@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/config"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/coreclient"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/grpcserver"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
@@ -140,6 +142,7 @@ func main() {
 	vc := vault.New(cfg.AgentVaultAPI, cfg.AgentVaultProxy, cfg.AgentVaultSecretsDir)
 	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
+	provSvc.SetGitHub(github.New(os.Getenv("GH_TOKEN"), strings.Split(cfg.FleetRepoInviters, ",")))
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)

@@ -49,7 +49,7 @@ func TestOpenFromProposal_StoresDefaultModelAndAutoMode(t *testing.T) {
 		transcr: transcript.NewPostgresStore(pool), e2e: provClient, caps: sessions.Caps{MaxLive: 5},
 	}
 
-	if err := repoStore.Create(ctx, repos.Repo{Name: "editable-blog", URL: "https://example.invalid/x.git"}); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('editable-blog', 'https://example.invalid/x.git')`); err != nil {
 		t.Fatalf("repo: %v", err)
 	}
 	pid, _, err := propStore.Create(ctx, "editable-blog", "audit", "k-1", "fix the thing", "body", "")

@@ -4,150 +4,190 @@ package repos
 
 import (
 	"context"
-	"errors"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 )
 
-// dbtest.NewPool applies the real db/migrations/ (docs/adr/0030), which
-// seeds 'dream-analyst'/'vos-monolith'/'agent-fleet' rows into repos —
-// tests below use a fixture name outside that seeded set so they don't
-// collide with it.
-func newTestPool(t *testing.T) *pgxpool.Pool {
-	return dbtest.NewPool(t)
+// The migration seeds four rows with no github_id (dream-analyst,
+// vos-monolith on base 'dev', agent-fleet, infra-bootstrap with cluster
+// access): exactly the pre-0074 state the first sync must adopt in place.
+var seeded = []GitHubRepo{
+	{ID: 1, FullName: "MohammadBnei/dream-analyst", Name: "dream-analyst", CloneURL: "https://github.com/MohammadBnei/dream-analyst.git", DefaultBranch: "main"},
+	{ID: 2, FullName: "MohammadBnei/vos-monolith", Name: "vos-monolith", CloneURL: "https://github.com/MohammadBnei/vos-monolith.git", DefaultBranch: "main"},
+	{ID: 3, FullName: "MohammadBnei/agent-fleet", Name: "agent-fleet", CloneURL: "https://github.com/MohammadBnei/agent-fleet.git", DefaultBranch: "main"},
+	{ID: 4, FullName: "MohammadBnei/infra-bootstrap", Name: "infra-bootstrap", CloneURL: "https://github.com/MohammadBnei/infra-bootstrap.git", DefaultBranch: "main"},
 }
 
-func TestStore_CreateGetListUpdateDelete(t *testing.T) {
-	s := NewStore(newTestPool(t))
-	ctx := context.Background()
+var seededOverrides = map[string]Override{
+	"MohammadBnei/vos-monolith":    {ID: 2, BaseBranch: "dev"},
+	"MohammadBnei/infra-bootstrap": {ID: 4, ClusterAccess: true},
+}
 
-	if got, err := s.Get(ctx, "test-repo"); err != nil || got != nil {
-		t.Fatalf("Get before Create = (%v, %v), want (nil, nil)", got, err)
-	}
+func setup(t *testing.T) (*Store, *pgxpool.Pool) {
+	t.Helper()
+	pool := dbtest.NewPool(t)
+	return NewStore(pool), pool
+}
 
-	r := Repo{Name: "test-repo", URL: "https://example.com/test-repo.git", BaseBranch: "dev"}
-	if err := s.Create(ctx, r); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	got, err := s.Get(ctx, "test-repo")
+func runSync(t *testing.T, s *Store, gh []GitHubRepo, ov map[string]Override) int {
+	t.Helper()
+	n, err := s.Sync(context.Background(), append([]GitHubRepo(nil), gh...), ov)
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatal(err)
 	}
-	if got == nil || *got != r {
-		t.Fatalf("Get = %+v, want %+v", got, r)
-	}
+	return n
+}
 
-	// List includes the migration's seeded repos alongside the one just
-	// created (docs/adr/0030) — assert containment, not an exact count.
+func get(t *testing.T, s *Store, name string) *Repo {
+	t.Helper()
+	r, err := s.Get(context.Background(), name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func exists(t *testing.T, pool *pgxpool.Pool, name string) bool {
+	t.Helper()
+	var ok bool
+	if err := pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM repos WHERE name = $1)`, name).Scan(&ok); err != nil {
+		t.Fatal(err)
+	}
+	return ok
+}
+
+func TestSync_CutoverAdoptsRowsAndIsIdempotent(t *testing.T) {
+	s, pool := setup(t)
+	if n := runSync(t, s, seeded, seededOverrides); n != 4 {
+		t.Fatalf("first sync changed %d rows, want 4", n)
+	}
+	if r := get(t, s, "infra-bootstrap"); r == nil || !r.ClusterAccess || r.FullName != "MohammadBnei/infra-bootstrap" {
+		t.Fatalf("infra-bootstrap = %+v", r)
+	}
+	if r := get(t, s, "vos-monolith"); r == nil || r.BaseBranch != "dev" {
+		t.Fatalf("vos-monolith = %+v", r)
+	}
+	if r := get(t, s, "dream-analyst"); r == nil || r.BaseBranch != "main" || r.ClusterAccess {
+		t.Fatalf("dream-analyst = %+v", r)
+	}
+	var n int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM repos WHERE github_id IS NOT NULL`).Scan(&n); err != nil || n != 4 {
+		t.Fatalf("github_id set on %d rows (%v), want 4: no row recreated", n, err)
+	}
+	if n := runSync(t, s, seeded, seededOverrides); n != 0 {
+		t.Fatalf("second sync changed %d rows, want 0", n)
+	}
+}
+
+// cluster_access comes only from the overrides file: dropping the entry
+// revokes it, and a mismatched id grants nothing.
+func TestSync_ClusterAccessOnlyFromAMatchingOverride(t *testing.T) {
+	s, _ := setup(t)
+	runSync(t, s, seeded, seededOverrides)
+	runSync(t, s, seeded, map[string]Override{"MohammadBnei/infra-bootstrap": {ID: 99, ClusterAccess: true}})
+	if r := get(t, s, "infra-bootstrap"); r.ClusterAccess {
+		t.Fatal("an override with the wrong id granted cluster access")
+	}
+	runSync(t, s, seeded, seededOverrides)
+	runSync(t, s, seeded, map[string]Override{})
+	if r := get(t, s, "infra-bootstrap"); r.ClusterAccess {
+		t.Fatal("an empty overrides file did not revoke cluster access")
+	}
+}
+
+func TestSync_NewReposAndNameCollision(t *testing.T) {
+	s, _ := setup(t)
+	gh := append(append([]GitHubRepo(nil), seeded...),
+		GitHubRepo{ID: 11, FullName: "opus-tech-hq/workspace", Name: "workspace", CloneURL: "https://github.com/opus-tech-hq/workspace.git", DefaultBranch: "main"},
+		GitHubRepo{ID: 10, FullName: "MohammadBnei/workspace", Name: "workspace", CloneURL: "https://github.com/MohammadBnei/workspace.git", DefaultBranch: "trunk"},
+	)
+	runSync(t, s, gh, seededOverrides)
+	if r := get(t, s, "workspace"); r == nil || r.FullName != "MohammadBnei/workspace" || r.BaseBranch != "trunk" {
+		t.Fatalf("workspace = %+v, want the older repo (id 10)", r)
+	}
+	ov := map[string]Override{"opus-tech-hq/workspace": {ID: 11, Name: "opus-workspace"}}
+	for k, v := range seededOverrides {
+		ov[k] = v
+	}
+	runSync(t, s, gh, ov)
+	if r := get(t, s, "opus-workspace"); r == nil || r.FullName != "opus-tech-hq/workspace" {
+		t.Fatalf("opus-workspace = %+v", r)
+	}
+}
+
+// A GitHub rename keeps the row (same id): url and full_name move with it.
+func TestSync_RenameKeepsTheRow(t *testing.T) {
+	s, _ := setup(t)
+	runSync(t, s, seeded, seededOverrides)
+	gh := append([]GitHubRepo(nil), seeded...)
+	gh[0] = GitHubRepo{ID: 1, FullName: "MohammadBnei/dreams", Name: "dreams", CloneURL: "https://github.com/MohammadBnei/dreams.git", DefaultBranch: "main"}
+	ov := map[string]Override{"MohammadBnei/dreams": {ID: 1, Name: "dream-analyst"}}
+	for k, v := range seededOverrides {
+		ov[k] = v
+	}
+	runSync(t, s, gh, ov)
+	if r := get(t, s, "dream-analyst"); r == nil || r.URL != "https://github.com/MohammadBnei/dreams.git" || r.FullName != "MohammadBnei/dreams" {
+		t.Fatalf("dream-analyst = %+v", r)
+	}
+}
+
+func TestSync_GoneHidesThenDeletesAfterGrace(t *testing.T) {
+	s, pool := setup(t)
+	ctx := context.Background()
+	runSync(t, s, seeded, seededOverrides)
+
+	runSync(t, s, seeded[1:], seededOverrides) // the bot was removed from dream-analyst
+	if r := get(t, s, "dream-analyst"); r != nil {
+		t.Fatal("a gone repo is still visible to Get")
+	}
 	list, err := s.List(ctx)
 	if err != nil {
-		t.Fatalf("List: %v", err)
+		t.Fatal(err)
 	}
-	found := false
-	for _, item := range list {
-		if item == r {
-			found = true
+	for _, r := range list {
+		if r.Name == "dream-analyst" {
+			t.Fatal("a gone repo is still listed")
 		}
 	}
-	if !found {
-		t.Fatalf("List = %+v, want it to contain %+v", list, r)
+
+	runSync(t, s, seeded, seededOverrides) // re-added within the grace
+	if r := get(t, s, "dream-analyst"); r == nil {
+		t.Fatal("re-adding the bot did not clear gone_since")
 	}
 
-	updated := Repo{Name: "test-repo", URL: "https://example.com/test-repo-v2.git", BaseBranch: "main"}
-	if err := s.Update(ctx, updated); err != nil {
-		t.Fatalf("Update: %v", err)
+	runSync(t, s, seeded[1:], seededOverrides)
+	if _, err := pool.Exec(ctx, `UPDATE repos SET gone_since = now() - interval '8 days' WHERE name = 'dream-analyst'`); err != nil {
+		t.Fatal(err)
 	}
-	got, err = s.Get(ctx, "test-repo")
-	if err != nil || got == nil || *got != updated {
-		t.Fatalf("Get after Update = (%+v, %v), want %+v", got, err, updated)
+	var sid string
+	if err := pool.QueryRow(ctx, `INSERT INTO sessions (repo) VALUES ('dream-analyst') RETURNING id`).Scan(&sid); err != nil {
+		t.Fatal(err)
 	}
-
-	if err := s.Delete(ctx, "test-repo"); err != nil {
-		t.Fatalf("Delete: %v", err)
+	runSync(t, s, seeded[1:], seededOverrides)
+	if !exists(t, pool, "dream-analyst") {
+		t.Fatal("deleted while an open session references it")
 	}
-	if got, err := s.Get(ctx, "test-repo"); err != nil || got != nil {
-		t.Fatalf("Get after Delete = (%v, %v), want (nil, nil)", got, err)
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET archived_at = now() WHERE id = $1`, sid); err != nil {
+		t.Fatal(err)
+	}
+	runSync(t, s, seeded[1:], seededOverrides)
+	if exists(t, pool, "dream-analyst") {
+		t.Fatal("not deleted after the grace with no open session")
 	}
 }
 
-func TestStore_CreateDuplicateName(t *testing.T) {
-	s := NewStore(newTestPool(t))
-	ctx := context.Background()
-
-	r := Repo{Name: "test-repo", URL: "https://example.com/test-repo.git"}
-	if err := s.Create(ctx, r); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if err := s.Create(ctx, r); !errors.Is(err, ErrExists) {
-		t.Fatalf("second Create error = %v, want ErrExists", err)
-	}
-}
-
-func TestStore_UpdateDeleteUnknownName(t *testing.T) {
-	s := NewStore(newTestPool(t))
-	ctx := context.Background()
-
-	if err := s.Update(ctx, Repo{Name: "nope", URL: "https://example.com/nope.git"}); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("Update unknown error = %v, want pgx.ErrNoRows", err)
-	}
-	if err := s.Delete(ctx, "nope"); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("Delete unknown error = %v, want pgx.ErrNoRows", err)
-	}
-}
-
-func TestStore_SetOnChange(t *testing.T) {
-	s := NewStore(newTestPool(t))
-	ctx := context.Background()
-
-	calls := 0
-	s.SetOnChange(func() { calls++ })
-
-	r := Repo{Name: "test-repo", URL: "https://example.com/test-repo.git"}
-	if err := s.Create(ctx, r); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if err := s.Update(ctx, r); err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	if err := s.Delete(ctx, "test-repo"); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if calls != 3 {
-		t.Fatalf("onChange called %d times, want 3", calls)
-	}
-}
-
-// The bug this prevents: an SSH URL is syntactically valid, stores fine,
-// and only fails ten minutes later when a dispatched task tries to clone
-// — surfacing as failed_permanently with "clone/fetch failed" and no
-// obvious cause. Confirmed live 2026-08-11 with infra-bootstrap.
-func TestCreate_RejectsSSHURL(t *testing.T) {
-	ctx := context.Background()
-	s := NewStore(newTestPool(t))
-
-	for _, url := range []string{
-		"git@github.com:MohammadBnei/infra-bootstrap.git",
-		"ssh://git@github.com/MohammadBnei/infra-bootstrap.git",
-	} {
-		err := s.Create(ctx, Repo{Name: "ssh-repo", URL: url, BaseBranch: "main"})
-		if !errors.Is(err, ErrSSHURL) {
-			t.Errorf("Create(%q) = %v, want ErrSSHURL — an SSH URL can never authenticate here", url, err)
+// A listing that lost more than maxGonePerTick repos is a token or GitHub
+// problem until a human says otherwise: nothing is marked gone.
+func TestSync_ShrinkGuard(t *testing.T) {
+	s, _ := setup(t)
+	runSync(t, s, seeded, seededOverrides)
+	runSync(t, s, nil, seededOverrides)
+	for _, g := range seeded {
+		if get(t, s, g.Name) == nil {
+			t.Fatalf("%s hidden by an empty listing", g.Name)
 		}
-	}
-}
-
-func TestCreate_AcceptsHTTPSURL(t *testing.T) {
-	ctx := context.Background()
-	s := NewStore(newTestPool(t))
-
-	if err := s.Create(ctx, Repo{
-		Name: "https-repo", URL: "https://github.com/MohammadBnei/x.git", BaseBranch: "main",
-	}); err != nil {
-		t.Fatalf("Create with an https URL should succeed, got %v", err)
 	}
 }

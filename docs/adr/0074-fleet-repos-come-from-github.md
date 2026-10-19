@@ -94,11 +94,15 @@ history.
    - A **mounted but empty** file is valid and means "no overrides". This is
      the way to revoke every grant.
    - A **missing** file, meaning a mount problem, keeps the last good copy.
-     At first boot with no file, every repo gets defaults, so cluster
-     access is off.
+     With no good copy yet in this process (a core restart while the
+     ConfigMap is absent), the sync does not run at all and every row keeps
+     its stored values. An absent file therefore never revokes a grant;
+     only an empty one does.
+   - `FLEET_REPO_OVERRIDES` unset (kind, local runs) turns the sync off.
 
    **`cluster_access` can only be set from this file.** Its default is
-   `false`, so a repo that only appears on GitHub never gets it.
+   `false`, so a repo that only appears on GitHub never gets it, and
+   removing a repo's entry revokes it on the next tick.
 
 6. **Removal is soft first.** When a repo is missing from a complete listing,
    it gets `gone_since = now()`. A gone repo is hidden from the console's
@@ -120,8 +124,9 @@ history.
 7. **The console is read-only for repos.** `CreateRepo`, `UpdateRepo` and
    `DeleteRepo` are removed from `DashboardService`. Every write to `repos`
    now comes from the sync. `SyncRepo` stays, because it only warms the
-   clone cache. The repo view shows `full_name`, the source of each
-   override, and `gone_since`.
+   clone cache. The repo view shows `full_name`, the effective base branch,
+   image and cluster access, and how to add or remove a repo. Gone repos are
+   not listed.
 
 8. **Cutover.** Before the first sync, the overrides file is seeded from a
    dump of the live rows. Every row that differs from the GitHub defaults
@@ -136,7 +141,9 @@ history.
    `resourceNames` list that excludes `fleet-repo-overrides`. Today the
    provisioner can `create` ConfigMaps and update only `agent-vault-ca`
    (`k8s/provisioner/role.yaml:57-60`), and worker pods have no
-   service-account token.
+   service-account token. `create` cannot be pinned by `resourceNames`, so
+   the provisioner could create the ConfigMap while it is absent; ArgoCD
+   owns the object, so this is the named residual.
 
 ## Alternatives considered
 
@@ -174,6 +181,9 @@ history.
 - A ConfigMap edit by anyone with write access in `agent-fleet` takes effect
   until ArgoCD's self-heal reverts it. Decision 9 keeps fleet components out
   of that set. Cluster admins are in it, and they have the cluster anyway.
+- Changing a repo's `name` override renames its row. Sessions reference
+  repos by name with no foreign key, so open sessions on the old name lose
+  their repo. Rename only when no session on it is open.
 - The provisioner makes about 2 GitHub API calls per tick (invitations, plus
   one page of repos per 100). That is about 3,000 per day, well inside the
   token's 5,000 per hour.

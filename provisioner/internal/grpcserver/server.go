@@ -23,6 +23,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
@@ -55,7 +56,13 @@ type Server struct {
 	// vault is the Agent Vault client (docs/adr/0065); it fails closed on its
 	// own without an agent token. Repo sessions never call it.
 	vault *vault.Client
+	// gh lists the bot's repos for core's repos sync (docs/adr/0074).
+	gh *github.Client
 }
+
+// SetGitHub wires the repos sync source (docs/adr/0074). Unset, ListGitHubRepos
+// fails closed.
+func (s *Server) SetGitHub(gh *github.Client) { s.gh = gh }
 
 // SetDefinitionsRef sets FLEET_DEFINITIONS_REF (docs/adr/0062). A setter
 // rather than an eighth positional string on New, which already takes six.
@@ -561,6 +568,31 @@ func (s *Server) ListDefinitionFiles(ctx context.Context, _ *agentfleetv1.ListDe
 	out := &agentfleetv1.ListDefinitionFilesResponse{Sha: sha}
 	for p, b := range files {
 		out.Files = append(out.Files, &agentfleetv1.DefinitionFile{Path: p, Content: b})
+	}
+	return out, nil
+}
+
+// ListGitHubRepos is core's repos sync source (docs/adr/0074): it accepts
+// allowlisted invitations first, so a repo shows up on the tick its invite
+// is accepted, then lists every repo the bot reaches. A failed accept is
+// logged and retried next tick; a failed listing is an error, never a
+// shorter list.
+func (s *Server) ListGitHubRepos(ctx context.Context, _ *agentfleetv1.ListGitHubReposRequest) (*agentfleetv1.ListGitHubReposResponse, error) {
+	if s.gh == nil {
+		return nil, status.Error(codes.FailedPrecondition, "no GitHub client: repos sync source is unset")
+	}
+	if _, err := s.gh.AcceptInvites(ctx); err != nil {
+		slog.Error("github: list invitations", "error", err)
+	}
+	list, err := s.gh.ListRepos(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	out := &agentfleetv1.ListGitHubReposResponse{}
+	for _, r := range list {
+		out.Repos = append(out.Repos, &agentfleetv1.GitHubRepo{
+			Id: r.ID, FullName: r.FullName, Name: r.Name, CloneUrl: r.CloneURL, DefaultBranch: r.DefaultBranch,
+		})
 	}
 	return out, nil
 }

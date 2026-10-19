@@ -72,6 +72,10 @@ type Config struct {
 	// (docs/adr/0062). 0 (the default) means no definition session can warm;
 	// run refuses to start unless it is >= 0 and < MaxInFlight.
 	MaxDefinitionSessions int
+	// RepoOverridesPath is FLEET_REPO_OVERRIDES, infra-bootstrap's
+	// fleet-repo-overrides file as mounted (docs/adr/0074). Empty turns the
+	// GitHub repos sync off, and repos keeps whatever rows it has (kind).
+	RepoOverridesPath string
 	// StopGrace is how long sessions.Loop waits after a Stop request before
 	// force-tearing down a worker pod that hasn't gone terminal on its own —
 	// long enough for a healthy pod to notice the cooperative abort message
@@ -193,6 +197,7 @@ func Load() Config {
 		STTToken:              os.Getenv("STT_TOKEN_FLEET"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxDefinitionSessions: envInt("MAX_DEFINITION_SESSIONS", 0),
+		RepoOverridesPath:     os.Getenv("FLEET_REPO_OVERRIDES"),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,

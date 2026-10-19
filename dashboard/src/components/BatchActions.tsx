@@ -153,7 +153,7 @@ export function BatchBar({
       {result && <InlineError message={result} onDismiss={() => setResult(null)} />}
 
       {/* Delete destroys the transcript, so past one session it asks for the
-          word — the same gate ManageReposModal uses. Archive is reversible and
+          word. Archive is reversible and
           Stop only ends a pod, so those get a plain confirm. */}
       <ConfirmModal
         open={pending !== null}

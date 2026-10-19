@@ -1853,9 +1853,9 @@ func (x *GetJournalResponse) GetNextId() int64 {
 	return 0
 }
 
-// Repo is the dashboard-editable target-repo config (docs/adr/0028) —
-// replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
-// table (db/schema.sql). No timestamps exposed: the dashboard's repo list
+// Repo is one fleet target repo (docs/adr/0028), read-only since
+// docs/adr/0074: the `repos` table is projected from GitHub plus
+// infra-bootstrap's fleet-repo-overrides file. No timestamps exposed: the dashboard's repo list
 // is small and unordered, unlike Session/JournalEntry which need cursor state.
 type Repo struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
@@ -1872,8 +1872,10 @@ type Repo struct {
 	// collapse into `image`, because it is a privilege grant rather than a
 	// toolchain — the pod still holds zero Kubernetes credentials either way,
 	// and which sessions may reach the cluster stays a human's decision,
-	// editable here without a redeploy.
+	// made only in infra-bootstrap's overrides file (docs/adr/0074).
 	ClusterAccess bool `protobuf:"varint,6,opt,name=cluster_access,json=clusterAccess,proto3" json:"cluster_access,omitempty"`
+	// GitHub's owner/repo, e.g. "opus-tech-hq/workspace".
+	FullName      string `protobuf:"bytes,7,opt,name=full_name,json=fullName,proto3" json:"full_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1941,6 +1943,13 @@ func (x *Repo) GetClusterAccess() bool {
 		return x.ClusterAccess
 	}
 	return false
+}
+
+func (x *Repo) GetFullName() string {
+	if x != nil {
+		return x.FullName
+	}
+	return ""
 }
 
 type ListDefinitionsRequest struct {
@@ -2227,326 +2236,6 @@ func (x *ListReposResponse) GetRepos() []*Repo {
 	return nil
 }
 
-type CreateRepoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	Image         string                 `protobuf:"bytes,5,opt,name=image,proto3" json:"image,omitempty"`
-	ClusterAccess bool                   `protobuf:"varint,6,opt,name=cluster_access,json=clusterAccess,proto3" json:"cluster_access,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateRepoRequest) Reset() {
-	*x = CreateRepoRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[39]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateRepoRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateRepoRequest) ProtoMessage() {}
-
-func (x *CreateRepoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[39]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateRepoRequest.ProtoReflect.Descriptor instead.
-func (*CreateRepoRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{39}
-}
-
-func (x *CreateRepoRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CreateRepoRequest) GetUrl() string {
-	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *CreateRepoRequest) GetBaseBranch() string {
-	if x != nil {
-		return x.BaseBranch
-	}
-	return ""
-}
-
-func (x *CreateRepoRequest) GetImage() string {
-	if x != nil {
-		return x.Image
-	}
-	return ""
-}
-
-func (x *CreateRepoRequest) GetClusterAccess() bool {
-	if x != nil {
-		return x.ClusterAccess
-	}
-	return false
-}
-
-type CreateRepoResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          *Repo                  `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateRepoResponse) Reset() {
-	*x = CreateRepoResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[40]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateRepoResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateRepoResponse) ProtoMessage() {}
-
-func (x *CreateRepoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[40]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateRepoResponse.ProtoReflect.Descriptor instead.
-func (*CreateRepoResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{40}
-}
-
-func (x *CreateRepoResponse) GetRepo() *Repo {
-	if x != nil {
-		return x.Repo
-	}
-	return nil
-}
-
-type UpdateRepoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	Image         string                 `protobuf:"bytes,5,opt,name=image,proto3" json:"image,omitempty"`
-	ClusterAccess bool                   `protobuf:"varint,6,opt,name=cluster_access,json=clusterAccess,proto3" json:"cluster_access,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateRepoRequest) Reset() {
-	*x = UpdateRepoRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[41]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateRepoRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateRepoRequest) ProtoMessage() {}
-
-func (x *UpdateRepoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[41]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateRepoRequest.ProtoReflect.Descriptor instead.
-func (*UpdateRepoRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{41}
-}
-
-func (x *UpdateRepoRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *UpdateRepoRequest) GetUrl() string {
-	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *UpdateRepoRequest) GetBaseBranch() string {
-	if x != nil {
-		return x.BaseBranch
-	}
-	return ""
-}
-
-func (x *UpdateRepoRequest) GetImage() string {
-	if x != nil {
-		return x.Image
-	}
-	return ""
-}
-
-func (x *UpdateRepoRequest) GetClusterAccess() bool {
-	if x != nil {
-		return x.ClusterAccess
-	}
-	return false
-}
-
-type UpdateRepoResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          *Repo                  `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateRepoResponse) Reset() {
-	*x = UpdateRepoResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[42]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateRepoResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateRepoResponse) ProtoMessage() {}
-
-func (x *UpdateRepoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[42]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateRepoResponse.ProtoReflect.Descriptor instead.
-func (*UpdateRepoResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{42}
-}
-
-func (x *UpdateRepoResponse) GetRepo() *Repo {
-	if x != nil {
-		return x.Repo
-	}
-	return nil
-}
-
-type DeleteRepoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteRepoRequest) Reset() {
-	*x = DeleteRepoRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[43]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteRepoRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteRepoRequest) ProtoMessage() {}
-
-func (x *DeleteRepoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[43]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteRepoRequest.ProtoReflect.Descriptor instead.
-func (*DeleteRepoRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{43}
-}
-
-func (x *DeleteRepoRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-type DeleteRepoResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteRepoResponse) Reset() {
-	*x = DeleteRepoResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[44]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteRepoResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteRepoResponse) ProtoMessage() {}
-
-func (x *DeleteRepoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[44]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteRepoResponse.ProtoReflect.Descriptor instead.
-func (*DeleteRepoResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{44}
-}
-
 // Refreshes the provisioner's clone cache for one repo (ProvisionerService's
 // SyncRepoCache). Only the name travels: core looks the URL up in the `repos`
 // table, so the dashboard cannot aim the cache at an arbitrary remote.
@@ -2563,7 +2252,7 @@ type SyncRepoRequest struct {
 
 func (x *SyncRepoRequest) Reset() {
 	*x = SyncRepoRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[45]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2575,7 +2264,7 @@ func (x *SyncRepoRequest) String() string {
 func (*SyncRepoRequest) ProtoMessage() {}
 
 func (x *SyncRepoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[45]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2588,7 +2277,7 @@ func (x *SyncRepoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRepoRequest.ProtoReflect.Descriptor instead.
 func (*SyncRepoRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{45}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SyncRepoRequest) GetName() string {
@@ -2621,7 +2310,7 @@ type SyncRepoResponse struct {
 
 func (x *SyncRepoResponse) Reset() {
 	*x = SyncRepoResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[46]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2633,7 +2322,7 @@ func (x *SyncRepoResponse) String() string {
 func (*SyncRepoResponse) ProtoMessage() {}
 
 func (x *SyncRepoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[46]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2646,7 +2335,7 @@ func (x *SyncRepoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRepoResponse.ProtoReflect.Descriptor instead.
 func (*SyncRepoResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{46}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SyncRepoResponse) GetCloned() bool {
@@ -2703,7 +2392,7 @@ type PromptSnippet struct {
 
 func (x *PromptSnippet) Reset() {
 	*x = PromptSnippet{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[47]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2715,7 +2404,7 @@ func (x *PromptSnippet) String() string {
 func (*PromptSnippet) ProtoMessage() {}
 
 func (x *PromptSnippet) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[47]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2728,7 +2417,7 @@ func (x *PromptSnippet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptSnippet.ProtoReflect.Descriptor instead.
 func (*PromptSnippet) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{47}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PromptSnippet) GetId() string {
@@ -2767,7 +2456,7 @@ type ListPromptSnippetsRequest struct {
 
 func (x *ListPromptSnippetsRequest) Reset() {
 	*x = ListPromptSnippetsRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[48]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2779,7 +2468,7 @@ func (x *ListPromptSnippetsRequest) String() string {
 func (*ListPromptSnippetsRequest) ProtoMessage() {}
 
 func (x *ListPromptSnippetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[48]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2792,7 +2481,7 @@ func (x *ListPromptSnippetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPromptSnippetsRequest.ProtoReflect.Descriptor instead.
 func (*ListPromptSnippetsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{48}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{42}
 }
 
 type ListPromptSnippetsResponse struct {
@@ -2804,7 +2493,7 @@ type ListPromptSnippetsResponse struct {
 
 func (x *ListPromptSnippetsResponse) Reset() {
 	*x = ListPromptSnippetsResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[49]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2816,7 +2505,7 @@ func (x *ListPromptSnippetsResponse) String() string {
 func (*ListPromptSnippetsResponse) ProtoMessage() {}
 
 func (x *ListPromptSnippetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[49]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2829,7 +2518,7 @@ func (x *ListPromptSnippetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPromptSnippetsResponse.ProtoReflect.Descriptor instead.
 func (*ListPromptSnippetsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{49}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ListPromptSnippetsResponse) GetSnippets() []*PromptSnippet {
@@ -2849,7 +2538,7 @@ type CreatePromptSnippetRequest struct {
 
 func (x *CreatePromptSnippetRequest) Reset() {
 	*x = CreatePromptSnippetRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[50]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2861,7 +2550,7 @@ func (x *CreatePromptSnippetRequest) String() string {
 func (*CreatePromptSnippetRequest) ProtoMessage() {}
 
 func (x *CreatePromptSnippetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[50]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2874,7 +2563,7 @@ func (x *CreatePromptSnippetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePromptSnippetRequest.ProtoReflect.Descriptor instead.
 func (*CreatePromptSnippetRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{50}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CreatePromptSnippetRequest) GetName() string {
@@ -2900,7 +2589,7 @@ type CreatePromptSnippetResponse struct {
 
 func (x *CreatePromptSnippetResponse) Reset() {
 	*x = CreatePromptSnippetResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[51]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2912,7 +2601,7 @@ func (x *CreatePromptSnippetResponse) String() string {
 func (*CreatePromptSnippetResponse) ProtoMessage() {}
 
 func (x *CreatePromptSnippetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[51]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2925,7 +2614,7 @@ func (x *CreatePromptSnippetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePromptSnippetResponse.ProtoReflect.Descriptor instead.
 func (*CreatePromptSnippetResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{51}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CreatePromptSnippetResponse) GetSnippet() *PromptSnippet {
@@ -2946,7 +2635,7 @@ type UpdatePromptSnippetRequest struct {
 
 func (x *UpdatePromptSnippetRequest) Reset() {
 	*x = UpdatePromptSnippetRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[52]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2958,7 +2647,7 @@ func (x *UpdatePromptSnippetRequest) String() string {
 func (*UpdatePromptSnippetRequest) ProtoMessage() {}
 
 func (x *UpdatePromptSnippetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[52]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2971,7 +2660,7 @@ func (x *UpdatePromptSnippetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePromptSnippetRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePromptSnippetRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{52}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *UpdatePromptSnippetRequest) GetId() string {
@@ -3004,7 +2693,7 @@ type UpdatePromptSnippetResponse struct {
 
 func (x *UpdatePromptSnippetResponse) Reset() {
 	*x = UpdatePromptSnippetResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[53]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3016,7 +2705,7 @@ func (x *UpdatePromptSnippetResponse) String() string {
 func (*UpdatePromptSnippetResponse) ProtoMessage() {}
 
 func (x *UpdatePromptSnippetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[53]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3029,7 +2718,7 @@ func (x *UpdatePromptSnippetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePromptSnippetResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePromptSnippetResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{53}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *UpdatePromptSnippetResponse) GetSnippet() *PromptSnippet {
@@ -3048,7 +2737,7 @@ type DeletePromptSnippetRequest struct {
 
 func (x *DeletePromptSnippetRequest) Reset() {
 	*x = DeletePromptSnippetRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[54]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3060,7 +2749,7 @@ func (x *DeletePromptSnippetRequest) String() string {
 func (*DeletePromptSnippetRequest) ProtoMessage() {}
 
 func (x *DeletePromptSnippetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[54]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3073,7 +2762,7 @@ func (x *DeletePromptSnippetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePromptSnippetRequest.ProtoReflect.Descriptor instead.
 func (*DeletePromptSnippetRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{54}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *DeletePromptSnippetRequest) GetId() string {
@@ -3091,7 +2780,7 @@ type DeletePromptSnippetResponse struct {
 
 func (x *DeletePromptSnippetResponse) Reset() {
 	*x = DeletePromptSnippetResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[55]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3103,7 +2792,7 @@ func (x *DeletePromptSnippetResponse) String() string {
 func (*DeletePromptSnippetResponse) ProtoMessage() {}
 
 func (x *DeletePromptSnippetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[55]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3116,7 +2805,7 @@ func (x *DeletePromptSnippetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePromptSnippetResponse.ProtoReflect.Descriptor instead.
 func (*DeletePromptSnippetResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{55}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{49}
 }
 
 // Fires a schedule out of band rather than adding a second dispatch path: it
@@ -3136,7 +2825,7 @@ type RunScheduleNowRequest struct {
 
 func (x *RunScheduleNowRequest) Reset() {
 	*x = RunScheduleNowRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[56]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3148,7 +2837,7 @@ func (x *RunScheduleNowRequest) String() string {
 func (*RunScheduleNowRequest) ProtoMessage() {}
 
 func (x *RunScheduleNowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[56]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3161,7 +2850,7 @@ func (x *RunScheduleNowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunScheduleNowRequest.ProtoReflect.Descriptor instead.
 func (*RunScheduleNowRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{56}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *RunScheduleNowRequest) GetId() string {
@@ -3180,7 +2869,7 @@ type RunScheduleNowResponse struct {
 
 func (x *RunScheduleNowResponse) Reset() {
 	*x = RunScheduleNowResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[57]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3192,7 +2881,7 @@ func (x *RunScheduleNowResponse) String() string {
 func (*RunScheduleNowResponse) ProtoMessage() {}
 
 func (x *RunScheduleNowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[57]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3205,7 +2894,7 @@ func (x *RunScheduleNowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunScheduleNowResponse.ProtoReflect.Descriptor instead.
 func (*RunScheduleNowResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{57}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *RunScheduleNowResponse) GetSchedule() *Schedule {
@@ -3246,7 +2935,7 @@ type Schedule struct {
 
 func (x *Schedule) Reset() {
 	*x = Schedule{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[58]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3258,7 +2947,7 @@ func (x *Schedule) String() string {
 func (*Schedule) ProtoMessage() {}
 
 func (x *Schedule) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[58]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3271,7 +2960,7 @@ func (x *Schedule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
 func (*Schedule) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{58}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *Schedule) GetId() string {
@@ -3359,7 +3048,7 @@ type ListSchedulesRequest struct {
 
 func (x *ListSchedulesRequest) Reset() {
 	*x = ListSchedulesRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[59]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3371,7 +3060,7 @@ func (x *ListSchedulesRequest) String() string {
 func (*ListSchedulesRequest) ProtoMessage() {}
 
 func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[59]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3384,7 +3073,7 @@ func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
 func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{59}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{53}
 }
 
 type ListSchedulesResponse struct {
@@ -3396,7 +3085,7 @@ type ListSchedulesResponse struct {
 
 func (x *ListSchedulesResponse) Reset() {
 	*x = ListSchedulesResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[60]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3408,7 +3097,7 @@ func (x *ListSchedulesResponse) String() string {
 func (*ListSchedulesResponse) ProtoMessage() {}
 
 func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[60]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3421,7 +3110,7 @@ func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesResponse.ProtoReflect.Descriptor instead.
 func (*ListSchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{60}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListSchedulesResponse) GetSchedules() []*Schedule {
@@ -3449,7 +3138,7 @@ type CreateScheduleRequest struct {
 
 func (x *CreateScheduleRequest) Reset() {
 	*x = CreateScheduleRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[61]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3461,7 +3150,7 @@ func (x *CreateScheduleRequest) String() string {
 func (*CreateScheduleRequest) ProtoMessage() {}
 
 func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[61]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3474,7 +3163,7 @@ func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateScheduleRequest.ProtoReflect.Descriptor instead.
 func (*CreateScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{61}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CreateScheduleRequest) GetName() string {
@@ -3528,7 +3217,7 @@ type CreateScheduleResponse struct {
 
 func (x *CreateScheduleResponse) Reset() {
 	*x = CreateScheduleResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[62]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3540,7 +3229,7 @@ func (x *CreateScheduleResponse) String() string {
 func (*CreateScheduleResponse) ProtoMessage() {}
 
 func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[62]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3553,7 +3242,7 @@ func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateScheduleResponse.ProtoReflect.Descriptor instead.
 func (*CreateScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{62}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *CreateScheduleResponse) GetSchedule() *Schedule {
@@ -3579,7 +3268,7 @@ type UpdateScheduleRequest struct {
 
 func (x *UpdateScheduleRequest) Reset() {
 	*x = UpdateScheduleRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[63]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3591,7 +3280,7 @@ func (x *UpdateScheduleRequest) String() string {
 func (*UpdateScheduleRequest) ProtoMessage() {}
 
 func (x *UpdateScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[63]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3604,7 +3293,7 @@ func (x *UpdateScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateScheduleRequest.ProtoReflect.Descriptor instead.
 func (*UpdateScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{63}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *UpdateScheduleRequest) GetId() string {
@@ -3672,7 +3361,7 @@ type UpdateScheduleResponse struct {
 
 func (x *UpdateScheduleResponse) Reset() {
 	*x = UpdateScheduleResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[64]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3684,7 +3373,7 @@ func (x *UpdateScheduleResponse) String() string {
 func (*UpdateScheduleResponse) ProtoMessage() {}
 
 func (x *UpdateScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[64]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3697,7 +3386,7 @@ func (x *UpdateScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateScheduleResponse.ProtoReflect.Descriptor instead.
 func (*UpdateScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{64}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *UpdateScheduleResponse) GetSchedule() *Schedule {
@@ -3716,7 +3405,7 @@ type DeleteScheduleRequest struct {
 
 func (x *DeleteScheduleRequest) Reset() {
 	*x = DeleteScheduleRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[65]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3728,7 +3417,7 @@ func (x *DeleteScheduleRequest) String() string {
 func (*DeleteScheduleRequest) ProtoMessage() {}
 
 func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[65]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3741,7 +3430,7 @@ func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteScheduleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{65}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *DeleteScheduleRequest) GetId() string {
@@ -3759,7 +3448,7 @@ type DeleteScheduleResponse struct {
 
 func (x *DeleteScheduleResponse) Reset() {
 	*x = DeleteScheduleResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[66]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3771,7 +3460,7 @@ func (x *DeleteScheduleResponse) String() string {
 func (*DeleteScheduleResponse) ProtoMessage() {}
 
 func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[66]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3784,7 +3473,7 @@ func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteScheduleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{66}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{60}
 }
 
 // QueryMetrics proxies PromQL through core. Prometheus has no IngressRoute
@@ -3808,7 +3497,7 @@ type QueryMetricsRequest struct {
 
 func (x *QueryMetricsRequest) Reset() {
 	*x = QueryMetricsRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[67]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3820,7 +3509,7 @@ func (x *QueryMetricsRequest) String() string {
 func (*QueryMetricsRequest) ProtoMessage() {}
 
 func (x *QueryMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[67]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3833,7 +3522,7 @@ func (x *QueryMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryMetricsRequest.ProtoReflect.Descriptor instead.
 func (*QueryMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{67}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *QueryMetricsRequest) GetQuery() string {
@@ -3877,7 +3566,7 @@ type QueryMetricsResponse struct {
 
 func (x *QueryMetricsResponse) Reset() {
 	*x = QueryMetricsResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[68]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3889,7 +3578,7 @@ func (x *QueryMetricsResponse) String() string {
 func (*QueryMetricsResponse) ProtoMessage() {}
 
 func (x *QueryMetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[68]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3902,7 +3591,7 @@ func (x *QueryMetricsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryMetricsResponse.ProtoReflect.Descriptor instead.
 func (*QueryMetricsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{68}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *QueryMetricsResponse) GetResultJson() string {
@@ -3920,7 +3609,7 @@ type GetFleetTopologyRequest struct {
 
 func (x *GetFleetTopologyRequest) Reset() {
 	*x = GetFleetTopologyRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[69]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3932,7 +3621,7 @@ func (x *GetFleetTopologyRequest) String() string {
 func (*GetFleetTopologyRequest) ProtoMessage() {}
 
 func (x *GetFleetTopologyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[69]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3945,7 +3634,7 @@ func (x *GetFleetTopologyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFleetTopologyRequest.ProtoReflect.Descriptor instead.
 func (*GetFleetTopologyRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{69}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{63}
 }
 
 // A cell in the fleet: one long-lived component, or one task's pod.
@@ -3975,7 +3664,7 @@ type CellNode struct {
 
 func (x *CellNode) Reset() {
 	*x = CellNode{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[70]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3987,7 +3676,7 @@ func (x *CellNode) String() string {
 func (*CellNode) ProtoMessage() {}
 
 func (x *CellNode) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[70]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4000,7 +3689,7 @@ func (x *CellNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CellNode.ProtoReflect.Descriptor instead.
 func (*CellNode) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{70}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *CellNode) GetId() string {
@@ -4071,7 +3760,7 @@ type TopologyEdge struct {
 
 func (x *TopologyEdge) Reset() {
 	*x = TopologyEdge{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[71]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4083,7 +3772,7 @@ func (x *TopologyEdge) String() string {
 func (*TopologyEdge) ProtoMessage() {}
 
 func (x *TopologyEdge) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[71]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4096,7 +3785,7 @@ func (x *TopologyEdge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TopologyEdge.ProtoReflect.Descriptor instead.
 func (*TopologyEdge) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{71}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *TopologyEdge) GetFrom() string {
@@ -4141,7 +3830,7 @@ type GetFleetTopologyResponse struct {
 
 func (x *GetFleetTopologyResponse) Reset() {
 	*x = GetFleetTopologyResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[72]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4153,7 +3842,7 @@ func (x *GetFleetTopologyResponse) String() string {
 func (*GetFleetTopologyResponse) ProtoMessage() {}
 
 func (x *GetFleetTopologyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[72]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4166,7 +3855,7 @@ func (x *GetFleetTopologyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFleetTopologyResponse.ProtoReflect.Descriptor instead.
 func (*GetFleetTopologyResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{72}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *GetFleetTopologyResponse) GetNodes() []*CellNode {
@@ -4229,7 +3918,7 @@ type TranscribeRequest struct {
 
 func (x *TranscribeRequest) Reset() {
 	*x = TranscribeRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[73]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4241,7 +3930,7 @@ func (x *TranscribeRequest) String() string {
 func (*TranscribeRequest) ProtoMessage() {}
 
 func (x *TranscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[73]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4254,7 +3943,7 @@ func (x *TranscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscribeRequest.ProtoReflect.Descriptor instead.
 func (*TranscribeRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{73}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *TranscribeRequest) GetAudio() []byte {
@@ -4296,7 +3985,7 @@ type TranscribeResponse struct {
 
 func (x *TranscribeResponse) Reset() {
 	*x = TranscribeResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[74]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4308,7 +3997,7 @@ func (x *TranscribeResponse) String() string {
 func (*TranscribeResponse) ProtoMessage() {}
 
 func (x *TranscribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[74]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4321,7 +4010,7 @@ func (x *TranscribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscribeResponse.ProtoReflect.Descriptor instead.
 func (*TranscribeResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{74}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *TranscribeResponse) GetText() string {
@@ -4451,14 +4140,15 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"d\n" +
 	"\x12GetJournalResponse\x125\n" +
 	"\aentries\x18\x01 \x03(\v2\x1b.agentfleet.v1.JournalEntryR\aentries\x12\x17\n" +
-	"\anext_id\x18\x02 \x01(\x03R\x06nextId\"\x9d\x01\n" +
+	"\anext_id\x18\x02 \x01(\x03R\x06nextId\"\xba\x01\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
 	"\vbase_branch\x18\x03 \x01(\tR\n" +
 	"baseBranch\x12\x14\n" +
 	"\x05image\x18\x05 \x01(\tR\x05image\x12%\n" +
-	"\x0ecluster_access\x18\x06 \x01(\bR\rclusterAccessJ\x04\b\x04\x10\x05R\ve2e_profile\"\x18\n" +
+	"\x0ecluster_access\x18\x06 \x01(\bR\rclusterAccess\x12\x1b\n" +
+	"\tfull_name\x18\a \x01(\tR\bfullNameJ\x04\b\x04\x10\x05R\ve2e_profile\"\x18\n" +
 	"\x16ListDefinitionsRequest\"\xfa\x01\n" +
 	"\x0fAgentDefinition\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
@@ -4476,28 +4166,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"syncErrors\"\x12\n" +
 	"\x10ListReposRequest\">\n" +
 	"\x11ListReposResponse\x12)\n" +
-	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\"\xaa\x01\n" +
-	"\x11CreateRepoRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
-	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
-	"\vbase_branch\x18\x03 \x01(\tR\n" +
-	"baseBranch\x12\x14\n" +
-	"\x05image\x18\x05 \x01(\tR\x05image\x12%\n" +
-	"\x0ecluster_access\x18\x06 \x01(\bR\rclusterAccessJ\x04\b\x04\x10\x05R\ve2e_profile\"=\n" +
-	"\x12CreateRepoResponse\x12'\n" +
-	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"\xaa\x01\n" +
-	"\x11UpdateRepoRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
-	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
-	"\vbase_branch\x18\x03 \x01(\tR\n" +
-	"baseBranch\x12\x14\n" +
-	"\x05image\x18\x05 \x01(\tR\x05image\x12%\n" +
-	"\x0ecluster_access\x18\x06 \x01(\bR\rclusterAccessJ\x04\b\x04\x10\x05R\ve2e_profile\"=\n" +
-	"\x12UpdateRepoResponse\x12'\n" +
-	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"'\n" +
-	"\x11DeleteRepoRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\x14\n" +
-	"\x12DeleteRepoResponse\"%\n" +
+	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\"%\n" +
 	"\x0fSyncRepoRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\xad\x01\n" +
 	"\x10SyncRepoResponse\x12\x16\n" +
@@ -4613,7 +4282,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x04last\x18\x03 \x01(\bR\x04last\x12\x1a\n" +
 	"\blanguage\x18\x04 \x01(\tR\blanguage\"(\n" +
 	"\x12TranscribeResponse\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text2\xfa\x1e\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text2\x81\x1d\n" +
 	"\x10DashboardService\x12W\n" +
 	"\fListSessions\x12\".agentfleet.v1.ListSessionsRequest\x1a#.agentfleet.v1.ListSessionsResponse\x12Q\n" +
 	"\n" +
@@ -4640,13 +4309,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
 	"GetJournal\x12 .agentfleet.v1.GetJournalRequest\x1a!.agentfleet.v1.GetJournalResponse\x12`\n" +
 	"\x0fListDefinitions\x12%.agentfleet.v1.ListDefinitionsRequest\x1a&.agentfleet.v1.ListDefinitionsResponse\x12N\n" +
-	"\tListRepos\x12\x1f.agentfleet.v1.ListReposRequest\x1a .agentfleet.v1.ListReposResponse\x12Q\n" +
-	"\n" +
-	"CreateRepo\x12 .agentfleet.v1.CreateRepoRequest\x1a!.agentfleet.v1.CreateRepoResponse\x12Q\n" +
-	"\n" +
-	"UpdateRepo\x12 .agentfleet.v1.UpdateRepoRequest\x1a!.agentfleet.v1.UpdateRepoResponse\x12Q\n" +
-	"\n" +
-	"DeleteRepo\x12 .agentfleet.v1.DeleteRepoRequest\x1a!.agentfleet.v1.DeleteRepoResponse\x12K\n" +
+	"\tListRepos\x12\x1f.agentfleet.v1.ListReposRequest\x1a .agentfleet.v1.ListReposResponse\x12K\n" +
 	"\bSyncRepo\x12\x1e.agentfleet.v1.SyncRepoRequest\x1a\x1f.agentfleet.v1.SyncRepoResponse\x12i\n" +
 	"\x12ListPromptSnippets\x12(.agentfleet.v1.ListPromptSnippetsRequest\x1a).agentfleet.v1.ListPromptSnippetsResponse\x12l\n" +
 	"\x13CreatePromptSnippet\x12).agentfleet.v1.CreatePromptSnippetRequest\x1a*.agentfleet.v1.CreatePromptSnippetResponse\x12l\n" +
@@ -4679,7 +4342,7 @@ func file_agentfleet_v1_dashboard_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_dashboard_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
+var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
 var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(GetFileDiffResponse_Status)(0),     // 0: agentfleet.v1.GetFileDiffResponse.Status
 	(*ListSessionsRequest)(nil),         // 1: agentfleet.v1.ListSessionsRequest
@@ -4721,176 +4384,162 @@ var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*ListDefinitionsResponse)(nil),     // 37: agentfleet.v1.ListDefinitionsResponse
 	(*ListReposRequest)(nil),            // 38: agentfleet.v1.ListReposRequest
 	(*ListReposResponse)(nil),           // 39: agentfleet.v1.ListReposResponse
-	(*CreateRepoRequest)(nil),           // 40: agentfleet.v1.CreateRepoRequest
-	(*CreateRepoResponse)(nil),          // 41: agentfleet.v1.CreateRepoResponse
-	(*UpdateRepoRequest)(nil),           // 42: agentfleet.v1.UpdateRepoRequest
-	(*UpdateRepoResponse)(nil),          // 43: agentfleet.v1.UpdateRepoResponse
-	(*DeleteRepoRequest)(nil),           // 44: agentfleet.v1.DeleteRepoRequest
-	(*DeleteRepoResponse)(nil),          // 45: agentfleet.v1.DeleteRepoResponse
-	(*SyncRepoRequest)(nil),             // 46: agentfleet.v1.SyncRepoRequest
-	(*SyncRepoResponse)(nil),            // 47: agentfleet.v1.SyncRepoResponse
-	(*PromptSnippet)(nil),               // 48: agentfleet.v1.PromptSnippet
-	(*ListPromptSnippetsRequest)(nil),   // 49: agentfleet.v1.ListPromptSnippetsRequest
-	(*ListPromptSnippetsResponse)(nil),  // 50: agentfleet.v1.ListPromptSnippetsResponse
-	(*CreatePromptSnippetRequest)(nil),  // 51: agentfleet.v1.CreatePromptSnippetRequest
-	(*CreatePromptSnippetResponse)(nil), // 52: agentfleet.v1.CreatePromptSnippetResponse
-	(*UpdatePromptSnippetRequest)(nil),  // 53: agentfleet.v1.UpdatePromptSnippetRequest
-	(*UpdatePromptSnippetResponse)(nil), // 54: agentfleet.v1.UpdatePromptSnippetResponse
-	(*DeletePromptSnippetRequest)(nil),  // 55: agentfleet.v1.DeletePromptSnippetRequest
-	(*DeletePromptSnippetResponse)(nil), // 56: agentfleet.v1.DeletePromptSnippetResponse
-	(*RunScheduleNowRequest)(nil),       // 57: agentfleet.v1.RunScheduleNowRequest
-	(*RunScheduleNowResponse)(nil),      // 58: agentfleet.v1.RunScheduleNowResponse
-	(*Schedule)(nil),                    // 59: agentfleet.v1.Schedule
-	(*ListSchedulesRequest)(nil),        // 60: agentfleet.v1.ListSchedulesRequest
-	(*ListSchedulesResponse)(nil),       // 61: agentfleet.v1.ListSchedulesResponse
-	(*CreateScheduleRequest)(nil),       // 62: agentfleet.v1.CreateScheduleRequest
-	(*CreateScheduleResponse)(nil),      // 63: agentfleet.v1.CreateScheduleResponse
-	(*UpdateScheduleRequest)(nil),       // 64: agentfleet.v1.UpdateScheduleRequest
-	(*UpdateScheduleResponse)(nil),      // 65: agentfleet.v1.UpdateScheduleResponse
-	(*DeleteScheduleRequest)(nil),       // 66: agentfleet.v1.DeleteScheduleRequest
-	(*DeleteScheduleResponse)(nil),      // 67: agentfleet.v1.DeleteScheduleResponse
-	(*QueryMetricsRequest)(nil),         // 68: agentfleet.v1.QueryMetricsRequest
-	(*QueryMetricsResponse)(nil),        // 69: agentfleet.v1.QueryMetricsResponse
-	(*GetFleetTopologyRequest)(nil),     // 70: agentfleet.v1.GetFleetTopologyRequest
-	(*CellNode)(nil),                    // 71: agentfleet.v1.CellNode
-	(*TopologyEdge)(nil),                // 72: agentfleet.v1.TopologyEdge
-	(*GetFleetTopologyResponse)(nil),    // 73: agentfleet.v1.GetFleetTopologyResponse
-	(*TranscribeRequest)(nil),           // 74: agentfleet.v1.TranscribeRequest
-	(*TranscribeResponse)(nil),          // 75: agentfleet.v1.TranscribeResponse
-	nil,                                 // 76: agentfleet.v1.CellNode.MetricsEntry
-	(*Session)(nil),                     // 77: agentfleet.v1.Session
-	(*JournalEntry)(nil),                // 78: agentfleet.v1.JournalEntry
-	(*GetSessionRequest)(nil),           // 79: agentfleet.v1.GetSessionRequest
-	(*ReadTranscriptSinceRequest)(nil),  // 80: agentfleet.v1.ReadTranscriptSinceRequest
-	(*SetPermissionModeRequest)(nil),    // 81: agentfleet.v1.SetPermissionModeRequest
-	(*ListFilesRequest)(nil),            // 82: agentfleet.v1.ListFilesRequest
-	(*GetFileUploadUrlRequest)(nil),     // 83: agentfleet.v1.GetFileUploadUrlRequest
-	(*GetFileDownloadUrlRequest)(nil),   // 84: agentfleet.v1.GetFileDownloadUrlRequest
-	(*DeleteFileRequest)(nil),           // 85: agentfleet.v1.DeleteFileRequest
-	(*QueryLogsRequest)(nil),            // 86: agentfleet.v1.QueryLogsRequest
-	(*GetSessionResponse)(nil),          // 87: agentfleet.v1.GetSessionResponse
-	(*ReadTranscriptSinceResponse)(nil), // 88: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),             // 89: agentfleet.v1.TranscriptEntry
-	(*SetPermissionModeResponse)(nil),   // 90: agentfleet.v1.SetPermissionModeResponse
-	(*AppendResponse)(nil),              // 91: agentfleet.v1.AppendResponse
-	(*ListFilesResponse)(nil),           // 92: agentfleet.v1.ListFilesResponse
-	(*GetFileUploadUrlResponse)(nil),    // 93: agentfleet.v1.GetFileUploadUrlResponse
-	(*GetFileDownloadUrlResponse)(nil),  // 94: agentfleet.v1.GetFileDownloadUrlResponse
-	(*DeleteFileResponse)(nil),          // 95: agentfleet.v1.DeleteFileResponse
-	(*QueryLogsResponse)(nil),           // 96: agentfleet.v1.QueryLogsResponse
+	(*SyncRepoRequest)(nil),             // 40: agentfleet.v1.SyncRepoRequest
+	(*SyncRepoResponse)(nil),            // 41: agentfleet.v1.SyncRepoResponse
+	(*PromptSnippet)(nil),               // 42: agentfleet.v1.PromptSnippet
+	(*ListPromptSnippetsRequest)(nil),   // 43: agentfleet.v1.ListPromptSnippetsRequest
+	(*ListPromptSnippetsResponse)(nil),  // 44: agentfleet.v1.ListPromptSnippetsResponse
+	(*CreatePromptSnippetRequest)(nil),  // 45: agentfleet.v1.CreatePromptSnippetRequest
+	(*CreatePromptSnippetResponse)(nil), // 46: agentfleet.v1.CreatePromptSnippetResponse
+	(*UpdatePromptSnippetRequest)(nil),  // 47: agentfleet.v1.UpdatePromptSnippetRequest
+	(*UpdatePromptSnippetResponse)(nil), // 48: agentfleet.v1.UpdatePromptSnippetResponse
+	(*DeletePromptSnippetRequest)(nil),  // 49: agentfleet.v1.DeletePromptSnippetRequest
+	(*DeletePromptSnippetResponse)(nil), // 50: agentfleet.v1.DeletePromptSnippetResponse
+	(*RunScheduleNowRequest)(nil),       // 51: agentfleet.v1.RunScheduleNowRequest
+	(*RunScheduleNowResponse)(nil),      // 52: agentfleet.v1.RunScheduleNowResponse
+	(*Schedule)(nil),                    // 53: agentfleet.v1.Schedule
+	(*ListSchedulesRequest)(nil),        // 54: agentfleet.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),       // 55: agentfleet.v1.ListSchedulesResponse
+	(*CreateScheduleRequest)(nil),       // 56: agentfleet.v1.CreateScheduleRequest
+	(*CreateScheduleResponse)(nil),      // 57: agentfleet.v1.CreateScheduleResponse
+	(*UpdateScheduleRequest)(nil),       // 58: agentfleet.v1.UpdateScheduleRequest
+	(*UpdateScheduleResponse)(nil),      // 59: agentfleet.v1.UpdateScheduleResponse
+	(*DeleteScheduleRequest)(nil),       // 60: agentfleet.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),      // 61: agentfleet.v1.DeleteScheduleResponse
+	(*QueryMetricsRequest)(nil),         // 62: agentfleet.v1.QueryMetricsRequest
+	(*QueryMetricsResponse)(nil),        // 63: agentfleet.v1.QueryMetricsResponse
+	(*GetFleetTopologyRequest)(nil),     // 64: agentfleet.v1.GetFleetTopologyRequest
+	(*CellNode)(nil),                    // 65: agentfleet.v1.CellNode
+	(*TopologyEdge)(nil),                // 66: agentfleet.v1.TopologyEdge
+	(*GetFleetTopologyResponse)(nil),    // 67: agentfleet.v1.GetFleetTopologyResponse
+	(*TranscribeRequest)(nil),           // 68: agentfleet.v1.TranscribeRequest
+	(*TranscribeResponse)(nil),          // 69: agentfleet.v1.TranscribeResponse
+	nil,                                 // 70: agentfleet.v1.CellNode.MetricsEntry
+	(*Session)(nil),                     // 71: agentfleet.v1.Session
+	(*JournalEntry)(nil),                // 72: agentfleet.v1.JournalEntry
+	(*GetSessionRequest)(nil),           // 73: agentfleet.v1.GetSessionRequest
+	(*ReadTranscriptSinceRequest)(nil),  // 74: agentfleet.v1.ReadTranscriptSinceRequest
+	(*SetPermissionModeRequest)(nil),    // 75: agentfleet.v1.SetPermissionModeRequest
+	(*ListFilesRequest)(nil),            // 76: agentfleet.v1.ListFilesRequest
+	(*GetFileUploadUrlRequest)(nil),     // 77: agentfleet.v1.GetFileUploadUrlRequest
+	(*GetFileDownloadUrlRequest)(nil),   // 78: agentfleet.v1.GetFileDownloadUrlRequest
+	(*DeleteFileRequest)(nil),           // 79: agentfleet.v1.DeleteFileRequest
+	(*QueryLogsRequest)(nil),            // 80: agentfleet.v1.QueryLogsRequest
+	(*GetSessionResponse)(nil),          // 81: agentfleet.v1.GetSessionResponse
+	(*ReadTranscriptSinceResponse)(nil), // 82: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),             // 83: agentfleet.v1.TranscriptEntry
+	(*SetPermissionModeResponse)(nil),   // 84: agentfleet.v1.SetPermissionModeResponse
+	(*AppendResponse)(nil),              // 85: agentfleet.v1.AppendResponse
+	(*ListFilesResponse)(nil),           // 86: agentfleet.v1.ListFilesResponse
+	(*GetFileUploadUrlResponse)(nil),    // 87: agentfleet.v1.GetFileUploadUrlResponse
+	(*GetFileDownloadUrlResponse)(nil),  // 88: agentfleet.v1.GetFileDownloadUrlResponse
+	(*DeleteFileResponse)(nil),          // 89: agentfleet.v1.DeleteFileResponse
+	(*QueryLogsResponse)(nil),           // 90: agentfleet.v1.QueryLogsResponse
 }
 var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
-	77, // 0: agentfleet.v1.ListSessionsResponse.sessions:type_name -> agentfleet.v1.Session
-	77, // 1: agentfleet.v1.CreateSessionResponse.session:type_name -> agentfleet.v1.Session
+	71, // 0: agentfleet.v1.ListSessionsResponse.sessions:type_name -> agentfleet.v1.Session
+	71, // 1: agentfleet.v1.CreateSessionResponse.session:type_name -> agentfleet.v1.Session
 	0,  // 2: agentfleet.v1.GetFileDiffResponse.status:type_name -> agentfleet.v1.GetFileDiffResponse.Status
 	16, // 3: agentfleet.v1.ListProposalsResponse.proposals:type_name -> agentfleet.v1.Proposal
-	77, // 4: agentfleet.v1.OpenFromProposalResponse.session:type_name -> agentfleet.v1.Session
-	78, // 5: agentfleet.v1.GetJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
+	71, // 4: agentfleet.v1.OpenFromProposalResponse.session:type_name -> agentfleet.v1.Session
+	72, // 5: agentfleet.v1.GetJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
 	36, // 6: agentfleet.v1.ListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinition
 	34, // 7: agentfleet.v1.ListReposResponse.repos:type_name -> agentfleet.v1.Repo
-	34, // 8: agentfleet.v1.CreateRepoResponse.repo:type_name -> agentfleet.v1.Repo
-	34, // 9: agentfleet.v1.UpdateRepoResponse.repo:type_name -> agentfleet.v1.Repo
-	48, // 10: agentfleet.v1.ListPromptSnippetsResponse.snippets:type_name -> agentfleet.v1.PromptSnippet
-	48, // 11: agentfleet.v1.CreatePromptSnippetResponse.snippet:type_name -> agentfleet.v1.PromptSnippet
-	48, // 12: agentfleet.v1.UpdatePromptSnippetResponse.snippet:type_name -> agentfleet.v1.PromptSnippet
-	59, // 13: agentfleet.v1.RunScheduleNowResponse.schedule:type_name -> agentfleet.v1.Schedule
-	59, // 14: agentfleet.v1.ListSchedulesResponse.schedules:type_name -> agentfleet.v1.Schedule
-	59, // 15: agentfleet.v1.CreateScheduleResponse.schedule:type_name -> agentfleet.v1.Schedule
-	59, // 16: agentfleet.v1.UpdateScheduleResponse.schedule:type_name -> agentfleet.v1.Schedule
-	76, // 17: agentfleet.v1.CellNode.metrics:type_name -> agentfleet.v1.CellNode.MetricsEntry
-	71, // 18: agentfleet.v1.GetFleetTopologyResponse.nodes:type_name -> agentfleet.v1.CellNode
-	72, // 19: agentfleet.v1.GetFleetTopologyResponse.edges:type_name -> agentfleet.v1.TopologyEdge
-	1,  // 20: agentfleet.v1.DashboardService.ListSessions:input_type -> agentfleet.v1.ListSessionsRequest
-	79, // 21: agentfleet.v1.DashboardService.GetSession:input_type -> agentfleet.v1.GetSessionRequest
-	3,  // 22: agentfleet.v1.DashboardService.CreateSession:input_type -> agentfleet.v1.CreateSessionRequest
-	80, // 23: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
-	5,  // 24: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
-	6,  // 25: agentfleet.v1.DashboardService.GetFileDiff:input_type -> agentfleet.v1.GetFileDiffRequest
-	8,  // 26: agentfleet.v1.DashboardService.StopSession:input_type -> agentfleet.v1.StopSessionRequest
-	10, // 27: agentfleet.v1.DashboardService.Interrupt:input_type -> agentfleet.v1.InterruptRequest
-	81, // 28: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
-	14, // 29: agentfleet.v1.DashboardService.WarmSession:input_type -> agentfleet.v1.WarmSessionRequest
-	12, // 30: agentfleet.v1.DashboardService.MarkSeen:input_type -> agentfleet.v1.MarkSeenRequest
-	23, // 31: agentfleet.v1.DashboardService.ArchiveSession:input_type -> agentfleet.v1.ArchiveSessionRequest
-	17, // 32: agentfleet.v1.DashboardService.ListProposals:input_type -> agentfleet.v1.ListProposalsRequest
-	19, // 33: agentfleet.v1.DashboardService.OpenFromProposal:input_type -> agentfleet.v1.OpenFromProposalRequest
-	21, // 34: agentfleet.v1.DashboardService.DismissProposal:input_type -> agentfleet.v1.DismissProposalRequest
-	28, // 35: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
-	25, // 36: agentfleet.v1.DashboardService.RespondToPermission:input_type -> agentfleet.v1.RespondToPermissionRequest
-	29, // 37: agentfleet.v1.DashboardService.PostMessage:input_type -> agentfleet.v1.PostMessageRequest
-	74, // 38: agentfleet.v1.DashboardService.Transcribe:input_type -> agentfleet.v1.TranscribeRequest
-	30, // 39: agentfleet.v1.DashboardService.DeleteSession:input_type -> agentfleet.v1.DeleteSessionRequest
-	32, // 40: agentfleet.v1.DashboardService.GetJournal:input_type -> agentfleet.v1.GetJournalRequest
-	35, // 41: agentfleet.v1.DashboardService.ListDefinitions:input_type -> agentfleet.v1.ListDefinitionsRequest
-	38, // 42: agentfleet.v1.DashboardService.ListRepos:input_type -> agentfleet.v1.ListReposRequest
-	40, // 43: agentfleet.v1.DashboardService.CreateRepo:input_type -> agentfleet.v1.CreateRepoRequest
-	42, // 44: agentfleet.v1.DashboardService.UpdateRepo:input_type -> agentfleet.v1.UpdateRepoRequest
-	44, // 45: agentfleet.v1.DashboardService.DeleteRepo:input_type -> agentfleet.v1.DeleteRepoRequest
-	46, // 46: agentfleet.v1.DashboardService.SyncRepo:input_type -> agentfleet.v1.SyncRepoRequest
-	49, // 47: agentfleet.v1.DashboardService.ListPromptSnippets:input_type -> agentfleet.v1.ListPromptSnippetsRequest
-	51, // 48: agentfleet.v1.DashboardService.CreatePromptSnippet:input_type -> agentfleet.v1.CreatePromptSnippetRequest
-	53, // 49: agentfleet.v1.DashboardService.UpdatePromptSnippet:input_type -> agentfleet.v1.UpdatePromptSnippetRequest
-	55, // 50: agentfleet.v1.DashboardService.DeletePromptSnippet:input_type -> agentfleet.v1.DeletePromptSnippetRequest
-	82, // 51: agentfleet.v1.DashboardService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
-	83, // 52: agentfleet.v1.DashboardService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
-	84, // 53: agentfleet.v1.DashboardService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
-	85, // 54: agentfleet.v1.DashboardService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
-	86, // 55: agentfleet.v1.DashboardService.QueryLogs:input_type -> agentfleet.v1.QueryLogsRequest
-	68, // 56: agentfleet.v1.DashboardService.QueryMetrics:input_type -> agentfleet.v1.QueryMetricsRequest
-	70, // 57: agentfleet.v1.DashboardService.GetFleetTopology:input_type -> agentfleet.v1.GetFleetTopologyRequest
-	60, // 58: agentfleet.v1.DashboardService.ListSchedules:input_type -> agentfleet.v1.ListSchedulesRequest
-	62, // 59: agentfleet.v1.DashboardService.CreateSchedule:input_type -> agentfleet.v1.CreateScheduleRequest
-	64, // 60: agentfleet.v1.DashboardService.UpdateSchedule:input_type -> agentfleet.v1.UpdateScheduleRequest
-	66, // 61: agentfleet.v1.DashboardService.DeleteSchedule:input_type -> agentfleet.v1.DeleteScheduleRequest
-	57, // 62: agentfleet.v1.DashboardService.RunScheduleNow:input_type -> agentfleet.v1.RunScheduleNowRequest
-	2,  // 63: agentfleet.v1.DashboardService.ListSessions:output_type -> agentfleet.v1.ListSessionsResponse
-	87, // 64: agentfleet.v1.DashboardService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
-	4,  // 65: agentfleet.v1.DashboardService.CreateSession:output_type -> agentfleet.v1.CreateSessionResponse
-	88, // 66: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	89, // 67: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
-	7,  // 68: agentfleet.v1.DashboardService.GetFileDiff:output_type -> agentfleet.v1.GetFileDiffResponse
-	9,  // 69: agentfleet.v1.DashboardService.StopSession:output_type -> agentfleet.v1.StopSessionResponse
-	11, // 70: agentfleet.v1.DashboardService.Interrupt:output_type -> agentfleet.v1.InterruptResponse
-	90, // 71: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	15, // 72: agentfleet.v1.DashboardService.WarmSession:output_type -> agentfleet.v1.WarmSessionResponse
-	13, // 73: agentfleet.v1.DashboardService.MarkSeen:output_type -> agentfleet.v1.MarkSeenResponse
-	24, // 74: agentfleet.v1.DashboardService.ArchiveSession:output_type -> agentfleet.v1.ArchiveSessionResponse
-	18, // 75: agentfleet.v1.DashboardService.ListProposals:output_type -> agentfleet.v1.ListProposalsResponse
-	20, // 76: agentfleet.v1.DashboardService.OpenFromProposal:output_type -> agentfleet.v1.OpenFromProposalResponse
-	22, // 77: agentfleet.v1.DashboardService.DismissProposal:output_type -> agentfleet.v1.DismissProposalResponse
-	91, // 78: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AppendResponse
-	91, // 79: agentfleet.v1.DashboardService.RespondToPermission:output_type -> agentfleet.v1.AppendResponse
-	91, // 80: agentfleet.v1.DashboardService.PostMessage:output_type -> agentfleet.v1.AppendResponse
-	75, // 81: agentfleet.v1.DashboardService.Transcribe:output_type -> agentfleet.v1.TranscribeResponse
-	31, // 82: agentfleet.v1.DashboardService.DeleteSession:output_type -> agentfleet.v1.DeleteSessionResponse
-	33, // 83: agentfleet.v1.DashboardService.GetJournal:output_type -> agentfleet.v1.GetJournalResponse
-	37, // 84: agentfleet.v1.DashboardService.ListDefinitions:output_type -> agentfleet.v1.ListDefinitionsResponse
-	39, // 85: agentfleet.v1.DashboardService.ListRepos:output_type -> agentfleet.v1.ListReposResponse
-	41, // 86: agentfleet.v1.DashboardService.CreateRepo:output_type -> agentfleet.v1.CreateRepoResponse
-	43, // 87: agentfleet.v1.DashboardService.UpdateRepo:output_type -> agentfleet.v1.UpdateRepoResponse
-	45, // 88: agentfleet.v1.DashboardService.DeleteRepo:output_type -> agentfleet.v1.DeleteRepoResponse
-	47, // 89: agentfleet.v1.DashboardService.SyncRepo:output_type -> agentfleet.v1.SyncRepoResponse
-	50, // 90: agentfleet.v1.DashboardService.ListPromptSnippets:output_type -> agentfleet.v1.ListPromptSnippetsResponse
-	52, // 91: agentfleet.v1.DashboardService.CreatePromptSnippet:output_type -> agentfleet.v1.CreatePromptSnippetResponse
-	54, // 92: agentfleet.v1.DashboardService.UpdatePromptSnippet:output_type -> agentfleet.v1.UpdatePromptSnippetResponse
-	56, // 93: agentfleet.v1.DashboardService.DeletePromptSnippet:output_type -> agentfleet.v1.DeletePromptSnippetResponse
-	92, // 94: agentfleet.v1.DashboardService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
-	93, // 95: agentfleet.v1.DashboardService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
-	94, // 96: agentfleet.v1.DashboardService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
-	95, // 97: agentfleet.v1.DashboardService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
-	96, // 98: agentfleet.v1.DashboardService.QueryLogs:output_type -> agentfleet.v1.QueryLogsResponse
-	69, // 99: agentfleet.v1.DashboardService.QueryMetrics:output_type -> agentfleet.v1.QueryMetricsResponse
-	73, // 100: agentfleet.v1.DashboardService.GetFleetTopology:output_type -> agentfleet.v1.GetFleetTopologyResponse
-	61, // 101: agentfleet.v1.DashboardService.ListSchedules:output_type -> agentfleet.v1.ListSchedulesResponse
-	63, // 102: agentfleet.v1.DashboardService.CreateSchedule:output_type -> agentfleet.v1.CreateScheduleResponse
-	65, // 103: agentfleet.v1.DashboardService.UpdateSchedule:output_type -> agentfleet.v1.UpdateScheduleResponse
-	67, // 104: agentfleet.v1.DashboardService.DeleteSchedule:output_type -> agentfleet.v1.DeleteScheduleResponse
-	58, // 105: agentfleet.v1.DashboardService.RunScheduleNow:output_type -> agentfleet.v1.RunScheduleNowResponse
-	63, // [63:106] is the sub-list for method output_type
-	20, // [20:63] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	42, // 8: agentfleet.v1.ListPromptSnippetsResponse.snippets:type_name -> agentfleet.v1.PromptSnippet
+	42, // 9: agentfleet.v1.CreatePromptSnippetResponse.snippet:type_name -> agentfleet.v1.PromptSnippet
+	42, // 10: agentfleet.v1.UpdatePromptSnippetResponse.snippet:type_name -> agentfleet.v1.PromptSnippet
+	53, // 11: agentfleet.v1.RunScheduleNowResponse.schedule:type_name -> agentfleet.v1.Schedule
+	53, // 12: agentfleet.v1.ListSchedulesResponse.schedules:type_name -> agentfleet.v1.Schedule
+	53, // 13: agentfleet.v1.CreateScheduleResponse.schedule:type_name -> agentfleet.v1.Schedule
+	53, // 14: agentfleet.v1.UpdateScheduleResponse.schedule:type_name -> agentfleet.v1.Schedule
+	70, // 15: agentfleet.v1.CellNode.metrics:type_name -> agentfleet.v1.CellNode.MetricsEntry
+	65, // 16: agentfleet.v1.GetFleetTopologyResponse.nodes:type_name -> agentfleet.v1.CellNode
+	66, // 17: agentfleet.v1.GetFleetTopologyResponse.edges:type_name -> agentfleet.v1.TopologyEdge
+	1,  // 18: agentfleet.v1.DashboardService.ListSessions:input_type -> agentfleet.v1.ListSessionsRequest
+	73, // 19: agentfleet.v1.DashboardService.GetSession:input_type -> agentfleet.v1.GetSessionRequest
+	3,  // 20: agentfleet.v1.DashboardService.CreateSession:input_type -> agentfleet.v1.CreateSessionRequest
+	74, // 21: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
+	5,  // 22: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
+	6,  // 23: agentfleet.v1.DashboardService.GetFileDiff:input_type -> agentfleet.v1.GetFileDiffRequest
+	8,  // 24: agentfleet.v1.DashboardService.StopSession:input_type -> agentfleet.v1.StopSessionRequest
+	10, // 25: agentfleet.v1.DashboardService.Interrupt:input_type -> agentfleet.v1.InterruptRequest
+	75, // 26: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
+	14, // 27: agentfleet.v1.DashboardService.WarmSession:input_type -> agentfleet.v1.WarmSessionRequest
+	12, // 28: agentfleet.v1.DashboardService.MarkSeen:input_type -> agentfleet.v1.MarkSeenRequest
+	23, // 29: agentfleet.v1.DashboardService.ArchiveSession:input_type -> agentfleet.v1.ArchiveSessionRequest
+	17, // 30: agentfleet.v1.DashboardService.ListProposals:input_type -> agentfleet.v1.ListProposalsRequest
+	19, // 31: agentfleet.v1.DashboardService.OpenFromProposal:input_type -> agentfleet.v1.OpenFromProposalRequest
+	21, // 32: agentfleet.v1.DashboardService.DismissProposal:input_type -> agentfleet.v1.DismissProposalRequest
+	28, // 33: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
+	25, // 34: agentfleet.v1.DashboardService.RespondToPermission:input_type -> agentfleet.v1.RespondToPermissionRequest
+	29, // 35: agentfleet.v1.DashboardService.PostMessage:input_type -> agentfleet.v1.PostMessageRequest
+	68, // 36: agentfleet.v1.DashboardService.Transcribe:input_type -> agentfleet.v1.TranscribeRequest
+	30, // 37: agentfleet.v1.DashboardService.DeleteSession:input_type -> agentfleet.v1.DeleteSessionRequest
+	32, // 38: agentfleet.v1.DashboardService.GetJournal:input_type -> agentfleet.v1.GetJournalRequest
+	35, // 39: agentfleet.v1.DashboardService.ListDefinitions:input_type -> agentfleet.v1.ListDefinitionsRequest
+	38, // 40: agentfleet.v1.DashboardService.ListRepos:input_type -> agentfleet.v1.ListReposRequest
+	40, // 41: agentfleet.v1.DashboardService.SyncRepo:input_type -> agentfleet.v1.SyncRepoRequest
+	43, // 42: agentfleet.v1.DashboardService.ListPromptSnippets:input_type -> agentfleet.v1.ListPromptSnippetsRequest
+	45, // 43: agentfleet.v1.DashboardService.CreatePromptSnippet:input_type -> agentfleet.v1.CreatePromptSnippetRequest
+	47, // 44: agentfleet.v1.DashboardService.UpdatePromptSnippet:input_type -> agentfleet.v1.UpdatePromptSnippetRequest
+	49, // 45: agentfleet.v1.DashboardService.DeletePromptSnippet:input_type -> agentfleet.v1.DeletePromptSnippetRequest
+	76, // 46: agentfleet.v1.DashboardService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
+	77, // 47: agentfleet.v1.DashboardService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
+	78, // 48: agentfleet.v1.DashboardService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
+	79, // 49: agentfleet.v1.DashboardService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
+	80, // 50: agentfleet.v1.DashboardService.QueryLogs:input_type -> agentfleet.v1.QueryLogsRequest
+	62, // 51: agentfleet.v1.DashboardService.QueryMetrics:input_type -> agentfleet.v1.QueryMetricsRequest
+	64, // 52: agentfleet.v1.DashboardService.GetFleetTopology:input_type -> agentfleet.v1.GetFleetTopologyRequest
+	54, // 53: agentfleet.v1.DashboardService.ListSchedules:input_type -> agentfleet.v1.ListSchedulesRequest
+	56, // 54: agentfleet.v1.DashboardService.CreateSchedule:input_type -> agentfleet.v1.CreateScheduleRequest
+	58, // 55: agentfleet.v1.DashboardService.UpdateSchedule:input_type -> agentfleet.v1.UpdateScheduleRequest
+	60, // 56: agentfleet.v1.DashboardService.DeleteSchedule:input_type -> agentfleet.v1.DeleteScheduleRequest
+	51, // 57: agentfleet.v1.DashboardService.RunScheduleNow:input_type -> agentfleet.v1.RunScheduleNowRequest
+	2,  // 58: agentfleet.v1.DashboardService.ListSessions:output_type -> agentfleet.v1.ListSessionsResponse
+	81, // 59: agentfleet.v1.DashboardService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
+	4,  // 60: agentfleet.v1.DashboardService.CreateSession:output_type -> agentfleet.v1.CreateSessionResponse
+	82, // 61: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	83, // 62: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
+	7,  // 63: agentfleet.v1.DashboardService.GetFileDiff:output_type -> agentfleet.v1.GetFileDiffResponse
+	9,  // 64: agentfleet.v1.DashboardService.StopSession:output_type -> agentfleet.v1.StopSessionResponse
+	11, // 65: agentfleet.v1.DashboardService.Interrupt:output_type -> agentfleet.v1.InterruptResponse
+	84, // 66: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	15, // 67: agentfleet.v1.DashboardService.WarmSession:output_type -> agentfleet.v1.WarmSessionResponse
+	13, // 68: agentfleet.v1.DashboardService.MarkSeen:output_type -> agentfleet.v1.MarkSeenResponse
+	24, // 69: agentfleet.v1.DashboardService.ArchiveSession:output_type -> agentfleet.v1.ArchiveSessionResponse
+	18, // 70: agentfleet.v1.DashboardService.ListProposals:output_type -> agentfleet.v1.ListProposalsResponse
+	20, // 71: agentfleet.v1.DashboardService.OpenFromProposal:output_type -> agentfleet.v1.OpenFromProposalResponse
+	22, // 72: agentfleet.v1.DashboardService.DismissProposal:output_type -> agentfleet.v1.DismissProposalResponse
+	85, // 73: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AppendResponse
+	85, // 74: agentfleet.v1.DashboardService.RespondToPermission:output_type -> agentfleet.v1.AppendResponse
+	85, // 75: agentfleet.v1.DashboardService.PostMessage:output_type -> agentfleet.v1.AppendResponse
+	69, // 76: agentfleet.v1.DashboardService.Transcribe:output_type -> agentfleet.v1.TranscribeResponse
+	31, // 77: agentfleet.v1.DashboardService.DeleteSession:output_type -> agentfleet.v1.DeleteSessionResponse
+	33, // 78: agentfleet.v1.DashboardService.GetJournal:output_type -> agentfleet.v1.GetJournalResponse
+	37, // 79: agentfleet.v1.DashboardService.ListDefinitions:output_type -> agentfleet.v1.ListDefinitionsResponse
+	39, // 80: agentfleet.v1.DashboardService.ListRepos:output_type -> agentfleet.v1.ListReposResponse
+	41, // 81: agentfleet.v1.DashboardService.SyncRepo:output_type -> agentfleet.v1.SyncRepoResponse
+	44, // 82: agentfleet.v1.DashboardService.ListPromptSnippets:output_type -> agentfleet.v1.ListPromptSnippetsResponse
+	46, // 83: agentfleet.v1.DashboardService.CreatePromptSnippet:output_type -> agentfleet.v1.CreatePromptSnippetResponse
+	48, // 84: agentfleet.v1.DashboardService.UpdatePromptSnippet:output_type -> agentfleet.v1.UpdatePromptSnippetResponse
+	50, // 85: agentfleet.v1.DashboardService.DeletePromptSnippet:output_type -> agentfleet.v1.DeletePromptSnippetResponse
+	86, // 86: agentfleet.v1.DashboardService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
+	87, // 87: agentfleet.v1.DashboardService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
+	88, // 88: agentfleet.v1.DashboardService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
+	89, // 89: agentfleet.v1.DashboardService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
+	90, // 90: agentfleet.v1.DashboardService.QueryLogs:output_type -> agentfleet.v1.QueryLogsResponse
+	63, // 91: agentfleet.v1.DashboardService.QueryMetrics:output_type -> agentfleet.v1.QueryMetricsResponse
+	67, // 92: agentfleet.v1.DashboardService.GetFleetTopology:output_type -> agentfleet.v1.GetFleetTopologyResponse
+	55, // 93: agentfleet.v1.DashboardService.ListSchedules:output_type -> agentfleet.v1.ListSchedulesResponse
+	57, // 94: agentfleet.v1.DashboardService.CreateSchedule:output_type -> agentfleet.v1.CreateScheduleResponse
+	59, // 95: agentfleet.v1.DashboardService.UpdateSchedule:output_type -> agentfleet.v1.UpdateScheduleResponse
+	61, // 96: agentfleet.v1.DashboardService.DeleteSchedule:output_type -> agentfleet.v1.DeleteScheduleResponse
+	52, // 97: agentfleet.v1.DashboardService.RunScheduleNow:output_type -> agentfleet.v1.RunScheduleNowResponse
+	58, // [58:98] is the sub-list for method output_type
+	18, // [18:58] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_dashboard_proto_init() }
@@ -4904,14 +4553,14 @@ func file_agentfleet_v1_dashboard_proto_init() {
 	file_agentfleet_v1_dashboard_proto_msgTypes[2].OneofWrappers = []any{}
 	file_agentfleet_v1_dashboard_proto_msgTypes[7].OneofWrappers = []any{}
 	file_agentfleet_v1_dashboard_proto_msgTypes[15].OneofWrappers = []any{}
-	file_agentfleet_v1_dashboard_proto_msgTypes[47].OneofWrappers = []any{}
+	file_agentfleet_v1_dashboard_proto_msgTypes[41].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_dashboard_proto_rawDesc), len(file_agentfleet_v1_dashboard_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   76,
+			NumMessages:   70,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

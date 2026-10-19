@@ -1223,11 +1223,9 @@ func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleet
 	return connect.NewResponse(&agentfleetv1.GetJournalResponse{Entries: out, NextId: nextID}), nil
 }
 
-// ListRepos/CreateRepo/UpdateRepo/DeleteRepo back the dashboard's "manage
-// repos" UI (docs/adr/0028) — the DB-backed replacement for the hardcoded
-// tasks.KnownRepos Go map. repos.Store.SetOnChange (wired in
-// core/cmd/core/run.go) refreshes Discord's /task repo choices after every
-// mutation here, so no redeploy or bot restart is needed either.
+// ListRepos backs the console's read-only repo list. Rows come from the
+// GitHub sync and infra-bootstrap's overrides file (docs/adr/0074); there is
+// nothing to edit here.
 
 func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.ListReposRequest]) (*connect.Response[agentfleetv1.ListReposResponse], error) {
 	list, err := s.repos.List(ctx)
@@ -1240,52 +1238,6 @@ func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.
 		out[i] = repoToProto(r)
 	}
 	return connect.NewResponse(&agentfleetv1.ListReposResponse{Repos: out}), nil
-}
-
-func (s *Server) CreateRepo(ctx context.Context, req *connect.Request[agentfleetv1.CreateRepoRequest]) (*connect.Response[agentfleetv1.CreateRepoResponse], error) {
-	name := req.Msg.GetName()
-	url := req.Msg.GetUrl()
-	if name == "" || url == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
-	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), Image: req.Msg.GetImage(), ClusterAccess: req.Msg.GetClusterAccess()}
-	if err := s.repos.Create(ctx, r); err != nil {
-		if errors.Is(err, repos.ErrExists) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
-		}
-		slog.Error("dashboard CreateRepo", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.CreateRepoResponse{Repo: repoToProto(r)}), nil
-}
-
-func (s *Server) UpdateRepo(ctx context.Context, req *connect.Request[agentfleetv1.UpdateRepoRequest]) (*connect.Response[agentfleetv1.UpdateRepoResponse], error) {
-	name := req.Msg.GetName()
-	url := req.Msg.GetUrl()
-	if name == "" || url == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
-	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), Image: req.Msg.GetImage(), ClusterAccess: req.Msg.GetClusterAccess()}
-	if err := s.repos.Update(ctx, r); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
-		}
-		slog.Error("dashboard UpdateRepo", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.UpdateRepoResponse{Repo: repoToProto(r)}), nil
-}
-
-func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleetv1.DeleteRepoRequest]) (*connect.Response[agentfleetv1.DeleteRepoResponse], error) {
-	name := req.Msg.GetName()
-	if err := s.repos.Delete(ctx, name); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
-		}
-		slog.Error("dashboard DeleteRepo", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.DeleteRepoResponse{}), nil
 }
 
 // SyncRepo refreshes the provisioner's clone cache for one repo. Until this
@@ -1311,9 +1263,8 @@ func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	// repos.Store.Get reports "no such repo" as (nil, nil), not
-	// pgx.ErrNoRows — unlike Update/Delete right above, which do return the
-	// sentinel. Checking for the sentinel here compiles, passes every test
-	// with a repo that exists, and panics on the first typo'd name.
+	// pgx.ErrNoRows. Checking for the sentinel here compiles, passes every
+	// test with a repo that exists, and panics on the first typo'd name.
 	if r == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
 	}
@@ -1345,6 +1296,7 @@ func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 		BaseBranch:    r.BaseBranch,
 		Image:         r.Image,
 		ClusterAccess: r.ClusterAccess,
+		FullName:      r.FullName,
 	}
 }
 

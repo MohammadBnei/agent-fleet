@@ -52,9 +52,9 @@ export function NewSessionDialog({
   // that fails there is no row, and if it succeeds the dialog is already
   // closed. A failed first message surfaces in the session it belongs to.
 
-  // Fetched from the dashboard-editable repos table (docs/adr/0028), not a
-  // hardcoded list — a repo added/removed via ManageReposModal shows up
-  // here without a redeploy. Kept whole rather than reduced to names: the
+  // Fetched from the repos table (docs/adr/0028), not a hardcoded list — a
+  // repo the GitHub sync adds or removes (docs/adr/0074) shows up here
+  // without a redeploy. Kept whole rather than reduced to names: the
   // option label marks the ones carrying cluster access.
   useEffect(() => {
     if (!dialogOpen) return;

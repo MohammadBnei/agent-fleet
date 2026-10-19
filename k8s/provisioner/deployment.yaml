@@ -107,6 +107,10 @@ spec:
           value: agent-fleet.dev/session-node=true
         - name: CORE_GRPC_ADDR
           value: agent-fleet-core.agent-fleet.svc.cluster.local:9090
+        # docs/adr/0074: whose repo invitations the bot auto-accepts.
+        # Anyone else's stays pending for a human.
+        - name: FLEET_REPO_INVITERS
+          value: MohammadBnei
         # client-go's rest.InClusterConfig() natively trusts the projected
         # ServiceAccount CA — no TLS workaround needed for a Go binary
         # (unlike the old TS e2e-provisioner, see docs/adr/0013).

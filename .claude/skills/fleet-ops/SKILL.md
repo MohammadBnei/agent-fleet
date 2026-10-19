@@ -1,6 +1,6 @@
 ---
 name: fleet-ops
-description: Onboard a new target repo, walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
+description: Onboard a new target repo (invite the bot), walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
 user-invocable: true
 allowed-tools:
   - Read
@@ -21,41 +21,41 @@ with no message has no pod at all (`docs/adr/0048` §1).
 
 ## 1. Onboard a new target repo
 
-No new k8s manifest, no new Deployment, no redeploy — repo config lives in
-the dashboard-editable `repos` table (`docs/adr/0028`), not Go source:
+A repo is in the fleet while `argocd-ukubi-bot` is a collaborator on it
+(`docs/adr/0074`). No manifest, no redeploy, no console form:
 
-1. **Dashboard → "manage repos"** — add an entry: name, git URL, base
-   branch (only needs setting if the repo doesn't develop off `main` — see
-   `vos-monolith`'s row, base branch `dev`). This writes straight to the
-   `repos` table (`core/internal/repos.Store`), and the next session on that
-   repo reads the new row when it provisions — no core restart. Direct SQL
-   (`INSERT INTO repos (name, url, base_branch) VALUES (...)`) works too if
-   the dashboard isn't reachable.
-2. **Infisical** — confirm the target repo's bot GitHub account
-   (`GH_TOKEN`, shared by the provisioner's clone/fetch and the worker's
-   push/PR) has collaborator access to open PRs there. The rest of the
-   secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `AGENTFLEET_DB_*`) are already
-   shared across the `agent-fleet-nygh` Infisical project.
-3. **Decide the repo's image and cluster access** — the other two columns in
-   the same "manage repos" row (`ManageReposModal.tsx`):
+1. **GitHub**: invite `argocd-ukubi-bot` as a collaborator (write access).
+   The provisioner accepts invitations only from `FLEET_REPO_INVITERS`
+   (`k8s/provisioner/deployment.yaml`, today `MohammadBnei`), and core's 60s
+   tick inserts the row: about 2 minutes end to end. The base branch is the
+   repo's GitHub default branch.
+2. **Only if the defaults are wrong**: add an entry to infra-bootstrap's
+   `gitops/bootstrap/fleet-repo-overrides.yaml`, keyed by `owner/repo` with
+   the repo's GitHub `id` (`gh api repos/<owner>/<repo> --jq .id`):
 
-   - `image` — the container image this repo's sessions run. Blank means the
+   - `name`: the fleet name, when the GitHub name collides with another
+     repo's or definitions already use a different one.
+   - `baseBranch`: when the fleet should not work off the default branch.
+   - `image`: the container image this repo's sessions run. Blank means the
      fleet's default worker image, which carries bun, Go, git, `gh` and the
      Claude Code CLI (see `worker/Dockerfile` for the real list — it does
      *not* include `golangci-lint` or `buf`). Set it only when the repo needs
-     a toolchain the default lacks. This one column replaced the old
-     `repo_profiles`/`repo_profile_tools` rows and their four toolchain
-     ingredients (`docs/adr/0048` §6): there is no sandbox pod any more, so
-     the agent builds and tests in its own pod's `Bash` and "which toolchain"
-     is just "which image".
-   - `cluster_access` — whether this repo's sessions get the `kubectl` shim
-     that RPCs to thot-executor (`docs/adr/0037`). A privilege grant, not a
-     toolchain; the pod still holds zero Kubernetes credentials either way.
-     Currently true for `infra-bootstrap` alone.
+     a toolchain the default lacks (`docs/adr/0048` §6).
+   - `clusterAccess`: whether this repo's sessions get the `kubectl` shim
+     that RPCs to thot-executor (`docs/adr/0037`). A privilege grant, so it
+     exists only here, behind a reviewed infra-bootstrap PR. Currently true
+     for `infra-bootstrap` alone.
 
-   There is nothing else to configure. No profile, no start command, no e2e
-   preview, no `run_command` — `docs/adr/0048` §6 deleted all of it along
-   with the sandbox pod.
+   An entry whose `id` does not match is ignored with an ERROR. An empty file
+   revokes every override; a missing one changes nothing.
+3. **Removal**: remove the bot. The repo is hidden on the next tick and its
+   row is deleted 7 days later, once no open session references it. More than
+   2 repos vanishing in one tick changes nothing and logs an ERROR (shrink
+   guard): check the bot's token first.
+
+There is nothing else to configure. No profile, no start command, no e2e
+preview, no `run_command` — `docs/adr/0048` §6 deleted all of it along with
+the sandbox pod.
 
 ### Bumping the browser toolchain
 

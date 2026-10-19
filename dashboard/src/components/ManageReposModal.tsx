@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
-import { ConfirmModal } from "./ConfirmModal";
 import type { Repo, SyncRepoResponse } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
 
-// Dashboard-editable target-repo config (docs/adr/0028) — replaces the old
-// hardcoded KNOWN_REPOS array here and the equally-hardcoded
-// core/internal/sessions.KnownRepos Go map, so onboarding/editing a repo no
-// longer needs a core redeploy.
+// The fleet's target repos (docs/adr/0028), projected from GitHub plus
+// infra-bootstrap's overrides file since docs/adr/0074.
 
 // What a finished sync says. The point of the button is answering "did that
 // do anything?", so a bare "done" would waste the whole round trip — the
@@ -37,11 +34,11 @@ function syncLabel(res: SyncRepoResponse): string {
 // the result of the three that worked.
 type SyncState = { text: string; failed: boolean };
 
-function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, busy, sync }: {
+// Read-only since docs/adr/0074: a repo is in the fleet while
+// argocd-ukubi-bot is a collaborator on it, and its overrides live in
+// infra-bootstrap. The one action left is warming the clone cache.
+function RepoRow({ repo, onSync, syncing, busy, sync }: {
   repo: Repo;
-  onSaved: () => void;
-  onRequestDelete: (repo: Repo) => void;
-  onError: (msg: string) => void;
   onSync: (repo: Repo) => void;
   // This row is the one in flight (label only).
   syncing: boolean;
@@ -52,69 +49,17 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, bus
   busy: boolean;
   sync: SyncState | undefined;
 }) {
-  const [url, setUrl] = useState(repo.url);
-  const [baseBranch, setBaseBranch] = useState(repo.baseBranch);
-  const [image, setImage] = useState(repo.image);
-  const [saving, setSaving] = useState(false);
-  const dirty =
-    url !== repo.url || baseBranch !== repo.baseBranch || image !== repo.image;
-
-  async function save() {
-    setSaving(true);
-    try {
-      await client.updateRepo({ name: repo.name, url, baseBranch, image, clusterAccess: repo.clusterAccess });
-      onSaved();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div className="py-1.5 border-b border-base-content/5 last:border-0">
-    {/* Wraps rather than overflowing: this row already ran off the right edge
-        at phone width before it grew a Sync button, which put the buttons
-        somewhere no one could tap. */}
     <div className="flex items-center gap-2 flex-wrap">
       <span className="text-sm font-medium w-28 truncate flex-none">{repo.name}</span>
-      <input
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        className="input input-sm input-bordered flex-1 min-w-0"
-      />
-      <input
-        value={baseBranch}
-        onChange={(e) => setBaseBranch(e.target.value)}
-        placeholder="main"
-        className="input input-sm input-bordered w-24 flex-none"
-      />
-      {/* The container image this repo's sessions run in (repos.image,
-          docs/adr/0048 §6 — one column replacing three profile tables).
-          Blank means the fleet's default worker image, which carries bun, Go,
-          git, gh and a browser.
-
-          This input was still labelled as the e2e sandbox's build profile
-          while already writing `image`, so the UI described a field that no
-          longer existed and hid the one it was actually editing. */}
-      <input
-        value={image}
-        onChange={(e) => setImage(e.target.value)}
-        placeholder="default image"
-        title="Container image this repo's sessions run in — blank uses the fleet's default worker image"
-        className="input input-sm input-bordered w-32 flex-none"
-      />
-      <button
-        type="button"
-        onClick={save}
-        disabled={!dirty || saving}
-        className="btn btn-sm flex-none"
-      >
-        Save
-      </button>
+      <span className="text-xs text-dim flex-1 min-w-0 truncate" title={repo.url}>{repo.fullName || repo.url}</span>
+      <span className="text-xs flex-none">{repo.baseBranch || "main"}</span>
+      {repo.image && <span className="text-xs text-dim w-32 truncate flex-none" title={repo.image}>{repo.image}</span>}
+      {repo.clusterAccess && <span className="badge badge-sm badge-warning flex-none" title="Sessions get the kubectl shim (docs/adr/0037)">cluster</span>}
       {/* Refreshes the provisioner's clone cache for this repo. Nothing else
-          advances it between pod creations, so a repo added here has no cache
-          at all until its first session pays for a cold clone. */}
+          advances it between pod creations, so a new repo has no cache at all
+          until its first session pays for a cold clone. */}
       <button
         type="button"
         onClick={() => onSync(repo)}
@@ -124,9 +69,6 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, bus
       >
         {syncing ? "Syncing…" : "Sync"}
       </button>
-      <button type="button" onClick={() => onRequestDelete(repo)} className="btn btn-sm btn-error flex-none">
-        Delete
-      </button>
     </div>
     {sync && (
       <p className={`text-xs mt-1 ${sync.failed ? "text-error" : "text-dim"}`}>{sync.text}</p>
@@ -135,19 +77,10 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, bus
   );
 }
 
-export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
+export function ManageReposModal() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [baseBranch, setBaseBranch] = useState("");
-  const [image, setImage] = useState("");
-  const [creating, setCreating] = useState(false);
-  // Rendered as a sibling of <Modal> below, never nested inside it — a
-  // <dialog> nested inside another open <dialog> closes both together on
-  // Cancel in this browser (confirmed empirically), not just the inner one.
-  const [pendingDelete, setPendingDelete] = useState<Repo | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<Record<string, SyncState>>({});
 
@@ -170,11 +103,6 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
     if (dialogOpen) load();
   }, [dialogOpen]);
 
-  function refresh() {
-    load();
-    onChanged?.();
-  }
-
   function open() {
     setError(null);
     setDialogOpen(true);
@@ -182,18 +110,6 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
 
   function close() {
     setDialogOpen(false);
-  }
-
-  async function confirmDelete() {
-    const repo = pendingDelete;
-    setPendingDelete(null);
-    if (!repo) return;
-    try {
-      await client.deleteRepo({ name: repo.name });
-      refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
   }
 
   // The error message is shown verbatim rather than reduced to "sync failed":
@@ -221,24 +137,6 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || !url.trim()) return;
-    setCreating(true);
-    setError(null);
-    try {
-      await client.createRepo({ name, url, baseBranch, image, clusterAccess: false });
-      setName("");
-      setUrl("");
-      setBaseBranch("");
-      refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreating(false);
-    }
-  }
-
   return (
     <>
       <button
@@ -246,12 +144,12 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
         onClick={open}
         className="px-3 py-1.5 rounded-md border border-base-content/10 text-xs font-medium hover:bg-base-content/5"
       >
-        manage repos
+        repos
       </button>
 
       <Modal open={dialogOpen} onClose={close} boxClassName="max-w-3xl">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-base">Manage repos</h3>
+          <h3 className="font-semibold text-base">Repos</h3>
           <button
             type="button"
             onClick={syncAll}
@@ -268,50 +166,20 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
             <RepoRow
               key={r.name}
               repo={r}
-              onSaved={refresh}
-              onRequestDelete={setPendingDelete}
-              onError={setError}
               onSync={syncOne}
               syncing={syncing === r.name}
               busy={syncing !== null}
               sync={syncState[r.name]}
             />
           ))}
-          {repos.length === 0 && <p className="text-sm text-dim py-2">{loaded ? "No repos configured yet." : "Loading…"}</p>}
+          {repos.length === 0 && <p className="text-sm text-dim py-2">{loaded ? "No repos yet." : "Loading…"}</p>}
         </div>
 
-        <form onSubmit={handleCreate} className="flex items-center gap-2 mt-3 pt-3 border-t border-base-content/10">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="name"
-            className="input input-sm input-bordered w-28 flex-none"
-            required
-          />
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="git URL"
-            className="input input-sm input-bordered flex-1 min-w-0"
-            required
-          />
-          <input
-            value={baseBranch}
-            onChange={(e) => setBaseBranch(e.target.value)}
-            placeholder="main"
-            className="input input-sm input-bordered w-24 flex-none"
-          />
-          <input
-            value={image}
-            onChange={(e) => setImage(e.target.value)}
-            placeholder="default image"
-            title="Container image this repo's sessions run in — blank uses the fleet's default worker image"
-            className="input input-sm input-bordered w-32 flex-none"
-          />
-          <button type="submit" disabled={creating || !name.trim() || !url.trim()} className="btn btn-sm btn-primary flex-none">
-            {creating ? "Adding…" : "Add"}
-          </button>
-        </form>
+        <p className="text-xs text-dim mt-3 pt-3 border-t border-base-content/10">
+          To add a repo, invite <code>argocd-ukubi-bot</code> as a collaborator; it shows up within two minutes.
+          Remove the bot to remove it. Name, base branch, image and cluster access are set in infra-bootstrap's{" "}
+          <code>gitops/bootstrap/fleet-repo-overrides.yaml</code>.
+        </p>
 
         <InlineError message={error} />
 
@@ -322,17 +190,6 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
         </div>
       </Modal>
 
-      <ConfirmModal
-        open={pendingDelete !== null}
-        message={
-          pendingDelete
-            ? `Delete repo "${pendingDelete.name}"? Existing sessions keep their history; new sessions can no longer target it.`
-            : ""
-        }
-        confirmWord="delete"
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
-      />
     </>
   );
 }

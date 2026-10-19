@@ -320,6 +320,19 @@ func (c *Client) ListDefinitionFiles(ctx context.Context) (map[string][]byte, st
 	return files, resp.GetSha(), nil
 }
 
+// ListGitHubRepos returns every repo the bot reaches (docs/adr/0074), after
+// the provisioner accepted any allowlisted invitations. An error is never a
+// shorter list: the provisioner fails closed on any page.
+func (c *Client) ListGitHubRepos(ctx context.Context) ([]*agentfleetv1.GitHubRepo, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.ListGitHubRepos(ctx, &agentfleetv1.ListGitHubReposRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("ListGitHubRepos: %w", err)
+	}
+	return resp.GetRepos(), nil
+}
+
 // TearDownSession commands the provisioner to tear down a worker or e2e
 // session — core owns `tasks` and decides when a session should end
 // (task reached done/failed/cancelled, or an explicit kill); the

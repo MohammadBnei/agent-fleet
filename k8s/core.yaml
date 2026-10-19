@@ -207,6 +207,23 @@ env:
       secretKeyRef:
         name: fleet-oidc
         key: session_keys
+  # docs/adr/0074: repo overrides (name, baseBranch, image, clusterAccess),
+  # owned by infra-bootstrap's gitops/bootstrap/fleet-repo-overrides.yaml.
+  - name: FLEET_REPO_OVERRIDES
+    value: /etc/fleet-repo-overrides/overrides.yaml
+
+# The whole ConfigMap as a directory, never subPath: a subPath mount never
+# sees updates. optional: a missing ConfigMap is an empty directory, which
+# core reads as "keep what is applied", never as "no overrides".
+extraVolumes:
+  - name: fleet-repo-overrides
+    configMap:
+      name: fleet-repo-overrides
+      optional: true
+extraVolumeMounts:
+  - name: fleet-repo-overrides
+    mountPath: /etc/fleet-repo-overrides
+    readOnly: true
 
 podLabels:
   app.kubernetes.io/part-of: agent-fleet

@@ -88,7 +88,7 @@ func TestAnswerQuestion_WarmsFirstSoTheAnswerIsAboveTheResumeCursor(t *testing.T
 	// unreachable from AnswerQuestion.
 	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, e2e: provClient, caps: sessions.Caps{MaxLive: 5}}
 
-	if err := repoStore.Create(ctx, repos.Repo{Name: "editable-blog", URL: "https://example.invalid/x.git"}); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('editable-blog', 'https://example.invalid/x.git')`); err != nil {
 		t.Fatalf("repo: %v", err)
 	}
 	id, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "editable-blog", Title: "add media uploads"})
@@ -164,7 +164,7 @@ func TestTranscriptWindow_ALimitedReadReturnsTheNewestEntries(t *testing.T) {
 	transcr := transcript.NewPostgresStore(pool)
 	repoStore := repos.NewStore(pool)
 
-	if err := repoStore.Create(ctx, repos.Repo{Name: "editable-blog", URL: "https://example.invalid/x.git"}); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('editable-blog', 'https://example.invalid/x.git')`); err != nil {
 		t.Fatalf("repo: %v", err)
 	}
 	id, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "editable-blog"})

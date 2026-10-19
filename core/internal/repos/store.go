@@ -1,41 +1,21 @@
-// Package repos owns the dashboard-editable `repos` table (docs/adr/0028)
-// — the DB-backed replacement for the hardcoded tasks.KnownRepos Go map,
-// so onboarding/editing a target repo no longer needs a core redeploy.
+// Package repos owns the `repos` table (docs/adr/0028). Since docs/adr/0074
+// nothing edits it by hand: Sync projects the bot's GitHub repos plus
+// infra-bootstrap's overrides file into it.
 package repos
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// ErrExists is returned by Create when a repo with the same name already
-// exists — callers map it to connect.CodeAlreadyExists.
-var ErrExists = errors.New("repo already exists")
-
-// ErrSSHURL rejects the git@host:path form at the boundary.
-//
-// The provisioner authenticates with `gh auth setup-git`, which wires
-// HTTPS credentials only — an SSH URL can never authenticate, so the repo
-// looks fine until a task is dispatched and then dies with
-// "clone/fetch failed", marked failed_permanently with no obvious cause.
-//
-// Confirmed live 2026-08-11: infra-bootstrap was seeded with the SSH form
-// and every task against it failed at clone. Catching it here turns a
-// crashed pod ten minutes later into an error message at the moment
-// someone types the URL.
-var ErrSSHURL = errors.New("repo URL must be https:// — the provisioner authenticates via `gh auth setup-git`, which only wires HTTPS credentials, so an SSH URL can never clone")
 
 type Repo struct {
 	Name       string
 	URL        string
-	BaseBranch string // "" means the provisioner defaults to "main"
+	BaseBranch string // GitHub's default_branch unless overridden; "" means "main"
 	// Image is the container image this repo's sessions run. "" means the
 	// fleet default. Replaces the four toolchain ingredients of
 	// docs/adr/0034's recipe system (go-toolchain, bun-toolchain,
@@ -50,30 +30,25 @@ type Repo struct {
 	// either way; the shim is just an RPC client.
 	//
 	// Data rather than code for docs/adr/0037's own reason: which sessions
-	// may reach the cluster is a human's decision, editable without a
-	// redeploy. A bool rather than a profile row because there is exactly one
-	// such privilege and it composes with nothing.
+	// may reach the cluster is a human's decision. Since docs/adr/0074 that
+	// decision is made only in infra-bootstrap's overrides file, by a
+	// reviewed PR. A bool rather than a profile row because there is exactly
+	// one such privilege and it composes with nothing.
 	ClusterAccess bool
+	// FullName is GitHub's owner/repo ("" until the first sync).
+	FullName string
 }
 
 type Store struct {
-	pool     *pgxpool.Pool
-	onChange func() // optional; set via SetOnChange
+	pool *pgxpool.Pool
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-// SetOnChange wires a callback fired after every successful Create/Update/
-// Delete — same pattern as tasks.Store.SetNudge. core/cmd/core/run.go uses
-// this to refresh Discord's /task repo choices live, without a redeploy.
-func (s *Store) SetOnChange(onChange func()) {
-	s.onChange = onChange
-}
-
 func (s *Store) List(ctx context.Context) ([]Repo, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch, image, cluster_access FROM repos ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch, image, cluster_access, full_name FROM repos WHERE gone_since IS NULL ORDER BY name`)
 	if err != nil {
 		slog.Error("repos List", "error", err)
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -86,7 +61,7 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 	result := []Repo{}
 	for rows.Next() {
 		var r Repo
-		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess); err != nil {
+		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess, &r.FullName); err != nil {
 			slog.Error("repos List: scan", "error", err)
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
@@ -95,11 +70,13 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 	return result, rows.Err()
 }
 
-// Get returns nil, nil when no repo with this name exists.
+// Get returns nil, nil when no repo with this name exists, or when it is
+// gone (docs/adr/0074): every create and warm looks its repo up here, so a
+// gone repo is refused everywhere at once.
 func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 	var r Repo
-	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch, image, cluster_access FROM repos WHERE name = $1`, name).
-		Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess)
+	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch, image, cluster_access, full_name FROM repos WHERE name = $1 AND gone_since IS NULL`, name).
+		Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess, &r.FullName)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -108,75 +85,4 @@ func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 		return nil, fmt.Errorf("get repo: %w", err)
 	}
 	return &r, nil
-}
-
-func (s *Store) Create(ctx context.Context, r Repo) error {
-	if err := validateURL(r.URL); err != nil {
-		return err
-	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO repos (name, url, base_branch, image, cluster_access) VALUES ($1, $2, $3, $4, $5)`,
-		r.Name, r.URL, r.BaseBranch, r.Image, r.ClusterAccess)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return ErrExists
-		}
-		slog.Error("repos Create", "name", r.Name, "error", err)
-		return fmt.Errorf("create repo: %w", err)
-	}
-	slog.Info("repos Create", "name", r.Name)
-	if s.onChange != nil {
-		s.onChange()
-	}
-	return nil
-}
-
-// Update returns pgx.ErrNoRows if no repo with this name exists.
-func (s *Store) Update(ctx context.Context, r Repo) error {
-	if err := validateURL(r.URL); err != nil {
-		return err
-	}
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE repos SET url = $2, base_branch = $3, image = $4, cluster_access = $5, updated_at = now() WHERE name = $1
-	`, r.Name, r.URL, r.BaseBranch, r.Image, r.ClusterAccess)
-	if err != nil {
-		slog.Error("repos Update", "name", r.Name, "error", err)
-		return fmt.Errorf("update repo: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	slog.Info("repos Update", "name", r.Name)
-	if s.onChange != nil {
-		s.onChange()
-	}
-	return nil
-}
-
-// Delete returns pgx.ErrNoRows if no repo with this name exists.
-func (s *Store) Delete(ctx context.Context, name string) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM repos WHERE name = $1`, name)
-	if err != nil {
-		slog.Error("repos Delete", "name", name, "error", err)
-		return fmt.Errorf("delete repo: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	slog.Info("repos Delete", "name", name)
-	if s.onChange != nil {
-		s.onChange()
-	}
-	return nil
-}
-
-// validateURL rejects the one URL shape that is syntactically fine and
-// operationally impossible here. Deliberately narrow: it does not try to
-// validate that the repo exists or is reachable, only that its scheme is
-// one this fleet can actually authenticate.
-func validateURL(url string) error {
-	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
-		return ErrSSHURL
-	}
-	return nil
 }
