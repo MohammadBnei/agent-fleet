@@ -51,6 +51,7 @@ function NeedsYouCard({
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
           <span className="text-xs text-dim2 min-w-0 truncate">{session.repo}</span>
+          {session.definitionName && <DefinitionBadge name={session.definitionName} />}
           {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
           <RowActionsButton onOpen={onActions} inline />
         </div>
@@ -208,6 +209,7 @@ function QuietRow({
       >
         <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
         {badge && <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>}
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
       </button>
       <RowActionsButton onOpen={onActions} inline />
     </div>
