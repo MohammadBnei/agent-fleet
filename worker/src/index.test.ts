@@ -191,3 +191,19 @@ test("a persistent gh api user failure still fails the session", async () => {
   expect(ghAttempts).toBe(3);
   delete process.env.GH_TOKEN;
 });
+
+// docs/adr/0065: a definition pod's GH_TOKEN is a placeholder the vault swaps
+// on the wire, and `gh api user` is outside every vault rule (403 under
+// deny). Its identity comes from GIT_AUTHOR_* (docs/adr/0064), so nothing runs.
+test("a definition pod configures no gh auth", async () => {
+  process.env.GH_TOKEN = "fleet-vault-placeholder";
+  process.env.FLEET_DEFINITION = "dev-notes";
+  const calls: string[][] = [];
+  await defaultConfigureGitAuth(async (cmd: string[]) => {
+    calls.push(cmd);
+    return "";
+  }, async () => {});
+  expect(calls).toEqual([]);
+  delete process.env.GH_TOKEN;
+  delete process.env.FLEET_DEFINITION;
+});

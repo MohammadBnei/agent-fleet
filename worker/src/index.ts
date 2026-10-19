@@ -57,7 +57,9 @@ export async function defaultConfigureGitAuth(
   exec: (cmd: string[], cwd: string) => Promise<string> = run,
   sleep: (ms: number) => Promise<void> = Bun.sleep,
 ): Promise<void> {
-  if (!process.env.GH_TOKEN) return; // falls back to ambient git auth
+  // A definition pod's GH_TOKEN is a vault placeholder and its identity comes
+  // from GIT_AUTHOR_* (docs/adr/0064, 0065): `gh api user` would be denied.
+  if (!process.env.GH_TOKEN || process.env.FLEET_DEFINITION) return; // falls back to ambient git auth
   // The session directory was created by the provisioner's container (a
   // different UID — worker runs non-root). Git's ownership-mismatch guard
   // (CVE-2022-24765 mitigation) refuses every command otherwise, "detected
