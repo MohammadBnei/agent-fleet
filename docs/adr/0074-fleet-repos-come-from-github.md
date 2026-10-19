@@ -44,10 +44,11 @@ history.
      **inviter** is on `FLEET_REPO_INVITERS`. The initial value is
      `MohammadBnei`. Any other invitation is left pending and logged at
      WARN, and is never declined.
-   - It lists `GET /user/repos?affiliation=owner,collaborator`, following
-     every page. `organization_member` is not included, because org
-     membership must not imply fleet membership. Archived repos and forks
-     are skipped.
+   - It lists `GET /user/repos?affiliation=collaborator`, following every
+     page. `organization_member` is not included, because org membership
+     must not imply fleet membership. `owner` is not included either: the
+     bot's token is in every repo worker pod, so a session could create a
+     bot-owned repo and enlist it. Archived repos and forks are skipped.
 
    Each entry it returns has the GitHub `id`, `full_name`, `clone_url`
    (always HTTPS) and `default_branch`. Core upserts `repos` from that list.
@@ -55,11 +56,17 @@ history.
 3. **Identity is the GitHub repo id.** `repos` gains `github_id BIGINT
    UNIQUE`, `full_name TEXT` and `gone_since TIMESTAMPTZ`. A rename changes
    `full_name` and `url` on the same row. `name` stays the primary key
-   and the fleet-facing handle (definitions and sessions reference it). By
-   default it is the GitHub repo name. Two repos with the same short name
-   collide. When that happens, the second one is not inserted and core logs
-   an ERROR naming both full names, until an override gives one of them a
-   `name`. A short name is never inferred from an owner prefix.
+   and the fleet-facing handle (definitions and sessions reference it), and
+   an existing row keeps its name: only an override `name` renames it. A
+   new row takes the GitHub repo name, lowercased; a name that is not
+   `^[a-z0-9][a-z0-9._-]{0,62}$` (it becomes a pod label) is skipped with an
+   ERROR until an override names it. Two repos with the same short name
+   collide: the older repo (lower id) keeps the name, the other is not
+   inserted and core logs an ERROR naming both, until an override gives one
+   of them a `name`. A short name is never inferred from an owner prefix.
+   A repo deleted and re-created at the same URL (new id) adopts its old
+   row. The stored `url` is kept when it is the same remote up to case and
+   `.git`, because the clone cache compares `remote.origin.url` exactly.
 
 4. **Base branch is GitHub's `default_branch`.** It is read on every tick,
    so a branch rename is picked up without anyone editing anything. An
@@ -81,7 +88,8 @@ history.
        name: opus-workspace
    ```
 
-   The keys are `owner/repo`. The allowed fields are `id` (required),
+   The keys are `owner/repo`, matched case-insensitively; a key that
+   matches no listed repo logs a WARN every tick. The allowed fields are `id` (required),
    `name`, `baseBranch`, `image` and `clusterAccess`. Core mounts the
    ConfigMap as a directory (`optional: true`, no `subPath`, so updates
    propagate) and re-reads it on every tick.
@@ -89,7 +97,9 @@ history.
    - If the `id` does not match the live repo's id, the entry is ignored and
      core logs an ERROR. A deleted repo whose name was re-created by someone
      else inherits nothing.
-   - An unknown field logs a WARN and is otherwise ignored.
+   - An unknown field inside an entry logs a WARN and is otherwise ignored.
+     An unknown **top-level** key (`repo:` for `repos:`) is a parse error:
+     read as "no overrides" it would revoke every grant.
    - A YAML error keeps the last good copy and logs an ERROR.
    - A **mounted but empty** file is valid and means "no overrides". This is
      the way to revoke every grant.
@@ -100,9 +110,10 @@ history.
      only an empty one does.
    - `FLEET_REPO_OVERRIDES` unset (kind, local runs) turns the sync off.
 
-   **`cluster_access` can only be set from this file.** Its default is
-   `false`, so a repo that only appears on GitHub never gets it, and
-   removing a repo's entry revokes it on the next tick.
+   **`cluster_access` can only be set from this file.** Every sync sets it
+   to `false` on every row that no matching entry granted in that tick,
+   including rows the sync could not match at all, so a console-era grant
+   never outlives the cutover and removing an entry revokes on the next tick.
 
 6. **Removal is soft first.** When a repo is missing from a complete listing,
    it gets `gone_since = now()`. A gone repo is hidden from the console's
@@ -117,8 +128,10 @@ history.
    A listing counts as complete only when every page returned 2xx. A failed
    or partial listing changes nothing.
 
-   **Shrink guard:** if one tick would mark more than 2 repos gone, it marks
-   none, and core logs an ERROR with the list. A human then checks whether
+   **Shrink guard:** if one tick would mark more than 2 repos gone, or every
+   active repo (a token that sees nothing answers 200 with `[]`), it marks
+   none, and core logs an ERROR with the list. A row a listed repo matched
+   is never hard-deleted in that tick, even when a collision kept it gone. A human then checks whether
    the token or GitHub is the problem before anything is removed.
 
 7. **The console is read-only for repos.** `CreateRepo`, `UpdateRepo` and
@@ -181,9 +194,27 @@ history.
 - A ConfigMap edit by anyone with write access in `agent-fleet` takes effect
   until ArgoCD's self-heal reverts it. Decision 9 keeps fleet components out
   of that set. Cluster admins are in it, and they have the cluster anyway.
-- Changing a repo's `name` override renames its row. Sessions reference
+- Changing a repo's `name` override renames its row (the only rename). Sessions reference
   repos by name with no foreign key, so open sessions on the old name lose
   their repo. Rename only when no session on it is open.
+- **The bot's PAT is in every repo worker pod** (`GH_TOKEN`, pre-dating
+  this ADR; definition pods hold a placeholder since 0065). A session can
+  therefore accept any invitation and remove the bot from up to 2 repos per
+  tick. The inviter allowlist and the shrink guard bound mistakes, not a
+  hostile session; `cluster_access` stays gated by the overrides file.
+  Closing it means taking the PAT out of repo pods, which is P3's model for
+  definitions.
+- Listing uses offset pages. A repo added between two page reads can drop
+  out of one listing and be hidden for one tick. Below 100 repos there is
+  one page.
+- **Rollback.** An older core has no `gone_since` filter and still has the
+  console editor, so gone repos reappear and the console can set
+  `cluster_access` again until the next sync of a 0074 core. Rolling the
+  migration image back below 000010 fails `migrate up` on a version-10 DB.
+  Roll forward instead.
+- The RBAC test reads `k8s/` only. It does not see infra-bootstrap RBAC
+  (common-app-chart's core ServiceAccount, `thot-executor`'s cluster-wide
+  Deployment patch, which could repoint the mount until ArgoCD self-heals).
 - The provisioner makes about 2 GitHub API calls per tick (invitations, plus
   one page of repos per 100). That is about 3,000 per day, well inside the
   token's 5,000 per hour.

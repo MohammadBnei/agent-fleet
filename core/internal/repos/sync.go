@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +43,17 @@ type Override struct {
 // overrides: that is how every grant is revoked. An unknown field is a
 // warning, not an error, so a typo in one entry does not freeze the rest.
 func ParseOverrides(b []byte) (map[string]Override, error) {
+	// A top-level typo ("repo:") would otherwise decode as "no overrides",
+	// revoking every grant and renaming every name-overridden row.
+	var top map[string]any
+	if err := yaml.Unmarshal(b, &top); err != nil {
+		return nil, err
+	}
+	for k := range top {
+		if k != "repos" {
+			return nil, fmt.Errorf("overrides: unknown top-level key %q (want only \"repos\")", k)
+		}
+	}
 	var doc struct {
 		Repos map[string]Override `yaml:"repos"`
 	}
@@ -54,10 +67,13 @@ func ParseOverrides(b []byte) (map[string]Override, error) {
 		}
 		slog.Warn("repos: overrides has unknown fields, ignored", "error", strictErr)
 	}
-	if doc.Repos == nil {
-		doc.Repos = map[string]Override{}
+	// GitHub owner/repo is case-insensitive; the listing returns the
+	// canonical case, a hand-written key may not.
+	out := make(map[string]Override, len(doc.Repos))
+	for k, v := range doc.Repos {
+		out[strings.ToLower(k)] = v
 	}
-	return doc.Repos, nil
+	return out, nil
 }
 
 // Overrides keeps the last good copy of the overrides file. A missing file
@@ -98,6 +114,10 @@ func (o *Overrides) Load() (map[string]Override, bool) {
 // maxGonePerTick is the shrink guard: a token or GitHub problem looks like
 // many repos vanishing at once, a real removal like one or two.
 const maxGonePerTick = 2
+
+// fleetName bounds a name the sync may write: lowercase like definition repo
+// names, and at most 63 characters because it becomes a pod label.
+var fleetName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 type row struct {
 	name     string
@@ -146,24 +166,57 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 		byName[r.name] = r
 		if r.githubID != nil {
 			byID[*r.githubID] = r
-		} else {
-			byURL[normURL(r.url)] = r
 		}
+		byURL[normURL(r.url)] = r
 	}
 
 	// Oldest repo first: on a short-name collision the older one keeps the
 	// name, the same answer every tick.
+	gh = slices.Clone(gh)
+	lower := make(map[string]Override, len(ov))
+	for k, v := range ov {
+		lower[strings.ToLower(k)] = v
+	}
+	ov = lower
 	sort.Slice(gh, func(i, j int) bool { return gh[i].ID < gh[j].ID })
+	listed := map[int64]bool{}
+	for _, g := range gh {
+		listed[g.ID] = true
+	}
 	changed := 0
 	seen := map[*row]bool{}
+	seenNames, granted := []string{}, []string{}
 	claimed := map[string]string{} // fleet name → full name, this tick
+	usedOverride := map[string]bool{}
 	for _, g := range gh {
-		o, has := ov[g.FullName]
+		key := strings.ToLower(g.FullName)
+		o, has := ov[key]
+		usedOverride[key] = has
 		if has && o.ID != g.ID {
 			slog.Error("repos: override id does not match the repo, ignored", "repo", g.FullName, "overrideId", o.ID, "githubId", g.ID)
 			has = false
 		}
-		name, base := g.Name, g.DefaultBranch
+		cur := byID[g.ID]
+		if cur == nil {
+			// An unadopted (pre-0074) row, or a row whose repo was deleted and
+			// re-created at the same URL (its old id is no longer listed).
+			if r := byURL[normURL(g.CloneURL)]; r != nil && (r.githubID == nil || !listed[*r.githubID]) {
+				cur = r
+			}
+		}
+		if cur != nil {
+			// Matched even when skipped below: a collision is not a removal.
+			seen[cur] = true
+			seenNames = append(seenNames, cur.name)
+		}
+		// An existing row keeps its name: sessions and definitions reference it
+		// with no FK, so only an explicit override renames. A new row takes the
+		// GitHub name, lowercased like every fleet name.
+		name := strings.ToLower(g.Name)
+		if cur != nil {
+			name = cur.name
+		}
+		base := g.DefaultBranch
 		var image string
 		var cluster bool
 		if has {
@@ -175,13 +228,9 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 			}
 			image, cluster = o.Image, o.ClusterAccess
 		}
-		cur := byID[g.ID]
-		if cur == nil {
-			cur = byURL[normURL(g.CloneURL)]
-		}
-		if cur != nil {
-			// Matched even when skipped below: a collision is not a removal.
-			seen[cur] = true
+		if (cur == nil || name != cur.name) && !fleetName.MatchString(name) {
+			slog.Error("repos: not a valid fleet name, add a name override", "repo", g.FullName, "name", name)
+			continue
 		}
 		if other, ok := claimed[name]; ok {
 			slog.Error("repos: fleet name collision, add a name override", "name", name, "repo", g.FullName, "holder", other)
@@ -192,6 +241,12 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 			continue
 		}
 		claimed[name] = g.FullName
+		// Keep the stored URL when it is the same remote: the provisioner's
+		// clone cache compares remote.origin.url byte for byte.
+		url := g.CloneURL
+		if cur != nil && normURL(cur.url) == normURL(url) {
+			url = cur.url
+		}
 		var tag int64
 		if cur != nil {
 			t, err := tx.Exec(ctx, `
@@ -200,7 +255,7 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 				WHERE name = $1
 				  AND (name, url, github_id, full_name, base_branch, image, cluster_access, gone_since)
 				      IS DISTINCT FROM ($2, $3, $4, $5, $6, $7, $8, NULL)`,
-				cur.name, name, g.CloneURL, g.ID, g.FullName, base, image, cluster)
+				cur.name, name, url, g.ID, g.FullName, base, image, cluster)
 			if err != nil {
 				return 0, fmt.Errorf("repos sync: update %s: %w", g.FullName, err)
 			}
@@ -209,27 +264,53 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 			t, err := tx.Exec(ctx, `
 				INSERT INTO repos (name, url, github_id, full_name, base_branch, image, cluster_access)
 				VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-				name, g.CloneURL, g.ID, g.FullName, base, image, cluster)
+				name, url, g.ID, g.FullName, base, image, cluster)
 			if err != nil {
 				return 0, fmt.Errorf("repos sync: insert %s: %w", g.FullName, err)
 			}
 			tag = t.RowsAffected()
+		}
+		if cluster {
+			granted = append(granted, name)
 		}
 		if tag > 0 {
 			changed++
 			slog.Info("repos: synced", "name", name, "repo", g.FullName, "baseBranch", base, "image", image, "clusterAccess", cluster)
 		}
 	}
+	for k := range ov {
+		if !usedOverride[k] {
+			slog.Warn("repos: override matches no repo the bot reaches", "repo", k)
+		}
+	}
+
+	// cluster_access only from a matching override applied THIS tick: a row
+	// left unmatched (unadoptable URL, collision, shrink guard) never keeps a
+	// grant from the console era.
+	t, err := tx.Exec(ctx, `UPDATE repos SET cluster_access = false, updated_at = now() WHERE cluster_access AND NOT (name = ANY($1))`, granted)
+	if err != nil {
+		return 0, fmt.Errorf("repos sync: revoke: %w", err)
+	}
+	if n := t.RowsAffected(); n > 0 {
+		changed += int(n)
+		slog.Warn("repos: cluster access revoked, no matching override", "count", n)
+	}
 
 	var gone []string
+	active := 0
 	for i := range rows {
-		if r := &rows[i]; !seen[r] && !r.gone {
-			gone = append(gone, r.name)
+		if r := &rows[i]; !r.gone {
+			active++
+			if !seen[r] {
+				gone = append(gone, r.name)
+			}
 		}
 	}
 	switch {
-	case len(gone) > maxGonePerTick:
-		slog.Error("repos: shrink guard, more repos vanished than one tick may remove; nothing marked gone. Check the bot's token and GitHub", "gone", gone)
+	// A token that sees nothing (wrong account, lost scope) answers 200 with
+	// [], which on a small fleet would otherwise stay under the per-tick cap.
+	case len(gone) > maxGonePerTick || (len(gone) > 0 && len(gone) == active):
+		slog.Error("repos: shrink guard, too many repos vanished in one tick; nothing marked gone. Check the bot's token and GitHub", "gone", gone, "active", active)
 	case len(gone) > 0:
 		if _, err := tx.Exec(ctx, `UPDATE repos SET gone_since = now(), updated_at = now() WHERE name = ANY($1)`, gone); err != nil {
 			return 0, fmt.Errorf("repos sync: mark gone: %w", err)
@@ -238,10 +319,13 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 		slog.Warn("repos: no longer listed for the bot, hidden; deleted after 7 days", "repos", gone)
 	}
 
-	t, err := tx.Exec(ctx, `
+	// Never a row a listed repo matched this tick, even one skipped on a
+	// collision and so still marked gone.
+	t, err = tx.Exec(ctx, `
 		DELETE FROM repos r
 		WHERE r.gone_since < now() - interval '7 days'
-		  AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.repo = r.name AND s.archived_at IS NULL)`)
+		  AND NOT (r.name = ANY($1))
+		  AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.repo = r.name AND s.archived_at IS NULL)`, seenNames)
 	if err != nil {
 		return 0, fmt.Errorf("repos sync: delete gone: %w", err)
 	}

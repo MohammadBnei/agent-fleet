@@ -20,6 +20,13 @@ func TestParseOverrides(t *testing.T) {
 	if _, err := ParseOverrides([]byte("repos: [")); err == nil {
 		t.Fatal("broken YAML parsed")
 	}
+	// A top-level typo must keep the last good copy, not mean "no overrides".
+	if _, err := ParseOverrides([]byte("repo:\n  a/b: {id: 1}\n")); err == nil {
+		t.Fatal("unknown top-level key parsed")
+	}
+	if m, _ := ParseOverrides([]byte("repos:\n  A/B: {id: 1}\n")); m["a/b"].ID != 1 {
+		t.Fatal("keys not lowercased")
+	}
 }
 
 // Missing before any good read: not ok, so core does not sync. Missing or

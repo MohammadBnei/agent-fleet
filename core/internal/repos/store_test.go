@@ -118,19 +118,58 @@ func TestSync_NewReposAndNameCollision(t *testing.T) {
 	}
 }
 
-// A GitHub rename keeps the row (same id): url and full_name move with it.
-func TestSync_RenameKeepsTheRow(t *testing.T) {
+// A GitHub rename keeps the row and its fleet name (same id): only url and
+// full_name move. Sessions and definitions reference the name.
+func TestSync_RenameKeepsTheRowAndName(t *testing.T) {
 	s, _ := setup(t)
 	runSync(t, s, seeded, seededOverrides)
 	gh := append([]GitHubRepo(nil), seeded...)
 	gh[0] = GitHubRepo{ID: 1, FullName: "MohammadBnei/dreams", Name: "dreams", CloneURL: "https://github.com/MohammadBnei/dreams.git", DefaultBranch: "main"}
-	ov := map[string]Override{"MohammadBnei/dreams": {ID: 1, Name: "dream-analyst"}}
-	for k, v := range seededOverrides {
-		ov[k] = v
-	}
-	runSync(t, s, gh, ov)
+	runSync(t, s, gh, seededOverrides)
 	if r := get(t, s, "dream-analyst"); r == nil || r.URL != "https://github.com/MohammadBnei/dreams.git" || r.FullName != "MohammadBnei/dreams" {
 		t.Fatalf("dream-analyst = %+v", r)
+	}
+	if get(t, s, "dreams") != nil {
+		t.Fatal("a GitHub rename renamed the fleet row")
+	}
+}
+
+// Override keys match GitHub's owner/repo case-insensitively.
+func TestSync_OverrideKeyCaseInsensitive(t *testing.T) {
+	s, _ := setup(t)
+	ov, err := ParseOverrides([]byte("repos:\n  mohammadbnei/INFRA-bootstrap: {id: 4, clusterAccess: true}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runSync(t, s, seeded, ov)
+	if r := get(t, s, "infra-bootstrap"); !r.ClusterAccess {
+		t.Fatal("a differently-cased key did not apply")
+	}
+}
+
+// A row no listed repo adopts loses a console-era grant all the same.
+func TestSync_UnmatchedRowLosesClusterAccess(t *testing.T) {
+	s, pool := setup(t)
+	if _, err := pool.Exec(context.Background(), `INSERT INTO repos (name, url, cluster_access) VALUES ('stray', 'git@github.com:x/stray.git', true)`); err != nil {
+		t.Fatal(err)
+	}
+	runSync(t, s, seeded, seededOverrides)
+	var granted bool
+	if err := pool.QueryRow(context.Background(), `SELECT cluster_access FROM repos WHERE name = 'stray'`).Scan(&granted); err != nil || granted {
+		t.Fatalf("stray cluster_access = %v (%v), want false", granted, err)
+	}
+}
+
+// A repo deleted and re-created at the same URL (new id) takes over its old
+// row instead of being blocked by it.
+func TestSync_RecreatedRepoAdoptsItsRow(t *testing.T) {
+	s, _ := setup(t)
+	runSync(t, s, seeded, seededOverrides)
+	gh := append([]GitHubRepo(nil), seeded...)
+	gh[0].ID = 100
+	runSync(t, s, gh, seededOverrides)
+	if r := get(t, s, "dream-analyst"); r == nil {
+		t.Fatal("the re-created repo lost its row")
 	}
 }
 
@@ -182,12 +221,17 @@ func TestSync_GoneHidesThenDeletesAfterGrace(t *testing.T) {
 // A listing that lost more than maxGonePerTick repos is a token or GitHub
 // problem until a human says otherwise: nothing is marked gone.
 func TestSync_ShrinkGuard(t *testing.T) {
-	s, _ := setup(t)
+	s, pool := setup(t)
 	runSync(t, s, seeded, seededOverrides)
 	runSync(t, s, nil, seededOverrides)
-	for _, g := range seeded {
-		if get(t, s, g.Name) == nil {
-			t.Fatalf("%s hidden by an empty listing", g.Name)
+	// An empty listing on a fleet of two is still the token, not two removals.
+	if _, err := pool.Exec(context.Background(), `UPDATE repos SET gone_since = now() WHERE name IN ('agent-fleet', 'vos-monolith')`); err != nil {
+		t.Fatal(err)
+	}
+	runSync(t, s, nil, seededOverrides)
+	for _, name := range []string{"dream-analyst", "infra-bootstrap"} {
+		if get(t, s, name) == nil {
+			t.Fatalf("%s hidden by an empty listing", name)
 		}
 	}
 }

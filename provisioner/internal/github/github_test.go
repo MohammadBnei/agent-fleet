@@ -20,7 +20,7 @@ func fake(t *testing.T, failPage2 bool) (*Client, *[]string) {
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/user/repos":
-			if r.URL.Query().Get("affiliation") != "owner,collaborator" {
+			if r.URL.Query().Get("affiliation") != "collaborator" {
 				t.Errorf("affiliation = %q", r.URL.Query().Get("affiliation"))
 			}
 			var page []Repo
@@ -48,7 +48,7 @@ func fake(t *testing.T, failPage2 bool) (*Client, *[]string) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	c := New("tok", []string{"MohammadBnei"})
+	c := New("tok", []string{" mohammadbnei", ""})
 	c.API = srv.URL
 	return c, &patched
 }
