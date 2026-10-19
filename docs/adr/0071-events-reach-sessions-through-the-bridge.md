@@ -48,16 +48,23 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    event-opened session does not inherit the `'auto'` column default of
    [ADR-0061](0061-sessions-launch-in-auto.md). Proposals filed for
    untrusted or `actor=machine` events keep ADR-0061's behaviour once a
-   human opens them.
+   human opens them. Every transcript entry an event produces (the opening
+   message, a `context_only` follow-up) is appended by core itself: since
+   ADR-0064, a lease-authenticated `SendMessage` from a pod accepts only
+   `from` agent or worker.
 4. **Routing.** The `owner` is the definition whose `spec.owns` (repos,
    components, subject globs, types) matches the event; until definitions
    exist, an `owner` column on the `repos` table (ADR-0028) does it.
    Definitions whose `spec.subscribes` matches also receive it — fan-out
-   for observer agents, such as an always-on Hermes-type agent.
+   for observer agents, such as an always-on Hermes-type agent. Both match
+   the way the bridge's own subscription filter does: `types` are prefixes
+   of the CloudEvent type (`dev.bnei.github.pull_request`), `subjects` are
+   globs with `*` and `?` only (`github/MohammadBnei/*`).
 5. **Threads.** The CloudEvent `subject` is the thread key. A session is
    resident per thread: `sessions.thread_key` with a unique partial index on
    `(definition_name, thread_key)` where not archived (ADR-0062's shape; no
-   separate table, no status enum). The thread closes when the PR is merged
+   separate table, no status enum). The column ships with the dispatcher, in
+   migration 000010 or later: 000008 and 000009 are ADR-0062's and ADR-0064's. The thread closes when the PR is merged
    or closed, or the alert resolves — the alert handler moves to thread
    semantics and stops discarding `resolved`.
 6. **The gate** (the ADR-0048 §1 amendment itself is ADR-0062's):
