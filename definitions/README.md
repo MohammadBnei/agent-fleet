@@ -14,7 +14,10 @@ for kind and dev).
 Every launchable definition names its vault and services in `credentials`; the
 `secret` fields are **key names** in Infisical `agent-fleet-nygh` folder
 `/agent-vault`, which only the provisioner syncs. A missing key fails closed:
-the vault reconcile logs it and a warm is refused naming it.
+the vault reconcile logs it and a warm is refused naming it. A `github.com` /
+`api.github.com` service's key is always `GH_` + the vault name upper-snaked
+(`dev-notes` → `GH_DEV_NOTES`), and `api.anthropic.com` never takes a `GH_` key:
+the validator and the provisioner both refuse anything else.
 
 Onboarding a push definition (example: `dev-notes`):
 

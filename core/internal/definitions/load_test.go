@@ -138,7 +138,9 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"lowercase secret", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: abc }] }"}, "secret"},
 		{"anthropic with paths", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.anthropic.com, paths: ["/v1/*"], secret: A }] }`}, "no paths"},
 		{"github without paths", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: github.com, secret: A }] }"}, "at least one path"},
-		{"credentials ok", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/r.git/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		{"credentials ok", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/r.git/*"], secret: GH_VALID_CHILD }, { host: api.github.com, paths: ["/repos/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		{"another vault's PAT", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: GH_OTHER }, { host: api.anthropic.com, secret: B }] }`}, "must be GH_VALID_CHILD"},
+		{"PAT to the model host", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: GH_VALID_CHILD }] }"}, "GitHub credential"},
 		// docs/adr/0065
 		{"no credentials", map[string]string{"credentials": ""}, "credentials is required"},
 		{"no anthropic", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }] }`}, "api.anthropic.com service"},

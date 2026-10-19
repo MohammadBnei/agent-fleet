@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
 // workerJobTTLSeconds is how long a finished worker Job (and the pod it
@@ -221,7 +221,14 @@ type DefinitionProfile struct {
 	// DeadlineSeconds is the Job's activeDeadlineSeconds: limits.timeout,
 	// floored at 300. The token outlives it by 60s.
 	DeadlineSeconds int64
+	// VaultLabel is the token's vault session label, kept on the Job
+	// (VaultLabelAnnotation) so every revoke path deletes exactly this
+	// pod's token. Not a secret.
+	VaultLabel string
 }
+
+// VaultLabelAnnotation carries DefinitionProfile.VaultLabel on the Job.
+const VaultLabelAnnotation = "fleet.bnei.dev/vault-label"
 
 // VaultPlaceholder stands in for every model and GitHub credential in a
 // definition pod: the vault overwrites the whole Authorization header.
@@ -256,8 +263,9 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 //
 // docs/adr/0065: no real credential either. CLAUDE_CODE_OAUTH_TOKEN and
 // GH_TOKEN are placeholders the vault overwrites on the wire; the proxy, its
-// CA and NO_PROXY (loopback for the sidecar, core, the vault API) come from
-// vault.ProxyEnv.
+// CA and NO_PROXY (loopback for the sidecar, core, the vault API) are set
+// here: both cases of the proxy vars (curl prefers lowercase), and the CA in
+// every variable a client in the worker image reads.
 func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost string) []corev1.EnvVar {
 	out := make([]corev1.EnvVar, 0, len(env)+24)
 	for _, e := range env {
@@ -272,7 +280,14 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 	if u, err := url.Parse(d.ProxyURL); err == nil && u.Hostname() != "" {
 		noProxy = append(noProxy, u.Hostname())
 	}
-	out = append(out, vault.ProxyEnv(d.ProxyURL, vaultCADir+"/ca.pem", noProxy)...)
+	np := strings.Join(noProxy, ",")
+	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"} {
+		out = append(out, corev1.EnvVar{Name: k, Value: d.ProxyURL})
+	}
+	out = append(out, corev1.EnvVar{Name: "NO_PROXY", Value: np}, corev1.EnvVar{Name: "no_proxy", Value: np})
+	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
+		out = append(out, corev1.EnvVar{Name: k, Value: vaultCADir + "/ca.pem"})
+	}
 	return append(out,
 		corev1.EnvVar{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: VaultPlaceholder},
 		corev1.EnvVar{Name: "GH_TOKEN", Value: VaultPlaceholder},
@@ -699,13 +714,18 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		// docs/adr/0065: limits.timeout is the pod's lifetime, and its token's
 		// TTL is longer, so the pod never runs on a dead token.
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(d.DeadlineSeconds)
+		job.Annotations = map[string]string{VaultLabelAnnotation: d.VaultLabel}
 		ps := &job.Spec.Template.Spec
+		// No API-server token (the namespace's default SA would mount one,
+		// readable by the agent's Read tool) and no Service env vars.
+		ps.AutomountServiceAccountToken = boolPtr(false)
+		ps.EnableServiceLinks = boolPtr(false)
 		// REFUSED from the egress lock's DNS allowlist + musl's search
 		// expansion under ndots:5 stops resolution (spike 1 (b)).
 		ps.DNSConfig = &corev1.PodDNSConfig{Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: strPtr("1")}}}
-		// optional: false: the pod never starts without the vault CA.
+		// Not optional (the API default): the pod never starts without the CA.
 		ps.Volumes = append(ps.Volumes, corev1.Volume{Name: "agent-vault-ca", VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: VaultCAConfigMap}, Optional: boolPtr(false)},
+			ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: VaultCAConfigMap}},
 		}})
 		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "agent-vault-ca", MountPath: vaultCADir, ReadOnly: true})
 	}
@@ -739,20 +759,20 @@ func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 	return nil
 }
 
-// GetWorkerJobRepo recovers which repo a worker job belongs to from its
-// own RepoLabel — the only way to know, since the provisioner holds no DB
-// credentials to look it up any other way (docs/adr/0020 point 1). Needed
-// by TearDownSession to remove the right worktree.
-func (c *Client) GetWorkerJobRepo(ctx context.Context, taskID string) (repo string, exists bool, err error) {
-	job, err := c.Core.BatchV1().Jobs(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
+// GetWorkerJob reads a session's worker Job from its own labels and
+// annotations, the only record the provisioner has (it holds no DB
+// credentials, docs/adr/0020 point 1). TearDownSession uses it for existence
+// and the vault token to revoke (docs/adr/0065).
+func (c *Client) GetWorkerJob(ctx context.Context, taskID string) (job LiveWorkerJob, exists bool, err error) {
+	j, err := c.Core.BatchV1().Jobs(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return "", false, nil
+		return LiveWorkerJob{}, false, nil
 	}
 	if err != nil {
-		slog.Error("k8s GetWorkerJobRepo", "sessionId", taskID, "error", err)
-		return "", false, err
+		slog.Error("k8s GetWorkerJob", "sessionId", taskID, "error", err)
+		return LiveWorkerJob{}, false, err
 	}
-	return job.Labels[RepoLabel], true, nil
+	return liveJob(j), true, nil
 }
 
 func resourcePtr(qty string) *resource.Quantity {

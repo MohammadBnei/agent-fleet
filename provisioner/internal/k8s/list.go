@@ -26,11 +26,22 @@ type LiveWorkerJob struct {
 	TaskID  string
 	JobName string
 	// Phase mirrors the terminal-phase strings reconcile.gcTerminalWorkerJobs
-	// already compares against ("Succeeded"/"Failed") — derived from the
+	// compares against ("Succeeded"/"Failed"/"DeadlineExceeded") — derived from the
 	// Job's own status.conditions (jobPhase, below) rather than a Pod's
 	// status.phase, but kept as the same plain string so that comparison
 	// (and reconcile's own tests) didn't need to change shape.
 	Phase string
+	// Definition and VaultLabel are set on a definition session's Job only
+	// (docs/adr/0065): its vault, and its token's exact session label.
+	Definition string
+	VaultLabel string
+}
+
+func liveJob(job *batchv1.Job) LiveWorkerJob {
+	return LiveWorkerJob{
+		TaskID: job.Labels[TaskIDLabel], JobName: job.Name, Phase: jobPhase(job),
+		Definition: job.Labels[DefinitionLabel], VaultLabel: job.Annotations[VaultLabelAnnotation],
+	}
 }
 
 // jobPhase derives a Pod-phase-shaped status from a Job's own status
@@ -98,7 +109,7 @@ func (c *Client) ListWorkerJobsByLabel(ctx context.Context) ([]LiveWorkerJob, er
 		if job.DeletionTimestamp != nil {
 			continue
 		}
-		out = append(out, LiveWorkerJob{TaskID: taskID, JobName: job.Name, Phase: jobPhase(&job)})
+		out = append(out, liveJob(&job))
 	}
 	return out, nil
 }

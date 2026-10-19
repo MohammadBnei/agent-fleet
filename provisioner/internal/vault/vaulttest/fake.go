@@ -42,6 +42,8 @@ type Server struct {
 	// ConflictOnCreate answers POST /v1/vaults with 409 after creating the
 	// vault (it was created concurrently elsewhere).
 	ConflictOnCreate bool
+	// CredentialsError answers POST /v1/credentials with 400 and this text.
+	CredentialsError string
 	n                int
 }
 
@@ -144,7 +146,7 @@ func fail(w http.ResponseWriter, status int, msg string) {
 
 func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
-	delay, conflict := f.Delay, f.ConflictOnCreate
+	delay, conflict, credErr := f.Delay, f.ConflictOnCreate, f.CredentialsError
 	line := r.Method + " " + r.URL.Path
 	if r.URL.RawQuery != "" {
 		line += "?" + r.URL.RawQuery
@@ -196,6 +198,9 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusNotFound, "Vault not found")
 			return
 		}
+		// Echoing the PUT body is faithful for the fields the client sends:
+		// v0.40.0 splits "host/path" on ingest and broker.Service.MarshalJSON
+		// rejoins it on GET. vault_live_test.go checks the real round trip.
 		if r.Method == http.MethodPut {
 			var req struct{ Services json.RawMessage }
 			_ = json.NewDecoder(r.Body).Decode(&req)
@@ -241,6 +246,10 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
 		case http.MethodPost:
+			if credErr != "" {
+				fail(w, http.StatusBadRequest, credErr)
+				return
+			}
 			for k, x := range req.Credentials {
 				v.Creds[k] = x
 			}

@@ -133,11 +133,6 @@ func TestCreateWorkerPod_DefinitionMissingSecretRefused(t *testing.T) {
 	if last.GetPhase() != agentfleetv1.PodPhase_POD_PHASE_CRASHED || !strings.Contains(last.GetMessage(), "GH_DEV_NOTES") {
 		t.Errorf("last event %v", last)
 	}
-	// No vault at all: refused too.
-	s2, _, _ := newTestServer(t)
-	if _, err := s2.CreateWorkerPod(context.Background(), defRequest(t, "def-2", profile("dev-x"))); status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("no vault configured: %v", err)
-	}
 }
 
 func TestCreateWorkerPod_DefinitionRevokesWhenJobCreateFails(t *testing.T) {
@@ -154,8 +149,8 @@ func TestCreateWorkerPod_DefinitionRevokesWhenJobCreateFails(t *testing.T) {
 	}
 }
 
-// Teardown revokes the session's tokens BEFORE the Job delete, and also when
-// the Job is already gone.
+// Teardown revokes exactly the pod's own token (its label is on the Job)
+// BEFORE the Job delete; a repo session's teardown never calls the vault.
 func TestTearDownSession_RevokesBeforeDelete(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
@@ -164,6 +159,7 @@ func TestTearDownSession_RevokesBeforeDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.AddSession("dev-x", "other.1")
+	f.AddSession("dev-x", "def-1.1") // same session, another warm's label: not this pod's
 	liveAtDelete := -1
 	k8sc.Core.(*fake.Clientset).PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
 		v, _ := f.Get("dev-x")
@@ -173,15 +169,19 @@ func TestTearDownSession_RevokesBeforeDelete(t *testing.T) {
 	if _, err := s.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{SessionId: "def-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if liveAtDelete != 1 {
-		t.Errorf("%d sessions live at the Job delete, want only the other session's", liveAtDelete)
+	if liveAtDelete != 2 {
+		t.Errorf("%d sessions live at the Job delete, want the two unminted-here ones", liveAtDelete)
 	}
-	f.AddSession("dev-x", "gone-job.1")
-	if _, err := s.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{SessionId: "gone-job"}); err != nil {
+
+	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{SessionId: "repo-1", Repo: "repo-1", RepoUrl: newTestOriginRepo(t), BaseBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := f.Get("dev-x"); len(v.Sessions) != 1 || v.Sessions[0].Label != "other.1" {
-		t.Errorf("sessions %+v", v.Sessions)
+	f.ResetLog()
+	if _, err := s.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{SessionId: "repo-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if calls := f.Calls(); len(calls) != 0 {
+		t.Errorf("a repo session's teardown called the vault: %v", calls)
 	}
 }
 
@@ -202,6 +202,9 @@ func TestReconcileVaults_ResultsAndPrune(t *testing.T) {
 	}
 	if got["dev-x"] != "" || !strings.Contains(got["dev-notes"], "GH_DEV_NOTES") || len(got) != 2 {
 		t.Errorf("results %v", got)
+	}
+	if resp.GetPruneError() != "" {
+		t.Errorf("prune error %q", resp.GetPruneError())
 	}
 	if v, _ := f.Get("old-one"); len(v.Creds) != 0 || string(v.Services) != "[]" {
 		t.Errorf("a vault absent from the full set was not emptied: %+v", v)

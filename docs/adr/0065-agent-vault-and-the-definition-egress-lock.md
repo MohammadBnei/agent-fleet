@@ -46,6 +46,15 @@ definitions name (`CLAUDE_CODE_OAUTH_TOKEN`, as an Infisical reference to the
 root key; `GH_DEV_NOTES`). Core never syncs that folder (its scope is the
 non-recursive root) and never sees a value: it sends key **names**.
 
+This is a deliberate deviation from the plan's "reuse the provisioner's
+existing InfisicalSecret (`k8s/provisioner/infisicalsecret.yaml`)": a second
+InfisicalSecret, one folder, a file mount and the `${…}` reference check
+instead of more `envFrom` keys. Reasons: a definition can then only name keys
+in `/agent-vault` (never the provisioner's own `GH_TOKEN`, DB or core
+credentials, which `envFrom` puts in the same environment), a rotation reaches
+the running provisioner without a restart, and no credential value enters a
+child process's environment.
+
 Keys starting `AGENT_VAULT_` or `FLEET_VAULT_` are refused by the validator and
 again by the provisioner (`FLEET_VAULT_` is the provisioner's own synthetic-key
 prefix), so a definition can never upload the agent token into a vault. A value
@@ -55,10 +64,17 @@ name the key, never the value.
 `provisioner/internal/vault` is one client, no interface. It does not trust
 core's spec: before any write it re-checks the vault slug, the host allowlist
 (`github.com`, `api.github.com`, `api.anthropic.com`), the path shape (the
-validator's `githubPath`/`apiPath` regexes and dot-segment rule, ported) and
-"`api.anthropic.com` takes no paths"; `CreateWorkerPod` checks
+validator's `githubPath`/`apiPath` regexes and dot-segment rule, ported),
+"`api.anthropic.com` takes no paths", one `<owner>/<repo>` per vault, and the
+**key binding**: a GitHub service's key must be `GH_` + the vault name
+upper-snaked (`dev-notes` → `GH_DEV_NOTES`, `vault.GitHubKey`), and
+`api.anthropic.com` never takes a `GH_` key. `CreateWorkerPod` checks
 `vault.name == definition name`. A buggy or compromised core cannot point a
-credential at another host.
+credential at another host, give one vault another definition's PAT, or send
+the model token to GitHub. What core can still choose is which repo of the
+PAT's owner a vault's paths name; the fine-grained PAT (scoped to its one repo
+by GitHub) bounds that. Upgrade: the provisioner parses the definitions from
+its own git read at the pinned ref and treats core's spec as a selector only.
 
 ### 2. Reconcile: the vault matches git
 
@@ -69,11 +85,21 @@ absent (409 = success), sets each credential whose value is new or changed
 (sha256 memo, so an unchanged tick writes nothing), `PUT`s the service set only
 when it differs (a `PUT` replaces, so a service removed from git is removed),
 sets `unmatched_host_policy=deny`, then deletes credentials no service uses.
+A **widened** service set (any service not already there) first revokes every
+session on the vault: vaults are per definition, not per pinned version, so
+without it a release that adds a push service would hand it, within 60s, to
+live pods warmed under the older pr-mode pin. Those pods lose all access
+instead (every proxied call gets 407; a later warm runs at the new pin); a
+narrowing keeps them.
 Then it **prunes**: every vault it administers that is absent from the request
 gets an empty service set and no credentials (vault kept; prefix `executor-` is
 reserved for the event bridge's executor, ADR 0072, and skipped). An invalid or
 deleted definition is absent, so its vault is emptied: the same fail-closed rule
-as `Registry.Resolve`. A second identical call is GETs only (tested).
+as `Registry.Resolve`. A prune failure is `ReconcileVaultsResponse.prune_error`,
+never a fake per-vault result. A second identical call is three GETs and no
+write: unit-tested on the fake, and checked against a real v0.40.0 container
+(`vault_live_test.go`, `-tags=integration`): its GET rejoins `host`+`path`
+(`broker.Service.MarshalJSON`), so the client's inline `host` round-trips.
 
 A service whose secret is missing is **dropped** from the desired set (a value
 removed from Infisical revokes the vault's copy) and the reconcile errors
@@ -86,33 +112,38 @@ Rendering: `api.anthropic.com` → one `bearer` service (Claude Code's
 `Authorization: Bearer <placeholder>` is overwritten whole). `github.com` paths →
 one service per path, `basic` with username key `FLEET_VAULT_GIT_USERNAME`
 (= `x-access-token`, set by the provisioner) and password = the definition's key:
-git's documented HTTPS-PAT convention. Bearer for git smart-HTTP is unproven;
-`githubGitAuth` is one constant, both shapes are unit-tested, and the flip is
-one line once a real PAT has been tried both ways. Because the vault injects on
-the first request, git never sees a 401 and asks no credential helper.
+git's documented HTTPS-PAT convention. **Unverified end to end:** no real PAT
+has fetched or pushed through the vault yet (rollout step 6 is that check;
+Bearer is the fallback if Basic fails). Because the vault injects on the first
+request, git never sees a 401 and asks no credential helper.
 `api.github.com` paths → one `bearer` service per path.
 
 ### 3. One token per warm, revoked on every path
 
 `Mint(vault, label, ttl)` / `Revoke(vault, label)` are generic: the event
 bridge's executor will reuse them (one vault per executor scope, label = the
-approval step). Label = `<sessionID>.<unix-ms>`. The mint response carries no
-id, so `Revoke` lists the vault's sessions and deletes those whose label has the
-prefix. `RevokeSession(sessionID)` does that across every vault the agent
-administers, so it needs no Job annotation and works with the Job gone. Revokes
-are best-effort with their own 3s budget, detached from the caller's cancel; the
-TTL bounds a miss.
+approval step). Label = `<sessionID>.<unix-ms>`, kept on the Job as annotation
+`fleet.bnei.dev/vault-label` (not a secret). The mint response carries no id,
+so `Revoke` lists the vault's sessions and deletes the one whose label is
+**exactly** that label (a prefix would take `exec-10` with `exec-1`). Only a
+Job labelled `fleet.bnei.dev/definition` is revoked, in that one vault: a repo
+session never calls the vault, and an exact label never hits a re-warm's new
+token, even when a provisioner restart re-sights a retained Failed Job.
+Revokes are best-effort with their own 3s budget, detached from the caller's
+cancel; the TTL bounds a miss.
 
 | Path | Revoke |
 |---|---|
 | Job create fails after the mint | inline, exact label |
 | Reconcile / CA / mint fails | nothing was minted |
 | core refuses the answer (`vault_token_applied` absent, or an error) | `refuseDefinitionPod` → `TearDownSession` |
-| Archive, Delete, rollback, stop-grace, startup-stall, idle | `TearDownSession` → `RevokeSession` before the Job delete |
-| Stop, worker crash, `limits.timeout` | `gcTerminalWorkerJobs`, before its `ReportEvent` (so a re-warm cannot race it) |
+| Archive, Delete, rollback, stop-grace, startup-stall, idle | `TearDownSession` → `Revoke(definition, label)` from the Job, before the Job delete |
+| Stop, worker crash, `limits.timeout` | `gcTerminalWorkerJobs`, `Revoke(definition, label)` before its `ReportEvent` |
+| Job already gone at teardown | revoked when it went terminal, else TTL |
 | provisioner dies mid-warm, revoke times out | TTL |
 | open keep-alive tunnel after a revoke | ~2 min vault `IdleTimeout` (accepted) |
-| definition narrowed / invalid / deleted | next `ReconcileVaults` (≤60s): narrowed or emptied |
+| definition narrowed / invalid / deleted | next `ReconcileVaults` (≤60s): narrowed or emptied, live tokens kept |
+| definition widened (or a missing secret restored) | that reconcile revokes every session on the vault before the `PUT` |
 
 **`limits.timeout` is now a definition pod's wall-clock lifetime** (removed from
 ADR-0062 §7's inert list). Job `activeDeadlineSeconds = max(300, timeout)`;
@@ -132,11 +163,13 @@ Definition worker env: `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` =
 `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`,
 `CURL_CA_BUNDLE` = `/etc/agent-vault/ca.pem`; `GIT_TERMINAL_PROMPT=0`;
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` (telemetry the vault would deny).
-One helper, `vault.ProxyEnv(proxyURL, caPath, noProxy)`, emits the proxy and CA
-rows for every caller. The CA comes from the provisioner (`GET /v1/mitm/ca.pem`)
-into ConfigMap `agent-vault-ca`, upserted on change and mounted with
-`optional: false`, so the worker fetches nothing and a pod never starts without
-it. The sidecar gets no proxy env (grpc-go honours `HTTPS_PROXY`; it dials core
+`definitionWorkerEnv` builds these rows; the bridge executor extracts them when
+it needs them. The CA comes from the provisioner (`GET /v1/mitm/ca.pem`)
+into ConfigMap `agent-vault-ca`, upserted on change and mounted as a required
+volume, so the worker fetches nothing and a pod never starts without it. The
+pod sets `automountServiceAccountToken: false` (the namespace's `default` SA
+would otherwise get an API-server token mounted at admission, readable by the
+agent's `Read` tool) and `enableServiceLinks: false` (no Service env vars). The sidecar gets no proxy env (grpc-go honours `HTTPS_PROXY`; it dials core
 directly) and the clone init container needs none (local transport only). Pod
 `dnsConfig` `ndots:1` (REFUSED + `ndots:5` breaks musl, spike 1 (b)). The worker
 skips `gh api user` when `FLEET_DEFINITION` is set: the placeholder `GH_TOKEN`
@@ -144,7 +177,9 @@ reaches nothing outside `/repos/<o>/<r>/*`.
 
 After P3 no container of a definition pod, init containers included, holds a
 real secret: `TestDefinitionPod_NoRealSecret` asserts it with sentinel values in
-the provisioner's environment. A repo pod's Job is byte-identical
+the provisioner's environment, plus both pod-level flags above (the SA token is
+admission-mounted, so the template is the only place a test can see it). The
+one credential the pod does hold is its own `av_sess_` (accepted risks). A repo pod's Job is byte-identical
 (`TestCreateWorkerPod_RepoSessionGolden`).
 
 `CreateWorkerPodResponse.vault_token_applied` is set only by a provisioner that
@@ -196,7 +231,9 @@ through the tool surface (P4 `canUseTool`).
 
 A non-abstract definition needs `credentials` with an `api.anthropic.com`
 service; `credentials.vault` is ≥3 characters and does not start `executor-`;
-`secret` does not start `AGENT_VAULT_`/`FLEET_VAULT_`; `github.com`/`api.github.com`
+`secret` does not start `AGENT_VAULT_`/`FLEET_VAULT_`; a GitHub service's
+`secret` is `GH_` + the vault name upper-snaked and `api.anthropic.com`'s is not
+a `GH_` key; `github.com`/`api.github.com`
 services only with `git.mode: push` (pr mode keeps no push credential), and push
 needs a `github.com` service; all of a definition's GitHub paths name one
 `<owner>/<repo>`.
@@ -219,9 +256,19 @@ needs a `github.com` service; all of a definition's GitHub paths name one
   (ADR-0049 class). Upgrade: a dedicated project and identity for the
   provisioner and the vault (needs a UI-created identity).
 - A leaked `av_sess_` works from another definition pod (same CNP) until its TTL.
+- The `av_sess_` is plaintext env (`HTTPS_PROXY` and three twins) in the Job and
+  Pod spec: it sits in etcd, shows in `kubectl get -o yaml`/`describe`, and the
+  agent can read `/proc/self/environ` with `Read`, so it can land in a
+  transcript in core's DB. Bounded by its vault's rules and its TTL (up to
+  `limits.timeout` + 60s, ≤12h+60s). Upgrade: deny `Read(/proc/**)` in the
+  definition tool deny list, or a shorter TTL re-minted on re-warm.
+- A widening revokes every live pod of the definition: they lose the vault
+  mid-turn (407) until torn down and re-warmed.
+- Push for `git.mode: push` (Basic `x-access-token`) is unverified until
+  rollout step 6 runs.
 - ~2 min of a revoked token on an open tunnel; the vault's 60s per-request
-  `ReadTimeout` caps a single push upload (notes pushes are small; measured
-  post-merge).
+  `ReadTimeout` caps a single push upload (notes pushes are small; unmeasured,
+  rollout step 6).
 - The vault API is plain HTTP inside the cluster, fenced by ADR-0061's
   NetworkPolicy; credential values cross it on set.
 - `limits.timeout` can end a turn in flight.
@@ -241,6 +288,11 @@ needs a `github.com` service; all of a definition's GitHub paths name one
 4. Onboard repo `notes` in the console: url `https://github.com/MohammadBnei/notes.git`
    exactly (§6), base branch `main`, no image, cluster access off.
 5. Merge this; the release brings definitions at the new tag.
+6. **First push check (unverified until done):** from a `dev-*` pod behind the
+   vault, `git ls-remote https://github.com/MohammadBnei/notes.git` then one
+   small commit pushed to a scratch branch, with Basic. If GitHub refuses
+   Basic, switch `gitAuth` to `bearer` (one function) and repeat. Note the push
+   time against the vault's 60s `ReadTimeout`.
 
 ## Consequences
 
@@ -251,5 +303,6 @@ needs a `github.com` service; all of a definition's GitHub paths name one
   administrator, not in pods.
 - `ProvisionerService` gains `ReconcileVaults`; `DefinitionPodProfile` gains
   `vault` and `timeout_seconds`; `CreateWorkerPodResponse` gains
-  `vault_token_applied`. Additions only (`buf breaking` clean). No migration.
-- The provisioner's Role gains `configmaps` get/create/update (the CA).
+  `vault_token_applied`; `ReconcileVaultsResponse` has `prune_error`. Additions only (`buf breaking` clean). No migration.
+- The provisioner's Role gains `configmaps` create, and get/update on
+  `agent-vault-ca` only (the CA).

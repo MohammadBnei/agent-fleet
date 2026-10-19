@@ -50,8 +50,9 @@ type Server struct {
 	// definitionsRef is FLEET_DEFINITIONS_REF: overrides version as the ref
 	// definitions are read at (kind and dev point it at a branch).
 	definitionsRef string
-	// vault is the Agent Vault client (docs/adr/0065). nil refuses every
-	// definition warm and ReconcileVaults; repo sessions never need it.
+	// vault is the Agent Vault client (docs/adr/0065), always wired by main;
+	// it fails closed on its own without an agent token. Repo sessions never
+	// call it.
 	vault *vault.Client
 }
 
@@ -275,7 +276,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", status.Convert(err).Message())
 			return nil, err
 		}
-		label, definition.ProxyURL, definition.DeadlineSeconds = l, s.vault.ProxyURL(token, definition.Name), deadline
+		label, definition.ProxyURL, definition.DeadlineSeconds, definition.VaultLabel = l, s.vault.ProxyURL(token, definition.Name), deadline, l
 	}
 
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
@@ -318,18 +319,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	}, nil
 }
 
-// minTimeout is the vault's floor on a token's TTL, and so a definition pod's
-// shortest lifetime.
-const minTimeout = 300
-
 // mintDefinitionToken reconciles the definition's vault, publishes the vault
-// CA and mints this pod's token. The pod's deadline is max(300, timeout); the
+// CA and mints this pod's token. The pod's deadline is max(MinTTL, timeout); the
 // token lives 60s longer (activeDeadlineSeconds counts from the Job's
 // startTime, set at create: ms of skew).
 func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *agentfleetv1.DefinitionPodProfile) (token, label string, deadline int64, err error) {
-	if s.vault == nil {
-		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: no Agent Vault configured")
-	}
 	if err := s.vault.Reconcile(ctx, vaultSpec(d.GetVault())); err != nil {
 		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: "+err.Error())
 	}
@@ -340,7 +334,7 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 	if err != nil {
 		return "", "", 0, status.Error(codes.Unavailable, "vault CA: "+err.Error())
 	}
-	deadline = max(minTimeout, d.GetTimeoutSeconds())
+	deadline = max(int64(vault.MinTTL.Seconds()), d.GetTimeoutSeconds())
 	label = sessionID + "." + strconv.FormatInt(time.Now().UnixMilli(), 10)
 	token, err = s.vault.Mint(ctx, d.GetName(), label, time.Duration(deadline+60)*time.Second)
 	if err != nil {
@@ -361,9 +355,6 @@ func vaultSpec(v *agentfleetv1.VaultSpec) vault.Spec {
 // other vault this provisioner administers (docs/adr/0065 §2): the request is
 // core's full desired set. Errors are per vault, never a value.
 func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.ReconcileVaultsRequest) (*agentfleetv1.ReconcileVaultsResponse, error) {
-	if s.vault == nil {
-		return nil, status.Error(codes.FailedPrecondition, "no Agent Vault configured")
-	}
 	out := &agentfleetv1.ReconcileVaultsResponse{}
 	keep := map[string]bool{}
 	for _, v := range req.GetVaults() {
@@ -375,7 +366,7 @@ func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.Reconcil
 		out.Results = append(out.Results, res)
 	}
 	if err := s.vault.Prune(ctx, keep); err != nil {
-		out.Results = append(out.Results, &agentfleetv1.VaultResult{Name: "*prune*", Error: err.Error()})
+		out.PruneError = err.Error()
 	}
 	return out, nil
 }
@@ -402,20 +393,22 @@ func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDown
 // reference to a never-pushed branch's commits whenever teardown followed a
 // failed push. There is no branch for it to delete now in any case.
 func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
-	// docs/adr/0065: the session's vault tokens die before its pod, and
-	// whether or not the Job still exists. Best-effort (own 3s budget): a
-	// token's TTL bounds a miss. A repo session has none (one list per vault).
-	if s.vault != nil {
-		if err := s.vault.RevokeSession(ctx, taskID); err != nil {
-			slog.Warn("grpcserver tearDownWorker: vault revoke failed, the token's TTL bounds it", "sessionId", taskID, "error", err)
-		}
-	}
-	_, exists, err := s.k8sc.GetWorkerJobRepo(ctx, taskID)
+	job, exists, err := s.k8sc.GetWorkerJob(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
+	}
+	// docs/adr/0065: a definition pod's token dies before the pod, exactly
+	// that token (the label is on the Job). Best-effort (own 3s budget): its
+	// TTL bounds a miss, and a Job already gone was revoked when it went
+	// terminal (reconcile) or never got one. A repo session never calls the
+	// vault.
+	if job.Definition != "" && job.VaultLabel != "" {
+		if err := s.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+			slog.Warn("grpcserver tearDownWorker: vault revoke failed, the token's TTL bounds it", "sessionId", taskID, "error", err)
+		}
 	}
 	if err := s.k8sc.DeleteWorkerJob(ctx, taskID); err != nil {
 		return nil, err

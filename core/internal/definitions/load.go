@@ -445,7 +445,16 @@ func validate(name string, s *Spec) error {
 				if len(svc.Paths) > 0 {
 					bad("credentials.services: host api.anthropic.com takes no paths")
 				}
+				if strings.HasPrefix(svc.Secret, "GH_") {
+					bad("credentials.services[api.anthropic.com].secret %q: a GH_ key is a GitHub credential", svc.Secret)
+				}
 			case "github.com", "api.github.com":
+				// docs/adr/0065 §1: a GitHub key is bound to its vault by name,
+				// so no definition can name another's PAT (the provisioner
+				// re-checks this).
+				if want := "GH_" + strings.ToUpper(strings.ReplaceAll(c.Vault, "-", "_")); svc.Secret != want {
+					bad("credentials.services[%s].secret must be %s (GH_ + the vault name), not %q", svc.Host, want, svc.Secret)
+				}
 				if len(svc.Paths) == 0 {
 					bad("credentials.services: host %s needs at least one path", svc.Host)
 				}

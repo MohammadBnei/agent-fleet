@@ -61,15 +61,15 @@ type EventReporter interface {
 	ReportEvent(ctx context.Context, event *agentfleetv1.PodEvent)
 }
 
-// SessionRevoker is vault.Client's RevokeSession (docs/adr/0065).
-type SessionRevoker interface {
-	RevokeSession(ctx context.Context, sessionID string) error
+// Revoker is vault.Client's Revoke (docs/adr/0065).
+type Revoker interface {
+	Revoke(ctx context.Context, vault, label string) error
 }
 
 type Loop struct {
 	k8sc                      JobLister
 	core                      EventReporter
-	vault                     SessionRevoker // nil: no vault configured
+	vault                     Revoker
 	sharedInstanceIdleTimeout time.Duration
 	// reported is the set of sessions whose terminal phase has already been
 	// reported. Only Failed Jobs can land in it more than once: they are no
@@ -91,7 +91,7 @@ func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Dura
 }
 
 // SetVault makes the pass revoke a finished session's vault tokens.
-func (l *Loop) SetVault(v SessionRevoker) { l.vault = v }
+func (l *Loop) SetVault(v Revoker) { l.vault = v }
 
 func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	jobs, err := l.k8sc.ListWorkerJobsByLabel(ctx)
@@ -116,11 +116,11 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 			continue
 		}
 		l.reported[job.TaskID] = struct{}{}
-		// docs/adr/0065: the session's vault tokens die before the report,
-		// so a re-warm that report triggers cannot race this revoke (it only
-		// runs on a terminal Job's first sighting). Best-effort, 3s budget.
-		if l.vault != nil {
-			if err := l.vault.RevokeSession(ctx, job.TaskID); err != nil {
+		// docs/adr/0065: a definition Job's token dies before the report.
+		// Exactly its own label, so a re-warm's new token is never hit, even
+		// on a re-sighting after a provisioner restart. Best-effort, 3s budget.
+		if job.Definition != "" && job.VaultLabel != "" {
+			if err := l.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
 				slog.Warn("reconcile: vault revoke failed, the token's TTL bounds it", "sessionId", job.TaskID, "error", err)
 			}
 		}

@@ -262,22 +262,32 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	}
 }
 
-func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
+func TestGetWorkerJob_ExistsAndVaultLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
 	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "vos-monolith", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
-	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
+	job, exists, err := c.GetWorkerJob(ctx, "task-1")
 	if err != nil || !exists {
 		t.Fatalf("expected exists=true, got exists=%v err=%v", exists, err)
 	}
-	if repo != "vos-monolith" {
-		t.Errorf("expected repo=vos-monolith, got %q", repo)
+	if job.TaskID != "task-1" || job.Definition != "" || job.VaultLabel != "" {
+		t.Errorf("repo job %+v, want no definition or vault label", job)
 	}
 
-	_, exists, err = c.GetWorkerJobRepo(ctx, "never-existed")
+	spec := definitionSpec()
+	spec.SessionID = "def-1"
+	spec.Definition.VaultLabel = "def-1.123"
+	if err := c.CreateWorkerPod(ctx, spec); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+	if job, _, _ := c.GetWorkerJob(ctx, "def-1"); job.Definition != "dev-dream-analyst" || job.VaultLabel != "def-1.123" {
+		t.Errorf("definition job %+v", job)
+	}
+
+	_, exists, err = c.GetWorkerJob(ctx, "never-existed")
 	if err != nil || exists {
 		t.Fatalf("expected exists=false for a missing job, got exists=%v err=%v", exists, err)
 	}

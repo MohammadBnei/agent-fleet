@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -204,8 +205,8 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 // order records revokes and reports in one sequence.
 type order struct{ log []string }
 
-func (o *order) RevokeSession(_ context.Context, id string) error {
-	o.log = append(o.log, "revoke "+id)
+func (o *order) Revoke(_ context.Context, vault, label string) error {
+	o.log = append(o.log, "revoke "+vault+" "+label)
 	return nil
 }
 
@@ -215,23 +216,25 @@ func (r orderReporter) ReportEvent(_ context.Context, e *agentfleetv1.PodEvent) 
 	r.o.log = append(r.o.log, "report "+e.GetSessionId()+" "+e.GetPhase().String()+" "+e.GetMessage())
 }
 
-// docs/adr/0065: a terminal Job's vault tokens are revoked before the report
-// that could trigger a re-warm, and a limits.timeout end is TERMINATED (an idle
-// co-editor, not a failing one) and reaped like a Succeeded Job.
+// docs/adr/0065: a terminal definition Job's own token (exact label) is
+// revoked before the report that could trigger a re-warm, a repo Job never
+// calls the vault, and a limits.timeout end is TERMINATED (an idle co-editor,
+// not a failing one) and reaped like a Succeeded Job.
 func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
 	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
 		{TaskID: "running-1", JobName: "worker-1", Phase: "Running"},
-		{TaskID: "timed-out", JobName: "worker-2", Phase: "DeadlineExceeded"},
+		{TaskID: "timed-out", JobName: "worker-2", Phase: "DeadlineExceeded", Definition: "dev-x", VaultLabel: "timed-out.1"},
+		{TaskID: "repo-done", JobName: "worker-3", Phase: "Succeeded"},
 	}}
 	o := &order{}
 	l := New(kc, orderReporter{o}, time.Hour)
 	l.SetVault(o)
 	l.gcTerminalWorkerJobs(context.Background())
-	want := []string{"revoke timed-out", "report timed-out POD_PHASE_TERMINATED limits.timeout reached"}
-	if len(o.log) != 2 || o.log[0] != want[0] || o.log[1] != want[1] {
+	want := []string{"revoke dev-x timed-out.1", "report timed-out POD_PHASE_TERMINATED limits.timeout reached", "report repo-done POD_PHASE_TERMINATED worker job reached a terminal Succeeded phase"}
+	if !slices.Equal(o.log, want) {
 		t.Errorf("log %q, want %q", o.log, want)
 	}
-	if len(kc.deleted) != 1 || kc.deleted[0] != "timed-out" {
+	if len(kc.deleted) != 2 || kc.deleted[0] != "timed-out" {
 		t.Errorf("deleted %v", kc.deleted)
 	}
 }

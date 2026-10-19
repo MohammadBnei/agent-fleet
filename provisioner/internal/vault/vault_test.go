@@ -224,6 +224,13 @@ func TestReconcile_RefusesOffListHostOrPath(t *testing.T) {
 		"agent token":    {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "AGENT_VAULT_TOKEN"}}},
 		"own key":        {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "FLEET_VAULT_GIT_USERNAME"}}},
 		"key shape":      {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "../etc/passwd"}}},
+		"another's PAT":  {Name: "dev-notes", Services: []vault.Service{{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*"}, Secret: "GH_OPUS_WORKSPACE"}}},
+		"model key":      {Name: "dev-notes", Services: []vault.Service{{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*"}, Secret: "CLAUDE_CODE_OAUTH_TOKEN"}}},
+		"PAT to model":   {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "GH_DEV_NOTES"}}},
+		"two repos": {Name: "dev-notes", Services: []vault.Service{
+			{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+			{Host: "api.github.com", Paths: []string{"/repos/MohammadBnei/agent-fleet/*"}, Secret: "GH_DEV_NOTES"},
+		}},
 	} {
 		c, f, _ := setup(t, notesSecrets)
 		if err := c.Reconcile(context.Background(), spec); err == nil {
@@ -282,8 +289,7 @@ func TestPrune_EmptiesAbsentKeepsExecutor(t *testing.T) {
 	c, f, _ := setup(t, notesSecrets)
 	ctx := context.Background()
 	for _, n := range []string{"keep-me", "drop-me", "executor-x"} {
-		s := notesSpec()
-		s.Name = n
+		s := vault.Spec{Name: n, Services: notesSpec().Services[2:]}
 		if err := c.Reconcile(ctx, s); err != nil {
 			t.Fatal(err)
 		}
@@ -291,7 +297,7 @@ func TestPrune_EmptiesAbsentKeepsExecutor(t *testing.T) {
 	if err := c.Prune(ctx, map[string]bool{"keep-me": true}); err != nil {
 		t.Fatal(err)
 	}
-	for n, want := range map[string]int{"keep-me": 4, "drop-me": 0, "executor-x": 4} {
+	for n, want := range map[string]int{"keep-me": 1, "drop-me": 0, "executor-x": 1} {
 		if got := len(services(t, f, n)); got != want {
 			t.Errorf("%s: %d services, want %d", n, got, want)
 		}
@@ -344,28 +350,60 @@ func TestRevoke_ListThenDeleteByLabel(t *testing.T) {
 	}
 }
 
-func TestRevokeSession_PrefixAcrossVaults(t *testing.T) {
+// Exact labels: the bridge executor's "exec-1" must not take "exec-10" with it.
+func TestRevoke_ExactLabelAndOwnBudget(t *testing.T) {
 	c, f, _ := setup(t, nil)
-	f.AddSession("v1", "S.1")
-	f.AddSession("v2", "S.2")
-	f.AddSession("v2", "T.1")
-	f.AddSession("v2", "SX.1") // another session whose id merely starts with S
-	if err := c.RevokeSession(context.Background(), "S"); err != nil {
+	f.AddSession("v1", "exec-1")
+	f.AddSession("v1", "exec-10")
+	if err := c.Revoke(context.Background(), "v1", "exec-1"); err != nil {
 		t.Fatal(err)
 	}
-	v1, _ := f.Get("v1")
-	v2, _ := f.Get("v2")
-	if len(v1.Sessions) != 0 || len(v2.Sessions) != 2 {
-		t.Errorf("v1 %+v v2 %+v", v1.Sessions, v2.Sessions)
+	if v, _ := f.Get("v1"); len(v.Sessions) != 1 || v.Sessions[0].Label != "exec-10" {
+		t.Errorf("sessions %+v, want exec-10 kept", v.Sessions)
 	}
 
 	f.Configure(func(f *vaulttest.Server) { f.Delay = 5 * time.Second })
 	start := time.Now()
-	if err := c.RevokeSession(context.Background(), "T"); err == nil {
+	if err := c.Revoke(context.Background(), "v1", "exec-10"); err == nil {
 		t.Error("a slow vault returned no error")
 	}
 	if d := time.Since(start); d > 4*time.Second {
 		t.Errorf("revoke took %s, want its own ~3s budget", d)
+	}
+}
+
+// docs/adr/0065 §3: a widened vault revokes the tokens minted under the
+// narrower spec (an older pin); a narrowed one keeps them.
+func TestReconcile_WideningRevokesSessions(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ctx := context.Background()
+	narrow := vault.Spec{Name: "dev-notes", Services: notesSpec().Services[2:]}
+	if err := c.Reconcile(ctx, narrow); err != nil {
+		t.Fatal(err)
+	}
+	f.AddSession("dev-notes", "old-pin.1")
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := f.Get("dev-notes"); len(v.Sessions) != 0 {
+		t.Errorf("a widening kept %d sessions", len(v.Sessions))
+	}
+	f.AddSession("dev-notes", "new-pin.1")
+	if err := c.Reconcile(ctx, narrow); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := f.Get("dev-notes"); len(v.Sessions) != 1 {
+		t.Errorf("a narrowing revoked sessions: %+v", v.Sessions)
+	}
+}
+
+// A credentials POST carries values: the vault's error text is not forwarded.
+func TestReconcile_CredentialErrorDropsVaultText(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	f.Configure(func(f *vaulttest.Server) { f.CredentialsError = "rejected value ghp-sentinel-value" })
+	err := c.Reconcile(context.Background(), notesSpec())
+	if err == nil || !strings.Contains(err.Error(), "400") || strings.Contains(err.Error(), "sentinel") {
+		t.Fatalf("got %v, want the status and no vault text", err)
 	}
 }
 
@@ -377,35 +415,9 @@ func TestCA(t *testing.T) {
 	}
 }
 
-func TestProxyEnv_Shape(t *testing.T) {
+func TestProxyURL(t *testing.T) {
 	c, _, _ := setup(t, nil)
-	u := c.ProxyURL("av_sess_1", "dev-notes")
-	if u != "http://av_sess_1:dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
+	if u := c.ProxyURL("av_sess_1", "dev-notes"); u != "http://av_sess_1:dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
 		t.Errorf("proxy url %q", u)
-	}
-	env := map[string]string{}
-	for _, e := range vault.ProxyEnv(u, "/etc/agent-vault/ca.pem", []string{"127.0.0.1", "localhost"}) {
-		if _, dup := env[e.Name]; dup {
-			t.Errorf("duplicate %s", e.Name)
-		}
-		env[e.Name] = e.Value
-	}
-	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"} {
-		if env[k] != u {
-			t.Errorf("%s = %q", k, env[k])
-		}
-	}
-	for _, k := range []string{"NO_PROXY", "no_proxy"} {
-		if env[k] != "127.0.0.1,localhost" {
-			t.Errorf("%s = %q", k, env[k])
-		}
-	}
-	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
-		if env[k] != "/etc/agent-vault/ca.pem" {
-			t.Errorf("%s = %q", k, env[k])
-		}
-	}
-	if len(env) != 11 {
-		t.Errorf("%d vars: %v", len(env), env)
 	}
 }

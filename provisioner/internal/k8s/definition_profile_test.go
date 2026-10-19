@@ -143,6 +143,14 @@ func TestDefinitionPod_NoRealSecret(t *testing.T) {
 			t.Errorf("volume %s mounts a Secret", v.Name)
 		}
 	}
+	// The ServiceAccount token is admission-mounted, so the template is the
+	// only place to see it refused.
+	if a := ps.AutomountServiceAccountToken; a == nil || *a {
+		t.Error("the pod would mount an API-server token")
+	}
+	if l := ps.EnableServiceLinks; l == nil || *l {
+		t.Error("Service env vars would leak topology")
+	}
 }
 
 // docs/adr/0065 §4: proxy vars (both cases) on the worker only, the caller's
