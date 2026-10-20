@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.1.2](https://github.com/MohammadBnei/agent-fleet/compare/6.1.1...6.1.2) (2026-10-20)
+
+### Bug Fixes
+
+* **ci:** retry buildah push when zot drops credentials after a blob mount ([#286](https://github.com/MohammadBnei/agent-fleet/issues/286)) ([261421e](https://github.com/MohammadBnei/agent-fleet/commit/261421e64a29c63bd08c32e09531747e7a50f51d))
+
 ## [6.1.1](https://github.com/MohammadBnei/agent-fleet/compare/6.1.0...6.1.1) (2026-10-20)
 
 ### Bug Fixes
