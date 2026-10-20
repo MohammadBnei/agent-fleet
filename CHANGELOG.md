@@ -1,5 +1,11 @@
 # Changelog
 
+# [5.2.0](https://github.com/MohammadBnei/agent-fleet/compare/5.1.0...5.2.0) (2026-10-20)
+
+### Features
+
+* **packs:** deliver context packs to every warm as a read-only /genome (ADR 0063 step 3) ([#273](https://github.com/MohammadBnei/agent-fleet/issues/273)) ([757e760](https://github.com/MohammadBnei/agent-fleet/commit/757e760ad4f00bcb7eabe7c9337265cb009764bb))
+
 # [5.1.0](https://github.com/MohammadBnei/agent-fleet/compare/5.0.0...5.1.0) (2026-10-20)
 
 ### Features
