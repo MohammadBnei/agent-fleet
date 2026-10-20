@@ -7,6 +7,11 @@
   [ADR-0052](0052-auto-mode-and-the-bypass-launch-profile.md) (names the model
   the fleet runs), [ADR-0053](0053-the-gate-is-canusetool-not-a-rule-list.md)
   (`auto` as an opt-in a human picks)
+- **Amended 2026-10-20:** guidance snippets were removed (migration 000013,
+  replaced by context packs, [ADR-0063](0063-context-packs.md)). The
+  "snippet's suggested mode" below no longer exists: a session launches in
+  `auto` unless a human picks another mode, and plan mode is now only that
+  explicit pick.
 
 ## Context
 
