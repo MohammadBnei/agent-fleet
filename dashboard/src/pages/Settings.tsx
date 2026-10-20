@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Segmented } from "../components/Segmented";
 import { PacksPanel } from "../components/PacksPanel";
-import { GuidancePanel } from "../components/GuidancePanel";
 import { ReposPanel } from "../components/ReposPanel";
 import type { Theme } from "../useTheme";
 import { useIdentity } from "../useIdentity";
@@ -11,11 +10,10 @@ import type { FeedWidth } from "../useFeedWidth";
 // switch and the sign-out link: a third editor (context packs) made a menu of
 // modals the wrong shape. Each section is the full editor, inline.
 
-type Section = "packs" | "guidance" | "repos" | "appearance" | "account";
+type Section = "packs" | "repos" | "appearance" | "account";
 
 const SECTIONS: readonly { value: Section; label: string; hint: string }[] = [
   { value: "packs", label: "Packs", hint: "What agents load at start" },
-  { value: "guidance", label: "Guidance", hint: "Snippets for new sessions" },
   { value: "repos", label: "Repos", hint: "Repos in the fleet" },
   { value: "appearance", label: "Appearance", hint: "Theme and text width" },
   { value: "account", label: "Account", hint: "Who is signed in" },
@@ -95,7 +93,6 @@ export function Settings({ theme, onThemeChange, feedWidth, onFeedWidthChange }:
 
         <main className="flex-1 min-w-0">
           {section === "packs" && <PacksPanel />}
-          {section === "guidance" && <GuidancePanel />}
           {section === "repos" && <ReposPanel />}
           {section === "appearance" && (
             <div className="flex flex-col gap-4 max-w-sm">

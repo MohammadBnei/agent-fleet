@@ -307,9 +307,8 @@ class InputQueue {
 //
 // That also removes the wrapper's two quiet failure modes. `guidance` was
 // always empty in practice — the sidecar hardcoded it — so the operator's
-// chosen prompt snippets never actually reached the model; they now prefill
-// the dashboard's composer, where a human can see and edit them before
-// sending. And a description the agent could not see was a description that
+// chosen prompt snippets never actually reached the model (snippets are
+// gone now too, replaced by context packs, docs/adr/0063). And a description the agent could not see was a description that
 // silently drifted from what it had really been asked to do.
 
 // An SDK message's own fields minus the envelope the transcript row

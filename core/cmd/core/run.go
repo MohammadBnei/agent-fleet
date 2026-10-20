@@ -35,7 +35,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -64,7 +63,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	journalStore := journal.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	proposalStore := proposals.NewStore(pool)
-	snippetStore := promptsnippets.NewStore(pool)
 	scheduleStore := schedules.NewStore(pool)
 	// Every consumer below except SetNudge (a *PostgresStore-only method,
 	// not part of the transcript.Store interface) goes through this
@@ -252,7 +250,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions}, loki, prom, scheduleStore, version)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions}, loki, prom, scheduleStore, version)
 	dashboardSvc.SetDefinitions(defs)
 	packStore := packs.NewStore(pool)
 	defs.SetOnFiles(packStore.OnDefinitionFiles)

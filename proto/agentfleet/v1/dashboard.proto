@@ -44,10 +44,8 @@ message ListSessionsResponse {
 // nothing logged to explain it.
 //
 // Fields 3 and 5 are reserved. snippet_ids used to be resolved server-side
-// into a hidden `guidance` column; snippets now prefill the dashboard's
-// message composer instead, so their text reaches the model as part of a
-// message a human actually sent and can edit — rather than as a wrapper the
-// agent cannot see or question. `kind` was a UI label the dispatch path never
+// into a hidden `guidance` column; prompt snippets are gone entirely now,
+// replaced by context packs (docs/adr/0063). `kind` was a UI label the dispatch path never
 // branched on; a thot session is distinguished by its repo carrying
 // cluster_access, which is the thing that is actually true about it.
 message CreateSessionRequest {
@@ -486,55 +484,10 @@ message SyncRepoResponse {
 // still data rather than code for docs/adr/0037's own reason: which sessions
 // may reach the cluster is a human's decision, editable without a redeploy.
 
-// PromptSnippet is dashboard-editable, reusable guidance text (same
-// no-redeploy pattern as Repo above), backed by the `prompt_snippets`
-// table (db/schema.sql). An operator optionally attaches a set of these to
-// a task at creation time (CreateSessionRequest.snippet_ids) — replaces
-// worker/src/session.ts's old unconditional, hardcoded workflow prompt. A
-// task's base prompt is just its own description; anything more is one of
-// these, picked per task, not forced on every task regardless of size.
-message PromptSnippet {
-  string id = 1;
-  string name = 2;
-  string text = 3;
-  optional string suggested_permission_mode = 4;
-}
-
-message ListPromptSnippetsRequest {}
-
-message ListPromptSnippetsResponse {
-  repeated PromptSnippet snippets = 1;
-}
-
-message CreatePromptSnippetRequest {
-  string name = 1;
-  string text = 2;
-}
-
-message CreatePromptSnippetResponse {
-  PromptSnippet snippet = 1;
-}
-
-message UpdatePromptSnippetRequest {
-  string id = 1;
-  string name = 2;
-  string text = 3;
-}
-
-message UpdatePromptSnippetResponse {
-  PromptSnippet snippet = 1;
-}
-
-message DeletePromptSnippetRequest {
-  string id = 1;
-}
-
-message DeletePromptSnippetResponse {}
-
 // --- context packs (docs/adr/0063) ---
 // A live pack: rules text and skills, versioned, attached to definitions and
-// repos, rendered into every warm of its targets. Unlike a prompt snippet it
-// never appears in a message: it loads as memory the agent does not see sent.
+// repos, rendered into every warm of its targets. It never appears in a
+// message: it loads as memory the agent does not see sent.
 
 message PackSkill {
   string name = 1;
@@ -673,10 +626,6 @@ service DashboardService {
   rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc SyncRepo(SyncRepoRequest) returns (SyncRepoResponse);
-  rpc ListPromptSnippets(ListPromptSnippetsRequest) returns (ListPromptSnippetsResponse);
-  rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
-  rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);
-  rpc DeletePromptSnippet(DeletePromptSnippetRequest) returns (DeletePromptSnippetResponse);
 
   // docs/adr/0063. platform-admins only, like the rest of this service, until
   // the editor role's own ADR.

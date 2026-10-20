@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { queueFirstMessage } from "../useSessionDetail";
 import { Modal } from "./Modal";
-import type { AgentDefinition, PromptSnippet, Repo } from "../gen/agentfleet/v1/dashboard_pb";
+import type { AgentDefinition, Repo } from "../gen/agentfleet/v1/dashboard_pb";
 import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
 import { InlineError } from "./InlineError";
 
@@ -39,10 +39,7 @@ export function NewSessionDialog({
   const [definition, setDefinition] = useState("");
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
-  const [snippets, setSnippets] = useState<PromptSnippet[]>([]);
-  const [snippetIds, setSnippetIds] = useState<string[]>([]);
-  // null = "follow whatever the selected snippets suggest". A real value means
-  // the human picked one, and an explicit pick outranks a suggestion.
+  // null = the launch default; a real value is the human's pick.
   const [modeChoice, setModeChoice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,34 +78,6 @@ export function NewSessionDialog({
   }, [dialogOpen]);
   const chosen = definitions.find((d) => d.name === definition);
 
-  // Same dashboard-editable, no-redeploy pattern as repos above. Snippets are
-  // no longer sent to the server — `snippet_ids` is a reserved field
-  // (proto/agentfleet/v1/dashboard.proto:42-49), because resolving them into
-  // a hidden `guidance` blob is exactly what docs/adr/0048 deleted. They
-  // prefill the message instead, where the human can see and edit them.
-  useEffect(() => {
-    if (!dialogOpen) return;
-    client
-      .listPromptSnippets({})
-      .then((res) => setSnippets(res.snippets))
-      .catch((err: Error) => setError(err.message));
-  }, [dialogOpen]);
-
-  // ponytail: the textarea is the source of truth, not the checkboxes. Ticking
-  // inserts the snippet's text; unticking removes it only if it is still there
-  // verbatim, so text the human edited first survives. The checkbox is an
-  // inserter, not a two-way binding — which is the point, since what gets sent
-  // is whatever is in the box.
-  function toggleSnippet(s: PromptSnippet) {
-    const on = snippetIds.includes(s.id);
-    setSnippetIds((current) => (on ? current.filter((x) => x !== s.id) : [...current, s.id]));
-    setMessage((current) =>
-      on
-        ? current.replace(`${s.text}\n\n`, "").replace(s.text, "")
-        : `${s.text}\n\n${current}`,
-    );
-  }
-
   function open() {
     setError(null);
     setDialogOpen(true);
@@ -125,20 +94,13 @@ export function NewSessionDialog({
   function reset() {
     setTitle("");
     setMessage("");
-    setSnippetIds([]);
     setModeChoice(null);
     setDefinition("");
   }
 
-  // A snippet may suggest a mode (prompt_snippets.suggested_permission_mode).
-  // It PRE-SELECTS the picker rather than being applied invisibly behind it:
-  // the human sees the mode they are about to launch in, and can override it.
-  // An explicit pick always wins over a suggestion. With neither, "auto" — the
-  // fleet's launch default since docs/adr/0061, same as core's column default.
-  const suggestedMode = snippets.find(
-    (s) => snippetIds.includes(s.id) && s.suggestedPermissionMode,
-  )?.suggestedPermissionMode;
-  const effectiveMode = modeChoice ?? suggestedMode ?? "auto";
+  // Without an explicit pick, "auto" — the fleet's launch default since
+  // docs/adr/0061, same as core's column default.
+  const effectiveMode = modeChoice ?? "auto";
 
   // docs/adr/0048 §1: CreateSession writes a row and nothing else, and the
   // FIRST MESSAGE is what boots the pod. Sending an instruction as
@@ -305,26 +267,7 @@ export function NewSessionDialog({
                   (SessionActionsModal) never runs for a session that launches in
                   auto. If the consequence is not on screen here, it is nowhere. */}
               {effectiveMode === "auto" && <span className="text-warning text-xs">{AUTO_MODE_WARNING}</span>}
-              {suggestedMode && modeChoice === null && (
-                <span className="text-dim text-xs">Suggested by the guidance you selected — change it if you want.</span>
-              )}
             </label>
-          )}
-          {snippets.length > 0 && (
-            <fieldset className="flex flex-col gap-1 text-sm">
-              <legend className="mb-1">Guidance (optional)</legend>
-              {snippets.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={snippetIds.includes(s.id)}
-                    onChange={() => toggleSnippet(s)}
-                    className="checkbox checkbox-sm"
-                  />
-                  {s.name}
-                </label>
-              ))}
-            </fieldset>
           )}
           <InlineError message={error} />
           <div className="modal-action">

@@ -39,7 +39,7 @@ Decisions with no real alternative ever on the table live in
 | [0027](0027-arbitrary-permission-mode-and-command-palette.md) | Dashboard permission-mode selector (incl. `bypassPermissions`) and slash-command palette | Accepted (transport reused as-is by [0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md); only the allowlist and what calls it changed. `allowDangerouslySkipPermissions` section superseded by [0052](0052-auto-mode-and-the-bypass-launch-profile.md), which adds `auto` to the selector and makes `bypassPermissions` a launch profile) |
 | [0028](0028-dynamic-repo-config.md) | Dashboard-editable, DB-backed repo config | Accepted |
 | [0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md) | Sessions replace tasks as the durable unit; canUseTool becomes a live permission prompt, not a prospective approval gate | Accepted |
-| [0030](0030-single-source-schema-via-golang-migrate.md) | golang-migrate replaces the hand-copied `db/schema.sql` + test-fixture schemas | Accepted |
+| [0030](0030-single-source-schema-via-golang-migrate.md) | golang-migrate replaces the hand-copied `db/schema.sql` + test-fixture schemas. Its seeded `prompt_snippets` (guidance): superseded by ADR-0063 (context packs) and removed (migration 000013) | Accepted |
 | [0031](0031-garage-s3-shared-files.md) | Garage S3-backed shared file space, presigned URLs minted only by core | Accepted |
 | [0032](0032-fleet-shared-pvc-directory.md) | PVC-resident, provisioner-synced fleet-shared skills/context — implements [0019](0019-shared-pvc-and-unified-provisioner.md) point 6 | Accepted |
 | [0033](0033-journal-search-and-persistent-plugins.md) | Journal search and persistent plugins | Accepted |

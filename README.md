@@ -64,7 +64,7 @@ proposal; a human opens it.
   sidecar).
 - `db/migrations/` — sole source of truth (golang-migrate, see
   `docs/adr/0030`) for `sessions`, `proposals`, `transcript`, `repos`,
-  `schedules`, `scheduled_audits`, `prompt_snippets` and
+  `schedules`, `scheduled_audits` and
   `knowledge_journal`, in the fleet-wide `agentfleetdb` Postgres database
   (Pigsty).
 

@@ -52,7 +52,7 @@ Three consequences worth designing around:
 | **Session detail** | One session: transcript feed, blocking cards, actions, side panels. Where all the time is spent. |
 | **Files** | A flat fleet-wide shared file space (S3), shared by every session and the human. |
 | **Audits** | Scheduled recurring checks (cron-like), plus the proposals they raise. |
-| Modals | Manage repos · prompt snippets (reusable guidance) · scheduled audits · new session · confirm/bypass/error |
+| Modals | Manage repos · scheduled audits · new session · confirm/bypass/error |
 
 Desktop and mobile are both first-class. Mobile has no sidebar, so
 everything the sidebar carries must have a home there.
@@ -193,10 +193,8 @@ compute).
 message, which is what boots the pod) · dismiss, which re-arms the dedup key.
 
 **Anywhere:** create a session — repo picker (repos carrying cluster access
-are marked), optional title, optional first message, and a prompt-snippet
-picker that *inserts snippet text into that message box* rather than sending
-ids — · delete a session · filter/search sessions · toggle showing
-tools/changes inline · manage repos, prompt snippets, scheduled audits ·
+are marked), optional title and optional first message — · delete a session · filter/search sessions · toggle showing
+tools/changes inline · manage repos, scheduled audits ·
 upload/download/delete shared files.
 
 ---

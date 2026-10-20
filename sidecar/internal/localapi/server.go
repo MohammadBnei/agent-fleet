@@ -366,8 +366,7 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 // hardcoded — so the operator's chosen prompt snippets, resolved and stored
 // at task-creation time, never once reached the model, and every repo's base
 // branch was reported as main regardless of its actual configuration. Both
-// fields are gone with their columns (docs/adr/0048): snippets now prefill
-// the dashboard composer, where a human can see them, and the agent reads
+// fields are gone with their columns (docs/adr/0048), and the agent reads
 // its own branch from git.
 func taskHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
