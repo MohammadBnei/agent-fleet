@@ -116,7 +116,14 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 		}
 		return st.Recv()
 	}
+	// AskUserQuestion returns a human's answer, so it is gated like the feed.
+	ask := func(md context.Context, id, sha string) (*agentfleetv1.AskUserQuestionResponse, error) {
+		return c.AskUserQuestion(md, &agentfleetv1.AskUserQuestionRequest{SessionId: id, QuestionsJson: `[{"question":"ok?"}]`, TimeoutMs: 1, AgentSpecSha: sha})
+	}
 	for _, bad := range []string{"", "x" + sha[1:]} {
+		if _, err := ask(asDef, def, bad); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("AskUserQuestion(sha=%q): got %v, want FailedPrecondition", bad, err)
+		}
 		if _, err := wait(asDef, def, bad); status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("WaitForMessages(sha=%q): got %v, want FailedPrecondition", bad, err)
 		}
@@ -130,6 +137,9 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	if e, err := stream(asDef, def, sha); err != nil || e.GetText() != "hello" {
 		t.Errorf("StreamHumanMessages with the applied sha: %v, %v", e, err)
 	}
+	if r, err := ask(asDef, def, sha); err != nil || r.GetQuestionSeq() == 0 {
+		t.Errorf("AskUserQuestion with the applied sha: %v, %v", r, err)
+	}
 	// A repo session ignores the field either way.
 	for _, v := range []string{"", sha} {
 		if r, err := wait(asRepo, repo, v); err != nil || len(r.GetEntries()) != 1 {
@@ -139,6 +149,12 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 			t.Errorf("repo StreamHumanMessages(sha=%q): %v, %v", v, e, err)
 		}
 	}
+	// After the reads above: an asked question is a transcript entry.
+	for _, v := range []string{"", sha} {
+		if _, err := ask(asRepo, repo, v); err != nil {
+			t.Errorf("repo AskUserQuestion(sha=%q): %v", v, err)
+		}
+	}
 
 	// A revoked pin delivers nothing, sha or not.
 	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET valid = false, error = 'revoked' WHERE name = 'a'`); err != nil {
@@ -146,5 +162,8 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	}
 	if _, err := wait(asDef, def, sha); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("revoked pin: got %v, want FailedPrecondition", err)
+	}
+	if _, err := ask(asDef, def, sha); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("revoked pin AskUserQuestion: got %v, want FailedPrecondition", err)
 	}
 }

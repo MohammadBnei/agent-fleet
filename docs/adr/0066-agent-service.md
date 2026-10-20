@@ -333,7 +333,11 @@ sidecar keeps the one the worker sent on its stream for the agent's
 row now. Nothing is stored, so a core restart changes nothing. A worker that
 predates this ADR sends no sha, so it never receives a message, whoever warmed
 it: a member, a client or an admin through the console. Its session shows
-`PROVISION_FAILED` once the startup budget passes.
+`PROVISION_FAILED` once the startup budget passes. The gated methods are the
+three that hand a worker human input, `StreamHumanMessages`, `WaitForMessages`
+and `AskUserQuestion` (its answer, so it carries the sha too); the gate is a
+rollout gate against a stale worker, not a boundary against the agent, which
+holds the sha its own worker was given.
 
 ### 9. `CoreService` and the sidecar follow `sidecarTools`
 

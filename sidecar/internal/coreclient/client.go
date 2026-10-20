@@ -185,7 +185,7 @@ func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs 
 
 func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (answered bool, answersJSON string, questionSeq int64, err error) {
 	resp, err := c.rpc.AskUserQuestion(ctx, &agentfleetv1.AskUserQuestionRequest{
-		SessionId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs,
+		SessionId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs, AgentSpecSha: c.agentSpecSHA(),
 	})
 	if err != nil {
 		return false, "", 0, fmt.Errorf("AskUserQuestion: %w", err)

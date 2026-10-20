@@ -102,6 +102,9 @@ message AskUserQuestionRequest {
   // the agent's MCP client aborts a request at 60s (docs/adr/0058). <=0 falls
   // back to core's own default.
   int32 timeout_ms = 3;
+  // The agent_spec_sha the worker applied, as for StreamHumanMessagesRequest
+  // (docs/adr/0066 §8): an answer is human input too.
+  string agent_spec_sha = 4;
 }
 
 message AskUserQuestionResponse {

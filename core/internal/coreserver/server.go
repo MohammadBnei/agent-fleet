@@ -196,6 +196,10 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 	if req.GetSessionId() == "" || req.GetQuestionsJson() == "" {
 		return nil, fmt.Errorf("task_id and questions_json are required")
 	}
+	// The answer is human input, so it is gated like the feed (docs/adr/0066 §8).
+	if err := s.requireSpecApplied(ctx, req.GetSessionId(), req.GetAgentSpecSha()); err != nil {
+		return nil, err
+	}
 
 	// On timeout this tool returns {"status":"pending"} and the agent
 	// re-invokes with the *same* questions to keep waiting. A naive Append

@@ -85,6 +85,12 @@ func agentSpec(eff *definitions.Spec) *agentfleetv1.AgentSpec {
 // its definition lease, and a stray path that skipped the interceptor still
 // fails closed. A repo session costs one row read per call.
 func (s *Server) requireSpecApplied(ctx context.Context, sessionID, applied string) error {
+	// ponytail: a Server built without a session store (the transcript-only
+	// unit tests) has no pinned definition row to gate against. cmd/core and
+	// the auth interceptor always have one.
+	if s.sessions == nil {
+		return nil
+	}
 	_, want, err := s.agentSpecOf(ctx, sessionID)
 	if err != nil {
 		return err

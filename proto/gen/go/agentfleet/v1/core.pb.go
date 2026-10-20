@@ -371,7 +371,10 @@ type AskUserQuestionRequest struct {
 	// Fixed by the sidecar (blockingWaitMs, 45s), never chosen by the agent:
 	// the agent's MCP client aborts a request at 60s (docs/adr/0058). <=0 falls
 	// back to core's own default.
-	TimeoutMs     int32 `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	TimeoutMs int32 `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	// The agent_spec_sha the worker applied, as for StreamHumanMessagesRequest
+	// (docs/adr/0066 §8): an answer is human input too.
+	AgentSpecSha  string `protobuf:"bytes,4,opt,name=agent_spec_sha,json=agentSpecSha,proto3" json:"agent_spec_sha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -425,6 +428,13 @@ func (x *AskUserQuestionRequest) GetTimeoutMs() int32 {
 		return x.TimeoutMs
 	}
 	return 0
+}
+
+func (x *AskUserQuestionRequest) GetAgentSpecSha() string {
+	if x != nil {
+		return x.AgentSpecSha
+	}
+	return ""
 }
 
 type AskUserQuestionResponse struct {
@@ -2917,13 +2927,14 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"replyToSeq\x88\x01\x01B\x0f\n" +
 	"\r_reply_to_seq\"\"\n" +
 	"\x0eAppendResponse\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x03R\x03seq\"}\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\"\xa3\x01\n" +
 	"\x16AskUserQuestionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12%\n" +
 	"\x0equestions_json\x18\x02 \x01(\tR\rquestionsJson\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"\x89\x01\n" +
+	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\x12$\n" +
+	"\x0eagent_spec_sha\x18\x04 \x01(\tR\fagentSpecSha\"\x89\x01\n" +
 	"\x17AskUserQuestionResponse\x12\x1a\n" +
 	"\banswered\x18\x04 \x01(\bR\banswered\x12!\n" +
 	"\fanswers_json\x18\x02 \x01(\tR\vanswersJson\x12!\n" +
