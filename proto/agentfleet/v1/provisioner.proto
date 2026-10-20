@@ -214,6 +214,25 @@ message ListDefinitionFilesResponse {
   string sha = 2;
 }
 
+// docs/adr/0074. FAILS CLOSED: any page that is not 2xx is an error, never a
+// shorter list, because core reads a missing repo as a removal.
+message ListGitHubReposRequest {}
+
+message GitHubRepo {
+  int64 id = 1;
+  // owner/repo.
+  string full_name = 2;
+  // The bare repo name, the default fleet name.
+  string name = 3;
+  // Always https:// (GitHub's clone_url).
+  string clone_url = 4;
+  string default_branch = 5;
+}
+
+message ListGitHubReposResponse {
+  repeated GitHubRepo repos = 1;
+}
+
 // core owns `sessions` and therefore decides when a session should tear
 // down (task reached done/failed/cancelled, or an explicit kill) —
 // the provisioner no longer polls/joins against `the deleted status column` itself
@@ -343,6 +362,10 @@ service ProvisionerService {
   // good sync (docs/adr/0065); core commands, the provisioner executes, and
   // credential values exist only on the provisioner's side.
   rpc ReconcileVaults(ReconcileVaultsRequest) returns (ReconcileVaultsResponse);
+
+  // core's repos sync source (docs/adr/0074): accepts allowlisted
+  // invitations, then lists every repo the bot can reach.
+  rpc ListGitHubRepos(ListGitHubReposRequest) returns (ListGitHubReposResponse);
 }
 
 message SweepSessionRequest {

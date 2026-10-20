@@ -205,9 +205,12 @@ go wrong, and a fragment that gets misread is worse than a few extra words.
 
 ## Current targets
 
-`dream-analyst`, `vos-monolith`, `agent-fleet`. Real repos, seeded into the
-dashboard-editable `repos` table (`adr/0028`) — no redeploy to add/edit one. No per-repo
-Deployment/PVC: onboarding = a "manage repos" entry, not new k8s manifests.
+Every repo `argocd-ukubi-bot` is a collaborator on (`adr/0074`): core projects
+the bot's GitHub repos into the `repos` table each minute, and overrides (name,
+base branch, image, cluster access) come only from infra-bootstrap's
+`gitops/bootstrap/fleet-repo-overrides.yaml`. The console's repo list is
+read-only. Onboarding = invite the bot, nothing else; no per-repo
+Deployment/PVC.
 
 ## Verification traps
 

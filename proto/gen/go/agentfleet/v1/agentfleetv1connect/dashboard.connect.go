@@ -102,15 +102,6 @@ const (
 	// DashboardServiceListReposProcedure is the fully-qualified name of the DashboardService's
 	// ListRepos RPC.
 	DashboardServiceListReposProcedure = "/agentfleet.v1.DashboardService/ListRepos"
-	// DashboardServiceCreateRepoProcedure is the fully-qualified name of the DashboardService's
-	// CreateRepo RPC.
-	DashboardServiceCreateRepoProcedure = "/agentfleet.v1.DashboardService/CreateRepo"
-	// DashboardServiceUpdateRepoProcedure is the fully-qualified name of the DashboardService's
-	// UpdateRepo RPC.
-	DashboardServiceUpdateRepoProcedure = "/agentfleet.v1.DashboardService/UpdateRepo"
-	// DashboardServiceDeleteRepoProcedure is the fully-qualified name of the DashboardService's
-	// DeleteRepo RPC.
-	DashboardServiceDeleteRepoProcedure = "/agentfleet.v1.DashboardService/DeleteRepo"
 	// DashboardServiceSyncRepoProcedure is the fully-qualified name of the DashboardService's SyncRepo
 	// RPC.
 	DashboardServiceSyncRepoProcedure = "/agentfleet.v1.DashboardService/SyncRepo"
@@ -227,9 +218,6 @@ type DashboardServiceClient interface {
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
-	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
-	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
-	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
@@ -412,24 +400,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("ListRepos")),
 			connect.WithClientOptions(opts...),
 		),
-		createRepo: connect.NewClient[v1.CreateRepoRequest, v1.CreateRepoResponse](
-			httpClient,
-			baseURL+DashboardServiceCreateRepoProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("CreateRepo")),
-			connect.WithClientOptions(opts...),
-		),
-		updateRepo: connect.NewClient[v1.UpdateRepoRequest, v1.UpdateRepoResponse](
-			httpClient,
-			baseURL+DashboardServiceUpdateRepoProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepo")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteRepo: connect.NewClient[v1.DeleteRepoRequest, v1.DeleteRepoResponse](
-			httpClient,
-			baseURL+DashboardServiceDeleteRepoProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
-			connect.WithClientOptions(opts...),
-		),
 		syncRepo: connect.NewClient[v1.SyncRepoRequest, v1.SyncRepoResponse](
 			httpClient,
 			baseURL+DashboardServiceSyncRepoProcedure,
@@ -560,9 +530,6 @@ type dashboardServiceClient struct {
 	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
 	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
-	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
-	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
-	deleteRepo          *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
 	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
 	listPromptSnippets  *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
 	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
@@ -695,21 +662,6 @@ func (c *dashboardServiceClient) ListDefinitions(ctx context.Context, req *conne
 // ListRepos calls agentfleet.v1.DashboardService.ListRepos.
 func (c *dashboardServiceClient) ListRepos(ctx context.Context, req *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {
 	return c.listRepos.CallUnary(ctx, req)
-}
-
-// CreateRepo calls agentfleet.v1.DashboardService.CreateRepo.
-func (c *dashboardServiceClient) CreateRepo(ctx context.Context, req *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error) {
-	return c.createRepo.CallUnary(ctx, req)
-}
-
-// UpdateRepo calls agentfleet.v1.DashboardService.UpdateRepo.
-func (c *dashboardServiceClient) UpdateRepo(ctx context.Context, req *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error) {
-	return c.updateRepo.CallUnary(ctx, req)
-}
-
-// DeleteRepo calls agentfleet.v1.DashboardService.DeleteRepo.
-func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, req *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
-	return c.deleteRepo.CallUnary(ctx, req)
 }
 
 // SyncRepo calls agentfleet.v1.DashboardService.SyncRepo.
@@ -860,9 +812,6 @@ type DashboardServiceHandler interface {
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
-	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
-	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
-	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
@@ -1041,24 +990,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("ListRepos")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceCreateRepoHandler := connect.NewUnaryHandler(
-		DashboardServiceCreateRepoProcedure,
-		svc.CreateRepo,
-		connect.WithSchema(dashboardServiceMethods.ByName("CreateRepo")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceUpdateRepoHandler := connect.NewUnaryHandler(
-		DashboardServiceUpdateRepoProcedure,
-		svc.UpdateRepo,
-		connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepo")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceDeleteRepoHandler := connect.NewUnaryHandler(
-		DashboardServiceDeleteRepoProcedure,
-		svc.DeleteRepo,
-		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dashboardServiceSyncRepoHandler := connect.NewUnaryHandler(
 		DashboardServiceSyncRepoProcedure,
 		svc.SyncRepo,
@@ -1209,12 +1140,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListDefinitionsHandler.ServeHTTP(w, r)
 		case DashboardServiceListReposProcedure:
 			dashboardServiceListReposHandler.ServeHTTP(w, r)
-		case DashboardServiceCreateRepoProcedure:
-			dashboardServiceCreateRepoHandler.ServeHTTP(w, r)
-		case DashboardServiceUpdateRepoProcedure:
-			dashboardServiceUpdateRepoHandler.ServeHTTP(w, r)
-		case DashboardServiceDeleteRepoProcedure:
-			dashboardServiceDeleteRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceSyncRepoProcedure:
 			dashboardServiceSyncRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceListPromptSnippetsProcedure:
@@ -1348,18 +1273,6 @@ func (UnimplementedDashboardServiceHandler) ListDefinitions(context.Context, *co
 
 func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListRepos is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateRepo is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateRepo is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepo is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {

@@ -42,9 +42,6 @@ const (
 	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
 	DashboardService_ListDefinitions_FullMethodName     = "/agentfleet.v1.DashboardService/ListDefinitions"
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
-	DashboardService_CreateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/CreateRepo"
-	DashboardService_UpdateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/UpdateRepo"
-	DashboardService_DeleteRepo_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteRepo"
 	DashboardService_SyncRepo_FullMethodName            = "/agentfleet.v1.DashboardService/SyncRepo"
 	DashboardService_ListPromptSnippets_FullMethodName  = "/agentfleet.v1.DashboardService/ListPromptSnippets"
 	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
@@ -129,9 +126,6 @@ type DashboardServiceClient interface {
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error)
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
-	CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error)
-	UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error)
-	DeleteRepo(ctx context.Context, in *DeleteRepoRequest, opts ...grpc.CallOption) (*DeleteRepoResponse, error)
 	SyncRepo(ctx context.Context, in *SyncRepoRequest, opts ...grpc.CallOption) (*SyncRepoResponse, error)
 	ListPromptSnippets(ctx context.Context, in *ListPromptSnippetsRequest, opts ...grpc.CallOption) (*ListPromptSnippetsResponse, error)
 	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
@@ -412,36 +406,6 @@ func (c *dashboardServiceClient) ListRepos(ctx context.Context, in *ListReposReq
 	return out, nil
 }
 
-func (c *dashboardServiceClient) CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateRepoResponse)
-	err := c.cc.Invoke(ctx, DashboardService_CreateRepo_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateRepoResponse)
-	err := c.cc.Invoke(ctx, DashboardService_UpdateRepo_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, in *DeleteRepoRequest, opts ...grpc.CallOption) (*DeleteRepoResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteRepoResponse)
-	err := c.cc.Invoke(ctx, DashboardService_DeleteRepo_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *dashboardServiceClient) SyncRepo(ctx context.Context, in *SyncRepoRequest, opts ...grpc.CallOption) (*SyncRepoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SyncRepoResponse)
@@ -677,9 +641,6 @@ type DashboardServiceServer interface {
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error)
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
-	CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error)
-	UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error)
-	DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error)
 	SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error)
 	ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error)
 	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
@@ -789,15 +750,6 @@ func (UnimplementedDashboardServiceServer) ListDefinitions(context.Context, *Lis
 }
 func (UnimplementedDashboardServiceServer) ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRepos not implemented")
-}
-func (UnimplementedDashboardServiceServer) CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateRepo not implemented")
-}
-func (UnimplementedDashboardServiceServer) UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateRepo not implemented")
-}
-func (UnimplementedDashboardServiceServer) DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteRepo not implemented")
 }
 func (UnimplementedDashboardServiceServer) SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SyncRepo not implemented")
@@ -1278,60 +1230,6 @@ func _DashboardService_ListRepos_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_CreateRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateRepoRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).CreateRepo(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_CreateRepo_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).CreateRepo(ctx, req.(*CreateRepoRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_UpdateRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateRepoRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).UpdateRepo(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_UpdateRepo_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).UpdateRepo(ctx, req.(*UpdateRepoRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_DeleteRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteRepoRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).DeleteRepo(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_DeleteRepo_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).DeleteRepo(ctx, req.(*DeleteRepoRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DashboardService_SyncRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SyncRepoRequest)
 	if err := dec(in); err != nil {
@@ -1732,18 +1630,6 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRepos",
 			Handler:    _DashboardService_ListRepos_Handler,
-		},
-		{
-			MethodName: "CreateRepo",
-			Handler:    _DashboardService_CreateRepo_Handler,
-		},
-		{
-			MethodName: "UpdateRepo",
-			Handler:    _DashboardService_UpdateRepo_Handler,
-		},
-		{
-			MethodName: "DeleteRepo",
-			Handler:    _DashboardService_DeleteRepo_Handler,
 		},
 		{
 			MethodName: "SyncRepo",

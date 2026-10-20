@@ -66,6 +66,9 @@ const (
 	// ProvisionerServiceReconcileVaultsProcedure is the fully-qualified name of the
 	// ProvisionerService's ReconcileVaults RPC.
 	ProvisionerServiceReconcileVaultsProcedure = "/agentfleet.v1.ProvisionerService/ReconcileVaults"
+	// ProvisionerServiceListGitHubReposProcedure is the fully-qualified name of the
+	// ProvisionerService's ListGitHubRepos RPC.
+	ProvisionerServiceListGitHubReposProcedure = "/agentfleet.v1.ProvisionerService/ListGitHubRepos"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -103,6 +106,9 @@ type ProvisionerServiceClient interface {
 	// good sync (docs/adr/0065); core commands, the provisioner executes, and
 	// credential values exist only on the provisioner's side.
 	ReconcileVaults(context.Context, *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error)
+	// core's repos sync source (docs/adr/0074): accepts allowlisted
+	// invitations, then lists every repo the bot can reach.
+	ListGitHubRepos(context.Context, *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -182,6 +188,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("ReconcileVaults")),
 			connect.WithClientOptions(opts...),
 		),
+		listGitHubRepos: connect.NewClient[v1.ListGitHubReposRequest, v1.ListGitHubReposResponse](
+			httpClient,
+			baseURL+ProvisionerServiceListGitHubReposProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ListGitHubRepos")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -198,6 +210,7 @@ type provisionerServiceClient struct {
 	sweepSession        *connect.Client[v1.SweepSessionRequest, v1.SweepSessionResponse]
 	listDefinitionFiles *connect.Client[v1.ListDefinitionFilesRequest, v1.ListDefinitionFilesResponse]
 	reconcileVaults     *connect.Client[v1.ReconcileVaultsRequest, v1.ReconcileVaultsResponse]
+	listGitHubRepos     *connect.Client[v1.ListGitHubReposRequest, v1.ListGitHubReposResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -255,6 +268,11 @@ func (c *provisionerServiceClient) ReconcileVaults(ctx context.Context, req *con
 	return c.reconcileVaults.CallUnary(ctx, req)
 }
 
+// ListGitHubRepos calls agentfleet.v1.ProvisionerService.ListGitHubRepos.
+func (c *provisionerServiceClient) ListGitHubRepos(ctx context.Context, req *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error) {
+	return c.listGitHubRepos.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
@@ -290,6 +308,9 @@ type ProvisionerServiceHandler interface {
 	// good sync (docs/adr/0065); core commands, the provisioner executes, and
 	// credential values exist only on the provisioner's side.
 	ReconcileVaults(context.Context, *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error)
+	// core's repos sync source (docs/adr/0074): accepts allowlisted
+	// invitations, then lists every repo the bot can reach.
+	ListGitHubRepos(context.Context, *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -365,6 +386,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("ReconcileVaults")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceListGitHubReposHandler := connect.NewUnaryHandler(
+		ProvisionerServiceListGitHubReposProcedure,
+		svc.ListGitHubRepos,
+		connect.WithSchema(provisionerServiceMethods.ByName("ListGitHubRepos")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceCreateWorkerPodProcedure:
@@ -389,6 +416,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceListDefinitionFilesHandler.ServeHTTP(w, r)
 		case ProvisionerServiceReconcileVaultsProcedure:
 			provisionerServiceReconcileVaultsHandler.ServeHTTP(w, r)
+		case ProvisionerServiceListGitHubReposProcedure:
+			provisionerServiceListGitHubReposHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -440,4 +469,8 @@ func (UnimplementedProvisionerServiceHandler) ListDefinitionFiles(context.Contex
 
 func (UnimplementedProvisionerServiceHandler) ReconcileVaults(context.Context, *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ReconcileVaults is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) ListGitHubRepos(context.Context, *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListGitHubRepos is not implemented"))
 }

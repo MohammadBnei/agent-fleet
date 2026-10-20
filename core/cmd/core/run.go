@@ -143,7 +143,15 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// delay the ordinary-session sweeps, and a tick still running skips the next.
 	var vaultErrs string
 	var vaultBusy atomic.Bool
+	repoOverrides := &repos.Overrides{Path: cfg.RepoOverridesPath}
+	var repoSyncBusy atomic.Bool
 	sessionLoop.SetOnTick(func(ctx context.Context) {
+		if cfg.RepoOverridesPath != "" && repoSyncBusy.CompareAndSwap(false, true) {
+			go func() {
+				defer repoSyncBusy.Store(false)
+				syncRepos(ctx, provisioner, repoStore, repoOverrides)
+			}()
+		}
 		if err := defs.Sync(ctx); err != nil {
 			slog.Error("definitions: sync failed", "error", err)
 			return
@@ -380,6 +388,33 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 // FLEET_AUTH_DISABLED=1 (identity gate) too (docs/adr/0069).
 func httpHandler(mux http.Handler, gate func(http.Handler) http.Handler) http.Handler {
 	return auth.FrameDeny(gate(mux))
+}
+
+// syncRepos projects the bot's GitHub repos plus infra-bootstrap's overrides
+// into repos (docs/adr/0074). No good overrides read yet in this process, or
+// a failed listing: nothing changes. Off the sessions loop like the vault
+// reconcile, so a slow GitHub cannot delay the sweeps.
+func syncRepos(ctx context.Context, p *provisionerclient.Client, store *repos.Store, ov *repos.Overrides) {
+	overrides, ok := ov.Load()
+	if !ok {
+		return
+	}
+	list, err := p.ListGitHubRepos(ctx)
+	if status.Code(err) == codes.Unimplemented {
+		slog.Debug("repos: provisioner predates ListGitHubRepos (docs/adr/0074)")
+		return
+	}
+	if err != nil {
+		slog.Error("repos: list GitHub repos failed, nothing changed", "error", err)
+		return
+	}
+	gh := make([]repos.GitHubRepo, len(list))
+	for i, r := range list {
+		gh[i] = repos.GitHubRepo{ID: r.GetId(), FullName: r.GetFullName(), Name: r.GetName(), CloneURL: r.GetCloneUrl(), DefaultBranch: r.GetDefaultBranch()}
+	}
+	if _, err := store.Sync(ctx, gh, overrides); err != nil {
+		slog.Error("repos: sync", "error", err)
+	}
 }
 
 // vaultReconciler is provisionerclient.Client's ReconcileVaults.

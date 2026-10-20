@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -112,6 +113,21 @@ func repoDefinitionFiles(t *testing.T) map[string][]byte {
 
 func newDefinitionsServer(t *testing.T) (*Server, *definitionsProvisioner, *definitions.Registry, *sessions.Store) {
 	t.Helper()
+	s, prov, reg, store, _ := newDefinitionsServerPool(t)
+	return s, prov, reg, store
+}
+
+// setRepo writes a repos row directly: the console has no repo editor since
+// docs/adr/0074, and these tests only need the row's url and image.
+func setRepo(t *testing.T, pool *pgxpool.Pool, r *repos.Repo) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), `UPDATE repos SET url = $2, image = $3 WHERE name = $1`, r.Name, r.URL, r.Image); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newDefinitionsServerPool(t *testing.T) (*Server, *definitionsProvisioner, *definitions.Registry, *sessions.Store, *pgxpool.Pool) {
+	t.Helper()
 	pool := dbtest.NewPool(t)
 	prov := &definitionsProvisioner{files: repoDefinitionFiles(t), sha: "sha-one"}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -135,7 +151,7 @@ func newDefinitionsServer(t *testing.T) (*Server, *definitionsProvisioner, *defi
 	store := sessions.NewStore(pool)
 	s := &Server{sessions: store, repos: repos.NewStore(pool), transcr: transcript.NewPostgresStore(pool), e2e: client,
 		caps: sessions.Caps{MaxLive: 5, MaxDefinition: 2}, definitions: reg}
-	return s, prov, reg, store
+	return s, prov, reg, store, pool
 }
 
 func code(err error) connect.Code {
@@ -299,7 +315,7 @@ func TestWarmIfIdle_DefinitionUnconfirmedCreateFailsClosed(t *testing.T) {
 
 func TestWarmIfIdle_Definition(t *testing.T) {
 	ctx := context.Background()
-	s, prov, reg, store := newDefinitionsServer(t)
+	s, prov, reg, store, pool := newDefinitionsServerPool(t)
 	sess, err := createDef(s, "dev-dream-analyst", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -312,9 +328,7 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo.Image = "registry.example/old-worker:1"
-	if err := s.repos.Update(ctx, *repo); err != nil {
-		t.Fatal(err)
-	}
+	setRepo(t, pool, repo)
 	// The create lands on an older provisioner (or an older replica in a
 	// rollout overlap): it built the ordinary pod, so core revokes and removes
 	// it. If the removal fails, the phase stays live so the startup-stall
@@ -426,7 +440,7 @@ func TestWarmIfIdle_DefinitionNeedsAVaultToken(t *testing.T) {
 // credentials name, refused before any lease exists.
 func TestWarmIfIdle_DefinitionURLBinding(t *testing.T) {
 	ctx := context.Background()
-	s, prov, reg, store := newDefinitionsServer(t)
+	s, prov, reg, store, pool := newDefinitionsServerPool(t)
 	prov.set(func(p *definitionsProvisioner) {
 		p.files["definitions/dev-pusher.yaml"] = []byte(`apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
@@ -457,9 +471,7 @@ spec:
 	seeded := repo.URL // https://github.com/MohammadBnei/dream-analyst.git
 	for _, url := range []string{"https://github.com/MohammadBnei/dream-analyst-evil.git", "https://github.com/mohammadbnei/dream-analyst.git", "https://github.com/MohammadBnei/dream-analyst/x.git"} {
 		repo.URL = url
-		if err := s.repos.Update(ctx, *repo); err != nil {
-			t.Fatal(err)
-		}
+		setRepo(t, pool, repo)
 		if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
 			t.Fatalf("%s: got %v", url, err)
 		}
@@ -469,9 +481,7 @@ spec:
 		assertNoLease(t, store, sess.GetId())
 	}
 	repo.URL = seeded
-	if err := s.repos.Update(ctx, *repo); err != nil {
-		t.Fatal(err)
-	}
+	setRepo(t, pool, repo)
 	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
 		t.Fatalf("the bound URL: %v", err)
 	}

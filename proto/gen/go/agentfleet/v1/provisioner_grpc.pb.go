@@ -30,6 +30,7 @@ const (
 	ProvisionerService_SweepSession_FullMethodName        = "/agentfleet.v1.ProvisionerService/SweepSession"
 	ProvisionerService_ListDefinitionFiles_FullMethodName = "/agentfleet.v1.ProvisionerService/ListDefinitionFiles"
 	ProvisionerService_ReconcileVaults_FullMethodName     = "/agentfleet.v1.ProvisionerService/ReconcileVaults"
+	ProvisionerService_ListGitHubRepos_FullMethodName     = "/agentfleet.v1.ProvisionerService/ListGitHubRepos"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
@@ -69,6 +70,9 @@ type ProvisionerServiceClient interface {
 	// good sync (docs/adr/0065); core commands, the provisioner executes, and
 	// credential values exist only on the provisioner's side.
 	ReconcileVaults(ctx context.Context, in *ReconcileVaultsRequest, opts ...grpc.CallOption) (*ReconcileVaultsResponse, error)
+	// core's repos sync source (docs/adr/0074): accepts allowlisted
+	// invitations, then lists every repo the bot can reach.
+	ListGitHubRepos(ctx context.Context, in *ListGitHubReposRequest, opts ...grpc.CallOption) (*ListGitHubReposResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -189,6 +193,16 @@ func (c *provisionerServiceClient) ReconcileVaults(ctx context.Context, in *Reco
 	return out, nil
 }
 
+func (c *provisionerServiceClient) ListGitHubRepos(ctx context.Context, in *ListGitHubReposRequest, opts ...grpc.CallOption) (*ListGitHubReposResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListGitHubReposResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_ListGitHubRepos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvisionerServiceServer is the server API for ProvisionerService service.
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
@@ -226,6 +240,9 @@ type ProvisionerServiceServer interface {
 	// good sync (docs/adr/0065); core commands, the provisioner executes, and
 	// credential values exist only on the provisioner's side.
 	ReconcileVaults(context.Context, *ReconcileVaultsRequest) (*ReconcileVaultsResponse, error)
+	// core's repos sync source (docs/adr/0074): accepts allowlisted
+	// invitations, then lists every repo the bot can reach.
+	ListGitHubRepos(context.Context, *ListGitHubReposRequest) (*ListGitHubReposResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -268,6 +285,9 @@ func (UnimplementedProvisionerServiceServer) ListDefinitionFiles(context.Context
 }
 func (UnimplementedProvisionerServiceServer) ReconcileVaults(context.Context, *ReconcileVaultsRequest) (*ReconcileVaultsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReconcileVaults not implemented")
+}
+func (UnimplementedProvisionerServiceServer) ListGitHubRepos(context.Context, *ListGitHubReposRequest) (*ListGitHubReposResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListGitHubRepos not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -488,6 +508,24 @@ func _ProvisionerService_ReconcileVaults_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_ListGitHubRepos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListGitHubReposRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).ListGitHubRepos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_ListGitHubRepos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).ListGitHubRepos(ctx, req.(*ListGitHubReposRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvisionerService_ServiceDesc is the grpc.ServiceDesc for ProvisionerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -538,6 +576,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReconcileVaults",
 			Handler:    _ProvisionerService_ReconcileVaults_Handler,
+		},
+		{
+			MethodName: "ListGitHubRepos",
+			Handler:    _ProvisionerService_ListGitHubRepos_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

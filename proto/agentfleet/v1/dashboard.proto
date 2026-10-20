@@ -373,9 +373,9 @@ message GetJournalResponse {
   int64 next_id = 2;
 }
 
-// Repo is the dashboard-editable target-repo config (docs/adr/0028) —
-// replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
-// table (db/schema.sql). No timestamps exposed: the dashboard's repo list
+// Repo is one fleet target repo (docs/adr/0028), read-only since
+// docs/adr/0074: the `repos` table is projected from GitHub plus
+// infra-bootstrap's fleet-repo-overrides file. No timestamps exposed: the dashboard's repo list
 // is small and unordered, unlike Session/JournalEntry which need cursor state.
 message Repo {
   reserved 4;
@@ -394,8 +394,10 @@ message Repo {
   // collapse into `image`, because it is a privilege grant rather than a
   // toolchain — the pod still holds zero Kubernetes credentials either way,
   // and which sessions may reach the cluster stays a human's decision,
-  // editable here without a redeploy.
+  // made only in infra-bootstrap's overrides file (docs/adr/0074).
   bool cluster_access = 6;
+  // GitHub's owner/repo, e.g. "opus-tech-hq/workspace".
+  string full_name = 7;
 }
 
 message ListDefinitionsRequest {}
@@ -431,39 +433,9 @@ message ListReposResponse {
   repeated Repo repos = 1;
 }
 
-message CreateRepoRequest {
-  string name = 1;
-  string url = 2;
-  string base_branch = 3;
-  reserved 4;
-  reserved "e2e_profile";
-  string image = 5;
-  bool cluster_access = 6;
-}
-
-message CreateRepoResponse {
-  Repo repo = 1;
-}
-
-message UpdateRepoRequest {
-  string name = 1;
-  string url = 2;
-  string base_branch = 3;
-  reserved 4;
-  reserved "e2e_profile";
-  string image = 5;
-  bool cluster_access = 6;
-}
-
-message UpdateRepoResponse {
-  Repo repo = 1;
-}
-
-message DeleteRepoRequest {
-  string name = 1;
-}
-
-message DeleteRepoResponse {}
+// CreateRepo, UpdateRepo and DeleteRepo used to live here. Repos now come
+// from GitHub (the bot's collaborator list) plus infra-bootstrap's overrides
+// file, so the console has nothing to write (docs/adr/0074).
 
 // Refreshes the provisioner's clone cache for one repo (ProvisionerService's
 // SyncRepoCache). Only the name travels: core looks the URL up in the `repos`
@@ -626,9 +598,6 @@ service DashboardService {
   // Defined agents (docs/adr/0062). Admin-only like every method here.
   rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
-  rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
-  rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
-  rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
   rpc SyncRepo(SyncRepoRequest) returns (SyncRepoResponse);
   rpc ListPromptSnippets(ListPromptSnippetsRequest) returns (ListPromptSnippetsResponse);
   rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
