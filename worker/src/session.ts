@@ -1,4 +1,4 @@
-import { query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
@@ -602,6 +602,28 @@ export type SessionResult = { aborted: boolean; summary: string };
 // findings.md #0): one query() call, streaming-input mode, spans planning
 // and implementation with no fleet-imposed phase boundary or teardown/
 // restart at the approval boundary.
+// reportContext posts what this pod actually loaded (docs/adr/0063 §7), next
+// to core's context_rendered entry for the same warm: memory files in load
+// order, and every skill with its source. A name listed twice is a collision
+// the SDK resolved on its own. A diagnostic, not a control: the pod is the
+// agent's, so nothing is allowed or refused on its word.
+async function reportContext(q: Query): Promise<void> {
+  const usage = await q.getContextUsage();
+  const skills = (usage.skills?.skillFrontmatter ?? []).map((s) => ({ name: s.name, source: s.source }));
+  const counts = new Map<string, number>();
+  for (const s of skills) counts.set(s.name, (counts.get(s.name) ?? 0) + 1);
+  await sidecar.pushMessage(
+    "agent",
+    JSON.stringify({
+      sdk: "context_loaded",
+      memory_files: usage.memoryFiles.map((f) => ({ path: f.path, type: f.type })),
+      skills,
+      collisions: [...counts].filter(([, n]) => n > 1).map(([name]) => name),
+    }),
+    "system",
+  );
+}
+
 // The provisioner's mount (provisioner/internal/k8s/pod.go genomeDir); read
 // per call so a test can point it elsewhere.
 const genomeDir = () => process.env.FLEET_GENOME_DIR ?? "/genome";
@@ -1205,6 +1227,8 @@ export async function runSession(): Promise<SessionResult> {
       // stopped asking — and the badge would say auto for a session that isn't.
       if (msg.type === "system" && msg.subtype === "init" && !launchChecked) {
         launchChecked = true;
+        // Not awaited: a control request can hang with the CLI (see q.interrupt).
+        void reportContext(q).catch((err) => log("warn", "context report failed", { taskId: SESSION_ID, error: String(err) }));
         if (msg.permissionMode && msg.permissionMode !== currentMode) {
           log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
           currentMode = msg.permissionMode;

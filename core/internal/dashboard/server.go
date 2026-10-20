@@ -7,6 +7,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1032,7 +1033,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		image = ""
 	}
 	// Rendered before the lease, so a failed read leaves nothing to undo.
-	genome, err := s.renderGenome(ctx, t)
+	genome, rendered, err := s.renderGenome(ctx, t)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
@@ -1101,6 +1102,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		// current provisioner gets them.
 		slog.Warn("dashboard warm: provisioner did not apply the context packs", "sessionId", sessionID)
 	}
+	s.recordRendered(ctx, sessionID, rendered, pod.GenomeApplied)
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
 	// would trade a working session for a cosmetic one.
@@ -1112,9 +1114,9 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 
 // renderGenome renders the session's context packs (docs/adr/0063): a
 // definition session's by its definition, a repo session's by its repo.
-func (s *Server) renderGenome(ctx context.Context, t *sessions.Session) ([]*agentfleetv1.GenomeFile, error) {
+func (s *Server) renderGenome(ctx context.Context, t *sessions.Session) ([]*agentfleetv1.GenomeFile, *packs.Rendered, error) {
 	if s.packs == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	kind, name := packs.KindRepo, t.Repo
 	if t.DefinitionName != nil {
@@ -1122,15 +1124,40 @@ func (s *Server) renderGenome(ctx context.Context, t *sessions.Session) ([]*agen
 	}
 	r, err := s.packs.RenderContext(ctx, kind, name)
 	if err != nil {
-		return nil, fmt.Errorf("render context packs: %w", err)
+		return nil, nil, fmt.Errorf("render context packs: %w", err)
 	}
-	// ponytail: logged until the per-warm context log (ADR-0063 §7) lands.
 	slog.Info("dashboard warm: context packs", "sessionId", t.ID, "kind", kind, "target", name, "versions", r.Versions, "skipped", r.Skipped)
 	out := make([]*agentfleetv1.GenomeFile, 0, len(r.Files))
 	for _, f := range r.Files {
 		out = append(out, &agentfleetv1.GenomeFile{Path: f.Path, Body: f.Body})
 	}
-	return out, nil
+	return out, &r, nil
+}
+
+// recordRendered writes the warm's context_rendered signal (docs/adr/0063 §7):
+// what core sent, beside the pod's own context_loaded report. A SYSTEM entry
+// from "fleet", so it is never streamed to the agent (only human and session
+// entries are) and the console shows it in the session feed. Not fatal.
+func (s *Server) recordRendered(ctx context.Context, sessionID string, r *packs.Rendered, applied bool) {
+	if r == nil {
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"sdk": "context_rendered", "versions": nonNilStrings(r.Versions), "skipped": nonNilStrings(r.Skipped), "applied": applied,
+	})
+	if err == nil {
+		_, err = s.transcr.Append(ctx, sessionID, "fleet", string(body), "system", "")
+	}
+	if err != nil {
+		slog.Warn("dashboard warm: recording the rendered context", "sessionId", sessionID, "error", err)
+	}
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // refuseDefinitionPod revokes and removes whatever a definition warm may have

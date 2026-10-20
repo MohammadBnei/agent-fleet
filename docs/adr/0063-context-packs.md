@@ -206,14 +206,24 @@ in #269.
 
 ### 7. The panel shows what loaded, not what was sent
 
-After init the worker reports `getContextUsage().memoryFiles`, its skill names
-and any name collisions through the sidecar. Core stores
-`pod_context_log(session, warm_at, image, pack_versions, memory_files, skills, collisions, stale)`.
-The session view shows it per warm. Collisions are reported from what the
-worker actually loaded, because core cannot see a workspace's
-`.claude/skills` or the image's plugins. The report needs its own entry in the
-sidecar's per-method auth table. It comes from a pod the agent runs in, so it
-is a diagnostic, not a control: nothing is allowed or refused on its word.
+Each warm leaves two entries in the session's own transcript, both SYSTEM
+signals the agent never receives (only human and session entries stream to
+it):
+
+- `context_rendered`, from core: the pack versions it sent, what it skipped
+  and why (caps, shadowed skills, a stale or failed reviewed copy), and
+  whether the provisioner applied them.
+- `context_loaded`, from the worker after init: `getContextUsage()`'s memory
+  files in load order, every skill with its source, and any name listed
+  twice. Collisions come from what the worker actually loaded, because core
+  cannot see a workspace's `.claude/skills` or the image's plugins.
+
+The session feed shows both per warm. The worker's entry goes through the
+sidecar's existing `/message` path, so it needs no new RPC or auth rule. It
+comes from a pod the agent runs in, so it is a diagnostic, not a control:
+nothing is allowed or refused on its word. (First drafted as a separate
+`pod_context_log` table; the transcript already holds per-warm, per-session
+history with the session's lifetime, so a second store bought nothing.)
 
 ### 8. fleet-shared moves in two releases
 
@@ -225,7 +235,7 @@ leave pods with no fleet rules between merge and release.
   `fleet-shared/CLAUDE.md`. It also makes `SyncFleetShared` delete `CLAUDE.md` or
   `skills/` when they are missing from the source. Today it skips a missing name,
   which would leave every resumed repo session with a stale copy.
-- **Release N+1**, once `pod_context_log` shows both packs loaded: deletes
+- **Release N+1**, once the `context_loaded` entries show both packs loaded: deletes
   `fleet-shared/CLAUDE.md` and `skills/`, and release N's sync removes the
   synced copies. Rolling back to a release before N afterwards leaves repo
   pods without fleet rules, so a rollback past N restores the files first. `fleet-shared/settings.json` stays; it
@@ -268,9 +278,7 @@ leave pods with no fleet rules between merge and release.
   rejects GitHub Actions as a ruleset bypass actor on a personal-account repo, so
   `main` stays unprotected until the release workflow pushes with a deploy key.
   That is tracked, not done.
-- The `pod_context_log` table grows by one row per warm. Sessions are never
-  pruned, so the log keeps 30 days of rows and core deletes older ones on its
-  tick.
+- Every warm adds two transcript entries, kept and swept with the session.
 
 ## Rollout
 

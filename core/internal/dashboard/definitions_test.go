@@ -479,6 +479,15 @@ func TestWarmIfIdle_DefinitionContextPacks(t *testing.T) {
 	if len(g) != 1 || g[0].GetPath() != ".claude/rules/20-notes-style.md" || g[0].GetBody() != "short notes" {
 		t.Fatalf("genome = %v", g)
 	}
+	// The warm records what it rendered (docs/adr/0063 §7), as a fleet SYSTEM
+	// entry the worker never receives.
+	var from, text string
+	if err := pool.QueryRow(ctx, `SELECT "from", text FROM transcript WHERE session_id = $1 AND text LIKE '%context_rendered%' ORDER BY seq DESC LIMIT 1`, sess.GetId()).Scan(&from, &text); err != nil {
+		t.Fatal(err)
+	}
+	if from != "fleet" || !strings.Contains(text, `"versions":["notes-style@1"]`) || !strings.Contains(text, `"applied":true`) {
+		t.Fatalf("context_rendered entry = %s %s", from, text)
+	}
 }
 
 // docs/adr/0065 §6: a push definition warms only on the one repo URL its
