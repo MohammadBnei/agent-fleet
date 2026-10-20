@@ -64,6 +64,12 @@ func (m *Manager) WriteGenome(sessionID string, files []GenomeFile) error {
 		_ = os.RemoveAll(tmp)
 		return fmt.Errorf("chmod genome: %w", err)
 	}
+	// Always present: a definition pod mounts it at /claude-home/skills, and a
+	// missing subPath would be created by kubelet, root-owned, in this tree.
+	if err := os.MkdirAll(filepath.Join(tmp, ".claude", "skills"), 0o755); err != nil {
+		_ = os.RemoveAll(tmp)
+		return fmt.Errorf("mkdir genome skills: %w", err)
+	}
 	old := tmp + ".old"
 
 	for _, f := range files {

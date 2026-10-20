@@ -20,6 +20,14 @@ func TestWriteGenome(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(dir, ".claude/rules/20-style.md")); err != nil || string(b) != "short notes" {
 		t.Fatalf("rules file = %q, %v", b, err)
 	}
+	// docs/adr/0067 §4: the skills directory always exists; a definition pod
+	// mounts it at /claude-home/skills.
+	if err := m.WriteGenome("empty", nil); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(filepath.Join(m.GenomePath("empty"), ".claude/skills")); err != nil || !fi.IsDir() {
+		t.Fatalf("empty genome has no .claude/skills: %v", err)
+	}
 
 	// A re-render replaces the whole directory: a file dropped from the
 	// render is gone, not left over from the last warm.

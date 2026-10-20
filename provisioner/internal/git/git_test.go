@@ -203,6 +203,34 @@ func TestRemoveFleetShared_KeepsTheImagePluginsWithoutASync(t *testing.T) {
 	}
 }
 
+// docs/adr/0067 §4: the empty skills/ kubelet makes as the genome mount point
+// is not a sync, so plugins/ stays and the entrypoint skips its cp -r.
+func TestRemoveFleetShared_EmptySkillsMountPointIsNotASync(t *testing.T) {
+	m := NewManager(t.TempDir())
+	home := m.ClaudeHomePath("s")
+	for _, d := range []string{"plugins/x", "skills"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.RemoveFleetShared("s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "plugins/x")); err != nil {
+		t.Fatalf("plugins/ removed for an empty skills mount point: %v", err)
+	}
+	// A real sync leftover still goes.
+	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RemoveFleetShared("s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("settings.json survived: %v", err)
+	}
+}
+
 // docs/adr/0065 §6: a definition's cache must have been cloned from the repo
 // URL the warm names. ensureLocked never re-points a warm cache, so a
 // repos.url repointed A -> B -> A would otherwise leave a cache cloned from B.
