@@ -37,7 +37,10 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    `CoreService.PublishEvent`. Core stamps the verified session (lease), sets
    `actor=agent`, sets `causationid` to the event the session is handling and
    computes `hops` from that chain — the caller cannot set either. Above the
-   existing depth limit (3, `maxPromptDepth`) the publish is refused.
+   existing depth limit (3, `maxPromptDepth`) the publish is refused. A
+   published event is trusted only if the event that caused it was trusted
+   and the publishing session is not tainted: the lowest trust along
+   `causationid` (infra-bootstrap ADR-0060 §6).
 3. **Core consumes through one dispatcher.** A goroutine subscribes to the
    bridge and calls `AgentService.Open(definition, thread_key, message,
    interaction=ask, lifecycle=resident)` as the registered client
@@ -72,8 +75,11 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    semantics and stops discarding `resolved`.
 6. **The gate** (the ADR-0048 §1 amendment itself is ADR-0062's):
    - A **new thread** opens a session only for a trusted actor — the
-     operator, Renovate, the fleet's own agents, CI — with trust computed by
-     the bridge from the PR author and head repo, never the webhook sender.
+     operator and CI — with trust computed by the bridge: a trusted actor on
+     a thread the operator owns, from a same-repo head. A push, close or
+     reopen counts as whoever did it, not the PR author. The fleet's agents
+     and Renovate are not trusted openers: the agents share one GitHub
+     identity, and Renovate PR bodies carry third-party release notes.
      Anything else, and every `actor=machine` event (alerts, ArgoCD, zot),
      files a proposal as today. An alert storm still cannot spawn a pod.
    - At most **3** sessions opened by events run at once (the fleet has 5
@@ -82,17 +88,20 @@ the log, retry and dead-lettering. This ADR is core's side of it.
      follow-up is appended `context_only`: quoted, labelled untrusted, read
      on the next wake, never a trigger. A session blocked on a human gets
      follow-ups `context_only` too.
-   - Wakes caused by `actor=agent` are capped per thread, because GitHub
-     strips `hops`: an agent comment that wakes another agent which pushes
-     comes back with `hops=0`. All fleet agents push and comment as one
-     GitHub identity (the `ukubi-fleet` App's bot, infra-bootstrap
-     ADR-0062), so the bridge can tag `actor=agent` but cannot tell which
-     agent acted. The dispatcher, not the bridge, decides whether an
-     agent event came from the thread's own session; until it can, the
-     per-thread cap is what stops a loop.
+   - All fleet agents push and comment as one GitHub identity (the
+     `ukubi-fleet` App's bot, infra-bootstrap ADR-0062), so the bridge tags
+     those events `actor=agent` and never trusts them: they never open or
+     wake a thread, and arrive `context_only`. Otherwise a session tainted by
+     a stranger could act through the shared identity and come back as a
+     clean, trusted event. The operator's comments, pushes and reviews on a
+     fleet PR stay trusted. A hand-off that should wake another agent goes
+     through `PublishEvent`, which carries trust along `causationid`.
+   - Wakes caused by `PublishEvent` are capped per thread, because hops do
+     not survive a GitHub round-trip.
 7. **Taint.** A session that has any `context_only` entry is *tainted*,
-   derived from the transcript, not stored. ADR-0072's approval buttons show
-   it.
+   derived from the transcript, not stored. A session opened by an event
+   whose causation chain includes an untrusted event starts tainted.
+   ADR-0072's approval buttons show it.
 
 ## Alternatives considered
 
