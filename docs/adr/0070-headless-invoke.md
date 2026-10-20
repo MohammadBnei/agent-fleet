@@ -115,8 +115,8 @@ is no per-definition `retention` setting until a consumer needs one.
 ## Consequences
 
 - A headless definition must be written so that its allow list covers its
-  task, without Bash rules until the argument check exists. Anything else is
-  denied.
+  task. A Bash prefix rule runs only for calls the argument check passes
+  (ADR-0067 §4); anything else is denied.
 - Repeating an `Invoke` with the same key is safe and returns the same
   answer.
 - A single-shot session's working tree is gone after the run. Anything worth

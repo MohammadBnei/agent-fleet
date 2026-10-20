@@ -102,6 +102,9 @@ message ReadTranscriptSinceRequest {
   // for — past 1000 entries that silently returned the oldest page and never
   // fetched the rest.
   optional int64 before_seq = 5;
+  // CoreService.WaitForMessages only: the agent_spec_sha the worker applied,
+  // as for StreamHumanMessagesRequest (docs/adr/0066 §8).
+  string agent_spec_sha = 6;
 }
 
 message ReadTranscriptSinceResponse {

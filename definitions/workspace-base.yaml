@@ -8,7 +8,7 @@ spec:
   abstract: true
   model: { default: claude-opus-5, allow: [claude-opus-5, claude-sonnet-5] }
   thinking: { default: medium }
-  mode: { default: default, allow: [default, plan] }
+  mode: { default: auto, allow: [auto, default, plan] }
   tools:
     allow: [Read, Edit, Write, Glob, Grep]
     deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]

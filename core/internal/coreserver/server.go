@@ -161,6 +161,9 @@ func (s *Server) WaitForMessages(ctx context.Context, req *agentfleetv1.ReadTran
 	if taskID == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
+	if err := s.requireSpecApplied(ctx, taskID, req.GetAgentSpecSha()); err != nil {
+		return nil, err
+	}
 	timeoutMs := req.GetTimeoutMs()
 	if timeoutMs <= 0 {
 		timeoutMs = 30000
@@ -192,6 +195,10 @@ func (s *Server) WaitForMessages(ctx context.Context, req *agentfleetv1.ReadTran
 func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQuestionRequest) (*agentfleetv1.AskUserQuestionResponse, error) {
 	if req.GetSessionId() == "" || req.GetQuestionsJson() == "" {
 		return nil, fmt.Errorf("task_id and questions_json are required")
+	}
+	// The answer is human input, so it is gated like the feed (docs/adr/0066 §8).
+	if err := s.requireSpecApplied(ctx, req.GetSessionId(), req.GetAgentSpecSha()); err != nil {
+		return nil, err
 	}
 
 	// On timeout this tool returns {"status":"pending"} and the agent
@@ -424,7 +431,13 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 	if t == nil {
 		return nil, fmt.Errorf("GetTask: task %s not found", req.GetId())
 	}
-	return &agentfleetv1.GetSessionResponse{Session: dashboard.SessionToProto(*t)}, nil
+	// docs/adr/0067 §4: a definition session carries the spec its worker must
+	// apply, and the sha it echoes once it has (requireSpecApplied).
+	spec, sha, err := s.agentSpecOf(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &agentfleetv1.GetSessionResponse{Session: dashboard.SessionToProto(*t), AgentSpec: spec, AgentSpecSha: sha}, nil
 }
 
 // SetPermissionMode persists a worker pod's own permission mode (the
@@ -641,6 +654,12 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 	ctx := stream.Context()
 	taskID := req.GetSessionId()
 	cursor := req.GetSinceSeq()
+	// Checked once, at open: a pinned row's effective never changes (a new
+	// version is a new sha, which the pin refuses at the next warm), and a
+	// revocation is caught at the next open.
+	if err := s.requireSpecApplied(ctx, taskID, req.GetAgentSpecSha()); err != nil {
+		return err
+	}
 
 	for {
 		entries, nextSeq, err := s.transcr.ReadSince(ctx, taskID, cursor, 100)

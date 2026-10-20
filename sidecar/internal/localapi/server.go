@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
@@ -237,6 +239,9 @@ func humanMessagesHandler(core *coreclient.Client) http.HandlerFunc {
 				sinceSeq = parsed
 			}
 		}
+		// The spec sha the worker applied (docs/adr/0066 §8), kept for the
+		// agent's wait_for_messages too: see coreclient.Client.specSHA.
+		core.SetAgentSpecSHA(r.URL.Query().Get("agentSpecSha"))
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			writeError(w, http.StatusInternalServerError, errors.New("response writer does not support flushing"))
@@ -370,11 +375,12 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 // its own branch from git.
 func taskHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, err := core.GetTask(r.Context())
+		resp, err := core.GetTask(r.Context())
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
+		session := resp.GetSession()
 		// description is a label, not an instruction — the session's actual
 		// instruction is its first transcript entry.
 		response := map[string]any{"description": session.GetDescription()}
@@ -383,6 +389,17 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 		}
 		if session.Model != nil {
 			response["model"] = *session.Model
+		}
+		// A definition session's spec (docs/adr/0067 §4), as protojson so the
+		// worker reads the proto's own camelCase names, every field present.
+		if spec := resp.GetAgentSpec(); spec != nil {
+			b, err := protojson.MarshalOptions{EmitUnpopulated: true}.Marshal(spec)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			response["agentSpec"] = json.RawMessage(b)
+			response["agentSpecSha"] = resp.GetAgentSpecSha()
 		}
 		writeJSON(w, http.StatusOK, response)
 	}

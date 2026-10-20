@@ -1,8 +1,10 @@
-import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode, type EffortLevel } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
+import type { AgentSpec } from "./sidecarClient.js";
 import { log } from "./log.js";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -137,6 +139,211 @@ function autoModeStillAsksCommand(toolName: string, input: Record<string, unknow
 // they never opened is the opposite case.
 function autoModeStillAsks(toolName: string, input: Record<string, unknown>): boolean {
   return toolName === "ExitPlanMode" || autoModeStillAsksCommand(toolName, input);
+}
+
+// A `Bash(<prefix>:*)` rule. Matching one asks (docs/adr/0062 §7): `:*` admits
+// every argument, and `git push --receive-pack=…` runs a local command. The
+// exception is gitArgsAreInert below.
+const BASH_PREFIX_RULE = /^Bash\((.+):\*\)$/;
+const BASH_EXACT_RULE = /^Bash\((.+)\)$/;
+
+// The tools.allow rule a call matches, or undefined. Only the forms
+// definitions/*.yaml uses: a bare tool name (`Read`), `Bash(<prefix>:*)` (the
+// command is the prefix, alone or followed by a space) and `Bash(<command>)`
+// (exactly that command). A rule that matches without asking wins over a
+// prefix rule.
+// ponytail: any other `Tool(<specifier>)` (an `Edit(src/**)` glob) matches
+// nothing, so a definition that lists one is denied the tool, never widened.
+// Add the glob form when a definition needs it in allow.
+export function matchesToolRule(rules: string[], toolName: string, input: Record<string, unknown>): string | undefined {
+  const command = typeof input.command === "string" ? input.command : undefined;
+  const hits = rules.filter((rule) => {
+    if (rule === toolName) return true;
+    if (toolName !== "Bash" || command === undefined) return false;
+    const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
+    if (prefix !== undefined) return command === prefix || command.startsWith(prefix + " ");
+    return BASH_EXACT_RULE.exec(rule)?.[1] === command;
+  });
+  return hits.find((rule) => !BASH_PREFIX_RULE.test(rule)) ?? hits[0];
+}
+
+// What a definition session does with a call canUseTool sees (docs/adr/0076
+// §2, replacing docs/adr/0067 §4's "outside tools.allow is denied"): a call
+// tools.allow matches runs (in `default` an Edit/Write still asks), anything
+// else in the tool ceiling asks, and a tool outside the ceiling is denied.
+// ExitPlanMode asks in every mode. Under `interaction: deny` every ask is a
+// deny.
+export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask" } | { behavior: "deny"; message: string };
+
+// The argument check docs/adr/0067 names as the first follow-up: a git prefix
+// rule's call runs without asking when its arguments cannot run a local
+// command or rewrite history. An allowlist, not a denylist: an option this
+// table does not name asks, so a missed `--upload-pack` style flag fails safe.
+// `value` options take the next word as their argument (a commit message).
+const GIT_SAFE_ARGS: Record<string, { flags: string[]; value: string[] }> = {
+  "git add": { flags: ["-A", "--all", "-u", "--update"], value: [] },
+  "git commit": { flags: ["-a", "--all", "-q", "--quiet"], value: ["-m", "--message"] },
+  "git pull --rebase": { flags: ["-q", "--quiet"], value: [] },
+  "git push": { flags: ["-q", "--quiet", "-u", "--set-upstream"], value: [] },
+  "git status": { flags: ["-s", "--short", "-b", "--branch"], value: [] },
+  "git diff": { flags: ["--stat", "--cached", "--staged", "--name-only"], value: [] },
+  "git log": { flags: ["--oneline", "--stat"], value: ["-n"] },
+};
+
+// The shell words of `rest`, or undefined when it holds anything a shell would
+// expand or chain: an unquoted metacharacter, or `$`, backtick or backslash
+// inside double quotes. Single quotes are literal.
+function shellWords(rest: string): string[] | undefined {
+  const words: string[] = [];
+  let word = "";
+  let inWord = false;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i];
+    if (c === "'" || c === '"') {
+      const end = rest.indexOf(c, i + 1);
+      if (end < 0) return undefined;
+      const body = rest.slice(i + 1, end);
+      if (c === '"' && /[$`\\]/.test(body)) return undefined;
+      word += body;
+      inWord = true;
+      i = end;
+    } else if (c === " ") {
+      if (inWord) words.push(word);
+      word = "";
+      inWord = false;
+    } else if (/[;&|<>()$`\\{}*?~\n\t#]/.test(c)) {
+      return undefined;
+    } else {
+      word += c;
+      inWord = true;
+    }
+  }
+  if (inWord) words.push(word);
+  return words;
+}
+
+// Prefixes whose positionals name a remote and then branches.
+const GIT_REMOTE_PREFIXES = new Set(["git push", "git pull --rebase"]);
+
+export function gitArgsAreInert(prefix: string, command: string): boolean {
+  if (!Object.hasOwn(GIT_SAFE_ARGS, prefix)) return false;
+  const safe = GIT_SAFE_ARGS[prefix];
+  if (!(command === prefix || command.startsWith(prefix + " "))) return false;
+  const words = shellWords(command.slice(prefix.length));
+  if (!words) return false;
+  let positional = 0;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (safe.value.includes(w)) {
+      i++;
+      if (i >= words.length) return false;
+    } else if (w.startsWith("-")) {
+      if (!safe.flags.includes(w)) return false;
+    } else if (w.startsWith("+") || w.includes(":")) {
+      // `+ref` force-pushes; `src:dst` pushes elsewhere or deletes a ref.
+      return false;
+    } else if (GIT_REMOTE_PREFIXES.has(prefix)) {
+      // Only remote and branch names. The first positional is the remote: a
+      // `/`, `.` or `~` there makes it a path, i.e. another local repository
+      // (its hooks and config). A later one is a branch, where `/` is common
+      // (`feature/x`), so only a leading `.` or `~` asks.
+      if (w.startsWith(".") || w.startsWith("~") || (positional === 0 && w.includes("/"))) return false;
+      positional++;
+    }
+  }
+  return true;
+}
+
+// docs/adr/0076 §1: a definition session in `auto` runs the SDK in `default`,
+// because the SDK's own `auto` never calls canUseTool for what its classifier
+// allows, so tools.allow would bound nothing. The fleet's mode stays `auto`.
+export function sdkMode(mode: PermissionMode): PermissionMode {
+  return mode === "auto" ? "default" : mode;
+}
+
+// Mirrors core/internal/definitions/load.go's toolCeiling: the tools a
+// definition can ever be allowed. Outside it a call is denied, not asked.
+const DEFINITION_TOOL_CEILING = new Set(["Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"]);
+const PATH_TOOLS: Record<string, string> = { Edit: "file_path", Write: "file_path" };
+// Git reads these wherever they sit in the tree (a submodule URL, a filter
+// driver, an included config), so a write to one is a write to git config.
+const GIT_CONFIG_FILES = new Set([".gitmodules", ".gitattributes", ".gitconfig"]);
+
+// `p` with symlinks resolved: the real path of its nearest existing ancestor,
+// plus the part that does not exist yet (a new file). Undefined for a dangling
+// symlink, which a write would follow somewhere this cannot see.
+function realPath(p: string): string | undefined {
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(p), ...rest);
+    } catch {
+      try {
+        lstatSync(p);
+        return undefined;
+      } catch {}
+      if (dirname(p) === p) return undefined;
+      rest.unshift(basename(p));
+      p = dirname(p);
+    }
+  }
+}
+
+// docs/adr/0076 §2 step 2: Edit/Write land inside the worktree and never under
+// any .git/ or .claude/ in it (a nested repo's hooks count), nor on a git
+// config file, whatever tools.allow says. The per-session claude-home
+// and /genome are outside it, so an agent cannot rewrite its own settings,
+// git config or hooks.
+// ponytail: a `..` segment is refused outright rather than resolved, since a
+// lexical resolve and the kernel disagree when it follows a symlink.
+function insideWorkspace(path: unknown, worktree: string): boolean {
+  if (typeof path !== "string" || path === "" || path.split(/[\/]/).includes("..")) return false;
+  const root = realPath(worktree);
+  const real = realPath(resolve(worktree, path));
+  if (root === undefined || real === undefined) return false;
+  const rel = relative(root, real);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return false;
+  const segments = rel.split(sep);
+  return !segments.some((s) => s === ".git" || s === ".claude") && !GIT_CONFIG_FILES.has(segments[segments.length - 1]);
+}
+
+// The SDK's built-in tool set for a definition session (query()'s `tools`):
+// the ceiling plus ExitPlanMode, which plan mode (in modeAllow) needs to end.
+// WebFetch, WebSearch, Task, NotebookEdit and the rest never reach the model.
+export const DEFINITION_BUILTIN_TOOLS = [...DEFINITION_TOOL_CEILING, "ExitPlanMode"];
+
+export function definitionDecision(
+  spec: AgentSpec,
+  toolName: string,
+  input: Record<string, unknown>,
+  mode: PermissionMode,
+  worktree: string,
+): DefinitionDecision {
+  const allow: DefinitionDecision = { behavior: "allow" };
+  const ask: DefinitionDecision = spec.interaction === "deny" ? { behavior: "deny", message: "not allowed in a headless run" } : { behavior: "ask" };
+  if (toolName === "ExitPlanMode") return ask;
+  // The ceiling first: tools.allow cannot widen it.
+  if (!DEFINITION_TOOL_CEILING.has(toolName)) return { behavior: "deny", message: "not available to definitions" };
+  const pathKey = PATH_TOOLS[toolName];
+  if (pathKey && !insideWorkspace(input[pathKey], worktree)) return { behavior: "deny", message: "outside this definition's workspace" };
+  const rule = matchesToolRule(spec.toolsAllow, toolName, input);
+  if (rule === undefined) return ask;
+  // `default` (and `plan`, which the SDK already holds back from mutating)
+  // asks on a matched edit, as Claude Code's `default` does.
+  if (pathKey) return mode === "auto" ? allow : ask;
+  if (toolName === "Bash" && typeof input.command === "string") {
+    if (autoModeStillAsksCommand(toolName, input)) return ask;
+    const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
+    if (prefix !== undefined) {
+      // A git prefix gets the argument check, so one the table does not name
+      // (`git`, `git checkout`) always asks; any other prefix only needs to
+      // be plain words: no metacharacter, expansion or chaining.
+      const isGit = prefix === "git" || prefix.startsWith("git ");
+      const inert = isGit ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
+      if (!inert) return ask;
+    }
+  }
+  return allow;
 }
 
 // A peer session's prompt arrives on the same feed as a human's and, until this
@@ -637,6 +844,9 @@ export async function runSession(): Promise<SessionResult> {
   // and the human would have no way to tell except by watching it start
   // asking again.
   const session = await sidecar.getSession();
+  // docs/adr/0067 §4: set for a definition session only. Everything below
+  // that reads it narrows; a repo session (no spec) runs exactly as before.
+  const spec = session.agentSpec;
 
   // The mode this pod BOOTS in — restored from the column so a warm resumes in
   // the mode a human left the session in, rather than reverting to "default".
@@ -771,6 +981,7 @@ export async function runSession(): Promise<SessionResult> {
   // would bound nothing there. The provisioner sets FLEET_DEFINITION on a
   // definition pod only; read per call so a test can set it.
   const definitionPod = Boolean(process.env.FLEET_DEFINITION);
+  const definitionSidecarTools = new Set((spec?.sidecarTools ?? []).map((t) => `mcp__agent-fleet-sidecar__${t}`));
   const peerTools = ["SendMessage", "ListAgents"];
 
   const abortController = new AbortController();
@@ -796,7 +1007,7 @@ export async function runSession(): Promise<SessionResult> {
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
-      permissionMode: launchMode,
+      permissionMode: spec ? sdkMode(launchMode) : launchMode,
       // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
       // (docs/adr/0053).
       //
@@ -815,8 +1026,11 @@ export async function runSession(): Promise<SessionResult> {
       // text in a space's CLAUDE.md (a dev-notes commit, 2026-10-19). Flag
       // scope, so a repo's settings cannot undo it. It only steers the model;
       // FLEET_GIT_HOOKS below is what enforces the trailer.
+      //
+      // tools.deny (docs/adr/0067 §4) sits beside them, flag scope, so it holds
+      // in every mode, including the calls canUseTool never sees.
       settings: {
-        permissions: { ask: FLEET_ASK_RULES },
+        permissions: { ask: FLEET_ASK_RULES, ...(spec?.toolsDeny.length ? { deny: spec.toolsDeny } : {}) },
         crossSessionInbound: definitionPod ? "refuse" : "accept",
         remoteControlAtStartup: false,
         attribution: { commit: definitionPod ? "" : FLEET_TRAILER, pr: "", sessionUrl: false },
@@ -825,7 +1039,11 @@ export async function runSession(): Promise<SessionResult> {
       // mounted read-only by the provisioner. The env var makes the SDK load
       // CLAUDE.md and .claude/rules/ from it, not just its skills. Absent
       // (an older provisioner), the session runs without packs.
-      additionalDirectories: existsSync(genomeDir()) ? [genomeDir()] : [],
+      //
+      // A definition session reads no project settings (settingSources below),
+      // so its worktree is added here instead: its CLAUDE.md still loads as
+      // memory, its settings.json never does (docs/adr/0067 §4).
+      additionalDirectories: [...(existsSync(genomeDir()) ? [genomeDir()] : []), ...(spec ? [WORKTREE_PATH] : [])],
       env: { ...process.env, ...gitHooksEnv(process.env), CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
@@ -847,7 +1065,11 @@ export async function runSession(): Promise<SessionResult> {
       // undefined as matching the whole server), so they were a second,
       // hand-maintained copy of the same policy that every new tool had to
       // be added to.
-      allowedTools: [
+      //
+      // A definition session lists only its own sidecarTools: tools.allow is
+      // decided in canUseTool, never here, since this list skips canUseTool
+      // (docs/adr/0062 §7).
+      allowedTools: spec ? spec.sidecarTools.map((t) => `mcp__agent-fleet-sidecar__${t}`) : [
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
         // Claude Code's native cross-session channel (docs/adr/0060). Listed so
         // the agent uses it on its own, without a human prompt per message.
@@ -873,6 +1095,10 @@ export async function runSession(): Promise<SessionResult> {
       // no way to actually deliver a chosen answer back. Removing it from
       // context forces the only question tool that's actually wired up.
       disallowedTools: ["AskUserQuestion", ...(definitionPod ? peerTools : [])],
+      // A definition session's built-ins stop at its ceiling (see
+      // DEFINITION_BUILTIN_TOOLS): denied in canUseTool is not enough, since a
+      // tool the model can see is one it keeps reaching for.
+      ...(spec ? { tools: DEFINITION_BUILTIN_TOOLS } : {}),
       // Still no tool classification here — the SDK's own permission mode
       // decides when canUseTool gets invoked (acceptEdits skips it for file
       // edits, plan blocks mutation without invoking it, default invokes it
@@ -884,8 +1110,17 @@ export async function runSession(): Promise<SessionResult> {
       // dangerous — they are the two answers the fleet has already made and
       // will not re-ask a human for. Everything else still blocks.
       canUseTool: async (toolName, toolInput) => {
-        // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
-        if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
+        if (spec) {
+          // Only the sidecar tools this definition lists are the fleet's own.
+          if (definitionSidecarTools.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
+          const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH);
+          if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
+          if (decision.behavior === "deny") return decision;
+          // "ask": the ordinary prompt below. definitionDecision already
+          // decided what the fleet's auto allows (docs/adr/0076 §2), so the
+          // repo-session auto branch below is skipped.
+        } else if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
+          // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
           return { behavior: "allow", updatedInput: toolInput };
         }
         // toolInput passes through untouched, and that is the whole point:
@@ -901,7 +1136,7 @@ export async function runSession(): Promise<SessionResult> {
         // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
         // leaving `auto` is a live control request, so this has to read what
         // the session is in now.
-        if (currentMode === "auto" && !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)) {
+        if (!spec && currentMode === "auto" && !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)) {
           return { behavior: "allow", updatedInput: toolInput };
         }
         const seq = await sidecar
@@ -951,8 +1186,17 @@ export async function runSession(): Promise<SessionResult> {
       //
       // Deliberately NOT "local": .claude/settings.local.json is gitignored,
       // so nothing about it is reviewable in the PR that lands it.
-      settingSources: ["user", "project"],
-      maxTurns: MAX_TURNS,
+      //
+      // A definition session drops "project" (docs/adr/0067 §4): the target
+      // repo's allow rules, hooks, env and plugins are never read; its memory
+      // loads through additionalDirectories above.
+      settingSources: spec ? ["user"] : ["user", "project"],
+      maxTurns: spec?.maxTurns ? spec.maxTurns : MAX_TURNS,
+      // The definition's thinking and prompt (docs/adr/0067 §4). systemPrompt
+      // is otherwise unset, which the SDK sends as an empty custom prompt, so a
+      // plain string IS "append" to what this worker runs today.
+      ...(spec?.thinkingDefault ? { effort: spec.thinkingDefault as EffortLevel, thinking: { type: "adaptive" as const } } : {}),
+      ...(spec?.systemPromptAppend ? { systemPrompt: spec.systemPromptAppend } : {}),
       abortController,
     },
   });
@@ -987,6 +1231,10 @@ export async function runSession(): Promise<SessionResult> {
 
   // Delivers every new human message live (docs/adr/0021 point 2) — not a
   // poll the wrapper initiates on its own schedule.
+  //
+  // It carries the spec sha, and only from here: every query() option above is
+  // built and launched by now, which is what "applied" means. Until then core
+  // delivers a definition session nothing (docs/adr/0066 §8).
   const humanMessagesAbort = new AbortController();
   const humanMessagesDone = sidecar
     .streamHumanMessages(async (entry) => {
@@ -1056,9 +1304,12 @@ export async function runSession(): Promise<SessionResult> {
         } catch {
           return;
         }
+        // A definition session's answer is {behavior, message} only
+        // (docs/adr/0067 §4): the call runs as the agent asked for it, so a
+        // human cannot rewrite it into a call nobody was asked about.
         resolvePending(entry.replyTo, (input) =>
           decision.behavior === "allow"
-            ? { behavior: "allow", updatedInput: decision.updatedInput ?? input }
+            ? { behavior: "allow", updatedInput: spec ? input : (decision.updatedInput ?? input) }
             : { behavior: "deny", message: decision.message ?? "Denied." },
         );
         return;
@@ -1085,10 +1336,15 @@ export async function runSession(): Promise<SessionResult> {
         // rejects on any non-success control response, which an unrecognized
         // mode string is — and which "auto" is whenever its own gates (remote
         // circuit breaker, model allow-list) say no.
-        const failure = await q
-          .setPermissionMode(mode)
-          .then(() => null)
-          .catch((err) => String(err));
+        // A definition session only enters a mode its spec allows; core
+        // checks too, this is the worker not trusting a stale or forged entry.
+        const failure =
+          spec && !spec.modeAllow.includes(mode)
+            ? "not one of this definition's modes"
+            : await q
+                .setPermissionMode(spec ? sdkMode(mode) : mode)
+                .then(() => null)
+                .catch((err) => String(err));
         if (failure !== null) {
           // NOT resolveOnePendingAllow: the mode did not change, so allowing
           // the parked call would be this wrapper approving a tool on a
@@ -1107,7 +1363,9 @@ export async function runSession(): Promise<SessionResult> {
           return;
         }
         currentMode = mode;
-        resolveOnePendingAllow(mode);
+        // A definition session's mode change approves nothing (docs/adr/0067
+        // §4): a parked call is still answered only by a permission_response.
+        if (!spec) resolveOnePendingAllow(mode);
         return;
       }
       // `/clear` (and its CLI aliases) must NOT reach the SDK.
@@ -1169,7 +1427,7 @@ export async function runSession(): Promise<SessionResult> {
         resolveAllPendingDeny(`Mohammad replied (not an approval): ${entry.text}`);
       }
       input.push(entry.from === "session" ? peerTurn(entry.text) : entry.text);
-    }, humanMessagesAbort.signal, RESUME_FROM_SEQ)
+    }, humanMessagesAbort.signal, RESUME_FROM_SEQ, session.agentSpecSha ?? "")
     .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
 
   let sessionId = "";
@@ -1228,12 +1486,20 @@ export async function runSession(): Promise<SessionResult> {
         launchChecked = true;
         // Not awaited: a control request can hang with the CLI (see q.interrupt).
         void reportContext(q).catch((err) => log("warn", "context report failed", { taskId: SESSION_ID, error: String(err) }));
-        if (msg.permissionMode && msg.permissionMode !== currentMode) {
+        // A definition session in auto runs the SDK in default (sdkMode), so
+        // that is what it must report, or every auto session is saved as
+        // default.
+        if (msg.permissionMode && msg.permissionMode !== (spec ? sdkMode(currentMode) : currentMode)) {
           log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
-          currentMode = msg.permissionMode;
-          await sidecar
-            .savePermissionMode(currentMode)
-            .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
+          // A definition session never adopts what the SDK reports: the gate
+          // keeps reading the mode the spec allowed (definitionDecision is
+          // what decides there, not the SDK's mode).
+          if (!spec) {
+            currentMode = msg.permissionMode;
+            await sidecar
+              .savePermissionMode(currentMode)
+              .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
+          }
         }
       }
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });

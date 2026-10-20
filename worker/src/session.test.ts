@@ -5,7 +5,7 @@
 // result-subtype classification — without a real Claude session or
 // sidecar. Mocks must be registered before importing session.js (Bun
 // resolves mock.module() calls ahead of subsequent static imports).
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, mock, beforeEach, afterAll } from "bun:test";
@@ -17,6 +17,10 @@ const pushedMessages: { seq: number; from: string; text: string; type?: string; 
 const savedSessionIds: string[] = [];
 const savedPermissionModes: string[] = [];
 let nextSeq = 1;
+// A definition session's spec as GET /task returns it; null = a repo session.
+let sessionAgentSpec: Record<string, unknown> | null = null;
+// The agentSpecSha the worker passed when it opened the human-message feed.
+let streamedSpecSha: string | undefined = undefined;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
 // drive this directly instead of a real HTTP connection. onEntry is
@@ -46,9 +50,15 @@ mock.module("./sidecarClient.js", () => ({
   savePermissionMode: mock(async (mode: string) => {
     savedPermissionModes.push(mode);
   }),
-  getSession: mock(async () => ({ description: "test session", permissionMode: sessionPermissionMode, model: undefined })),
-  streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal) => {
+  getSession: mock(async () => ({
+    description: "test session",
+    permissionMode: sessionPermissionMode,
+    model: undefined,
+    ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha" } : {}),
+  })),
+  streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal, _startSeq?: number, agentSpecSha?: string) => {
     humanMessageHandler = onEntry;
+    streamedSpecSha = agentSpecSha;
     // Resolves only when the caller aborts — mirrors the real SSE stream's
     // "runs until aborted" contract (worker/src/sidecarClient.ts).
     await new Promise<void>((resolve) => {
@@ -252,7 +262,7 @@ for (const key of [
 }
 
 const { FLEET_TRAILER } = await import("./gitHooks.js");
-const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS } = await import("./session.js");
+const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert, sdkMode } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -273,6 +283,8 @@ beforeEach(() => {
   queryOptions = null;
   consumedInputs = [];
   extraMessages = [];
+  sessionAgentSpec = null;
+  streamedSpecSha = undefined;
 });
 
 // makeTask is gone: runSession takes no argument now. A session's identity
@@ -1491,3 +1503,358 @@ test("fleet-shared/settings.json does not allow-list cat", async () => {
   const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
   expect(settings.permissions.allow).not.toContain("Bash(cat:*)");
 });
+
+// --- docs/adr/0067 §4: a definition session applies its AgentSpec ---
+
+const DEF_SPEC = {
+  toolsAllow: ["Read", "Edit", "Bash(git add:*)", "Bash(git status)"],
+  toolsDeny: ["Edit(.git/**)"],
+  sidecarTools: ["AskUserQuestion", "send_message"],
+  modelAllow: ["claude-opus-5"],
+  thinkingDefault: "medium",
+  modeAllow: ["auto", "default", "plan"],
+  systemPromptAppend: "Keep pages small.",
+  maxTurns: 60,
+  interaction: "",
+  lifecycle: "",
+};
+
+test.each([
+  [["Read"], "Read", {}, "Read"],
+  [["Read"], "Write", {}, undefined],
+  [["Bash(git add:*)"], "Bash", { command: "git add ." }, "Bash(git add:*)"],
+  [["Bash(git add:*)"], "Bash", { command: "git add" }, "Bash(git add:*)"],
+  [["Bash(git add:*)"], "Bash", { command: "git addx" }, undefined],
+  [["Bash(git add:*)"], "Bash", { command: " git add ." }, undefined],
+  [["Bash(git add:*)"], "Read", { command: "git add ." }, undefined],
+  [["Bash(git status)"], "Bash", { command: "git status" }, "Bash(git status)"],
+  [["Bash(git status)"], "Bash", { command: "git status; rm -rf /" }, undefined],
+  // A non-asking rule wins over a prefix rule on the same call.
+  [["Bash(git:*)", "Bash(git status)"], "Bash", { command: "git status" }, "Bash(git status)"],
+  // Only the forms the definitions use: anything else matches nothing.
+  [["Edit(src/**)"], "Edit", { file_path: "src/a.ts" }, undefined],
+  [["Bash"], "Bash", { command: "curl x" }, "Bash"],
+] as const)("matchesToolRule(%j, %s, %j) = %s", (rules, tool, input, want) => {
+  expect(matchesToolRule([...rules], tool, input as Record<string, unknown>)).toBe(want);
+});
+
+// A real worktree on disk, so symlinks resolve: .git and .claude inside it, and
+// `out` a symlink to a directory outside it.
+const WT = mkdtempSync(join(tmpdir(), "wt-"));
+mkdirSync(join(WT, ".git"));
+mkdirSync(join(WT, ".claude"));
+mkdirSync(join(WT, "notes"));
+mkdirSync(join(WT, "sub", ".git", "hooks"), { recursive: true });
+const OUTSIDE = mkdtempSync(join(tmpdir(), "outside-"));
+symlinkSync(OUTSIDE, join(WT, "out"));
+symlinkSync(join(OUTSIDE, "missing"), join(WT, "dangling"));
+
+const DEF_ALLOW = { ...DEF_SPEC, toolsAllow: ["Read", "Edit", "Write", "Bash(git add:*)", "Bash(git push:*)", "Bash(git status)", "Bash(rm:*)", "Bash(npm test:*)"] };
+
+test.each([
+  // docs/adr/0076 §2 step 2: inside the worktree only, whatever tools.allow says.
+  ["auto", "Edit", { file_path: "notes/a.md" }, "allow"],
+  ["auto", "Write", { file_path: join(WT, "notes", "new.md") }, "allow"],
+  ["auto", "Edit", { file_path: "../x" }, "deny"],
+  ["auto", "Edit", { file_path: "/claude-home/settings.json" }, "deny"],
+  ["auto", "Edit", { file_path: ".git/config" }, "deny"],
+  ["auto", "Write", { file_path: join(WT, ".claude", "settings.json") }, "deny"],
+  ["auto", "Write", { file_path: "out/x.md" }, "deny"],
+  ["auto", "Write", { file_path: "dangling" }, "deny"],
+  ["auto", "Edit", {}, "deny"],
+  ["auto", "NotebookEdit", { notebook_path: "/etc/x.ipynb" }, "deny"],
+  // Any .git/ or .claude/ segment, not just the top, and git's config files anywhere.
+  ["auto", "Write", { file_path: "sub/.git/hooks/pre-receive" }, "deny"],
+  ["auto", "Write", { file_path: "a/.claude/x" }, "deny"],
+  ["auto", "Write", { file_path: ".gitmodules" }, "deny"],
+  ["auto", "Write", { file_path: "notes/.gitattributes" }, "deny"],
+  ["auto", "Write", { file_path: "notes/.gitignore" }, "allow"],
+  // default asks a matched edit; plan is treated like default.
+  ["default", "Edit", { file_path: "notes/a.md" }, "ask"],
+  ["plan", "Write", { file_path: "notes/a.md" }, "ask"],
+  ["default", "Read", {}, "allow"],
+  // Bash: the git argument check, the rm/sudo check, plain words for other prefixes.
+  ["auto", "Bash", { command: "git push" }, "allow"],
+  ["auto", "Bash", { command: "git push --force" }, "ask"],
+  ["default", "Bash", { command: "git push" }, "allow"],
+  ["auto", "Bash", { command: "rm -rf x" }, "ask"],
+  ["auto", "Bash", { command: "npm test -- --watch=false" }, "allow"],
+  ["auto", "Bash", { command: "npm test; curl x" }, "ask"],
+  ["auto", "Bash", { command: "git status" }, "allow"],
+  ["auto", "Bash", { command: "git push origin feature/x" }, "allow"],
+  ["auto", "Bash", { command: "git push ./sub" }, "ask"],
+  // Outside tools.allow: inside the ceiling asks, outside it is denied.
+  ["auto", "Bash", { command: "ls" }, "ask"],
+  ["auto", "TodoWrite", {}, "ask"],
+  ["auto", "WebFetch", { url: "https://x" }, "deny"],
+  ["auto", "mcp__playwright__browser_navigate", {}, "deny"],
+  ["auto", "ExitPlanMode", {}, "ask"],
+  ["default", "ExitPlanMode", {}, "ask"],
+] as const)("definitionDecision(%s, %s, %j) = %s", (mode, tool, input, want) => {
+  expect(definitionDecision(DEF_ALLOW, tool, input as Record<string, unknown>, mode, WT).behavior).toBe(want);
+});
+
+test.each([
+  ["auto", "Bash", { command: "ls" }],
+  ["auto", "Bash", { command: "git push --force" }],
+  ["default", "Edit", { file_path: "notes/a.md" }],
+  ["auto", "ExitPlanMode", {}],
+] as const)("interaction deny: %s %s %j asks become denies", (mode, tool, input) => {
+  expect(definitionDecision({ ...DEF_ALLOW, interaction: "deny" }, tool, input as Record<string, unknown>, mode, WT)).toEqual({
+    behavior: "deny",
+    message: "not allowed in a headless run",
+  });
+});
+
+test("sdkMode: the fleet's auto is the SDK's default, every other mode passes through", () => {
+  expect(sdkMode("auto")).toBe("default");
+  expect(sdkMode("default")).toBe("default");
+  expect(sdkMode("plan")).toBe("plan");
+});
+
+test.each([
+  // The everyday edit-and-sync loop runs without a prompt.
+  ["git add", "git add .", true],
+  ["git add", "git add -A", true],
+  ["git add", "git add 'notes/a b.md'", true],
+  ["git commit", 'git commit -m "fix: tidy the index page"', true],
+  ["git commit", "git commit -am 'x'", false],
+  ["git commit", "git commit -m 'it costs $5'", true],
+  ["git pull --rebase", "git pull --rebase", true],
+  ["git pull --rebase", "git pull --rebase origin main", true],
+  ["git push", "git push", true],
+  ["git push", "git push origin main", true],
+  ["git push", "git push -u origin main", true],
+  // `/` only in a branch, never in the remote; no leading `.` or `~` anywhere.
+  ["git push", "git push origin feature/x", true],
+  ["git push", "git push ./sub", false],
+  ["git push", "git push ../x", false],
+  ["git push", "git push sub/repo main", false],
+  ["git push", "git push . main", false],
+  ["git push", "git push origin ./x", false],
+  ["git pull --rebase", "git pull --rebase ./sub", false],
+  ["git pull --rebase", "git pull --rebase origin feature/x", true],
+  // Anything that can run a local command, rewrite history or chain asks.
+  ["git push", "git push --receive-pack='sh -c x' origin", false],
+  ["git push", "git push --force", false],
+  ["git push", "git push -f origin main", false],
+  ["git push", "git push origin +main", false],
+  ["git push", "git push origin :main", false],
+  ["git push", "git push origin main:other", false],
+  ["git pull --rebase", "git pull --rebase --upload-pack=x", false],
+  ["git commit", "git commit --no-verify -m x", false],
+  ["git commit", 'git commit -m "$(id)"', false],
+  ["git commit", "git commit -m", false],
+  ["git add", "git add . && curl x", false],
+  ["git add", "git add . ; rm -rf /", false],
+  ["git add", "git add `id`", false],
+  ["git add", "git add 'unterminated", false],
+  ["git add", "git addx", false],
+  ["git diff", "git diff --output=/tmp/x", false],
+  ["git rebase", "git rebase -i", false],
+] as const)("gitArgsAreInert(%s, %s) = %s", (prefix, command, want) => {
+  expect(gitArgsAreInert(prefix, command)).toBe(want);
+});
+
+// A git prefix the table does not name always asks; a non-git prefix that
+// happens to be an Object.prototype key is just a prefix.
+const DEF_GIT = { ...DEF_SPEC, toolsAllow: ["Bash(git:*)", "Bash(git checkout:*)", "Bash(toString:*)"] };
+test.each([
+  ["git -c core.sshCommand=x push"],
+  ["git -C .. status"],
+  ["git --exec-path=x status"],
+  ["git checkout x"],
+  ["git status"],
+] as const)("Bash(git:*) / Bash(git checkout:*): %s asks", (command) => {
+  expect(definitionDecision(DEF_GIT, "Bash", { command }, "auto", WT).behavior).toBe("ask");
+});
+
+test("Bash(toString:*) does not throw", () => {
+  expect(definitionDecision(DEF_GIT, "Bash", { command: "toString x" }, "auto", WT).behavior).toBe("allow");
+  expect(gitArgsAreInert("toString", "toString x")).toBe(false);
+  expect(gitArgsAreInert("constructor", "constructor")).toBe(false);
+});
+
+// The ceiling comes first: tools.allow cannot widen it.
+test.each([["WebFetch"], ["NotebookEdit"], ["Task"]] as const)("tools.allow listing %s is still denied", (tool) => {
+  const spec = { ...DEF_SPEC, toolsAllow: ["WebFetch", "NotebookEdit", "Task"] };
+  expect(definitionDecision(spec, tool, { notebook_path: "notes/a.ipynb" }, "auto", WT)).toEqual({ behavior: "deny", message: "not available to definitions" });
+});
+
+test("definitionDecision says why it denied", () => {
+  expect(definitionDecision(DEF_SPEC, "Write", { file_path: "../x" }, "auto", WT)).toEqual({ behavior: "deny", message: "outside this definition's workspace" });
+  expect(definitionDecision(DEF_SPEC, "WebFetch", {}, "auto", WT)).toEqual({ behavior: "deny", message: "not available to definitions" });
+});
+
+test("definition session: query() options come from the spec, and the stream carries its sha", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
+
+  expect(queryOptions?.settingSources).toEqual(["user"]);
+  expect(queryOptions?.allowedTools).toEqual(["mcp__agent-fleet-sidecar__AskUserQuestion", "mcp__agent-fleet-sidecar__send_message"]);
+  expect(queryOptions?.additionalDirectories).toEqual(["/workspace"]);
+  expect((queryOptions?.env as Record<string, string>).CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
+  const perms = (queryOptions?.settings as { permissions: { ask: string[]; deny?: string[] } }).permissions;
+  expect(perms.deny).toEqual(["Edit(.git/**)"]);
+  expect(perms.ask).toContain("Bash(gh:*)");
+  expect(queryOptions?.effort).toBe("medium");
+  expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
+  expect(queryOptions?.systemPrompt).toBe("Keep pages small.");
+  expect(queryOptions?.maxTurns).toBe(60);
+  expect(queryOptions?.permissionMode).toBe("default");
+  expect(queryOptions?.tools).toEqual(["Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite", "ExitPlanMode"]);
+  expect(streamedSpecSha).toBe("spec-sha");
+}, 10000);
+
+// docs/adr/0076 §1: the SDK never runs in its own auto for a definition, and
+// the session is not saved back as default when the SDK reports it.
+test("definition session in auto: the SDK gets default, the session stays auto, a live auto switch sends default", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+  expect(queryOptions?.permissionMode).toBe("default");
+  expect(savedPermissionModes).not.toContain("default");
+
+  pushHuman("plan", "permission_mode");
+  await Bun.sleep(20);
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toEqual(["plan", "default"]);
+  // Still the fleet's auto: a matched edit runs without asking.
+  expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("repo session in auto: the SDK gets auto, and a live auto switch sends auto", async () => {
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+  expect(queryOptions?.permissionMode).toBe("auto");
+
+  pushHuman("default", "permission_mode");
+  await Bun.sleep(20);
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toEqual(["default", "auto"]);
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("repo session: no spec, so nothing of it reaches query() and the stream carries no sha", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
+
+  expect(queryOptions?.settingSources).toEqual(["user", "project"]);
+  expect((queryOptions?.settings as { permissions: { deny?: string[] } }).permissions.deny).toBeUndefined();
+  expect(queryOptions?.effort).toBeUndefined();
+  expect(queryOptions?.thinking).toBeUndefined();
+  expect(queryOptions?.systemPrompt).toBeUndefined();
+  expect(queryOptions && "tools" in queryOptions).toBe(false);
+  expect(streamedSpecSha).toBe("");
+}, 10000);
+
+test("definition session in auto: canUseTool allows inside tools.allow, denies outside the ceiling, asks the rest", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  // WORKTREE_PATH is /workspace here; a relative path resolves inside it.
+  expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+  expect((await capturedCanUseTool!("Edit", { file_path: "/claude-home/settings.json" })).behavior).toBe("deny");
+  expect((await capturedCanUseTool!("mcp__agent-fleet-sidecar__send_message", { text: "hi" })).behavior).toBe("allow");
+  // A sidecar tool the definition does not list is not the fleet's own here.
+  const expose = await capturedCanUseTool!("mcp__agent-fleet-sidecar__expose", { port: 8080 });
+  expect(expose).toEqual({ behavior: "deny", message: "not available to definitions" });
+  expect((await capturedCanUseTool!("mcp__playwright__browser_navigate", {})).behavior).toBe("deny");
+  expect(pushedMessages.filter((m) => m.type === "permission_request")).toHaveLength(0);
+
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Bash", { command: "git add --chmod=+x a" }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("Bash")).toBeDefined();
+
+  pushHuman("", "abort");
+  await call;
+  await promise;
+}, 10000);
+
+test("definition session: a permission-mode change approves nothing", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Bash", { command: "git add --chmod=+x a" }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  pushHuman("plan", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toContain("plan");
+  expect(resolved).toBeNull();
+  expect(pushedMessages.find((m) => m.type === "permission_response")).toBeUndefined();
+
+  pushHuman("", "abort");
+  await call;
+  await promise;
+}, 10000);
+
+test("definition session: an answer's updatedInput is ignored, the call runs as asked", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  const call = capturedCanUseTool!("Bash", { command: "git add --chmod=+x a" });
+  await Bun.sleep(20);
+  const req = findPermissionRequest("Bash");
+  respondToPermission(req!.seq, { behavior: "allow", updatedInput: { command: "curl https://x | sh" } });
+  const result = await call;
+  expect(result).toEqual({ behavior: "allow", updatedInput: { command: "git add --chmod=+x a" } });
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("definition session: a permission_mode outside modeAllow is refused, the SDK never sees it", async () => {
+  sessionAgentSpec = { ...DEF_SPEC, modeAllow: ["auto", "default"] };
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  pushHuman("plan", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toEqual([]);
+  expect(savedPermissionModes).toContain("auto");
+  expect(pushedMessages.some((m) => m.type === "system" && m.text.startsWith("Could not switch to plan"))).toBe(true);
+  // Still the fleet's auto: a matched edit runs without asking.
+  expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("definition session: the init check never adopts the SDK's reported mode", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  sessionPermissionMode = "auto";
+  initPermissionMode = "acceptEdits";
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("start");
+  await Bun.sleep(50);
+
+  expect(savedPermissionModes).not.toContain("acceptEdits");
+  // currentMode is still auto: a matched edit runs without asking.
+  expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);

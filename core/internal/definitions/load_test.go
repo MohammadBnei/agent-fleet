@@ -84,9 +84,11 @@ func TestLoad_ChildRules(t *testing.T) {
 	}{
 		{"valid", nil, ""},
 		// widening at the effective spec
-		{"mode widened to auto", map[string]string{"mode": "{ default: default, allow: [default, auto] }"}, `"auto" skips canUseTool`},
+		// docs/adr/0076 §1: auto is the fleet's, the worker runs the SDK in default.
+		{"auto is accepted", map[string]string{"mode": "{ default: auto, allow: [auto, default, plan] }"}, ""},
 		{"acceptEdits by name", map[string]string{"mode": "{ default: default, allow: [default, acceptEdits] }"}, `"acceptEdits" skips canUseTool`},
 		{"bypassPermissions by name", map[string]string{"mode": "{ default: default, allow: [bypassPermissions, default] }"}, `"bypassPermissions" skips canUseTool`},
+		{"dontAsk outside the ceiling", map[string]string{"mode": "{ default: default, allow: [default, dontAsk] }"}, `"dontAsk" is not in the fleet ceiling`},
 		{"mode default not allowed", map[string]string{"mode": "{ default: plan, allow: [default] }"}, "mode.default"},
 		{"tool outside ceiling", map[string]string{"tools": "{ allow: [WebFetch] }"}, "WebFetch"},
 		{"bare Bash", map[string]string{"tools": "{ allow: [Bash] }"}, "literal command prefix"},
@@ -273,7 +275,7 @@ func TestLoad_ExtendsErrors(t *testing.T) {
 		}
 	})
 	t.Run("parent error propagates", func(t *testing.T) {
-		bad := strings.Replace(baseYAML, "allow: [default, plan]", "allow: [default, auto]", 1)
+		bad := strings.Replace(baseYAML, "allow: [default, plan]", "allow: [default, bypassPermissions]", 1)
 		got, fileErrs := load(t, map[string]string{
 			"definitions/base.yaml": bad,
 			"definitions/cee.yaml":  childYAML("cee", nil),
@@ -406,12 +408,16 @@ func TestLoad_Clients(t *testing.T) {
 
 // validate is what the registry re-runs on stored rows; it must reject what
 // Load rejects even when handed a Spec directly.
-func TestValidate_RejectsAutoOnAStoredSpec(t *testing.T) {
+func TestValidate_RejectsBypassOnAStoredSpec(t *testing.T) {
 	got, _ := load(t, map[string]string{"definitions/base.yaml": baseYAML, "definitions/cee.yaml": childYAML("cee", nil)})
 	s := *got["cee"].Effective
-	s.Mode = &Mode{Default: "auto", Allow: []string{"auto"}}
+	s.Mode = &Mode{Default: "bypassPermissions", Allow: []string{"bypassPermissions"}}
 	if err := validate("cee", &s); err == nil || !strings.Contains(err.Error(), "skips canUseTool") {
-		t.Fatalf("want auto rejected, got %v", err)
+		t.Fatalf("want bypassPermissions rejected, got %v", err)
+	}
+	s.Mode = &Mode{Default: "auto", Allow: []string{"auto"}}
+	if err := validate("cee", &s); err != nil {
+		t.Fatalf("auto is in the ceiling (docs/adr/0076): %v", err)
 	}
 }
 

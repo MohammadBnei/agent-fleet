@@ -323,14 +323,21 @@ a pending permission, on every branch; for these sessions the skip no longer
 applies to the `limits.timeout` branch. So a thread nobody answers gives its
 slot back.
 
-**No message reaches a worker that has not applied the spec.** A
-definition pod's worker must call a new `CoreService.AckAgentSpec` after it
-has read `GetSession` and applied the `AgentSpec` (ADR-0067 §4), before it
-consumes anything. Core streams no human entry (`StreamHumanMessages`,
-`WaitForMessages`) to a definition pod's lease until that ack. A worker that
-predates this ADR never acks, so it never receives a message, whoever warmed
+**No message reaches a worker that has not applied the spec.**
+`GetSession` returns the `AgentSpec` with `agent_spec_sha`, the hex sha256 of
+its deterministic encoding. After applying the spec (ADR-0067 §4), the worker
+echoes that sha on every `StreamHumanMessages` and `WaitForMessages` (the
+sidecar keeps the one the worker sent on its stream for the agent's
+`wait_for_messages`). For a definition session core refuses both with
+`FailedPrecondition` unless the sha equals the one it computes from the pinned
+row now. Nothing is stored, so a core restart changes nothing. A worker that
+predates this ADR sends no sha, so it never receives a message, whoever warmed
 it: a member, a client or an admin through the console. Its session shows
-`PROVISION_FAILED` once the startup budget passes.
+`PROVISION_FAILED` once the startup budget passes. The gated methods are the
+three that hand a worker human input, `StreamHumanMessages`, `WaitForMessages`
+and `AskUserQuestion` (its answer, so it carries the sha too); the gate is a
+rollout gate against a stale worker, not a boundary against the agent, which
+holds the sha its own worker was given.
 
 ### 9. `CoreService` and the sidecar follow `sidecarTools`
 
@@ -444,7 +451,7 @@ An ESLint import rule keeps embed code off `DashboardService`.
 
 1. Rotate `SESSION_KEYS` (operator; logs everyone out).
 2. The context-packs skills mount (ADR-0063's follow-up PR), then the worker
-   applying `AgentSpec`, with `AckAgentSpec` and core's stream gate (§8). No
+   applying `AgentSpec`, echoing `agent_spec_sha`, and core's stream gate (§8). No
    caller changes yet: admins still create every definition session.
 3. Migration 000015 (ADR-0067), the proto, the handlers behind the authz
    table, and the gate allowlist. The member login widening ships in this

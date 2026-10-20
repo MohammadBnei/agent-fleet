@@ -111,7 +111,7 @@ func repoDefinitionFiles(t *testing.T) map[string][]byte {
 		t.Fatal(err)
 	}
 	files["definitions/broken.yaml"] = []byte(strings.Replace(string(files["definitions/dev-dream-analyst.yaml"]),
-		"name: dev-dream-analyst }", "name: broken }\n", 1) + "  mode: { default: auto, allow: [auto] }\n")
+		"name: dev-dream-analyst }", "name: broken }\n", 1) + "  mode: { default: bypassPermissions, allow: [bypassPermissions] }\n")
 	return files
 }
 
@@ -206,22 +206,25 @@ func TestCreateSession_Definition(t *testing.T) {
 	if sess.GetDefinitionName() != "dev-dream-analyst" || sess.GetDefinitionSha() != "sha-one" {
 		t.Fatalf("pin: %q %q", sess.GetDefinitionName(), sess.GetDefinitionSha())
 	}
-	// Explicit, never the 'auto' column default (docs/adr/0061).
-	if sess.GetPermissionMode() != "default" || sess.GetModel() != "claude-opus-5" || sess.GetRepo() != "dream-analyst" {
+	// mode.default, written explicitly: workspace-base's is auto (docs/adr/0076).
+	if sess.GetPermissionMode() != "auto" || sess.GetModel() != "claude-opus-5" || sess.GetRepo() != "dream-analyst" {
 		t.Fatalf("got mode %q model %q repo %q", sess.GetPermissionMode(), sess.GetModel(), sess.GetRepo())
 	}
 
 	// A definition only narrows, for admins too, and a refusal appends
 	// nothing: the transcript entry is what reaches the running worker.
-	_, err = s.SetPermissionMode(context.Background(), connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sess.GetId(), Mode: "auto"}))
+	_, err = s.SetPermissionMode(context.Background(), connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sess.GetId(), Mode: "acceptEdits"}))
 	if code(err) != connect.CodeInvalidArgument {
-		t.Fatalf("auto on a definition session: %v", err)
+		t.Fatalf("acceptEdits on a definition session: %v", err)
 	}
 	if entries, _, err := s.transcr.ReadSince(context.Background(), sess.GetId(), 0, 100); err != nil || len(entries) != 0 {
 		t.Fatalf("a refused mode reached the transcript: %v %v", entries, err)
 	}
 	if _, err := s.SetPermissionMode(context.Background(), connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sess.GetId(), Mode: "plan"})); err != nil {
 		t.Fatalf("plan is in mode.allow: %v", err)
+	}
+	if _, err := s.SetPermissionMode(context.Background(), connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sess.GetId(), Mode: "auto"})); err != nil {
+		t.Fatalf("auto is in mode.allow (docs/adr/0076): %v", err)
 	}
 }
 
@@ -245,7 +248,7 @@ func TestListDefinitions(t *testing.T) {
 	if _, ok := got["workspace-base"]; ok {
 		t.Error("an abstract definition is never listed")
 	}
-	if d := got["dev-dream-analyst"]; !d.GetValid() || d.GetRepo() != "dream-analyst" || d.GetPermissionMode() != "default" || d.GetAudienceGroup() != "platform-admins" {
+	if d := got["dev-dream-analyst"]; !d.GetValid() || d.GetRepo() != "dream-analyst" || d.GetPermissionMode() != "auto" || d.GetAudienceGroup() != "platform-admins" {
 		t.Errorf("dev-dream-analyst: %v", d)
 	}
 	if d := got["opus-workspace"]; !d.GetValid() {
