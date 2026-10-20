@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,6 +32,9 @@ type Pack struct {
 
 type Store struct {
 	pool *pgxpool.Pool
+
+	mu               sync.Mutex
+	lastReviewedErrs string // logged on change only
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -46,6 +50,8 @@ func (s *Store) Create(ctx context.Context, name, ownerGroup string) error {
 	if err := checkPackName(name); err != nil {
 		return err
 	}
+	// One namespace with the reviewed packs (ADR-0063 §1): checkPackName
+	// reserves every reviewed name.
 	_, err := s.pool.Exec(ctx, `INSERT INTO packs (name, owner_group) VALUES ($1, $2)`, name, ownerGroup)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -220,31 +226,35 @@ func (s *Store) Detach(ctx context.Context, kind, name, pack string) error {
 }
 
 // RenderContext renders what a warm of this target loads: its attached live
-// packs at their latest version, plus the reviewed repo/fleet packs (nil until
-// the provisioner syncs packs/). A repo with no GitHub id renders without live
-// packs rather than failing the warm.
-func (s *Store) RenderContext(ctx context.Context, kind, name string, repo, fleet *Version) (Rendered, error) {
+// packs at their latest version, plus the last good reviewed packs (fleet for
+// every pod, repo for a repo session). A repo with no GitHub id renders
+// without live packs rather than failing the warm.
+func (s *Store) RenderContext(ctx context.Context, kind, name string) (Rendered, error) {
+	repo, fleet, notes, err := reviewed(ctx, s.pool, kind == KindRepo)
+	if err != nil {
+		return Rendered{}, err
+	}
 	var live []Version
 	target, err := targetID(ctx, s.pool, kind, name)
 	switch {
 	case errors.Is(err, ErrNotFound):
-		r := Render(nil, repo, fleet)
-		r.Skipped = append(r.Skipped, err.Error())
-		return r, nil
+		notes = append(notes, err.Error())
 	case err != nil:
 		return Rendered{}, err
+	default:
+		if live, err = latest(ctx, s.pool, kind, target); err != nil {
+			return Rendered{}, err
+		}
 	}
-	if live, err = latest(ctx, s.pool, kind, target); err != nil {
-		return Rendered{}, err
-	}
-	return Render(live, repo, fleet), nil
+	r := Render(live, repo, fleet)
+	r.Skipped = append(r.Skipped, notes...)
+	return r, nil
 }
 
-// checkComposed refuses a target whose attached latest versions exceed the
-// caps. The per-target advisory lock makes two concurrent attaches or saves
-// see each other's rows. ponytail: reviewed packs' bytes are not counted
-// until core holds them (the provisioner step); Render still enforces the
-// full sum and skips what does not fit.
+// checkComposed refuses a target whose attached latest versions, plus the
+// reviewed packs it gets, exceed the caps. The per-target advisory lock makes
+// two concurrent attaches or saves see each other's rows. Render still
+// enforces the sum at warm time, when a reviewed pack may have grown.
 func checkComposed(ctx context.Context, tx pgx.Tx, kind, target string) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('packs:' || $1 || ':' || $2))`, kind, target); err != nil {
 		return err
@@ -252,6 +262,15 @@ func checkComposed(ctx context.Context, tx pgx.Tx, kind, target string) error {
 	live, err := latest(ctx, tx, kind, target)
 	if err != nil {
 		return err
+	}
+	repo, fleet, _, err := reviewed(ctx, tx, kind == KindRepo)
+	if err != nil {
+		return err
+	}
+	for _, v := range []*Version{repo, fleet} {
+		if v != nil {
+			live = append(live, *v)
+		}
 	}
 	text, skills := composedSize(live)
 	if text > MaxText || skills > MaxSkills {

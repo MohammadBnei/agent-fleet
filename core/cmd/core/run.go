@@ -254,7 +254,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions}, loki, prom, scheduleStore, version)
 	dashboardSvc.SetDefinitions(defs)
-	dashboardSvc.SetPacks(packs.NewStore(pool))
+	packStore := packs.NewStore(pool)
+	defs.SetOnFiles(packStore.OnDefinitionFiles)
+	dashboardSvc.SetPacks(packStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that

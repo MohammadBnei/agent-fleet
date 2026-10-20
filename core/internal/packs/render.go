@@ -27,7 +27,7 @@ var (
 	// @ not glued to a letter or digit, so mail addresses still pass.
 	importRe = regexp.MustCompile(`(^|[^A-Za-z0-9])@`)
 	// Names the reviewed packs render under; a live pack cannot take them.
-	reserved = map[string]bool{"fleet": true, "repo": true}
+	reserved = reviewedNames
 )
 
 // Skill is stored without frontmatter. Render writes the frontmatter itself
@@ -45,12 +45,21 @@ func (s Skill) File() string {
 	return "---\nname: " + s.Name + "\ndescription: " + string(d) + "\n---\n" + s.Body
 }
 
-// Version is one immutable pack version, live or reviewed.
+// Version is one immutable pack version, live or reviewed. A reviewed one
+// is identified by Ref, the commit it was read at, instead of Version.
 type Version struct {
 	Pack    string
 	Version int
+	Ref     string
 	Text    string
 	Skills  []Skill
+}
+
+func (v Version) id() string {
+	if v.Ref != "" {
+		return fmt.Sprintf("%s@%.7s", v.Pack, v.Ref)
+	}
+	return fmt.Sprintf("%s@%d", v.Pack, v.Version)
 }
 
 // File is one path under /genome and its content.
@@ -114,7 +123,11 @@ func composedSize(vs []Version) (text, skills int) {
 	for _, v := range vs {
 		text += len(v.Text)
 		for _, s := range v.Skills {
-			skills += len(s.File())
+			if v.Ref != "" {
+				skills += len(s.Body) // a reviewed SKILL.md is written as is
+			} else {
+				skills += len(s.File())
+			}
 		}
 	}
 	return text, skills
@@ -144,7 +157,7 @@ func Render(live []Version, repo, fleet *Version) Rendered {
 	owner := map[string]string{} // skill name -> pack that placed it
 	var rules, skills []File
 	skip := func(v Version, format string, args ...any) {
-		r.Skipped = append(r.Skipped, fmt.Sprintf("%s@%d: ", v.Pack, v.Version)+fmt.Sprintf(format, args...))
+		r.Skipped = append(r.Skipped, v.id()+": "+fmt.Sprintf(format, args...))
 	}
 
 	add := func(v Version, rulesName string, reviewed bool) {
@@ -187,7 +200,7 @@ func Render(live []Version, repo, fleet *Version) Rendered {
 		if reviewed {
 			tag = "reviewed:"
 		}
-		r.Versions = append(r.Versions, fmt.Sprintf("%s%s@%d%s", tag, v.Pack, v.Version, partial))
+		r.Versions = append(r.Versions, tag+v.id()+partial)
 	}
 
 	if fleet != nil {

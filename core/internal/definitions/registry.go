@@ -67,6 +67,14 @@ type Registry struct {
 	// heads are then last-known-good, and List says so.
 	lastErr  error
 	lastGood time.Time
+	// onFiles sees every good listing (docs/adr/0063: packs/ rides along).
+	onFiles func(ctx context.Context, files map[string][]byte, sha string)
+}
+
+// SetOnFiles hands every listing whose definitions were stored to f, with its
+// own time budget.
+func (r *Registry) SetOnFiles(f func(ctx context.Context, files map[string][]byte, sha string)) {
+	r.onFiles = f
 }
 
 func NewRegistry(pool *pgxpool.Pool, lister Lister) *Registry {
@@ -213,6 +221,11 @@ func (r *Registry) sync(ctx context.Context) error {
 	r.mu.Lock()
 	r.synced, r.heads, r.syncErrs, r.lastGood = true, heads, syncErrs, time.Now()
 	r.mu.Unlock()
+	if r.onFiles != nil {
+		hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncTimeout)
+		defer cancel()
+		r.onFiles(hookCtx, files, sha)
+	}
 	return nil
 }
 
