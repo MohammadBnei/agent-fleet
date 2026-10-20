@@ -47,7 +47,11 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    `lifecycle=resident`, `visibility=shared` (the operator sees every
    event session), `actor` and `causation_id` from the event, and
    `wake`/`tainted` from the gate below: trust is decided here, and core
-   checks `actor` only against `actors.allow` as a ceiling. The CloudEvent
+   checks `actor` only against `actors.allow` as a ceiling. `actor` is the
+   GitHub login, or `agent:<definition>` for an event published through
+   `PublishEvent`; the ceiling is an exact match and fails closed, so an
+   agent hand-off that may wake a session needs its own `agent:<definition>`
+   entry in `bridge.yaml` (ADR-0066 §6). The CloudEvent
    `source` + `id` (the id is unique only per source) is Open's idempotency
    key, so a redelivery appends nothing. Core always uses the definition's
    `spec.mode.default`, never `auto`, so an event-opened session does not
