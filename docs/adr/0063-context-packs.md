@@ -12,8 +12,8 @@ and only Decision 8 changes what `SyncFleetShared` deletes there).
   [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md) (egress stays the
   vault's decision; a pack cannot widen it). [ADR-0049](0049-project-setting-source.md)
   (the `project` setting source stays, see Decision 6). [ADR-0048](0048-one-session-one-pod-one-shared-home.md)
-  (prompt snippets are human-visible composer prefill and stay separate from
-  packs). The trailer enforcement this ADR relies on shipped in #269 (4.24.0).
+  (prompt snippets were human-visible composer prefill, kept separate from
+  packs; they were later removed, migration 000013). The trailer enforcement this ADR relies on shipped in #269 (4.24.0).
   [ADR-0074](0074-fleet-repos-come-from-github.md) (a repo attachment
   names a `repos` row, which now follows GitHub). The collaborator editor
   role gets its own later ADR.
@@ -262,7 +262,9 @@ leave pods with no fleet rules between merge and release.
   copy. Core already holds the data and sends bytes.
 - **Fold prompt snippets into packs:** snippets are text a human sees and edits
   before sending. Packs are loaded silently. Merging them would bring back the
-  hidden injected prompt that ADR-0048 removed.
+  hidden injected prompt that ADR-0048 removed. (Snippets were then removed
+  outright, not folded: with packs, the console had two places for reusable
+  text and the user kept one.)
 
 ## Consequences
 
