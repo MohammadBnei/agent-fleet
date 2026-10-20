@@ -9,6 +9,12 @@ FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY provisioner ./provisioner
+# go.work.sum: checksums only the workspace needs. Today that is core's
+# google.golang.org/genproto (via golang-migrate); without the file every
+# build asked sum.golang.org, and a lossy route to Google failed the image
+# builds on 2026-10-20. The other images copy it for the same guarantee.
+# Nothing checks it is current: a stale file only falls back to sumdb.
+COPY go.work.sum ./
 # A fresh, minimal go.work scoped to only what's copied into this image —
 # the repo-root go.work (dev convenience, also lists core/sidecar) isn't
 # portable across a partial build context.
