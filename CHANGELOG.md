@@ -1,5 +1,14 @@
 # Changelog
 
+# [5.0.0](https://github.com/MohammadBnei/agent-fleet/compare/4.24.0...5.0.0) (2026-10-20)
+
+* feat(repos)!: fleet repos come from GitHub, overrides from infra-bootstrap (ADR 0074) (#271) ([fdcce6e](https://github.com/MohammadBnei/agent-fleet/commit/fdcce6e4803ceea8e773c701c7a03b0bdeaf1457)), closes [#271](https://github.com/MohammadBnei/agent-fleet/issues/271)
+
+### BREAKING CHANGES
+
+* DashboardService CreateRepo, UpdateRepo and DeleteRepo
+  are removed; the console's repo list is read-only (SyncRepo stays).
+
 # [4.24.0](https://github.com/MohammadBnei/agent-fleet/compare/4.23.3...4.24.0) (2026-10-19)
 
 ### Features
