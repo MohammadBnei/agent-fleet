@@ -20,6 +20,11 @@ COPY --from=spa /app/dashboard/dist ./core/internal/webui/dist
 # A fresh, minimal go.work scoped to only what's copied into this image —
 # the repo-root go.work (dev convenience, also lists provisioner/sidecar)
 # isn't portable across a partial build context.
+# go.work.sum holds the checksums of modules only the workspace pulls in
+# (google.golang.org/genproto for grpc's status package). Without it the
+# build asks sum.golang.org on every run, and a lossy route to Google
+# failed the image build (2026-10-20). The repo's copy matches go.work.
+COPY go.work.sum ./
 RUN go work init ./proto/gen/go ./core
 WORKDIR /app/core
 # The version the dashboard reports for core (and for the SPA embedded above,
