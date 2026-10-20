@@ -1,5 +1,11 @@
 # Changelog
 
+# [5.5.0](https://github.com/MohammadBnei/agent-fleet/compare/5.4.0...5.5.0) (2026-10-20)
+
+### Features
+
+* **console:** Settings page with context packs (ADR 0063 step 5) ([#277](https://github.com/MohammadBnei/agent-fleet/issues/277)) ([8d9b8d1](https://github.com/MohammadBnei/agent-fleet/commit/8d9b8d1120112b067b09bc60b21816f2287ea6a2))
+
 # [5.4.0](https://github.com/MohammadBnei/agent-fleet/compare/5.3.0...5.4.0) (2026-10-20)
 
 ### Features
