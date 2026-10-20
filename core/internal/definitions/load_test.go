@@ -146,6 +146,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"no anthropic", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }] }`}, "api.anthropic.com service"},
 		{"agent token key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: AGENT_VAULT_TOKEN }] }"}, "provisioner's own"},
 		{"provisioner key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: FLEET_VAULT_GIT_USERNAME }] }"}, "provisioner's own"},
+		{"github app key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: GITHUB_APP_PRIVATE_KEY }] }"}, "provisioner's own"},
 		{"github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
 		{"api.github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
 		{"push without github", map[string]string{"git": push}, "git.mode push needs a github.com"},

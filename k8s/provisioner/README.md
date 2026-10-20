@@ -60,6 +60,14 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   `extraManifests`. Worker pods aren't selected by any policy and stay
   default-allow.
 
+- `infisicalsecret-github-app.yaml` — syncs the dedicated Infisical project
+  `fleet-github-app` (the App `ukubi-fleet`'s `GITHUB_APP_ID` and
+  `GITHUB_APP_PRIVATE_KEY`, docs/adr/0075) into Secret
+  `provisioner-github-app`, mounted as files at `/var/run/github-app`, never
+  in env. It authenticates with the identity `fleet-github-app-reader`, whose
+  credentials must exist as Secret `infisical/fleet-github-app-universal-auth`
+  (created by infra-bootstrap's ADR-0062 setup); without it nothing syncs and
+  the provisioner stays on the Infisical files.
 - `infisicalsecret-agent-vault.yaml` — syncs `agent-fleet-nygh` folder
   `/agent-vault` only into Secret `provisioner-agent-vault`, mounted read-only
   at `/var/run/agent-vault`: the Agent Vault agent token and the credential
