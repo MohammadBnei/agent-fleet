@@ -1,5 +1,11 @@
 # Changelog
 
+# [5.6.0](https://github.com/MohammadBnei/agent-fleet/compare/5.5.0...5.6.0) (2026-10-20)
+
+### Features
+
+* **provisioner:** mint definition GitHub tokens from the ukubi-fleet App ([#278](https://github.com/MohammadBnei/agent-fleet/issues/278)) ([d7693d0](https://github.com/MohammadBnei/agent-fleet/commit/d7693d0e2698ecfb45c623b3732d62fa88505f46))
+
 # [5.5.0](https://github.com/MohammadBnei/agent-fleet/compare/5.4.0...5.5.0) (2026-10-20)
 
 ### Features
