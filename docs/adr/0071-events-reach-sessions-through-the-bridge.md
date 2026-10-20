@@ -42,14 +42,22 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    and the publishing session is not tainted: the lowest trust along
    `causationid` (infra-bootstrap ADR-0060 §6).
 3. **Core consumes through one dispatcher.** A goroutine subscribes to the
-   bridge and calls `AgentService.Open(definition, thread_key, message,
-   interaction=ask, lifecycle=resident)` as the registered client
-   `definitions/clients/bridge.yaml`. The CloudEvent `source` + `id` (the id is
-   unique only per source) is Open's idempotency key, so a redelivery appends
-   nothing. Open passes the permission mode
-   explicitly — the definition's `spec.mode.default`, never `auto` — so an
-   event-opened session does not inherit the `'auto'` column default of
-   [ADR-0061](0061-sessions-launch-in-auto.md). Proposals filed for
+   bridge and calls `AgentService.Open` (ADR-0067) as the in-process
+   client `definitions/clients/bridge.yaml`, with `interaction=ask`,
+   `lifecycle=resident`, `visibility=shared` (the operator sees every
+   event session), `actor` and `causation_id` from the event, and
+   `wake`/`tainted` from the gate below: trust is decided here, and core
+   checks `actor` only against `actors.allow` as a ceiling. The CloudEvent
+   `source` + `id` (the id is unique only per source) is Open's idempotency
+   key, so a redelivery appends nothing. Core always uses the definition's
+   `spec.mode.default`, never `auto`, so an event-opened session does not
+   inherit the `'auto'` column default of
+   [ADR-0061](0061-sessions-launch-in-auto.md). Open answering
+   `ResourceExhausted` (no pool slot) files a proposal and the event is
+   acked: the bridge delivers head-of-line, so a retry would hold every
+   later event behind it. `FailedPrecondition` (a `context_only` event with
+   no open thread) also files a proposal. `CloseThread` ends a thread when
+   the PR is merged or closed, or the alert resolves. Proposals filed for
    untrusted or `actor=machine` events keep ADR-0061's behaviour once a
    human opens them. Every transcript entry an event produces (the opening
    message, a `context_only` follow-up) is appended by core itself: since
@@ -67,12 +75,13 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    of the CloudEvent type (`dev.bnei.github.pull_request`), `subjects` are
    globs with `*` and `?` only (`github/MohammadBnei/*`).
 5. **Threads.** The CloudEvent `subject` is the thread key. A session is
-   resident per thread: `sessions.thread_key` with a unique partial index on
-   `(definition_name, thread_key)` where not archived (ADR-0062's shape; no
-   separate table, no status enum). The column ships with the dispatcher, in
-   migration 000010 or later: 000008 and 000009 are ADR-0062's and ADR-0064's. The thread closes when the PR is merged
+   resident per thread, using ADR-0067's `sessions.thread_key` (unique per
+   `(invoker, definition_name, thread_key)` while not archived, migration
+   000015); this ADR adds no column. The thread closes when the PR is merged
    or closed, or the alert resolves — the alert handler moves to thread
-   semantics and stops discarding `resolved`.
+   semantics and stops discarding `resolved`. A thread whose definition
+   changed since it opened is archived and replaced on its next waking
+   event (ADR-0067).
 6. **The gate** (the ADR-0048 §1 amendment itself is ADR-0062's):
    - A **new thread** opens a session only for a trusted actor — the
      operator and CI — with trust computed by the bridge: a trusted actor on
