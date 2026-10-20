@@ -13,7 +13,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -125,27 +124,29 @@ func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
 
 // installation finds owner's installation among the allowlisted accounts.
 // Matched on the account id, never the login alone: a login can be renamed
-// and re-registered by someone else.
-//
-// ponytail: one page of 100 installations; only allowlisted ones matter and
-// there are two.
+// and re-registered by someone else. Every page is read: the App is public,
+// so foreign installations can push an allowlisted one past page one.
 func (a *App) installation(ctx context.Context, jwt, owner string) (int64, error) {
-	var list []struct {
-		ID      int64 `json:"id"`
-		Account struct {
-			ID    int64  `json:"id"`
-			Login string `json:"login"`
-		} `json:"account"`
-	}
-	if err := a.call(ctx, jwt, http.MethodGet, "/app/installations?per_page=100", nil, &list); err != nil {
-		return 0, err
-	}
-	for _, in := range list {
-		if a.Accounts[in.Account.ID] && strings.EqualFold(in.Account.Login, owner) {
-			return in.ID, nil
+	for page := 1; ; page++ {
+		var list []struct {
+			ID      int64 `json:"id"`
+			Account struct {
+				ID    int64  `json:"id"`
+				Login string `json:"login"`
+			} `json:"account"`
+		}
+		if err := a.call(ctx, jwt, http.MethodGet, fmt.Sprintf("/app/installations?per_page=%d&page=%d", perPage, page), nil, &list); err != nil {
+			return 0, err
+		}
+		for _, in := range list {
+			if a.Accounts[in.Account.ID] && strings.EqualFold(in.Account.Login, owner) {
+				return in.ID, nil
+			}
+		}
+		if len(list) < perPage {
+			return 0, fmt.Errorf("github app: no installation for %s among the allowlisted accounts", owner)
 		}
 	}
-	return 0, fmt.Errorf("github app: no installation for %s among the allowlisted accounts", owner)
 }
 
 // jwt signs the App's RS256 JWT: iat backdated 60s for clock skew, exp 9m
@@ -197,39 +198,6 @@ func parseKey(raw []byte) (*rsa.PrivateKey, error) {
 	return rk, nil
 }
 
-// call is do() with the App JWT. Error text carries GitHub's message, never
-// the request body or a token.
 func (a *App) call(ctx context.Context, jwt, method, path string, in, out any) error {
-	var body io.Reader
-	if in != nil {
-		b, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, a.API+path, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+jwt)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	resp, err := a.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode/100 != 2 {
-		var e struct {
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(b, &e)
-		return fmt.Errorf("github app: %s %s: %d %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, e.Message)
-	}
-	return json.Unmarshal(b, out)
+	return request(ctx, a.HTTP, a.API, jwt, method, path, in, out)
 }

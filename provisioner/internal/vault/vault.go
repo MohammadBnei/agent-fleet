@@ -411,13 +411,10 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 // specRepo is the one <owner>/<repo> a checked spec's GitHub paths name.
 func specRepo(s Spec) (owner, repo string, ok bool) {
 	for _, svc := range s.Services {
-		if len(svc.Paths) == 0 || (svc.Host != "github.com" && svc.Host != "api.github.com") {
+		if svc.Host != "github.com" || len(svc.Paths) == 0 {
 			continue
 		}
 		seg := strings.Split(svc.Paths[0], "/") // "", owner, repo[.git], "*"
-		if svc.Host == "api.github.com" {
-			seg = seg[1:] // "", "repos", owner, repo, "*"
-		}
 		return seg[1], strings.TrimSuffix(seg[2], ".git"), true
 	}
 	return "", "", false

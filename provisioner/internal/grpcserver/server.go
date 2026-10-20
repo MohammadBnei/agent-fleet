@@ -479,13 +479,36 @@ func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.Reconcil
 // refreshes nothing until core returns.
 func (s *Server) RefreshVaults(ctx context.Context) {
 	s.specsMu.Lock()
-	specs := s.specs
+	names := make([]string, 0, len(s.specs))
+	for _, v := range s.specs {
+		names = append(names, v.GetName())
+	}
 	s.specsMu.Unlock()
-	for _, v := range specs {
-		if err := s.reconcileVault(ctx, v); err != nil {
-			slog.Error("grpcserver: vault refresh", "vault", v.GetName(), "error", err)
+	for _, name := range names {
+		if err := s.refreshVault(ctx, name); err != nil {
+			slog.Error("grpcserver: vault refresh", "vault", name, "error", err)
 		}
 	}
+}
+
+// refreshVault re-reads the spec under the vault's lock. ReconcileVaults
+// publishes its set before taking any vault lock, so a refresh that waited
+// on the lock sees core's newest spec, never a stale snapshot that would
+// narrow the vault, re-widen it, or bring back a pruned one.
+func (s *Server) refreshVault(ctx context.Context, name string) error {
+	defer s.vault.Lock(name)()
+	s.specsMu.Lock()
+	var cur *agentfleetv1.VaultSpec
+	for _, v := range s.specs {
+		if v.GetName() == name {
+			cur = v
+		}
+	}
+	s.specsMu.Unlock()
+	if cur == nil {
+		return nil // core dropped it meanwhile
+	}
+	return s.reconcileVaultLocked(ctx, cur)
 }
 
 // TearDownSession is opportunistic by design (docs/adr/0020's Consequences

@@ -145,6 +145,9 @@ func main() {
 	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
 	if app.Configured() {
 		vc.Forge = app
+		if len(app.Accounts) == 0 {
+			slog.Error("github app mounted but FLEET_GITHUB_ACCOUNTS is empty: every definition GitHub token will fail closed")
+		}
 	} else {
 		slog.Warn("github app not mounted: vault GitHub keys come from Infisical files", "dir", cfg.GitHubAppDir)
 	}

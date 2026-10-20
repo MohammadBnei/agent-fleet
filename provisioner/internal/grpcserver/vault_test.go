@@ -408,3 +408,25 @@ func TestRefreshVaults_NothingBeforeCoreSentASet(t *testing.T) {
 		t.Errorf("refreshed with no known specs: %v", calls)
 	}
 }
+
+// A refresh that waited on the vault lock must use core's newest set: a vault
+// core dropped meanwhile is not brought back.
+func TestRefreshVault_UsesTheNewestSpecNotItsSnapshot(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	s.vault.Forge = &rotatingForge{token: "ghs-1"}
+	ctx := context.Background()
+	if _, err := s.ReconcileVaults(ctx, &agentfleetv1.ReconcileVaultsRequest{Vaults: []*agentfleetv1.VaultSpec{notesProfile().Vault}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReconcileVaults(ctx, &agentfleetv1.ReconcileVaultsRequest{}); err != nil { // core drops dev-notes, Prune empties it
+		t.Fatal(err)
+	}
+	f.ResetLog()
+	if err := s.refreshVault(ctx, "dev-notes"); err != nil {
+		t.Fatal(err)
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("a stale refresh rewrote a pruned vault: %v", w)
+	}
+}

@@ -4,6 +4,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -111,14 +112,28 @@ func (c *Client) do(ctx context.Context, method, path string, out any) error {
 	if c.Token == "" {
 		return fmt.Errorf("github: GH_TOKEN is not set")
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.API+path, nil)
+	return request(ctx, c.HTTP, c.API, c.Token, method, path, nil, out)
+}
+
+// request is one GitHub REST call. Errors carry GitHub's message and the
+// path without its query, never the request body or the bearer.
+func request(ctx context.Context, hc *http.Client, api, bearer, method, path string, in, out any) error {
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, api+path, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	resp, err := c.HTTP.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
@@ -132,11 +147,11 @@ func (c *Client) do(ctx context.Context, method, path string, out any) error {
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(b, &e)
-		return fmt.Errorf("github: %s %s: %d %s", method, path, resp.StatusCode, e.Message)
+		return fmt.Errorf("github: %s %s: %d %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, e.Message)
 	}
 	if out != nil {
 		if err := json.Unmarshal(b, out); err != nil {
-			return fmt.Errorf("github: %s %s: decode: %w", method, path, err)
+			return fmt.Errorf("github: %s %s: decode: %w", method, strings.SplitN(path, "?", 2)[0], err)
 		}
 	}
 	return nil
