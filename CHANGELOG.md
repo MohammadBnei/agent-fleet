@@ -1,5 +1,13 @@
 # Changelog
 
+# [6.0.0](https://github.com/MohammadBnei/agent-fleet/compare/5.6.0...6.0.0) (2026-10-20)
+
+* feat(console)!: remove guidance snippets, replaced by context packs (#280) ([f8ec84f](https://github.com/MohammadBnei/agent-fleet/commit/f8ec84f4649733b7fb86cf237837177e21609dd3)), closes [#280](https://github.com/MohammadBnei/agent-fleet/issues/280)
+
+### BREAKING CHANGES
+
+* DashboardService ListPromptSnippets, CreatePromptSnippet, UpdatePromptSnippet and DeletePromptSnippet are removed; migration 000013 drops prompt_snippets.
+
 # [5.6.0](https://github.com/MohammadBnei/agent-fleet/compare/5.5.0...5.6.0) (2026-10-20)
 
 ### Features
