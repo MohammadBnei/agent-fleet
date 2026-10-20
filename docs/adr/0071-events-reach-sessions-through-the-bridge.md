@@ -51,7 +51,10 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    human opens them. Every transcript entry an event produces (the opening
    message, a `context_only` follow-up) is appended by core itself: since
    ADR-0064, a lease-authenticated `SendMessage` from a pod accepts only
-   `from` agent or worker.
+   `from` agent or worker. Open warms through `WarmIfIdle`, like every other
+   warm, so a dispatched definition session gets its context packs
+   (ADR-0063). The dispatcher's test asserts `genome_applied=true` on the
+   pod it opens.
 4. **Routing.** The `owner` is the definition whose `spec.owns` (repos,
    components, subject globs, types) matches the event; until definitions
    exist, an `owner` column on the `repos` table (ADR-0028) does it.
