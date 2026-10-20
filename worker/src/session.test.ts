@@ -223,6 +223,10 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         setPermissionModeCalls.push(mode);
         if (setPermissionModeError !== null) throw new Error(setPermissionModeError);
       }),
+      getContextUsage: mock(async () => ({
+        memoryFiles: [{ path: "/genome/.claude/rules/90-fleet.md", type: "Project", tokens: 10 }],
+        skills: { skillFrontmatter: [{ name: "journal", source: "projectSettings", tokens: 1 }, { name: "journal", source: "userSettings", tokens: 1 }] },
+      })),
     });
   },
 }));
@@ -776,6 +780,18 @@ test("a later init does not override the launch mode", async () => {
   await Bun.sleep(50);
 
   expect(savedPermissionModes).not.toContain("auto");
+  // docs/adr/0063: once, at the first init, the pod reports what it loaded.
+  const report = pushedMessages.find((m) => m.type === "system" && m.text.includes('"context_loaded"'));
+  expect(report && JSON.parse(report.text)).toEqual({
+    sdk: "context_loaded",
+    memory_files: [{ path: "/genome/.claude/rules/90-fleet.md", type: "Project" }],
+    skills: [
+      { name: "journal", source: "projectSettings" },
+      { name: "journal", source: "userSettings" },
+    ],
+    collisions: ["journal"],
+  });
+  expect(pushedMessages.filter((m) => m.text.includes('"context_loaded"'))).toHaveLength(1);
   let resolved: { behavior: string } | null = null;
   const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
     resolved = r as { behavior: string };
