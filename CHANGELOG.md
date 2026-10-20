@@ -1,5 +1,11 @@
 # Changelog
 
+# [5.4.0](https://github.com/MohammadBnei/agent-fleet/compare/5.3.0...5.4.0) (2026-10-20)
+
+### Features
+
+* **packs:** record what each warm rendered and what the pod loaded (ADR 0063 step 4) ([#275](https://github.com/MohammadBnei/agent-fleet/issues/275)) ([03068f2](https://github.com/MohammadBnei/agent-fleet/commit/03068f2f2fb97a7f1b7e20cd40943188e78bfc7c))
+
 # [5.3.0](https://github.com/MohammadBnei/agent-fleet/compare/5.2.0...5.3.0) (2026-10-20)
 
 ### Features
