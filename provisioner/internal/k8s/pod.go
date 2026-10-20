@@ -742,6 +742,15 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 			ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: VaultCAConfigMap}},
 		}})
 		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "agent-vault-ca", MountPath: vaultCADir, ReadOnly: true})
+		// docs/adr/0063 + 0067 §4: a definition pod runs settingSources
+		// ["user"], under which skills load only from the user scope, never
+		// from additionalDirectories. So the genome's skills are mounted,
+		// read-only, over /claude-home/skills: nested inside the read-write
+		// claude-home mount and listed after it, so this one wins. The rules
+		// stay on /genome through additionalDirectories.
+		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name: "shared", MountPath: claudeConfigDir + "/skills", SubPath: "claude-home/" + spec.SessionID + "-genome/.claude/skills", ReadOnly: true,
+		})
 	}
 
 	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})

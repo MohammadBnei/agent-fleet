@@ -392,6 +392,16 @@ func (m *Manager) RemoveFleetShared(sessionID string) error {
 			synced = true
 		}
 	}
+	// docs/adr/0067 §4: an empty skills/ is the mount point kubelet made for
+	// the genome's read-only skills mount, not a sync's leftover.
+	if entries, err := os.ReadDir(filepath.Join(home, "skills")); err == nil && len(entries) == 0 {
+		synced = false
+		for _, name := range fleetSharedNames {
+			if _, err := os.Lstat(filepath.Join(home, name)); name != "plugins" && name != "skills" && !errors.Is(err, fs.ErrNotExist) {
+				synced = true
+			}
+		}
+	}
 	if !synced {
 		return nil
 	}

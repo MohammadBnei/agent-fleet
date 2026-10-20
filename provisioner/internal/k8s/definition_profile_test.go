@@ -193,9 +193,18 @@ func TestDefinitionPod_ProxyAndCAEnv(t *testing.T) {
 			t.Errorf("worker %s = %q", k, got)
 		}
 	}
-	var mounted bool
+	var mounted, skills bool
+	sawHome := false
 	for _, m := range worker.VolumeMounts {
 		mounted = mounted || (m.MountPath == "/etc/agent-vault" && m.ReadOnly)
+		sawHome = sawHome || m.MountPath == "/claude-home"
+		// docs/adr/0067 §4: pack skills at user scope, read-only, after claude-home.
+		if m.MountPath == "/claude-home/skills" {
+			skills = m.ReadOnly && sawHome && strings.HasSuffix(m.SubPath, "-genome/.claude/skills")
+		}
+	}
+	if !skills {
+		t.Errorf("worker has no read-only /claude-home/skills genome mount after /claude-home: %+v", worker.VolumeMounts)
 	}
 	var vol *corev1.Volume
 	for i, v := range job.Spec.Template.Spec.Volumes {
