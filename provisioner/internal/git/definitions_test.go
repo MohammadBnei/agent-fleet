@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) string {
@@ -217,12 +216,11 @@ func TestReadDefinitions_FailsClosed(t *testing.T) {
 	})
 }
 
-// A provisioner killed mid-reset (a rollout, an OOM) leaves .git/index.lock
-// on the PVC, and every later reset failed until someone removed it by hand
-// (2026-10-20: definitions sync down ~2h after the 6.0.2 rollout). A lock old
-// enough that no live git can own it is cleared; a fresh one is left alone,
-// since the rollout overlap means another pod may be mid-reset.
-func TestReadDefinitions_ClearsAStaleIndexLockOnly(t *testing.T) {
+// A provisioner killed mid-git leaves locks or a half-built .git on the PVC,
+// and every later refresh failed on them until someone cleaned up by hand
+// (2026-10-20: definitions sync down ~2h after the 6.0.2 rollout). The clone
+// is disposable: a failed refresh re-clones from scratch.
+func TestReadDefinitions_RecoversFromALeftoverLockOrBrokenClone(t *testing.T) {
 	root := t.TempDir()
 	m := NewManager(root)
 	origin := newDefinitionsOrigin(t)
@@ -230,22 +228,27 @@ func TestReadDefinitions_ClearsAStaleIndexLockOnly(t *testing.T) {
 	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err != nil {
 		t.Fatal(err)
 	}
-	lock := filepath.Join(root, "definitions-src", ".git", "index.lock")
+	clone := filepath.Join(root, "definitions-src")
 
-	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+	for _, leftover := range []string{".git/index.lock", ".git/HEAD.lock", ".git/refs/heads/main.lock"} {
+		if err := os.WriteFile(filepath.Join(clone, leftover), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want := commitFile(t, origin, "definitions/c.yaml", leftover)
+		files, sha, err := m.ReadDefinitions(ctx, origin, "main")
+		if err != nil || sha != want || string(files["definitions/c.yaml"]) != leftover {
+			t.Fatalf("%s left behind: sha %q want %q, err %v", leftover, sha, want, err)
+		}
+	}
+
+	// A clone killed partway: .git exists but is not a repository.
+	if err := os.RemoveAll(clone); err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, origin, "definitions/c.yaml", "c")
-	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err == nil {
-		t.Fatal("a fresh lock was removed: another pod may own it")
-	}
-
-	old := time.Now().Add(-staleLockAge - time.Minute)
-	if err := os.Chtimes(lock, old, old); err != nil {
+	if err := os.MkdirAll(filepath.Join(clone, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	files, _, err := m.ReadDefinitions(ctx, origin, "main")
-	if err != nil || string(files["definitions/c.yaml"]) != "c" {
-		t.Fatalf("stale lock not cleared: files %v, err %v", files, err)
+	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err != nil {
+		t.Fatalf("half-built clone not recovered: %v", err)
 	}
 }

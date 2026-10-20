@@ -472,6 +472,28 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 // never written to by a worker, so there is no uncommitted work to protect —
 // and a plain fetch alone would not update the tree at all.
 func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
+	err := m.updateClone(ctx, path, repoURL, ref, fetchArgs...)
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	// The clone is disposable, so a failed refresh is retried once from
+	// scratch. A provisioner killed mid-git (a rollout, an OOM) can leave
+	// index.lock, a ref lock, packed-refs.lock or a half-built .git on the
+	// PVC, and every later refresh failed on it until someone cleaned up by
+	// hand (2026-10-20: definitions sync down ~2h after the 6.0.2 rollout).
+	// ponytail: a GitHub outage also re-clones once per call; cheap at this
+	// size.
+	slog.Warn("git: refresh failed, re-cloning from scratch", "path", path, "error", err)
+	if rmErr := os.RemoveAll(path); rmErr != nil {
+		return errors.Join(err, fmt.Errorf("remove %s: %w", path, rmErr))
+	}
+	if retry := m.updateClone(ctx, path, repoURL, ref, fetchArgs...); retry != nil {
+		return errors.Join(err, fmt.Errorf("re-clone: %w", retry))
+	}
+	return nil
+}
+
+func (m *Manager) updateClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", path, err)
@@ -484,33 +506,10 @@ func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, f
 	if _, err := m.run(ctx, path, append(append([]string{"fetch"}, fetchArgs...), "origin", ref)...); err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
-	clearStaleIndexLock(path)
 	if _, err := m.run(ctx, path, "reset", "--hard", "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("reset: %w", err)
 	}
 	return nil
-}
-
-// staleLockAge: a reset on these clones takes seconds, so an index.lock this
-// old belongs to a git that died (a pod killed mid-reset), not a live one.
-const staleLockAge = 2 * time.Minute
-
-// clearStaleIndexLock removes path's .git/index.lock when it is older than
-// staleLockAge. A killed provisioner leaves one on the shared PVC and every
-// later reset fails on it (2026-10-20: definitions sync down ~2h after a
-// rollout). A fresh lock stays: during a rollout the other pod may be
-// mid-reset on the same clone.
-func clearStaleIndexLock(path string) {
-	lock := filepath.Join(path, ".git", "index.lock")
-	info, err := os.Stat(lock)
-	if err != nil || time.Since(info.ModTime()) < staleLockAge {
-		return
-	}
-	if err := os.Remove(lock); err != nil && !os.IsNotExist(err) {
-		slog.Warn("git: stale index.lock not removed", "path", lock, "error", err)
-		return
-	}
-	slog.Warn("git: removed a stale index.lock", "path", lock, "age", time.Since(info.ModTime()).Round(time.Second))
 }
 
 // packEntryProblem says why one packs/ entry is not read, or "" when it is
