@@ -84,8 +84,12 @@ the log, retry and dead-lettering. This ADR is core's side of it.
      follow-ups `context_only` too.
    - Wakes caused by `actor=agent` are capped per thread, because GitHub
      strips `hops`: an agent comment that wakes another agent which pushes
-     comes back with `hops=0`. Events caused by the thread's own agent
-     identity are dropped at the bridge.
+     comes back with `hops=0`. All fleet agents push and comment as one
+     GitHub identity (the `ukubi-fleet` App's bot, infra-bootstrap
+     ADR-0062), so the bridge can tag `actor=agent` but cannot tell which
+     agent acted. The dispatcher, not the bridge, decides whether an
+     agent event came from the thread's own session; until it can, the
+     per-thread cap is what stops a loop.
 7. **Taint.** A session that has any `context_only` entry is *tainted*,
    derived from the transcript, not stored. ADR-0072's approval buttons show
    it.
