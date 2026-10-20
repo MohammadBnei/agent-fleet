@@ -215,3 +215,40 @@ func TestReadDefinitions_FailsClosed(t *testing.T) {
 		}
 	})
 }
+
+// A provisioner killed mid-git leaves locks or a half-built .git on the PVC,
+// and every later refresh failed on them until someone cleaned up by hand
+// (2026-10-20: definitions sync down ~2h after the 6.0.2 rollout). The clone
+// is disposable: a failed refresh re-clones from scratch.
+func TestReadDefinitions_RecoversFromALeftoverLockOrBrokenClone(t *testing.T) {
+	root := t.TempDir()
+	m := NewManager(root)
+	origin := newDefinitionsOrigin(t)
+	ctx := context.Background()
+	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	clone := filepath.Join(root, "definitions-src")
+
+	for _, leftover := range []string{".git/index.lock", ".git/HEAD.lock", ".git/refs/heads/main.lock"} {
+		if err := os.WriteFile(filepath.Join(clone, leftover), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want := commitFile(t, origin, "definitions/c.yaml", leftover)
+		files, sha, err := m.ReadDefinitions(ctx, origin, "main")
+		if err != nil || sha != want || string(files["definitions/c.yaml"]) != leftover {
+			t.Fatalf("%s left behind: sha %q want %q, err %v", leftover, sha, want, err)
+		}
+	}
+
+	// A clone killed partway: .git exists but is not a repository.
+	if err := os.RemoveAll(clone); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(clone, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err != nil {
+		t.Fatalf("half-built clone not recovered: %v", err)
+	}
+}

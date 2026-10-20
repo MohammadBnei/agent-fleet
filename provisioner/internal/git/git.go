@@ -482,6 +482,28 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 // never written to by a worker, so there is no uncommitted work to protect —
 // and a plain fetch alone would not update the tree at all.
 func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
+	err := m.updateClone(ctx, path, repoURL, ref, fetchArgs...)
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	// The clone is disposable, so a failed refresh is retried once from
+	// scratch. A provisioner killed mid-git (a rollout, an OOM) can leave
+	// index.lock, a ref lock, packed-refs.lock or a half-built .git on the
+	// PVC, and every later refresh failed on it until someone cleaned up by
+	// hand (2026-10-20: definitions sync down ~2h after the 6.0.2 rollout).
+	// ponytail: a GitHub outage also re-clones once per call; cheap at this
+	// size.
+	slog.Warn("git: refresh failed, re-cloning from scratch", "path", path, "error", err)
+	if rmErr := os.RemoveAll(path); rmErr != nil {
+		return errors.Join(err, fmt.Errorf("remove %s: %w", path, rmErr))
+	}
+	if retry := m.updateClone(ctx, path, repoURL, ref, fetchArgs...); retry != nil {
+		return errors.Join(err, fmt.Errorf("re-clone: %w", retry))
+	}
+	return nil
+}
+
+func (m *Manager) updateClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", path, err)
