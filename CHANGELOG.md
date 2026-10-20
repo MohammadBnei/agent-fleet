@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.1.0](https://github.com/MohammadBnei/agent-fleet/compare/6.0.2...6.1.0) (2026-10-20)
+
+### Features
+
+* **provisioner:** definition pods get the genome's skills at user scope (ADR 0067 §4) ([#283](https://github.com/MohammadBnei/agent-fleet/issues/283)) ([2596357](https://github.com/MohammadBnei/agent-fleet/commit/259635752f2f6c8c9f82ffb4d682dc24b9537855))
+
 ## [6.0.2](https://github.com/MohammadBnei/agent-fleet/compare/6.0.1...6.0.2) (2026-10-20)
 
 ### Bug Fixes
