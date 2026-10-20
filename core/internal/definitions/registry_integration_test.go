@@ -54,7 +54,7 @@ func TestRegistry_Sync(t *testing.T) {
 	}
 
 	good := childYAML("good", nil)
-	badMode := childYAML("bad", map[string]string{"mode": "{ default: auto, allow: [auto] }"})
+	badMode := childYAML("bad", map[string]string{"mode": "{ default: bypassPermissions, allow: [bypassPermissions] }"})
 	lister.set("sha1", map[string]string{
 		"definitions/base.yaml": baseYAML,
 		"definitions/good.yaml": good,
@@ -127,7 +127,7 @@ func TestRegistry_Sync(t *testing.T) {
 	t.Run("an invalid HEAD fails closed, a revert reuses its sha", func(t *testing.T) {
 		lister.set("sha4", map[string]string{
 			"definitions/base.yaml": baseYAML,
-			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: plan, allow: [plan, auto] }"}),
+			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: plan, allow: [plan, bypassPermissions] }"}),
 		})
 		if err := r.Sync(ctx); err != nil {
 			t.Fatal(err)
@@ -187,7 +187,7 @@ func TestRegistry_Sync(t *testing.T) {
 		}
 		lister.set("sha1", map[string]string{
 			"definitions/base.yaml": baseYAML,
-			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: auto, allow: [auto] }"}),
+			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: bypassPermissions, allow: [bypassPermissions] }"}),
 		})
 		if err := r.Sync(ctx); err != nil {
 			t.Fatal(err)
@@ -216,7 +216,7 @@ func TestRegistry_Sync(t *testing.T) {
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO agent_definitions (name, sha, spec, effective, valid, error, synced_at)
 			SELECT 'good', 'sha0', spec,
-			       jsonb_set(effective, '{mode}', '{"default":"auto","allow":["auto"]}'), true, NULL,
+			       jsonb_set(effective, '{mode}', '{"default":"bypassPermissions","allow":["bypassPermissions"]}'), true, NULL,
 			       now() + interval '1 hour'
 			  FROM agent_definitions WHERE name = 'good' AND sha = 'sha1'`); err != nil {
 			t.Fatal(err)
@@ -262,7 +262,7 @@ func TestRegistry_Sync(t *testing.T) {
 	t.Run("re-judge reaches names no longer in git", func(t *testing.T) {
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO agent_definitions (name, sha, spec, effective, valid)
-			SELECT 'gone', 'g1', spec, jsonb_set(effective, '{mode}', '{"default":"auto","allow":["auto"]}'), true
+			SELECT 'gone', 'g1', spec, jsonb_set(effective, '{mode}', '{"default":"bypassPermissions","allow":["bypassPermissions"]}'), true
 			  FROM agent_definitions WHERE name = 'good' AND sha = 'sha1'`); err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +307,7 @@ func TestRegistry_LogsOnlyChanges(t *testing.T) {
 	r := NewRegistry(dbtest.NewPool(t), &fakeLister{})
 	r.lister.(*fakeLister).set("sha1", map[string]string{
 		"definitions/base.yaml": baseYAML,
-		"definitions/bad.yaml":  childYAML("bad", map[string]string{"mode": "{ default: auto, allow: [auto] }"}),
+		"definitions/bad.yaml":  childYAML("bad", map[string]string{"mode": "{ default: bypassPermissions, allow: [bypassPermissions] }"}),
 		"definitions/oops.yml":  "x",
 	})
 	var buf bytes.Buffer
@@ -340,7 +340,7 @@ func TestRegistry_Vaults(t *testing.T) {
 	lister.set("sha1", map[string]string{
 		"definitions/base.yaml": baseYAML,
 		"definitions/good.yaml": childYAML("good", nil),
-		"definitions/bad.yaml":  childYAML("bad", map[string]string{"mode": "{ default: auto, allow: [auto] }"}),
+		"definitions/bad.yaml":  childYAML("bad", map[string]string{"mode": "{ default: bypassPermissions, allow: [bypassPermissions] }"}),
 	})
 	if err := r.Sync(ctx); err != nil {
 		t.Fatal(err)

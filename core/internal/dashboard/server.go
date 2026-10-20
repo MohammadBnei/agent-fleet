@@ -140,8 +140,8 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 	repo, model, mode := req.Msg.GetRepo(), req.Msg.GetModel(), req.Msg.GetPermissionMode()
 	// A definition session (docs/adr/0062) is pinned to the definition's
 	// current valid version, and repo, model and mode all come from it. The
-	// mode is written EXPLICITLY: the column default is 'auto'
-	// (docs/adr/0061), which a definition session must never get.
+	// mode is written EXPLICITLY from mode.default, never the column default:
+	// workspace-base's is auto (docs/adr/0076), but a definition may narrow.
 	var head *definitions.Head
 	if name := req.Msg.GetDefinition(); name != "" {
 		if repo != "" || model != "" || mode != "" {

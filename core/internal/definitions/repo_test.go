@@ -50,6 +50,11 @@ func TestRepoDefinitions(t *testing.T) {
 			t.Errorf("definition %q is invalid: %v", r.Name, r.Err)
 		}
 		seen[r.Name] = !r.Abstract && r.Err == nil
+		// workspace-base launches its children in auto (docs/adr/0076 §1);
+		// none of them narrows mode.
+		if seen[r.Name] && (r.Effective.Mode == nil || r.Effective.Mode.Default != "auto") {
+			t.Errorf("%s: effective mode %+v, want default auto from workspace-base", r.Name, r.Effective.Mode)
+		}
 	}
 	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes"} {
 		if !seen[want] {

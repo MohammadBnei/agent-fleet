@@ -5,7 +5,7 @@
 // result-subtype classification — without a real Claude session or
 // sidecar. Mocks must be registered before importing session.js (Bun
 // resolves mock.module() calls ahead of subsequent static imports).
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, mock, beforeEach, afterAll } from "bun:test";
@@ -262,7 +262,7 @@ for (const key of [
 }
 
 const { FLEET_TRAILER } = await import("./gitHooks.js");
-const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert } = await import("./session.js");
+const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert, sdkMode } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -1512,7 +1512,7 @@ const DEF_SPEC = {
   sidecarTools: ["AskUserQuestion", "send_message"],
   modelAllow: ["claude-opus-5"],
   thinkingDefault: "medium",
-  modeAllow: ["default", "plan"],
+  modeAllow: ["auto", "default", "plan"],
   systemPromptAppend: "Keep pages small.",
   maxTurns: 60,
   interaction: "",
@@ -1538,20 +1538,69 @@ test.each([
   expect(matchesToolRule([...rules], tool, input as Record<string, unknown>)).toBe(want);
 });
 
+// A real worktree on disk, so symlinks resolve: .git and .claude inside it, and
+// `out` a symlink to a directory outside it.
+const WT = mkdtempSync(join(tmpdir(), "wt-"));
+mkdirSync(join(WT, ".git"));
+mkdirSync(join(WT, ".claude"));
+mkdirSync(join(WT, "notes"));
+const OUTSIDE = mkdtempSync(join(tmpdir(), "outside-"));
+symlinkSync(OUTSIDE, join(WT, "out"));
+symlinkSync(join(OUTSIDE, "missing"), join(WT, "dangling"));
+
+const DEF_ALLOW = { ...DEF_SPEC, toolsAllow: ["Read", "Edit", "Write", "Bash(git add:*)", "Bash(git push:*)", "Bash(git status)", "Bash(rm:*)", "Bash(npm test:*)"] };
+
 test.each([
-  ["Read", {}, "", "allow"],
-  ["Bash", { command: "git status" }, "", "allow"],
-  ["Bash", { command: "git add --chmod=+x a" }, "", "ask"],
-  ["Bash", { command: "curl https://x" }, "", "deny"],
-  ["Write", { file_path: "a" }, "", "deny"],
-  ["mcp__playwright__browser_navigate", {}, "", "deny"],
-  ["ExitPlanMode", {}, "", "ask"],
-  ["Bash", { command: "git add --chmod=+x a" }, "deny", "deny"],
-  ["ExitPlanMode", {}, "deny", "deny"],
-  ["Read", {}, "deny", "allow"],
-] as const)("definitionDecision(%s, %j, interaction=%s) = %s", (tool, input, interaction, want) => {
-  const d = definitionDecision({ ...DEF_SPEC, interaction }, tool, input as Record<string, unknown>);
-  expect(d.behavior).toBe(want);
+  // docs/adr/0076 §2 step 2: inside the worktree only, whatever tools.allow says.
+  ["auto", "Edit", { file_path: "notes/a.md" }, "allow"],
+  ["auto", "Write", { file_path: join(WT, "notes", "new.md") }, "allow"],
+  ["auto", "Edit", { file_path: "../x" }, "deny"],
+  ["auto", "Edit", { file_path: "/claude-home/settings.json" }, "deny"],
+  ["auto", "Edit", { file_path: ".git/config" }, "deny"],
+  ["auto", "Write", { file_path: join(WT, ".claude", "settings.json") }, "deny"],
+  ["auto", "Write", { file_path: "out/x.md" }, "deny"],
+  ["auto", "Write", { file_path: "dangling" }, "deny"],
+  ["auto", "Edit", {}, "deny"],
+  ["auto", "NotebookEdit", { notebook_path: "/etc/x.ipynb" }, "deny"],
+  // default asks a matched edit; plan is treated like default.
+  ["default", "Edit", { file_path: "notes/a.md" }, "ask"],
+  ["plan", "Write", { file_path: "notes/a.md" }, "ask"],
+  ["default", "Read", {}, "allow"],
+  // Bash: the git argument check, the rm/sudo check, plain words for other prefixes.
+  ["auto", "Bash", { command: "git push" }, "allow"],
+  ["auto", "Bash", { command: "git push --force" }, "ask"],
+  ["default", "Bash", { command: "git push" }, "allow"],
+  ["auto", "Bash", { command: "rm -rf x" }, "ask"],
+  ["auto", "Bash", { command: "npm test -- --watch=false" }, "allow"],
+  ["auto", "Bash", { command: "npm test; curl x" }, "ask"],
+  ["auto", "Bash", { command: "git status" }, "allow"],
+  // Outside tools.allow: inside the ceiling asks, outside it is denied.
+  ["auto", "Bash", { command: "ls" }, "ask"],
+  ["auto", "TodoWrite", {}, "ask"],
+  ["auto", "WebFetch", { url: "https://x" }, "deny"],
+  ["auto", "mcp__playwright__browser_navigate", {}, "deny"],
+  ["auto", "ExitPlanMode", {}, "ask"],
+  ["default", "ExitPlanMode", {}, "ask"],
+] as const)("definitionDecision(%s, %s, %j) = %s", (mode, tool, input, want) => {
+  expect(definitionDecision(DEF_ALLOW, tool, input as Record<string, unknown>, mode, WT).behavior).toBe(want);
+});
+
+test.each([
+  ["auto", "Bash", { command: "ls" }],
+  ["auto", "Bash", { command: "git push --force" }],
+  ["default", "Edit", { file_path: "notes/a.md" }],
+  ["auto", "ExitPlanMode", {}],
+] as const)("interaction deny: %s %s %j asks become denies", (mode, tool, input) => {
+  expect(definitionDecision({ ...DEF_ALLOW, interaction: "deny" }, tool, input as Record<string, unknown>, mode, WT)).toEqual({
+    behavior: "deny",
+    message: "not allowed in a headless run",
+  });
+});
+
+test("sdkMode: the fleet's auto is the SDK's default, every other mode passes through", () => {
+  expect(sdkMode("auto")).toBe("default");
+  expect(sdkMode("default")).toBe("default");
+  expect(sdkMode("plan")).toBe("plan");
 });
 
 test.each([
@@ -1590,11 +1639,8 @@ test.each([
 });
 
 test("definitionDecision says why it denied", () => {
-  expect(definitionDecision(DEF_SPEC, "Write", {})).toEqual({ behavior: "deny", message: "not in this definition's tools.allow" });
-  expect(definitionDecision({ ...DEF_SPEC, interaction: "deny" }, "Bash", { command: "git add --chmod=+x a" })).toEqual({
-    behavior: "deny",
-    message: "not allowed in a headless run",
-  });
+  expect(definitionDecision(DEF_SPEC, "Write", { file_path: "../x" }, "auto", WT)).toEqual({ behavior: "deny", message: "outside this definition's workspace" });
+  expect(definitionDecision(DEF_SPEC, "WebFetch", {}, "auto", WT)).toEqual({ behavior: "deny", message: "not available to definitions" });
 });
 
 test("definition session: query() options come from the spec, and the stream carries its sha", async () => {
@@ -1619,6 +1665,44 @@ test("definition session: query() options come from the spec, and the stream car
   expect(streamedSpecSha).toBe("spec-sha");
 }, 10000);
 
+// docs/adr/0076 §1: the SDK never runs in its own auto for a definition, and
+// the session is not saved back as default when the SDK reports it.
+test("definition session in auto: the SDK gets default, the session stays auto, a live auto switch sends default", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+  expect(queryOptions?.permissionMode).toBe("default");
+  expect(savedPermissionModes).not.toContain("default");
+
+  pushHuman("plan", "permission_mode");
+  await Bun.sleep(20);
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toEqual(["plan", "default"]);
+  // Still the fleet's auto: a matched edit runs without asking.
+  expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("repo session in auto: the SDK gets auto, and a live auto switch sends auto", async () => {
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+  expect(queryOptions?.permissionMode).toBe("auto");
+
+  pushHuman("default", "permission_mode");
+  await Bun.sleep(20);
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toEqual(["default", "auto"]);
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
 test("repo session: no spec, so nothing of it reaches query() and the stream carries no sha", async () => {
   const promise = runSession();
   await Bun.sleep(20);
@@ -1633,18 +1717,20 @@ test("repo session: no spec, so nothing of it reaches query() and the stream car
   expect(streamedSpecSha).toBe("");
 }, 10000);
 
-test("definition session: canUseTool allows inside tools.allow, asks on a Bash prefix, denies the rest", async () => {
+test("definition session in auto: canUseTool allows inside tools.allow, denies outside the ceiling, asks the rest", async () => {
   sessionAgentSpec = DEF_SPEC;
+  sessionPermissionMode = "auto";
   const promise = runSession();
   await Bun.sleep(20);
 
+  // WORKTREE_PATH is /workspace here; a relative path resolves inside it.
   expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+  expect((await capturedCanUseTool!("Edit", { file_path: "/claude-home/settings.json" })).behavior).toBe("deny");
   expect((await capturedCanUseTool!("mcp__agent-fleet-sidecar__send_message", { text: "hi" })).behavior).toBe("allow");
   // A sidecar tool the definition does not list is not the fleet's own here.
   const expose = await capturedCanUseTool!("mcp__agent-fleet-sidecar__expose", { port: 8080 });
-  expect(expose).toEqual({ behavior: "deny", message: "not in this definition's tools.allow" });
+  expect(expose).toEqual({ behavior: "deny", message: "not available to definitions" });
   expect((await capturedCanUseTool!("mcp__playwright__browser_navigate", {})).behavior).toBe("deny");
-  expect((await capturedCanUseTool!("Bash", { command: "curl https://x" })).behavior).toBe("deny");
   expect(pushedMessages.filter((m) => m.type === "permission_request")).toHaveLength(0);
 
   let resolved: { behavior: string } | null = null;

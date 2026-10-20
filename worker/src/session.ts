@@ -3,7 +3,8 @@ import * as sidecar from "./sidecarClient.js";
 import type { AgentSpec } from "./sidecarClient.js";
 import { log } from "./log.js";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -166,12 +167,12 @@ export function matchesToolRule(rules: string[], toolName: string, input: Record
   return hits.find((rule) => !BASH_PREFIX_RULE.test(rule)) ?? hits[0];
 }
 
-// What a definition session does with a call canUseTool sees (docs/adr/0067
-// §4): the definition is the ceiling, so a call outside tools.allow is denied,
-// never asked, and a human click cannot widen it. ExitPlanMode is the one
-// exception: it acts on nothing, the SDK holds it for a human in every mode,
-// and denying it would leave `plan` (which mode.allow may list) with no way
-// out but a mode switch. Under `interaction: deny` every ask is a deny.
+// What a definition session does with a call canUseTool sees (docs/adr/0076
+// §2, replacing docs/adr/0067 §4's "outside tools.allow is denied"): a call
+// tools.allow matches runs (in `default` an Edit/Write still asks), anything
+// else in the tool ceiling asks, and a tool outside the ceiling is denied.
+// ExitPlanMode asks in every mode. Under `interaction: deny` every ask is a
+// deny.
 export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask" } | { behavior: "deny"; message: string };
 
 // The argument check docs/adr/0067 names as the first follow-up: a git prefix
@@ -241,16 +242,83 @@ export function gitArgsAreInert(prefix: string, command: string): boolean {
   return true;
 }
 
-export function definitionDecision(spec: AgentSpec, toolName: string, input: Record<string, unknown>): DefinitionDecision {
-  if (toolName !== "ExitPlanMode") {
-    const rule = matchesToolRule(spec.toolsAllow, toolName, input);
-    if (rule === undefined) return { behavior: "deny", message: "not in this definition's tools.allow" };
-    const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
-    if (prefix === undefined) return { behavior: "allow" };
-    if (typeof input.command === "string" && gitArgsAreInert(prefix, input.command)) return { behavior: "allow" };
+// docs/adr/0076 §1: a definition session in `auto` runs the SDK in `default`,
+// because the SDK's own `auto` never calls canUseTool for what its classifier
+// allows, so tools.allow would bound nothing. The fleet's mode stays `auto`.
+export function sdkMode(mode: PermissionMode): PermissionMode {
+  return mode === "auto" ? "default" : mode;
+}
+
+// Mirrors core/internal/definitions/load.go's toolCeiling: the tools a
+// definition can ever be allowed. Outside it a call is denied, not asked.
+const DEFINITION_TOOL_CEILING = new Set(["Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"]);
+const PATH_TOOLS: Record<string, string> = { Edit: "file_path", Write: "file_path", NotebookEdit: "notebook_path" };
+
+// `p` with symlinks resolved: the real path of its nearest existing ancestor,
+// plus the part that does not exist yet (a new file). Undefined for a dangling
+// symlink, which a write would follow somewhere this cannot see.
+function realPath(p: string): string | undefined {
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(p), ...rest);
+    } catch {
+      try {
+        lstatSync(p);
+        return undefined;
+      } catch {}
+      if (dirname(p) === p) return undefined;
+      rest.unshift(basename(p));
+      p = dirname(p);
+    }
   }
-  if (spec.interaction === "deny") return { behavior: "deny", message: "not allowed in a headless run" };
-  return { behavior: "ask" };
+}
+
+// docs/adr/0076 §2 step 2: Edit/Write land inside the worktree and never under
+// its .git/ or .claude/, whatever tools.allow says. The per-session claude-home
+// and /genome are outside it, so an agent cannot rewrite its own settings,
+// git config or hooks.
+// ponytail: a `..` segment is refused outright rather than resolved, since a
+// lexical resolve and the kernel disagree when it follows a symlink.
+function insideWorkspace(path: unknown, worktree: string): boolean {
+  if (typeof path !== "string" || path === "" || path.split(/[\/]/).includes("..")) return false;
+  const root = realPath(worktree);
+  const real = realPath(resolve(worktree, path));
+  if (root === undefined || real === undefined) return false;
+  const rel = relative(root, real);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return false;
+  const top = rel.split(sep)[0];
+  return top !== ".git" && top !== ".claude";
+}
+
+export function definitionDecision(
+  spec: AgentSpec,
+  toolName: string,
+  input: Record<string, unknown>,
+  mode: PermissionMode,
+  worktree: string,
+): DefinitionDecision {
+  const allow: DefinitionDecision = { behavior: "allow" };
+  const ask: DefinitionDecision = spec.interaction === "deny" ? { behavior: "deny", message: "not allowed in a headless run" } : { behavior: "ask" };
+  if (toolName === "ExitPlanMode") return ask;
+  const pathKey = PATH_TOOLS[toolName];
+  if (pathKey && !insideWorkspace(input[pathKey], worktree)) return { behavior: "deny", message: "outside this definition's workspace" };
+  const rule = matchesToolRule(spec.toolsAllow, toolName, input);
+  if (rule === undefined) return DEFINITION_TOOL_CEILING.has(toolName) ? ask : { behavior: "deny", message: "not available to definitions" };
+  // `default` (and `plan`, which the SDK already holds back from mutating)
+  // asks on a matched edit, as Claude Code's `default` does.
+  if (pathKey) return mode === "auto" ? allow : ask;
+  if (toolName === "Bash" && typeof input.command === "string") {
+    if (autoModeStillAsksCommand(toolName, input)) return ask;
+    const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
+    if (prefix !== undefined) {
+      // A git prefix gets the argument check; any other prefix only needs to
+      // be plain words: no metacharacter, expansion or chaining.
+      const inert = prefix in GIT_SAFE_ARGS ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
+      if (!inert) return ask;
+    }
+  }
+  return allow;
 }
 
 // A peer session's prompt arrives on the same feed as a human's and, until this
@@ -914,7 +982,7 @@ export async function runSession(): Promise<SessionResult> {
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
-      permissionMode: launchMode,
+      permissionMode: spec ? sdkMode(launchMode) : launchMode,
       // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
       // (docs/adr/0053).
       //
@@ -1016,11 +1084,12 @@ export async function runSession(): Promise<SessionResult> {
         if (spec) {
           // Only the sidecar tools this definition lists are the fleet's own.
           if (definitionSidecarTools.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
-          const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>);
+          const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH);
           if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
           if (decision.behavior === "deny") return decision;
-          // "ask": the ordinary prompt below. No auto branch: a definition
-          // never runs in auto (definitions/load.go's ModeCeiling).
+          // "ask": the ordinary prompt below. definitionDecision already
+          // decided what the fleet's auto allows (docs/adr/0076 §2), so the
+          // repo-session auto branch below is skipped.
         } else if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
           // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
           return { behavior: "allow", updatedInput: toolInput };
@@ -1208,7 +1277,7 @@ export async function runSession(): Promise<SessionResult> {
         }
         // A definition session's answer is {behavior, message} only
         // (docs/adr/0067 §4): the call runs as the agent asked for it, so a
-        // human cannot rewrite it into something outside tools.allow.
+        // human cannot rewrite it into a call nobody was asked about.
         resolvePending(entry.replyTo, (input) =>
           decision.behavior === "allow"
             ? { behavior: "allow", updatedInput: spec ? input : (decision.updatedInput ?? input) }
@@ -1239,7 +1308,7 @@ export async function runSession(): Promise<SessionResult> {
         // mode string is — and which "auto" is whenever its own gates (remote
         // circuit breaker, model allow-list) say no.
         const failure = await q
-          .setPermissionMode(mode)
+          .setPermissionMode(spec ? sdkMode(mode) : mode)
           .then(() => null)
           .catch((err) => String(err));
         if (failure !== null) {
@@ -1383,7 +1452,10 @@ export async function runSession(): Promise<SessionResult> {
         launchChecked = true;
         // Not awaited: a control request can hang with the CLI (see q.interrupt).
         void reportContext(q).catch((err) => log("warn", "context report failed", { taskId: SESSION_ID, error: String(err) }));
-        if (msg.permissionMode && msg.permissionMode !== currentMode) {
+        // A definition session in auto runs the SDK in default (sdkMode), so
+        // that is what it must report, or every auto session is saved as
+        // default.
+        if (msg.permissionMode && msg.permissionMode !== (spec ? sdkMode(currentMode) : currentMode)) {
           log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
           currentMode = msg.permissionMode;
           await sidecar

@@ -28,12 +28,15 @@ var (
 	// (dashboard/ceiling_test.go), or a definition could name a model the
 	// console would refuse.
 	ModelCeiling = []string{"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
-	// ModeCeiling: the modes that keep canUseTool in the loop. Not dontAsk
-	// (docs/adr/0067 §4): it never calls canUseTool, and with allowedTools
-	// holding only sidecar tools it would deny everything tools.allow lists.
-	ModeCeiling = []string{"default", "plan"}
+	// ModeCeiling: the modes that keep canUseTool in the loop. auto is the
+	// fleet's auto, not the SDK's: the worker runs a definition session in
+	// auto with the SDK in default, so every call that is not auto-safe still
+	// reaches canUseTool (docs/adr/0076 §1). Not dontAsk (docs/adr/0067 §4):
+	// it never calls canUseTool, and with allowedTools holding only sidecar
+	// tools it would deny everything tools.allow lists.
+	ModeCeiling = []string{"auto", "default", "plan"}
 	// skipsCanUseTool is rejected BY NAME, so the error says why.
-	skipsCanUseTool = []string{"acceptEdits", "auto", "bypassPermissions"}
+	skipsCanUseTool = []string{"acceptEdits", "bypassPermissions"}
 	// SDK 0.3.301 EffortLevel.
 	effortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
