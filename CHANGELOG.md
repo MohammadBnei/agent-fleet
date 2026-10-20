@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.0.1](https://github.com/MohammadBnei/agent-fleet/compare/6.0.0...6.0.1) (2026-10-20)
+
+### Bug Fixes
+
+* **docker:** copy go.work.sum into Go image builds ([#281](https://github.com/MohammadBnei/agent-fleet/issues/281)) ([21d3232](https://github.com/MohammadBnei/agent-fleet/commit/21d32322fa1d71c19fb9480a21d765e9d16378bc))
+
 # [6.0.0](https://github.com/MohammadBnei/agent-fleet/compare/5.6.0...6.0.0) (2026-10-20)
 
 * feat(console)!: remove guidance snippets, replaced by context packs (#280) ([f8ec84f](https://github.com/MohammadBnei/agent-fleet/commit/f8ec84f4649733b7fb86cf237837177e21609dd3)), closes [#280](https://github.com/MohammadBnei/agent-fleet/issues/280)
