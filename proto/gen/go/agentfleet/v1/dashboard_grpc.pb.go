@@ -43,10 +43,6 @@ const (
 	DashboardService_ListDefinitions_FullMethodName     = "/agentfleet.v1.DashboardService/ListDefinitions"
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
 	DashboardService_SyncRepo_FullMethodName            = "/agentfleet.v1.DashboardService/SyncRepo"
-	DashboardService_ListPromptSnippets_FullMethodName  = "/agentfleet.v1.DashboardService/ListPromptSnippets"
-	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
-	DashboardService_UpdatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
-	DashboardService_DeletePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
 	DashboardService_ListPacks_FullMethodName           = "/agentfleet.v1.DashboardService/ListPacks"
 	DashboardService_CreatePack_FullMethodName          = "/agentfleet.v1.DashboardService/CreatePack"
 	DashboardService_SavePackVersion_FullMethodName     = "/agentfleet.v1.DashboardService/SavePackVersion"
@@ -133,10 +129,6 @@ type DashboardServiceClient interface {
 	ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error)
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
 	SyncRepo(ctx context.Context, in *SyncRepoRequest, opts ...grpc.CallOption) (*SyncRepoResponse, error)
-	ListPromptSnippets(ctx context.Context, in *ListPromptSnippetsRequest, opts ...grpc.CallOption) (*ListPromptSnippetsResponse, error)
-	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
-	UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error)
-	DeletePromptSnippet(ctx context.Context, in *DeletePromptSnippetRequest, opts ...grpc.CallOption) (*DeletePromptSnippetResponse, error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(ctx context.Context, in *ListPacksRequest, opts ...grpc.CallOption) (*ListPacksResponse, error)
@@ -430,46 +422,6 @@ func (c *dashboardServiceClient) SyncRepo(ctx context.Context, in *SyncRepoReque
 	return out, nil
 }
 
-func (c *dashboardServiceClient) ListPromptSnippets(ctx context.Context, in *ListPromptSnippetsRequest, opts ...grpc.CallOption) (*ListPromptSnippetsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListPromptSnippetsResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ListPromptSnippets_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreatePromptSnippetResponse)
-	err := c.cc.Invoke(ctx, DashboardService_CreatePromptSnippet_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdatePromptSnippetResponse)
-	err := c.cc.Invoke(ctx, DashboardService_UpdatePromptSnippet_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, in *DeletePromptSnippetRequest, opts ...grpc.CallOption) (*DeletePromptSnippetResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeletePromptSnippetResponse)
-	err := c.cc.Invoke(ctx, DashboardService_DeletePromptSnippet_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *dashboardServiceClient) ListPacks(ctx context.Context, in *ListPacksRequest, opts ...grpc.CallOption) (*ListPacksResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPacksResponse)
@@ -716,10 +668,6 @@ type DashboardServiceServer interface {
 	ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error)
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
 	SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error)
-	ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error)
-	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
-	UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error)
-	DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *ListPacksRequest) (*ListPacksResponse, error)
@@ -835,18 +783,6 @@ func (UnimplementedDashboardServiceServer) ListRepos(context.Context, *ListRepos
 }
 func (UnimplementedDashboardServiceServer) SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SyncRepo not implemented")
-}
-func (UnimplementedDashboardServiceServer) ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListPromptSnippets not implemented")
-}
-func (UnimplementedDashboardServiceServer) CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreatePromptSnippet not implemented")
-}
-func (UnimplementedDashboardServiceServer) UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdatePromptSnippet not implemented")
-}
-func (UnimplementedDashboardServiceServer) DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeletePromptSnippet not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListPacks(context.Context, *ListPacksRequest) (*ListPacksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPacks not implemented")
@@ -1348,78 +1284,6 @@ func _DashboardService_SyncRepo_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_ListPromptSnippets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListPromptSnippetsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).ListPromptSnippets(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_ListPromptSnippets_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ListPromptSnippets(ctx, req.(*ListPromptSnippetsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_CreatePromptSnippet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreatePromptSnippetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).CreatePromptSnippet(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_CreatePromptSnippet_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).CreatePromptSnippet(ctx, req.(*CreatePromptSnippetRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_UpdatePromptSnippet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdatePromptSnippetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).UpdatePromptSnippet(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_UpdatePromptSnippet_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).UpdatePromptSnippet(ctx, req.(*UpdatePromptSnippetRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_DeletePromptSnippet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeletePromptSnippetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).DeletePromptSnippet(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_DeletePromptSnippet_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).DeletePromptSnippet(ctx, req.(*DeletePromptSnippetRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DashboardService_ListPacks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPacksRequest)
 	if err := dec(in); err != nil {
@@ -1842,22 +1706,6 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SyncRepo",
 			Handler:    _DashboardService_SyncRepo_Handler,
-		},
-		{
-			MethodName: "ListPromptSnippets",
-			Handler:    _DashboardService_ListPromptSnippets_Handler,
-		},
-		{
-			MethodName: "CreatePromptSnippet",
-			Handler:    _DashboardService_CreatePromptSnippet_Handler,
-		},
-		{
-			MethodName: "UpdatePromptSnippet",
-			Handler:    _DashboardService_UpdatePromptSnippet_Handler,
-		},
-		{
-			MethodName: "DeletePromptSnippet",
-			Handler:    _DashboardService_DeletePromptSnippet_Handler,
 		},
 		{
 			MethodName: "ListPacks",

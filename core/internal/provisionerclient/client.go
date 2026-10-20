@@ -218,8 +218,7 @@ func ToolKeysFor(clusterAccess bool) []string {
 // is what keeps a machine-initiated proposal from ever producing a pod.
 //
 // toolKeys carries only cluster-access now (see ToolKeysFor); `guidance` is
-// gone with the column, since operator snippets reach the model as message
-// text a human sent rather than as a wrapper the agent cannot see.
+// gone with the column (docs/adr/0048).
 //
 // image is `repos.image`, the column that replaced the four toolchain
 // ingredients (docs/adr/0048 §6). Empty means the provisioner's own default.

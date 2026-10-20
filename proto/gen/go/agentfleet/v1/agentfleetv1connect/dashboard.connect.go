@@ -105,18 +105,6 @@ const (
 	// DashboardServiceSyncRepoProcedure is the fully-qualified name of the DashboardService's SyncRepo
 	// RPC.
 	DashboardServiceSyncRepoProcedure = "/agentfleet.v1.DashboardService/SyncRepo"
-	// DashboardServiceListPromptSnippetsProcedure is the fully-qualified name of the DashboardService's
-	// ListPromptSnippets RPC.
-	DashboardServiceListPromptSnippetsProcedure = "/agentfleet.v1.DashboardService/ListPromptSnippets"
-	// DashboardServiceCreatePromptSnippetProcedure is the fully-qualified name of the
-	// DashboardService's CreatePromptSnippet RPC.
-	DashboardServiceCreatePromptSnippetProcedure = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
-	// DashboardServiceUpdatePromptSnippetProcedure is the fully-qualified name of the
-	// DashboardService's UpdatePromptSnippet RPC.
-	DashboardServiceUpdatePromptSnippetProcedure = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
-	// DashboardServiceDeletePromptSnippetProcedure is the fully-qualified name of the
-	// DashboardService's DeletePromptSnippet RPC.
-	DashboardServiceDeletePromptSnippetProcedure = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
 	// DashboardServiceListPacksProcedure is the fully-qualified name of the DashboardService's
 	// ListPacks RPC.
 	DashboardServiceListPacksProcedure = "/agentfleet.v1.DashboardService/ListPacks"
@@ -237,10 +225,6 @@ type DashboardServiceClient interface {
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
-	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
-	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
-	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
-	DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
@@ -432,30 +416,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("SyncRepo")),
 			connect.WithClientOptions(opts...),
 		),
-		listPromptSnippets: connect.NewClient[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse](
-			httpClient,
-			baseURL+DashboardServiceListPromptSnippetsProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("ListPromptSnippets")),
-			connect.WithClientOptions(opts...),
-		),
-		createPromptSnippet: connect.NewClient[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse](
-			httpClient,
-			baseURL+DashboardServiceCreatePromptSnippetProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("CreatePromptSnippet")),
-			connect.WithClientOptions(opts...),
-		),
-		updatePromptSnippet: connect.NewClient[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse](
-			httpClient,
-			baseURL+DashboardServiceUpdatePromptSnippetProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("UpdatePromptSnippet")),
-			connect.WithClientOptions(opts...),
-		),
-		deletePromptSnippet: connect.NewClient[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse](
-			httpClient,
-			baseURL+DashboardServiceDeletePromptSnippetProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("DeletePromptSnippet")),
-			connect.WithClientOptions(opts...),
-		),
 		listPacks: connect.NewClient[v1.ListPacksRequest, v1.ListPacksResponse](
 			httpClient,
 			baseURL+DashboardServiceListPacksProcedure,
@@ -593,10 +553,6 @@ type dashboardServiceClient struct {
 	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
-	listPromptSnippets  *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
-	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
-	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
-	deletePromptSnippet *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
 	listPacks           *connect.Client[v1.ListPacksRequest, v1.ListPacksResponse]
 	createPack          *connect.Client[v1.CreatePackRequest, v1.CreatePackResponse]
 	savePackVersion     *connect.Client[v1.SavePackVersionRequest, v1.SavePackVersionResponse]
@@ -735,26 +691,6 @@ func (c *dashboardServiceClient) ListRepos(ctx context.Context, req *connect.Req
 // SyncRepo calls agentfleet.v1.DashboardService.SyncRepo.
 func (c *dashboardServiceClient) SyncRepo(ctx context.Context, req *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {
 	return c.syncRepo.CallUnary(ctx, req)
-}
-
-// ListPromptSnippets calls agentfleet.v1.DashboardService.ListPromptSnippets.
-func (c *dashboardServiceClient) ListPromptSnippets(ctx context.Context, req *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error) {
-	return c.listPromptSnippets.CallUnary(ctx, req)
-}
-
-// CreatePromptSnippet calls agentfleet.v1.DashboardService.CreatePromptSnippet.
-func (c *dashboardServiceClient) CreatePromptSnippet(ctx context.Context, req *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error) {
-	return c.createPromptSnippet.CallUnary(ctx, req)
-}
-
-// UpdatePromptSnippet calls agentfleet.v1.DashboardService.UpdatePromptSnippet.
-func (c *dashboardServiceClient) UpdatePromptSnippet(ctx context.Context, req *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error) {
-	return c.updatePromptSnippet.CallUnary(ctx, req)
-}
-
-// DeletePromptSnippet calls agentfleet.v1.DashboardService.DeletePromptSnippet.
-func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, req *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error) {
-	return c.deletePromptSnippet.CallUnary(ctx, req)
 }
 
 // ListPacks calls agentfleet.v1.DashboardService.ListPacks.
@@ -911,10 +847,6 @@ type DashboardServiceHandler interface {
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
-	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
-	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
-	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
-	DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
@@ -1102,30 +1034,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("SyncRepo")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceListPromptSnippetsHandler := connect.NewUnaryHandler(
-		DashboardServiceListPromptSnippetsProcedure,
-		svc.ListPromptSnippets,
-		connect.WithSchema(dashboardServiceMethods.ByName("ListPromptSnippets")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceCreatePromptSnippetHandler := connect.NewUnaryHandler(
-		DashboardServiceCreatePromptSnippetProcedure,
-		svc.CreatePromptSnippet,
-		connect.WithSchema(dashboardServiceMethods.ByName("CreatePromptSnippet")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceUpdatePromptSnippetHandler := connect.NewUnaryHandler(
-		DashboardServiceUpdatePromptSnippetProcedure,
-		svc.UpdatePromptSnippet,
-		connect.WithSchema(dashboardServiceMethods.ByName("UpdatePromptSnippet")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceDeletePromptSnippetHandler := connect.NewUnaryHandler(
-		DashboardServiceDeletePromptSnippetProcedure,
-		svc.DeletePromptSnippet,
-		connect.WithSchema(dashboardServiceMethods.ByName("DeletePromptSnippet")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dashboardServiceListPacksHandler := connect.NewUnaryHandler(
 		DashboardServiceListPacksProcedure,
 		svc.ListPacks,
@@ -1284,14 +1192,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListReposHandler.ServeHTTP(w, r)
 		case DashboardServiceSyncRepoProcedure:
 			dashboardServiceSyncRepoHandler.ServeHTTP(w, r)
-		case DashboardServiceListPromptSnippetsProcedure:
-			dashboardServiceListPromptSnippetsHandler.ServeHTTP(w, r)
-		case DashboardServiceCreatePromptSnippetProcedure:
-			dashboardServiceCreatePromptSnippetHandler.ServeHTTP(w, r)
-		case DashboardServiceUpdatePromptSnippetProcedure:
-			dashboardServiceUpdatePromptSnippetHandler.ServeHTTP(w, r)
-		case DashboardServiceDeletePromptSnippetProcedure:
-			dashboardServiceDeletePromptSnippetHandler.ServeHTTP(w, r)
 		case DashboardServiceListPacksProcedure:
 			dashboardServiceListPacksHandler.ServeHTTP(w, r)
 		case DashboardServiceCreatePackProcedure:
@@ -1431,22 +1331,6 @@ func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.
 
 func (UnimplementedDashboardServiceHandler) SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SyncRepo is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListPromptSnippets is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreatePromptSnippet is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdatePromptSnippet is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeletePromptSnippet is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error) {

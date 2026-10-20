@@ -31,7 +31,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -47,7 +46,6 @@ type Server struct {
 	transcr   transcript.Store
 	journal   *journal.Store
 	repos     *repos.Store
-	snippets  *promptsnippets.Store
 	e2e       *provisionerclient.Client
 	files     filestore.Store
 	hub       *Hub
@@ -85,8 +83,8 @@ type Server struct {
 	packs *packs.Store
 }
 
-func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
-	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, caps: caps, loki: loki, prom: prom, schedules: scheduleStore, version: version}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, files: files, hub: hub, caps: caps, loki: loki, prom: prom, schedules: scheduleStore, version: version}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -137,10 +135,7 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 // would be unresumable, and would be swept as stalled with nothing logged.
 //
 // `description` is optional now, and is a label rather than an instruction:
-// the session's actual instruction is its first transcript entry. Snippets
-// are no longer resolved here into a hidden `guidance` column — the dashboard
-// prefills them into the message composer, so their text reaches the model as
-// part of a message a human sent and can edit.
+// the session's actual instruction is its first transcript entry.
 func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
 	repo, model, mode := req.Msg.GetRepo(), req.Msg.GetModel(), req.Msg.GetPermissionMode()
 	// A definition session (docs/adr/0062) is pinned to the definition's
@@ -417,16 +412,6 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 	out.SessionId = p.SessionID
 	return out
 }
-
-// resolveGuidanceAndMode used to live here: it joined the operator's selected
-// prompt snippets into the hidden `guidance` blob stored alongside the task's
-// description, and picked up a suggested permission mode along the way.
-//
-// Both halves are gone in docs/adr/0048. There is no `guidance` column,
-// because there is no fleet-composed prompt to hide text in — whatever the
-// human types is the turn, verbatim. Snippets survive as what they always
-// really were: text the dashboard prefills into the composer, visible and
-// editable before it is sent. ListPromptSnippets still serves them.
 
 // defaultModel is what a session runs when neither the request nor CLAUDE_MODEL
 // names one. worker/src/session.ts has its own fallback for a row with no
@@ -1382,75 +1367,6 @@ func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 // now, still data rather than code for docs/adr/0037's own reason: which
 // sessions may reach the cluster is a human's decision, editable without a
 // redeploy.
-
-func (s *Server) ListPromptSnippets(ctx context.Context, _ *connect.Request[agentfleetv1.ListPromptSnippetsRequest]) (*connect.Response[agentfleetv1.ListPromptSnippetsResponse], error) {
-	list, err := s.snippets.List(ctx)
-	if err != nil {
-		slog.Error("dashboard ListPromptSnippets", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	out := make([]*agentfleetv1.PromptSnippet, len(list))
-	for i, sn := range list {
-		out[i] = snippetToProto(sn)
-	}
-	return connect.NewResponse(&agentfleetv1.ListPromptSnippetsResponse{Snippets: out}), nil
-}
-
-func (s *Server) CreatePromptSnippet(ctx context.Context, req *connect.Request[agentfleetv1.CreatePromptSnippetRequest]) (*connect.Response[agentfleetv1.CreatePromptSnippetResponse], error) {
-	name := req.Msg.GetName()
-	text := req.Msg.GetText()
-	if name == "" || text == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and text are required"))
-	}
-	sn, err := s.snippets.Create(ctx, promptsnippets.Snippet{Name: name, Text: text})
-	if err != nil {
-		if errors.Is(err, promptsnippets.ErrExists) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
-		}
-		slog.Error("dashboard CreatePromptSnippet", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.CreatePromptSnippetResponse{Snippet: snippetToProto(sn)}), nil
-}
-
-func (s *Server) UpdatePromptSnippet(ctx context.Context, req *connect.Request[agentfleetv1.UpdatePromptSnippetRequest]) (*connect.Response[agentfleetv1.UpdatePromptSnippetResponse], error) {
-	id := req.Msg.GetId()
-	name := req.Msg.GetName()
-	text := req.Msg.GetText()
-	if id == "" || name == "" || text == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id, name, and text are required"))
-	}
-	sn := promptsnippets.Snippet{ID: id, Name: name, Text: text}
-	if err := s.snippets.Update(ctx, sn); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown prompt snippet %q", id))
-		}
-		slog.Error("dashboard UpdatePromptSnippet", "id", id, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.UpdatePromptSnippetResponse{Snippet: snippetToProto(sn)}), nil
-}
-
-func (s *Server) DeletePromptSnippet(ctx context.Context, req *connect.Request[agentfleetv1.DeletePromptSnippetRequest]) (*connect.Response[agentfleetv1.DeletePromptSnippetResponse], error) {
-	id := req.Msg.GetId()
-	if err := s.snippets.Delete(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown prompt snippet %q", id))
-		}
-		slog.Error("dashboard DeletePromptSnippet", "id", id, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.DeletePromptSnippetResponse{}), nil
-}
-
-func snippetToProto(sn promptsnippets.Snippet) *agentfleetv1.PromptSnippet {
-	return &agentfleetv1.PromptSnippet{
-		Id:                      sn.ID,
-		Name:                    sn.Name,
-		Text:                    sn.Text,
-		SuggestedPermissionMode: sn.SuggestedPermissionMode,
-	}
-}
 
 // --- shared file space (docs/adr/0030) — core mints presigned URLs, the
 // dashboard's browser moves the actual bytes directly against Garage ---

@@ -57,7 +57,7 @@ func TestServer_ListFiles(t *testing.T) {
 	fake := &fakeFileStore{files: []filestore.FileMetadata{
 		{Key: "notes.txt", SizeBytes: 42, LastModified: time.Unix(1000, 0), ContentType: "text/plain"},
 	}}
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := NewServer(nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	resp, err := s.ListFiles(context.Background(), connect.NewRequest(&agentfleetv1.ListFilesRequest{}))
 	if err != nil {
@@ -70,7 +70,7 @@ func TestServer_ListFiles(t *testing.T) {
 
 func TestServer_ListFiles_Error(t *testing.T) {
 	fake := &fakeFileStore{presignErr: errors.New("garage unreachable")}
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := NewServer(nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	if _, err := s.ListFiles(context.Background(), connect.NewRequest(&agentfleetv1.ListFilesRequest{})); err == nil {
 		t.Fatal("expected error, got nil")
@@ -79,7 +79,7 @@ func TestServer_ListFiles_Error(t *testing.T) {
 
 func TestServer_GetFileUploadUrl(t *testing.T) {
 	fake := &fakeFileStore{}
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := NewServer(nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	resp, err := s.GetFileUploadUrl(context.Background(), connect.NewRequest(&agentfleetv1.GetFileUploadUrlRequest{Filename: "report.pdf"}))
 	if err != nil {
@@ -92,7 +92,7 @@ func TestServer_GetFileUploadUrl(t *testing.T) {
 
 func TestServer_GetFileDownloadUrl(t *testing.T) {
 	fake := &fakeFileStore{}
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := NewServer(nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	resp, err := s.GetFileDownloadUrl(context.Background(), connect.NewRequest(&agentfleetv1.GetFileDownloadUrlRequest{Key: "report.pdf"}))
 	if err != nil {
@@ -105,7 +105,7 @@ func TestServer_GetFileDownloadUrl(t *testing.T) {
 
 func TestServer_DeleteFile(t *testing.T) {
 	fake := &fakeFileStore{}
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := NewServer(nil, nil, nil, nil, nil, nil, fake, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	// The response is empty by design (docs/adr/0048): err == nil IS the
 	// success signal. The assertion is on the side effect.
