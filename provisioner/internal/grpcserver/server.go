@@ -235,6 +235,16 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
 		return nil, fmt.Errorf("ensure claude home: %w", err)
 	}
+	// docs/adr/0063. Fatal: the pod mounts this directory, and a stale genome
+	// would run the session under rules core no longer renders.
+	genome := make([]git.GenomeFile, 0, len(req.GetGenome()))
+	for _, f := range req.GetGenome() {
+		genome = append(genome, git.GenomeFile{Path: f.GetPath(), Body: f.GetBody()})
+	}
+	if err := s.git.WriteGenome(req.GetSessionId(), genome); err != nil {
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "context packs write failed: "+err.Error())
+		return nil, status.Error(codes.InvalidArgument, "write genome: "+err.Error())
+	}
 
 	// Best-effort, unlike the clone/worktree steps above: stale or
 	// momentarily missing fleet-shared skills/context is a degraded worker
@@ -332,6 +342,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		SidecarImage:             sidecarImage,
 		DefinitionProfileApplied: definition != nil,
 		VaultTokenApplied:        definition != nil,
+		GenomeApplied:            true,
 	}, nil
 }
 

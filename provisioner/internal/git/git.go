@@ -361,6 +361,12 @@ func (m *Manager) DeleteSessionDir(sessionID string) error {
 	if err := os.RemoveAll(m.ClaudeHomePath(sessionID)); err != nil {
 		return fmt.Errorf("remove claude home for %s: %w", sessionID, err)
 	}
+	// docs/adr/0063: the genome is a sibling, so it is swept separately.
+	for _, p := range []string{m.GenomePath(sessionID), m.GenomePath(sessionID) + ".new", m.GenomePath(sessionID) + ".old"} {
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("remove genome for %s: %w", sessionID, err)
+		}
+	}
 	return nil
 }
 

@@ -307,6 +307,12 @@
               {
                 "name": "shared",
                 "readOnly": true,
+                "mountPath": "/genome",
+                "subPath": "claude-home/task-1-genome"
+              },
+              {
+                "name": "shared",
+                "readOnly": true,
                 "mountPath": "/ms-playwright",
                 "subPath": "browsers"
               }

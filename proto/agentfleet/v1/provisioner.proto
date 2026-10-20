@@ -97,6 +97,17 @@ message CreateWorkerPodRequest {
   // docs/adr/0064. Set only for a definition session; its presence switches
   // the pod to the definition profile. Absent, the pod is exactly as before.
   DefinitionPodProfile definition = 13;
+  // docs/adr/0063: the session's rendered context packs. The provisioner
+  // writes them to claude-home/<id>-genome, mounted read-only at /genome.
+  // Empty is a valid genome (no packs), and still replaces the last one.
+  repeated GenomeFile genome = 14;
+}
+
+// One file under /genome. path is relative and must be CLAUDE.md,
+// .claude/rules/<name>.md or .claude/skills/<name>/SKILL.md.
+message GenomeFile {
+  string path = 1;
+  string body = 2;
 }
 
 // docs/adr/0064: what a definition session's pod needs beyond the ordinary
@@ -153,6 +164,10 @@ message CreateWorkerPodResponse {
   // definition warm whose answer lacks it got a P1 (pre-vault) pod: core
   // refuses it like a missing definition_profile_applied.
   bool vault_token_applied = 5;
+  // docs/adr/0063: true only from a provisioner that wrote the request's
+  // genome and mounted it. An older one drops the field; core refuses a
+  // definition warm without it and logs a repo warm.
+  bool genome_applied = 6;
 }
 
 // docs/adr/0065. Every valid definition's vault after core's last good

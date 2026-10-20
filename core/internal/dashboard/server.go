@@ -29,6 +29,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
@@ -79,6 +80,8 @@ type Server struct {
 	// definition creates and warms answer Unavailable and ListDefinitions an
 	// empty list carrying that as a sync error; repo sessions are unaffected.
 	definitions *definitions.Registry
+	// packs renders each warm's context packs (docs/adr/0063). nil sends none.
+	packs *packs.Store
 }
 
 func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
@@ -589,6 +592,8 @@ func (s *Server) SetSTTClient(c *sttclient.Client) { s.stt = c }
 
 func (s *Server) SetDefinitions(r *definitions.Registry) { s.definitions = r }
 
+func (s *Server) SetPacks(p *packs.Store) { s.packs = p }
+
 // GetFileDiff answers "what actually changed in this file" for a file the
 // CHANGES panel listed but the console cannot reconstruct — anything a Bash
 // command wrote: sed, a formatter, a codegen script. The panel itself has
@@ -1026,6 +1031,11 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		}
 		image = ""
 	}
+	// Rendered before the lease, so a failed read leaves nothing to undo.
+	genome, err := s.renderGenome(ctx, t)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
 
 	// The cap check and the lease mint happen together, under an advisory
 	// lock, inside ReserveSlot. Checking here and acting after would be the
@@ -1061,7 +1071,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// row, which a concurrent "manage repos" edit could have straddled, so a
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
-	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile)
+	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile, genome)
 	switch {
 	case err != nil && profile != nil:
 		// docs/adr/0064: an error can come after the Job exists (the call's
@@ -1083,6 +1093,13 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	case profile != nil && !pod.VaultTokenApplied:
 		// docs/adr/0065: a P1 provisioner built a pod holding real credentials.
 		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeFailedPrecondition, "provisioner did not mint a vault token")
+	case profile != nil && s.packs != nil && !pod.GenomeApplied:
+		// docs/adr/0063: a definition's packs are part of what it is.
+		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeFailedPrecondition, "provisioner did not apply the context packs")
+	case s.packs != nil && !pod.GenomeApplied:
+		// A repo session still works without them; the next warm on a
+		// current provisioner gets them.
+		slog.Warn("dashboard warm: provisioner did not apply the context packs", "sessionId", sessionID)
 	}
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
@@ -1091,6 +1108,29 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		slog.Warn("dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
 	}
 	return pod.PodName, nil
+}
+
+// renderGenome renders the session's context packs (docs/adr/0063): a
+// definition session's by its definition, a repo session's by its repo.
+func (s *Server) renderGenome(ctx context.Context, t *sessions.Session) ([]*agentfleetv1.GenomeFile, error) {
+	if s.packs == nil {
+		return nil, nil
+	}
+	kind, name := packs.KindRepo, t.Repo
+	if t.DefinitionName != nil {
+		kind, name = packs.KindDefinition, *t.DefinitionName
+	}
+	r, err := s.packs.RenderContext(ctx, kind, name, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("render context packs: %w", err)
+	}
+	// ponytail: logged until the per-warm context log (ADR-0063 §7) lands.
+	slog.Info("dashboard warm: context packs", "sessionId", t.ID, "kind", kind, "target", name, "versions", r.Versions, "skipped", r.Skipped)
+	out := make([]*agentfleetv1.GenomeFile, 0, len(r.Files))
+	for _, f := range r.Files {
+		out = append(out, &agentfleetv1.GenomeFile{Path: f.Path, Body: f.Body})
+	}
+	return out, nil
 }
 
 // refuseDefinitionPod revokes and removes whatever a definition warm may have

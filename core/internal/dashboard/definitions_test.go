@@ -20,6 +20,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -39,6 +40,9 @@ type definitionsProvisioner struct {
 	// noVaultToken is a P1 provisioner: it applies the profile but mints no
 	// vault token (docs/adr/0065).
 	noVaultToken bool
+	// noGenome is a provisioner from before docs/adr/0063: it drops the
+	// request's context packs and does not confirm them.
+	noGenome bool
 	// createErr fails the create AFTER recording it: the Job may exist.
 	createErr error
 	// onCreate runs inside the create (a caller going away mid-call).
@@ -69,7 +73,7 @@ func (p *definitionsProvisioner) CreateWorkerPod(_ context.Context, req *agentfl
 		return nil, p.createErr
 	}
 	applied := req.GetDefinition() != nil && !p.dropsProfile
-	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test", DefinitionProfileApplied: applied, VaultTokenApplied: applied && !p.noVaultToken}, nil
+	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test", DefinitionProfileApplied: applied, VaultTokenApplied: applied && !p.noVaultToken, GenomeApplied: !p.noGenome}, nil
 }
 
 func (p *definitionsProvisioner) TearDownSession(_ context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
@@ -433,6 +437,47 @@ func TestWarmIfIdle_DefinitionNeedsAVaultToken(t *testing.T) {
 	})
 	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "CLAUDE_CODE_OAUTH_TOKEN not set") {
 		t.Fatalf("a vault refusal: got %v", err)
+	}
+}
+
+// docs/adr/0063: a definition warm carries its attached packs, and a
+// provisioner that drops them gets the warm refused like a dropped profile.
+func TestWarmIfIdle_DefinitionContextPacks(t *testing.T) {
+	ctx := context.Background()
+	s, prov, _, store, pool := newDefinitionsServerPool(t)
+	ps := packs.NewStore(pool)
+	s.SetPacks(ps)
+	if err := ps.Create(ctx, "notes-style", "platform-admins"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ps.SaveVersion(ctx, packs.Version{Pack: "notes-style", Text: "short notes"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Attach(ctx, packs.KindDefinition, "dev-dream-analyst", "notes-style", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := createDef(s, "dev-dream-analyst", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prov.set(func(p *definitionsProvisioner) { p.noGenome = true })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "context packs") {
+		t.Fatalf("a pod without its packs: got %v", err)
+	}
+	if got, err := store.Get(ctx, sess.GetId()); err != nil || sessions.IsPodPhaseLive(got.PodPhase) {
+		t.Fatalf("kept a live phase: %+v %v", got, err)
+	}
+
+	prov.set(func(p *definitionsProvisioner) { p.noGenome = false })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	prov.mu.Lock()
+	g := prov.creates[len(prov.creates)-1].GetGenome()
+	prov.mu.Unlock()
+	if len(g) != 1 || g[0].GetPath() != ".claude/rules/20-notes-style.md" || g[0].GetBody() != "short notes" {
+		t.Fatalf("genome = %v", g)
 	}
 }
 

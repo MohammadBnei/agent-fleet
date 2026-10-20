@@ -244,11 +244,14 @@ type WorkerPod struct {
 	// VaultTokenApplied: this pod got a vault token and placeholders instead of
 	// real credentials (docs/adr/0065). An older provisioner never sets it.
 	VaultTokenApplied bool
+	// GenomeApplied: the provisioner wrote and mounted the request's context
+	// packs (docs/adr/0063). An older provisioner never sets it.
+	GenomeApplied bool
 }
 
 // definition is nil for a repo session. For a definition session it switches
 // the pod to the definition profile (docs/adr/0064).
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile) (WorkerPod, error) {
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile, genome []*agentfleetv1.GenomeFile) (WorkerPod, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -263,6 +266,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		ToolKeys:        toolKeys,
 		Image:           image,
 		Definition:      definition,
+		Genome:          genome,
 	})
 	if err != nil {
 		return WorkerPod{}, fmt.Errorf("CreateWorkerPod: %w", err)
@@ -273,6 +277,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		SidecarImage:             resp.GetSidecarImage(),
 		DefinitionProfileApplied: resp.GetDefinitionProfileApplied(),
 		VaultTokenApplied:        resp.GetVaultTokenApplied(),
+		GenomeApplied:            resp.GetGenomeApplied(),
 	}, nil
 }
 
