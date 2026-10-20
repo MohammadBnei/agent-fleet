@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.1.1](https://github.com/MohammadBnei/agent-fleet/compare/6.1.0...6.1.1) (2026-10-20)
+
+### Bug Fixes
+
+* **provisioner:** re-clone a provisioner-owned clone when its refresh fails ([#284](https://github.com/MohammadBnei/agent-fleet/issues/284)) ([9060079](https://github.com/MohammadBnei/agent-fleet/commit/90600795d8af260f65b13d7aada3ba3ed8353fbb))
+
 # [6.1.0](https://github.com/MohammadBnei/agent-fleet/compare/6.0.2...6.1.0) (2026-10-20)
 
 ### Features
