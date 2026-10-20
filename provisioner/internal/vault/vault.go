@@ -44,6 +44,9 @@ type Client struct {
 	Proxy      string // agent-vault.agent-vault.svc.cluster.local:14322
 	SecretsDir string // the mounted Secret: AGENT_VAULT_TOKEN + credential values
 	HTTP       *http.Client
+	// Forge, when set, supplies each vault's GitHub key: a token minted for
+	// the vault's one repo (docs/adr/0075 §5). Nil reads it from SecretsDir.
+	Forge Forge
 
 	mu    sync.Mutex
 	set   map[string]map[string][32]byte // vault -> key -> sha256 of the value last written
@@ -56,6 +59,12 @@ func New(api, proxy, secretsDir string) *Client {
 		HTTP: &http.Client{Timeout: 10 * time.Second},
 		set:  map[string]map[string][32]byte{}, locks: map[string]*sync.Mutex{},
 	}
+}
+
+// Forge mints repo-scoped credentials. GitHub's App is the one
+// implementation; Forgejo is the planned second (docs/adr/0075 §2).
+type Forge interface {
+	Token(ctx context.Context, owner, repo string) (string, error)
 }
 
 // Spec is one vault's desired state (a definition's credentials).
@@ -122,7 +131,7 @@ func checkSpec(s Spec) error {
 	}
 	repos := map[string]bool{}
 	for _, svc := range s.Services {
-		if !keyRe.MatchString(svc.Secret) || strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") {
+		if !keyRe.MatchString(svc.Secret) || strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") || strings.HasPrefix(svc.Secret, "GITHUB_APP_") {
 			return fmt.Errorf("vault %s: secret %q is not a definition credential key", s.Name, svc.Secret)
 		}
 		re := githubPath
@@ -251,6 +260,18 @@ func (c *Client) Reconcile(ctx context.Context, s Spec) (widened bool, err error
 
 func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	values := map[string]string{gitUsernameKey: "x-access-token"}
+	// Every value is gathered before the first write. A forge error returns
+	// here, so it can never narrow the services the way a missing key does
+	// (docs/adr/0075 §5).
+	if c.Forge != nil {
+		if owner, repo, ok := specRepo(s); ok {
+			v, err := c.Forge.Token(ctx, owner, repo)
+			if err != nil {
+				return fmt.Errorf("vault %s: mint %s/%s: %w", s.Name, owner, repo, err)
+			}
+			values[GitHubKey(s.Name)] = v
+		}
+	}
 	var missing []string
 	var desired []service
 	for _, svc := range render(s) {
@@ -385,6 +406,21 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 		slog.Info("vault: credentials removed", "vault", s.Name, "keys", stale)
 	}
 	return missingErr(s.Name, missing)
+}
+
+// specRepo is the one <owner>/<repo> a checked spec's GitHub paths name.
+func specRepo(s Spec) (owner, repo string, ok bool) {
+	for _, svc := range s.Services {
+		if len(svc.Paths) == 0 || (svc.Host != "github.com" && svc.Host != "api.github.com") {
+			continue
+		}
+		seg := strings.Split(svc.Paths[0], "/") // "", owner, repo[.git], "*"
+		if svc.Host == "api.github.com" {
+			seg = seg[1:] // "", "repos", owner, repo, "*"
+		}
+		return seg[1], strings.TrimSuffix(seg[2], ".git"), true
+	}
+	return "", "", false
 }
 
 func missingErr(vault string, missing []string) error {

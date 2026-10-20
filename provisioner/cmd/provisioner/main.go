@@ -140,6 +140,14 @@ func main() {
 	// boot: before infra-bootstrap's agent-vault-bootstrap.sh has run, every
 	// definition warm and reconcile fails closed with that script's name.
 	vc := vault.New(cfg.AgentVaultAPI, cfg.AgentVaultProxy, cfg.AgentVaultSecretsDir)
+	// docs/adr/0075: with the App mounted, each vault's GitHub key is a token
+	// minted for its one repo; without it, the mounted file as before.
+	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
+	if app.Configured() {
+		vc.Forge = app
+	} else {
+		slog.Warn("github app not mounted: vault GitHub keys come from Infisical files", "dir", cfg.GitHubAppDir)
+	}
 	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
 	provSvc.SetGitHub(github.New(os.Getenv("GH_TOKEN"), strings.Split(cfg.FleetRepoInviters, ",")))
@@ -149,6 +157,21 @@ func main() {
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)
 	loop := reconcile.New(k8sc, core, vc, time.Duration(sharedInstanceIdleTimeout)*time.Millisecond)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
+
+	// docs/adr/0075 §5: push re-minted tokens on the provisioner's own clock,
+	// not core's. Tokens are re-minted with <30m left, so 5m leaves margin.
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				provSvc.RefreshVaults(ctx)
+			}
+		}
+	}()
 
 	// The branch/worktree sweep loop is gone (docs/adr/0048 §5). It deleted
 	// worktrees on its own ticker, without telling core — which is why any
@@ -195,4 +218,22 @@ func resolveLogLevel(raw string) (level slog.Level, warning string) {
 		return slog.LevelInfo, "invalid LOG_LEVEL, defaulting to info"
 	}
 	return l, ""
+}
+
+// parseIDs reads FLEET_GITHUB_ACCOUNTS. A malformed id is logged and skipped:
+// it can only shrink the allowlist.
+func parseIDs(raw string) []int64 {
+	var out []int64
+	for _, f := range strings.Split(raw, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(f, 10, 64)
+		if err != nil {
+			slog.Error("FLEET_GITHUB_ACCOUNTS: not an account id, skipped", "value", f)
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
 }

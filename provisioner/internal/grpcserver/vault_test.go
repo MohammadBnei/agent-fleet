@@ -377,3 +377,34 @@ func TestCreateWorkerPod_DefinitionRefusedWithoutEgressLock(t *testing.T) {
 		t.Error("a token was minted without an egress lock")
 	}
 }
+
+type rotatingForge struct{ token string }
+
+func (f *rotatingForge) Token(context.Context, string, string) (string, error) { return f.token, nil }
+
+// docs/adr/0075 §5: the provisioner pushes re-minted tokens on its own, so a
+// stalled core never lets a vault's GitHub token expire.
+func TestRefreshVaults_PushesTheReMintedTokenWithoutCore(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	forge := &rotatingForge{token: "ghs-1"}
+	s.vault.Forge = forge
+	ctx := context.Background()
+	if _, err := s.ReconcileVaults(ctx, &agentfleetv1.ReconcileVaultsRequest{Vaults: []*agentfleetv1.VaultSpec{notesProfile().Vault}}); err != nil {
+		t.Fatal(err)
+	}
+	forge.token = "ghs-2"
+	s.RefreshVaults(ctx)
+	if v, _ := f.Get("dev-notes"); v.Creds["GH_DEV_NOTES"] != "ghs-2" {
+		t.Errorf("GH_DEV_NOTES = %q after refresh, want ghs-2", v.Creds["GH_DEV_NOTES"])
+	}
+}
+
+func TestRefreshVaults_NothingBeforeCoreSentASet(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	f := withVault(t, s, map[string]string{})
+	s.RefreshVaults(context.Background())
+	if calls := f.Calls(); len(calls) != 0 {
+		t.Errorf("refreshed with no known specs: %v", calls)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -60,6 +61,10 @@ type Server struct {
 	vault *vault.Client
 	// gh lists the bot's repos for core's repos sync (docs/adr/0074).
 	gh *github.Client
+	// specs is core's last full vault set, kept so RefreshVaults can push
+	// re-minted tokens while core is down (docs/adr/0075 §5).
+	specsMu sync.Mutex
+	specs   []*agentfleetv1.VaultSpec
 }
 
 // SetGitHub wires the repos sync source (docs/adr/0074). Unset, ListGitHubRepos
@@ -446,6 +451,9 @@ func vaultSpec(v *agentfleetv1.VaultSpec) vault.Spec {
 // other vault this provisioner administers (docs/adr/0065 §2): the request is
 // core's full desired set. Errors are per vault, never a value.
 func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.ReconcileVaultsRequest) (*agentfleetv1.ReconcileVaultsResponse, error) {
+	s.specsMu.Lock()
+	s.specs = req.GetVaults()
+	s.specsMu.Unlock()
 	out := &agentfleetv1.ReconcileVaultsResponse{}
 	keep := map[string]bool{}
 	for _, v := range req.GetVaults() {
@@ -460,6 +468,24 @@ func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.Reconcil
 		out.PruneError = err.Error()
 	}
 	return out, nil
+}
+
+// RefreshVaults re-reconciles core's last vault set, so each vault gets its
+// re-minted GitHub token even while core's tick is stalled (docs/adr/0075 §5).
+// Unchanged values cost reads only. Before core's first set (just after a
+// restart) there is nothing to refresh; tokens already pushed last up to 1h.
+//
+// ponytail: specs live in memory; a provisioner restart while core is down
+// refreshes nothing until core returns.
+func (s *Server) RefreshVaults(ctx context.Context) {
+	s.specsMu.Lock()
+	specs := s.specs
+	s.specsMu.Unlock()
+	for _, v := range specs {
+		if err := s.reconcileVault(ctx, v); err != nil {
+			slog.Error("grpcserver: vault refresh", "vault", v.GetName(), "error", err)
+		}
+	}
 }
 
 // TearDownSession is opportunistic by design (docs/adr/0020's Consequences

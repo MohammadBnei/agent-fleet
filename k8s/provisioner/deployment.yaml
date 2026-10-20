@@ -111,6 +111,11 @@ spec:
         # Anyone else's stays pending for a human.
         - name: FLEET_REPO_INVITERS
           value: MohammadBnei
+        # docs/adr/0075: account ids whose ukubi-fleet installations count
+        # (MohammadBnei, opus-tech-hq). The App is public; any other
+        # installation is ignored.
+        - name: FLEET_GITHUB_ACCOUNTS
+          value: "43962695,344349211"
         # client-go's rest.InClusterConfig() natively trusts the projected
         # ServiceAccount CA — no TLS workaround needed for a Go binary
         # (unlike the old TS e2e-provisioner, see docs/adr/0013).
@@ -124,6 +129,10 @@ spec:
         # one file per key, read per call (vault.Client). Read-only.
         - name: agent-vault
           mountPath: /var/run/agent-vault
+          readOnly: true
+        # docs/adr/0075: the App's id and private key, read per JWT.
+        - name: github-app
+          mountPath: /var/run/github-app
           readOnly: true
         resources:
           requests:
@@ -141,4 +150,9 @@ spec:
       - name: agent-vault
         secret:
           secretName: provisioner-agent-vault
+          optional: true
+      # optional: unmounted, vault GitHub keys come from Infisical files.
+      - name: github-app
+        secret:
+          secretName: provisioner-github-app
           optional: true

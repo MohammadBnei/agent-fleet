@@ -438,7 +438,7 @@ func validate(name string, s *Spec) error {
 			seen[svc.Host] = true
 			if !envKeyRe.MatchString(svc.Secret) {
 				bad("credentials.services[%s].secret must be a secret KEY name matching %s (value not shown)", svc.Host, envKeyRe)
-			} else if strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") {
+			} else if strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") || strings.HasPrefix(svc.Secret, "GITHUB_APP_") {
 				bad("credentials.services[%s].secret %q is the provisioner's own key, never a definition's", svc.Host, svc.Secret)
 			}
 			switch svc.Host {

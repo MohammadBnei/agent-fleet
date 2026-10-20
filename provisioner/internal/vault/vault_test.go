@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -452,5 +453,69 @@ func TestReconcile_AcceptsOwnerStartingRepos(t *testing.T) {
 	}}
 	if _, err := c.Reconcile(context.Background(), spec); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type fakeForge struct {
+	token string
+	err   error
+	asked []string
+}
+
+func (f *fakeForge) Token(_ context.Context, owner, repo string) (string, error) {
+	f.asked = append(f.asked, owner+"/"+repo)
+	return f.token, f.err
+}
+
+// docs/adr/0075 §5: with a forge, a vault's GitHub key is the minted token for
+// its one repo, not the mounted file.
+func TestReconcile_GitHubKeyComesFromTheForge(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ff := &fakeForge{token: "ghs-minted"}
+	c.Forge = ff
+	if _, err := c.Reconcile(context.Background(), notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := f.Get("dev-notes")
+	if v.Creds["GH_DEV_NOTES"] != "ghs-minted" {
+		t.Errorf("GH_DEV_NOTES = %q, want the minted token", v.Creds["GH_DEV_NOTES"])
+	}
+	if v.Creds["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-sentinel-value" {
+		t.Error("non-GitHub keys still come from the mounted files")
+	}
+	if !slices.Equal(ff.asked, []string{"MohammadBnei/notes"}) {
+		t.Errorf("forge asked %v", ff.asked)
+	}
+}
+
+// A forge failure must leave the vault untouched: treating it as a missing key
+// would narrow the services, and the next good tick would read as a widening
+// that revokes every session (docs/adr/0075 §5).
+func TestReconcile_ForgeFailureWritesNothing(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	c.Forge = &fakeForge{token: "ghs-minted"}
+	ctx := context.Background()
+	if _, err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	f.ResetLog()
+	c.Forge = &fakeForge{err: errors.New("github down")}
+	widened, err := c.Reconcile(ctx, notesSpec())
+	if err == nil || widened {
+		t.Fatalf("err=%v widened=%v, want an error and no widening", err, widened)
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("forge failure wrote to the vault: %v", w)
+	}
+	if got := len(services(t, f, "dev-notes")); got != 4 {
+		t.Errorf("services %d, want the 4 untouched", got)
+	}
+}
+
+func TestReconcile_RefusesTheAppKeyAsADefinitionSecret(t *testing.T) {
+	c, _, _ := setup(t, map[string]string{"GITHUB_APP_PRIVATE_KEY": "pem"})
+	_, err := c.Reconcile(context.Background(), vault.Spec{Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "GITHUB_APP_PRIVATE_KEY"}}})
+	if err == nil {
+		t.Fatal("a definition named the App's key")
 	}
 }
