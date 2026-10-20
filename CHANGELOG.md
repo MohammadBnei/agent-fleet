@@ -1,5 +1,11 @@
 # Changelog
 
+# [5.1.0](https://github.com/MohammadBnei/agent-fleet/compare/5.0.0...5.1.0) (2026-10-20)
+
+### Features
+
+* **packs:** live context pack store and renderer (ADR 0063 step 2) ([#272](https://github.com/MohammadBnei/agent-fleet/issues/272)) ([2116fd6](https://github.com/MohammadBnei/agent-fleet/commit/2116fd66366610f905e8a118d99b7f3908478b3b))
+
 # [5.0.0](https://github.com/MohammadBnei/agent-fleet/compare/4.24.0...5.0.0) (2026-10-20)
 
 * feat(repos)!: fleet repos come from GitHub, overrides from infra-bootstrap (ADR 0074) (#271) ([fdcce6e](https://github.com/MohammadBnei/agent-fleet/commit/fdcce6e4803ceea8e773c701c7a03b0bdeaf1457)), closes [#271](https://github.com/MohammadBnei/agent-fleet/issues/271)
