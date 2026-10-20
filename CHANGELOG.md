@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.2.0](https://github.com/MohammadBnei/agent-fleet/compare/6.1.2...6.2.0) (2026-10-20)
+
+### Features
+
+* **definitions:** definition sessions apply their AgentSpec and run in the fleet's auto ([#287](https://github.com/MohammadBnei/agent-fleet/issues/287)) ([5caa973](https://github.com/MohammadBnei/agent-fleet/commit/5caa973a5e0b91c2d0994a96a6abd17ea6727698))
+
 ## [6.1.2](https://github.com/MohammadBnei/agent-fleet/compare/6.1.1...6.1.2) (2026-10-20)
 
 ### Bug Fixes
