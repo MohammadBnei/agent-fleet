@@ -260,14 +260,19 @@ func (c *Client) Reconcile(ctx context.Context, s Spec) (widened bool, err error
 
 func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	values := map[string]string{gitUsernameKey: "x-access-token"}
-	// Every value is gathered before the first write. A forge error returns
-	// here, so it can never narrow the services the way a missing key does
-	// (docs/adr/0075 §5).
+	// Every value is gathered before the first write. A forge error with no
+	// mounted file to fall back on returns here, so it can never narrow the
+	// services the way a missing key does (docs/adr/0075 §5).
 	if c.Forge != nil {
 		if owner, repo, ok := specRepo(s); ok {
 			v, err := c.Forge.Token(ctx, owner, repo)
 			if err != nil {
-				return fmt.Errorf("vault %s: mint %s/%s: %w", s.Name, owner, repo, err)
+				file, ferr := c.readSecret(GitHubKey(s.Name))
+				if ferr != nil || file == "" {
+					return fmt.Errorf("vault %s: mint %s/%s: %w", s.Name, owner, repo, err)
+				}
+				slog.Warn("vault: mint failed, using the mounted file", "vault", s.Name, "error", err)
+				v = file
 			}
 			values[GitHubKey(s.Name)] = v
 		}
@@ -411,10 +416,13 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 // specRepo is the one <owner>/<repo> a checked spec's GitHub paths name.
 func specRepo(s Spec) (owner, repo string, ok bool) {
 	for _, svc := range s.Services {
-		if svc.Host != "github.com" || len(svc.Paths) == 0 {
+		if len(svc.Paths) == 0 || (svc.Host != "github.com" && svc.Host != "api.github.com") {
 			continue
 		}
 		seg := strings.Split(svc.Paths[0], "/") // "", owner, repo[.git], "*"
+		if svc.Host == "api.github.com" {
+			seg = seg[1:] // "", "repos", owner, repo, "*"
+		}
 		return seg[1], strings.TrimSuffix(seg[2], ".git"), true
 	}
 	return "", "", false

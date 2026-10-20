@@ -33,12 +33,17 @@ type fakeGitHub struct {
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.checkJWT(r.Header.Get("Authorization"))
 	switch {
-	case r.Method == http.MethodGet && r.URL.Path == "/app/installations":
-		_ = json.NewEncoder(w).Encode([]map[string]any{
-			{"id": 1, "account": map[string]any{"id": 666, "login": "MohammadBnei"}}, // foreign account, same login: must be ignored
-			{"id": 2, "account": map[string]any{"id": 43962695, "login": "MohammadBnei"}},
-			{"id": 3, "account": map[string]any{"id": 344349211, "login": "opus-tech-hq"}},
-		})
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/installation"):
+		switch strings.ToLower(r.URL.Path) {
+		case "/repos/mohammadbnei/notes/installation":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 2, "account": map[string]any{"id": 43962695, "login": "MohammadBnei"}})
+		case "/repos/mohammadbnei/squatted/installation": // same login, foreign account id
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "account": map[string]any{"id": 666, "login": "MohammadBnei"}})
+		case "/repos/opus-tech-hq/workspace/installation", "/repos/opus-tech-hq/other/installation":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 3, "account": map[string]any{"id": 344349211, "login": "opus-tech-hq"}})
+		default:
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+		}
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/app/installations/"):
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -123,11 +128,10 @@ func TestApp_MintsOneRepoTokenFromTheAllowlistedInstallation(t *testing.T) {
 	}
 }
 
-func TestApp_RefusesAnOwnerWithNoAllowlistedInstallation(t *testing.T) {
+func TestApp_RefusesAnInstallationByANonAllowlistedAccount(t *testing.T) {
 	a, f := newApp(t, false)
-	a.Accounts = map[int64]bool{344349211: true} // MohammadBnei's real install not allowlisted
-	if _, err := a.Token(context.Background(), "MohammadBnei", "notes"); err == nil {
-		t.Fatal("want an error: only a foreign installation matches this login")
+	if _, err := a.Token(context.Background(), "MohammadBnei", "squatted"); err == nil {
+		t.Fatal("want an error: the repo's installation is by a foreign account id")
 	}
 	if len(f.mints) != 0 {
 		t.Errorf("minted %d tokens", len(f.mints))
@@ -156,10 +160,14 @@ func TestApp_FailedRemintServesTheLastToken(t *testing.T) {
 	ctx := context.Background()
 	t1, _ := a.Token(ctx, "opus-tech-hq", "workspace")
 	f.fail = true
-	a.now = func() time.Time { return time.Now().Add(2 * time.Hour) }
+	a.now = func() time.Time { return time.Now().Add(45 * time.Minute) } // <30m left, still valid
 	t2, err := a.Token(ctx, "opus-tech-hq", "workspace")
 	if err != nil || t2 != t1 {
 		t.Fatalf("got %q %v, want the last token", t2, err)
+	}
+	a.now = func() time.Time { return time.Now().Add(2 * time.Hour) } // expired
+	if _, err := a.Token(ctx, "opus-tech-hq", "workspace"); err == nil {
+		t.Fatal("an expired token was served as valid")
 	}
 	if _, err := a.Token(ctx, "opus-tech-hq", "other"); err == nil {
 		t.Fatal("no token yet and the mint fails: want an error")

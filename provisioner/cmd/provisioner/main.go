@@ -142,14 +142,15 @@ func main() {
 	vc := vault.New(cfg.AgentVaultAPI, cfg.AgentVaultProxy, cfg.AgentVaultSecretsDir)
 	// docs/adr/0075: with the App mounted, each vault's GitHub key is a token
 	// minted for its one repo; without it, the mounted file as before.
+	// Always wired: Token re-checks the mount per call, so a Secret synced
+	// after boot is used without a restart; unmounted, the vault falls back
+	// to the Infisical files.
 	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
-	if app.Configured() {
-		vc.Forge = app
-		if len(app.Accounts) == 0 {
-			slog.Error("github app mounted but FLEET_GITHUB_ACCOUNTS is empty: every definition GitHub token will fail closed")
-		}
-	} else {
-		slog.Warn("github app not mounted: vault GitHub keys come from Infisical files", "dir", cfg.GitHubAppDir)
+	vc.Forge = app
+	if !app.Configured() {
+		slog.Warn("github app not mounted yet: vault GitHub keys come from Infisical files", "dir", cfg.GitHubAppDir)
+	} else if len(app.Accounts) == 0 {
+		slog.Error("github app mounted but FLEET_GITHUB_ACCOUNTS is empty: every definition GitHub token will fail closed")
 	}
 	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
@@ -171,7 +172,9 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				provSvc.RefreshVaults(ctx)
+				if app.Configured() { // nothing re-mints without the App
+					provSvc.RefreshVaults(ctx)
+				}
 			}
 		}
 	}()

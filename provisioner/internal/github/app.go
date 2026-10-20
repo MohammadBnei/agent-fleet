@@ -76,10 +76,15 @@ func (a *App) Configured() bool {
 
 // Token returns an installation token for owner/repo, minting one when none
 // is cached or the cached one has less than refreshBefore left. A failed
-// mint returns the last token, even an expired one: the caller pushes an
-// unchanged value instead of losing a service. Only a repo never minted has
-// no fallback.
+// re-mint returns the last token while it is still valid; an expired one is
+// an error, never passed on as if it worked.
+//
+// ponytail: one lock across the mint's network calls, so a slow GitHub
+// serialises every vault's mint (10s timeouts). Per-repo locks if warms stall.
 func (a *App) Token(ctx context.Context, owner, repo string) (string, error) {
+	if !a.Configured() {
+		return "", fmt.Errorf("github app: not mounted at %s", a.Dir)
+	}
 	key := strings.ToLower(owner + "/" + repo)
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -89,7 +94,7 @@ func (a *App) Token(ctx context.Context, owner, repo string) (string, error) {
 	}
 	t, err := a.mint(ctx, owner, repo)
 	if err != nil {
-		if ok {
+		if ok && a.now().Before(last.expires) {
 			slog.Error("github app: re-mint failed, serving the last token", "repo", key, "expires", last.expires, "error", err)
 			return last.value, nil
 		}
@@ -104,7 +109,7 @@ func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
 	if err != nil {
 		return token{}, err
 	}
-	id, err := a.installation(ctx, jwt, owner)
+	id, err := a.installation(ctx, jwt, owner, repo)
 	if err != nil {
 		return token{}, err
 	}
@@ -122,31 +127,25 @@ func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
 	return token{value: out.Token, expires: out.ExpiresAt}, nil
 }
 
-// installation finds owner's installation among the allowlisted accounts.
-// Matched on the account id, never the login alone: a login can be renamed
-// and re-registered by someone else. Every page is read: the App is public,
-// so foreign installations can push an allowlisted one past page one.
-func (a *App) installation(ctx context.Context, jwt, owner string) (int64, error) {
-	for page := 1; ; page++ {
-		var list []struct {
-			ID      int64 `json:"id"`
-			Account struct {
-				ID    int64  `json:"id"`
-				Login string `json:"login"`
-			} `json:"account"`
-		}
-		if err := a.call(ctx, jwt, http.MethodGet, fmt.Sprintf("/app/installations?per_page=%d&page=%d", perPage, page), nil, &list); err != nil {
-			return 0, err
-		}
-		for _, in := range list {
-			if a.Accounts[in.Account.ID] && strings.EqualFold(in.Account.Login, owner) {
-				return in.ID, nil
-			}
-		}
-		if len(list) < perPage {
-			return 0, fmt.Errorf("github app: no installation for %s among the allowlisted accounts", owner)
-		}
+// installation is the installation covering owner/repo, if its account is
+// allowlisted. Matched on the account id, never the login: the App is
+// public, and a login can be renamed and re-registered by someone else.
+func (a *App) installation(ctx context.Context, jwt, owner, repo string) (int64, error) {
+	var in struct {
+		ID      int64 `json:"id"`
+		Account struct {
+			ID    int64  `json:"id"`
+			Login string `json:"login"`
+		} `json:"account"`
 	}
+	if err := a.call(ctx, jwt, http.MethodGet, "/repos/"+owner+"/"+repo+"/installation", nil, &in); err != nil {
+		return 0, err
+	}
+	if !a.Accounts[in.Account.ID] {
+		slog.Error("github app: installation by a non-allowlisted account, ignored; remove it by hand (infra-bootstrap ADR-0062)", "repo", owner+"/"+repo, "account", in.Account.Login, "accountId", in.Account.ID, "installation", in.ID)
+		return 0, fmt.Errorf("github app: %s/%s is installed by account %d, not an allowlisted one", owner, repo, in.Account.ID)
+	}
+	return in.ID, nil
 }
 
 // jwt signs the App's RS256 JWT: iat backdated 60s for clock skew, exp 9m

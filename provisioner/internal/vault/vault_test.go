@@ -492,7 +492,8 @@ func TestReconcile_GitHubKeyComesFromTheForge(t *testing.T) {
 // would narrow the services, and the next good tick would read as a widening
 // that revokes every session (docs/adr/0075 §5).
 func TestReconcile_ForgeFailureWritesNothing(t *testing.T) {
-	c, f, _ := setup(t, notesSecrets)
+	secrets := map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth-sentinel-value"} // no GH file to fall back on
+	c, f, _ := setup(t, secrets)
 	c.Forge = &fakeForge{token: "ghs-minted"}
 	ctx := context.Background()
 	if _, err := c.Reconcile(ctx, notesSpec()); err != nil {
@@ -517,5 +518,17 @@ func TestReconcile_RefusesTheAppKeyAsADefinitionSecret(t *testing.T) {
 	_, err := c.Reconcile(context.Background(), vault.Spec{Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "GITHUB_APP_PRIVATE_KEY"}}})
 	if err == nil {
 		t.Fatal("a definition named the App's key")
+	}
+}
+
+// Until the Infisical PAT is deleted, a mint failure falls back to it.
+func TestReconcile_ForgeFailureFallsBackToTheMountedFile(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	c.Forge = &fakeForge{err: errors.New("not installed")}
+	if _, err := c.Reconcile(context.Background(), notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := f.Get("dev-notes"); v.Creds["GH_DEV_NOTES"] != "ghp-sentinel-value" {
+		t.Errorf("GH_DEV_NOTES = %q, want the mounted file", v.Creds["GH_DEV_NOTES"])
 	}
 }
