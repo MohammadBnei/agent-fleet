@@ -1,5 +1,11 @@
 # Changelog
 
+# [5.3.0](https://github.com/MohammadBnei/agent-fleet/compare/5.2.0...5.3.0) (2026-10-20)
+
+### Features
+
+* **packs:** reviewed packs from packs/ at the release tag (ADR 0063 step 3b) ([#274](https://github.com/MohammadBnei/agent-fleet/issues/274)) ([079603c](https://github.com/MohammadBnei/agent-fleet/commit/079603cd03a5bc00dd55da63e2301ba5d7d18c76))
+
 # [5.2.0](https://github.com/MohammadBnei/agent-fleet/compare/5.1.0...5.2.0) (2026-10-20)
 
 ### Features
