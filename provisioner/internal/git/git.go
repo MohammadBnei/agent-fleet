@@ -482,6 +482,13 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 // never written to by a worker, so there is no uncommitted work to protect —
 // and a plain fetch alone would not update the tree at all.
 func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
+	// Detached from the caller: core's ListDefinitionFiles has a 30s deadline,
+	// and a cancelled ctx SIGKILLs git mid-reset on a slow PVC, leaving
+	// index.lock (2026-10-20, v6.2.0 rollout: ~3 min of failed syncs). The
+	// refresh finishes under its own bound instead; the caller holds path's
+	// lock, so the next call waits for it and then reads a ready clone.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	defer cancel()
 	err := m.updateClone(ctx, path, repoURL, ref, fetchArgs...)
 	if err == nil || ctx.Err() != nil {
 		return err
@@ -502,6 +509,10 @@ func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, f
 	}
 	return nil
 }
+
+// refreshTimeout bounds one clone refresh, retry included, independently of
+// the RPC that triggered it.
+const refreshTimeout = 5 * time.Minute
 
 func (m *Manager) updateClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {

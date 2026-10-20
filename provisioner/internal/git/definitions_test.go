@@ -252,3 +252,25 @@ func TestReadDefinitions_RecoversFromALeftoverLockOrBrokenClone(t *testing.T) {
 		t.Fatalf("half-built clone not recovered: %v", err)
 	}
 }
+
+// A caller whose deadline passes mid-refresh must not kill git: the refresh
+// finishes on its own bound and leaves a ready clone and no lock. The read
+// after it may still fail on the dead ctx; the next tick reads cleanly.
+func TestReadDefinitions_RefreshOutlivesACancelledCaller(t *testing.T) {
+	root := t.TempDir()
+	m := NewManager(root)
+	origin := newDefinitionsOrigin(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, _ = m.ReadDefinitions(ctx, origin, "main")
+	clone := filepath.Join(root, "definitions-src")
+	if got, want := gitIn(t, clone, "rev-parse", "HEAD"), gitIn(t, origin, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("refresh aborted with its caller: clone at %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(clone, ".git", "index.lock")); !os.IsNotExist(err) {
+		t.Fatalf("index.lock left behind: %v", err)
+	}
+	if _, _, err := m.ReadDefinitions(context.Background(), origin, "main"); err != nil {
+		t.Fatalf("next tick: %v", err)
+	}
+}
