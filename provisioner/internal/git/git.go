@@ -484,10 +484,33 @@ func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, f
 	if _, err := m.run(ctx, path, append(append([]string{"fetch"}, fetchArgs...), "origin", ref)...); err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
+	clearStaleIndexLock(path)
 	if _, err := m.run(ctx, path, "reset", "--hard", "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("reset: %w", err)
 	}
 	return nil
+}
+
+// staleLockAge: a reset on these clones takes seconds, so an index.lock this
+// old belongs to a git that died (a pod killed mid-reset), not a live one.
+const staleLockAge = 2 * time.Minute
+
+// clearStaleIndexLock removes path's .git/index.lock when it is older than
+// staleLockAge. A killed provisioner leaves one on the shared PVC and every
+// later reset fails on it (2026-10-20: definitions sync down ~2h after a
+// rollout). A fresh lock stays: during a rollout the other pod may be
+// mid-reset on the same clone.
+func clearStaleIndexLock(path string) {
+	lock := filepath.Join(path, ".git", "index.lock")
+	info, err := os.Stat(lock)
+	if err != nil || time.Since(info.ModTime()) < staleLockAge {
+		return
+	}
+	if err := os.Remove(lock); err != nil && !os.IsNotExist(err) {
+		slog.Warn("git: stale index.lock not removed", "path", lock, "error", err)
+		return
+	}
+	slog.Warn("git: removed a stale index.lock", "path", lock, "age", time.Since(info.ModTime()).Round(time.Second))
 }
 
 // packEntryProblem says why one packs/ entry is not read, or "" when it is

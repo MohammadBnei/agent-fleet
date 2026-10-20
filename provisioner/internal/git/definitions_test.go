@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) string {
@@ -214,4 +215,37 @@ func TestReadDefinitions_FailsClosed(t *testing.T) {
 			t.Fatal("want an error")
 		}
 	})
+}
+
+// A provisioner killed mid-reset (a rollout, an OOM) leaves .git/index.lock
+// on the PVC, and every later reset failed until someone removed it by hand
+// (2026-10-20: definitions sync down ~2h after the 6.0.2 rollout). A lock old
+// enough that no live git can own it is cleared; a fresh one is left alone,
+// since the rollout overlap means another pod may be mid-reset.
+func TestReadDefinitions_ClearsAStaleIndexLockOnly(t *testing.T) {
+	root := t.TempDir()
+	m := NewManager(root)
+	origin := newDefinitionsOrigin(t)
+	ctx := context.Background()
+	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(root, "definitions-src", ".git", "index.lock")
+
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, origin, "definitions/c.yaml", "c")
+	if _, _, err := m.ReadDefinitions(ctx, origin, "main"); err == nil {
+		t.Fatal("a fresh lock was removed: another pod may own it")
+	}
+
+	old := time.Now().Add(-staleLockAge - time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := m.ReadDefinitions(ctx, origin, "main")
+	if err != nil || string(files["definitions/c.yaml"]) != "c" {
+		t.Fatalf("stale lock not cleared: files %v, err %v", files, err)
+	}
 }
