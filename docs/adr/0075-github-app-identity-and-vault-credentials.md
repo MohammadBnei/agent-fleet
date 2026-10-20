@@ -154,7 +154,15 @@ ids and a permission subset, and last one hour. Sessions last up to 12h.
   before repo pods move.
 - An autonomous repo session still mid-turn when it reaches 12h is killed
   and not resumed automatically. `expose` previews die with the pod.
-- Every session opens PRs as the same `<slug>[bot]`.
+- Every session opens PRs as the same `<slug>[bot]`, and ukubi-bridge trusts
+  agent logins automatically. So a definition session driven by audience
+  members and an admin session look the same to the bridge. This is
+  accepted while no definition can open PRs: Opus's tools don't allow `gh`.
+  Before any definition gains PR tools, core's dispatcher must key trust on
+  the session's provenance (definition or admin), not on the login.
+- The App key's Kubernetes Secret has a distinct name. The provisioner can
+  create pods that mount any Secret in the namespace, so a test asserts
+  that no worker pod spec references it.
 - Exfiltration through open egress is unchanged from today.
 
 ## Rollout
@@ -162,14 +170,18 @@ ids and a permission subset, and last one hour. Sessions last up to 12h.
 Each step is one PR, merged by the user.
 
 1. **This ADR**, plus infra-bootstrap ADR-0062.
-2. **Unblock Opus.** The user creates the App and installs it on `notes`
-   and `opus-tech-hq/workspace`; **both installs are a hard merge
-   precondition**, because the merge deploys. This step ships the Forge,
+2. **Unblock Opus.** The user creates the App and installs it on every
+   repo that should stay in the fleet, plus `agent-fleet` and every
+   fleet-shared or genome source repo. **That full install is a hard merge
+   precondition.** The merge deploys at once, and decision 9 moves the
+   provisioner's own git onto installation tokens, which only reach
+   installed repos. Installing early is harmless, because membership still
+   comes from the bot until step 3. This step ships the Forge,
    JWT, allowlist, minter and refresh/push loop, `reconcile` from the
    minter, the reserved prefixes, and the provisioner's git. Delete
    `GH_OPUS_WORKSPACE` and `GH_DEV_NOTES` from Infisical afterwards.
-3. **Membership** from installations (decision 4), after the App covers
-   every live repo.
+3. **Membership** from installations (decision 4). This only flips the
+   source; the installs already exist.
 4. **Spike, then repo pods.** The spike runs in a throwaway namespace. It
    covers CA trust (git, gh, curl, bun and node, go, pip and uv, cargo,
    Chromium/NSS, gRPC through MITM), passthrough, the throughput of three
