@@ -12,7 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -178,7 +180,22 @@ func (s *Server) SweepSession(ctx context.Context, req *agentfleetv1.SweepSessio
 
 // --- worker pods (new, docs/adr/0019/0020) ---
 
+// sessionIDRe: core mints UUIDs; tests use short names like task-1.
+var sessionIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
+
 func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
+	// docs/adr/0063: the session id names claude-home/<id> and its sibling
+	// <id>-genome, so it may not climb out or look like a genome itself.
+	if !sessionIDRe.MatchString(req.GetSessionId()) || strings.Contains(req.GetSessionId(), "-genome") {
+		return nil, status.Error(codes.InvalidArgument, "invalid session id")
+	}
+	genome := make([]git.GenomeFile, 0, len(req.GetGenome()))
+	for _, f := range req.GetGenome() {
+		genome = append(genome, git.GenomeFile{Path: f.GetPath(), Body: f.GetBody()})
+	}
+	if err := git.CheckGenome(genome); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	// docs/adr/0064: a profile switches the pod to the definition profile.
 	// Checked before anything is reported or touched.
 	var definition *k8s.DefinitionProfile
@@ -235,16 +252,6 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
 		return nil, fmt.Errorf("ensure claude home: %w", err)
 	}
-	// docs/adr/0063. Fatal: the pod mounts this directory, and a stale genome
-	// would run the session under rules core no longer renders.
-	genome := make([]git.GenomeFile, 0, len(req.GetGenome()))
-	for _, f := range req.GetGenome() {
-		genome = append(genome, git.GenomeFile{Path: f.GetPath(), Body: f.GetBody()})
-	}
-	if err := s.git.WriteGenome(req.GetSessionId(), genome); err != nil {
-		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "context packs write failed: "+err.Error())
-		return nil, status.Error(codes.InvalidArgument, "write genome: "+err.Error())
-	}
 
 	// Best-effort, unlike the clone/worktree steps above: stale or
 	// momentarily missing fleet-shared skills/context is a degraded worker
@@ -286,6 +293,20 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	if err := s.replaceTerminalWorkerJob(ctx, req.GetSessionId()); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "previous pod cleanup failed: "+err.Error())
 		return nil, fmt.Errorf("replace terminal worker job: %w", err)
+	}
+	// docs/adr/0063. After the terminal Job is gone and only with no live one:
+	// the swap would otherwise pull the genome out from under a running pod.
+	// Fatal: a stale genome would run the session under rules core no longer
+	// renders.
+	if _, exists, err := s.k8sc.GetWorkerJob(ctx, req.GetSessionId()); err != nil || exists {
+		if err == nil {
+			err = status.Error(codes.FailedPrecondition, "a worker pod is still running for this session")
+		}
+		return nil, err
+	}
+	if err := s.git.WriteGenome(req.GetSessionId(), genome); err != nil {
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "context packs write failed: "+err.Error())
+		return nil, fmt.Errorf("write genome: %w", err)
 	}
 
 	// docs/adr/0065: the vault matches the pinned spec, the CA is published,

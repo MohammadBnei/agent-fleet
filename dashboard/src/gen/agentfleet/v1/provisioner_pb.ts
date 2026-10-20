@@ -323,7 +323,9 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
   /**
    * docs/adr/0063: true only from a provisioner that wrote the request's
    * genome and mounted it. An older one drops the field; core refuses a
-   * definition warm without it and logs a repo warm.
+   * definition warm without it and logs a repo warm. It does not prove the
+   * worker loaded it: a repo pinned to an older worker image (repos.image)
+   * gets the mount but never reads it. Only the worker's own report can.
    *
    * @generated from field: bool genome_applied = 6;
    */

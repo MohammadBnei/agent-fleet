@@ -534,7 +534,9 @@ type CreateWorkerPodResponse struct {
 	VaultTokenApplied bool `protobuf:"varint,5,opt,name=vault_token_applied,json=vaultTokenApplied,proto3" json:"vault_token_applied,omitempty"`
 	// docs/adr/0063: true only from a provisioner that wrote the request's
 	// genome and mounted it. An older one drops the field; core refuses a
-	// definition warm without it and logs a repo warm.
+	// definition warm without it and logs a repo warm. It does not prove the
+	// worker loaded it: a repo pinned to an older worker image (repos.image)
+	// gets the mount but never reads it. Only the worker's own report can.
 	GenomeApplied bool `protobuf:"varint,6,opt,name=genome_applied,json=genomeApplied,proto3" json:"genome_applied,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

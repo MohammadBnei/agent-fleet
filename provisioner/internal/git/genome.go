@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,28 +29,43 @@ func (m *Manager) GenomePath(sessionID string) string {
 }
 
 // WriteGenome replaces the session's genome with files. It is written into a
-// fresh <id>-genome.new and swapped in by rename, so the directory a pod
-// mounts is always one complete render. The swap runs before the pod exists,
-// and a warm only happens with no pod running.
-func (m *Manager) WriteGenome(sessionID string, files []GenomeFile) error {
-	dir := m.GenomePath(sessionID)
-	tmp, old := dir+".new", dir+".old"
+// fresh directory and swapped in by rename, so the directory a pod mounts is
+// always one complete render. The caller runs it only with no worker Job.
+// CheckGenome refuses any path outside the allowlist, and duplicates.
+func CheckGenome(files []GenomeFile) error {
+	seen := map[string]bool{}
 	for _, f := range files {
 		if !genomePathRe.MatchString(f.Path) {
 			return fmt.Errorf("genome path %q is not allowed", f.Path)
 		}
-	}
-	for _, p := range []string{tmp, old} {
-		if err := os.RemoveAll(p); err != nil {
-			return fmt.Errorf("clear %s: %w", p, err)
+		if seen[f.Path] {
+			return fmt.Errorf("genome path %q appears twice", f.Path)
 		}
+		seen[f.Path] = true
 	}
-	if err := os.MkdirAll(filepath.Dir(tmp), 0o755); err != nil {
+	return nil
+}
+
+func (m *Manager) WriteGenome(sessionID string, files []GenomeFile) error {
+	if err := CheckGenome(files); err != nil {
+		return err
+	}
+	dir := m.GenomePath(sessionID)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return fmt.Errorf("mkdir claude-home: %w", err)
 	}
-	if err := os.Mkdir(tmp, 0o755); err != nil {
+	// Unique names, so two overlapping warms of one session never write into
+	// each other's tree; the loser's swap fails and so does its Job create.
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+".new-")
+	if err != nil {
 		return fmt.Errorf("mkdir genome: %w", err)
 	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		_ = os.RemoveAll(tmp)
+		return fmt.Errorf("chmod genome: %w", err)
+	}
+	old := tmp + ".old"
+
 	for _, f := range files {
 		if err := writeGenomeFile(tmp, f); err != nil {
 			_ = os.RemoveAll(tmp)
@@ -72,7 +88,12 @@ func (m *Manager) WriteGenome(sessionID string, files []GenomeFile) error {
 		}
 		return fmt.Errorf("swap genome in: %w", err)
 	}
-	return os.RemoveAll(old)
+	if err := os.RemoveAll(old); err != nil {
+		// The new genome is in place; a leftover (an NFS .nfsXXXX from an old
+		// pod's open file) is swept with the session.
+		slog.Warn("git: removing the previous genome", "sessionId", sessionID, "error", err)
+	}
+	return nil
 }
 
 func writeGenomeFile(root string, f GenomeFile) error {

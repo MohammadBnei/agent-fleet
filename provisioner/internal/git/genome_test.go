@@ -29,10 +29,8 @@ func TestWriteGenome(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".claude/skills/tidy/SKILL.md")); !os.IsNotExist(err) {
 		t.Fatalf("stale skill survived the re-render: %v", err)
 	}
-	for _, p := range []string{dir + ".new", dir + ".old"} {
-		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Fatalf("%s left behind: %v", p, err)
-		}
+	if left, _ := filepath.Glob(dir + ".*"); len(left) != 0 {
+		t.Fatalf("temp directories left behind: %v", left)
 	}
 
 	for _, bad := range []string{

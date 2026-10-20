@@ -362,7 +362,8 @@ func (m *Manager) DeleteSessionDir(sessionID string) error {
 		return fmt.Errorf("remove claude home for %s: %w", sessionID, err)
 	}
 	// docs/adr/0063: the genome is a sibling, so it is swept separately.
-	for _, p := range []string{m.GenomePath(sessionID), m.GenomePath(sessionID) + ".new", m.GenomePath(sessionID) + ".old"} {
+	leftovers, _ := filepath.Glob(m.GenomePath(sessionID) + ".new-*")
+	for _, p := range append(leftovers, m.GenomePath(sessionID)) {
 		if err := os.RemoveAll(p); err != nil {
 			return fmt.Errorf("remove genome for %s: %w", sessionID, err)
 		}
