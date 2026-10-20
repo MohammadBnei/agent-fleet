@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.0.2](https://github.com/MohammadBnei/agent-fleet/compare/6.0.1...6.0.2) (2026-10-20)
+
+### Bug Fixes
+
+* **worker:** take the Go toolchain from the golang image, not go.dev ([#282](https://github.com/MohammadBnei/agent-fleet/issues/282)) ([d61252f](https://github.com/MohammadBnei/agent-fleet/commit/d61252ffccb24de462445748270863595864b6d3))
+
 ## [6.0.1](https://github.com/MohammadBnei/agent-fleet/compare/6.0.0...6.0.1) (2026-10-20)
 
 ### Bug Fixes
