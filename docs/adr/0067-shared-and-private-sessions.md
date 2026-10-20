@@ -170,9 +170,14 @@ sessions:
   approve `curl` or a stray `git push --force` that the definition does not
   list.
 - **Asking happens only inside the allow list.** A `Bash(<prefix>:*)` match
-  still asks, because `:*` admits arguments such as `--upload-pack=…`, which
-  run local commands (ADR-0062 §7). That holds until the worker has its own
-  argument check for the rule.
+  asks, because `:*` admits arguments such as `--upload-pack=…`, which run
+  local commands (ADR-0062 §7). The exception is the worker's argument check
+  (`gitArgsAreInert`): for the git prefixes the definitions use (`git
+  add/commit/pull --rebase/push/status/diff/log`), a call runs without asking
+  when every option is on a small per-command allowlist, no word is a
+  `+ref` or `src:dst` refspec, and nothing in it would make a shell expand or
+  chain. Anything else asks. The allowlist fails safe: an option it does not
+  name asks.
 - **An answer is `{behavior, message}` only.** The worker ignores
   `updatedInput` and `updatedPermissions` in a definition session's answers,
   as core already strips them (ADR-0066 §4).
@@ -258,10 +263,10 @@ are pending, so the widget can show it.
 
 - A member in a shared thread sees what the other members wrote, by name.
   The agent knows who asked.
-- **A Bash allow rule still asks** until an argument check exists. On
-  `opus-workspace`, every `git push` asks a member once per call. That
-  friction is accepted; an argument check for `git push` and `git pull
-  --rebase` is the first follow-up.
+- **A plain edit-and-sync loop asks nothing.** On `opus-workspace`, `git add
+  .`, `git commit -m "…"`, `git pull --rebase` and `git push` run without a
+  prompt. A force push, a refspec, `--no-verify` or any option outside the
+  allowlist asks a member.
 - A definition that forgets a tool it needs fails visibly (denied), instead
   of asking someone. Its PR fixes it.
 - A tainted shared session waits for an admin, even when a member is

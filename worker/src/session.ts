@@ -140,8 +140,9 @@ function autoModeStillAsks(toolName: string, input: Record<string, unknown>): bo
   return toolName === "ExitPlanMode" || autoModeStillAsksCommand(toolName, input);
 }
 
-// A `Bash(<prefix>:*)` rule. Matching one still asks (docs/adr/0062 §7): `:*`
-// admits every argument, and `git push --receive-pack=…` runs a local command.
+// A `Bash(<prefix>:*)` rule. Matching one asks (docs/adr/0062 §7): `:*` admits
+// every argument, and `git push --receive-pack=…` runs a local command. The
+// exception is gitArgsAreInert below.
 const BASH_PREFIX_RULE = /^Bash\((.+):\*\)$/;
 const BASH_EXACT_RULE = /^Bash\((.+)\)$/;
 
@@ -173,11 +174,80 @@ export function matchesToolRule(rules: string[], toolName: string, input: Record
 // out but a mode switch. Under `interaction: deny` every ask is a deny.
 export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask" } | { behavior: "deny"; message: string };
 
+// The argument check docs/adr/0067 names as the first follow-up: a git prefix
+// rule's call runs without asking when its arguments cannot run a local
+// command or rewrite history. An allowlist, not a denylist: an option this
+// table does not name asks, so a missed `--upload-pack` style flag fails safe.
+// `value` options take the next word as their argument (a commit message).
+const GIT_SAFE_ARGS: Record<string, { flags: string[]; value: string[] }> = {
+  "git add": { flags: ["-A", "--all", "-u", "--update"], value: [] },
+  "git commit": { flags: ["-a", "--all", "-q", "--quiet"], value: ["-m", "--message"] },
+  "git pull --rebase": { flags: ["-q", "--quiet"], value: [] },
+  "git push": { flags: ["-q", "--quiet", "-u", "--set-upstream"], value: [] },
+  "git status": { flags: ["-s", "--short", "-b", "--branch"], value: [] },
+  "git diff": { flags: ["--stat", "--cached", "--staged", "--name-only"], value: [] },
+  "git log": { flags: ["--oneline", "--stat"], value: ["-n"] },
+};
+
+// The shell words of `rest`, or undefined when it holds anything a shell would
+// expand or chain: an unquoted metacharacter, or `$`, backtick or backslash
+// inside double quotes. Single quotes are literal.
+function shellWords(rest: string): string[] | undefined {
+  const words: string[] = [];
+  let word = "";
+  let inWord = false;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i];
+    if (c === "'" || c === '"') {
+      const end = rest.indexOf(c, i + 1);
+      if (end < 0) return undefined;
+      const body = rest.slice(i + 1, end);
+      if (c === '"' && /[$`\\]/.test(body)) return undefined;
+      word += body;
+      inWord = true;
+      i = end;
+    } else if (c === " ") {
+      if (inWord) words.push(word);
+      word = "";
+      inWord = false;
+    } else if (/[;&|<>()$`\\{}*?~\n\t#]/.test(c)) {
+      return undefined;
+    } else {
+      word += c;
+      inWord = true;
+    }
+  }
+  if (inWord) words.push(word);
+  return words;
+}
+
+export function gitArgsAreInert(prefix: string, command: string): boolean {
+  const safe = GIT_SAFE_ARGS[prefix];
+  if (!safe || !(command === prefix || command.startsWith(prefix + " "))) return false;
+  const words = shellWords(command.slice(prefix.length));
+  if (!words) return false;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (safe.value.includes(w)) {
+      i++;
+      if (i >= words.length) return false;
+    } else if (w.startsWith("-")) {
+      if (!safe.flags.includes(w)) return false;
+    } else if (w.startsWith("+") || w.includes(":")) {
+      // `+ref` force-pushes; `src:dst` pushes elsewhere or deletes a ref.
+      return false;
+    }
+  }
+  return true;
+}
+
 export function definitionDecision(spec: AgentSpec, toolName: string, input: Record<string, unknown>): DefinitionDecision {
   if (toolName !== "ExitPlanMode") {
     const rule = matchesToolRule(spec.toolsAllow, toolName, input);
     if (rule === undefined) return { behavior: "deny", message: "not in this definition's tools.allow" };
-    if (!BASH_PREFIX_RULE.test(rule)) return { behavior: "allow" };
+    const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
+    if (prefix === undefined) return { behavior: "allow" };
+    if (typeof input.command === "string" && gitArgsAreInert(prefix, input.command)) return { behavior: "allow" };
   }
   if (spec.interaction === "deny") return { behavior: "deny", message: "not allowed in a headless run" };
   return { behavior: "ask" };
