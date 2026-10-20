@@ -4,12 +4,12 @@
 # Bun runs the TypeScript sources directly (no separate tsc build stage/dist
 # output needed) — smaller image, faster startup, per Mohammad's call to
 # standardize this repo's JS runtime on Bun.
-# The Go toolchain, from the official image rather than a go.dev download: the
-# build runner already holds golang images for the Go components, and a lossy
-# route from home to Google reset the 70 MB go.dev fetch mid-stream and failed
-# the v6.0.1 image build (2026-10-20). Same upstream /usr/local/go either way.
-ARG GO_VERSION=1.27.1
-FROM golang:${GO_VERSION} AS gotoolchain
+# The Go toolchain, from the official image rather than a go.dev download: a
+# lossy route from home to Google reset the 70 MB go.dev fetch mid-stream and
+# failed the v6.0.1 image build (2026-10-20). Same tag as core, executor,
+# provisioner and sidecar use, so the runner already has it cached and the
+# worker's Go matches the Go the components are built with.
+FROM golang:1.27 AS gotoolchain
 
 FROM oven/bun:1-slim
 # procps is not optional: the bundled Claude Code CLI kills subprocess trees
@@ -50,7 +50,7 @@ RUN bun install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 #
 # Go is the upstream build rather than apt: Debian slim's golang lags far
 # enough behind to fail on a modern go.mod's toolchain directive. Copied from
-# the gotoolchain stage above (GO_VERSION is set there).
+# the gotoolchain stage above.
 COPY --from=gotoolchain /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
