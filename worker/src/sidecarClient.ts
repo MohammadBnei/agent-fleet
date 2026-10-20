@@ -71,10 +71,15 @@ export async function saveSessionId(sessionId: string, model: string): Promise<v
 // `description` comes back too but is a label, not an instruction: the
 // session's actual instruction is its first transcript entry. `guidance` and
 // `baseBranch` are gone with the columns.
+//
+// A definition session also carries its AgentSpec and that spec's sha
+// (docs/adr/0067 §4); a repo session carries neither.
 export async function getSession(): Promise<{
   description: string;
   permissionMode?: string;
   model?: string;
+  agentSpec?: AgentSpec;
+  agentSpecSha?: string;
 }> {
   const res = await fetch(`${base()}/task`);
   if (!res.ok) throw new Error(`sidecar /task failed: ${res.status} ${await res.text()}`);
@@ -109,6 +114,21 @@ export async function pushMessage(from: string, text: string, type?: string, rep
   const res = await postJSON<{ seq: number }>("/message", { from, text, type, replyTo });
   return res.seq;
 }
+
+// core.proto's AgentSpec, as the sidecar's /task serializes it (protojson,
+// every field present).
+export type AgentSpec = {
+  toolsAllow: string[];
+  toolsDeny: string[];
+  sidecarTools: string[];
+  modelAllow: string[];
+  thinkingDefault: string;
+  modeAllow: string[];
+  systemPromptAppend: string;
+  maxTurns: number;
+  interaction: string;
+  lifecycle: string;
+};
 
 export type TranscriptEntry = { seq: number; from: string; text: string; type?: string; replyTo?: number };
 
@@ -162,16 +182,22 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 // dispatch-time RESUME_FROM_SEQ instead, or this replays every
 // pre-existing human directive from task history, including a stale
 // Stop's "abort" entry, which self-aborts the new session immediately.
+//
+// agentSpecSha is the spec sha this worker applied (docs/adr/0066 §8). Sent on
+// every connect, and the sidecar keeps it for the agent's wait_for_messages:
+// core delivers a definition session nothing without it.
 export async function streamHumanMessages(
   onEntry: (entry: TranscriptEntry) => void | Promise<void>,
   signal: AbortSignal,
   startSeq = 0,
+  agentSpecSha = "",
 ): Promise<void> {
   let nextSeq = startSeq;
   while (!signal.aborted) {
     try {
       await streamOnce(
         nextSeq,
+        agentSpecSha,
         async (entry) => {
           await onEntry(entry);
           nextSeq = entry.seq + 1;
@@ -194,10 +220,12 @@ export async function streamHumanMessages(
 // line and are silently skipped, same as before.
 async function streamOnce(
   sinceSeq: number,
+  agentSpecSha: string,
   onEntry: (entry: TranscriptEntry) => void | Promise<void>,
   signal: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`${base()}/human-messages?sinceSeq=${sinceSeq}`, { signal });
+  const sha = agentSpecSha ? `&agentSpecSha=${encodeURIComponent(agentSpecSha)}` : "";
+  const res = await fetch(`${base()}/human-messages?sinceSeq=${sinceSeq}${sha}`, { signal });
   if (!res.ok || !res.body) throw new Error(`sidecar human-messages stream failed: ${res.status}`);
 
   const reader = res.body.getReader();

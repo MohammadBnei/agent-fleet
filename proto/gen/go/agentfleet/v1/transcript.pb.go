@@ -330,7 +330,10 @@ type ReadTranscriptSinceRequest struct {
 	// "the whole transcript from seq 0" is no longer the only thing it can ask
 	// for — past 1000 entries that silently returned the oldest page and never
 	// fetched the rest.
-	BeforeSeq     *int64 `protobuf:"varint,5,opt,name=before_seq,json=beforeSeq,proto3,oneof" json:"before_seq,omitempty"`
+	BeforeSeq *int64 `protobuf:"varint,5,opt,name=before_seq,json=beforeSeq,proto3,oneof" json:"before_seq,omitempty"`
+	// CoreService.WaitForMessages only: the agent_spec_sha the worker applied,
+	// as for StreamHumanMessagesRequest (docs/adr/0066 §8).
+	AgentSpecSha  string `protobuf:"bytes,6,opt,name=agent_spec_sha,json=agentSpecSha,proto3" json:"agent_spec_sha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -398,6 +401,13 @@ func (x *ReadTranscriptSinceRequest) GetBeforeSeq() int64 {
 		return *x.BeforeSeq
 	}
 	return 0
+}
+
+func (x *ReadTranscriptSinceRequest) GetAgentSpecSha() string {
+	if x != nil {
+		return x.AgentSpecSha
+	}
+	return ""
 }
 
 type ReadTranscriptSinceResponse struct {
@@ -474,7 +484,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x126\n" +
 	"\x04type\x18\x04 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\xcf\x01\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\xf5\x01\n" +
 	"\x1aReadTranscriptSinceRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -483,7 +493,8 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\x12\x19\n" +
 	"\x05limit\x18\x04 \x01(\x05H\x00R\x05limit\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"before_seq\x18\x05 \x01(\x03H\x01R\tbeforeSeq\x88\x01\x01B\b\n" +
+	"before_seq\x18\x05 \x01(\x03H\x01R\tbeforeSeq\x88\x01\x01\x12$\n" +
+	"\x0eagent_spec_sha\x18\x06 \x01(\tR\fagentSpecShaB\b\n" +
 	"\x06_limitB\r\n" +
 	"\v_before_seq\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +

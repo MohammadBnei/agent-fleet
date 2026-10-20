@@ -28,6 +28,22 @@ type Client struct {
 	// (docs/adr/0064).
 	leaseID string
 	ready   atomic.Bool
+	// specSHA is the agent_spec_sha the worker says it applied, registered
+	// each time it opens /human-messages (SetAgentSpecSHA) and sent on every
+	// StreamHumanMessages and WaitForMessages. Stored here rather than passed
+	// per call because the agent's wait_for_messages comes in over MCP, which
+	// carries no word from the worker: the worker's own stream is the one
+	// place it speaks, and it opens that only after applying the spec, so
+	// before then core refuses both (docs/adr/0066 §8). "" for a repo session
+	// or an older worker.
+	specSHA atomic.Value // string
+}
+
+func (c *Client) SetAgentSpecSHA(sha string) { c.specSHA.Store(sha) }
+
+func (c *Client) agentSpecSHA() string {
+	s, _ := c.specSHA.Load().(string)
+	return s
 }
 
 // retryServiceConfig bounds-retries transient "produced zero addresses"
@@ -159,7 +175,7 @@ func (c *Client) AppendReplyMessage(ctx context.Context, from, text string, msgT
 
 func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs int32) ([]*agentfleetv1.TranscriptEntry, int64, error) {
 	resp, err := c.rpc.WaitForMessages(ctx, &agentfleetv1.ReadTranscriptSinceRequest{
-		SessionId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs,
+		SessionId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs, AgentSpecSha: c.agentSpecSHA(),
 	})
 	if err != nil {
 		return nil, sinceSeq, fmt.Errorf("WaitForMessages: %w", err)
@@ -329,7 +345,7 @@ func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON, fileDiffsJS
 // live (docs/adr/0021 point 2). Blocks until the stream ends or ctx is
 // cancelled; callers run it in its own goroutine.
 func (c *Client) StreamHumanMessages(ctx context.Context, sinceSeq int64, onEntry func(*agentfleetv1.TranscriptEntry)) error {
-	stream, err := c.rpc.StreamHumanMessages(ctx, &agentfleetv1.StreamHumanMessagesRequest{SessionId: c.taskID, SinceSeq: sinceSeq})
+	stream, err := c.rpc.StreamHumanMessages(ctx, &agentfleetv1.StreamHumanMessagesRequest{SessionId: c.taskID, SinceSeq: sinceSeq, AgentSpecSha: c.agentSpecSHA()})
 	if err != nil {
 		return fmt.Errorf("StreamHumanMessages: open: %w", err)
 	}
@@ -372,12 +388,15 @@ func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, le
 // only the dashboard SPA can set (core/internal/dashboard/interceptor.go);
 // it was never reachable over this gRPC connection at all, let alone by a
 // non-browser caller.
-func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Session, error) {
+//
+// The whole response, not just the row: a definition session's AgentSpec and
+// its sha ride beside it (docs/adr/0067 §4).
+func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.GetSessionResponse, error) {
 	resp, err := c.rpc.GetSession(ctx, &agentfleetv1.GetSessionRequest{Id: c.taskID})
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
 	}
-	return resp.GetSession(), nil
+	return resp, nil
 }
 
 // SetPermissionMode persists the current permission mode to the database.

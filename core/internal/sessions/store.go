@@ -671,6 +671,33 @@ func (s *Store) ClearLease(ctx context.Context, id string) error {
 	return nil
 }
 
+// PinnedEffective is the effective spec (JSON) of the definition version a
+// session is pinned to (docs/adr/0067 §4): nil for a repo session,
+// ErrDefinitionInvalid when that version was revoked, ErrNotFound for an
+// unknown session.
+func (s *Store) PinnedEffective(ctx context.Context, id string) ([]byte, error) {
+	var (
+		pinned, valid bool
+		eff           []byte
+	)
+	err := s.pool.QueryRow(ctx, `
+		SELECT s.definition_name IS NOT NULL, COALESCE(d.valid, false), d.effective
+		  FROM sessions s
+		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
+		 WHERE s.id = $1`, id).Scan(&pinned, &valid, &eff)
+	switch {
+	case err == pgx.ErrNoRows:
+		return nil, ErrNotFound
+	case err != nil:
+		return nil, fmt.Errorf("pinned effective: %w", err)
+	case !pinned:
+		return nil, nil
+	case !valid || eff == nil:
+		return nil, ErrDefinitionInvalid
+	}
+	return eff, nil
+}
+
 // SetPermissionMode persists a session's mode. For a definition session the
 // mode must be in its pinned, still-valid version's mode.allow
 // (docs/adr/0062): checked in the same statement, so both callers (the

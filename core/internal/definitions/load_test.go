@@ -87,6 +87,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"mode widened to auto", map[string]string{"mode": "{ default: default, allow: [default, auto] }"}, `"auto" skips canUseTool`},
 		{"acceptEdits by name", map[string]string{"mode": "{ default: default, allow: [default, acceptEdits] }"}, `"acceptEdits" skips canUseTool`},
 		{"bypassPermissions by name", map[string]string{"mode": "{ default: default, allow: [bypassPermissions, default] }"}, `"bypassPermissions" skips canUseTool`},
+		{"dontAsk outside the ceiling", map[string]string{"mode": "{ default: default, allow: [default, dontAsk] }"}, `"dontAsk" is not in the fleet ceiling`},
 		{"mode default not allowed", map[string]string{"mode": "{ default: plan, allow: [default] }"}, "mode.default"},
 		{"tool outside ceiling", map[string]string{"tools": "{ allow: [WebFetch] }"}, "WebFetch"},
 		{"bare Bash", map[string]string{"tools": "{ allow: [Bash] }"}, "literal command prefix"},

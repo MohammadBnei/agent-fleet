@@ -28,8 +28,10 @@ var (
 	// (dashboard/ceiling_test.go), or a definition could name a model the
 	// console would refuse.
 	ModelCeiling = []string{"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
-	// ModeCeiling: the modes that keep canUseTool in the loop.
-	ModeCeiling = []string{"default", "plan", "dontAsk"}
+	// ModeCeiling: the modes that keep canUseTool in the loop. Not dontAsk
+	// (docs/adr/0067 §4): it never calls canUseTool, and with allowedTools
+	// holding only sidecar tools it would deny everything tools.allow lists.
+	ModeCeiling = []string{"default", "plan"}
 	// skipsCanUseTool is rejected BY NAME, so the error says why.
 	skipsCanUseTool = []string{"acceptEdits", "auto", "bypassPermissions"}
 	// SDK 0.3.301 EffortLevel.

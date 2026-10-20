@@ -157,8 +157,9 @@ untrusted input can approve a turn that input drove.
 `sidecarTools`, `model.allow`, `thinking.default`, `mode.allow`,
 `systemPrompt`, `limits.maxTurns` and `output`, plus the session's
 `interaction` and `lifecycle`. Repo sessions get no `AgentSpec` and keep
-today's behaviour. The worker applies the spec, then calls `AckAgentSpec`,
-and core streams it nothing before that (ADR-0066 §8). For definition
+today's behaviour. The worker applies the spec, then echoes its
+`agent_spec_sha` on every read, and core streams it nothing without the
+current one (ADR-0066 §8). For definition
 sessions:
 
 - **`tools.allow` is decided inside `canUseTool`**, never passed as the SDK's

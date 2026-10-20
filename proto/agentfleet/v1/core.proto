@@ -328,6 +328,33 @@ message GetSessionRequest {
 
 message GetSessionResponse {
   Session session = 1;
+  // docs/adr/0066 §9, 0067 §4: a definition session's spec, from its pinned
+  // version's effective spec. Unset for a repo session, which keeps today's
+  // behaviour.
+  AgentSpec agent_spec = 2;
+  // Hex sha256 of agent_spec's deterministic encoding. The worker echoes it
+  // on StreamHumanMessages and WaitForMessages once it has applied the spec;
+  // core delivers a definition session nothing without the current one
+  // (docs/adr/0066 §8). Empty for a repo session.
+  string agent_spec_sha = 3;
+}
+
+// What a definition pod's worker applies to its query() (docs/adr/0067 §4).
+// Flattened from the definition's effective spec (core/internal/definitions
+// Spec); interaction and lifecycle are the SESSION's choice within the
+// definition's allow lists, empty until sessions carry them (the worker
+// reads "" as "ask" and "resident").
+message AgentSpec {
+  repeated string tools_allow = 1;
+  repeated string tools_deny = 2;
+  repeated string sidecar_tools = 3;
+  repeated string model_allow = 4;
+  string thinking_default = 5;
+  repeated string mode_allow = 6;
+  string system_prompt_append = 7;
+  int32 max_turns = 8;
+  string interaction = 9;
+  string lifecycle = 10;
 }
 
 // Sets an arbitrary SDK permission mode on a task. Reused by two very
@@ -472,6 +499,10 @@ message PushToolTelemetryResponse {
 message StreamHumanMessagesRequest {
   string session_id = 1;
   int64 since_seq = 2;
+  // The GetSessionResponse.agent_spec_sha this worker applied. Required, and
+  // must be current, for a definition session (docs/adr/0066 §8); ignored
+  // for a repo session.
+  string agent_spec_sha = 3;
 }
 
 // --- sidecar -> core: shared file space, agent-facing (docs/adr/0030) ---

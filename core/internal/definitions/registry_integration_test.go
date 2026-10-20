@@ -177,7 +177,7 @@ func TestRegistry_Sync(t *testing.T) {
 		_, before := effOf()
 		lister.set("sha1", map[string]string{
 			"definitions/base.yaml": baseYAML,
-			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: default, allow: [default, dontAsk] }"}),
+			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: default, allow: [default] }"}),
 		})
 		if err := r.Sync(ctx); err != nil {
 			t.Fatal(err)
