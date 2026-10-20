@@ -488,8 +488,24 @@ jobs:
             build_end=$(date +%s)
             if [ "$DO_PUSH" = "true" ]; then
               for t in "$TAG" latest; do
-                sudo buildah push --tls-verify=false \
-                  "$REGISTRY/agent-fleet-$c:$t"
+                # Retried in the shell: twice on 2026-10-20, right after
+                # cross-repo blob mounts, buildah sent the next write (a blob
+                # POST, then a manifest PUT) with no credentials, got 401 from
+                # zot and did not retry. zot logged the same `ci` user
+                # succeeding a second earlier, so a fresh push goes through.
+                # buildah's own --retry only covers network errors, not a 401.
+                for attempt in 1 2 3; do
+                  if sudo buildah push --tls-verify=false \
+                    "$REGISTRY/agent-fleet-$c:$t"; then
+                    break
+                  fi
+                  if [ "$attempt" = 3 ]; then
+                    echo "::error::push of agent-fleet-$c:$t failed 3 times"
+                    exit 1
+                  fi
+                  echo "::warning::push of agent-fleet-$c:$t failed (attempt $attempt), retrying"
+                  sleep 5
+                done
               done
             fi
             end=$(date +%s)
