@@ -4,15 +4,16 @@ FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY executor ./executor
+# go.work.sum: checksums only the workspace needs. Today that is core's
+# google.golang.org/genproto (via golang-migrate); without the file every
+# build asked sum.golang.org, and a lossy route to Google failed the image
+# builds on 2026-10-20. The other images copy it for the same guarantee.
+# Nothing checks it is current: a stale file only falls back to sumdb.
+COPY go.work.sum ./
 # `go work init` with just these two modules, rather than COPYing the
 # repo's own go.work — that file lists core/provisioner/sidecar/e2e-runner
 # too, none of which are in this build context, and go refuses to load a
 # workspace whose members are missing. Same pattern as sidecar/Dockerfile.
-# go.work.sum holds the checksums of modules only the workspace pulls in
-# (google.golang.org/genproto for grpc's status package). Without it the
-# build asks sum.golang.org on every run, and a lossy route to Google
-# failed the image build (2026-10-20). The repo's copy matches go.work.
-COPY go.work.sum ./
 RUN go work init ./proto/gen/go ./executor
 WORKDIR /app/executor
 RUN CGO_ENABLED=0 go build -o /out/executor ./cmd/executor

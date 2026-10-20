@@ -11,10 +11,11 @@ FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY sidecar ./sidecar
-# go.work.sum holds the checksums of modules only the workspace pulls in
-# (google.golang.org/genproto for grpc's status package). Without it the
-# build asks sum.golang.org on every run, and a lossy route to Google
-# failed the image build (2026-10-20). The repo's copy matches go.work.
+# go.work.sum: checksums only the workspace needs. Today that is core's
+# google.golang.org/genproto (via golang-migrate); without the file every
+# build asked sum.golang.org, and a lossy route to Google failed the image
+# builds on 2026-10-20. The other images copy it for the same guarantee.
+# Nothing checks it is current: a stale file only falls back to sumdb.
 COPY go.work.sum ./
 RUN go work init ./proto/gen/go ./sidecar
 WORKDIR /app/sidecar
