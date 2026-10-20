@@ -117,6 +117,24 @@ const (
 	// DashboardServiceDeletePromptSnippetProcedure is the fully-qualified name of the
 	// DashboardService's DeletePromptSnippet RPC.
 	DashboardServiceDeletePromptSnippetProcedure = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	// DashboardServiceListPacksProcedure is the fully-qualified name of the DashboardService's
+	// ListPacks RPC.
+	DashboardServiceListPacksProcedure = "/agentfleet.v1.DashboardService/ListPacks"
+	// DashboardServiceCreatePackProcedure is the fully-qualified name of the DashboardService's
+	// CreatePack RPC.
+	DashboardServiceCreatePackProcedure = "/agentfleet.v1.DashboardService/CreatePack"
+	// DashboardServiceSavePackVersionProcedure is the fully-qualified name of the DashboardService's
+	// SavePackVersion RPC.
+	DashboardServiceSavePackVersionProcedure = "/agentfleet.v1.DashboardService/SavePackVersion"
+	// DashboardServiceDeletePackProcedure is the fully-qualified name of the DashboardService's
+	// DeletePack RPC.
+	DashboardServiceDeletePackProcedure = "/agentfleet.v1.DashboardService/DeletePack"
+	// DashboardServiceAttachPackProcedure is the fully-qualified name of the DashboardService's
+	// AttachPack RPC.
+	DashboardServiceAttachPackProcedure = "/agentfleet.v1.DashboardService/AttachPack"
+	// DashboardServiceDetachPackProcedure is the fully-qualified name of the DashboardService's
+	// DetachPack RPC.
+	DashboardServiceDetachPackProcedure = "/agentfleet.v1.DashboardService/DetachPack"
 	// DashboardServiceListFilesProcedure is the fully-qualified name of the DashboardService's
 	// ListFiles RPC.
 	DashboardServiceListFilesProcedure = "/agentfleet.v1.DashboardService/ListFiles"
@@ -223,6 +241,14 @@ type DashboardServiceClient interface {
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
 	DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error)
+	// docs/adr/0063. platform-admins only, like the rest of this service, until
+	// the editor role's own ADR.
+	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
+	CreatePack(context.Context, *connect.Request[v1.CreatePackRequest]) (*connect.Response[v1.CreatePackResponse], error)
+	SavePackVersion(context.Context, *connect.Request[v1.SavePackVersionRequest]) (*connect.Response[v1.SavePackVersionResponse], error)
+	DeletePack(context.Context, *connect.Request[v1.DeletePackRequest]) (*connect.Response[v1.DeletePackResponse], error)
+	AttachPack(context.Context, *connect.Request[v1.AttachPackRequest]) (*connect.Response[v1.AttachPackResponse], error)
+	DetachPack(context.Context, *connect.Request[v1.DetachPackRequest]) (*connect.Response[v1.DetachPackResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -430,6 +456,42 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeletePromptSnippet")),
 			connect.WithClientOptions(opts...),
 		),
+		listPacks: connect.NewClient[v1.ListPacksRequest, v1.ListPacksResponse](
+			httpClient,
+			baseURL+DashboardServiceListPacksProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListPacks")),
+			connect.WithClientOptions(opts...),
+		),
+		createPack: connect.NewClient[v1.CreatePackRequest, v1.CreatePackResponse](
+			httpClient,
+			baseURL+DashboardServiceCreatePackProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreatePack")),
+			connect.WithClientOptions(opts...),
+		),
+		savePackVersion: connect.NewClient[v1.SavePackVersionRequest, v1.SavePackVersionResponse](
+			httpClient,
+			baseURL+DashboardServiceSavePackVersionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("SavePackVersion")),
+			connect.WithClientOptions(opts...),
+		),
+		deletePack: connect.NewClient[v1.DeletePackRequest, v1.DeletePackResponse](
+			httpClient,
+			baseURL+DashboardServiceDeletePackProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeletePack")),
+			connect.WithClientOptions(opts...),
+		),
+		attachPack: connect.NewClient[v1.AttachPackRequest, v1.AttachPackResponse](
+			httpClient,
+			baseURL+DashboardServiceAttachPackProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("AttachPack")),
+			connect.WithClientOptions(opts...),
+		),
+		detachPack: connect.NewClient[v1.DetachPackRequest, v1.DetachPackResponse](
+			httpClient,
+			baseURL+DashboardServiceDetachPackProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DetachPack")),
+			connect.WithClientOptions(opts...),
+		),
 		listFiles: connect.NewClient[v1.ListFilesRequest, v1.ListFilesResponse](
 			httpClient,
 			baseURL+DashboardServiceListFilesProcedure,
@@ -535,6 +597,12 @@ type dashboardServiceClient struct {
 	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
 	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
 	deletePromptSnippet *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
+	listPacks           *connect.Client[v1.ListPacksRequest, v1.ListPacksResponse]
+	createPack          *connect.Client[v1.CreatePackRequest, v1.CreatePackResponse]
+	savePackVersion     *connect.Client[v1.SavePackVersionRequest, v1.SavePackVersionResponse]
+	deletePack          *connect.Client[v1.DeletePackRequest, v1.DeletePackResponse]
+	attachPack          *connect.Client[v1.AttachPackRequest, v1.AttachPackResponse]
+	detachPack          *connect.Client[v1.DetachPackRequest, v1.DetachPackResponse]
 	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
 	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
 	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
@@ -689,6 +757,36 @@ func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, req *c
 	return c.deletePromptSnippet.CallUnary(ctx, req)
 }
 
+// ListPacks calls agentfleet.v1.DashboardService.ListPacks.
+func (c *dashboardServiceClient) ListPacks(ctx context.Context, req *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error) {
+	return c.listPacks.CallUnary(ctx, req)
+}
+
+// CreatePack calls agentfleet.v1.DashboardService.CreatePack.
+func (c *dashboardServiceClient) CreatePack(ctx context.Context, req *connect.Request[v1.CreatePackRequest]) (*connect.Response[v1.CreatePackResponse], error) {
+	return c.createPack.CallUnary(ctx, req)
+}
+
+// SavePackVersion calls agentfleet.v1.DashboardService.SavePackVersion.
+func (c *dashboardServiceClient) SavePackVersion(ctx context.Context, req *connect.Request[v1.SavePackVersionRequest]) (*connect.Response[v1.SavePackVersionResponse], error) {
+	return c.savePackVersion.CallUnary(ctx, req)
+}
+
+// DeletePack calls agentfleet.v1.DashboardService.DeletePack.
+func (c *dashboardServiceClient) DeletePack(ctx context.Context, req *connect.Request[v1.DeletePackRequest]) (*connect.Response[v1.DeletePackResponse], error) {
+	return c.deletePack.CallUnary(ctx, req)
+}
+
+// AttachPack calls agentfleet.v1.DashboardService.AttachPack.
+func (c *dashboardServiceClient) AttachPack(ctx context.Context, req *connect.Request[v1.AttachPackRequest]) (*connect.Response[v1.AttachPackResponse], error) {
+	return c.attachPack.CallUnary(ctx, req)
+}
+
+// DetachPack calls agentfleet.v1.DashboardService.DetachPack.
+func (c *dashboardServiceClient) DetachPack(ctx context.Context, req *connect.Request[v1.DetachPackRequest]) (*connect.Response[v1.DetachPackResponse], error) {
+	return c.detachPack.CallUnary(ctx, req)
+}
+
 // ListFiles calls agentfleet.v1.DashboardService.ListFiles.
 func (c *dashboardServiceClient) ListFiles(ctx context.Context, req *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
 	return c.listFiles.CallUnary(ctx, req)
@@ -817,6 +915,14 @@ type DashboardServiceHandler interface {
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
 	DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error)
+	// docs/adr/0063. platform-admins only, like the rest of this service, until
+	// the editor role's own ADR.
+	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
+	CreatePack(context.Context, *connect.Request[v1.CreatePackRequest]) (*connect.Response[v1.CreatePackResponse], error)
+	SavePackVersion(context.Context, *connect.Request[v1.SavePackVersionRequest]) (*connect.Response[v1.SavePackVersionResponse], error)
+	DeletePack(context.Context, *connect.Request[v1.DeletePackRequest]) (*connect.Response[v1.DeletePackResponse], error)
+	AttachPack(context.Context, *connect.Request[v1.AttachPackRequest]) (*connect.Response[v1.AttachPackResponse], error)
+	DetachPack(context.Context, *connect.Request[v1.DetachPackRequest]) (*connect.Response[v1.DetachPackResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -1020,6 +1126,42 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeletePromptSnippet")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListPacksHandler := connect.NewUnaryHandler(
+		DashboardServiceListPacksProcedure,
+		svc.ListPacks,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListPacks")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceCreatePackHandler := connect.NewUnaryHandler(
+		DashboardServiceCreatePackProcedure,
+		svc.CreatePack,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreatePack")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceSavePackVersionHandler := connect.NewUnaryHandler(
+		DashboardServiceSavePackVersionProcedure,
+		svc.SavePackVersion,
+		connect.WithSchema(dashboardServiceMethods.ByName("SavePackVersion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDeletePackHandler := connect.NewUnaryHandler(
+		DashboardServiceDeletePackProcedure,
+		svc.DeletePack,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeletePack")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceAttachPackHandler := connect.NewUnaryHandler(
+		DashboardServiceAttachPackProcedure,
+		svc.AttachPack,
+		connect.WithSchema(dashboardServiceMethods.ByName("AttachPack")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDetachPackHandler := connect.NewUnaryHandler(
+		DashboardServiceDetachPackProcedure,
+		svc.DetachPack,
+		connect.WithSchema(dashboardServiceMethods.ByName("DetachPack")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListFilesHandler := connect.NewUnaryHandler(
 		DashboardServiceListFilesProcedure,
 		svc.ListFiles,
@@ -1150,6 +1292,18 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceUpdatePromptSnippetHandler.ServeHTTP(w, r)
 		case DashboardServiceDeletePromptSnippetProcedure:
 			dashboardServiceDeletePromptSnippetHandler.ServeHTTP(w, r)
+		case DashboardServiceListPacksProcedure:
+			dashboardServiceListPacksHandler.ServeHTTP(w, r)
+		case DashboardServiceCreatePackProcedure:
+			dashboardServiceCreatePackHandler.ServeHTTP(w, r)
+		case DashboardServiceSavePackVersionProcedure:
+			dashboardServiceSavePackVersionHandler.ServeHTTP(w, r)
+		case DashboardServiceDeletePackProcedure:
+			dashboardServiceDeletePackHandler.ServeHTTP(w, r)
+		case DashboardServiceAttachPackProcedure:
+			dashboardServiceAttachPackHandler.ServeHTTP(w, r)
+		case DashboardServiceDetachPackProcedure:
+			dashboardServiceDetachPackHandler.ServeHTTP(w, r)
 		case DashboardServiceListFilesProcedure:
 			dashboardServiceListFilesHandler.ServeHTTP(w, r)
 		case DashboardServiceGetFileUploadUrlProcedure:
@@ -1293,6 +1447,30 @@ func (UnimplementedDashboardServiceHandler) UpdatePromptSnippet(context.Context,
 
 func (UnimplementedDashboardServiceHandler) DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeletePromptSnippet is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListPacks is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) CreatePack(context.Context, *connect.Request[v1.CreatePackRequest]) (*connect.Response[v1.CreatePackResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreatePack is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) SavePackVersion(context.Context, *connect.Request[v1.SavePackVersionRequest]) (*connect.Response[v1.SavePackVersionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SavePackVersion is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeletePack(context.Context, *connect.Request[v1.DeletePackRequest]) (*connect.Response[v1.DeletePackResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeletePack is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) AttachPack(context.Context, *connect.Request[v1.AttachPackRequest]) (*connect.Response[v1.AttachPackResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AttachPack is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DetachPack(context.Context, *connect.Request[v1.DetachPackRequest]) (*connect.Response[v1.DetachPackResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DetachPack is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {

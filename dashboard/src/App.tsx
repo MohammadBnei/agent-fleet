@@ -6,7 +6,7 @@ import { Files } from "./pages/Files";
 import { Schedules } from "./pages/Schedules";
 import { Observability } from "./pages/Observability";
 import { NewSessionDialog } from "./components/NewSessionDialog";
-import { SettingsMenu } from "./components/SettingsMenu";
+import { Settings } from "./pages/Settings";
 import { NeedsYouModal } from "./components/NeedsYouModal";
 import { Segmented } from "./components/Segmented";
 import { MobileSessionList } from "./mobile/MobileSessionList";
@@ -37,7 +37,7 @@ function readSessionIdFromUrl(): string | null {
   return p.get("session") ?? p.get("task");
 }
 
-export type View = "sessions" | "schedules" | "files" | "observability";
+export type View = "sessions" | "schedules" | "files" | "observability" | "settings";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
@@ -53,7 +53,7 @@ function readViewFromUrl(): View {
   // until its repo stopped being a constant. "tasks" is the pre-rename name of
   // the default one and falls through to it — listed so it reads as deliberate.
   if (v === "audits") return "schedules";
-  return v === "files" || v === "schedules" || v === "observability" ? v : "sessions";
+  return v === "files" || v === "schedules" || v === "observability" || v === "settings" ? v : "sessions";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
@@ -486,7 +486,15 @@ export default function App() {
               selectSession(id);
             }}
           />
-          <SettingsMenu theme={theme} onThemeChange={setTheme} feedWidth={feedWidth} onFeedWidthChange={setFeedWidth} />
+          <button
+            type="button"
+            aria-label="Settings"
+            aria-current={view === "settings" ? "page" : undefined}
+            onClick={() => selectView("settings")}
+            className={`flex-none cursor-pointer px-1.5 py-1 text-base hover:text-base-content ${view === "settings" ? "text-primary" : "text-dim"}`}
+          >
+            ⚙
+          </button>
         </div>
       ) : (
         <div className="flex-none border-b border-line bg-base-200">
@@ -525,7 +533,15 @@ export default function App() {
                 selectSession(id);
               }}
             />
-            <SettingsMenu theme={theme} onThemeChange={setTheme} feedWidth={feedWidth} onFeedWidthChange={setFeedWidth} />
+            <button
+            type="button"
+            aria-label="Settings"
+            aria-current={view === "settings" ? "page" : undefined}
+            onClick={() => selectView("settings")}
+            className={`flex-none cursor-pointer px-1.5 py-1 text-base hover:text-base-content ${view === "settings" ? "text-primary" : "text-dim"}`}
+          >
+            ⚙
+          </button>
           </div>
           {searchOpen && (
             <div className="px-3.5 pb-2.5">
@@ -575,7 +591,9 @@ export default function App() {
           are no worktrees now, a session's tree is its own PVC, and the
           retention GC reclaims it without anyone clicking.
         */}
-        {view === "files" ? (
+        {view === "settings" ? (
+          <Settings theme={theme} onThemeChange={setTheme} feedWidth={feedWidth} onFeedWidthChange={setFeedWidth} />
+        ) : view === "files" ? (
           <Files />
         ) : view === "schedules" ? (
           <Schedules

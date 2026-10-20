@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
-import { Modal } from "./Modal";
 import type { Repo, SyncRepoResponse } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
 
@@ -77,8 +76,7 @@ function RepoRow({ repo, onSync, syncing, busy, sync }: {
   );
 }
 
-export function ManageReposModal() {
-  const [dialogOpen, setDialogOpen] = useState(false);
+export function ReposPanel() {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -100,17 +98,8 @@ export function ManageReposModal() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (dialogOpen) load();
-  }, [dialogOpen]);
-
-  function open() {
-    setError(null);
-    setDialogOpen(true);
-  }
-
-  function close() {
-    setDialogOpen(false);
-  }
+    load();
+  }, []);
 
   // The error message is shown verbatim rather than reduced to "sync failed":
   // core forwards git's own stderr ("fatal: could not read Username",
@@ -139,15 +128,7 @@ export function ManageReposModal() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={open}
-        className="px-3 py-1.5 rounded-md border border-base-content/10 text-xs font-medium hover:bg-base-content/5"
-      >
-        repos
-      </button>
-
-      <Modal open={dialogOpen} onClose={close} boxClassName="max-w-3xl">
+      <div className="flex flex-col">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-base">Repos</h3>
           <button
@@ -182,13 +163,7 @@ export function ManageReposModal() {
         </p>
 
         <InlineError message={error} />
-
-        <div className="modal-action">
-          <button type="button" className="btn btn-sm" onClick={close}>
-            Close
-          </button>
-        </div>
-      </Modal>
+      </div>
 
     </>
   );

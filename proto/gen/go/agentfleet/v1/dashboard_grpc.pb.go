@@ -47,6 +47,12 @@ const (
 	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
 	DashboardService_UpdatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
 	DashboardService_DeletePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	DashboardService_ListPacks_FullMethodName           = "/agentfleet.v1.DashboardService/ListPacks"
+	DashboardService_CreatePack_FullMethodName          = "/agentfleet.v1.DashboardService/CreatePack"
+	DashboardService_SavePackVersion_FullMethodName     = "/agentfleet.v1.DashboardService/SavePackVersion"
+	DashboardService_DeletePack_FullMethodName          = "/agentfleet.v1.DashboardService/DeletePack"
+	DashboardService_AttachPack_FullMethodName          = "/agentfleet.v1.DashboardService/AttachPack"
+	DashboardService_DetachPack_FullMethodName          = "/agentfleet.v1.DashboardService/DetachPack"
 	DashboardService_ListFiles_FullMethodName           = "/agentfleet.v1.DashboardService/ListFiles"
 	DashboardService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
 	DashboardService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
@@ -131,6 +137,14 @@ type DashboardServiceClient interface {
 	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error)
 	DeletePromptSnippet(ctx context.Context, in *DeletePromptSnippetRequest, opts ...grpc.CallOption) (*DeletePromptSnippetResponse, error)
+	// docs/adr/0063. platform-admins only, like the rest of this service, until
+	// the editor role's own ADR.
+	ListPacks(ctx context.Context, in *ListPacksRequest, opts ...grpc.CallOption) (*ListPacksResponse, error)
+	CreatePack(ctx context.Context, in *CreatePackRequest, opts ...grpc.CallOption) (*CreatePackResponse, error)
+	SavePackVersion(ctx context.Context, in *SavePackVersionRequest, opts ...grpc.CallOption) (*SavePackVersionResponse, error)
+	DeletePack(ctx context.Context, in *DeletePackRequest, opts ...grpc.CallOption) (*DeletePackResponse, error)
+	AttachPack(ctx context.Context, in *AttachPackRequest, opts ...grpc.CallOption) (*AttachPackResponse, error)
+	DetachPack(ctx context.Context, in *DetachPackRequest, opts ...grpc.CallOption) (*DetachPackResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -456,6 +470,66 @@ func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, in *De
 	return out, nil
 }
 
+func (c *dashboardServiceClient) ListPacks(ctx context.Context, in *ListPacksRequest, opts ...grpc.CallOption) (*ListPacksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPacksResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListPacks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) CreatePack(ctx context.Context, in *CreatePackRequest, opts ...grpc.CallOption) (*CreatePackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreatePackResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreatePack_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) SavePackVersion(ctx context.Context, in *SavePackVersionRequest, opts ...grpc.CallOption) (*SavePackVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SavePackVersionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_SavePackVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DeletePack(ctx context.Context, in *DeletePackRequest, opts ...grpc.CallOption) (*DeletePackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletePackResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeletePack_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) AttachPack(ctx context.Context, in *AttachPackRequest, opts ...grpc.CallOption) (*AttachPackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachPackResponse)
+	err := c.cc.Invoke(ctx, DashboardService_AttachPack_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DetachPack(ctx context.Context, in *DetachPackRequest, opts ...grpc.CallOption) (*DetachPackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DetachPackResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DetachPack_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListFilesResponse)
@@ -646,6 +720,14 @@ type DashboardServiceServer interface {
 	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error)
 	DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error)
+	// docs/adr/0063. platform-admins only, like the rest of this service, until
+	// the editor role's own ADR.
+	ListPacks(context.Context, *ListPacksRequest) (*ListPacksResponse, error)
+	CreatePack(context.Context, *CreatePackRequest) (*CreatePackResponse, error)
+	SavePackVersion(context.Context, *SavePackVersionRequest) (*SavePackVersionResponse, error)
+	DeletePack(context.Context, *DeletePackRequest) (*DeletePackResponse, error)
+	AttachPack(context.Context, *AttachPackRequest) (*AttachPackResponse, error)
+	DetachPack(context.Context, *DetachPackRequest) (*DetachPackResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -765,6 +847,24 @@ func (UnimplementedDashboardServiceServer) UpdatePromptSnippet(context.Context, 
 }
 func (UnimplementedDashboardServiceServer) DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeletePromptSnippet not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListPacks(context.Context, *ListPacksRequest) (*ListPacksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPacks not implemented")
+}
+func (UnimplementedDashboardServiceServer) CreatePack(context.Context, *CreatePackRequest) (*CreatePackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreatePack not implemented")
+}
+func (UnimplementedDashboardServiceServer) SavePackVersion(context.Context, *SavePackVersionRequest) (*SavePackVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SavePackVersion not implemented")
+}
+func (UnimplementedDashboardServiceServer) DeletePack(context.Context, *DeletePackRequest) (*DeletePackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeletePack not implemented")
+}
+func (UnimplementedDashboardServiceServer) AttachPack(context.Context, *AttachPackRequest) (*AttachPackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AttachPack not implemented")
+}
+func (UnimplementedDashboardServiceServer) DetachPack(context.Context, *DetachPackRequest) (*DetachPackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DetachPack not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
@@ -1320,6 +1420,114 @@ func _DashboardService_DeletePromptSnippet_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_ListPacks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPacksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListPacks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListPacks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListPacks(ctx, req.(*ListPacksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_CreatePack_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreatePackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).CreatePack(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_CreatePack_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).CreatePack(ctx, req.(*CreatePackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_SavePackVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SavePackVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).SavePackVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_SavePackVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).SavePackVersion(ctx, req.(*SavePackVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DeletePack_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DeletePack(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DeletePack_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DeletePack(ctx, req.(*DeletePackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_AttachPack_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachPackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).AttachPack(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_AttachPack_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).AttachPack(ctx, req.(*AttachPackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DetachPack_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DetachPackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DetachPack(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DetachPack_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DetachPack(ctx, req.(*DetachPackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListFilesRequest)
 	if err := dec(in); err != nil {
@@ -1650,6 +1858,30 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePromptSnippet",
 			Handler:    _DashboardService_DeletePromptSnippet_Handler,
+		},
+		{
+			MethodName: "ListPacks",
+			Handler:    _DashboardService_ListPacks_Handler,
+		},
+		{
+			MethodName: "CreatePack",
+			Handler:    _DashboardService_CreatePack_Handler,
+		},
+		{
+			MethodName: "SavePackVersion",
+			Handler:    _DashboardService_SavePackVersion_Handler,
+		},
+		{
+			MethodName: "DeletePack",
+			Handler:    _DashboardService_DeletePack_Handler,
+		},
+		{
+			MethodName: "AttachPack",
+			Handler:    _DashboardService_AttachPack_Handler,
+		},
+		{
+			MethodName: "DetachPack",
+			Handler:    _DashboardService_DetachPack_Handler,
 		},
 		{
 			MethodName: "ListFiles",

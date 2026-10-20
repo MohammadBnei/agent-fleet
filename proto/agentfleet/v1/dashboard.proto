@@ -531,6 +531,80 @@ message DeletePromptSnippetRequest {
 
 message DeletePromptSnippetResponse {}
 
+// --- context packs (docs/adr/0063) ---
+// A live pack: rules text and skills, versioned, attached to definitions and
+// repos, rendered into every warm of its targets. Unlike a prompt snippet it
+// never appears in a message: it loads as memory the agent does not see sent.
+
+message PackSkill {
+  string name = 1;
+  // One line. Core writes the SKILL.md frontmatter (name, description) itself.
+  string description = 2;
+  string body = 3;
+}
+
+message PackAttachment {
+  // "definition" or "repo".
+  string kind = 1;
+  // The definition name, or the repo's fleet name. A repo that left the
+  // fleet shows as "#<github id>" until it rejoins.
+  string target = 2;
+}
+
+message Pack {
+  string name = 1;
+  string owner_group = 2;
+  // 0 = no version saved yet; text and skills are the latest version's.
+  int32 latest_version = 3;
+  string text = 4;
+  repeated PackSkill skills = 5;
+  repeated PackAttachment attachments = 6;
+}
+
+message ListPacksRequest {}
+
+message ListPacksResponse {
+  repeated Pack packs = 1;
+}
+
+message CreatePackRequest {
+  string name = 1;
+}
+
+message CreatePackResponse {}
+
+// Saves a new immutable version; it is what the next warm of every target
+// renders.
+message SavePackVersionRequest {
+  string name = 1;
+  string text = 2;
+  repeated PackSkill skills = 3;
+}
+
+message SavePackVersionResponse {
+  int32 version = 1;
+}
+
+message DeletePackRequest {
+  string name = 1;
+}
+
+message DeletePackResponse {}
+
+message AttachPackRequest {
+  string name = 1;
+  PackAttachment attachment = 2;
+}
+
+message AttachPackResponse {}
+
+message DetachPackRequest {
+  string name = 1;
+  PackAttachment attachment = 2;
+}
+
+message DetachPackResponse {}
+
 // --- shared file space, human-facing (docs/adr/0030) ---
 // Reuses files.proto's message shapes verbatim — same reuse precedent
 // ListWorktrees/DeleteWorktree already set with provisioner.proto.
@@ -603,6 +677,15 @@ service DashboardService {
   rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
   rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);
   rpc DeletePromptSnippet(DeletePromptSnippetRequest) returns (DeletePromptSnippetResponse);
+
+  // docs/adr/0063. platform-admins only, like the rest of this service, until
+  // the editor role's own ADR.
+  rpc ListPacks(ListPacksRequest) returns (ListPacksResponse);
+  rpc CreatePack(CreatePackRequest) returns (CreatePackResponse);
+  rpc SavePackVersion(SavePackVersionRequest) returns (SavePackVersionResponse);
+  rpc DeletePack(DeletePackRequest) returns (DeletePackResponse);
+  rpc AttachPack(AttachPackRequest) returns (AttachPackResponse);
+  rpc DetachPack(DetachPackRequest) returns (DetachPackResponse);
 
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
