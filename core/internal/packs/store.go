@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -111,7 +112,10 @@ func (s *Store) List(ctx context.Context) ([]Pack, error) {
 
 	rows, err = s.pool.Query(ctx, `
 		SELECT a.pack, a.target_kind, CASE WHEN a.target_kind = 'repo' THEN COALESCE(r.name, '#' || a.target) ELSE a.target END
-		FROM pack_attachments a LEFT JOIN repos r ON a.target_kind = 'repo' AND r.github_id::text = a.target
+		FROM pack_attachments a LEFT JOIN repos r
+		  -- CASE, not AND: Postgres does not promise to short-circuit, and a
+		  -- definition name must never reach the cast.
+		  ON r.github_id = CASE WHEN a.target_kind = 'repo' AND a.target ~ '^[0-9]+$' THEN a.target::bigint END
 		ORDER BY 1, 2, 3`)
 	if err != nil {
 		return nil, fmt.Errorf("list attachments: %w", err)
@@ -203,6 +207,11 @@ func targetID(ctx context.Context, q querier, kind, name string) (string, error)
 	case KindDefinition:
 		return name, nil
 	case KindRepo:
+		// List shows a repo that left the fleet as "#<github id>"; that is
+		// already the stored key, so it can still be detached.
+		if id, ok := strings.CutPrefix(name, "#"); ok && id != "" && strings.Trim(id, "0123456789") == "" {
+			return id, nil
+		}
 		var id *int64
 		err := q.QueryRow(ctx, `SELECT github_id FROM repos WHERE name = $1`, name).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && id == nil) {

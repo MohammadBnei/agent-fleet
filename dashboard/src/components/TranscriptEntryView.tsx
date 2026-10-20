@@ -249,7 +249,12 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
             `${signal.skills?.length ?? 0} skills`,
             signal.collisions?.length ? `collision: ${signal.collisions.join(", ")}` : null,
           ];
-      const detail = rendered ? signal.skipped ?? [] : (signal.memory_files ?? []).map((f) => `${f.type} ${f.path}`);
+      const detail = rendered
+        ? signal.skipped ?? []
+        : [
+            ...(signal.memory_files ?? []).map((f) => `${f.type} ${f.path}`),
+            ...(signal.skills ?? []).map((sk) => `skill ${sk.name} (${sk.source})`),
+          ];
       const warn = rendered ? signal.applied === false || !!signal.skipped?.length : !!signal.collisions?.length;
       const line = (
         <LogLine badge={rendered ? "context" : "loaded"} badgeClass={warn ? "warning" : "info"} compact={compact}>
@@ -265,8 +270,8 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
           summary={line}
         >
           <ul className="text-2xs text-dim font-mono pl-4 list-disc">
-            {detail.map((d) => (
-              <li key={d}>{d}</li>
+            {detail.map((d, i) => (
+              <li key={i}>{d}</li>
             ))}
           </ul>
         </Collapse>

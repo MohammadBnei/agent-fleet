@@ -7,8 +7,8 @@ import type { CSSProperties } from "react";
 // on the repo axis, a single-choice <select> that could only ever narrow to one
 // repo — there was no way to say "these two but not that one".
 //
-// Native Popover API + CSS anchor positioning, the pattern ActionsMenu and
-// SettingsMenu already use: no z-index, no click-outside handler, Esc-to-close
+// Native Popover API + CSS anchor positioning, the pattern ActionsMenu
+// already uses: no z-index, no click-outside handler, Esc-to-close
 // for free.
 //
 // `id` is required and must be unique on the page. The other popovers in this

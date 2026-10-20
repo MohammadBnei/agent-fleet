@@ -37,6 +37,21 @@ function readSessionIdFromUrl(): string | null {
   return p.get("session") ?? p.get("task");
 }
 
+// The ⚙ in both headers: opens the Settings page.
+function SettingsButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Settings"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={`flex-none cursor-pointer px-1.5 py-1 text-base hover:text-base-content ${active ? "text-primary" : "text-dim"}`}
+    >
+      ⚙
+    </button>
+  );
+}
+
 export type View = "sessions" | "schedules" | "files" | "observability" | "settings";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
@@ -273,6 +288,8 @@ export default function App() {
     // two ids in one URL is the kind of thing that resolves differently in
     // the next reader.
     url.searchParams.delete("task");
+    // Settings' own sub-page: leaving Settings must not carry it along.
+    if (next !== "settings") url.searchParams.delete("section");
     window.history.pushState({}, "", url);
   }
 
@@ -486,15 +503,7 @@ export default function App() {
               selectSession(id);
             }}
           />
-          <button
-            type="button"
-            aria-label="Settings"
-            aria-current={view === "settings" ? "page" : undefined}
-            onClick={() => selectView("settings")}
-            className={`flex-none cursor-pointer px-1.5 py-1 text-base hover:text-base-content ${view === "settings" ? "text-primary" : "text-dim"}`}
-          >
-            ⚙
-          </button>
+          <SettingsButton active={view === "settings"} onClick={() => selectView("settings")} />
         </div>
       ) : (
         <div className="flex-none border-b border-line bg-base-200">
@@ -533,15 +542,7 @@ export default function App() {
                 selectSession(id);
               }}
             />
-            <button
-            type="button"
-            aria-label="Settings"
-            aria-current={view === "settings" ? "page" : undefined}
-            onClick={() => selectView("settings")}
-            className={`flex-none cursor-pointer px-1.5 py-1 text-base hover:text-base-content ${view === "settings" ? "text-primary" : "text-dim"}`}
-          >
-            ⚙
-          </button>
+            <SettingsButton active={view === "settings"} onClick={() => selectView("settings")} />
           </div>
           {searchOpen && (
             <div className="px-3.5 pb-2.5">

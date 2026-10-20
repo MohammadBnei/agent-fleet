@@ -215,3 +215,33 @@ func TestStore_ReviewedPacks(t *testing.T) {
 		t.Fatal("Create took a reviewed name")
 	}
 }
+
+// A repo that left the fleet is listed as "#<github id>", and that is what
+// the console sends back to detach it.
+func TestStore_DetachOrphanedRepo(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	s := NewStore(pool)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url, github_id) VALUES ('gone', 'https://github.com/o/gone', 4242)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Create(ctx, "style", "platform-admins"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveVersion(ctx, Version{Pack: "style", Text: "x"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Attach(ctx, KindRepo, "gone", "style", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM repos WHERE name = 'gone'`); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List(ctx)
+	if err != nil || len(list) != 1 || len(list[0].Attachments) != 1 || list[0].Attachments[0].Target != "#4242" {
+		t.Fatalf("List = %+v, %v", list, err)
+	}
+	if err := s.Detach(ctx, KindRepo, "#4242", "style"); err != nil {
+		t.Fatalf("Detach orphan: %v", err)
+	}
+}

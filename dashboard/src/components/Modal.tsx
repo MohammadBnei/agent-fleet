@@ -29,9 +29,9 @@ export function Modal({ open, onClose, children, boxClassName = "" }: ModalProps
       // and dismissing an inner drawer dropped the human two levels out.
       // Confirmed in Playwright on the mobile panels sheet.
       //
-      // ManageReposModal worked around this by rendering its confirm dialog
-      // as a sibling of the modal that triggers it; with the guard here that
-      // workaround is no longer required of every caller.
+      // The old repos modal worked around this by rendering its confirm
+      // dialog as a sibling of the modal that triggers it; with the guard
+      // here that workaround is no longer required of every caller.
       onClose={(e) => {
         if (e.target !== dialogRef.current) return;
         onClose();

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { ConfirmModal } from "./ConfirmModal";
-import type { Pack, PackAttachment } from "../gen/agentfleet/v1/dashboard_pb";
+import type { Pack } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
 
 // Live context packs (docs/adr/0063): instructions and skills that load into
@@ -12,12 +12,16 @@ import { InlineError } from "./InlineError";
 // packs/repo) change by pull request and are not shown here.
 
 type Targets = { definition: string[]; repo: string[] };
-type SkillDraft = { name: string; description: string; body: string };
+type SkillDraft = { id: number; name: string; description: string; body: string };
 type Use = { kind: string; target: string };
 
 const keyOf = (u: Use) => `${u.kind}/${u.target}`;
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
-const sameJSON = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+// What the server stores, without the editor's own ids.
+const contentOf = (text: string, skills: SkillDraft[]) =>
+  JSON.stringify({ text, skills: skills.map(({ name, description, body }) => ({ name, description, body })) });
+
+let nextSkillId = 1;
 
 function SkillEditor({ skill, onChange, onDone, onRemove }: {
   skill: SkillDraft;
@@ -29,12 +33,14 @@ function SkillEditor({ skill, onChange, onDone, onRemove }: {
     <div className="flex flex-col gap-1.5 border border-base-content/10 rounded-md p-2">
       <div className="flex gap-1.5">
         <input
+          aria-label="skill name"
           value={skill.name}
           onChange={(e) => onChange({ ...skill, name: e.target.value })}
           placeholder="skill-name"
           className="input input-sm input-bordered w-40 font-mono"
         />
         <input
+          aria-label="when to use the skill"
           value={skill.description}
           onChange={(e) => onChange({ ...skill, description: e.target.value })}
           placeholder="When should the agent use it? (one line)"
@@ -42,6 +48,7 @@ function SkillEditor({ skill, onChange, onDone, onRemove }: {
         />
       </div>
       <textarea
+        aria-label="skill instructions"
         value={skill.body}
         onChange={(e) => onChange({ ...skill, body: e.target.value })}
         rows={4}
@@ -64,10 +71,12 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
   pack: Pack | null; // null = a new pack
   targets: Targets;
   onBack: () => void;
-  onSaved: (name: string) => void;
+  onSaved: (name: string) => Promise<void>;
   onRequestDelete: (pack: Pack) => void;
 }) {
-  const initialSkills: SkillDraft[] = (pack?.skills ?? []).map((s) => ({ name: s.name, description: s.description, body: s.body }));
+  const [initialSkills] = useState<SkillDraft[]>(() =>
+    (pack?.skills ?? []).map((s) => ({ id: nextSkillId++, name: s.name, description: s.description, body: s.body })),
+  );
   const initialUses: Use[] = (pack?.attachments ?? []).map((a) => ({ kind: a.kind, target: a.target }));
   const [name, setName] = useState(pack?.name ?? "");
   const [text, setText] = useState(pack?.text ?? "");
@@ -76,28 +85,69 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
   const [uses, setUses] = useState<Use[]>(initialUses);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What the server already has. A save is several calls; when one fails,
+  // the retry resumes from here instead of re-creating the pack or re-saving
+  // a version that went through.
+  const [done, setDone] = useState(() => ({
+    created: pack !== null,
+    content: contentOf(pack?.text ?? "", initialSkills),
+    uses: new Set(initialUses.map(keyOf)),
+  }));
 
-  const contentChanged = text !== (pack?.text ?? "") || !sameJSON(skills, initialSkills);
-  const usesChanged = !sameJSON(uses.map(keyOf).sort(), initialUses.map(keyOf).sort());
-  const canSave = !saving && name.trim() !== "" && (pack === null ? text.trim() !== "" || skills.length > 0 : contentChanged || usesChanged);
   const used = new Set(uses.map(keyOf));
+  const contentChanged = contentOf(text, skills) !== done.content;
+  const usesChanged = used.size !== done.uses.size || [...used].some((k) => !done.uses.has(k));
+  const skillsNamed = skills.every((s) => s.name.trim() !== "");
+  const canSave =
+    !saving &&
+    name.trim() !== "" &&
+    skillsNamed &&
+    (!done.created ? text.trim() !== "" || skills.length > 0 : contentChanged || usesChanged);
 
   async function save() {
     setSaving(true);
     setError(null);
     const packName = name.trim();
+    // A working copy; whatever went through is kept even when a later call fails.
+    const d = { ...done, uses: new Set(done.uses) };
     try {
-      if (pack === null) await client.createPack({ name: packName });
-      if (pack === null || contentChanged) await client.savePackVersion({ name: packName, text, skills });
-      const before = new Set(initialUses.map(keyOf));
-      for (const u of uses) if (!before.has(keyOf(u))) await client.attachPack({ name: packName, attachment: u });
-      for (const u of initialUses) if (!used.has(keyOf(u))) await client.detachPack({ name: packName, attachment: u as PackAttachment });
-      onSaved(packName);
+      if (!d.created) {
+        await client.createPack({ name: packName });
+        d.created = true;
+      }
+      const content = contentOf(text, skills);
+      if (content !== d.content) {
+        await client.savePackVersion({
+          name: packName,
+          text,
+          skills: skills.map(({ name, description, body }) => ({ name, description, body })),
+        });
+        d.content = content;
+      }
+      for (const u of uses) {
+        if (d.uses.has(keyOf(u))) continue;
+        await client.attachPack({ name: packName, attachment: u });
+        d.uses.add(keyOf(u));
+      }
+      for (const k of [...d.uses]) {
+        if (used.has(k)) continue;
+        const [kind, ...rest] = k.split("/");
+        await client.detachPack({ name: packName, attachment: { kind, target: rest.join("/") } });
+        d.uses.delete(k);
+      }
+      // Stays "saving" until the list has reloaded: the editor then remounts
+      // on the fresh server state, so nothing can be saved twice.
+      await onSaved(packName);
     } catch (err) {
+      setDone(d);
       setError(errText(err));
-    } finally {
       setSaving(false);
     }
+  }
+
+  function removeSkill(id: number) {
+    setSkills((l) => l.filter((s) => s.id !== id));
+    if (editing === id) setEditing(null);
   }
 
   return (
@@ -111,7 +161,9 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
         ) : (
           <input
             autoFocus
+            aria-label="pack name"
             value={name}
+            disabled={done.created}
             onChange={(e) => setName(e.target.value.toLowerCase())}
             placeholder="pack-name (lowercase, dashes)"
             className="input input-sm input-bordered flex-1 font-mono"
@@ -121,8 +173,11 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
       </div>
 
       <section className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">1. Instructions the agent always follows</h4>
+        <h4 className="text-sm font-medium" id="pack-instructions">
+          1. Instructions the agent always follows
+        </h4>
         <textarea
+          aria-labelledby="pack-instructions"
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={6}
@@ -140,39 +195,32 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
             type="button"
             className="btn btn-xs"
             onClick={() => {
-              setSkills((l) => [...l, { name: "", description: "", body: "" }]);
-              setEditing(skills.length);
+              const id = nextSkillId++;
+              setSkills((l) => [...l, { id, name: "", description: "", body: "" }]);
+              setEditing(id);
             }}
           >
             + add skill
           </button>
         </div>
         {skills.length === 0 && <p className="text-xs text-dim">No skills.</p>}
-        {skills.map((s, i) =>
-          editing === i ? (
+        {skills.map((s) =>
+          editing === s.id ? (
             <SkillEditor
-              key={i}
+              key={s.id}
               skill={s}
-              onChange={(next) => setSkills((l) => l.map((x, j) => (j === i ? next : x)))}
+              onChange={(next) => setSkills((l) => l.map((x) => (x.id === s.id ? next : x)))}
               onDone={() => setEditing(null)}
-              onRemove={() => {
-                setSkills((l) => l.filter((_, j) => j !== i));
-                setEditing(null);
-              }}
+              onRemove={() => removeSkill(s.id)}
             />
           ) : (
-            <div key={i} className="flex items-center gap-2 text-sm">
-              <span className="font-mono">{s.name}</span>
+            <div key={s.id} className="flex items-center gap-2 text-sm">
+              <span className="font-mono">{s.name || "(unnamed)"}</span>
               <span className="text-dim flex-1 truncate">— {s.description || "no description"}</span>
-              <button type="button" className="btn btn-xs btn-ghost" aria-label={`edit skill ${s.name}`} onClick={() => setEditing(i)}>
+              <button type="button" className="btn btn-xs btn-ghost" aria-label={`edit skill ${s.name}`} onClick={() => setEditing(s.id)}>
                 ✎
               </button>
-              <button
-                type="button"
-                className="btn btn-xs btn-ghost"
-                aria-label={`remove skill ${s.name}`}
-                onClick={() => setSkills((l) => l.filter((_, j) => j !== i))}
-              >
+              <button type="button" className="btn btn-xs btn-ghost" aria-label={`remove skill ${s.name}`} onClick={() => removeSkill(s.id)}>
                 ✕
               </button>
             </div>
@@ -198,33 +246,39 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
             </span>
           ))}
           <select
+            aria-label="add an agent or repo"
             value=""
             onChange={(e) => {
-              const [kind, target] = e.target.value.split("/");
-              if (target) setUses((l) => [...l, { kind, target }]);
+              const [kind, ...rest] = e.target.value.split("/");
+              if (rest.length) setUses((l) => [...l, { kind, target: rest.join("/") }]);
             }}
             className="select select-sm select-bordered"
           >
             <option value="">+ add agent or repo</option>
             <optgroup label="Agents">
-              {targets.definition.filter((t) => !used.has(`definition/${t}`)).map((t) => (
-                <option key={t} value={`definition/${t}`}>
-                  {t}
-                </option>
-              ))}
+              {targets.definition
+                .filter((t) => !used.has(`definition/${t}`))
+                .map((t) => (
+                  <option key={t} value={`definition/${t}`}>
+                    {t}
+                  </option>
+                ))}
             </optgroup>
             <optgroup label="Repos">
-              {targets.repo.filter((t) => !used.has(`repo/${t}`)).map((t) => (
-                <option key={t} value={`repo/${t}`}>
-                  {t}
-                </option>
-              ))}
+              {targets.repo
+                .filter((t) => !used.has(`repo/${t}`))
+                .map((t) => (
+                  <option key={t} value={`repo/${t}`}>
+                    {t}
+                  </option>
+                ))}
             </optgroup>
           </select>
         </div>
         {uses.length === 0 && <p className="text-xs text-dim">Not used anywhere yet: saving keeps it, but no agent loads it.</p>}
       </section>
 
+      {!skillsNamed && <p className="text-xs text-warning">Every skill needs a name before saving.</p>}
       <InlineError message={error} />
 
       <div className="flex items-center gap-3 pt-2 border-t border-base-content/10">
@@ -269,9 +323,10 @@ export function PacksPanel() {
     const pack = pendingDelete;
     setPendingDelete(null);
     if (!pack) return;
+    // Back to the list either way: that is where the error is shown.
+    setOpen(undefined);
     try {
       await client.deletePack({ name: pack.name });
-      setOpen(undefined);
       load();
     } catch (err) {
       setError(errText(err));
@@ -313,12 +368,13 @@ export function PacksPanel() {
         </div>
       ) : (
         <PackEditor
-          key={open ?? "new"}
+          // Remounts on the server's state after every save.
+          key={current ? `${current.name}@${current.latestVersion}/${current.attachments.map((a) => a.kind + a.target).join(",")}` : "new"}
           pack={current ?? null}
           targets={targets}
           onBack={() => setOpen(undefined)}
-          onSaved={(name) => {
-            load();
+          onSaved={async (name) => {
+            await load();
             setOpen(name);
           }}
           onRequestDelete={setPendingDelete}
