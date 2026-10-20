@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,6 +32,9 @@ type Pack struct {
 
 type Store struct {
 	pool *pgxpool.Pool
+
+	mu               sync.Mutex
+	lastReviewedErrs string // logged on change only
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -46,18 +50,15 @@ func (s *Store) Create(ctx context.Context, name, ownerGroup string) error {
 	if err := checkPackName(name); err != nil {
 		return err
 	}
-	// One namespace with the reviewed packs (ADR-0063 §1).
-	tag, err := s.pool.Exec(ctx, `INSERT INTO packs (name, owner_group)
-		SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM reviewed_packs WHERE name = $1)`, name, ownerGroup)
+	// One namespace with the reviewed packs (ADR-0063 §1): checkPackName
+	// reserves every reviewed name.
+	_, err := s.pool.Exec(ctx, `INSERT INTO packs (name, owner_group) VALUES ($1, $2)`, name, ownerGroup)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return ErrExists
 	}
 	if err != nil {
 		return fmt.Errorf("create pack: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%q is a reviewed pack: %w", name, ErrExists)
 	}
 	slog.Info("packs Create", "name", name, "owner_group", ownerGroup)
 	return nil

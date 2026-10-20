@@ -27,7 +27,7 @@ var (
 	// @ not glued to a letter or digit, so mail addresses still pass.
 	importRe = regexp.MustCompile(`(^|[^A-Za-z0-9])@`)
 	// Names the reviewed packs render under; a live pack cannot take them.
-	reserved = map[string]bool{"fleet": true, "repo": true}
+	reserved = reviewedNames
 )
 
 // Skill is stored without frontmatter. Render writes the frontmatter itself
@@ -123,7 +123,11 @@ func composedSize(vs []Version) (text, skills int) {
 	for _, v := range vs {
 		text += len(v.Text)
 		for _, s := range v.Skills {
-			skills += len(s.File())
+			if v.Ref != "" {
+				skills += len(s.Body) // a reviewed SKILL.md is written as is
+			} else {
+				skills += len(s.File())
+			}
 		}
 	}
 	return text, skills

@@ -98,7 +98,8 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 	clientFiles := map[string]clientFile{}
 	clientErrs := map[string]error{}
 	for _, p := range paths {
-		if strings.HasSuffix(p, ".md") {
+		// packs/ rides along in the same listing (docs/adr/0063).
+		if strings.HasSuffix(p, ".md") || strings.HasPrefix(p, "packs/") {
 			continue
 		}
 		// A git path may be any bytes; a name column (and a proto string)

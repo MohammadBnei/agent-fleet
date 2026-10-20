@@ -6,5 +6,6 @@ CREATE TABLE reviewed_packs (
   sha       TEXT        NOT NULL,
   text      TEXT        NOT NULL DEFAULT '',
   skills    JSONB       NOT NULL DEFAULT '[]', -- [{name, body}], body = SKILL.md as written
+  error     TEXT,                              -- why the last sync kept the previous content
   synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -135,21 +135,22 @@ func TestStore_ReviewedPacks(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, effective, valid) VALUES ('dev-notes', 'abc', '{}', true)`); err != nil {
 		t.Fatal(err)
 	}
-
-	files := map[string][]byte{
-		"definitions/a.yaml":  []byte("a"),
-		"packs/fleet/PACK.md": []byte("fleet rules"),
-		"packs/repo/PACK.md":  []byte("repo rules"),
-	}
-	if errs := s.SyncReviewed(ctx, files, "1111111aaaa"); len(errs) != 0 {
-		t.Fatal(errs)
-	}
 	paths := func(r Rendered) string {
 		var p []string
 		for _, f := range r.Files {
 			p = append(p, f.Path)
 		}
 		return strings.Join(p, ",")
+	}
+
+	files := map[string][]byte{
+		"definitions/a.yaml":  []byte("a"),
+		listedMarker:          nil,
+		"packs/fleet/PACK.md": []byte("fleet rules"),
+		"packs/repo/PACK.md":  []byte("repo rules"),
+	}
+	if bad := s.SyncReviewed(ctx, files, "1111111aaaa"); len(bad) != 0 {
+		t.Fatal(bad)
 	}
 	r, err := s.RenderContext(ctx, KindRepo, "wedding")
 	if err != nil || paths(r) != ".claude/rules/80-repo.md,.claude/rules/90-fleet.md" {
@@ -163,31 +164,38 @@ func TestStore_ReviewedPacks(t *testing.T) {
 		t.Fatalf("definition render = %v, %v (no repo pack on a definition)", paths(r), err)
 	}
 
-	// One namespace: no live pack may take a reviewed name.
-	if err := s.Create(ctx, "fleet", "platform-admins"); err == nil {
-		t.Fatal("Create took a reviewed name")
+	// An unchanged pack keeps its sha across a new release commit.
+	if bad := s.SyncReviewed(ctx, files, "2222222bbbb"); len(bad) != 0 {
+		t.Fatal(bad)
+	}
+	if r, _ = s.RenderContext(ctx, KindRepo, "wedding"); strings.Join(r.Versions, ",") != "reviewed:fleet@1111111,reviewed:repo@1111111" {
+		t.Fatalf("an unchanged pack moved: %v", r.Versions)
 	}
 
-	// A listing with no packs/ (an older provisioner) keeps the last good copy.
-	if errs := s.SyncReviewed(ctx, map[string][]byte{"definitions/a.yaml": []byte("a")}, "2222222bbbb"); len(errs) != 0 {
-		t.Fatal(errs)
+	// No marker (an older provisioner): nothing changes.
+	if bad := s.SyncReviewed(ctx, map[string][]byte{"definitions/a.yaml": []byte("a")}, "3333333cccc"); len(bad) != 0 {
+		t.Fatal(bad)
 	}
 	if r, _ = s.RenderContext(ctx, KindRepo, "wedding"); len(r.Files) != 2 {
-		t.Fatalf("an empty listing dropped the reviewed packs: %v", paths(r))
+		t.Fatalf("an older provisioner's listing dropped the reviewed packs: %v", paths(r))
 	}
 
-	// A broken pack keeps its old row and reports stale once past staleAfter;
-	// a pack gone from the listing is removed.
+	// A broken fleet pack keeps its last good content and says why; a pack
+	// gone from a marked listing is removed.
+	broken := map[string][]byte{listedMarker: nil, "packs/fleet/PACK.md": []byte("new"), "packs/fleet/run.sh": []byte("x")}
+	if bad := s.SyncReviewed(ctx, broken, "4444444dddd"); len(bad) != 1 {
+		t.Fatalf("bad = %v", bad)
+	}
+	r, _ = s.RenderContext(ctx, KindRepo, "wedding")
+	if paths(r) != ".claude/rules/90-fleet.md" || r.Files[0].Body != "fleet rules" || len(r.Skipped) != 1 || !strings.Contains(r.Skipped[0], "run.sh") {
+		t.Fatalf("after a broken sync: %v %+v %v", paths(r), r.Files, r.Skipped)
+	}
+	// Past staleAfter the note says stale as well.
 	if _, err := pool.Exec(ctx, `UPDATE reviewed_packs SET synced_at = now() - interval '1 hour'`); err != nil {
 		t.Fatal(err)
 	}
-	broken := map[string][]byte{"packs/fleet/PACK.md": []byte("new"), "packs/fleet/run.sh": []byte("x")}
-	if errs := s.SyncReviewed(ctx, broken, "3333333cccc"); len(errs) != 1 {
-		t.Fatalf("errs = %v", errs)
-	}
-	r, _ = s.RenderContext(ctx, KindRepo, "wedding")
-	if paths(r) != ".claude/rules/90-fleet.md" || r.Files[0].Body != "fleet rules" || len(r.Skipped) != 1 || !strings.Contains(r.Skipped[0], "stale") {
-		t.Fatalf("after a broken sync: %v %+v %v", paths(r), r.Files, r.Skipped)
+	if r, _ = s.RenderContext(ctx, KindDefinition, "dev-notes"); len(r.Skipped) != 2 || !strings.Contains(r.Skipped[1], "stale") {
+		t.Fatalf("Skipped = %v", r.Skipped)
 	}
 
 	// The cap check at attach counts the reviewed bytes too.
@@ -202,5 +210,8 @@ func TestStore_ReviewedPacks(t *testing.T) {
 	}
 	if err := s.Attach(ctx, KindDefinition, "dev-notes", "style", "admin"); err == nil {
 		t.Fatal("Attach ignored the reviewed fleet pack's bytes")
+	}
+	if err := s.Create(ctx, "fleet", "platform-admins"); err == nil {
+		t.Fatal("Create took a reviewed name")
 	}
 }

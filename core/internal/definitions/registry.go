@@ -71,7 +71,8 @@ type Registry struct {
 	onFiles func(ctx context.Context, files map[string][]byte, sha string)
 }
 
-// SetOnFiles hands every good listing to f, before the definitions are judged.
+// SetOnFiles hands every listing whose definitions were stored to f, with its
+// own time budget.
 func (r *Registry) SetOnFiles(f func(ctx context.Context, files map[string][]byte, sha string)) {
 	r.onFiles = f
 }
@@ -102,9 +103,6 @@ func (r *Registry) sync(ctx context.Context) error {
 	files, sha, err := r.lister.ListDefinitionFiles(ctx)
 	if err != nil {
 		return err
-	}
-	if r.onFiles != nil {
-		r.onFiles(ctx, files, sha)
 	}
 	results, fileErrs := Load(files)
 	syncErrs := make([]string, 0, len(fileErrs))
@@ -223,6 +221,11 @@ func (r *Registry) sync(ctx context.Context) error {
 	r.mu.Lock()
 	r.synced, r.heads, r.syncErrs, r.lastGood = true, heads, syncErrs, time.Now()
 	r.mu.Unlock()
+	if r.onFiles != nil {
+		hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncTimeout)
+		defer cancel()
+		r.onFiles(hookCtx, files, sha)
+	}
 	return nil
 }
 

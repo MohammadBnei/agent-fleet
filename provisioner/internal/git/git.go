@@ -490,6 +490,27 @@ func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, f
 	return nil
 }
 
+// packEntryProblem says why one packs/ entry is not read, or "" when it is
+// read. Its own budget, so packs never push definitions over theirs.
+func packEntryProblem(rel string, f []string, packTotal int) string {
+	if rel == "packs" {
+		return "packs is not a directory"
+	}
+	if len(f) != 4 || (f[0] != "100644" && f[0] != "100755") {
+		return rel + " is not a regular file"
+	}
+	size, err := strconv.Atoi(f[3])
+	switch {
+	case err != nil:
+		return rel + ": size " + f[3]
+	case size > maxDefinitionFile:
+		return fmt.Sprintf("%s is %d bytes, over %d", rel, size, maxDefinitionFile)
+	case packTotal+size > maxDefinitionTotal:
+		return fmt.Sprintf("packs/ is over %d bytes at %s", maxDefinitionTotal, rel)
+	}
+	return ""
+}
+
 // definitionsSentinel keys ReadDefinitions' own lock, never fleet-shared's.
 const definitionsSentinel = "_definitions"
 
@@ -540,29 +561,44 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 	if err != nil {
 		return nil, "", err
 	}
-	files := map[string][]byte{}
-	total := 0
+	// docs/adr/0063: packs/ never fails the definitions read. A bad entry
+	// there becomes packs/<name>/.invalid.md carrying the reason, which core
+	// turns into that pack's error; packs/.listed.md says this provisioner
+	// read packs/ at all, so core can tell "deleted" from "older provisioner".
+	// Both end in .md, which an older core's definitions loader skips.
+	files := map[string][]byte{"packs/.listed.md": nil}
+	total, packTotal := 0, 0
 	for _, entry := range strings.Split(ls, "\x00") {
 		meta, rel, ok := strings.Cut(entry, "\t")
 		if !ok {
 			continue
 		}
 		f := strings.Fields(meta) // mode type object size
-		switch {
-		case rel == "definitions" || rel == "packs":
-			return nil, "", fmt.Errorf("%s/ is not a directory at %s (%.7s)", rel, ref, sha)
-		case len(f) != 4 || (f[0] != "100644" && f[0] != "100755"):
-			return nil, "", fmt.Errorf("read definitions: %s is not a regular file", rel)
-		}
-		size, err := strconv.Atoi(f[3])
-		if err != nil {
-			return nil, "", fmt.Errorf("read definitions: %s: size %q", rel, f[3])
-		}
-		if size > maxDefinitionFile {
-			return nil, "", fmt.Errorf("read definitions: %s is %d bytes, over %d", rel, size, maxDefinitionFile)
-		}
-		if total += size; total > maxDefinitionTotal {
-			return nil, "", fmt.Errorf("read definitions: definitions/ and packs/ are over %d bytes", maxDefinitionTotal)
+		if rel == "packs" || strings.HasPrefix(rel, "packs/") {
+			if reason := packEntryProblem(rel, f, packTotal); reason != "" {
+				name, _, _ := strings.Cut(strings.TrimPrefix(rel, "packs/"), "/")
+				files["packs/"+name+"/.invalid.md"] = []byte(reason)
+				continue
+			}
+			size, _ := strconv.Atoi(f[3])
+			packTotal += size
+		} else {
+			switch {
+			case rel == "definitions":
+				return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s)", ref, sha)
+			case len(f) != 4 || (f[0] != "100644" && f[0] != "100755"):
+				return nil, "", fmt.Errorf("read definitions: %s is not a regular file", rel)
+			}
+			size, err := strconv.Atoi(f[3])
+			if err != nil {
+				return nil, "", fmt.Errorf("read definitions: %s: size %q", rel, f[3])
+			}
+			if size > maxDefinitionFile {
+				return nil, "", fmt.Errorf("read definitions: %s is %d bytes, over %d", rel, size, maxDefinitionFile)
+			}
+			if total += size; total > maxDefinitionTotal {
+				return nil, "", fmt.Errorf("read definitions: definitions/ is over %d bytes", maxDefinitionTotal)
+			}
 		}
 		// Not m.run: that trims, and this is file content.
 		start, args := time.Now(), []string{"cat-file", "blob", f[2]}

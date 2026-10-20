@@ -68,7 +68,8 @@ func TestReadDefinitions_ReadsFilesAndSHA(t *testing.T) {
 	if sha != gitIn(t, origin, "rev-parse", "HEAD") {
 		t.Fatalf("sha %q is not the origin's HEAD", sha)
 	}
-	if len(files) != 2 || string(files["definitions/a.yaml"]) != "a" || string(files["definitions/clients/b.yaml"]) != "b" {
+	// Plus packs/.listed.md: this provisioner read packs/ (docs/adr/0063).
+	if _, listed := files["packs/.listed.md"]; len(files) != 3 || !listed || string(files["definitions/a.yaml"]) != "a" || string(files["definitions/clients/b.yaml"]) != "b" {
 		t.Fatalf("files: %v", files)
 	}
 	// Its own clone, never fleet-shared's: a slow fetch here must not stall
@@ -92,6 +93,13 @@ func TestReadDefinitions_ReadsFilesAndSHA(t *testing.T) {
 	files, sha, err = m.ReadDefinitions(context.Background(), origin, "main")
 	if err != nil || sha != want || string(files["packs/fleet/PACK.md"]) != "fleet rules" {
 		t.Fatalf("packs: sha %q want %q, files %v, err %v", sha, want, files, err)
+	}
+	// A bad pack entry never fails the definitions read: it becomes that
+	// pack's .invalid.md, and the rest is read as usual.
+	commitFile(t, origin, "packs/repo/huge.md", strings.Repeat("x", maxDefinitionFile+1))
+	files, _, err = m.ReadDefinitions(context.Background(), origin, "main")
+	if err != nil || !strings.Contains(string(files["packs/repo/.invalid.md"]), "over") || string(files["packs/fleet/PACK.md"]) != "fleet rules" {
+		t.Fatalf("bad pack entry: files %v, err %v", files, err)
 	}
 }
 
@@ -159,7 +167,7 @@ func TestReadDefinitions_ReadsTheCommitNotTheWorkingTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(files["definitions/a.yaml"]) != "a" || len(files) != 2 {
+	if string(files["definitions/a.yaml"]) != "a" || len(files) != 3 {
 		t.Fatalf("read the working tree: %v", files)
 	}
 }

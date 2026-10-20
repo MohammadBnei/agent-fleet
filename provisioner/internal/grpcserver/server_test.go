@@ -522,7 +522,12 @@ func TestListDefinitionFiles(t *testing.T) {
 	})
 	t.Run("release tag by default", func(t *testing.T) {
 		resp, err := newServer(origin, "4.19.0").ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
-		if err != nil || len(resp.GetFiles()) != 1 || resp.GetFiles()[0].GetPath() != "definitions/a.yaml" || resp.GetSha() == "" {
+		paths := map[string]bool{}
+		for _, f := range resp.GetFiles() {
+			paths[f.GetPath()] = true
+		}
+		// Plus packs/.listed.md (docs/adr/0063).
+		if err != nil || len(paths) != 2 || !paths["definitions/a.yaml"] || !paths["packs/.listed.md"] || resp.GetSha() == "" {
 			t.Fatalf("resp %v err %v", resp, err)
 		}
 	})
