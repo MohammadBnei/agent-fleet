@@ -63,6 +63,10 @@ const workerJobTTLSeconds = 1800
 // root would land all of them in the same `projects/-workspace/`.
 const claudeConfigDir = "/claude-home"
 
+// genomeDir is where the worker finds its context packs (docs/adr/0063); the
+// worker passes it as an additionalDirectory.
+const genomeDir = "/genome"
+
 // sessionCacheDir is the per-session dependency cache mount (docs/adr/0048 §4).
 const sessionCacheDir = "/cache"
 
@@ -444,6 +448,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		// ability to resume the conversation at all, which is the one thing
 		// here that git is not already a backup of.
 		{Name: "shared", MountPath: claudeConfigDir, SubPath: "claude-home/" + taskID},
+		// docs/adr/0063: the rendered context packs, read-only, so the agent
+		// cannot edit the rules it runs under. A sibling of claude-home/<id>.
+		{Name: "shared", MountPath: genomeDir, SubPath: "claude-home/" + taskID + "-genome", ReadOnly: true},
 		// Playwright's browser builds, read-only. 2 GB that every session can
 		// use and no session may write — see browsersDir.
 		{Name: "shared", MountPath: browsersDir, SubPath: browsersSubPath, ReadOnly: true},

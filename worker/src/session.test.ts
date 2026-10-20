@@ -5,6 +5,9 @@
 // result-subtype classification — without a real Claude session or
 // sidecar. Mocks must be registered before importing session.js (Bun
 // resolves mock.module() calls ahead of subsequent static imports).
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 
@@ -277,6 +280,9 @@ beforeEach(() => {
 // never touches core, so core's definition allowlist cannot bound it.
 test("definition pod: native cross-session channel refused, SendMessage/ListAgents disallowed", async () => {
   process.env.FLEET_DEFINITION = "dev-dream-analyst";
+  // docs/adr/0063: a mounted genome becomes an additional directory.
+  const genome = mkdtempSync(join(tmpdir(), "genome-"));
+  process.env.FLEET_GENOME_DIR = genome;
   try {
     const promise = runSession();
     await Bun.sleep(20);
@@ -284,7 +290,9 @@ test("definition pod: native cross-session channel refused, SendMessage/ListAgen
     await promise;
   } finally {
     delete process.env.FLEET_DEFINITION;
+    delete process.env.FLEET_GENOME_DIR;
   }
+  expect(queryOptions?.additionalDirectories).toEqual([genome]);
   const allowedTools = queryOptions?.allowedTools as string[];
   expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("refuse");
   expect((queryOptions?.settings as { attribution?: unknown })?.attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
@@ -335,6 +343,9 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("accept");
   expect((queryOptions?.settings as { remoteControlAtStartup?: boolean })?.remoteControlAtStartup).toBe(false);
   expect((queryOptions?.settings as { attribution?: unknown })?.attribution).toEqual({ commit: FLEET_TRAILER, pr: "", sessionUrl: false });
+  // docs/adr/0063: no /genome in the test environment, so no packs directory.
+  expect(queryOptions?.additionalDirectories).toEqual([]);
+  expect((queryOptions?.env as Record<string, string>)?.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
   const env = queryOptions?.env as Record<string, string>;
   const n = Number(env.GIT_CONFIG_COUNT) - 1;
   expect(env[`GIT_CONFIG_KEY_${n}`]).toBe("core.hooksPath");

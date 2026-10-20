@@ -2,6 +2,7 @@ import { query, type SDKUserMessage, type PermissionResult, type PermissionMode 
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
+import { existsSync } from "node:fs";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -601,6 +602,10 @@ export type SessionResult = { aborted: boolean; summary: string };
 // findings.md #0): one query() call, streaming-input mode, spans planning
 // and implementation with no fleet-imposed phase boundary or teardown/
 // restart at the approval boundary.
+// The provisioner's mount (provisioner/internal/k8s/pod.go genomeDir); read
+// per call so a test can point it elsewhere.
+const genomeDir = () => process.env.FLEET_GENOME_DIR ?? "/genome";
+
 export async function runSession(): Promise<SessionResult> {
   // The session row, read fresh at startup rather than trusted from env.
   //
@@ -795,7 +800,12 @@ export async function runSession(): Promise<SessionResult> {
         remoteControlAtStartup: false,
         attribution: { commit: definitionPod ? "" : FLEET_TRAILER, pr: "", sessionUrl: false },
       },
-      env: { ...process.env, ...gitHooksEnv(process.env) },
+      // docs/adr/0063: the session's context packs, rendered by core and
+      // mounted read-only by the provisioner. The env var makes the SDK load
+      // CLAUDE.md and .claude/rules/ from it, not just its skills. Absent
+      // (an older provisioner), the session runs without packs.
+      additionalDirectories: existsSync(genomeDir()) ? [genomeDir()] : [],
+      env: { ...process.env, ...gitHooksEnv(process.env), CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
