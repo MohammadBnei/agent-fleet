@@ -233,6 +233,51 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
         </LogLine>
       );
 
+    // docs/adr/0063 §7: what core rendered into this warm, and what the pod
+    // actually loaded. The detail is one click away; the line is the summary.
+    case "context_rendered":
+    case "context_loaded": {
+      const rendered = signal.sdk === "context_rendered";
+      const summary = rendered
+        ? [
+            (signal.versions ?? []).join(", ") || "no packs",
+            signal.skipped?.length ? `${signal.skipped.length} skipped` : null,
+            signal.applied === false ? "NOT applied" : null,
+          ]
+        : [
+            `${signal.memory_files?.length ?? 0} memory files`,
+            `${signal.skills?.length ?? 0} skills`,
+            signal.collisions?.length ? `collision: ${signal.collisions.join(", ")}` : null,
+          ];
+      const detail = rendered
+        ? signal.skipped ?? []
+        : [
+            ...(signal.memory_files ?? []).map((f) => `${f.type} ${f.path}`),
+            ...(signal.skills ?? []).map((sk) => `skill ${sk.name} (${sk.source})`),
+          ];
+      const warn = rendered ? signal.applied === false || !!signal.skipped?.length : !!signal.collisions?.length;
+      const line = (
+        <LogLine badge={rendered ? "context" : "loaded"} badgeClass={warn ? "warning" : "info"} compact={compact}>
+          {summary.filter(Boolean).join(" · ")}
+        </LogLine>
+      );
+      if (detail.length === 0) return line;
+      return (
+        <Collapse
+          className="border-0 bg-transparent"
+          summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
+          contentClassName="px-0 pt-1"
+          summary={line}
+        >
+          <ul className="text-2xs text-dim font-mono pl-4 list-disc">
+            {detail.map((d, i) => (
+              <li key={i}>{d}</li>
+            ))}
+          </ul>
+        </Collapse>
+      );
+    }
+
     default:
       // A subtype the SDK added after this was written still relays (the
       // worker passes unknown ones through unmapped), so show it rather

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,9 @@ var (
 	ErrExists = errors.New("pack already exists")
 	// ErrNotFound covers an unknown pack, and a repo with no GitHub id yet.
 	ErrNotFound = errors.New("not found")
+	// ErrInvalid wraps every refusal of the pack's own content or size: the
+	// caller's fault, never the database's.
+	ErrInvalid = errors.New("invalid pack")
 )
 
 const (
@@ -28,6 +32,17 @@ type Pack struct {
 	Name       string
 	OwnerGroup string
 	Latest     int // 0 = no version saved yet
+	// The latest version's content, and where the pack is attached.
+	Text        string
+	Skills      []Skill
+	Attachments []Attachment
+}
+
+// Attachment names a target the way the console does: a definition by name,
+// a repo by its fleet name, or "#<github id>" for a repo that left the fleet.
+type Attachment struct {
+	Kind   string
+	Target string
 }
 
 type Store struct {
@@ -48,7 +63,7 @@ type querier interface {
 
 func (s *Store) Create(ctx context.Context, name, ownerGroup string) error {
 	if err := checkPackName(name); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	// One namespace with the reviewed packs (ADR-0063 §1): checkPackName
 	// reserves every reviewed name.
@@ -66,20 +81,55 @@ func (s *Store) Create(ctx context.Context, name, ownerGroup string) error {
 
 func (s *Store) List(ctx context.Context) ([]Pack, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.name, p.owner_group, COALESCE(MAX(v.version), 0)
-		FROM packs p LEFT JOIN pack_versions v ON v.pack = p.name
-		GROUP BY p.name ORDER BY p.name`)
+		SELECT p.name, p.owner_group, COALESCE(v.version, 0), COALESCE(v.text, ''), COALESCE(v.skills, '[]')
+		FROM packs p LEFT JOIN LATERAL (
+		  SELECT version, text, skills FROM pack_versions WHERE pack = p.name ORDER BY version DESC LIMIT 1
+		) v ON true
+		ORDER BY p.name`)
 	if err != nil {
 		return nil, fmt.Errorf("list packs: %w", err)
 	}
-	defer rows.Close()
 	result := []Pack{}
+	index := map[string]int{}
 	for rows.Next() {
 		var p Pack
-		if err := rows.Scan(&p.Name, &p.OwnerGroup, &p.Latest); err != nil {
+		var skills []byte
+		if err := rows.Scan(&p.Name, &p.OwnerGroup, &p.Latest, &p.Text, &skills); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("scan pack: %w", err)
 		}
+		if err := json.Unmarshal(skills, &p.Skills); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("pack %s skills: %w", p.Name, err)
+		}
+		index[p.Name] = len(result)
 		result = append(result, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	rows, err = s.pool.Query(ctx, `
+		SELECT a.pack, a.target_kind, CASE WHEN a.target_kind = 'repo' THEN COALESCE(r.name, '#' || a.target) ELSE a.target END
+		FROM pack_attachments a LEFT JOIN repos r
+		  -- CASE, not AND: Postgres does not promise to short-circuit, and a
+		  -- definition name must never reach the cast.
+		  ON r.github_id = CASE WHEN a.target_kind = 'repo' AND a.target ~ '^[0-9]+$' THEN a.target::bigint END
+		ORDER BY 1, 2, 3`)
+	if err != nil {
+		return nil, fmt.Errorf("list attachments: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pack string
+		var a Attachment
+		if err := rows.Scan(&pack, &a.Kind, &a.Target); err != nil {
+			return nil, fmt.Errorf("scan attachment: %w", err)
+		}
+		if i, ok := index[pack]; ok {
+			result[i].Attachments = append(result[i].Attachments, a)
+		}
 	}
 	return result, rows.Err()
 }
@@ -100,7 +150,7 @@ func (s *Store) Delete(ctx context.Context, name string) error {
 // SaveVersion validates v and stores it as the pack's next version.
 func (s *Store) SaveVersion(ctx context.Context, v Version, by string) (int, error) {
 	if err := Validate(v); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	skills := v.Skills
 	if skills == nil {
@@ -157,6 +207,11 @@ func targetID(ctx context.Context, q querier, kind, name string) (string, error)
 	case KindDefinition:
 		return name, nil
 	case KindRepo:
+		// List shows a repo that left the fleet as "#<github id>"; that is
+		// already the stored key, so it can still be detached.
+		if id, ok := strings.CutPrefix(name, "#"); ok && id != "" && strings.Trim(id, "0123456789") == "" {
+			return id, nil
+		}
 		var id *int64
 		err := q.QueryRow(ctx, `SELECT github_id FROM repos WHERE name = $1`, name).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && id == nil) {
@@ -274,7 +329,7 @@ func checkComposed(ctx context.Context, tx pgx.Tx, kind, target string) error {
 	}
 	text, skills := composedSize(live)
 	if text > MaxText || skills > MaxSkills {
-		return fmt.Errorf("composed size %d text / %d skill bytes, max %d / %d", text, skills, MaxText, MaxSkills)
+		return fmt.Errorf("%w: composed size %d text / %d skill bytes, max %d / %d", ErrInvalid, text, skills, MaxText, MaxSkills)
 	}
 	return nil
 }

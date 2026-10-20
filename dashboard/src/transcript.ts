@@ -294,6 +294,13 @@ export type SdkSignal = {
   max_retries?: number;
   error_status?: number;
   decision_reason?: string;
+  // context_rendered (core) / context_loaded (worker), docs/adr/0063 §7.
+  versions?: string[];
+  skipped?: string[];
+  applied?: boolean;
+  memory_files?: { path: string; type: string }[];
+  skills?: { name: string; source: string }[];
+  collisions?: string[];
 };
 
 export function parseSdkSignal(text: string): SdkSignal | null {

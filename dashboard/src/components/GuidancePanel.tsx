@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
-import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
 import type { PromptSnippet } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
@@ -9,7 +8,7 @@ import { InlineError } from "./InlineError";
 // attaches to a session at creation time (see NewSessionDialog's snippet
 // checkboxes) — replaces the old unconditional, hardcoded workflow prompt in
 // worker/src/session.ts. Structurally a clone of
-// ManageReposModal.tsx, same no-redeploy CRUD pattern.
+// ReposPanel.tsx, same no-redeploy CRUD pattern. A section of the Settings page.
 
 function SnippetRow({ snippet, onSaved, onRequestDelete, onError }: {
   snippet: PromptSnippet;
@@ -59,17 +58,12 @@ function SnippetRow({ snippet, onSaved, onRequestDelete, onError }: {
   );
 }
 
-export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => void }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
+export function GuidancePanel({ onChanged }: { onChanged?: () => void }) {
   const [snippets, setSnippets] = useState<PromptSnippet[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [creating, setCreating] = useState(false);
-  // Rendered as a sibling of <Modal> below, never nested inside it — a
-  // <dialog> nested inside another open <dialog> closes both together on
-  // Cancel in this browser (confirmed empirically for ManageReposModal),
-  // not just the inner one.
   const [pendingDelete, setPendingDelete] = useState<PromptSnippet | null>(null);
 
   function load() {
@@ -88,21 +82,12 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (dialogOpen) load();
-  }, [dialogOpen]);
+    load();
+  }, []);
 
   function refresh() {
     load();
     onChanged?.();
-  }
-
-  function open() {
-    setError(null);
-    setDialogOpen(true);
-  }
-
-  function close() {
-    setDialogOpen(false);
   }
 
   async function confirmDelete() {
@@ -136,16 +121,8 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
 
   return (
     <>
-      <button
-        type="button"
-        onClick={open}
-        className="px-3 py-1.5 rounded-md border border-base-content/10 text-xs font-medium hover:bg-base-content/5"
-      >
-        manage guidance
-      </button>
-
-      <Modal open={dialogOpen} onClose={close} boxClassName="max-w-lg">
-        <h3 className="font-semibold text-base mb-3">Manage guidance</h3>
+      <div className="flex flex-col">
+        <h3 className="font-semibold text-base mb-3">Guidance</h3>
         <p className="text-xs text-dim mb-3">
           Optional, reusable instructions. Ticking one in the new-session form inserts its text into the first
           message, where it stays visible and editable before it is sent — the agent reads it as part of what a
@@ -187,13 +164,7 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
         </form>
 
         <InlineError message={error} />
-
-        <div className="modal-action">
-          <button type="button" className="btn btn-sm" onClick={close}>
-            Close
-          </button>
-        </div>
-      </Modal>
+      </div>
 
       <ConfirmModal
         open={pendingDelete !== null}
