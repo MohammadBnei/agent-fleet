@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -498,7 +500,7 @@ const (
 )
 
 // ReadDefinitions refreshes <root>/definitions-src to ref and returns every
-// regular file under its definitions/ (keys relative to the clone root) and
+// regular file under its definitions/ and packs/ (keys relative to the clone root) and
 // the commit they were read at (docs/adr/0062).
 //
 // Its own clone and its own lock: a slow GitHub fetch here never stalls
@@ -532,7 +534,9 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 	// Read from the commit, never the working tree: the sha is the pin, so
 	// the content must be exactly that commit's, whatever the checkout on
 	// this PVC looks like (the steady state above never resets it).
-	ls, err := m.run(ctx, path, "ls-tree", "-r", "-l", "-z", sha, "--", "definitions")
+	// packs/ rides along (docs/adr/0063): reviewed context packs are read at
+	// the same release tag, under the same caps.
+	ls, err := m.run(ctx, path, "ls-tree", "-r", "-l", "-z", sha, "--", "definitions", "packs")
 	if err != nil {
 		return nil, "", err
 	}
@@ -545,8 +549,8 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 		}
 		f := strings.Fields(meta) // mode type object size
 		switch {
-		case rel == "definitions":
-			return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s)", ref, sha)
+		case rel == "definitions" || rel == "packs":
+			return nil, "", fmt.Errorf("%s/ is not a directory at %s (%.7s)", rel, ref, sha)
 		case len(f) != 4 || (f[0] != "100644" && f[0] != "100755"):
 			return nil, "", fmt.Errorf("read definitions: %s is not a regular file", rel)
 		}
@@ -558,7 +562,7 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 			return nil, "", fmt.Errorf("read definitions: %s is %d bytes, over %d", rel, size, maxDefinitionFile)
 		}
 		if total += size; total > maxDefinitionTotal {
-			return nil, "", fmt.Errorf("read definitions: definitions/ is over %d bytes", maxDefinitionTotal)
+			return nil, "", fmt.Errorf("read definitions: definitions/ and packs/ are over %d bytes", maxDefinitionTotal)
 		}
 		// Not m.run: that trims, and this is file content.
 		start, args := time.Now(), []string{"cat-file", "blob", f[2]}
@@ -571,7 +575,7 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 		}
 		files[rel] = b
 	}
-	if len(files) == 0 {
+	if !slices.ContainsFunc(slices.Collect(maps.Keys(files)), func(p string) bool { return strings.HasPrefix(p, "definitions/") }) {
 		return nil, "", fmt.Errorf("no definitions/ at %s (%.7s)", ref, sha)
 	}
 	return files, sha, nil

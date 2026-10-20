@@ -54,7 +54,7 @@ func TestStore_VersionsAttachRender(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE repos SET name = 'wedding-2026' WHERE name = 'wedding'`); err != nil {
 		t.Fatal(err)
 	}
-	r, err := s.RenderContext(ctx, KindRepo, "wedding-2026", nil, nil)
+	r, err := s.RenderContext(ctx, KindRepo, "wedding-2026")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestStore_VersionsAttachRender(t *testing.T) {
 	}
 
 	// A session still on the old name renders without the repo's packs.
-	r, err = s.RenderContext(ctx, KindRepo, "wedding", nil, nil)
+	r, err = s.RenderContext(ctx, KindRepo, "wedding")
 	if err != nil || len(r.Files) != 0 || len(r.Skipped) != 1 {
 		t.Fatalf("RenderContext old name = %+v, %v", r, err)
 	}
@@ -108,7 +108,7 @@ func TestStore_VersionsAttachRender(t *testing.T) {
 	if err := s.Detach(ctx, KindRepo, "wedding-2026", "big"); err != nil {
 		t.Fatal(err)
 	}
-	r, _ = s.RenderContext(ctx, KindDefinition, "dev-notes", nil, nil)
+	r, _ = s.RenderContext(ctx, KindDefinition, "dev-notes")
 	if len(r.Versions) != 1 {
 		t.Fatalf("after a refused Attach, Versions = %v", r.Versions)
 	}
@@ -122,5 +122,85 @@ func TestStore_VersionsAttachRender(t *testing.T) {
 	list, err := s.List(ctx)
 	if err != nil || len(list) != 2 || list[0].Name != "big" || list[0].Latest != 1 {
 		t.Fatalf("List = %+v, %v", list, err)
+	}
+}
+
+func TestStore_ReviewedPacks(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	s := NewStore(pool)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url, github_id) VALUES ('wedding', 'https://github.com/o/wedding-2026', 42)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, effective, valid) VALUES ('dev-notes', 'abc', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string][]byte{
+		"definitions/a.yaml":  []byte("a"),
+		"packs/fleet/PACK.md": []byte("fleet rules"),
+		"packs/repo/PACK.md":  []byte("repo rules"),
+	}
+	if errs := s.SyncReviewed(ctx, files, "1111111aaaa"); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	paths := func(r Rendered) string {
+		var p []string
+		for _, f := range r.Files {
+			p = append(p, f.Path)
+		}
+		return strings.Join(p, ",")
+	}
+	r, err := s.RenderContext(ctx, KindRepo, "wedding")
+	if err != nil || paths(r) != ".claude/rules/80-repo.md,.claude/rules/90-fleet.md" {
+		t.Fatalf("repo render = %v, %v", paths(r), err)
+	}
+	if got := strings.Join(r.Versions, ","); got != "reviewed:fleet@1111111,reviewed:repo@1111111" {
+		t.Fatalf("Versions = %s", got)
+	}
+	r, err = s.RenderContext(ctx, KindDefinition, "dev-notes")
+	if err != nil || paths(r) != ".claude/rules/90-fleet.md" {
+		t.Fatalf("definition render = %v, %v (no repo pack on a definition)", paths(r), err)
+	}
+
+	// One namespace: no live pack may take a reviewed name.
+	if err := s.Create(ctx, "fleet", "platform-admins"); err == nil {
+		t.Fatal("Create took a reviewed name")
+	}
+
+	// A listing with no packs/ (an older provisioner) keeps the last good copy.
+	if errs := s.SyncReviewed(ctx, map[string][]byte{"definitions/a.yaml": []byte("a")}, "2222222bbbb"); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	if r, _ = s.RenderContext(ctx, KindRepo, "wedding"); len(r.Files) != 2 {
+		t.Fatalf("an empty listing dropped the reviewed packs: %v", paths(r))
+	}
+
+	// A broken pack keeps its old row and reports stale once past staleAfter;
+	// a pack gone from the listing is removed.
+	if _, err := pool.Exec(ctx, `UPDATE reviewed_packs SET synced_at = now() - interval '1 hour'`); err != nil {
+		t.Fatal(err)
+	}
+	broken := map[string][]byte{"packs/fleet/PACK.md": []byte("new"), "packs/fleet/run.sh": []byte("x")}
+	if errs := s.SyncReviewed(ctx, broken, "3333333cccc"); len(errs) != 1 {
+		t.Fatalf("errs = %v", errs)
+	}
+	r, _ = s.RenderContext(ctx, KindRepo, "wedding")
+	if paths(r) != ".claude/rules/90-fleet.md" || r.Files[0].Body != "fleet rules" || len(r.Skipped) != 1 || !strings.Contains(r.Skipped[0], "stale") {
+		t.Fatalf("after a broken sync: %v %+v %v", paths(r), r.Files, r.Skipped)
+	}
+
+	// The cap check at attach counts the reviewed bytes too.
+	if _, err := pool.Exec(ctx, `UPDATE reviewed_packs SET text = repeat('f', $1) WHERE name = 'fleet'`, MaxText-10); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Create(ctx, "style", "platform-admins"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveVersion(ctx, Version{Pack: "style", Text: strings.Repeat("s", 20)}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Attach(ctx, KindDefinition, "dev-notes", "style", "admin"); err == nil {
+		t.Fatal("Attach ignored the reviewed fleet pack's bytes")
 	}
 }

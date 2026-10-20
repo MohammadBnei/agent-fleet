@@ -45,12 +45,21 @@ func (s Skill) File() string {
 	return "---\nname: " + s.Name + "\ndescription: " + string(d) + "\n---\n" + s.Body
 }
 
-// Version is one immutable pack version, live or reviewed.
+// Version is one immutable pack version, live or reviewed. A reviewed one
+// is identified by Ref, the commit it was read at, instead of Version.
 type Version struct {
 	Pack    string
 	Version int
+	Ref     string
 	Text    string
 	Skills  []Skill
+}
+
+func (v Version) id() string {
+	if v.Ref != "" {
+		return fmt.Sprintf("%s@%.7s", v.Pack, v.Ref)
+	}
+	return fmt.Sprintf("%s@%d", v.Pack, v.Version)
 }
 
 // File is one path under /genome and its content.
@@ -144,7 +153,7 @@ func Render(live []Version, repo, fleet *Version) Rendered {
 	owner := map[string]string{} // skill name -> pack that placed it
 	var rules, skills []File
 	skip := func(v Version, format string, args ...any) {
-		r.Skipped = append(r.Skipped, fmt.Sprintf("%s@%d: ", v.Pack, v.Version)+fmt.Sprintf(format, args...))
+		r.Skipped = append(r.Skipped, v.id()+": "+fmt.Sprintf(format, args...))
 	}
 
 	add := func(v Version, rulesName string, reviewed bool) {
@@ -187,7 +196,7 @@ func Render(live []Version, repo, fleet *Version) Rendered {
 		if reviewed {
 			tag = "reviewed:"
 		}
-		r.Versions = append(r.Versions, fmt.Sprintf("%s%s@%d%s", tag, v.Pack, v.Version, partial))
+		r.Versions = append(r.Versions, tag+v.id()+partial)
 	}
 
 	if fleet != nil {

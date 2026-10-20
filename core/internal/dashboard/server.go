@@ -1120,7 +1120,7 @@ func (s *Server) renderGenome(ctx context.Context, t *sessions.Session) ([]*agen
 	if t.DefinitionName != nil {
 		kind, name = packs.KindDefinition, *t.DefinitionName
 	}
-	r, err := s.packs.RenderContext(ctx, kind, name, nil, nil)
+	r, err := s.packs.RenderContext(ctx, kind, name)
 	if err != nil {
 		return nil, fmt.Errorf("render context packs: %w", err)
 	}

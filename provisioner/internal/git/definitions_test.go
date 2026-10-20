@@ -86,6 +86,13 @@ func TestReadDefinitions_ReadsFilesAndSHA(t *testing.T) {
 	if err != nil || sha != want || string(files["definitions/c.yaml"]) != "c" {
 		t.Fatalf("refresh: sha %q want %q, files %v, err %v", sha, want, files, err)
 	}
+
+	// docs/adr/0063: reviewed packs are read from the same commit.
+	want = commitFile(t, origin, "packs/fleet/PACK.md", "fleet rules")
+	files, sha, err = m.ReadDefinitions(context.Background(), origin, "main")
+	if err != nil || sha != want || string(files["packs/fleet/PACK.md"]) != "fleet rules" {
+		t.Fatalf("packs: sha %q want %q, files %v, err %v", sha, want, files, err)
+	}
 }
 
 // At a tag, the tagged tree is read, not the branch tip: that is what keeps
