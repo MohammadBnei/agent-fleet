@@ -181,40 +181,18 @@ git config --global --add safe.directory '*'
 	}
 }
 
-// cloneTail is the part of the clone script from its workspace guard on.
+// cloneTail is the part of the clone script from its workspace guard on. The
+// same for every pod since docs/adr/0075: none holds a credential its clone
+// could use, so none contacts the remote.
 func cloneTail(spec WorkerPodSpec, base string) string {
-	format := `if [ -d %[1]s/.git ]; then
-  echo "workspace already has a repository, leaving it alone"
-  exit 0
-fi
-mkdir -p %[1]s
-git clone --shared /repo-cache/%[2]s %[1]s
-cd %[1]s
-# The clone's origin points at the local cache, which is useless to the agent:
-# it needs to fetch from and push to the real remote.
-git remote set-url origin %[4]s
-
-# Then take the base branch from the REAL remote, not from the cache.
-#
-# EnsureRepoCloned only ever runs "git fetch origin" on the cache, which
-# advances its remote-tracking refs and leaves its LOCAL branches frozen at
-# whenever it was first cloned. "git clone --shared" copies the source's LOCAL
-# branches — so checking out from the cache alone starts every session on a
-# base that may be months stale, and a branch created after the cache existed
-# would not be found at all. Neither failure is visible: the agent gets a
-# perfectly valid repository and branches from the wrong commit.
-#
-# Objects still arrive through the alternates link, so this transfers only the
-# delta the cache is genuinely missing.
-git fetch origin %[3]s
-git checkout -B %[3]s FETCH_HEAD
-`
-	if spec.Definition != nil {
-		format = `# The marker is the script's last step, so only a finished clone has it. A
-# clone killed mid-way (OOM, eviction, SIGKILL: no trap would run) left a
-# partial tree the agent never ran on, since the worker starts only after
-# this container succeeds: wipe it and clone again.
-if [ -f %[1]s/.git/fleet-clone-done ]; then
+	format := `# A finished clone has the marker (the script's last step) or, if it is a
+# repo session's tree from before the marker existed, an index (that clone
+# checked out in one step). Either way the agent may have worked there: keep
+# it. Anything else is a clone killed mid-way (OOM, eviction, a missing base
+# branch; no trap would run), which the agent never ran on, since the worker
+# starts only after this container succeeds: wipe it and clone again. A
+# --no-checkout clone writes no index until the checkout below.
+if [ -f %[1]s/.git/fleet-clone-done ] || [ -f %[1]s/.git/index ]; then
   echo "workspace already has a repository, leaving it alone"
   exit 0
 fi
@@ -226,14 +204,15 @@ cd %[1]s
 # never contacts the remote: the fetch names the cache's PATH, not "origin", so
 # no reordering can turn it into a remote fetch. It copies the cache's
 # REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
-# (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
-# before this pod was created, over the ones clone --shared made from the
-# cache's local branches (frozen at its first clone), so origin/* is current.
+# (git.Manager.EnsureRepoFetched, never skipped) just before this pod was
+# created, over the ones clone --shared made from the cache's local branches
+# (frozen at its first clone), so origin/* is current.
 git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
-git checkout -B %[3]s origin/%[3]s
+# Before the checkout: the index it writes is what keeps this tree, so the
+# remote must already be the real one by then.
 git remote set-url origin %[4]s
+git checkout -B %[3]s origin/%[3]s
 touch .git/fleet-clone-done
 `
-	}
 	return fmt.Sprintf(format, sessionWorkdir, spec.Repo, base, spec.RepoURL)
 }

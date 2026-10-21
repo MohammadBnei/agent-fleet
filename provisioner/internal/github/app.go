@@ -44,6 +44,9 @@ type App struct {
 	insts   []installation // allowlisted installations, cached for instTTL
 	instsAt time.Time
 	instErr error // the last listing failure, cached for instErrTTL
+	// lastGood is the last successful listing, for OwnerToken only: a repo
+	// warm must not fail on a listing blip while a minted token is cached.
+	lastGood []installation
 }
 
 type installation struct {
@@ -80,6 +83,14 @@ const refreshBefore = 30 * time.Minute
 // definitionPermissions is what a definition pod's token may do: push and
 // open PRs on its one repo. Never workflows (docs/adr/0075).
 var definitionPermissions = map[string]string{"contents": "write", "pull_requests": "write", "metadata": "read"}
+
+// repoPodPermissions is what a repo pod's owner-wide token may do
+// (docs/adr/0075 §7): the definition set plus issues, and read on CI state so
+// `gh pr checks` and `gh run view` work. Never workflows.
+var repoPodPermissions = map[string]string{
+	"contents": "write", "pull_requests": "write", "issues": "write", "metadata": "read",
+	"actions": "read", "checks": "read", "statuses": "read",
+}
 
 func NewApp(dir string, accounts []int64) *App {
 	m := map[int64]bool{}
@@ -156,6 +167,9 @@ func (a *App) installations(ctx context.Context) ([]installation, error) {
 	}
 	out, err := a.listInstallations(ctx)
 	a.insts, a.instErr, a.instsAt = out, err, a.now()
+	if err == nil {
+		a.lastGood = out
+	}
 	return out, err
 }
 
@@ -203,6 +217,50 @@ func (a *App) installationToken(ctx context.Context, in installation) (string, e
 		}
 		return a.accessToken(ctx, jwt, in.ID, map[string]any{"permissions": installationPermissions})
 	})
+}
+
+// OwnerToken is a repo pods' token over every repo of owner's installation
+// (docs/adr/0075 §7), cached like Token. owner must be an allowlisted
+// account's login, matched case-insensitively.
+func (a *App) OwnerToken(ctx context.Context, owner string) (string, error) {
+	insts, err := a.installations(ctx)
+	if err != nil {
+		a.instMu.Lock()
+		insts = a.lastGood
+		a.instMu.Unlock()
+		if len(insts) == 0 {
+			return "", err
+		}
+		// cached still serves a token with time left, and fails if a mint
+		// is due: the listing is only how owner maps to an installation id.
+		slog.Warn("github app: installations listing failed, using the last good one", "error", err)
+	}
+	for _, in := range insts {
+		if !strings.EqualFold(in.Account.Login, owner) {
+			continue
+		}
+		return a.cached(ctx, "owner:"+strconv.FormatInt(in.ID, 10), func(ctx context.Context) (token, error) {
+			jwt, err := a.jwt()
+			if err != nil {
+				return token{}, err
+			}
+			return a.accessToken(ctx, jwt, in.ID, map[string]any{"permissions": repoPodPermissions})
+		})
+	}
+	return "", fmt.Errorf("github app: %s has no allowlisted installation", owner)
+}
+
+// Owners lists the allowlisted installations' account logins.
+func (a *App) Owners(ctx context.Context) ([]string, error) {
+	insts, err := a.installations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(insts))
+	for _, in := range insts {
+		out = append(out, in.Account.Login)
+	}
+	return out, nil
 }
 
 // ListRepos is the fleet's repo list (docs/adr/0075 §4): every non-archived,

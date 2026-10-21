@@ -13,11 +13,11 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata golden files")
 
-// A repo session's Job, whole. docs/adr/0064 adds a definition pod profile
-// that must leave every other pod exactly as it was; this golden was written
-// by the code BEFORE that change, so any drift in the ordinary pod shows up
-// here as a diff, not as a review miss. Regenerate with -update only for a
-// change that means to alter repo-session pods.
+// A repo session's Job, whole, so any drift in the ordinary pod shows up here
+// as a diff, not as a review miss. Regenerate with -update only for a change
+// that means to alter repo-session pods (last: docs/adr/0075 §7, the owner
+// vault). GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN are set to prove neither
+// reaches the pod.
 func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 	for k, v := range map[string]string{
 		"GH_TOKEN": "gh-token", "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token", "CLAUDE_MODEL": "model", "MAX_TURNS": "7",
@@ -29,6 +29,10 @@ func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
 		SessionID: "task-1", Repo: "dream-analyst", RepoURL: "https://github.com/o/dream-analyst.git", BaseBranch: "dev",
 		LeaseID: "lease-1", ResumeID: "resume-1", ResumeFromSeq: 42,
+		RepoVault: &RepoVault{
+			Vault: "owner-o", ProxyURL: "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322",
+			DeadlineSeconds: 43200, VaultLabel: "task-1.1", GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}

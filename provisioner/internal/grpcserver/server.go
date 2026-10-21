@@ -57,25 +57,34 @@ type Server struct {
 	// definitions are read at (kind and dev point it at a branch).
 	definitionsRef string
 	// vault is the Agent Vault client (docs/adr/0065); it fails closed on its
-	// own without an agent token. Repo sessions never call it.
+	// own without an agent token.
 	vault *vault.Client
-	// gh lists the fleet's repos for core's repos sync (docs/adr/0074,
-	// amended by 0075: the App's allowlisted installations).
-	gh RepoLister
+	// gh is the App ukubi-fleet: the repos sync source (docs/adr/0074,
+	// amended by 0075) and the repo pods' owner tokens (0075 §7).
+	gh GitHub
+	// gitName/gitEmail author a repo session's commits (docs/adr/0075 §8).
+	gitName, gitEmail string
 	// specs is core's last full vault set, kept so RefreshVaults can push
 	// re-minted tokens while core is down (docs/adr/0075 §5).
 	specsMu sync.Mutex
 	specs   []*agentfleetv1.VaultSpec
 }
 
-// RepoLister is the repos sync source: the App ukubi-fleet (docs/adr/0075 §4).
-type RepoLister interface {
+// GitHub is the App ukubi-fleet (docs/adr/0075 §4, §7).
+type GitHub interface {
 	ListRepos(ctx context.Context) ([]github.Repo, error)
+	// OwnerToken is a token over owner's whole installation, for its vault.
+	OwnerToken(ctx context.Context, owner string) (string, error)
+	// Owners are the allowlisted installations' logins.
+	Owners(ctx context.Context) ([]string, error)
 }
 
-// SetGitHub wires the repos sync source (docs/adr/0074). Unset, ListGitHubRepos
-// fails closed.
-func (s *Server) SetGitHub(gh RepoLister) { s.gh = gh }
+// SetGitHub wires the App (docs/adr/0074, 0075). Unset, ListGitHubRepos and
+// every repo warm fail closed.
+func (s *Server) SetGitHub(gh GitHub) { s.gh = gh }
+
+// SetGitIdentity sets the author of repo sessions' commits (docs/adr/0075 §8).
+func (s *Server) SetGitIdentity(name, email string) { s.gitName, s.gitEmail = name, email }
 
 // SetDefinitionsRef sets FLEET_DEFINITIONS_REF (docs/adr/0062). A setter
 // rather than an eighth positional string on New, which already takes six.
@@ -224,17 +233,20 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		}
 		// docs/adr/0065: an older core sends no vault, and its warm fails here.
 		// timeout_seconds is no longer read: limits.timeout is core's idle
-		// timeout, and the pod's lifetime is definitionPodLifetime.
+		// timeout, and the pod's lifetime is podLifetime.
 		if d.GetVault() == nil || d.GetVault().GetName() != d.GetName() {
 			return nil, status.Error(codes.InvalidArgument, "definition profile needs its own vault (docs/adr/0065)")
 		}
 		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail()}
 	}
-	// A definition pod's clone reads the cache's origin/<base> and never
-	// contacts the remote, so its fetch is load-bearing and never skipped.
-	ensureCache := s.git.EnsureRepoCachedForSession
-	if definition != nil {
-		ensureCache = s.git.EnsureRepoFetched
+	// docs/adr/0075 §7: every repo pod uses its owner's vault. Checked before
+	// anything is reported or touched, like the profile above.
+	var owner string
+	if definition == nil {
+		var err error
+		if owner, err = repoOwner(req.GetRepoUrl()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 	}
 	// Reported immediately, before any git/k8s work starts — otherwise a
 	// claimed task with a hung or merely slow provisioning step is
@@ -245,7 +257,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// provisioner-internal detail, not states any other component branches
 	// on — see core.proto's own comment on the enum value.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
-	if err := ensureCache(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
+	// No pod's clone contacts the remote (it holds no credential): it reads
+	// the cache's origin/<base>, so this fetch is load-bearing, never skipped.
+	if err := s.git.EnsureRepoFetched(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
@@ -336,6 +350,24 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		}
 		definition.ProxyURL, definition.DeadlineSeconds, definition.VaultLabel = s.vault.ProxyURL(token, definition.Name), deadline, l
 	}
+	// docs/adr/0075 §7: the same, on the owner's vault, under its lock: a
+	// widening (the owner vault's first creation) then revokes and ends only
+	// pods minted before this one.
+	var repoVault *k8s.RepoVault
+	if definition == nil {
+		name := vault.OwnerVault(owner)
+		defer s.vault.Lock(name)()
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting vault token")
+		token, l, deadline, err := s.mintRepoToken(ctx, req.GetSessionId(), owner)
+		if err != nil {
+			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", status.Convert(err).Message())
+			return nil, err
+		}
+		repoVault = &k8s.RepoVault{
+			Vault: name, ProxyURL: s.vault.ProxyURL(token, name), DeadlineSeconds: deadline, VaultLabel: l,
+			GitAuthorName: s.gitName, GitAuthorEmail: s.gitEmail,
+		}
+	}
 
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
 	if err := s.k8sc.CreateWorkerPod(ctx, k8s.WorkerPodSpec{
@@ -351,11 +383,16 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		ServiceRefs:   nil,
 		ExtraEnv:      nil,
 		Definition:    definition,
+		RepoVault:     repoVault,
 	}); err != nil {
+		v, label := "", ""
 		if definition != nil {
-			if rerr := s.vault.Revoke(ctx, definition.Name, definition.VaultLabel); rerr != nil {
-				slog.Warn("grpcserver CreateWorkerPod: revoking the token of a pod never created (its TTL bounds it)", "sessionId", req.GetSessionId(), "error", rerr)
-			}
+			v, label = definition.Name, definition.VaultLabel
+		} else {
+			v, label = repoVault.Vault, repoVault.VaultLabel
+		}
+		if rerr := s.vault.Revoke(ctx, v, label); rerr != nil {
+			slog.Warn("grpcserver CreateWorkerPod: revoking the token of a pod never created (its TTL bounds it)", "sessionId", req.GetSessionId(), "error", rerr)
 		}
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
@@ -373,22 +410,19 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		WorkerImage:              workerImage,
 		SidecarImage:             sidecarImage,
 		DefinitionProfileApplied: definition != nil,
-		VaultTokenApplied:        definition != nil,
+		VaultTokenApplied:        true,
 		GenomeApplied:            true,
 	}, nil
 }
 
-// definitionPodLifetime caps a definition pod's wall-clock life, so its vault
-// token always expires. Not limits.timeout, which is core's idle timeout for
-// the session: a pod in active use lives until this cap, then the next message
-// re-warms with a fresh token.
-const definitionPodLifetime = 12 * time.Hour
+// podLifetime caps every session pod's wall-clock life, so its vault token
+// always expires (docs/adr/0065, 0075 §7). Not limits.timeout, which is
+// core's idle timeout for the session: a pod in active use lives until this
+// cap, then the next message re-warms with a fresh token.
+const podLifetime = 12 * time.Hour
 
-// mintDefinitionToken reconciles the definition's vault, publishes the vault
-// CA and mints this pod's token. The pod's deadline is definitionPodLifetime;
-// the token lives 60s longer (activeDeadlineSeconds counts from the Job's
-// startTime, set at create: ms of skew).
-// The caller holds the vault's lock.
+// mintDefinitionToken reconciles the definition's vault, then mints this
+// pod's token. The caller holds the vault's lock.
 func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *agentfleetv1.DefinitionPodProfile) (token, label string, deadline int64, err error) {
 	if err := s.k8sc.EgressLockPresent(ctx); err != nil {
 		return "", "", 0, status.Error(codes.FailedPrecondition, err.Error())
@@ -396,6 +430,24 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 	if err := s.reconcileVaultLocked(ctx, d.GetVault()); err != nil {
 		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: "+err.Error())
 	}
+	return s.mintSessionToken(ctx, sessionID, d.GetName())
+}
+
+// mintRepoToken reconciles owner's vault, then mints this pod's token on it.
+// No egress lock: a repo pod's egress is open (docs/adr/0075 §7). The caller
+// holds the vault's lock.
+func (s *Server) mintRepoToken(ctx context.Context, sessionID, owner string) (token, label string, deadline int64, err error) {
+	if err := s.reconcileOwnerLocked(ctx, owner); err != nil {
+		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: "+err.Error())
+	}
+	return s.mintSessionToken(ctx, sessionID, vault.OwnerVault(owner))
+}
+
+// mintSessionToken publishes the vault CA and mints a pod's token on vault
+// v. The pod's deadline is podLifetime; the token lives 60s longer
+// (activeDeadlineSeconds counts from the Job's startTime, set at create: ms
+// of skew). The caller holds v's lock, after reconciling it.
+func (s *Server) mintSessionToken(ctx context.Context, sessionID, v string) (token, label string, deadline int64, err error) {
 	pem, err := s.vault.CA(ctx)
 	if err == nil {
 		err = s.k8sc.EnsureVaultCA(ctx, pem)
@@ -403,9 +455,9 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 	if err != nil {
 		return "", "", 0, status.Error(codes.Unavailable, "vault CA: "+err.Error())
 	}
-	deadline = int64(definitionPodLifetime.Seconds())
+	deadline = int64(podLifetime.Seconds())
 	label = sessionID + "." + strconv.FormatInt(time.Now().UnixMilli(), 10)
-	token, err = s.vault.Mint(ctx, d.GetName(), label, time.Duration(deadline+60)*time.Second)
+	token, err = s.vault.Mint(ctx, v, label, time.Duration(deadline+60)*time.Second)
 	if err != nil {
 		return "", "", 0, status.Error(codes.Unavailable, err.Error())
 	}
@@ -426,18 +478,39 @@ func (s *Server) reconcileVault(ctx context.Context, v *agentfleetv1.VaultSpec) 
 
 func (s *Server) reconcileVaultLocked(ctx context.Context, v *agentfleetv1.VaultSpec) error {
 	widened, err := s.vault.Reconcile(ctx, vaultSpec(v))
+	return s.endWidened(ctx, v.GetName(), widened, err)
+}
+
+// reconcileOwnerLocked reconciles owner's vault with a fresh-enough owner
+// token (docs/adr/0075 §7). A mint failure writes nothing. The caller holds
+// the vault's lock.
+func (s *Server) reconcileOwnerLocked(ctx context.Context, owner string) error {
+	if s.gh == nil {
+		return errors.New("no GitHub App: repo pods have no credentials")
+	}
+	tok, err := s.gh.OwnerToken(ctx, owner)
+	if err != nil {
+		return err
+	}
+	widened, err := s.vault.ReconcileOwner(ctx, owner, tok)
+	return s.endWidened(ctx, vault.OwnerVault(owner), widened, err)
+}
+
+// endWidened deletes the live Jobs on vault name after a widening revoked
+// their tokens.
+func (s *Server) endWidened(ctx context.Context, name string, widened bool, err error) error {
 	if !widened {
 		return err
 	}
 	jobs, lerr := s.k8sc.ListWorkerJobsByLabel(ctx)
 	if lerr != nil {
-		return errors.Join(err, fmt.Errorf("vault %s widened, listing its pods to end them: %w", v.GetName(), lerr))
+		return errors.Join(err, fmt.Errorf("vault %s widened, listing its pods to end them: %w", name, lerr))
 	}
 	for _, j := range jobs {
-		if j.Definition != v.GetName() || j.Terminal() {
+		if j.Vault() != name || j.Terminal() {
 			continue
 		}
-		slog.Info("grpcserver: vault widened, ending a pod on its revoked token", "vault", v.GetName(), "sessionId", j.TaskID)
+		slog.Info("grpcserver: vault widened, ending a pod on its revoked token", "vault", name, "sessionId", j.TaskID)
 		if derr := s.k8sc.DeleteWorkerJob(ctx, j.TaskID); derr != nil {
 			err = errors.Join(err, derr)
 		}
@@ -476,14 +549,28 @@ func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.Reconcil
 	return out, nil
 }
 
-// RefreshVaults re-reconciles core's last vault set, so each vault gets its
-// re-minted GitHub token even while core's tick is stalled (docs/adr/0075 §5).
-// Unchanged values cost reads only. Before core's first set (just after a
-// restart) there is nothing to refresh; tokens already pushed last up to 1h.
+// RefreshVaults re-reconciles every owner vault and core's last vault set, so
+// each gets its re-minted GitHub token even while core's tick is stalled
+// (docs/adr/0075 §5). Unchanged values cost reads only. Owner vaults need no
+// core. Before core's first set (just after a restart) no definition vault is
+// refreshed; tokens already pushed last up to 1h.
 //
 // ponytail: specs live in memory; a provisioner restart while core is down
-// refreshes nothing until core returns.
+// refreshes no definition vault until core returns.
 func (s *Server) RefreshVaults(ctx context.Context) {
+	if s.gh != nil {
+		owners, err := s.gh.Owners(ctx)
+		if err != nil {
+			slog.Error("grpcserver: owner vault refresh", "error", err)
+		}
+		for _, o := range owners {
+			unlock := s.vault.Lock(vault.OwnerVault(o))
+			if err := s.reconcileOwnerLocked(ctx, o); err != nil {
+				slog.Error("grpcserver: owner vault refresh", "owner", o, "error", err)
+			}
+			unlock()
+		}
+	}
 	s.specsMu.Lock()
 	names := make([]string, 0, len(s.specs))
 	for _, v := range s.specs {
@@ -539,8 +626,8 @@ func (s *Server) replaceTerminalWorkerJob(ctx context.Context, taskID string) er
 	if err != nil || !exists || !job.Terminal() {
 		return err
 	}
-	if job.Definition != "" && job.VaultLabel != "" {
-		if err := s.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+	if job.Vault() != "" && job.VaultLabel != "" {
+		if err := s.vault.Revoke(ctx, job.Vault(), job.VaultLabel); err != nil {
 			return err
 		}
 	}
@@ -571,13 +658,12 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 	if !exists {
 		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
 	}
-	// docs/adr/0065: a definition pod's token dies before the pod, exactly
-	// that token (the label is on the Job). Best-effort (own 3s budget): its
-	// TTL bounds a miss, and a Job already gone was revoked when it went
-	// terminal (reconcile) or never got one. A repo session never calls the
-	// vault.
-	if job.Definition != "" && job.VaultLabel != "" {
-		if err := s.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+	// docs/adr/0065, 0075 §7: a pod's token dies before the pod, exactly that
+	// token (the label is on the Job). Best-effort (own 3s budget): its TTL
+	// bounds a miss, and a Job already gone was revoked when it went terminal
+	// (reconcile) or never got one.
+	if job.Vault() != "" && job.VaultLabel != "" {
+		if err := s.vault.Revoke(ctx, job.Vault(), job.VaultLabel); err != nil {
 			slog.Warn("grpcserver tearDownWorker: vault revoke failed, the token's TTL bounds it", "sessionId", taskID, "error", err)
 		}
 	}
@@ -677,6 +763,23 @@ func (s *Server) ListGitHubRepos(ctx context.Context, _ *agentfleetv1.ListGitHub
 		})
 	}
 	return out, nil
+}
+
+// ownerRe is a GitHub login: letters, digits, hyphens.
+var ownerRe = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+
+// repoOwner is the <owner> of repos.url's .../<owner>/<repo>[.git]. A URL
+// must be https://github.com/: the owner's token is minted for GitHub only.
+// A bare path is a test's local origin.
+func repoOwner(repoURL string) (string, error) {
+	if strings.Contains(repoURL, "://") && !strings.HasPrefix(strings.ToLower(repoURL), "https://github.com/") {
+		return "", fmt.Errorf("repo url %q is not on https://github.com: no owner vault (docs/adr/0075 §7)", repoURL)
+	}
+	parts := strings.Split(strings.TrimSuffix(strings.TrimSuffix(repoURL, "/"), ".git"), "/")
+	if len(parts) < 3 || !ownerRe.MatchString(parts[len(parts)-2]) {
+		return "", fmt.Errorf("repo url %q names no GitHub owner: no owner vault (docs/adr/0075 §7)", repoURL)
+	}
+	return parts[len(parts)-2], nil
 }
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {

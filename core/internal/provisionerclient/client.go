@@ -45,8 +45,9 @@ const sessionCallTimeout = 2 * time.Minute
 // cache directory is unrecoverable: it is neither a repository nor empty, so
 // every later `git clone` into it fails with "destination path already exists
 // and is not an empty directory". Waiting is cheap; a poisoned cache is not.
-// git.EnsureRepoCachedForSession is what keeps the contending session from
-// paying for that wait.
+// A contending session waits, up to its own deadline (git.EnsureRepoFetched):
+// its clone reads the cache, never the remote (docs/adr/0075), so it cannot
+// skip the fetch. On a warm cache that wait is one fetch.
 //
 // ponytail: a fixed synchronous ceiling. A repo big enough to blow ten minutes
 // wants a background job with a status column, not a bigger number here.

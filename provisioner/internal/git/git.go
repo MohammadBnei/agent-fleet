@@ -43,16 +43,6 @@ type Manager struct {
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex // per-repo, held only while cloning/fetching/adding a worktree for that repo
-	// cached[repo] is true once a clone or fetch for that repo has COMPLETED
-	// in this process — the question EnsureRepoCachedForSession has to answer
-	// while another goroutine holds the repo's lock.
-	//
-	// In memory rather than on disk on purpose: the filesystem cannot answer
-	// it. `git clone` creates .git early, so `rev-parse --is-inside-work-tree`
-	// reports a half-transferred cache as a usable one, and a session that
-	// `--shared` clones from that gets a broken repository. Empty after a
-	// restart, which only costs a wait.
-	cached map[string]bool
 	// GitEnv, when set, authenticates clone/fetch with the App's read-only
 	// installation tokens (docs/adr/0075 §9), passed as GIT_CONFIG_* env so
 	// no token reaches argv, which run() quotes in errors. An error falls back
@@ -61,52 +51,7 @@ type Manager struct {
 }
 
 func NewManager(root string) *Manager {
-	return &Manager{root: root, locks: make(map[string]*sync.Mutex), cached: make(map[string]bool)}
-}
-
-func (m *Manager) markCached(repo string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.cached[repo] = true
-}
-
-func (m *Manager) isCached(repo string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.cached[repo]
-}
-
-// ConfigureAuth ports worker/src/git.ts's configureGitAuth — the
-// provisioner now does the clone/fetch that used to be the worker's job
-// (docs/adr/0019 point 2), so it needs the same GH_TOKEN-backed
-// authentication the worker configured for itself. A no-op if GH_TOKEN
-// isn't set (falls back to whatever ambient git auth is configured), same
-// as the TS original. Call once at startup, before any clone/fetch.
-func (m *Manager) ConfigureAuth(ctx context.Context) error {
-	if os.Getenv("GH_TOKEN") == "" {
-		return nil
-	}
-	if _, err := m.runGh(ctx, "auth", "setup-git"); err != nil {
-		return fmt.Errorf("gh auth setup-git: %w", err)
-	}
-	login, err := m.runGh(ctx, "api", "user", "--jq", ".login")
-	if err != nil {
-		return fmt.Errorf("gh api user: %w", err)
-	}
-	if _, err := m.run(ctx, "", "config", "--global", "user.name", login); err != nil {
-		return err
-	}
-	_, err = m.run(ctx, "", "config", "--global", "user.email", login+"@users.noreply.github.com")
-	return err
-}
-
-func (m *Manager) runGh(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("gh %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return strings.TrimSpace(string(out)), nil
+	return &Manager{root: root, locks: make(map[string]*sync.Mutex)}
 }
 
 func (m *Manager) repoLock(repo string) *sync.Mutex {
@@ -191,38 +136,6 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 	return m.ensureLocked(ctx, repo, repoURL)
 }
 
-// EnsureRepoCachedForSession is the pod-creation path's entry point, and it
-// differs from EnsureRepoCloned in one way: it will not wait behind another
-// goroutine's clone or fetch of the same repo once a usable cache exists.
-//
-// The lock is a plain sync.Mutex and cannot be waited on with a deadline, so
-// a CreateWorkerPod arriving during a dashboard-triggered sync used to block
-// for as long as that sync ran — up to provisionerclient.repoSyncTimeout,
-// five times core's own sessionCallTimeout. The wait outlived the caller's
-// context, so git then ran on a cancelled one and the session was reported
-// CRASHED. Nothing about that was visible as a lock problem.
-//
-// Skipping the fetch is safe because it was never load-bearing FOR REPO
-// SESSIONS: the pod's clone init container fetches its base branch from the
-// REAL remote (k8s/session_storage.go), so a cache one sync out of date costs a
-// slightly larger delta over the network and nothing else. Definition pods do
-// not fetch from the remote and use EnsureRepoFetched instead. The clone IS load-bearing —
-// with no cache there is nothing to `git clone --shared` from — so a cold
-// repo still waits however long it takes.
-func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL string) error {
-	lock := m.repoLock(repo)
-	if !lock.TryLock() {
-		if m.isCached(repo) {
-			slog.Info("git: repo cache busy, using it as-is", "repo", repo)
-			return nil
-		}
-		lock.Lock()
-	}
-	defer lock.Unlock()
-	_, err := m.ensureLocked(ctx, repo, repoURL)
-	return err
-}
-
 // EnsureRepoFetched always fetches, waiting for the repo lock no longer than
 // ctx. A definition pod's clone reads the cache's origin/<base> and never
 // contacts the remote (docs/adr/0064), so a fetch skipped under a busy lock
@@ -242,7 +155,7 @@ func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) e
 	// ensureLocked never re-points a warm cache, so check it did not come from
 	// somewhere else first. No cache yet: the clone below uses repoURL.
 	if origin, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url"); err == nil &&
-		strings.TrimSuffix(origin, ".git") != strings.TrimSuffix(repoURL, ".git") {
+		!strings.EqualFold(strings.TrimSuffix(origin, ".git"), strings.TrimSuffix(repoURL, ".git")) {
 		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; delete %s on the provisioner's workspace PVC and the next warm re-clones from repos.url (the console's sync only fetches)", repo, origin, repoURL, m.repoPath(repo))
 	}
 	_, err := m.ensureLocked(ctx, repo, repoURL)
@@ -265,7 +178,6 @@ func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncR
 				res.Advanced, _ = strconv.Atoi(out)
 			}
 		}
-		m.markCached(repo)
 		return res, m.disableAutoGC(ctx, path)
 	}
 
@@ -275,7 +187,6 @@ func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncR
 	if _, err := m.run(ctx, "", "clone", repoURL, path); err != nil {
 		return SyncResult{}, err
 	}
-	m.markCached(repo)
 	return SyncResult{Cloned: true, Head: m.originHead(ctx, path)}, m.disableAutoGC(ctx, path)
 }
 

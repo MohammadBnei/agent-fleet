@@ -41,7 +41,7 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 	}
 	commitTo(t, fleetShared, "fleet-shared/settings.json")
 	s := New(k8sc, git.NewManager(root), &fakeEventReporter{}, nil, "e2e.bnei.dev", fleetShared, "main", "test")
-	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	withRepoVault(t, s)
 	origin := newTestOriginRepo(t)
 
 	// A repo session first: it clones the cache and gets fleet-shared.

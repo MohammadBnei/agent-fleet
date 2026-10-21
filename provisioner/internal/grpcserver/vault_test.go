@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -154,7 +155,7 @@ func TestCreateWorkerPod_DefinitionRevokesWhenJobCreateFails(t *testing.T) {
 }
 
 // Teardown revokes exactly the pod's own token (its label is on the Job)
-// BEFORE the Job delete; a repo session's teardown never calls the vault.
+// BEFORE the Job delete, a repo session's on its owner vault (docs/adr/0075).
 func TestTearDownSession_RevokesBeforeDelete(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
@@ -180,12 +181,12 @@ func TestTearDownSession_RevokesBeforeDelete(t *testing.T) {
 	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{SessionId: "repo-1", Repo: "repo-1", RepoUrl: newTestOriginRepo(t), BaseBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	f.ResetLog()
+	f.AddSession("owner-mohammadbnei", "repo-2.1")
 	if _, err := s.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{SessionId: "repo-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if calls := f.Calls(); len(calls) != 0 {
-		t.Errorf("a repo session's teardown called the vault: %v", calls)
+	if v, _ := f.Get("owner-mohammadbnei"); len(v.Sessions) != 1 || v.Sessions[0].Label != "repo-2.1" {
+		t.Errorf("owner vault sessions %+v, want only the other pod's", v.Sessions)
 	}
 }
 
@@ -243,18 +244,19 @@ func TestCreateWorkerPod_RewarmReplacesTerminalJob(t *testing.T) {
 		t.Errorf("new Job %+v exists=%v, want a fresh live one", j, exists)
 	}
 
-	// A repo session's kept Job is replaced the same way, without the vault.
+	// A repo session's kept Job is replaced the same way, on its owner vault.
 	repo := &agentfleetv1.CreateWorkerPodRequest{SessionId: "repo-1", Repo: "repo-1", RepoUrl: newTestOriginRepo(t), BaseBranch: "main"}
 	if _, err := s.CreateWorkerPod(ctx, repo); err != nil {
 		t.Fatal(err)
 	}
+	oldRepo, _, _ := k8sc.GetWorkerJob(ctx, "repo-1")
 	failJob(t, k8sc, "repo-1")
-	f.ResetLog()
 	if _, err := s.CreateWorkerPod(ctx, repo); err != nil {
 		t.Fatalf("repo re-warm after a crash: %v", err)
 	}
-	if calls := f.Calls(); len(calls) != 0 {
-		t.Errorf("a repo session's re-warm called the vault: %v", calls)
+	v, _ := f.Get("owner-mohammadbnei")
+	if len(v.Sessions) != 1 || v.Sessions[0].Label == oldRepo.VaultLabel || oldRepo.VaultOwner != "owner-mohammadbnei" {
+		t.Errorf("owner vault sessions %+v, want only the re-warm's (old %q)", v.Sessions, oldRepo.VaultLabel)
 	}
 }
 
@@ -428,5 +430,119 @@ func TestRefreshVault_UsesTheNewestSpecNotItsSnapshot(t *testing.T) {
 	}
 	if w := f.Writes(); len(w) != 0 {
 		t.Errorf("a stale refresh rewrote a pruned vault: %v", w)
+	}
+}
+
+func repoRequest(t *testing.T, id string) *agentfleetv1.CreateWorkerPodRequest {
+	return &agentfleetv1.CreateWorkerPodRequest{SessionId: id, Repo: id, RepoUrl: newTestOriginRepo(t), BaseBranch: "main"}
+}
+
+func workerEnv(t *testing.T, k8sc *k8s.Client, id string) map[string]string {
+	t.Helper()
+	job, err := k8sc.Core.BatchV1().Jobs("agent-fleet").Get(context.Background(), k8s.WorkerResourceName(id), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"label:" + k8s.VaultOwnerLabel: job.Spec.Template.Labels[k8s.VaultOwnerLabel]}
+	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	if d := job.Spec.ActiveDeadlineSeconds; d != nil {
+		env["deadline"] = strconv.FormatInt(*d, 10)
+	}
+	return env
+}
+
+// docs/adr/0075 §7: a repo warm reconciles its owner's vault (passthrough,
+// the owner token) and mints the pod's token on it; the pod holds only
+// placeholders, the commit identity from config and the 12h cap.
+func TestCreateWorkerPod_RepoSessionUsesItsOwnerVault(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghp-bot-sentinel")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-env-sentinel")
+	s, k8sc, _ := newTestServer(t)
+	f := withRepoVault(t, s)
+	resp, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.GetVaultTokenApplied() || resp.GetDefinitionProfileApplied() {
+		t.Errorf("response %v", resp)
+	}
+	v, ok := f.Get("owner-mohammadbnei")
+	if !ok || v.Policy != "passthrough" || v.Creds["GH_OWNER_MOHAMMADBNEI"] != "ghs-owner" || len(v.Sessions) != 1 || v.Sessions[0].TTL != 43260 {
+		t.Fatalf("owner vault %+v", v)
+	}
+	env := workerEnv(t, k8sc, "repo-1")
+	if env["HTTPS_PROXY"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" {
+		t.Errorf("HTTPS_PROXY %q", env["HTTPS_PROXY"])
+	}
+	for k, want := range map[string]string{
+		"GH_TOKEN": k8s.VaultPlaceholder, "CLAUDE_CODE_OAUTH_TOKEN": k8s.VaultPlaceholder,
+		"GIT_AUTHOR_EMAIL": "ukubi@bnei.dev", "SSL_CERT_FILE": "/etc/agent-vault/bundle.pem",
+		"deadline": "43200", "label:" + k8s.VaultOwnerLabel: "owner-mohammadbnei",
+	} {
+		if env[k] != want {
+			t.Errorf("%s = %q, want %q", k, env[k], want)
+		}
+	}
+	if _, ok := env["LEASE_ID"]; ok {
+		t.Error("LEASE_ID reached the worker container")
+	}
+	if _, ok := env["FLEET_DEFINITION"]; ok {
+		t.Error("a repo pod got FLEET_DEFINITION")
+	}
+	cm, err := k8sc.Core.CoreV1().ConfigMaps("agent-fleet").Get(context.Background(), k8s.VaultCAConfigMap, metav1.GetOptions{})
+	if err != nil || !strings.HasSuffix(cm.Data["bundle.pem"], vaulttest.CA) || len(cm.Data["bundle.pem"]) <= len(vaulttest.CA)+1 {
+		t.Errorf("CA bundle: %v", err)
+	}
+}
+
+// No fallback (docs/adr/0075 §10): an owner token that cannot be minted
+// refuses the warm before any vault write or Job.
+func TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	f := withRepoVault(t, s)
+	s.SetGitHub(&fakeApp{err: errors.New("github down")})
+	_, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1"))
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("err %v", err)
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("vault writes %v", w)
+	}
+	if n := jobCount(t, k8sc); n != 0 {
+		t.Errorf("%d Jobs", n)
+	}
+}
+
+// RefreshVaults pushes a re-minted owner token with no core call at all.
+func TestRefreshVaults_PushesOwnerTokens(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	f := withRepoVault(t, s)
+	app := &fakeApp{token: "ghs-1"}
+	s.SetGitHub(app)
+	s.RefreshVaults(context.Background())
+	app.token = "ghs-2"
+	s.RefreshVaults(context.Background())
+	if v, _ := f.Get("owner-mohammadbnei"); v.Creds["GH_OWNER_MOHAMMADBNEI"] != "ghs-2" {
+		t.Errorf("owner vault creds %v", v.Creds)
+	}
+}
+
+func TestRepoOwner(t *testing.T) {
+	for url, want := range map[string]string{
+		"https://github.com/MohammadBnei/agent-fleet.git": "MohammadBnei",
+		"https://github.com/opus-tech-hq/workspace":       "opus-tech-hq",
+		"https://github.com/o/r/":                         "o",
+		"/tmp/x/MohammadBnei/origin":                      "MohammadBnei",
+		"repo":                                            "",
+		"https://github.com/a_b/r.git":                    "",
+		"https://evil.example/MohammadBnei/r":             "",
+		"http://github.com/MohammadBnei/r":                "",
+	} {
+		got, err := repoOwner(url)
+		if got != want || (want == "") != (err != nil) {
+			t.Errorf("repoOwner(%q) = %q, %v; want %q", url, got, err, want)
+		}
 	}
 }

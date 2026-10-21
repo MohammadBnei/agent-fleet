@@ -34,6 +34,7 @@ type fakeGitHub struct {
 	instLists    int
 	failPage2    bool // /installation/repositories page 2 answers 502
 	suspendOpus  bool
+	failList     bool // GET /app/installations answers 502
 }
 
 func (f *fakeGitHub) serveInstallationRepos(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +79,9 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 		}
+	case r.Method == http.MethodGet && r.URL.Path == "/app/installations" && f.failList:
+		http.Error(w, `{"message":"boom"}`, http.StatusBadGateway)
+		return
 	case r.Method == http.MethodGet && r.URL.Path == "/app/installations":
 		f.mu.Lock()
 		f.instLists++
@@ -340,5 +344,48 @@ func TestApp_GitEnvUnmountedIsNoop(t *testing.T) {
 	env, err := NewApp(t.TempDir(), []int64{1}).GitEnv(context.Background())
 	if err != nil || env != nil {
 		t.Fatalf("env %v err %v", env, err)
+	}
+}
+
+// docs/adr/0075 §7: a repo pods' token covers the owner's whole allowlisted
+// installation, never the foreign one with the same login, never workflows.
+func TestApp_OwnerTokenIsInstallationWide(t *testing.T) {
+	a, f := newApp(t, false)
+	tok, err := a.OwnerToken(context.Background(), "mohammadbnei")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := a.OwnerToken(context.Background(), "MohammadBnei"); again != tok || len(f.mints) != 1 {
+		t.Fatalf("not cached: %q then %q, %d mints", tok, again, len(f.mints))
+	}
+	m := f.mints[0]
+	if m["path"] != "/app/installations/2/access_tokens" || m["repositories"] != nil {
+		t.Errorf("mint %v, want installation 2 unnarrowed", m)
+	}
+	perms, _ := m["permissions"].(map[string]any)
+	if perms["contents"] != "write" || perms["issues"] != "write" || perms["checks"] != "read" || perms["workflows"] != nil {
+		t.Errorf("permissions %v", perms)
+	}
+	if _, err := a.OwnerToken(context.Background(), "someone-else"); err == nil {
+		t.Error("a non-allowlisted owner got a token")
+	}
+	owners, err := a.Owners(context.Background())
+	if err != nil || strings.Join(owners, ",") != "MohammadBnei,opus-tech-hq" {
+		t.Errorf("owners %v %v", owners, err)
+	}
+}
+
+// A listing blip after instTTL must not fail a repo warm while the owner's
+// token is still cached: the last good listing maps the owner.
+func TestApp_OwnerTokenSurvivesAListingFailure(t *testing.T) {
+	a, f := newApp(t, false)
+	tok, err := a.OwnerToken(context.Background(), "MohammadBnei")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.now = func() time.Time { return time.Now().Add(instTTL + time.Minute) }
+	f.failList = true
+	if again, err := a.OwnerToken(context.Background(), "MohammadBnei"); err != nil || again != tok {
+		t.Fatalf("got %q, %v; want the cached %q", again, err, tok)
 	}
 }

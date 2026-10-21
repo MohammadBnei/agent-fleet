@@ -125,8 +125,20 @@ func GitHubKey(vault string) string {
 	return "GH_" + strings.ToUpper(strings.ReplaceAll(vault, "-", "_"))
 }
 
+// OwnerPrefix names a repo pods' vault, one per GitHub account
+// (docs/adr/0075 §7). Reserved like "executor-": no definition may take it,
+// and Prune skips it.
+const OwnerPrefix = "owner-"
+
+// OwnerVault is owner's vault name. Logins are case-insensitive on GitHub.
+func OwnerVault(owner string) string { return OwnerPrefix + strings.ToLower(owner) }
+
+// oauthKey is the model token every owner vault injects: the same mounted key
+// the definitions name.
+const oauthKey = "CLAUDE_CODE_OAUTH_TOKEN"
+
 func checkSpec(s Spec) error {
-	if !vaultNameRe.MatchString(s.Name) || strings.HasPrefix(s.Name, "executor-") {
+	if !vaultNameRe.MatchString(s.Name) || strings.HasPrefix(s.Name, "executor-") || strings.HasPrefix(s.Name, OwnerPrefix) {
 		return fmt.Errorf("vault name %q is not a definition vault slug", s.Name)
 	}
 	repos := map[string]bool{}
@@ -305,6 +317,48 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 			desired = append(desired, svc)
 		}
 	}
+	if err := c.apply(ctx, s.Name, desired, values, "deny", widened); err != nil {
+		return err
+	}
+	return missingErr(s.Name, missing)
+}
+
+// ReconcileOwner makes owner's vault serve repo pods (docs/adr/0075 §7): all
+// of github.com:443 and api.github.com:443 carry ghToken, the owner's
+// installation-wide token, api.anthropic.com:443 the model token, and every
+// other host passes through. Any value missing is an error before the first
+// write: a narrowed owner vault would widen back on the next call and revoke
+// every repo pod's token. The caller holds Lock(OwnerVault(owner)).
+func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (widened bool, err error) {
+	name := OwnerVault(owner)
+	if !vaultNameRe.MatchString(name) {
+		return false, fmt.Errorf("owner %q does not make a vault name", owner)
+	}
+	if ghToken == "" {
+		return false, fmt.Errorf("vault %s: no GitHub token", name)
+	}
+	oauth, err := c.readSecret(oauthKey)
+	if err != nil {
+		return false, fmt.Errorf("vault %s: %w", name, err)
+	}
+	if oauth == "" || referenceRe.MatchString(oauth) {
+		return false, missingErr(name, []string{oauthKey})
+	}
+	gh := GitHubKey(name)
+	desired := []service{
+		{Name: "anthropic", Host: "api.anthropic.com:443", Auth: auth{Type: "bearer", Token: oauthKey}},
+		{Name: "github", Host: "github.com:443", Auth: gitAuth(gh)},
+		{Name: "github-api", Host: "api.github.com:443", Auth: auth{Type: "bearer", Token: gh}},
+	}
+	values := map[string]string{gitUsernameKey: "x-access-token", gh: ghToken, oauthKey: oauth}
+	err = c.apply(ctx, name, desired, values, "passthrough", &widened)
+	return widened, err
+}
+
+// apply writes one vault: created if absent (its policy set at once: a new
+// vault starts in passthrough), credentials, services, policy, then stale
+// keys. values holds every key desired names.
+func (c *Client) apply(ctx context.Context, name string, desired []service, values map[string]string, policy string, widened *bool) error {
 	want := map[string]string{}
 	for _, svc := range desired {
 		for _, k := range svc.Auth.keys() {
@@ -316,29 +370,32 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	var current struct {
 		Services []service `json:"services"`
 	}
-	err := c.do(ctx, http.MethodGet, "/v1/vaults/"+s.Name+"/services", nil, &current)
+	err := c.do(ctx, http.MethodGet, "/v1/vaults/"+name+"/services", nil, &current)
 	switch {
 	case isStatus(err, http.StatusNotFound) && len(desired) == 0:
-		return missingErr(s.Name, missing)
+		return nil
 	case isStatus(err, http.StatusNotFound):
-		if err := c.do(ctx, http.MethodPost, "/v1/vaults", map[string]string{"name": s.Name}, nil); err != nil && !isStatus(err, http.StatusConflict) {
-			return fmt.Errorf("vault %s: create: %w", s.Name, err)
+		if err := c.do(ctx, http.MethodPost, "/v1/vaults", map[string]string{"name": name}, nil); err != nil && !isStatus(err, http.StatusConflict) {
+			return fmt.Errorf("vault %s: create: %w", name, err)
+		}
+		if err := c.do(ctx, http.MethodPatch, "/v1/vaults/"+name+"/settings", map[string]string{"unmatched_host_policy": policy}, nil); err != nil {
+			return fmt.Errorf("vault %s: %s policy: %w", name, policy, err)
 		}
 	case err != nil:
-		return fmt.Errorf("vault %s: services: %w", s.Name, err)
+		return fmt.Errorf("vault %s: services: %w", name, err)
 	}
 
 	var listed struct {
 		Keys []string `json:"keys"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/v1/credentials?vault="+url.QueryEscape(s.Name), nil, &listed); err != nil {
-		return fmt.Errorf("vault %s: credentials: %w", s.Name, err)
+	if err := c.do(ctx, http.MethodGet, "/v1/credentials?vault="+url.QueryEscape(name), nil, &listed); err != nil {
+		return fmt.Errorf("vault %s: credentials: %w", name, err)
 	}
 	c.mu.Lock()
-	memo := c.set[s.Name]
+	memo := c.set[name]
 	if memo == nil {
 		memo = map[string][32]byte{}
-		c.set[s.Name] = memo
+		c.set[name] = memo
 	}
 	changed := map[string]string{}
 	for k, v := range want {
@@ -348,17 +405,17 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	}
 	c.mu.Unlock()
 	if len(changed) > 0 {
-		if err := c.do(ctx, http.MethodPost, "/v1/credentials", map[string]any{"vault": s.Name, "credentials": changed}, nil); err != nil {
+		if err := c.do(ctx, http.MethodPost, "/v1/credentials", map[string]any{"vault": name, "credentials": changed}, nil); err != nil {
 			// The request carried values: the vault's own text is not
 			// forwarded, in case it ever echoes one.
-			return fmt.Errorf("vault %s: set credentials: %w", s.Name, statusOnly(err))
+			return fmt.Errorf("vault %s: set credentials: %w", name, statusOnly(err))
 		}
 		c.mu.Lock()
 		for k, v := range changed {
 			memo[k] = sha256.Sum256([]byte(v))
 		}
 		c.mu.Unlock()
-		slog.Info("vault: credentials set", "vault", s.Name, "keys", sortedKeys(changed))
+		slog.Info("vault: credentials set", "vault", name, "keys", sortedKeys(changed))
 	}
 
 	sort.Slice(current.Services, func(i, j int) bool { return current.Services[i].Name < current.Services[j].Name })
@@ -366,29 +423,29 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 		if slices.ContainsFunc(desired, func(d service) bool {
 			return !slices.ContainsFunc(current.Services, func(c service) bool { return c.Host == d.Host && c.Auth == d.Auth })
 		}) {
-			if _, err := c.revokeWhere(ctx, s.Name, func(string) bool { return true }); err != nil {
-				return fmt.Errorf("vault %s: widening, so revoking its sessions first: %w", s.Name, err)
+			if _, err := c.revokeWhere(ctx, name, func(string) bool { return true }); err != nil {
+				return fmt.Errorf("vault %s: widening, so revoking its sessions first: %w", name, err)
 			}
 			*widened = true
 		}
 		if desired == nil {
 			desired = []service{}
 		}
-		if err := c.do(ctx, http.MethodPut, "/v1/vaults/"+s.Name+"/services", map[string]any{"services": desired}, nil); err != nil {
-			return fmt.Errorf("vault %s: set services: %w", s.Name, err)
+		if err := c.do(ctx, http.MethodPut, "/v1/vaults/"+name+"/services", map[string]any{"services": desired}, nil); err != nil {
+			return fmt.Errorf("vault %s: set services: %w", name, err)
 		}
-		slog.Info("vault: services set", "vault", s.Name, "count", len(desired))
+		slog.Info("vault: services set", "vault", name, "count", len(desired))
 	}
 
 	var settings struct {
 		Policy string `json:"unmatched_host_policy"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/v1/vaults/"+s.Name+"/settings", nil, &settings); err != nil {
-		return fmt.Errorf("vault %s: settings: %w", s.Name, err)
+	if err := c.do(ctx, http.MethodGet, "/v1/vaults/"+name+"/settings", nil, &settings); err != nil {
+		return fmt.Errorf("vault %s: settings: %w", name, err)
 	}
-	if settings.Policy != "deny" {
-		if err := c.do(ctx, http.MethodPatch, "/v1/vaults/"+s.Name+"/settings", map[string]string{"unmatched_host_policy": "deny"}, nil); err != nil {
-			return fmt.Errorf("vault %s: deny policy: %w", s.Name, err)
+	if settings.Policy != policy {
+		if err := c.do(ctx, http.MethodPatch, "/v1/vaults/"+name+"/settings", map[string]string{"unmatched_host_policy": policy}, nil); err != nil {
+			return fmt.Errorf("vault %s: %s policy: %w", name, policy, err)
 		}
 	}
 
@@ -400,17 +457,17 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 		}
 	}
 	if len(stale) > 0 {
-		if err := c.do(ctx, http.MethodDelete, "/v1/credentials", map[string]any{"vault": s.Name, "keys": stale}, nil); err != nil {
-			return fmt.Errorf("vault %s: delete credentials: %w", s.Name, err)
+		if err := c.do(ctx, http.MethodDelete, "/v1/credentials", map[string]any{"vault": name, "keys": stale}, nil); err != nil {
+			return fmt.Errorf("vault %s: delete credentials: %w", name, err)
 		}
 		c.mu.Lock()
 		for _, k := range stale {
 			delete(memo, k)
 		}
 		c.mu.Unlock()
-		slog.Info("vault: credentials removed", "vault", s.Name, "keys", stale)
+		slog.Info("vault: credentials removed", "vault", name, "keys", stale)
 	}
-	return missingErr(s.Name, missing)
+	return nil
 }
 
 // specRepo is the one <owner>/<repo> a checked spec's GitHub paths name.
@@ -461,7 +518,8 @@ func (c *Client) vaultNames(ctx context.Context) ([]string, error) {
 }
 
 // Prune empties every vault this agent administers that is not in keep and
-// not "executor-"-prefixed (reserved for the bridge executor, ADR 0072). The
+// not "executor-"-prefixed (reserved for the bridge executor, ADR 0072) or
+// OwnerPrefix-prefixed (repo pods, reconciled by ReconcileOwner). The
 // vault itself stays: harmless, and cheap to re-fill. Only for the FULL set.
 func (c *Client) Prune(ctx context.Context, keep map[string]bool) error {
 	names, err := c.vaultNames(ctx)
@@ -470,7 +528,7 @@ func (c *Client) Prune(ctx context.Context, keep map[string]bool) error {
 	}
 	var errs []error
 	for _, n := range names {
-		if keep[n] || strings.HasPrefix(n, "executor-") || !vaultNameRe.MatchString(n) {
+		if keep[n] || strings.HasPrefix(n, "executor-") || strings.HasPrefix(n, OwnerPrefix) || !vaultNameRe.MatchString(n) {
 			continue
 		}
 		unlock := c.Lock(n)
@@ -551,7 +609,7 @@ func (c *Client) CA(ctx context.Context) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// ProxyURL is a definition pod's HTTPS_PROXY.
+// ProxyURL is a session pod's HTTPS_PROXY.
 func (c *Client) ProxyURL(token, vault string) string {
 	return "http://" + url.UserPassword(token, vault).String() + "@" + c.Proxy
 }

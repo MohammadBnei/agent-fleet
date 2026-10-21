@@ -139,8 +139,15 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   A warm is torn down unless the create answers `definition_profile_applied` (older
   provisioner or rollout overlap). A definition lease lives in `profile_lease_id`, never
   `lease_id`, so an older core can neither mint nor verify one, and it counts only while
-  `pod_phase` is live, since an older core's teardown cannot clear it. A non-definition pod's
-  Job is byte-identical (golden test).
+  `pod_phase` is live, since an older core's teardown cannot clear it.
+- **A repo pod holds no real secret either** (`adr/0075` §7). Its owner's vault
+  (`owner-<login>`, reserved prefix, skipped by `Prune`) maps all of `github.com:443` and
+  `api.github.com:443` to an installation-wide App token (never `workflows`) and
+  `api.anthropic.com:443` to the model token; every other host passes through. Egress stays
+  open; `NO_PROXY` covers the cluster, the LAN and `.bnei.dev`, and the CA vars name
+  `bundle.pem` (system roots + vault root). Same 12h cap, per-warm token, revoke paths and
+  local-only clone as a definition pod; commits as `FLEET_GIT_AUTHOR_*` (`ukubi`). The
+  provisioner refreshes owner vaults on its own 5-min tick. Golden test pins the Job.
 - **Session with no message has no pod — that is the human gate** (`adr/0048` §1).
   Amended by `adr/0062`: the provisioning message comes from an audience member, a
   registered client, or an allowlisted actor's event via a registered client (P1:

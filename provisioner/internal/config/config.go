@@ -101,6 +101,10 @@ type Config struct {
 	// count: the App is public.
 	GitHubAppDir   string
 	GitHubAccounts string
+	// GitAuthorName/GitAuthorEmail author repo sessions' commits
+	// (docs/adr/0075 §8); definitions keep their git.identity.
+	GitAuthorName  string
+	GitAuthorEmail string
 }
 
 func Load() Config {
@@ -141,6 +145,8 @@ func Load() Config {
 		AgentVaultSecretsDir:        env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
 		GitHubAppDir:                env("GITHUB_APP_DIR", "/var/run/github-app"),
 		GitHubAccounts:              env("FLEET_GITHUB_ACCOUNTS", ""),
+		GitAuthorName:               env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
+		GitAuthorEmail:              env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
 	}
 }
 

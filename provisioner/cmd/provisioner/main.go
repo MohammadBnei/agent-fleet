@@ -105,14 +105,9 @@ func main() {
 
 	gitMgr := git.NewManager(cfg.WorkspaceRoot)
 	// docs/adr/0075 §9: the provisioner's own clone/fetch uses the App's
-	// read-only installation tokens; the bot PAT's credential helper
-	// (ConfigureAuth) stays as the fallback until repo pods move (step 4).
+	// read-only installation tokens, and nothing else: the bot PAT is gone.
 	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
 	gitMgr.GitEnv = app.GitEnv
-	if err := gitMgr.ConfigureAuth(ctx); err != nil {
-		slog.Error("git auth configuration failed", "error", err)
-		os.Exit(1)
-	}
 
 	// Fill the shared PVC's Playwright browser cache, which every worker pod
 	// mounts read-only (pod.go's browsersDir). Best-effort and NOT fatal: a
@@ -161,6 +156,7 @@ func main() {
 	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
 	provSvc.SetGitHub(app)
+	provSvc.SetGitIdentity(cfg.GitAuthorName, cfg.GitAuthorEmail)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
