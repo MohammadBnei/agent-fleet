@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>fleet-agent demo</title>
+    <style>
+      body { margin: 0; padding: 32px 16px; background: #efe6d6; font-family: system-ui, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+      .bar { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #64533f; }
+      #log { font: 12px ui-monospace, monospace; color: #64533f; min-height: 1em; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="bar">
+        A mock AgentService (demo/mock.ts). Theme:
+        <select id="theme"><option>office</option><option>underground</option><option>glow</option></select>
+      </div>
+      <div id="slot"></div>
+      <div id="log"></div>
+    </main>
+    <script type="module" src="/demo/mock.ts"></script>
+  </body>
+</html>

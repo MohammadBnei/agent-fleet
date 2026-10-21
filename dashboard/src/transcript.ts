@@ -36,9 +36,14 @@ export function parseAnswers(text: string): Record<string, string> | null {
   }
 }
 
+// The fields the pending-decision helpers read. Both DashboardService's
+// TranscriptEntry and AgentService's Entry (the islands, docs/adr/0068) have
+// them, so one implementation serves both.
+export type EntryLike = { seq: bigint; type: TranscriptEntryType; text: string; replyTo?: bigint };
+
 // Only one question is ever pending per session at a time (the agent's tool
 // call blocks on it) — the latest QUESTION entry with no later ANSWER.
-export function findPendingQuestion(entries: TranscriptEntry[]): TranscriptEntry | null {
+export function findPendingQuestion<E extends EntryLike>(entries: E[]): E | null {
   const idx = entries.findIndex(
     (e, i) =>
       e.type === TranscriptEntryType.QUESTION &&
@@ -47,7 +52,7 @@ export function findPendingQuestion(entries: TranscriptEntry[]): TranscriptEntry
   return idx >= 0 ? entries[idx] : null;
 }
 
-export type PendingPermission = { entry: TranscriptEntry; tool: string; input: unknown };
+export type PendingPermission<E extends EntryLike = TranscriptEntry> = { entry: E; tool: string; input: unknown };
 
 // A PERMISSION_REQUEST entry is pending until a PERMISSION_RESPONSE entry
 // replies to its own seq (real correlation, not the old "any later
@@ -67,8 +72,8 @@ export type PendingPermission = { entry: TranscriptEntry; tool: string; input: u
 // Multiple can be pending at once now that canUseTool is a generic
 // per-tool-call gate rather than an ExitPlanMode-only special case, so this
 // returns every unresolved one, not just the latest.
-export function findPendingPermissions(entries: TranscriptEntry[]): PendingPermission[] {
-  const out: PendingPermission[] = [];
+export function findPendingPermissions<E extends EntryLike>(entries: E[]): PendingPermission<E>[] {
+  const out: PendingPermission<E>[] = [];
   for (const e of entries) {
     if (e.type !== TranscriptEntryType.PERMISSION_REQUEST) continue;
     let parsed: { tool?: unknown; input?: unknown };

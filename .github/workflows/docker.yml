@@ -251,6 +251,7 @@ jobs:
       pull-requests: read
     outputs:
       dashboard: ${{ steps.filter.outputs.dashboard }}
+      islands: ${{ steps.filter.outputs.islands }}
       worker: ${{ steps.filter.outputs.worker }}
       components: ${{ steps.components.outputs.result }}
     steps:
@@ -276,6 +277,11 @@ jobs:
               - 'dashboard/**'
             dashboard:
               - 'dashboard/**'
+            # The island shares dashboard/src/gen and transcript.ts.
+            islands:
+              - 'islands/**'
+              - 'dashboard/src/gen/**'
+              - 'dashboard/src/transcript.ts'
             provisioner:
               - 'provisioner/**'
             sidecar:
@@ -364,6 +370,25 @@ jobs:
       # import has already shipped a broken core image once.
       - name: Build
         working-directory: dashboard
+        run: bun run build
+
+  # docs/adr/0068: the <fleet-agent> island. Same shape as dashboard-test.
+  # Not in core's image yet; serving /islands/* lands with the CORS layer.
+  islands-test:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.islands == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: islands
+        run: bun install --frozen-lockfile
+      - name: Run tests
+        working-directory: islands
+        run: bun test src
+      - name: Build
+        working-directory: islands
         run: bun run build
 
   build-push:

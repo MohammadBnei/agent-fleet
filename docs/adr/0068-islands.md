@@ -73,9 +73,9 @@ The owner rejected the iframe on four counts:
   (`loading | working | waiting | idle | error`), `fleet-message` (a new
   agent entry, its id and kind only).
 - **Theme:** a `theme` attribute (`office`, the default, `underground` or
-  `glow`). Every colour, size and radius is a `--ukubi-*` custom property,
-  which CSS inheritance carries into the Shadow DOM, so a host can override
-  any of them.
+  `glow`). Every colour, size and radius is a `--ukubi-*` custom property set
+  on `:host`; a host overrides any of them with a rule on the element itself
+  (`fleet-agent { --ukubi-ochre-400: … }`), which wins over `:host`.
 - Nothing else. The host cannot call methods that act on the session; the
   element acts only on its own user's clicks.
 
@@ -127,10 +127,11 @@ The owner rejected the iframe on four counts:
   (the other exemptions are exact paths), matched on the same escaped string
   the file server uses, with a path-traversal test. The entry module
   (`/islands/fleet-agent.js`) has a stable URL and `Cache-Control: no-cache`
-  with an ETag, so a fix or rollback reaches hosts at once. It is one file;
-  the only lazy chunk is mermaid, content-hashed and `immutable`. A page that
-  still runs the previous entry after a release can miss that chunk, and then
-  shows the diagram's source instead. All of it is served with
+  with an ETag, so a fix or rollback reaches hosts at once. Its chunks are
+  content-hashed and `immutable`: one static chunk (DOMPurify, shared with
+  mermaid), which always loads with the entry, and mermaid's lazy chunks. A
+  page left open across a release can miss a lazy chunk, and then shows the
+  diagram's source instead. All of it is served with
   `Access-Control-Allow-Origin: *`: it holds no data, and module scripts load
   in CORS mode.
 - **Login.** On `Unauthenticated` the element shows "Sign in", which opens
