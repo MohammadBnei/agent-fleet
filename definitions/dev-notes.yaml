@@ -10,6 +10,10 @@ metadata: { name: dev-notes }
 spec:
   extends: workspace-base
   audience: { group: platform-admins }
+  # The first island host (docs/adr/0068): <fleet-agent> on notes.bnei.dev.
+  # SilverBullet sends frame-ancestors 'self' (infra-bootstrap #359), and
+  # agent-written scripts in the space ask a human first.
+  embed: { origins: ["https://notes.bnei.dev"] }
   credentials:
     vault: dev-notes
     services:

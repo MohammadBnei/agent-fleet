@@ -45,9 +45,15 @@ func Render(requestText string) (Rules, error) {
 	var req struct {
 		Tool  string         `json:"tool"`
 		Input map[string]any `json:"input"`
+		// Set by the worker on its script-write ask (docs/adr/0068 §4): it
+		// asks every time, so a remembered rule would never be used.
+		NoGrant bool `json:"noGrant"`
 	}
 	if err := json.Unmarshal([]byte(requestText), &req); err != nil {
 		return Rules{}, fmt.Errorf("%w: unreadable request", ErrInvalid)
+	}
+	if req.NoGrant {
+		return Rules{}, fmt.Errorf("%w: a script write asks every time and cannot be remembered", ErrInvalid)
 	}
 	if !ceiling[req.Tool] {
 		return Rules{}, fmt.Errorf("%w: %s is outside the tool ceiling", ErrInvalid, req.Tool)

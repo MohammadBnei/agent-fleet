@@ -220,6 +220,7 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 		}
 		results = append(results, res)
 	}
+	islandWorkspaces(results)
 
 	clientNames := make([]string, 0, len(clients))
 	for n := range clients {
@@ -737,4 +738,28 @@ func GitHubRepo(c *Credentials) string {
 		return r
 	}
 	return ""
+}
+
+// islandWorkspaces refuses a definition that shares its workspace repo with an
+// island definition (one listing embed.origins) without listing origins itself
+// (docs/adr/0068 §4). The worker's script-write ask is on per definition
+// (AgentSpec.script_ask), so a second definition on the same space without it
+// could write the scripts the first one's host would run.
+func islandWorkspaces(results []Result) {
+	island := map[string]string{}
+	for _, r := range results {
+		if e := r.Effective; e != nil && !r.Abstract && e.Workspace != nil && e.Embed != nil && len(e.Embed.Origins) > 0 {
+			island[e.Workspace.Repo] = r.Name
+		}
+	}
+	for i, r := range results {
+		e := r.Effective
+		if e == nil || r.Abstract || e.Workspace == nil || (e.Embed != nil && len(e.Embed.Origins) > 0) {
+			continue
+		}
+		if owner, ok := island[e.Workspace.Repo]; ok {
+			results[i].Err = fmt.Errorf("workspace.repo %q is served to an island host by %q: list embed.origins here too, or use another repo", e.Workspace.Repo, owner)
+			results[i].Effective = nil
+		}
+	}
 }

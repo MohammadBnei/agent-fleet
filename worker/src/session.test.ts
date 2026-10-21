@@ -5,10 +5,10 @@
 // result-subtype classification — without a real Claude session or
 // sidecar. Mocks must be registered before importing session.js (Bun
 // resolves mock.module() calls ahead of subsequent static imports).
-import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, expect, mock, beforeEach, afterAll } from "bun:test";
+import { test, expect, mock, beforeEach, afterAll, describe } from "bun:test";
 
 
 // --- fake sidecarClient.js ---
@@ -1958,4 +1958,81 @@ test("a grant does not ask under interaction: deny", () => {
   const spec = { ...DEF_NONE, interaction: "deny" };
   expect(definitionDecision(spec, "Bash", { command: "npm test" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("allow");
   expect(definitionDecision(spec, "Bash", { command: "ls" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("deny");
+});
+
+// docs/adr/0068 §4: a write asks a human in every mode, and no remembered
+// grant covers it, when the file is not a plain type or will hold any active
+// content.
+describe("script-write ask", () => {
+  const page = join(WT, "page.md");
+  const scripted = join(WT, "scripted.md");
+  writeFileSync(page, "Price {total} today.\n```lua\nprint(1)\n```\n");
+  writeFileSync(scripted, "Intro\n```space-lua\nlocal x = 1\n```\nTotal ${x}\n");
+  const ISLAND = { ...DEF_ALLOW, scriptAsk: true };
+  const decide = (tool: string, input: Record<string, unknown>, grants: string[] = []) =>
+    definitionDecision(ISLAND, tool, input, "auto", WT, grants).behavior;
+
+  test("the script ask is marked so core offers no remembered rule", () => {
+    expect(definitionDecision(ISLAND, "Write", { file_path: "new.md", content: "${x}" }, "auto", WT)).toEqual({ behavior: "ask", noGrant: true });
+    expect(definitionDecision(ISLAND, "Bash", { command: "ls" }, "auto", WT)).toEqual({ behavior: "ask" });
+  });
+
+  test("off for a definition no island host serves (a code repo)", () => {
+    expect(definitionDecision(DEF_ALLOW, "Write", { file_path: "src/a.ts", content: "`${x}`" }, "auto", WT).behavior).toBe("allow");
+  });
+
+  test.each([
+    ["a space-lua fence", { file_path: "new.md", content: "```space-lua\nprint(1)\n```" }],
+    ["a tilde fence", { file_path: "new.md", content: "~~~space-lua\nprint(1)\n~~~" }],
+    ["a case variant", { file_path: "new.md", content: "``` Space-Script\nx\n```" }],
+    ["a style fence", { file_path: "new.md", content: "```space-style\n.a{}\n```" }],
+    ["an expression", { file_path: "new.md", content: "Total: ${query[[from index.tag 'x']]}" }],
+    ["js.import", { file_path: "new.md", content: "local m = js.import('https://x')" }],
+    ["raw HTML script", { file_path: "new.md", content: "<img src=x onerror=alert(1)>" }],
+    ["a script tag", { file_path: "new.md", content: "<script>alert(1)</script>" }],
+    ["a javascript: link", { file_path: "new.md", content: "[x](javascript:alert(1))" }],
+    ["a .js file", { file_path: "lib/x.js", content: "1" }],
+    ["an .html file", { file_path: "x.html", content: "hi" }],
+    ["an .svg file", { file_path: "x.svg", content: "<svg/>" }],
+    ["a file with no extension", { file_path: "notes", content: "plain" }],
+    ["a library install", { file_path: "Library/Std/x.md", content: "plain" }],
+  ])("Write with %s asks", (_, input) => {
+    expect(decide("Write", input)).toBe("ask");
+    expect(decide("Write", input, ["Write"])).toBe("ask");
+  });
+
+  test("any edit to a page holding a script asks, even one that adds no marker", () => {
+    expect(decide("Edit", { file_path: "scripted.md", old_string: "local x = 1", new_string: "local x = os.exit()" })).toBe("ask");
+    expect(decide("Edit", { file_path: "scripted.md", old_string: "Intro", new_string: "Hello" })).toBe("ask");
+  });
+
+  test("an Edit that joins a marker from pieces asks", () => {
+    expect(decide("Edit", { file_path: "page.md", old_string: "Price ", new_string: "Price $" })).toBe("ask");
+    expect(decide("Edit", { file_path: "page.md", old_string: "```lua", new_string: "```space-lua" })).toBe("ask");
+  });
+
+  test("$-patterns in new text are literal", () => {
+    // With a string replacer, "$&" would re-insert "Price " and hide nothing,
+    // but it must be judged as the literal text the SDK writes.
+    expect(decide("Edit", { file_path: "page.md", old_string: "today", new_string: "$& more" })).toBe("allow");
+  });
+
+  test("plain writes and edits still run", () => {
+    expect(decide("Write", { file_path: "new.md", content: "# Notes\nNothing to run, only {braces} and $5." })).toBe("allow");
+    expect(decide("Write", { file_path: "img/cat.png", content: "x" })).toBe("allow");
+    expect(decide("Edit", { file_path: "page.md", old_string: "today", new_string: "tomorrow" })).toBe("allow");
+  });
+});
+
+describe("script-write ask, entity-hidden script URLs", () => {
+  const ISLAND = { ...DEF_ALLOW, scriptAsk: true };
+  test.each([
+    "[x](javas&#99;ript:alert(1))",
+    '<a href="&#106;avascript:alert(1)">x</a>',
+    "<form action=x><button>go</button></form>",
+    "[x](data:text/html,<b>x</b>)",
+    "<math><mtext>x</mtext></math>",
+  ])("%s asks", (content) => {
+    expect(definitionDecision(ISLAND, "Write", { file_path: "new.md", content }, "auto", WT).behavior).toBe("ask");
+  });
 });

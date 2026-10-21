@@ -3,7 +3,7 @@ import * as sidecar from "./sidecarClient.js";
 import type { AgentSpec } from "./sidecarClient.js";
 import { log } from "./log.js";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // TransientError used to be thrown when an SDK result looked like a
@@ -172,7 +172,9 @@ export function matchesToolRule(rules: string[], toolName: string, input: Record
 // else in the tool ceiling asks, and a tool outside the ceiling is denied.
 // ExitPlanMode asks in every mode. Under `interaction: deny` every ask is a
 // deny.
-export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask" } | { behavior: "deny"; message: string };
+// noGrant: the ask is the script-write one (docs/adr/0068 §4), which no
+// remembered grant can answer, so the request tells core not to offer one.
+export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask"; noGrant?: true } | { behavior: "deny"; message: string };
 
 // The argument check docs/adr/0067 names as the first follow-up: a git prefix
 // rule's call runs without asking when its arguments cannot run a local
@@ -307,6 +309,41 @@ function workspacePath(path: unknown, worktree: string): string | undefined {
   return segments.join("/");
 }
 
+// docs/adr/0068 §4: for a definition whose workspace an island host serves
+// (AgentSpec.scriptAsk, set from embed.origins). A SilverBullet space runs
+// what its pages carry, and an island on that host acts as whoever opens it. So a write asks a human,
+// in every mode and past any remembered grant, when the file is not a plain
+// type (SilverBullet serves space files from its own origin: an .html or .svg
+// would run there) or when the file as it would be AFTER the write holds any
+// active content at all: a space-* fence (lua, script, style...), a ${…}
+// expression, js.import / js.window, or raw HTML that runs script. Any edit to
+// such a file asks, not only one that adds a marker: changing an existing
+// script is as dangerous as adding one. Shared with core's grants.Render.
+// Entities count too: a browser decodes javas&#99;ript: in a link before it
+// runs it, so a link target or tag attribute holding one asks.
+export const ACTIVE_CONTENT = /(?:`{3,}|~{3,})\s*space-|\$\{|\bjs\.(?:import|window)|<\s*(?:script|iframe|object|embed|svg|style|link|meta|base|a|form|button|math|area)\b|\bon[a-z]+\s*=|javascript:|data:text\/html|\]\([^)]*&#?[a-z0-9]+;/i;
+const INERT_FILE = /\.(?:md|txt|csv|pdf|png|jpe?g|gif|webp|avif)$/i;
+
+export function writesScript(toolName: string, input: Record<string, unknown>, rel: string, abs: string): boolean {
+  if (!INERT_FILE.test(rel) || rel === "Library" || rel.startsWith("Library/")) return true;
+  let before = "";
+  try {
+    before = readFileSync(abs, "utf8");
+  } catch {
+    // A new file.
+  }
+  let after: string;
+  if (toolName === "Write") {
+    after = typeof input.content === "string" ? input.content : "";
+  } else {
+    const oldS = typeof input.old_string === "string" ? input.old_string : "";
+    const newS = typeof input.new_string === "string" ? input.new_string : "";
+    // A function replacer: newS is literal text, never a $& pattern.
+    after = oldS && before.includes(oldS) ? (input.replace_all === true ? before.split(oldS).join(newS) : before.replace(oldS, () => newS)) : before + newS;
+  }
+  return ACTIVE_CONTENT.test(after);
+}
+
 // The grant a call matches (docs/adr/0076 §3), or undefined. Core renders
 // grants as tools.allow's forms plus `Edit(<path>)` / `Edit(<dir>/**)` (and
 // Write), with paths relative to the worktree; `rel` is the call's resolved
@@ -343,6 +380,9 @@ export function definitionDecision(
   const pathKey = PATH_TOOLS[toolName];
   const rel = pathKey ? workspacePath(input[pathKey], worktree) : undefined;
   if (pathKey && rel === undefined) return { behavior: "deny", message: "outside this definition's workspace" };
+  if (spec.scriptAsk && rel !== undefined && writesScript(toolName, input, rel, join(worktree, rel))) {
+    return ask.behavior === "ask" ? { behavior: "ask", noGrant: true } : ask;
+  }
   // A grant is matched on its own, not only when tools.allow misses: a listed
   // `Edit` that asks in `default`, or a listed prefix whose argument check
   // fails, must not hide the human's exact approval of the same call.
@@ -1147,12 +1187,14 @@ export async function runSession(): Promise<SessionResult> {
       // dangerous — they are the two answers the fleet has already made and
       // will not re-ask a human for. Everything else still blocks.
       canUseTool: async (toolName, toolInput) => {
+        let noGrant = false;
         if (spec) {
           // Only the sidecar tools this definition lists are the fleet's own.
           if (definitionSidecarTools.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
           const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
           if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
           if (decision.behavior === "deny") return decision;
+          noGrant = decision.noGrant === true;
           // "ask": the ordinary prompt below. definitionDecision already
           // decided what the fleet's auto allows (docs/adr/0076 §2), so the
           // repo-session auto branch below is skipped.
@@ -1177,7 +1219,7 @@ export async function runSession(): Promise<SessionResult> {
           return { behavior: "allow", updatedInput: toolInput };
         }
         const seq = await sidecar
-          .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput }), "permission_request")
+          .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput, ...(noGrant ? { noGrant: true } : {}) }), "permission_request")
           .catch((err) => {
             log("warn", "permission_request push failed", { toolName, error: String(err) });
             return null;
