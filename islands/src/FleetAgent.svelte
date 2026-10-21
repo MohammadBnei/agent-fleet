@@ -13,7 +13,7 @@
   import { onMount } from "svelte";
   import type { Thread, Entry } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
   import { Code, ConnectError } from "@connectrpc/connect";
-  import { agentClient, errorText, fleetOrigin, isUnauthenticated } from "./api";
+  import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isUnauthenticated } from "./api";
   import { conversation, decisions } from "./feed";
   import { createRenderer } from "./render";
   import { drawDiagrams } from "./diagram";
@@ -35,6 +35,7 @@
   let busy = $state(false);
   let answers = $state<Record<string, string>>({});
   let reconnecting = $state(false);
+  let composer = $state<HTMLTextAreaElement | undefined>();
   let stream: AbortController | undefined;
   // Bumped by every load/select/unmount. Work started under an older value
   // writes nothing: a slow response for thread A never lands in thread B.
@@ -69,7 +70,7 @@
     } catch (err) {
       if (isUnauthenticated(err)) {
         phase = "signed-out";
-      } else {
+      } else if (!isAlreadyAnswered(err)) {
         error = errorText(err);
         if (phase === "loading") phase = "error";
       }
@@ -285,7 +286,10 @@
         {#if !items.length}<li class="muted">Nothing said yet.</li>{/if}
       </ol>
 
-      {#each open as d (d.seq)}
+      {#if current.tainted && open.length}
+        <p class="muted">This thread holds untrusted input, so only an admin can answer it, from the console.</p>
+      {/if}
+      {#each current.tainted ? [] : open as d (d.seq)}
         <div class="decision chamfer-md" role="group" aria-label="Needs you">
           {#if d.kind === "question"}
             {#each d.questions as q (q.question)}
@@ -302,7 +306,8 @@
             <div class="md plan">{@html render.markdown(d.plan)}</div>
             <div class="options">
               <button class="primary chamfer" disabled={busy} onclick={() => approve(d.seq)}>Approve plan</button>
-              <button class="secondary" disabled={busy} onclick={() => permit(d.seq, "deny")}>Ask for changes</button>
+              <!-- A reply resolves a pending plan; AgentService has no plan deny. -->
+              <button class="secondary" disabled={busy} onclick={() => composer?.focus()}>Ask for changes</button>
             </div>
           {:else if d.kind === "permission"}
             <p class="title">Allow {d.tool}?</p>
@@ -318,12 +323,14 @@
       <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
         <textarea
           aria-label="Message"
-          placeholder="Write to the agent"
+          placeholder={current.tainted ? "Only an admin can write in this thread" : "Write to the agent"}
           rows="2"
+          disabled={current.tainted}
+          bind:this={composer}
           bind:value={draft}
           onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
         ></textarea>
-        <button class="primary chamfer" type="submit" disabled={busy || !draft.trim()}>Send</button>
+        <button class="primary chamfer" type="submit" disabled={busy || current.tainted || !draft.trim()}>Send</button>
       </form>
     {/if}
   {/if}
