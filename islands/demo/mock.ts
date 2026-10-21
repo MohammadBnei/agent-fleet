@@ -11,7 +11,7 @@ const entry = (type: T, from: string, text: string, extra: MessageInitShape<type
   create(EntrySchema, { seq: ++seq, type, from, text, createdAt: new Date().toISOString(), ...extra });
 
 const log: Entry[] = [
-  entry(T.DISCUSSION, "human", "Can you tidy the onboarding page and link it from the index?", { authorName: "Nadia" }),
+  entry(T.DISCUSSION, "human", "Can you tidy the onboarding page and link it from the index?", { authorName: "nadia@opus.tech" }),
   entry(
     T.DISCUSSION,
     "agent",
@@ -82,7 +82,7 @@ setTransport(
         }
       },
       postMessage: (req) => {
-        push(entry(T.DISCUSSION, "human", req.text, { authorName: "You" }));
+        push(entry(T.DISCUSSION, "human", req.text, { authorName: "you@bnei.dev", mine: true }));
         setTimeout(() => push(entry(T.DISCUSSION, "agent", `Noted: _${req.text}_. Working on it.`)), 900);
         return { seq };
       },
