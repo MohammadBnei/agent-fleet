@@ -96,6 +96,12 @@ type parsed struct {
 // every error with no definition row to live on (a bad path, an abstract
 // definition's own error, a client error), so none of them is log-only.
 func Load(files map[string][]byte) (results []Result, fileErrs []error) {
+	results, _, fileErrs = LoadAll(files)
+	return results, fileErrs
+}
+
+// LoadAll is Load plus the valid client registrations.
+func LoadAll(files map[string][]byte) (results []Result, valid []Client, fileErrs []error) {
 	paths := make([]string, 0, len(files))
 	for p := range files {
 		paths = append(paths, p)
@@ -234,9 +240,11 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 		}
 		if err := validateClient(n, clientFiles[n].Spec, defs, results); err != nil {
 			fileErrs = append(fileErrs, fmt.Errorf("%s: %w", clients[n], err))
+			continue
 		}
+		valid = append(valid, Client{Name: n, Spec: clientFiles[n].Spec})
 	}
-	return results, fileErrs
+	return results, valid, fileErrs
 }
 
 func parseDefinition(p, stem string, b []byte) *parsed {
@@ -353,7 +361,7 @@ func toSpec(merged map[string]any) (*Spec, error) {
 
 func validateClient(name string, s ClientSpec, defs map[string]*parsed, results []Result) error {
 	var errs []error
-	if !envKeyRe.MatchString(s.TokenRef) {
+	if s.TokenRef != "" && !envKeyRe.MatchString(s.TokenRef) {
 		// Never echo it: this check exists to catch a pasted value.
 		errs = append(errs, fmt.Errorf("tokenRef must be a secret KEY name matching %s, never a value (value not shown)", envKeyRe))
 	}

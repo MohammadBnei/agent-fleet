@@ -33,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
+	"github.com/MohammadBnei/agent-fleet/core/internal/islands"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
@@ -45,7 +46,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
-	"github.com/MohammadBnei/agent-fleet/core/internal/islands"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
 
@@ -389,8 +389,31 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// call is Unauthenticated: the service has no unauthenticated mode.
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
-	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub), connect.WithInterceptors(memberInterceptors...))
+	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub)
+	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
+
+	// :9091, clients (docs/adr/0066 §3): the same handlers, a bearer for the
+	// principal, AgentService and nothing else on the socket. No CSRF check:
+	// no browser and no cookie reach this port.
+	var clientList func() []definitions.Client
+	if defs != nil {
+		clientList = defs.Clients
+	} else {
+		clientList = func() []definitions.Client { return nil }
+	}
+	clientMux := http.NewServeMux()
+	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(
+		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList)))
+	clientMux.Handle(agentPath, clientHandler)
+	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		slog.Info("core client API listening", "port", cfg.ClientPort)
+		if err := clientServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+	defer func() { _ = clientServer.Close() }()
 	mux.Handle("/islands/", islands.Handler("/islands/"))
 	mux.Handle("/", webui.Handler())
 	// The gate wraps the WHOLE mux, with an explicit exempt list inside it,

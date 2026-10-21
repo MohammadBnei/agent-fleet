@@ -145,6 +145,15 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	if r, err := wait(asDef, def, sha); err != nil || len(r.GetEntries()) != 1 {
 		t.Errorf("WaitForMessages with the applied sha: %v, %v", r, err)
 	}
+	// A context-only entry is never the agent's input (docs/adr/0067 §3):
+	// neither stream nor wait_for_messages hands it over.
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
+		VALUES ($1, 500, 'human', 'a comment', 'discussion', 'ctx-only', true, true)`, def); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := c.WaitForMessages(asDef, &agentfleetv1.ReadTranscriptSinceRequest{SessionId: def, SinceSeq: 500, TimeoutMs: 1, AgentSpecSha: sha}); err != nil || len(r.GetEntries()) != 0 || r.GetNextSeq() != 501 {
+		t.Errorf("context-only via WaitForMessages: %v, %v", r, err)
+	}
 	if e, err := stream(asDef, def, sha); err != nil || e.GetText() != "hello" {
 		t.Errorf("StreamHumanMessages with the applied sha: %v, %v", e, err)
 	}

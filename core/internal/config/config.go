@@ -15,6 +15,9 @@ type Config struct {
 	Port     string
 	GRPCPort string
 	// MetricsPort carries /metrics on its OWN listener, deliberately not on
+	// ClientPort serves AgentService to registered clients only, behind a
+	// bearer (docs/adr/0066 §3). Never routed by any ingress.
+	ClientPort string
 	// Port. fleet.bnei.dev's IngressRoute matches on host with no path
 	// constraint, so everything Port serves is internet-routed and only the
 	// OIDC gate refuses it — see docs/adr/0059.
@@ -183,6 +186,7 @@ func Load() Config {
 		Port:                  env("CORE_PORT", "8080"),
 		GRPCPort:              env("CORE_GRPC_PORT", "9090"),
 		MetricsPort:           env("CORE_METRICS_PORT", "9093"),
+		ClientPort:            env("CORE_CLIENT_PORT", "9091"),
 		LogLevel:              env("LOG_LEVEL", "info"),
 		DBHost:                env("AGENTFLEET_DB_HOST", "postgres.bnei.lan"),
 		DBPort:                envInt("AGENTFLEET_DB_PORT", 5432),
