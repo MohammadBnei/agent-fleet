@@ -82,31 +82,72 @@ The owner rejected the iframe on four counts:
 ### 3. Auth: the fleet cookie, same-site hosts, CORS on AgentService only
 
 - **Same-site hosts only.** `opus.bnei.dev` and `fleet.bnei.dev` are the same
-  site (`bnei.dev` is not a public suffix), so the `__Host-` `SameSite=Lax`
-  session cookie is sent on a credentialed `fetch` and is not a third-party
-  cookie that browsers block. The definitions validator already limits
-  `embed.origins` to exact `https://` origins on `bnei.dev` or `*.bnei.dev`.
-- **CORS (amends ADR-0066 §1).** Core answers CORS on the `AgentService`
-  path prefix only, and only for an `Origin` that some valid definition lists
-  in `embed.origins`: the exact origin echoed, `Access-Control-Allow-
-  Credentials: true`, `Vary: Origin`, and the preflight allowing the Connect
-  and CSRF headers. Every other path, `DashboardService` and `/auth/*`
-  included, still sends no CORS header. The per-method authz (ADR-0066 §4)
-  then decides per definition: a call naming a definition whose
-  `embed.origins` does not list the request's `Origin` is refused, so an
-  origin allowed for one definition cannot drive another.
+  site (`bnei.dev` is the registrable domain, both on https), so the
+  `__Host-` `SameSite=Lax` session cookie rides a credentialed `fetch` and is
+  not a third-party cookie that browsers block. The definitions validator
+  already limits `embed.origins` to exact `https://` origins on `bnei.dev` or
+  `*.bnei.dev`.
+- **Where CORS sits.** The handler order is `FrameDeny` → CORS → `OIDC.Gate`
+  → mux. The CORS layer matches the `AgentService` path prefix on
+  `EscapedPath()`, the string the Gate and mux use, and nothing else:
+  - it answers the preflight itself, without auth (a preflight never carries
+    cookies);
+  - it decorates every `AgentService` response, the Gate's own 401 and 403
+    included, so the island sees `Unauthenticated` and not an opaque network
+    error;
+  - for an allowlisted `Origin` it echoes that exact origin with
+    `Access-Control-Allow-Credentials: true`; `Vary: Origin` goes on every
+    `AgentService` response, CORS or not;
+  - `Access-Control-Allow-Headers` lists the Connect headers and
+    AgentService's CSRF header only, never `DashboardService`'s. Every other
+    path, `DashboardService` and `/auth/*` included, still sends no CORS
+    header, so the dashboard's CSRF header keeps forcing a preflight that is
+    never answered.
+- **What `Origin` means** (amends ADR-0066 §1 and §4). `Origin` is a browser
+  signal; a non-browser caller can set anything, and on `:8080` it still needs
+  a member cookie.
+  - **Absent, or the fleet's own origin:** the console. ADR-0066's rules
+    apply unchanged.
+  - **An origin some valid definition lists:** an island call. The caller is
+    evaluated **as a member only**: `platform-admins` gives nothing extra, so
+    a script on a host can never use an admin's cookie as admin power. Every
+    method is fenced to the definitions listing that origin: a
+    session-scoped method (streams included) resolves the session's
+    definition, list methods are filtered, and a mismatch is the same
+    `NotFound` as an unseen session. An origin allowed for one definition
+    cannot reach another.
+  - **Anything else, `null` included:** refused.
+  The CSRF header stays mandatory on every `AgentService` call, unary GETs
+  included.
 - **Static bundles.** `/islands/*` joins the gate's exempt paths as the
-  first prefix: immutable, hashed JS and CSS with no data, served with
-  `Access-Control-Allow-Origin: *` (module scripts are fetched in CORS mode)
-  and long cache headers.
+  first prefix, matched on the same escaped string the file server uses, with
+  a path-traversal test. The entry module (`/islands/fleet-agent.js`) has a
+  stable URL and `Cache-Control: no-cache` with an ETag, so a fix or rollback
+  reaches hosts at once. Its chunks are content-hashed and `immutable`. All of
+  it is served with `Access-Control-Allow-Origin: *`: it holds no data, and
+  module scripts load in CORS mode.
 - **Login.** On `Unauthenticated` the element shows "Sign in", which opens
-  `fleet.bnei.dev/auth/login?popup=1` top-level in a popup. The callback
-  sets the cookie and lands on a page that closes itself. The element does
-  not rely on `window.opener`: it retries the call when its window regains
-  focus. Core never sets `Cross-Origin-Opener-Policy: same-origin` on
-  `/auth/*`.
+  `fleet.bnei.dev/auth/login?popup=1` top-level in a popup. `popup=1` only
+  selects the fixed local landing page `/auth/done`, which joins the exempt
+  paths; the return target stays local-only (`safeReturnTo`). The landing page
+  closes itself. The element does not rely on `window.opener`: it retries
+  when its window regains focus and offers a manual "Retry". When the popup
+  is blocked, "Sign in" opens a new tab instead. Core never sets
+  `Cross-Origin-Opener-Policy: same-origin` on `/auth/*`; authentik's pages
+  are outside its control and only break the opener, which nothing needs.
 - **No iframe, so no `/embed/*`.** `frame-ancestors 'none'` (ADR-0069)
-  stays on every path; nothing in the fleet is framed.
+  stays on every fleet path. The Allow button now lives in the host page, so
+  the framing defence moves there: **a host in `embed.origins` must send
+  `frame-ancestors 'self'`**, or a same-site page (a preview host, any
+  `*.bnei.dev` app) could frame it and clickjack an approval with the cookie
+  riding.
+- **Which origins.** An origin is listed only for a host the platform serves
+  as a registered app (infra-bootstrap `gitops/apps/registry.yaml`), and
+  leaves the definition in the PR that removes the app: wildcard DNS means a
+  dropped name still resolves, and anyone who later claims it would inherit
+  the access. Definitions ship at the release tag (ADR-0062), so removing an
+  origin takes effect at the next release; until then the Gate's 401 is the
+  only stop.
 
 ### 4. The boundary is the host origin's scripts
 
@@ -119,13 +160,27 @@ boundaries either: the script calls the API, not the element.
 
 - All decisions are inline, the riskiest included. There is no fleet-origin
   confirmation step.
-- On a host the agent can write to (the Opus space is the agent's own
-  workspace), the control is the **script-write ask** (P5 spike 5): any write
-  of `.js`/`.mjs`, a `space-lua`/`space-script` fence, `${`, `js.import`,
-  `js.window` or a `Library/` install asks a human, even in `auto`.
-- **Accepted residual:** one approved script, or any XSS on an allowlisted
-  host, can act as every member who opens that page, including approving the
-  agent's own permission requests and plans, until the script is removed.
+- **Who can put a script on the host.**
+  - The agent: on a host it writes to (the Opus space is its workspace), the
+    **script-write ask** (P5 spike 5) asks a human for any write of
+    `.js`/`.mjs`, a `space-lua`/`space-script` fence, `${`, `js.import`,
+    `js.window` or a `Library/` install, even in `auto`.
+  - Any member who can edit the space, through SilverBullet itself. The ask
+    does not cover humans.
+  - Whoever ships a fleet release: the island bundle runs in every host. That
+    is the same trust as the core image, an owner-merged PR with green CI.
+- **The island renders untrusted content inside the host origin**: agent
+  output, other members' messages in shared threads, text the agent read from
+  the web or the space. A rendering bug there is script in the host. So:
+  markdown renders with raw HTML off, every produced HTML string goes through
+  a sanitizer before it reaches the DOM, links get `rel="noopener"` and
+  never a `javascript:` URL, and mermaid runs with `securityLevel: "strict"`.
+- **Accepted residual:** one approved or member-written script, a sanitizer
+  bug, or any XSS on an allowlisted host can act as every member who opens
+  that page, within that member's rights on the host's definitions:
+  answering, approving, posting, reading their threads. Admin power is out of
+  reach (island calls are member-only). Group removal takes effect when the
+  12h cookie expires (ADR-0069 §5).
 - An origin goes into `embed.origins` only when its scripts are reviewed or
   guarded like this. Adding one is a definition PR.
 
@@ -152,6 +207,9 @@ boundaries either: the script calls the API, not the element.
 - Members get the agent where they work. The console stays admin-only.
 - AgentService becomes reachable from allowlisted origins; every other core
   path stays same-origin.
+- `gate.go`'s "never allowing CORS" comment and the `/embed/*` notes in
+  `gate.go`, `headers.go`, ADR-0066 §2 and ADR-0069 §4 change with the code
+  that implements this.
 - Two UIs render transcripts: the console (React) and the islands (Svelte).
   Transcript parsing is shared code so they disagree on layout, not meaning.
 - Hosts are `*.bnei.dev` only. A host on another site needs third-party
