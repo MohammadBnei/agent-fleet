@@ -116,7 +116,10 @@ The owner rejected the iframe on four counts:
     definition, list methods are filtered, and a mismatch is the same
     `NotFound` as an unseen session. An origin allowed for one definition
     cannot reach another.
-  - **Anything else, `null` included:** refused.
+  - **Anything else, `null` included:** refused, by the CORS layer itself
+    with a 403 before the Gate or any handler runs: a refused preflight alone
+    does not stop a simple POST. AgentService's interceptor refuses the same
+    origins again as a second layer.
   The CSRF header stays mandatory on every `AgentService` call, unary GETs
   included.
 - **Static bundles.** `/islands/*` joins the gate's exempt paths as the
