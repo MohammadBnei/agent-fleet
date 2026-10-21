@@ -114,6 +114,9 @@ const (
 	// DashboardServiceSyncRepoProcedure is the fully-qualified name of the DashboardService's SyncRepo
 	// RPC.
 	DashboardServiceSyncRepoProcedure = "/agentfleet.v1.DashboardService/SyncRepo"
+	// DashboardServiceSetReposActiveProcedure is the fully-qualified name of the DashboardService's
+	// SetReposActive RPC.
+	DashboardServiceSetReposActiveProcedure = "/agentfleet.v1.DashboardService/SetReposActive"
 	// DashboardServiceListPacksProcedure is the fully-qualified name of the DashboardService's
 	// ListPacks RPC.
 	DashboardServiceListPacksProcedure = "/agentfleet.v1.DashboardService/ListPacks"
@@ -239,6 +242,7 @@ type DashboardServiceClient interface {
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
+	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
@@ -448,6 +452,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("SyncRepo")),
 			connect.WithClientOptions(opts...),
 		),
+		setReposActive: connect.NewClient[v1.SetReposActiveRequest, v1.SetReposActiveResponse](
+			httpClient,
+			baseURL+DashboardServiceSetReposActiveProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("SetReposActive")),
+			connect.WithClientOptions(opts...),
+		),
 		listPacks: connect.NewClient[v1.ListPacksRequest, v1.ListPacksResponse](
 			httpClient,
 			baseURL+DashboardServiceListPacksProcedure,
@@ -588,6 +598,7 @@ type dashboardServiceClient struct {
 	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
+	setReposActive      *connect.Client[v1.SetReposActiveRequest, v1.SetReposActiveResponse]
 	listPacks           *connect.Client[v1.ListPacksRequest, v1.ListPacksResponse]
 	createPack          *connect.Client[v1.CreatePackRequest, v1.CreatePackResponse]
 	savePackVersion     *connect.Client[v1.SavePackVersionRequest, v1.SavePackVersionResponse]
@@ -741,6 +752,11 @@ func (c *dashboardServiceClient) ListRepos(ctx context.Context, req *connect.Req
 // SyncRepo calls agentfleet.v1.DashboardService.SyncRepo.
 func (c *dashboardServiceClient) SyncRepo(ctx context.Context, req *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {
 	return c.syncRepo.CallUnary(ctx, req)
+}
+
+// SetReposActive calls agentfleet.v1.DashboardService.SetReposActive.
+func (c *dashboardServiceClient) SetReposActive(ctx context.Context, req *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error) {
+	return c.setReposActive.CallUnary(ctx, req)
 }
 
 // ListPacks calls agentfleet.v1.DashboardService.ListPacks.
@@ -902,6 +918,7 @@ type DashboardServiceHandler interface {
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
+	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
@@ -1107,6 +1124,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("SyncRepo")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceSetReposActiveHandler := connect.NewUnaryHandler(
+		DashboardServiceSetReposActiveProcedure,
+		svc.SetReposActive,
+		connect.WithSchema(dashboardServiceMethods.ByName("SetReposActive")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListPacksHandler := connect.NewUnaryHandler(
 		DashboardServiceListPacksProcedure,
 		svc.ListPacks,
@@ -1271,6 +1294,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListReposHandler.ServeHTTP(w, r)
 		case DashboardServiceSyncRepoProcedure:
 			dashboardServiceSyncRepoHandler.ServeHTTP(w, r)
+		case DashboardServiceSetReposActiveProcedure:
+			dashboardServiceSetReposActiveHandler.ServeHTTP(w, r)
 		case DashboardServiceListPacksProcedure:
 			dashboardServiceListPacksHandler.ServeHTTP(w, r)
 		case DashboardServiceCreatePackProcedure:
@@ -1422,6 +1447,10 @@ func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.
 
 func (UnimplementedDashboardServiceHandler) SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SyncRepo is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SetReposActive is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error) {

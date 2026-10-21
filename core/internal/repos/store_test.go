@@ -235,3 +235,46 @@ func TestSync_ShrinkGuard(t *testing.T) {
 		}
 	}
 }
+
+// active is the console's to write: SetActive touches only listed, non-gone
+// rows, a sync tick never resets it, and List/Get still return inactive rows.
+func TestSetActive(t *testing.T) {
+	s, pool := setup(t)
+	ctx := context.Background()
+	runSync(t, s, seeded, seededOverrides)
+	if r := get(t, s, "dream-analyst"); !r.Active || r.CreatedAt.IsZero() {
+		t.Fatalf("a synced repo = %+v, want active with created_at", r)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE repos SET gone_since = now() WHERE name = 'agent-fleet'`); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.SetActive(ctx, []string{"dream-analyst", "vos-monolith", "agent-fleet", "nope"}, false)
+	if err != nil || n != 2 {
+		t.Fatalf("SetActive = %d (%v), want 2: gone and unknown names are skipped", n, err)
+	}
+	var goneActive bool
+	if err := pool.QueryRow(ctx, `SELECT active FROM repos WHERE name = 'agent-fleet'`).Scan(&goneActive); err != nil || !goneActive {
+		t.Fatalf("gone row active = %v (%v), want untouched", goneActive, err)
+	}
+
+	runSync(t, s, seeded, seededOverrides)
+	if r := get(t, s, "dream-analyst"); r == nil || r.Active {
+		t.Fatalf("dream-analyst after sync = %+v, want still inactive", r)
+	}
+	if r := get(t, s, "infra-bootstrap"); !r.Active {
+		t.Fatal("an unlisted repo was deactivated")
+	}
+	list, err := s.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inactive := 0
+	for _, r := range list {
+		if !r.Active {
+			inactive++
+		}
+	}
+	if inactive != 2 {
+		t.Fatalf("List carries %d inactive rows, want 2", inactive)
+	}
+}

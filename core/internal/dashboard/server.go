@@ -178,6 +178,8 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 			fmt.Errorf("definition %q targets repo %q, which is not onboarded (add it under manage repos)", head.Name, repo))
 	case repoCfg == nil:
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown repo %q", repo))
+	case !repoCfg.Active:
+		return nil, errInactive(repo)
 	case head != nil && repoCfg.ClusterAccess:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
@@ -308,6 +310,18 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	}
 	if p == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such proposal"))
+	}
+	// Checked before anything is consumed: a schedule or alert must not open
+	// a session on a repo the admin switched off, and the proposal stays open.
+	r, err := s.repos.Get(ctx, p.Repo)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if r == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("repo %q is gone", p.Repo))
+	}
+	if !r.Active {
+		return nil, errInactive(p.Repo)
 	}
 
 	// Title for both the label fields: the body is not a label, it is the
@@ -1299,9 +1313,9 @@ func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleet
 	return connect.NewResponse(&agentfleetv1.GetJournalResponse{Entries: out, NextId: nextID}), nil
 }
 
-// ListRepos backs the console's read-only repo list. Rows come from the
-// GitHub sync and infra-bootstrap's overrides file (docs/adr/0074); there is
-// nothing to edit here.
+// ListRepos backs the console's repo manager. Rows come from the GitHub sync
+// and infra-bootstrap's overrides file (docs/adr/0074); inactive rows are
+// listed too, since the console is where they are switched back on.
 
 func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.ListReposRequest]) (*connect.Response[agentfleetv1.ListReposResponse], error) {
 	list, err := s.repos.List(ctx)
@@ -1344,6 +1358,9 @@ func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1
 	if r == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
 	}
+	if !r.Active {
+		return nil, errInactive(name)
+	}
 	resp, err := s.e2e.SyncRepoCache(ctx, r.Name, r.URL)
 	if err != nil {
 		// err itself, not a generic replacement: git's own stderr is already
@@ -1373,7 +1390,29 @@ func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 		Image:         r.Image,
 		ClusterAccess: r.ClusterAccess,
 		FullName:      r.FullName,
+		Active:        r.Active,
+		CreatedAt:     r.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+// errInactive is the one refusal for every way of starting a session on a
+// switched-off repo. Existing sessions are not refused: WarmIfIdle never
+// checks active.
+func errInactive(name string) error {
+	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("repo %s is inactive; enable it in Settings → Repos", name))
+}
+
+// SetReposActive is the console's one write on repos: whether the fleet uses
+// a repo, as opposed to whether it can reach it (the GitHub installation).
+func (s *Server) SetReposActive(ctx context.Context, req *connect.Request[agentfleetv1.SetReposActiveRequest]) (*connect.Response[agentfleetv1.SetReposActiveResponse], error) {
+	names, active := req.Msg.GetNames(), req.Msg.GetActive()
+	n, err := s.repos.SetActive(ctx, names, active)
+	if err != nil {
+		slog.Error("dashboard SetReposActive", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard SetReposActive", "by", who(ctx), "active", active, "requested", len(names), "updated", n)
+	return connect.NewResponse(&agentfleetv1.SetReposActiveResponse{Updated: int32(n)}), nil
 }
 
 // The four RepoProfile CRUD handlers and their five proto-conversion helpers

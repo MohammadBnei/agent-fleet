@@ -208,8 +208,10 @@ go wrong, and a fragment that gets misread is worse than a few extra words.
 Every repo `argocd-ukubi-bot` is a collaborator on (`adr/0074`): core projects
 the bot's GitHub repos into the `repos` table each minute, and overrides (name,
 base branch, image, cluster access) come only from infra-bootstrap's
-`gitops/bootstrap/fleet-repo-overrides.yaml`. The console's repo list is
-read-only. Onboarding = invite the bot, nothing else; no per-repo
+`gitops/bootstrap/fleet-repo-overrides.yaml`. The console writes one field,
+`active` (Settings → Repos): installation = what the fleet can reach, active =
+what it uses. An inactive repo starts no new session; open ones keep working.
+Onboarding = invite the bot; the repo arrives active. No per-repo
 Deployment/PVC.
 
 ## Verification traps

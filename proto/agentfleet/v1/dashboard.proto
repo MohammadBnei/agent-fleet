@@ -409,10 +409,9 @@ message GetJournalResponse {
   int64 next_id = 2;
 }
 
-// Repo is one fleet target repo (docs/adr/0028), read-only since
-// docs/adr/0074: the `repos` table is projected from GitHub plus
-// infra-bootstrap's fleet-repo-overrides file. No timestamps exposed: the dashboard's repo list
-// is small and unordered, unlike Session/JournalEntry which need cursor state.
+// Repo is one fleet target repo (docs/adr/0028). Since docs/adr/0074 the
+// `repos` table is projected from GitHub plus infra-bootstrap's
+// fleet-repo-overrides file; the console writes only `active`.
 message Repo {
   reserved 4;
   reserved "e2e_profile";
@@ -434,6 +433,11 @@ message Repo {
   bool cluster_access = 6;
   // GitHub's owner/repo, e.g. "opus-tech-hq/workspace".
   string full_name = 7;
+  // Whether the fleet uses this repo. Inactive starts no new session;
+  // existing sessions keep working. New repos arrive active.
+  bool active = 8;
+  // RFC3339. When the sync first saw the repo: the console's "new" marker.
+  string created_at = 9;
 }
 
 message ListDefinitionsRequest {}
@@ -471,7 +475,18 @@ message ListReposResponse {
 
 // CreateRepo, UpdateRepo and DeleteRepo used to live here. Repos now come
 // from GitHub (the bot's collaborator list) plus infra-bootstrap's overrides
-// file, so the console has nothing to write (docs/adr/0074).
+// file (docs/adr/0074); the console writes exactly one field, `active`.
+
+// Sets `active` on the named repos. Unknown and gone names are skipped;
+// `updated` counts the rows changed.
+message SetReposActiveRequest {
+  repeated string names = 1;
+  bool active = 2;
+}
+
+message SetReposActiveResponse {
+  int32 updated = 1;
+}
 
 // Refreshes the provisioner's clone cache for one repo (ProvisionerService's
 // SyncRepoCache). Only the name travels: core looks the URL up in the `repos`
@@ -669,6 +684,7 @@ service DashboardService {
   rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc SyncRepo(SyncRepoRequest) returns (SyncRepoResponse);
+  rpc SetReposActive(SetReposActiveRequest) returns (SetReposActiveResponse);
 
   // docs/adr/0063. platform-admins only, like the rest of this service, until
   // the editor role's own ADR.

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,6 +38,17 @@ type Repo struct {
 	ClusterAccess bool
 	// FullName is GitHub's owner/repo ("" until the first sync).
 	FullName string
+	// Active is whether the fleet uses this repo: the console's only write
+	// here. An inactive repo starts no new session; existing ones keep
+	// working. Sync never touches it.
+	Active    bool
+	CreatedAt time.Time
+}
+
+const cols = `name, url, base_branch, image, cluster_access, full_name, active, created_at`
+
+func scanDest(r *Repo) []any {
+	return []any{&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess, &r.FullName, &r.Active, &r.CreatedAt}
 }
 
 type Store struct {
@@ -48,7 +60,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) List(ctx context.Context) ([]Repo, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch, image, cluster_access, full_name FROM repos WHERE gone_since IS NULL ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT `+cols+` FROM repos WHERE gone_since IS NULL ORDER BY name`)
 	if err != nil {
 		slog.Error("repos List", "error", err)
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -61,7 +73,7 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 	result := []Repo{}
 	for rows.Next() {
 		var r Repo
-		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess, &r.FullName); err != nil {
+		if err := rows.Scan(scanDest(&r)...); err != nil {
 			slog.Error("repos List: scan", "error", err)
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
@@ -72,11 +84,12 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 
 // Get returns nil, nil when no repo with this name exists, or when it is
 // gone (docs/adr/0074): every create and warm looks its repo up here, so a
-// gone repo is refused everywhere at once.
+// gone repo is refused everywhere at once. An inactive repo is returned:
+// only starting a session refuses it, a warm of an existing one does not.
 func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 	var r Repo
-	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch, image, cluster_access, full_name FROM repos WHERE name = $1 AND gone_since IS NULL`, name).
-		Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess, &r.FullName)
+	err := s.pool.QueryRow(ctx, `SELECT `+cols+` FROM repos WHERE name = $1 AND gone_since IS NULL`, name).
+		Scan(scanDest(&r)...)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -85,4 +98,14 @@ func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 		return nil, fmt.Errorf("get repo: %w", err)
 	}
 	return &r, nil
+}
+
+// SetActive sets active on the named, non-gone repos and returns how many it
+// updated; unknown names are ignored.
+func (s *Store) SetActive(ctx context.Context, names []string, active bool) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE repos SET active = $2, updated_at = now() WHERE name = ANY($1) AND gone_since IS NULL`, names, active)
+	if err != nil {
+		return 0, fmt.Errorf("set repos active: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }

@@ -28,7 +28,10 @@ A repo is in the fleet while `argocd-ukubi-bot` is a collaborator on it
    The provisioner accepts invitations only from `FLEET_REPO_INVITERS`
    (`k8s/provisioner/deployment.yaml`, today `MohammadBnei`), and core's 60s
    tick inserts the row: about 2 minutes end to end. The base branch is the
-   repo's GitHub default branch.
+   repo's GitHub default branch. The repo arrives **active**; to keep the
+   fleet off it without removing the bot, switch it off in the console's
+   Settings → Repos (an inactive repo starts no new session; open ones keep
+   working).
 2. **Only if the defaults are wrong**: add an entry to infra-bootstrap's
    `gitops/bootstrap/fleet-repo-overrides.yaml`, keyed by `owner/repo` with
    the repo's GitHub `id` (`gh api repos/<owner>/<repo> --jq .id`):

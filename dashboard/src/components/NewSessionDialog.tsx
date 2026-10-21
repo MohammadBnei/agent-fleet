@@ -58,8 +58,10 @@ export function NewSessionDialog({
     client
       .listRepos({})
       .then((res) => {
-        setRepos(res.repos);
-        setRepo((current) => current || res.repos[0]?.name || "");
+        // Inactive repos start no session; core would refuse them anyway.
+        const active = res.repos.filter((r) => r.active);
+        setRepos(active);
+        setRepo((current) => current || active[0]?.name || "");
       })
       .catch((err: Error) => setError(err.message));
   }, [dialogOpen]);

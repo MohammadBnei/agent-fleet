@@ -224,7 +224,7 @@ function ScheduleForm({
       .listRepos({})
       .then((res) => {
         setRepos(res.repos);
-        setRepo((current) => current || res.repos[0]?.name || "");
+        setRepo((current) => current || res.repos.find((r) => r.active)?.name || "");
       })
       .catch((err: Error) => setError(err.message));
   }, []);
@@ -273,9 +273,11 @@ function ScheduleForm({
         <label className="flex flex-col gap-1 text-xs text-dim2">
           repo
           <select value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="repo" className={field}>
-            {repos.map((r) => (
+            {/* Active repos only, except the one an existing schedule already
+                targets: hiding it would silently retarget the schedule on save. */}
+            {repos.filter((r) => r.active || r.name === schedule?.repo).map((r) => (
               <option key={r.name} value={r.name}>
-                {r.clusterAccess ? `${r.name} · cluster access` : r.name}
+                {`${r.name}${r.clusterAccess ? " · cluster access" : ""}${r.active ? "" : " · inactive"}`}
               </option>
             ))}
           </select>

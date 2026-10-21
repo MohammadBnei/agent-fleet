@@ -309,7 +309,7 @@ export function PacksPanel() {
     return Promise.all([client.listPacks({}), client.listDefinitions({}), client.listRepos({})])
       .then(([p, d, r]) => {
         setPacks(p.packs);
-        setTargets({ definition: d.definitions.map((x) => x.name), repo: r.repos.map((x) => x.name) });
+        setTargets({ definition: d.definitions.map((x) => x.name), repo: r.repos.filter((x) => x.active).map((x) => x.name) });
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoaded(true));

@@ -1,6 +1,11 @@
 # ADR-0074 — Fleet repos come from GitHub; overrides come from infra-bootstrap
 
-- **Status:** Accepted
+- **Status:** Accepted. **Amended 2026-10-21:** the console writes one
+  column, `repos.active` (migration 000016, `SetReposActive`). The GitHub
+  installation is what the fleet can reach; `active` is what it uses. New
+  repos arrive active, the sync never touches the column, and an inactive
+  repo cannot start a new session (`CreateSession`, `OpenFromProposal`,
+  `SyncRepo` refuse it) while its existing sessions keep working.
 - **Date:** 2026-10-19
 - **Related:** [ADR-0028](0028-dynamic-repo-config.md) (amended: the `repos`
   table is no longer dashboard-editable; it is a projection of GitHub plus an
