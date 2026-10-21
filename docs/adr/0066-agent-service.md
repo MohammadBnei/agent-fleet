@@ -68,7 +68,10 @@ handler set is mounted twice:
   and a CSRF header check like `DashboardService`'s. The widget is an iframe
   served from the fleet's own origin (ADR-0068), so its calls are
   same-origin. **Core never sends CORS headers**, for this service or any
-  other.
+  other. *(Amended by [ADR-0068](0068-islands.md): islands are web components,
+  not an iframe. Core answers CORS on the `AgentService` prefix for the exact
+  origins in valid definitions' `embed.origins`, with credentials; every
+  other path still sends none.)*
 - **`:9091`, clients.** A new `http.Server` with only `AgentService` on it.
   ClusterIP only: the Service gains port `9091`, and no IngressRoute,
   Traefik route or `:8080` path ever reaches it.
