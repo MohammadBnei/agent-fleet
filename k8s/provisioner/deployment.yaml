@@ -62,7 +62,7 @@ spec:
         # definitions-only release changes only this value, which is what
         # rolls the pod onto the new definitions.
         - name: FLEET_VERSION
-          value: "6.18.0"
+          value: "6.19.0"
         - name: NAMESPACE
           value: agent-fleet
         # BASE domain, not the old deeper e2e.bnei.dev. Previews are now
