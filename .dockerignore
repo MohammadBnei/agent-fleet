@@ -19,6 +19,8 @@ node_modules
 **/node_modules
 dashboard/dist
 core/internal/webui/dist
+islands/dist
+core/internal/islands/dist
 
 # Docs and prose. Nothing is COPYed from these.
 docs

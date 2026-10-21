@@ -7,7 +7,7 @@
 # directory covers it. .dockerignore shapes every build context.
 #
 # component: path...
-core: core dashboard proto/gen/go go.work.sum .dockerignore
+core: core dashboard islands proto/gen/go go.work.sum .dockerignore
 provisioner: provisioner proto/gen/go go.work.sum .dockerignore
 sidecar: sidecar proto/gen/go go.work.sum .dockerignore
 executor: executor proto/gen/go go.work.sum .dockerignore

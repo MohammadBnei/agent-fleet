@@ -12,11 +12,25 @@ RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache bun in
 COPY dashboard/ ./
 RUN bun run build
 
+# The islands (docs/adr/0068): web components host pages load from
+# /islands/*. They import the generated AgentService code and the shared
+# transcript helpers from dashboard/src, at the same relative paths as in the
+# repo. Type checks run in CI's islands-test; the image only bundles.
+FROM oven/bun:1-slim AS islands
+WORKDIR /app/islands
+COPY islands/package.json islands/bun.lock ./
+RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache bun install --frozen-lockfile
+COPY dashboard/src/gen /app/dashboard/src/gen
+COPY dashboard/src/transcript.ts /app/dashboard/src/transcript.ts
+COPY islands/ ./
+RUN bun x vite build
+
 FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY core ./core
 COPY --from=spa /app/dashboard/dist ./core/internal/webui/dist
+COPY --from=islands /app/islands/dist ./core/internal/islands/dist
 # go.work.sum: checksums only the workspace needs. Today that is core's
 # google.golang.org/genproto (via golang-migrate); without the file every
 # build asked sum.golang.org, and a lossy route to Google failed the image

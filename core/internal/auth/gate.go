@@ -30,7 +30,10 @@ func FromContext(ctx context.Context) (Identity, bool) {
 //   - /webhook/alertmanager has its own bearer token (ALERT_WEBHOOK_TOKEN) and
 //     is called in-cluster over the Service URL, never with a browser cookie.
 //   - /auth/{login,callback,logout,me} are the four routes run.go registers.
-//     The planned /embed/* (adr/0068) will be the first deliberate prefix.
+//   - /auth/done is the static page the island's sign-in popup lands on and
+//     closes (docs/adr/0068 §3). It carries no data.
+//   - /islands/ is the one exempt PREFIX: the islands' static bundles, no
+//     data, loaded by host pages before anyone signs in (docs/adr/0068 §3).
 //
 // /metrics is deliberately ABSENT and not served on this mux at all: it lives
 // on CORE_METRICS_PORT (9093), which no IngressRoute reaches. Exempting it here
@@ -42,9 +45,14 @@ var exemptPaths = map[string]bool{
 	"/auth/callback":        true,
 	"/auth/logout":          true,
 	"/auth/me":              true,
+	"/auth/done":            true,
 }
 
-func exempt(path string) bool { return exemptPaths[path] }
+// islandsPrefix is matched on the escaped path like everything here; the file
+// server under it serves only what the embedded bundle holds.
+const islandsPrefix = "/islands/"
+
+func exempt(path string) bool { return exemptPaths[path] || strings.HasPrefix(path, islandsPrefix) }
 
 // Policy is the authorization rule a layer applies to an authenticated
 // identity.
@@ -74,7 +82,7 @@ func AnyGroup(groups []string) Policy {
 }
 
 // Route widens the Gate for one path prefix (docs/adr/0066 §2): the member
-// routes, AgentService's and later /embed/*. Every other path keeps the
+// routes, AgentService's. Every other path keeps the
 // Gate's default policy, so a route added later is admin-only unless someone
 // lists it here.
 type Route struct {

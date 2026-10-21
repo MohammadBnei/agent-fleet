@@ -45,6 +45,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
+	"github.com/MohammadBnei/agent-fleet/core/internal/islands"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
 
@@ -340,6 +341,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		// the gate is on, so with FLEET_AUTH_DISABLED=1 it 404s and the SPA
 		// simply shows nothing — which is honest: there is no identity to show.
 		mux.HandleFunc("/auth/me", oidcAuth.Me)
+		// Where the island's sign-in popup lands and closes (docs/adr/0068).
+		mux.HandleFunc("/auth/done", auth.Done)
 		// One value for both layers today. A service with a wider audience
 		// widens the Gate's policy to the union and passes its own here.
 		policy := auth.AdminOnly
@@ -353,9 +356,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// CSRF stays alongside the session check and is not redundant: a cookie is
 	// attached by the browser to same-origin requests regardless of which page
 	// triggered them, and the fleet publishes agent-authored dev servers on
-	// same-site siblings of this host. The header plus never allowing CORS is
-	// what stops one of those forging a call; the session check is what stops
-	// an unauthenticated one.
+	// same-site siblings of this host. The header plus no CORS on this service
+	// is what stops one of those forging a call; the session check is what
+	// stops an unauthenticated one. Only AgentService answers CORS, and only
+	// for the embed origins (auth.CORS, docs/adr/0068).
 	interceptors := []connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
 	interceptors = append(interceptors, authInterceptors...)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
@@ -387,6 +391,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
 	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub), connect.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
+	mux.Handle("/islands/", islands.Handler("/islands/"))
 	mux.Handle("/", webui.Handler())
 	// The gate wraps the WHOLE mux, with an explicit exempt list inside it,
 	// rather than wrapping webui.Handler() alone.
@@ -397,7 +402,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// closed. It also has to sit outside the SPA handler specifically, because
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate)}
+	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), embedOrigins(defs))
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate, cors)}
 
 	go func() {
 		slog.Info("core listening", "port", cfg.Port)
@@ -435,9 +441,11 @@ func embedOrigins(defs *definitions.Registry) func() []string {
 
 // httpHandler is the outermost composition core serves. FrameDeny sits outside
 // the gate so the gate's own 302/401/403 carry it, and applies with
-// FLEET_AUTH_DISABLED=1 (identity gate) too (docs/adr/0069).
-func httpHandler(mux http.Handler, gate func(http.Handler) http.Handler) http.Handler {
-	return auth.FrameDeny(gate(mux))
+// FLEET_AUTH_DISABLED=1 (identity gate) too (docs/adr/0069). CORS sits
+// between them for the same reason: the gate's 401/403 to an island must carry
+// its headers, and a preflight is answered before the gate (docs/adr/0068).
+func httpHandler(mux http.Handler, gate, cors func(http.Handler) http.Handler) http.Handler {
+	return auth.FrameDeny(cors(gate(mux)))
 }
 
 // syncRepos projects the bot's GitHub repos plus infra-bootstrap's overrides
