@@ -33,7 +33,7 @@ spec:
       serviceAccountName: provisioner
       containers:
       - name: provisioner
-        image: registry.bnei.lan:5000/agent-fleet-provisioner:src-b8874839160a
+        image: registry.bnei.lan:5000/agent-fleet-provisioner:src-9e997fe09451
         ports:
         - containerPort: 8080
           name: http
@@ -62,7 +62,7 @@ spec:
         # definitions-only release changes only this value, which is what
         # rolls the pod onto the new definitions.
         - name: FLEET_VERSION
-          value: "6.15.0"
+          value: "6.16.0"
         - name: NAMESPACE
           value: agent-fleet
         # BASE domain, not the old deeper e2e.bnei.dev. Previews are now
@@ -79,7 +79,7 @@ spec:
         # clones/worktrees onto, and where core's own gRPC server
         # (ReportPodEvents) lives.
         - name: WORKER_IMAGE
-          value: registry.bnei.lan:5000/agent-fleet-worker:src-e9bdbe15ddf3
+          value: registry.bnei.lan:5000/agent-fleet-worker:src-01f2ed1aff4e
         - name: SIDECAR_IMAGE
           value: registry.bnei.lan:5000/agent-fleet-sidecar:src-03bf04838a7e
         - name: WORKSPACE_PVC
