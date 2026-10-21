@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.3.0](https://github.com/MohammadBnei/agent-fleet/compare/6.2.1...6.3.0) (2026-10-21)
+
+### Features
+
+* **db:** AgentService schema, one reply per prompt (migration 000015) ([#289](https://github.com/MohammadBnei/agent-fleet/issues/289)) ([3938f94](https://github.com/MohammadBnei/agent-fleet/commit/3938f9442b0618729d1e061e096704f7b295988b))
+
 ## [6.2.1](https://github.com/MohammadBnei/agent-fleet/compare/6.2.0...6.2.1) (2026-10-21)
 
 ### Bug Fixes
