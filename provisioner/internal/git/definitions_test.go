@@ -252,3 +252,41 @@ func TestReadDefinitions_RecoversFromALeftoverLockOrBrokenClone(t *testing.T) {
 		t.Fatalf("half-built clone not recovered: %v", err)
 	}
 }
+
+// A caller whose deadline passes mid-refresh must not kill git: the refresh
+// finishes on its own bound, leaving a ready clone and no lock.
+func TestRefreshDetached_OutlivesACancelledCaller(t *testing.T) {
+	root := t.TempDir()
+	m := NewManager(root)
+	origin := newDefinitionsOrigin(t)
+	clone := filepath.Join(root, "definitions-src")
+	if _, _, err := m.ReadDefinitions(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	want := commitFile(t, origin, "definitions/c.yaml", "c")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := m.refreshDetached(ctx, clone, origin, "main"); err != nil {
+		t.Fatalf("refresh aborted with its caller: %v", err)
+	}
+	if got := gitIn(t, clone, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("clone at %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(clone, ".git", "index.lock")); !os.IsNotExist(err) {
+		t.Fatalf("index.lock left behind: %v", err)
+	}
+}
+
+// A caller that already left starts no git at all.
+func TestReadDefinitions_DeadCallerRunsNoGit(t *testing.T) {
+	root := t.TempDir()
+	m := NewManager(root)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := m.ReadDefinitions(ctx, newDefinitionsOrigin(t), "main"); err == nil {
+		t.Fatal("want ctx error")
+	}
+	if _, err := os.Stat(filepath.Join(root, "definitions-src")); !os.IsNotExist(err) {
+		t.Fatalf("a dead caller started a clone: %v", err)
+	}
+}

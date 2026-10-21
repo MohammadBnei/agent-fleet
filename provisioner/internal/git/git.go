@@ -222,17 +222,10 @@ func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL 
 // ponytail: 200ms poll; a channel semaphore if the latency ever shows.
 func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) error {
 	lock := m.repoLock(repo)
-	for !lock.TryLock() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
-	defer lock.Unlock()
-	if err := ctx.Err(); err != nil {
+	if err := lockCtx(ctx, lock); err != nil {
 		return err
 	}
+	defer lock.Unlock()
 	// docs/adr/0065 §6: the URL a definition clones from is bound to repos.url.
 	// ensureLocked never re-points a warm cache, so check it did not come from
 	// somewhere else first. No cache yet: the clone below uses repoURL.
@@ -474,6 +467,40 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 	return nil
 }
 
+// lockCtx takes lock, giving up when ctx ends; a sync.Mutex cannot be waited
+// on with a deadline, so it polls TryLock. On success ctx is still live, so
+// no git starts for a caller that already left.
+//
+// ponytail: 200ms poll; a channel semaphore if the latency ever shows.
+func lockCtx(ctx context.Context, lock *sync.Mutex) error {
+	for !lock.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		lock.Unlock()
+		return err
+	}
+	return nil
+}
+
+// refreshDetached runs refreshClone on a context detached from the caller,
+// under its own bound. core's ListDefinitionFiles has a 30s deadline, and a
+// cancelled ctx SIGKILLs git mid-reset on a slow PVC, leaving index.lock
+// (2026-10-20, v6.2.0 rollout: ~3 min of failed syncs). The caller holds
+// path's lock, so the next call waits for it, then reads a ready clone.
+func (m *Manager) refreshDetached(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	defer cancel()
+	return m.refreshClone(ctx, path, repoURL, ref, fetchArgs...)
+}
+
+// refreshTimeout bounds one detached refresh, re-clone included.
+const refreshTimeout = 5 * time.Minute
+
 // refreshClone makes path a provisioner-owned clone of repoURL at ref (a
 // branch or a tag): `clone --branch` when absent, else fetch (with any extra
 // fetchArgs) + hard reset to FETCH_HEAD. The caller holds path's lock.
@@ -567,7 +594,9 @@ const (
 // `--depth 1` if disk ever matters.
 func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map[string][]byte, string, error) {
 	lock := m.repoLock(definitionsSentinel)
-	lock.Lock()
+	if err := lockCtx(ctx, lock); err != nil {
+		return nil, "", err
+	}
 	defer lock.Unlock()
 
 	path := filepath.Join(m.root, "definitions-src")
@@ -577,7 +606,7 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 	// a fetched tag as a local ref, which this check needs.
 	sha, err := m.run(ctx, path, "rev-parse", "HEAD")
 	if tag, tagErr := m.run(ctx, path, "rev-parse", "-q", "--verify", "refs/tags/"+ref+"^{commit}"); err != nil || tagErr != nil || tag != sha {
-		if err := m.refreshClone(ctx, path, repoURL, ref, "--tags"); err != nil {
+		if err := m.refreshDetached(ctx, path, repoURL, ref, "--tags"); err != nil {
 			return nil, "", fmt.Errorf("definitions clone at %q: %w", ref, err)
 		}
 		if sha, err = m.run(ctx, path, "rev-parse", "HEAD"); err != nil {
