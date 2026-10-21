@@ -13,8 +13,10 @@ import (
 // provisioner does not report until the client-listener PR.
 func status(t *sessions.Session) *agentfleetv1.Status {
 	if !sessions.IsPodPhaseLive(t.PodPhase) {
+		// Never last_error itself: it is the provisioner's text (pod names,
+		// images) and a shared thread's members are not admins.
 		if t.LastError != nil && *t.LastError != "" {
-			return &agentfleetv1.Status{State: "error", Message: *t.LastError}
+			return &agentfleetv1.Status{State: "error", Message: "the session could not start"}
 		}
 		return &agentfleetv1.Status{State: "idle"}
 	}

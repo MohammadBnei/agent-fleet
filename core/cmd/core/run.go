@@ -49,7 +49,7 @@ import (
 
 // checkCapacity: the definition pool sits INSIDE the global cap so admins are
 // never locked out by defined agents (docs/adr/0062).
-func checkCapacity(maxInFlight, maxDef, maxExternal int) error {
+func checkCapacity(maxInFlight, maxDef, maxExternal, perMember int) error {
 	if maxDef < 0 || maxDef >= maxInFlight {
 		return fmt.Errorf("MAX_DEFINITION_SESSIONS (%d) must be >= 0 and < MAX_IN_FLIGHT_TASKS (%d): definition sessions draw from a pool inside the global cap so admins are never locked out", maxDef, maxInFlight)
 	}
@@ -58,11 +58,14 @@ func checkCapacity(maxInFlight, maxDef, maxExternal int) error {
 	if maxExternal < 0 || (maxExternal > 0 && maxExternal >= maxDef) {
 		return fmt.Errorf("MAX_EXTERNAL_SESSIONS (%d) must be >= 0 and < MAX_DEFINITION_SESSIONS (%d): member and client sessions draw from a pool inside the definition pool", maxExternal, maxDef)
 	}
+	if maxExternal > 0 && perMember < 1 {
+		return fmt.Errorf("MAX_SESSIONS_PER_MEMBER (%d) must be >= 1 when MAX_EXTERNAL_SESSIONS is set", perMember)
+	}
 	return nil
 }
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
-	if err := checkCapacity(cfg.MaxInFlight, cfg.MaxDefinitionSessions, cfg.MaxExternalSessions); err != nil {
+	if err := checkCapacity(cfg.MaxInFlight, cfg.MaxDefinitionSessions, cfg.MaxExternalSessions, cfg.MaxSessionsPerMember); err != nil {
 		return err
 	}
 	store := transcript.NewPostgresStore(pool)

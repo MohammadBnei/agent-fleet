@@ -3,6 +3,7 @@ package agentsvc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -14,6 +15,15 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+)
+
+// Bounds on what a member can write: open threads per owner (CreateThread
+// provisions nothing, so no warm-time cap counts them), a title, and one
+// message.
+const (
+	maxOpenThreads = 50
+	maxTitle       = 200
+	maxText        = 64 << 10
 )
 
 // One answer for "not yours" and "does not exist" (docs/adr/0066 §4), so
@@ -42,6 +52,11 @@ func (s *Server) thread(ctx context.Context, p Principal, id string) (*sessions.
 	if err != nil {
 		return nil, definitions.Head{}, connect.NewError(connect.CodeInternal, err)
 	}
+	one := []sessions.Session{*t}
+	if err := s.sessions.Tainted(ctx, one); err != nil {
+		return nil, definitions.Head{}, connect.NewError(connect.CodeInternal, err)
+	}
+	t = &one[0]
 	h, _ := s.definitions.Resolve(*t.DefinitionName)
 	if !canSee(p, t, h) {
 		return nil, definitions.Head{}, errNoThread
@@ -134,7 +149,12 @@ func (s *Server) ListThreads(ctx context.Context, req *connect.Request[agentflee
 	if len(names) == 0 {
 		return connect.NewResponse(out), nil
 	}
-	list, err := s.sessions.ListThreads(ctx, names, p.owner(), p.Admin())
+	// A client sees only its own threads, so other owners' shared rows never
+	// take its slots in the query's limit.
+	list, err := s.sessions.ListThreads(ctx, names, p.owner(), p.Member != nil, p.Admin())
+	if err == nil {
+		err = s.sessions.Tainted(ctx, list)
+	}
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -160,6 +180,20 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 	vis := req.Msg.GetVisibility()
 	if vis != "shared" && vis != "private" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(`visibility must be "shared" or "private"`))
+	}
+	if len(req.Msg.GetTitle()) > maxTitle {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("title is over %d bytes", maxTitle))
+	}
+	// Creating provisions nothing, so the warm-time caps never see a member
+	// who only creates; this bounds the rows instead.
+	if !p.Admin() {
+		n, err := s.sessions.OpenThreads(ctx, p.owner())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if n >= maxOpenThreads {
+			return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("you have %d open threads; close one first", n))
+		}
 	}
 	h, err := s.definitions.Resolve(req.Msg.GetDefinition())
 	switch {
@@ -196,8 +230,8 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	if err != nil {
 		return nil, err
 	}
-	if req.Msg.GetText() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
+	if req.Msg.GetText() == "" || len(req.Msg.GetText()) > maxText {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("text is required and at most %d bytes", maxText))
 	}
 	t, h, err := s.thread(ctx, p, req.Msg.GetThreadId())
 	if err != nil {
@@ -259,7 +293,11 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 }
 
 // streamMaxAge matches the console's: the client reconnects from its cursor.
+// Visibility is checked at the start of each stream, so a revocation takes
+// effect within it.
 var streamMaxAge = 90 * time.Second
+
+const streamPage = 100
 
 // StreamTranscript wakes on the console's hub and reads the store itself,
 // because the hub's entries are DashboardService's shape and carry no author.
@@ -273,12 +311,19 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 		return err
 	}
 	cursor := req.Msg.GetSinceSeq()
-	wake, cancel := s.hub.Subscribe(t.ID, cursor)
+	// The hub's cursor is shared by every subscriber of a session and seeded
+	// by the first, so it gets the store's head, never the caller's since:
+	// a member must not be able to stop everyone else's live view.
+	head, err := s.transcr.LatestSeq(ctx, t.ID)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	wake, cancel := s.hub.Subscribe(t.ID, head)
 	defer cancel()
 	deadline := time.NewTimer(streamMaxAge)
 	defer deadline.Stop()
 	for {
-		entries, next, err := s.transcr.ReadSince(ctx, t.ID, cursor, 100)
+		entries, next, err := s.transcr.ReadSince(ctx, t.ID, cursor, streamPage)
 		if err != nil {
 			return connect.NewError(connect.CodeInternal, err)
 		}
@@ -288,6 +333,10 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 			}
 		}
 		cursor = next
+		// A full page means more is waiting: read again before sleeping.
+		if len(entries) == streamPage {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return nil

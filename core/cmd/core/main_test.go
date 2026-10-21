@@ -33,16 +33,18 @@ func TestResolveLogLevel(t *testing.T) {
 // large as the cap would let defined agents lock admins out.
 func TestCheckCapacity(t *testing.T) {
 	for _, c := range []struct {
-		inFlight, def, ext int
-		ok                 bool
+		inFlight, def, ext, perMember int
+		ok                            bool
 	}{
-		{5, 0, 0, true}, {5, 2, 0, true}, {5, 4, 0, true},
-		{5, 5, 0, false}, {5, 6, 0, false}, {5, -1, 0, false},
-		// docs/adr/0066 §8: the external pool sits inside the definition pool.
-		{5, 2, 1, true}, {5, 2, 2, false}, {5, 0, 1, false}, {5, 2, -1, false},
+		{5, 0, 0, 1, true}, {5, 2, 0, 1, true}, {5, 4, 0, 1, true},
+		{5, 5, 0, 1, false}, {5, 6, 0, 1, false}, {5, -1, 0, 1, false},
+		// docs/adr/0066 §8: the external pool sits inside the definition
+		// pool, and a member needs a share of it.
+		{5, 2, 1, 1, true}, {5, 2, 2, 1, false}, {5, 0, 1, 1, false}, {5, 2, -1, 1, false},
+		{5, 2, 1, 0, false}, {5, 2, 0, 0, true},
 	} {
-		if err := checkCapacity(c.inFlight, c.def, c.ext); (err == nil) != c.ok {
-			t.Errorf("checkCapacity(%d, %d, %d) = %v, want ok=%v", c.inFlight, c.def, c.ext, err, c.ok)
+		if err := checkCapacity(c.inFlight, c.def, c.ext, c.perMember); (err == nil) != c.ok {
+			t.Errorf("checkCapacity(%d, %d, %d, %d) = %v, want ok=%v", c.inFlight, c.def, c.ext, c.perMember, err, c.ok)
 		}
 	}
 }

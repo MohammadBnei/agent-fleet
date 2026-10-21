@@ -121,7 +121,8 @@ type Session struct {
 	Interaction *string `json:"interaction,omitempty"`
 	Lifecycle   *string `json:"lifecycle,omitempty"`
 	// Tainted is derived (docs/adr/0067 §3): an untrusted entry is in the
-	// transcript. Never stored.
+	// transcript. Never stored, and filled only by Tainted below, not on every
+	// read: the console's list must not pay for it.
 	Tainted   bool      `json:"tainted"`
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -189,7 +190,6 @@ const selectCols = `
 	s.worker_image, s.sidecar_image,
 	s.definition_name, s.definition_sha,
 	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
-	EXISTS (SELECT 1 FROM transcript u WHERE u.session_id = s.id AND u.untrusted) AS tainted,
 	(SELECT count(*) FROM transcript q
 	   WHERE q.session_id = s.id
 	     AND q.type IN ('question', 'permission_request')
@@ -210,7 +210,6 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.WorkerImage, &s.SidecarImage,
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
-		&s.Tainted,
 		&s.PendingDecisions,
 	)
 	if err != nil {
@@ -296,14 +295,18 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	return id, nil
 }
 
-// ListThreads is the open definition sessions of definitions that sub may
-// see (docs/adr/0067 §2): its own, and the shared ones. admin sees every
-// one, owner-less console sessions included. Newest first.
-func (s *Store) ListThreads(ctx context.Context, definitions []string, sub string, admin bool) ([]Session, error) {
+// ListThreads is the open definition sessions of definitions that owner may
+// see (docs/adr/0067 §2): its own, and with shared the shared ones. admin
+// sees every one, owner-less console sessions included. Newest first.
+//
+// ponytail: no pagination; 500 rows, and CreateThread caps a member's open
+// threads well below that. Add a cursor when a definition's shared threads
+// outgrow it.
+func (s *Store) ListThreads(ctx context.Context, definitions []string, owner string, shared, admin bool) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+selectCols+` FROM sessions s
 		WHERE s.archived_at IS NULL AND s.definition_name = ANY($1)
-		  AND ($3 OR s.owner = $2 OR s.visibility = 'shared')
-		ORDER BY s.created_at DESC LIMIT 200`, definitions, sub, admin)
+		  AND ($4 OR s.owner = $2 OR ($3 AND s.visibility = 'shared'))
+		ORDER BY s.created_at DESC LIMIT 500`, definitions, owner, shared, admin)
 	if err != nil {
 		return nil, fmt.Errorf("list threads: %w", err)
 	}
@@ -317,6 +320,46 @@ func (s *Store) ListThreads(ctx context.Context, definitions []string, sub strin
 		out = append(out, *t)
 	}
 	return out, rows.Err()
+}
+
+// Tainted sets each session's Tainted: an untrusted entry is in its
+// transcript (docs/adr/0067 §3).
+//
+// ponytail: no index on transcript.untrusted, so this reads each session's
+// transcript through its primary key. Fine at today's size; a partial index
+// ON transcript (session_id) WHERE untrusted is the upgrade.
+func (s *Store) Tainted(ctx context.Context, list []Session) error {
+	if len(list) == 0 {
+		return nil
+	}
+	ids := make([]string, len(list))
+	for i := range list {
+		ids[i] = list[i].ID
+	}
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT session_id::text FROM transcript WHERE session_id = ANY($1::uuid[]) AND untrusted`, ids)
+	if err != nil {
+		return fmt.Errorf("tainted: %w", err)
+	}
+	defer rows.Close()
+	tainted := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("tainted: %w", err)
+		}
+		tainted[id] = true
+	}
+	for i := range list {
+		list[i].Tainted = tainted[list[i].ID]
+	}
+	return rows.Err()
+}
+
+// OpenThreads counts owner's open sessions, for CreateThread's cap.
+func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE owner = $1 AND archived_at IS NULL`, owner).Scan(&n)
+	return n, err
 }
 
 // Get returns ErrNotFound when no such session exists.
