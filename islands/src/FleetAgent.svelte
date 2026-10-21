@@ -15,6 +15,7 @@
   import { Code, ConnectError } from "@connectrpc/connect";
   import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isStale, isUnauthenticated } from "./api";
   import { conversation, decisions } from "./feed";
+  import { threadTitle } from "./text";
   import { createRenderer } from "./render";
   import { drawDiagrams } from "./diagram";
   import tokens from "./tokens.css?inline";
@@ -239,28 +240,40 @@
     error = "";
     draft = "";
     let key = 0;
+    // Bound to where the user is now: if they move to another thread while
+    // this travels, nothing below writes into that one.
+    let my = gen;
     try {
       let t = current;
       if (!t) {
         // The first line names the thread, so threads tell apart in the list.
-        const title = text.split("\n")[0].slice(0, 80);
-        const res = await api.createThread({ definition, visibility: newVisibility, title });
+        const res = await api.createThread({ definition, visibility: newVisibility, title: threadTitle(text) });
         if (!res.thread) throw new Error("no thread");
         t = res.thread;
         threads = [t, ...threads.filter((x) => x.id !== t!.id)];
+        if (my !== gen) return; // they picked another thread meanwhile
         await select(t);
+        my = gen;
       }
-      const my = gen;
       key = ++pendingKey;
       pending = [...pending, { key, text }];
       const res = await api.postMessage({ threadId: t.id, text });
       if (my !== gen) return;
-      // Already streamed back: drop the copy now; else the stream drops it by seq.
-      if (seen.has(res.seq)) pending = pending.filter((p) => p.key !== key);
-      else pending = pending.map((p) => (p.key === key ? { ...p, seq: res.seq } : p));
+      if (seen.has(res.seq)) {
+        // Already streamed back.
+        pending = pending.filter((p) => p.key !== key);
+      } else if (!stream || stream.signal.aborted) {
+        // No stream to echo it (the transcript failed to load): reload.
+        pending = pending.filter((p) => p.key !== key);
+        await select(t);
+      } else {
+        pending = pending.map((p) => (p.key === key ? { ...p, seq: res.seq } : p));
+      }
     } catch (err) {
+      if (my !== gen) return;
       pending = pending.filter((p) => p.key !== key);
-      if (!draft) draft = text;
+      // Nothing typed since is lost: the failed text goes back in front of it.
+      draft = draft ? `${text}\n${draft}` : text;
       if (isUnauthenticated(err)) phase = "signed-out";
       else if (isStale(err)) stale = true;
       else {
@@ -445,7 +458,10 @@
         disabled={current?.tainted || stale}
         bind:this={composer}
         bind:value={draft}
-        onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+        onkeydown={(e) => {
+          // Enter that confirms an IME candidate (CJK, phone keyboards) is not a send.
+          if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
+        }}
       ></textarea>
       <button class="primary chamfer send" type="submit" disabled={current?.tainted || stale || !draft.trim()}>Send</button>
     </form>

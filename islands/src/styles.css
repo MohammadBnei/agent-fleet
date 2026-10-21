@@ -135,6 +135,7 @@ button { white-space: nowrap; }
 .status[data-state="working"] .dot, .status[data-state="loading"] .dot { background: var(--ukubi-palm-400); }
 .status[data-state="error"] .dot { background: var(--ukubi-danger); }
 .pending { opacity: 0.55; }
-/* Narrow hosts (phones): the status word goes, the dot stays. */
-@container (max-width: 420px) { .status-word { display: none; } }
-:host { container-type: inline-size; }
+/* Narrow screens (phones): the status word goes, the dot stays. */
+@media (max-width: 480px) { .status-word { display: none; } }
+/* Without field-sizing the textarea cannot grow: give it room instead. */
+@supports not (field-sizing: content) { textarea { min-height: 4.5rem; } }
