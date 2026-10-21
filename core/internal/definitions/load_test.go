@@ -536,3 +536,23 @@ func TestGitHubRepo(t *testing.T) {
 		}
 	}
 }
+
+// docs/adr/0068 §4: a definition sharing an island definition's workspace
+// repo must list embed.origins itself, or it would write scripts without the
+// worker's ask.
+func TestLoad_IslandWorkspaceIsNotShared(t *testing.T) {
+	embed := `{ origins: ["https://notes.bnei.dev"] }`
+	got, _ := load(t, map[string]string{
+		"definitions/base.yaml":   baseYAML,
+		"definitions/island.yaml": childYAML("island", map[string]string{"embed": embed}),
+		"definitions/plain.yaml":  childYAML("plain", nil),
+		"definitions/both.yaml":   childYAML("both", map[string]string{"embed": embed}),
+		"definitions/other.yaml":  childYAML("other", map[string]string{"workspace": "{ kind: repo, repo: notes }"}),
+	})
+	if got["island"].Err != nil || got["both"].Err != nil || got["other"].Err != nil {
+		t.Fatalf("island %v, both %v, other %v", got["island"].Err, got["both"].Err, got["other"].Err)
+	}
+	if err := got["plain"].Err; err == nil || !strings.Contains(err.Error(), "island host") || got["plain"].Effective != nil {
+		t.Fatalf("plain shares the island's repo without embed: %v", err)
+	}
+}

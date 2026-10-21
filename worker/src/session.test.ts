@@ -2023,3 +2023,16 @@ describe("script-write ask", () => {
     expect(decide("Edit", { file_path: "page.md", old_string: "today", new_string: "tomorrow" })).toBe("allow");
   });
 });
+
+describe("script-write ask, entity-hidden script URLs", () => {
+  const ISLAND = { ...DEF_ALLOW, scriptAsk: true };
+  test.each([
+    "[x](javas&#99;ript:alert(1))",
+    '<a href="&#106;avascript:alert(1)">x</a>',
+    "<form action=x><button>go</button></form>",
+    "[x](data:text/html,<b>x</b>)",
+    "<math><mtext>x</mtext></math>",
+  ])("%s asks", (content) => {
+    expect(definitionDecision(ISLAND, "Write", { file_path: "new.md", content }, "auto", WT).behavior).toBe("ask");
+  });
+});

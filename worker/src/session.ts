@@ -319,7 +319,9 @@ function workspacePath(path: unknown, worktree: string): string | undefined {
 // expression, js.import / js.window, or raw HTML that runs script. Any edit to
 // such a file asks, not only one that adds a marker: changing an existing
 // script is as dangerous as adding one. Shared with core's grants.Render.
-export const ACTIVE_CONTENT = /(?:`{3,}|~{3,})\s*space-|\$\{|\bjs\.(?:import|window)|<\s*(?:script|iframe|object|embed|svg|style|link|meta|base)\b|\bon[a-z]+\s*=|javascript:/i;
+// Entities count too: a browser decodes javas&#99;ript: in a link before it
+// runs it, so a link target or tag attribute holding one asks.
+export const ACTIVE_CONTENT = /(?:`{3,}|~{3,})\s*space-|\$\{|\bjs\.(?:import|window)|<\s*(?:script|iframe|object|embed|svg|style|link|meta|base|a|form|button|math|area)\b|\bon[a-z]+\s*=|javascript:|data:text\/html|\]\([^)]*&#?[a-z0-9]+;/i;
 const INERT_FILE = /\.(?:md|txt|csv|pdf|png|jpe?g|gif|webp|avif)$/i;
 
 export function writesScript(toolName: string, input: Record<string, unknown>, rel: string, abs: string): boolean {
