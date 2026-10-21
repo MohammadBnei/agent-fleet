@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.2.1](https://github.com/MohammadBnei/agent-fleet/compare/6.2.0...6.2.1) (2026-10-21)
+
+### Bug Fixes
+
+* **provisioner:** run clone refreshes on a context detached from the RPC ([#288](https://github.com/MohammadBnei/agent-fleet/issues/288)) ([7592689](https://github.com/MohammadBnei/agent-fleet/commit/7592689fb88e317efde93830deb5e2077baebee7))
+
 # [6.2.0](https://github.com/MohammadBnei/agent-fleet/compare/6.1.2...6.2.0) (2026-10-20)
 
 ### Features
