@@ -85,7 +85,7 @@ func TestMemberListener(t *testing.T) {
 			return next(ctx, req)
 		}
 	})
-	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(setID, MemberInterceptor()))
+	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(setID, MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{"https://opus.bnei.dev"} })))
 	mux := http.NewServeMux()
 	mux.Handle(path, h)
 	hs := httptest.NewServer(mux)
@@ -124,5 +124,71 @@ func TestMemberListener(t *testing.T) {
 	}
 	if _, err := c.Stop(ctx, connect.NewRequest(&agentfleetv1.StopRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Errorf("not yet implemented: %v", err)
+	}
+}
+
+// docs/adr/0068: an island's call is a member's, inside the definitions that
+// embed its origin; an origin nobody lists is refused; an admin's cookie from
+// an island grants nothing extra.
+func TestOriginFence(t *testing.T) {
+	spec := func(group string, origins ...string) *definitions.Spec {
+		s := &definitions.Spec{Audience: &definitions.Audience{Group: group}}
+		if len(origins) > 0 {
+			s.Embed = &definitions.Embed{Origins: origins}
+		}
+		return s
+	}
+	srv := &Server{definitions: fakeHeads{
+		{Name: "notes", SHA: "a", Effective: spec("shared-notes", "https://opus.bnei.dev")},
+		{Name: "other", SHA: "b", Effective: spec("shared-notes")},
+		{Name: "ops", SHA: "c", Effective: spec("platform-admins")},
+	}}
+	var id auth.Identity
+	setID := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			return next(auth.WithIdentity(ctx, id), req)
+		}
+	})
+	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(setID,
+		MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{"https://opus.bnei.dev"} })))
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	hs := httptest.NewServer(mux)
+	t.Cleanup(hs.Close)
+	c := agentfleetv1connect.NewAgentServiceClient(hs.Client(), hs.URL)
+	list := func(origin string) ([]string, error) {
+		req := connect.NewRequest(&agentfleetv1.AgentServiceListDefinitionsRequest{})
+		if origin != "" {
+			req.Header().Set("Origin", origin)
+		}
+		r, err := c.ListDefinitions(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		var names []string
+		for _, d := range r.Msg.GetDefinitions() {
+			names = append(names, d.GetName())
+		}
+		return names, nil
+	}
+	id = auth.Identity{Sub: "m", Groups: []string{"shared-notes"}}
+	if got, _ := list(""); len(got) != 2 {
+		t.Errorf("member, console: %v", got)
+	}
+	if got, err := list("https://opus.bnei.dev"); err != nil || len(got) != 1 || got[0] != "notes" {
+		t.Errorf("member, island: %v, %v", got, err)
+	}
+	for _, o := range []string{"https://evil.example", "null", "https://opus.bnei.dev.evil.example"} {
+		if _, err := list(o); connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Errorf("origin %q: %v", o, err)
+		}
+	}
+	id = auth.Identity{Sub: "a", Groups: []string{auth.RequiredGroup}}
+	if got, _ := list("https://fleet.bnei.dev"); len(got) != 3 {
+		t.Errorf("admin, console: %v", got)
+	}
+	// Not in shared-notes, so the island shows nothing, admin or not.
+	if got, err := list("https://opus.bnei.dev"); err != nil || len(got) != 0 {
+		t.Errorf("admin, island: %v, %v", got, err)
 	}
 }

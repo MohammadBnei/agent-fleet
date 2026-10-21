@@ -53,7 +53,13 @@ func principal(ctx context.Context) (Principal, error) {
 
 // mayUse is docs/adr/0066 §5 for a member, judged on the current head: in the
 // audience group, or an admin.
+//
+// From an island, the definition must also list the island's origin
+// (docs/adr/0068): a host page reaches only the definitions embedded in it.
 func mayUse(p Principal, spec *definitions.Spec) bool {
+	if p.Origin != "" && (spec.Embed == nil || !slices.Contains(spec.Embed.Origins, p.Origin)) {
+		return false
+	}
 	if p.Admin() {
 		return true
 	}

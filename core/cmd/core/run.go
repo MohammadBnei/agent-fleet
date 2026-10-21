@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -383,7 +384,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// With FLEET_AUTH_DISABLED=1 no identity is set, so every AgentService
 	// call is Unauthenticated: the service has no unauthenticated mode.
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
-		append(memberInterceptors, agentsvc.MemberInterceptor())...)
+		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
 	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub), connect.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
 	mux.Handle("/", webui.Handler())
@@ -413,6 +414,23 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	case err := <-errCh:
 		return err
 	}
+}
+
+// originOf is a URL's scheme://host, the form a browser's Origin header takes.
+func originOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// embedOrigins is nil without a registry: no island is accepted.
+func embedOrigins(defs *definitions.Registry) func() []string {
+	if defs == nil {
+		return nil
+	}
+	return defs.EmbedOrigins
 }
 
 // httpHandler is the outermost composition core serves. FrameDeny sits outside
