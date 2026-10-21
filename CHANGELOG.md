@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.13.0](https://github.com/MohammadBnei/agent-fleet/compare/6.12.0...6.13.0) (2026-10-21)
+
+### Features
+
+* **core:** serve the islands and answer their CORS (ADR-0068 §3) ([#305](https://github.com/MohammadBnei/agent-fleet/issues/305)) ([3816bbe](https://github.com/MohammadBnei/agent-fleet/commit/3816bbe05515bc590f273d57dc91ecc87083be07)), closes [#299](https://github.com/MohammadBnei/agent-fleet/issues/299)
+
 # [6.12.0](https://github.com/MohammadBnei/agent-fleet/compare/6.11.2...6.12.0) (2026-10-21)
 
 ### Features
