@@ -124,10 +124,6 @@
                 "name": "LOG_LEVEL"
               },
               {
-                "name": "FLEET_VERSION",
-                "value": "6.22.1"
-              },
-              {
                 "name": "CORE_GRPC_ADDR"
               },
               {
@@ -194,10 +190,6 @@
             "name": "worker",
             "image": "registry.bnei.lan:5000/agent-fleet-worker:latest",
             "env": [
-              {
-                "name": "FLEET_VERSION",
-                "value": "6.22.1"
-              },
               {
                 "name": "SESSION_ID",
                 "value": "task-1"

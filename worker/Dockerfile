@@ -250,8 +250,10 @@ RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache set -e
     chown -R bun:bun /app
 
 # Add new system packages HERE, not in the base apt step: anything above this
-# line re-pushes ~850MB (and the ~300MB bun install) when it changes; here only
-# this step and the source COPY below rebuild. Runs as root: USER bun is last.
+# line re-pushes ~850MB (and the ~300MB bun install) when it changes; an edit
+# to this line rebuilds only this step and the source COPY below. CACHE_WEEK
+# still busts the base apt step, so once a week is a full rebuild regardless.
+# Runs as root: USER bun is last.
 #
 # python3 is an agent utility here, not a target-repo toolchain: the agent
 # reaches for `python3 -c` constantly for JSON munging, arithmetic and one-off

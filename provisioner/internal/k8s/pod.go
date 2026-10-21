@@ -411,7 +411,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
 	// A version that is not a valid label value (a ref with a slash) would
-	// fail the whole create; the FLEET_VERSION env below still carries it.
+	// fail the whole create, so it is left off; core still gets it from
+	// CreateWorkerPodResponse.fleet_version.
 	if c.Version != "" && len(validation.IsValidLabelValue(c.Version)) == 0 {
 		labels[VersionLabel] = c.Version
 	}
@@ -446,7 +447,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	}
 
 	workerEnv := []corev1.EnvVar{
-		{Name: "FLEET_VERSION", Value: c.Version},
 		{Name: "SESSION_ID", Value: taskID},
 		{Name: "TARGET_REPO", Value: repo},
 		{Name: "LEASE_ID", Value: leaseID},
@@ -583,7 +583,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					{Name: "LEASE_ID", Value: spec.LeaseID},
 					{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
-					{Name: "FLEET_VERSION", Value: c.Version},
 					// Without this, the sidecar falls back to its own
 					// separately-hardcoded default, which only happens to
 					// match prod's release-prefixed core Service name — it

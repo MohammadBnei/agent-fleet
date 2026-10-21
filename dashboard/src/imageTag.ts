@@ -10,16 +10,3 @@ export function imageTag(ref: string): string {
   if (i < 0 || i < ref.lastIndexOf("/")) return ref;
   return ref.slice(i + 1);
 }
-
-// The release that built a pod, then its image tag: "6.22.1 (src-8a19aa40)".
-// Images are tagged src-<input hash> and reused across releases, so the tag
-// alone no longer names the release. A pod from before the provisioner
-// reported one shows the tag only. Mirrors core's podVersion
-// (core/internal/dashboard/metrics.go), which formats the topology cells.
-export function podVersion(release: string | undefined, image: string): string {
-  let tag = imageTag(image);
-  if (tag.startsWith("src-") && tag.length > 12) tag = tag.slice(0, 12);
-  if (!release) return tag;
-  if (!tag) return release;
-  return `${release} (${tag})`;
-}

@@ -16,8 +16,8 @@ var update = flag.Bool("update", false, "rewrite testdata golden files")
 // A repo session's Job, whole, so any drift in the ordinary pod shows up here
 // as a diff, not as a review miss. Regenerate with -update only for a change
 // that means to alter repo-session pods (last: the agent-fleet.dev/version
-// label and FLEET_VERSION env). GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN are set
-// to prove neither reaches the pod.
+// label). GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN are set to prove neither
+// reaches the pod.
 func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 	for k, v := range map[string]string{
 		"GH_TOKEN": "gh-token", "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token", "CLAUDE_MODEL": "model", "MAX_TURNS": "7",

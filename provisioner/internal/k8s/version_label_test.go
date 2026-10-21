@@ -4,22 +4,14 @@ import (
 	"context"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func envValue(env []corev1.EnvVar, name string) (string, bool) {
-	for _, e := range env {
-		if e.Name == name {
-			return e.Value, true
-		}
-	}
-	return "", false
-}
-
-// The release that built a pod rides on the Job and pod as a label and on
-// both containers as FLEET_VERSION; a version that is not a valid label value
-// keeps the env and drops only the label, rather than failing the create.
+// The release that built a pod rides on the Job and pod as a label; a version
+// that is not a valid label value drops the label rather than failing the
+// create. It is deliberately NOT container env: it would leak into the agent's
+// Bash, and a session running core or the provisioner from source would pick
+// up a release instead of "dev" (which moves the definitions ref).
 func TestCreateWorkerPod_StampsFleetVersion(t *testing.T) {
 	for _, tt := range []struct{ version, wantLabel string }{
 		{"6.22.1", "6.22.1"},
@@ -46,11 +38,10 @@ func TestCreateWorkerPod_StampsFleetVersion(t *testing.T) {
 		}
 		spec := job.Spec.Template.Spec
 		for _, ctr := range append(spec.Containers, spec.InitContainers...) {
-			if ctr.Name != "worker" && ctr.Name != "sidecar" {
-				continue
-			}
-			if got, ok := envValue(ctr.Env, "FLEET_VERSION"); !ok || got != tt.version {
-				t.Errorf("%s: %s FLEET_VERSION = %q (set %v)", tt.version, ctr.Name, got, ok)
+			for _, e := range ctr.Env {
+				if e.Name == "FLEET_VERSION" {
+					t.Errorf("%s: %s container carries FLEET_VERSION", tt.version, ctr.Name)
+				}
 			}
 		}
 	}

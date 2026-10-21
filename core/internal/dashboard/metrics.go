@@ -193,7 +193,6 @@ func imageTag(ref string) string {
 // its image tag — "6.22.1 (src-8a19aa40)". Images are tagged by an input hash
 // since #300 and reused across releases, so the tag alone no longer names the
 // release. A pod from before the provisioner reported one shows the tag only.
-// Mirrored by the dashboard's podVersion (dashboard/src/imageTag.ts).
 func podVersion(release, image string) string {
 	tag := imageTag(image)
 	if hash, ok := strings.CutPrefix(tag, "src-"); ok && len(hash) > 8 {
