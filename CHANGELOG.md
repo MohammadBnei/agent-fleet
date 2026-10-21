@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.20.0](https://github.com/MohammadBnei/agent-fleet/compare/6.19.0...6.20.0) (2026-10-21)
+
+### Features
+
+* **sidecar:** egress router, repo pods send only vault hosts to the vault ([#310](https://github.com/MohammadBnei/agent-fleet/issues/310)) ([fc13ff2](https://github.com/MohammadBnei/agent-fleet/commit/fc13ff2ade241be9e794e20f78fefe73a686f30a))
+
 # [6.19.0](https://github.com/MohammadBnei/agent-fleet/compare/6.18.0...6.19.0) (2026-10-21)
 
 ### Features
