@@ -21,6 +21,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
@@ -304,8 +305,11 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// perfectly healthy. Refusing to start is loud; serving unauthenticated is
 	// not. FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out, so "no
 	// auth" is always something someone wrote down.
-	var authInterceptors []connect.Interceptor
+	var authInterceptors, memberInterceptors []connect.Interceptor
 	gate := func(h http.Handler) http.Handler { return h }
+	// The constant, not NewAgentServiceHandler(nil): the generated constructor
+	// reads method values off its argument and panics on nil.
+	agentPath := "/" + agentfleetv1connect.AgentServiceName + "/"
 	if cfg.AuthDisabled {
 		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
 	} else {
@@ -315,6 +319,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			ClientSecret: cfg.OIDCClientSecret,
 			PublicURL:    cfg.DashboardPublicURL,
 			SessionKeys:  cfg.SessionKeys,
+			AdmitGroups:  definitions.KnownGroups(),
 		})
 		if err != nil {
 			return fmt.Errorf("oidc setup (set FLEET_AUTH_DISABLED=1 for a local stack): %w", err)
@@ -330,7 +335,11 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		// widens the Gate's policy to the union and passes its own here.
 		policy := auth.AdminOnly
 		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor(policy))
-		gate = oidcAuth.Gate(policy)
+		// Members reach AgentService and nothing else (docs/adr/0066 §2); the
+		// service's authz table decides each method from there.
+		members := auth.AnyGroup(definitions.KnownGroups())
+		memberInterceptors = append(memberInterceptors, oidcAuth.ConnectInterceptor(members))
+		gate = oidcAuth.Gate(policy, auth.Route{Prefix: agentPath, Allow: members})
 	}
 	// CSRF stays alongside the session check and is not redundant: a cookie is
 	// attached by the browser to same-origin requests regardless of which page
@@ -363,6 +372,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	alertHandler.SetInactive(repoStore.Inactive)
 	mux.Handle("/webhook/alertmanager", alertHandler)
 	mux.Handle(dashboardPath, dashboardHandler)
+	// With FLEET_AUTH_DISABLED=1 no identity is set, so every AgentService
+	// call is Unauthenticated: the service has no unauthenticated mode.
+	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
+		append(memberInterceptors, agentsvc.MemberInterceptor())...)
+	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(defs), connect.WithInterceptors(memberInterceptors...))
+	mux.Handle(agentPath, agentHandler)
 	mux.Handle("/", webui.Handler())
 	// The gate wraps the WHOLE mux, with an explicit exempt list inside it,
 	// rather than wrapping webui.Handler() alone.

@@ -54,9 +54,33 @@ func exempt(path string) bool { return exemptPaths[path] }
 // ESCAPED one the exemption and ServeMux use, never r.URL.Path.
 type Policy func(Identity) bool
 
-// AdminOnly admits RequiredGroup members. It is the whole console's policy
-// today, at the Gate and on DashboardService.
+// AdminOnly admits RequiredGroup members. It is the console's policy at the
+// Gate and on DashboardService.
 func AdminOnly(id Identity) bool { return id.InGroup(RequiredGroup) }
+
+// AnyGroup admits an identity in any of groups, or an admin.
+func AnyGroup(groups []string) Policy {
+	return func(id Identity) bool {
+		if AdminOnly(id) {
+			return true
+		}
+		for _, g := range groups {
+			if id.InGroup(g) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// Route widens the Gate for one path prefix (docs/adr/0066 §2): the member
+// routes, AgentService's and later /embed/*. Every other path keeps the
+// Gate's default policy, so a route added later is admin-only unless someone
+// lists it here.
+type Route struct {
+	Prefix string
+	Allow  Policy
+}
 
 // Gate wraps the whole mux. An unauthenticated request is redirected to the
 // login for a document navigation and refused for anything else.
@@ -75,20 +99,28 @@ func AdminOnly(id Identity) bool { return id.InGroup(RequiredGroup) }
 //
 // allow is the coarse "may use this console at all" check, one value for every
 // gated path, so it must admit the UNION of every service's audience; each
-// Connect service's own ConnectInterceptor policy then narrows it. Today both
-// are AdminOnly, passed once from run.go.
-func (o *OIDC) Gate(allow Policy) func(http.Handler) http.Handler {
+// Connect service's own ConnectInterceptor policy then narrows it. routes
+// widen it for their prefix only, matched on the escaped path.
+func (o *OIDC) Gate(allow Policy, routes ...Route) func(http.Handler) http.Handler {
 	authz := connectAuth{signer: o.signer, allow: allow}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// The ESCAPED path, because that is what ServeMux routes on:
 			// /auth%2Fme decodes to Path "/auth/me" but reaches the "/" SPA
 			// fallback, so matching Path would hand it the 200 shell unauthenticated.
-			if exempt(r.URL.EscapedPath()) {
+			path := r.URL.EscapedPath()
+			if exempt(path) {
 				next.ServeHTTP(w, r)
 				return
 			}
-			id, err := authz.authorize(r.Header)
+			a := authz
+			for _, rt := range routes {
+				if strings.HasPrefix(path, rt.Prefix) {
+					a = connectAuth{signer: o.signer, allow: rt.Allow}
+					break
+				}
+			}
+			id, err := a.authorize(r.Header)
 			switch {
 			case err == nil:
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, id)))
@@ -253,3 +285,9 @@ func logForbidden(id Identity, path string) {
 type authError struct{ msg string }
 
 func (e *authError) Error() string { return e.msg }
+
+// WithIdentity is the context FromContext reads. For an interceptor that
+// stands in for this package's in tests.
+func WithIdentity(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, ctxKey{}, id)
+}

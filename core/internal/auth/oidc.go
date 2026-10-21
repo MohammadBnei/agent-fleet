@@ -40,12 +40,31 @@ type Config struct {
 	// exactly — authentik's matching_mode is `strict`.
 	PublicURL   string
 	SessionKeys string
+	// AdmitGroups is who may log in at all (docs/adr/0066 §2): the
+	// definitions ceiling's known groups. Login is not access: the Gate keeps
+	// everything but its member routes AdminOnly. Empty admits RequiredGroup
+	// only.
+	AdmitGroups []string
 }
 
 type OIDC struct {
 	verifier *oidc.IDTokenVerifier
 	oauth    *oauth2.Config
 	signer   *Signer
+	admit    []string
+}
+
+// admits reports whether a login carrying id's groups is let in.
+func (o *OIDC) admits(id Identity) bool {
+	if id.InGroup(RequiredGroup) {
+		return true
+	}
+	for _, g := range o.admit {
+		if id.InGroup(g) {
+			return true
+		}
+	}
+	return false
 }
 
 // New builds the relying party. It performs OIDC DISCOVERY against the issuer,
@@ -90,6 +109,7 @@ func New(ctx context.Context, cfg Config) (*OIDC, error) {
 			Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 		},
 		signer: signer,
+		admit:  cfg.AdmitGroups,
 	}, nil
 }
 
@@ -205,14 +225,14 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := Identity{Sub: idToken.Subject, Email: claims.Email, Groups: claims.Groups}
-	if !id.InGroup(RequiredGroup) {
+	if !o.admits(id) {
 		// Logged with the groups actually received, because the likeliest
 		// cause is not an unauthorised person: it is the provider not emitting
 		// a `groups` claim at all, which fails closed for EVERYONE and looks
 		// exactly like a core bug. See the property_mappings comment in
 		// infra-bootstrap's authentik-blueprint-fleet.yaml.
-		slog.Warn("auth: rejected login, required group missing",
-			"email", claims.Email, "groups", claims.Groups, "required", RequiredGroup)
+		slog.Warn("auth: rejected login, no admitted group",
+			"email", claims.Email, "groups", claims.Groups, "admit", append([]string{RequiredGroup}, o.admit...))
 		http.Error(w, "not authorized for this fleet", http.StatusForbidden)
 		return
 	}

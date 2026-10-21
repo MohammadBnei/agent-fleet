@@ -1,0 +1,254 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+import "agentfleet/v1/transcript.proto";
+
+// AgentService (docs/adr/0066): the one API members and registered clients
+// drive definition sessions through. Members call it on :8080 with their
+// console cookie, clients on :9091 with a bearer; the listener sets the
+// principal, and core/internal/agentsvc's authz table decides each method.
+//
+// It returns its own messages, never DashboardService's Session: no pod
+// names, leases, images or agent session ids.
+service AgentService {
+  rpc ListDefinitions(AgentServiceListDefinitionsRequest) returns (AgentServiceListDefinitionsResponse);
+
+  // Threads (docs/adr/0067): a thread is one definition session.
+  rpc ListThreads(ListThreadsRequest) returns (ListThreadsResponse);
+  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse);
+  rpc PostMessage(AgentServicePostMessageRequest) returns (AgentServicePostMessageResponse);
+  rpc GetTranscript(AgentServiceGetTranscriptRequest) returns (AgentServiceGetTranscriptResponse);
+  rpc StreamTranscript(AgentServiceStreamTranscriptRequest) returns (stream AgentServiceStreamTranscriptResponse);
+
+  // Decisions: each names the seq of an unanswered request of its type.
+  rpc RespondToPermission(AgentServiceRespondToPermissionRequest) returns (AgentServiceRespondToPermissionResponse);
+  rpc AnswerQuestion(AgentServiceAnswerQuestionRequest) returns (AgentServiceAnswerQuestionResponse);
+  rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse);
+
+  // Control: the owner's or an admin's.
+  rpc SetConfig(SetConfigRequest) returns (SetConfigResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // Clients only (docs/adr/0066 §6-7, 0070).
+  rpc Open(OpenRequest) returns (OpenResponse);
+  rpc CloseThread(CloseThreadRequest) returns (CloseThreadResponse);
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+  rpc WaitForResult(WaitForResultRequest) returns (WaitForResultResponse);
+}
+
+message AgentDefinitionInfo {
+  string name = 1;
+  repeated string model_allow = 2;
+  repeated string mode_allow = 3;
+  repeated string interaction_allow = 4;
+  repeated string lifecycle_allow = 5;
+}
+
+message AgentServiceListDefinitionsRequest {}
+
+message AgentServiceListDefinitionsResponse {
+  repeated AgentDefinitionInfo definitions = 1;
+}
+
+message Thread {
+  string id = 1;
+  string definition = 2;
+  string title = 3;
+  // "shared" or "private".
+  string visibility = 4;
+  // True when the caller owns the thread.
+  bool mine = 5;
+  // "ask" or "deny".
+  string interaction = 6;
+  // "resident" or "single-shot".
+  string lifecycle = 7;
+  string model = 8;
+  string mode = 9;
+  // A context-only or untrusted entry is in its transcript (docs/adr/0067
+  // §3): only admins answer it.
+  bool tainted = 10;
+  string created_at = 11;
+  string last_active_at = 12;
+  Status status = 13;
+}
+
+// docs/adr/0066 §10, derived, never stored.
+message Status {
+  // "loading", "working", "waiting", "idle" or "error".
+  string state = 1;
+  // Set with state "error": CAPACITY, PROVISION_FAILED, IMAGE_PULL, OOM,
+  // STARTUP_STALL, AGENT_CRASHED, TIMEOUT, CREDENTIAL_STALE.
+  string code = 2;
+  string message = 3;
+}
+
+message Entry {
+  int64 seq = 1;
+  TranscriptEntryType type = 2;
+  // "agent", "worker", "human", "system".
+  string from = 3;
+  string text = 4;
+  optional int64 reply_to = 5;
+  string created_at = 6;
+  // Display only: the member's name, or the client.
+  string author_name = 7;
+  bool context_only = 8;
+  bool untrusted = 9;
+}
+
+message ListThreadsRequest {
+  // Empty lists every definition the caller may use.
+  string definition = 1;
+}
+
+message ListThreadsResponse {
+  repeated Thread threads = 1;
+}
+
+message CreateThreadRequest {
+  string definition = 1;
+  // "shared" or "private".
+  string visibility = 2;
+  string title = 3;
+}
+
+message CreateThreadResponse {
+  Thread thread = 1;
+}
+
+message AgentServicePostMessageRequest {
+  string thread_id = 1;
+  string text = 2;
+}
+
+message AgentServicePostMessageResponse {
+  int64 seq = 1;
+}
+
+message AgentServiceGetTranscriptRequest {
+  string thread_id = 1;
+  int64 since_seq = 2;
+  int32 limit = 3;
+}
+
+message AgentServiceGetTranscriptResponse {
+  repeated Entry entries = 1;
+  int64 next_seq = 2;
+}
+
+message AgentServiceStreamTranscriptRequest {
+  string thread_id = 1;
+  int64 since_seq = 2;
+}
+
+message AgentServiceStreamTranscriptResponse {
+  Entry entry = 1;
+}
+
+message AgentServiceRespondToPermissionRequest {
+  string thread_id = 1;
+  int64 seq = 2;
+  // "allow" or "deny".
+  string behavior = 3;
+  string message = 4;
+}
+
+message AgentServiceRespondToPermissionResponse {
+  int64 seq = 1;
+}
+
+message AgentServiceAnswerQuestionRequest {
+  string thread_id = 1;
+  int64 seq = 2;
+  string answers_json = 3;
+}
+
+message AgentServiceAnswerQuestionResponse {
+  int64 seq = 1;
+}
+
+message ApprovePlanRequest {
+  string thread_id = 1;
+  int64 seq = 2;
+  // Optional: a mode to switch to before approving, within mode.allow.
+  string mode = 3;
+}
+
+message ApprovePlanResponse {
+  int64 seq = 1;
+}
+
+message SetConfigRequest {
+  string thread_id = 1;
+  // Empty leaves the value as it is.
+  string model = 2;
+  string mode = 3;
+}
+
+message SetConfigResponse {}
+
+message StopRequest {
+  string thread_id = 1;
+}
+
+message StopResponse {}
+
+message GetStatusRequest {
+  string thread_id = 1;
+}
+
+message GetStatusResponse {
+  Status status = 1;
+}
+
+message OpenRequest {
+  string definition = 1;
+  string thread_key = 2;
+  string message = 3;
+  bool wake = 4;
+  bool tainted = 5;
+  string interaction = 6;
+  string lifecycle = 7;
+  string visibility = 8;
+  string idempotency_key = 9;
+  string actor = 10;
+  string causation_id = 11;
+}
+
+message OpenResponse {
+  string thread_id = 1;
+  int64 seq = 2;
+}
+
+message CloseThreadRequest {
+  string definition = 1;
+  string thread_key = 2;
+}
+
+message CloseThreadResponse {}
+
+message InvokeRequest {
+  string definition = 1;
+  string input = 2;
+  string idempotency_key = 3;
+}
+
+message InvokeResponse {
+  string thread_id = 1;
+}
+
+message WaitForResultRequest {
+  string thread_id = 1;
+  int32 wait_seconds = 2;
+}
+
+message WaitForResultResponse {
+  // "running", "done" or "failed".
+  string state = 1;
+  string structured_output = 2;
+  string result_text = 3;
+  string subtype = 4;
+  Status error = 5;
+}
