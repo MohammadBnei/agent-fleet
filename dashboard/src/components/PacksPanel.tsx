@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
+import { activeRepos } from "../repoFilter";
 import { ConfirmModal } from "./ConfirmModal";
 import type { Pack } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
@@ -309,7 +310,7 @@ export function PacksPanel() {
     return Promise.all([client.listPacks({}), client.listDefinitions({}), client.listRepos({})])
       .then(([p, d, r]) => {
         setPacks(p.packs);
-        setTargets({ definition: d.definitions.map((x) => x.name), repo: r.repos.map((x) => x.name) });
+        setTargets({ definition: d.definitions.map((x) => x.name), repo: activeRepos(r.repos).map((x) => x.name) });
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoaded(true));

@@ -239,3 +239,30 @@ func TestADueTickDoesNotClearTheKey(t *testing.T) {
 		t.Fatalf("a cadence tick cleared the dedup key: %+v", runner.dismissed)
 	}
 }
+
+// A due run on an inactive repo files nothing and says so in last_status.
+func TestTickSkipsAnInactiveRepo(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	runner := &stubRunner{}
+	loop := NewLoop(store, runner)
+	loop.SetInactive(func(context.Context, string) bool { return true })
+
+	sc, err := store.Create(ctx, every(60), time.Time{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	backdate(t, store, sc.ID)
+	loop.tick(ctx)
+
+	if len(runner.calls) != 0 {
+		t.Fatalf("filed %+v on an inactive repo", runner.calls)
+	}
+	list, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].LastStatus != "skipped: repo inactive" {
+		t.Errorf("last_status = %q, want the inactive skip", list[0].LastStatus)
+	}
+}

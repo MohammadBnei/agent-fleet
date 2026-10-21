@@ -37,10 +37,15 @@ type Runner interface {
 const proposalSource = "schedule"
 
 type Loop struct {
-	store  *Store
-	runner Runner
-	nudge  chan struct{}
+	store    *Store
+	runner   Runner
+	nudge    chan struct{}
+	inactive func(ctx context.Context, repo string) bool
 }
+
+// SetInactive installs the repo gate: a run on a repo it reports inactive is
+// claimed (the cadence advances) but files nothing. Nil means no gate.
+func (l *Loop) SetInactive(fn func(ctx context.Context, repo string) bool) { l.inactive = fn }
 
 func NewLoop(store *Store, runner Runner) *Loop {
 	return &Loop{store: store, runner: runner, nudge: make(chan struct{}, 1)}
@@ -141,6 +146,12 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 	// un-opened proposal (or still running) collapses into it, and the next
 	// tick after it finishes or is dismissed files a fresh one. Without this
 	// an un-opened schedule would accumulate one row per cadence forever.
+	if l.inactive != nil && l.inactive(ctx, s.Repo) {
+		slog.Info("schedules: repo inactive, not filing", "schedule", s.Name, "repo", s.Repo)
+		l.recordStatus(ctx, s, "skipped: repo inactive")
+		return
+	}
+
 	dedupKey := "schedule:" + s.ID
 	// A human asked for this run explicitly, so clear the key first. Without
 	// this the click was swallowed: Create returned created=false and the only

@@ -170,6 +170,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// A schedule files a proposal, which a human opens — there is no separate
 	// service to reach, so the scheduler always runs.
 	scheduleLoop := schedules.NewLoop(scheduleStore, proposalStore)
+	scheduleLoop.SetInactive(repoStore.Inactive)
 	go scheduleLoop.Run(ctx, 60*time.Second)
 	// Same live-refresh wiring repos uses: a dashboard edit takes effect now,
 	// not on the next tick.
@@ -354,11 +355,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	if dc != nil {
 		alertNotifier = dc
 	}
-	mux.Handle("/webhook/alertmanager", alertwebhook.New(proposalStore, alertNotifier, alertwebhook.Config{
+	alertHandler := alertwebhook.New(proposalStore, alertNotifier, alertwebhook.Config{
 		Token:     cfg.AlertWebhookToken,
 		Repo:      cfg.ThotRepo,
 		ChannelID: cfg.ThotDiscordChannel,
-	}))
+	})
+	alertHandler.SetInactive(repoStore.Inactive)
+	mux.Handle("/webhook/alertmanager", alertHandler)
 	mux.Handle(dashboardPath, dashboardHandler)
 	mux.Handle("/", webui.Handler())
 	// The gate wraps the WHOLE mux, with an explicit exempt list inside it,

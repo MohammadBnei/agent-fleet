@@ -62,7 +62,12 @@ type Handler struct {
 	proposals ProposalCreator
 	discord   Notifier
 	cfg       Config
+	inactive  func(ctx context.Context, repo string) bool
 }
+
+// SetInactive installs the repo gate: while cfg.Repo is inactive, firing
+// alerts file no proposal. Nil means no gate.
+func (h *Handler) SetInactive(fn func(ctx context.Context, repo string) bool) { h.inactive = fn }
 
 func New(p ProposalCreator, discord Notifier, cfg Config) *Handler {
 	return &Handler{proposals: p, discord: discord, cfg: cfg}
@@ -114,6 +119,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var p payload
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
 		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+
+	// 200, not an error: Alertmanager would only retry the same batch.
+	if h.inactive != nil && h.inactive(r.Context(), h.cfg.Repo) {
+		slog.Info("alertwebhook: repo inactive, not filing", "repo", h.cfg.Repo, "alerts", len(p.Alerts))
+		_, _ = fmt.Fprintf(w, "skipped: repo %s inactive\n", h.cfg.Repo)
 		return
 	}
 
