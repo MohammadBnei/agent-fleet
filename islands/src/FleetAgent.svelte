@@ -15,7 +15,7 @@
   import { Code, ConnectError } from "@connectrpc/connect";
   import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isStale, isUnauthenticated } from "./api";
   import { conversation, decisions } from "./feed";
-  import { threadTitle } from "./text";
+  import { threadTitle, withOther } from "./text";
   import { createRenderer } from "./render";
   import { drawDiagrams } from "./diagram";
   import tokens from "./tokens.css?inline";
@@ -288,6 +288,21 @@
       error = "This message is too long (64 KiB at most).";
       return;
     }
+    // An open question takes the text as its answer, as "Other" does in Claude
+    // Code: a plain message would only queue behind the question it blocks on.
+    const q = current && !current.tainted ? open.find((d) => d.kind === "question") : undefined;
+    if (q?.kind === "question") {
+      sending = true;
+      draft = "";
+      const picked = answers;
+      const ok = await act((threadId) =>
+        api.answerQuestion({ threadId, seq: q.seq, answersJson: JSON.stringify({ answers: withOther(q.questions.map((x) => x.question), picked, text) }) }),
+      );
+      if (ok) answers = {};
+      else draft = draft ? `${text}\n${draft}` : text;
+      sending = false;
+      return;
+    }
     sending = true;
     error = "";
     draft = "";
@@ -513,7 +528,7 @@
     <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
       <textarea
         aria-label="Message"
-        placeholder={current?.tainted ? "Only an admin can write in this thread" : "Reply to the agent"}
+        placeholder={current?.tainted ? "Only an admin can write in this thread" : open.some((d) => d.kind === "question") ? "Pick an answer, or type your own" : "Reply to the agent"}
         rows="1"
         disabled={current?.tainted || stale}
         bind:this={composer}

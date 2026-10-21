@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { displayNames, threadTitle } from "./text";
+import { answerText, displayNames, threadTitle, withOther } from "./text";
 
 // CreateThread refuses titles over 200 bytes: multi-byte text must fit and
 // never be cut mid-character.
@@ -21,4 +21,14 @@ test("members are named by their email's local part, in full on a collision", ()
   expect(n.get("sam@b.com")).toBe("sam@b.com");
   expect(n.get("")).toBe("Another member");
   expect(n.get("Nadia")).toBe("Nadia");
+});
+
+test("typed text answers what was not picked", () => {
+  expect(withOther(["A?", "B?"], { "A?": "yes" }, "my own")).toEqual({ "A?": "yes", "B?": "my own" });
+  expect(withOther(["A?"], {}, "free")).toEqual({ "A?": "free" });
+});
+
+test("answer entries read as their answers", () => {
+  expect(answerText(JSON.stringify({ answers: { "A?": "yes", "B?": "my own" } }))).toBe("yes\nmy own");
+  expect(answerText("not json")).toBe("not json");
 });
