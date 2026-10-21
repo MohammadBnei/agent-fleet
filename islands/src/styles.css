@@ -8,6 +8,8 @@
   color: var(--ukubi-ink);
 }
 * { box-sizing: border-box; }
+/* A bounded box: header and composer stay put, the conversation scrolls
+   between them. Hosts size it with --fleet-max-height. */
 .island {
   background: var(--ukubi-surface);
   border: 1px solid var(--ukubi-line);
@@ -17,7 +19,16 @@
   gap: var(--ukubi-space-3);
   padding: var(--ukubi-space-3);
   min-width: 0;
+  max-height: var(--fleet-max-height, min(80vh, 44rem));
 }
+.island > header, .island > .composer { flex: none; }
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.scroll-inner { display: flex; flex-direction: column; gap: var(--ukubi-space-3); }
 .row { display: flex; flex-wrap: wrap; gap: var(--ukubi-space-2); align-items: center; }
 .grow { flex: 1 1 10rem; min-width: 0; }
 .pad { padding: var(--ukubi-space-4) 0; }
@@ -139,3 +150,52 @@ button { white-space: nowrap; }
 @media (max-width: 480px) { .status-word { display: none; } }
 /* Without field-sizing the textarea cannot grow: give it room instead. */
 @supports not (field-sizing: content) { textarea { min-height: 4.5rem; } }
+
+/* Chat layout after the Claude app: the agent's replies are plain text on the
+   page, the user's are a soft bubble on the right, the composer is one
+   rounded field with the send arrow inside. Ukubi colours throughout. */
+.island { background: var(--ukubi-surface); border-color: var(--ukubi-line); }
+.head select.thread {
+  background: transparent; border-color: transparent;
+  font-weight: var(--ukubi-title-3-weight); font-size: var(--ukubi-title-3-size);
+  padding-left: 0; cursor: pointer;
+}
+.head select.thread:hover { border-color: var(--ukubi-line); }
+
+.feed { gap: var(--ukubi-space-4); }
+.msg { background: none; border: 0; padding: 0; }
+.msg.human {
+  align-self: flex-end; max-width: 85%;
+  background: var(--ukubi-surface-raised); border: 1px solid var(--ukubi-line);
+  border-radius: var(--ukubi-radius-md); padding: var(--ukubi-space-2) var(--ukubi-space-3);
+}
+.msg .who { text-transform: none; letter-spacing: 0; font-size: var(--ukubi-body-sm-size); font-weight: 500; }
+
+.composer {
+  align-items: flex-end;
+  background: var(--ukubi-surface-raised);
+  border: 1px solid var(--ukubi-line-strong);
+  border-radius: var(--ukubi-radius-lg);
+  padding: var(--ukubi-space-2);
+}
+.composer:focus-within { border-color: var(--ukubi-ochre-700); }
+.composer textarea { background: transparent; border: 0; padding: var(--ukubi-space-1) var(--ukubi-space-2); }
+.composer textarea:focus-visible { outline: none; }
+.send {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px; padding: 0;
+  background: var(--ukubi-ochre-400); color: var(--ukubi-on-ochre);
+  border: 0; border-radius: var(--ukubi-radius-sm);
+}
+.send:disabled { background: var(--ukubi-line); color: var(--ukubi-ink-subtle); opacity: 1; }
+
+.decision { border-color: var(--ukubi-line-strong); gap: var(--ukubi-space-2); padding: var(--ukubi-space-3); }
+.decision .title { font-size: var(--ukubi-body-size); }
+.head select.thread { flex: 0 1 auto; max-width: 100%; field-sizing: content; }
+.head .status, .head .seg { margin-left: auto; }
+
+/* Focus stays visible without the textarea's own outline (office's ochre-700
+   border alone is ~1.2:1 against line-strong). */
+.composer:focus-within { outline: 2px solid var(--ukubi-focus); outline-offset: 2px; }
+.scroll:focus-visible { outline: 2px solid var(--ukubi-focus); outline-offset: -2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

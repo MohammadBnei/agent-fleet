@@ -23,8 +23,9 @@ for k in ("spacing", "radius", "chamfer"):
         out.append(f"  --ukubi-{tok['name']}: {tok['value']};")
 out.append("}")
 # office is the default; the theme attribute switches.
-for sel, theme in ((':host, :host([theme="office"])', "office"), (':host([theme="underground"])', "underground"), (':host([theme="glow"])', "glow")):
+for sel, theme in ((':host, :host([theme="office"])', "office"), (':host([theme="underground"]), :host(:not([theme])[data-fleet-scheme="dark"])', "underground"), (':host([theme="glow"])', "glow")):
     out.append(sel + " {")
+    out.append(f"  color-scheme: {'light' if theme == 'office' else 'dark'};")
     out += [f"  --ukubi-{c['name']}: {c['value'][theme]};" for c in t["color"]["tokens"]]
     out += [f"  --ukubi-{s['name']}: {s['value'][theme]};" for s in t["shadow"]["tokens"]]
     out.append("}")
