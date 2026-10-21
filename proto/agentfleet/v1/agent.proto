@@ -96,6 +96,9 @@ message Entry {
   string author_name = 7;
   bool context_only = 8;
   bool untrusted = 9;
+  // The caller wrote this entry. The author's sub never leaves core; this
+  // is how a client tells its own messages from other members'.
+  bool mine = 10;
 }
 
 message ListThreadsRequest {

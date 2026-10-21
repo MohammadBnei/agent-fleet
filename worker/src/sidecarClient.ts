@@ -136,7 +136,9 @@ export type AgentSpec = {
   scriptAsk?: boolean;
 };
 
-export type TranscriptEntry = { seq: number; from: string; text: string; type?: string; replyTo?: number };
+// authorName: who wrote a human entry (docs/adr/0067 §3), set by core from the
+// transcript's author column; empty for console entries.
+export type TranscriptEntry = { seq: number; from: string; text: string; type?: string; replyTo?: number; authorName?: string };
 
 const RECONNECT_DELAY_MS = 2000;
 

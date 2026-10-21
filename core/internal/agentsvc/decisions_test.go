@@ -100,6 +100,25 @@ func TestDecisions(t *testing.T) {
 	if resp == nil || resp.Text != `{"behavior":"allow"}` || resp.AuthorName != "bob@bnei.dev" {
 		t.Errorf("recorded answer: %+v", resp)
 	}
+	// Entry.mine: the caller's own entries, never the agent's or another
+	// member's.
+	mine := func(c context.Context) map[int64]bool {
+		r, err := s.GetTranscript(c, connect.NewRequest(&agentfleetv1.AgentServiceGetTranscriptRequest{ThreadId: shared}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[int64]bool{}
+		for _, e := range r.Msg.GetEntries() {
+			out[e.GetSeq()] = e.GetMine()
+		}
+		return out
+	}
+	if m := mine(bob); !m[resp.Seq] || m[bash] {
+		t.Errorf("bob's view: %v", m)
+	}
+	if m := mine(alice); m[resp.Seq] {
+		t.Errorf("alice sees bob's answer as hers: %v", m)
+	}
 
 	for _, a := range []string{"[1]", "null"} {
 		if _, err := s.AnswerQuestion(bob, connect.NewRequest(&agentfleetv1.AgentServiceAnswerQuestionRequest{ThreadId: shared, Seq: question, AnswersJson: a})); code(err) != connect.CodeInvalidArgument {

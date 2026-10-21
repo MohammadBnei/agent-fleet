@@ -75,6 +75,10 @@ message TranscriptEntry {
   // anything happened or how long a turn took — `seq` orders a feed, it
   // does not time one.
   string created_at = 7;
+  // docs/adr/0067 §3: who wrote a human entry, as a display name (the
+  // member's email, or "client:<name>"). Empty for console entries. The
+  // worker shows it to the model; it is never parsed from text.
+  string author_name = 8;
 }
 
 message AppendTranscriptEntryRequest {

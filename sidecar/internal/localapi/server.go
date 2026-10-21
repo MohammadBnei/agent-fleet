@@ -267,7 +267,7 @@ func humanMessagesHandler(core *coreclient.Client) http.HandlerFunc {
 			done <- core.StreamHumanMessages(r.Context(), sinceSeq, func(entry *agentfleetv1.TranscriptEntry) {
 				payload, _ := json.Marshal(map[string]any{
 					"seq": entry.GetSeq(), "from": entry.GetFrom(), "text": entry.GetText(), "type": protoTypeToString(entry.GetType()),
-					"replyTo": entry.ReplyTo,
+					"replyTo": entry.ReplyTo, "authorName": entry.GetAuthorName(),
 				})
 				write([]byte("data: " + string(payload) + "\n\n"))
 			})

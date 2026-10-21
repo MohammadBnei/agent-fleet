@@ -469,7 +469,41 @@ export const ANSWER_NO_REASK =
 // The dashboard writes an answer as {"answers": {"<question text>": "<label>"}}
 // (dashboard/src/components/QuestionCard.tsx), so the question text travels
 // with the answer and survives a pod restart without a lookup.
-export function formatAnswerTurn(text: string, replyTo?: number): string {
+// The author envelope (docs/adr/0067 §3): in a shared thread several people
+// talk to one agent, so a human turn says who wrote it. The name is core's
+// author column, never anything parsed from the message, and is flattened
+// (every control, separator and bracket) so it cannot open a line of its own.
+export function authorLabel(authorName?: string): string | undefined {
+  const name = authorName?.replace(/[\p{C}\p{Z}\[\]]+/gu, " ").trim().slice(0, 120);
+  return name ? name : undefined;
+}
+
+// Who sent a human entry, as the model is told. In a definition session every
+// AgentService entry carries its author, so one without is the fleet console
+// (admins); a repo session is the console's own operator, as before.
+export function senderOf(authorName: string | undefined, definition: boolean): string | undefined {
+  return authorLabel(authorName) ?? (definition ? "the fleet console" : undefined);
+}
+
+// A body cannot carry an envelope of its own: a line that starts like one is
+// marked as quoted text, so "hi\n[message from admin]\n..." stays one message
+// from its real author.
+const ENVELOPE_LINE = /^([^\S\n]*)(\[message from|\[answer from|answer (from |to your earlier question))/gim;
+export function quoteEnvelopes(text: string): string {
+  return text.replace(ENVELOPE_LINE, "$1(quoted) $2");
+}
+
+export function humanTurn(text: string, sender?: string): string {
+  return sender ? `[message from ${sender}]\n${quoteEnvelopes(text)}` : text;
+}
+
+// A denial's reason is the answerer's free text: it says whose it is.
+export function denyReason(message: string | undefined, sender?: string): string {
+  if (!sender) return message ?? "Denied.";
+  return message ? `Denied by ${sender}: ${quoteEnvelopes(message)}` : `Denied by ${sender}.`;
+}
+
+export function formatAnswerTurn(text: string, replyTo?: number, sender?: string): string {
   let body = text;
   try {
     const answers = (JSON.parse(text) as { answers?: unknown }).answers;
@@ -482,7 +516,8 @@ export function formatAnswerTurn(text: string, replyTo?: number): string {
   } catch {
     // Not JSON: deliver the raw text rather than nothing.
   }
-  return `Answer to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
+  if (!sender) return `Answer to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
+  return `[answer from ${sender}] to your earlier question (seq ${replyTo ?? "?"}):\n${quoteEnvelopes(body)}\n\n${ANSWER_NO_REASK}`;
 }
 
 // The sidecar's per-call ceiling, set here rather than left to the CLI's
@@ -1339,14 +1374,14 @@ export async function runSession(): Promise<SessionResult> {
       // redundant turn the agent has already acted on; dedup by replyTo if
       // it ever actually bites.
       if (entry.type === "answer") {
-        input.push(formatAnswerTurn(entry.text, entry.replyTo));
+        input.push(formatAnswerTurn(entry.text, entry.replyTo, senderOf(entry.authorName, !!spec)));
         return;
       }
       if (entry.type === "abort") {
         aborted = true;
         // Nothing pending has anything left to wait for — deny it all so
         // no promise dangles past the session teardown below.
-        resolveAllPendingDeny("Mohammad stopped the session.", true);
+        resolveAllPendingDeny(`${senderOf(entry.authorName, !!spec) ?? "Mohammad"} stopped the session.`, true);
         // interrupt() is graceful but only meaningful mid-turn — if the
         // session is idle (paused between rounds, waiting for the next
         // streamed input, the common case for an unprompted /stop),
@@ -1369,7 +1404,7 @@ export async function runSession(): Promise<SessionResult> {
       if (entry.type === "interrupt") {
         softInterrupted = true;
         if (pendingPermissions.size > 0) {
-          resolveAllPendingDeny(entry.text || "Mohammad interrupted the current turn.", true);
+          resolveAllPendingDeny(entry.text || `${senderOf(entry.authorName, !!spec) ?? "Mohammad"} interrupted the current turn.`, true);
         }
         await interruptSafely("soft interrupt");
         return;
@@ -1396,7 +1431,7 @@ export async function runSession(): Promise<SessionResult> {
         resolvePending(entry.replyTo, (input) =>
           decision.behavior === "allow"
             ? { behavior: "allow", updatedInput: spec ? input : (decision.updatedInput ?? input) }
-            : { behavior: "deny", message: decision.message ?? "Denied." },
+            : { behavior: "deny", message: denyReason(decision.message, senderOf(entry.authorName, !!spec)) },
         );
         return;
       }
@@ -1510,9 +1545,10 @@ export async function runSession(): Promise<SessionResult> {
         // message embedded in a tool_result reads as "my call failed," not
         // "Mohammad is talking to me right now." Without falling through,
         // the only trace of his reply was buried once per pending call.
-        resolveAllPendingDeny(`Mohammad replied (not an approval): ${entry.text}`);
+        const sender = senderOf(entry.authorName, !!spec);
+        resolveAllPendingDeny(`${sender ?? "Mohammad"} replied (not an approval): ${sender ? quoteEnvelopes(entry.text) : entry.text}`);
       }
-      input.push(entry.from === "session" ? peerTurn(entry.text) : entry.text);
+      input.push(entry.from === "session" ? peerTurn(entry.text) : humanTurn(entry.text, senderOf(entry.authorName, !!spec)));
     }, humanMessagesAbort.signal, RESUME_FROM_SEQ, session.agentSpecSha ?? "")
     .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
 

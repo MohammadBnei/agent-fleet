@@ -397,9 +397,12 @@ type Entry struct {
 	ReplyTo   *int64 `protobuf:"varint,5,opt,name=reply_to,json=replyTo,proto3,oneof" json:"reply_to,omitempty"`
 	CreatedAt string `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// Display only: the member's name, or the client.
-	AuthorName    string `protobuf:"bytes,7,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
-	ContextOnly   bool   `protobuf:"varint,8,opt,name=context_only,json=contextOnly,proto3" json:"context_only,omitempty"`
-	Untrusted     bool   `protobuf:"varint,9,opt,name=untrusted,proto3" json:"untrusted,omitempty"`
+	AuthorName  string `protobuf:"bytes,7,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
+	ContextOnly bool   `protobuf:"varint,8,opt,name=context_only,json=contextOnly,proto3" json:"context_only,omitempty"`
+	Untrusted   bool   `protobuf:"varint,9,opt,name=untrusted,proto3" json:"untrusted,omitempty"`
+	// The caller wrote this entry. The author's sub never leaves core; this
+	// is how a client tells its own messages from other members'.
+	Mine          bool `protobuf:"varint,10,opt,name=mine,proto3" json:"mine,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -493,6 +496,13 @@ func (x *Entry) GetContextOnly() bool {
 func (x *Entry) GetUntrusted() bool {
 	if x != nil {
 		return x.Untrusted
+	}
+	return false
+}
+
+func (x *Entry) GetMine() bool {
+	if x != nil {
+		return x.Mine
 	}
 	return false
 }
@@ -2118,7 +2128,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x06Status\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xa7\x02\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xbb\x02\n" +
 	"\x05Entry\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x126\n" +
 	"\x04type\x18\x02 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12\x12\n" +
@@ -2130,7 +2140,9 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\vauthor_name\x18\a \x01(\tR\n" +
 	"authorName\x12!\n" +
 	"\fcontext_only\x18\b \x01(\bR\vcontextOnly\x12\x1c\n" +
-	"\tuntrusted\x18\t \x01(\bR\tuntrustedB\v\n" +
+	"\tuntrusted\x18\t \x01(\bR\tuntrusted\x12\x12\n" +
+	"\x04mine\x18\n" +
+	" \x01(\bR\x04mineB\v\n" +
 	"\t_reply_to\"4\n" +
 	"\x12ListThreadsRequest\x12\x1e\n" +
 	"\n" +

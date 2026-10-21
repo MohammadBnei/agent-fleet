@@ -260,11 +260,12 @@ func (p Principal) author() transcript.Author {
 	return transcript.Author{Sub: p.owner(), Name: p.owner()}
 }
 
-func entryToProto(e transcript.Entry) *agentfleetv1.Entry {
+func entryToProto(p Principal, e transcript.Entry) *agentfleetv1.Entry {
 	return &agentfleetv1.Entry{
 		Seq: e.Seq, Type: dashboard.ProtoType(e.Type), From: e.From, Text: e.Text, ReplyTo: e.ReplyTo,
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt), AuthorName: e.AuthorName,
 		ContextOnly: e.ContextOnly, Untrusted: e.Untrusted,
+		Mine: e.AuthorSub != "" && e.AuthorSub == p.author().Sub,
 	}
 }
 
@@ -287,7 +288,7 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 	}
 	out := &agentfleetv1.AgentServiceGetTranscriptResponse{NextSeq: next}
 	for _, e := range entries {
-		out.Entries = append(out.Entries, entryToProto(e))
+		out.Entries = append(out.Entries, entryToProto(p, e))
 	}
 	return connect.NewResponse(out), nil
 }
@@ -328,7 +329,7 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 			return connect.NewError(connect.CodeInternal, err)
 		}
 		for _, e := range entries {
-			if err := stream.Send(&agentfleetv1.AgentServiceStreamTranscriptResponse{Entry: entryToProto(e)}); err != nil {
+			if err := stream.Send(&agentfleetv1.AgentServiceStreamTranscriptResponse{Entry: entryToProto(p, e)}); err != nil {
 				return err
 			}
 		}
