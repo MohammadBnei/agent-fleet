@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { errorText, isAlreadyAnswered } from "./api";
+import { errorText, isAlreadyAnswered } from "./errors";
 
 // AgentService's refusals (infra-bootstrap-9f, A2/A3) read as plain words.
 test("refusals map to plain words", () => {

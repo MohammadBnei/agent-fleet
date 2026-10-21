@@ -1,4 +1,4 @@
-import { Code, ConnectError, createClient, type Client, type Interceptor, type Transport } from "@connectrpc/connect";
+import { createClient, type Client, type Interceptor, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { AgentService } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
 
@@ -32,26 +32,4 @@ export function agentClient(): AgentClient {
   return createClient(AgentService, transport);
 }
 
-export const isUnauthenticated = (err: unknown) => ConnectError.from(err).code === Code.Unauthenticated;
-
-// AgentService's refusals (docs/adr/0066, 0067), said plainly. The server's
-// own message stays the fallback.
-export function errorText(err: unknown): string {
-  const e = ConnectError.from(err);
-  if (e.rawMessage.includes("DEFINITION_CHANGED")) return "This agent was updated. Start a new thread to continue.";
-  switch (e.code) {
-    case Code.ResourceExhausted:
-      return "The agent is busy with another session. Try again in a minute.";
-    case Code.NotFound:
-      return "This thread is no longer available.";
-    case Code.PermissionDenied:
-      return "You cannot do that in this thread. If it holds untrusted input, only an admin can answer it, from the console.";
-    default:
-      return e.rawMessage || "Something went wrong.";
-  }
-}
-
-export const isStale = (err: unknown) => ConnectError.from(err).rawMessage.includes("DEFINITION_CHANGED");
-
-// Someone else answered first: the stream shows their answer.
-export const isAlreadyAnswered = (err: unknown) => ConnectError.from(err).code === Code.AlreadyExists;
+export { errorText, isAlreadyAnswered, isStale, isUnauthenticated } from "./errors";
