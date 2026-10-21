@@ -65,24 +65,31 @@
 
   // With no theme attribute the island follows the host page: its <html>
   // data-theme (SilverBullet), a "dark" class, else the system setting. The
-  // result lands in data-auto, which tokens.css maps to underground.
+  // result lands in data-fleet-scheme, which tokens.css maps to underground;
+  // an explicit theme attribute wins, and then nothing is written.
   function hostScheme(): "dark" | "light" {
     const h = document.documentElement;
     const t = h.dataset.theme ?? h.dataset.colorScheme;
     if (t === "dark" || t === "light") return t;
     if (h.classList.contains("dark")) return "dark";
+    if (h.classList.contains("light")) return "light";
     return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
   function followHost(): () => void {
-    const apply = () => (el.dataset.auto = hostScheme());
+    const apply = () => {
+      if (el.hasAttribute("theme")) delete el.dataset.fleetScheme;
+      else el.dataset.fleetScheme = hostScheme();
+    };
     apply();
     const obs = new MutationObserver(apply);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-color-scheme", "class"] });
+    obs.observe(el, { attributes: true, attributeFilter: ["theme"] });
     const mq = matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
     return () => {
       obs.disconnect();
       mq.removeEventListener("change", apply);
+      delete el.dataset.fleetScheme;
     };
   }
 
@@ -302,6 +309,7 @@
       }
       key = ++pendingKey;
       pending = [...pending, { key, text }];
+      pinned = true; // your own message always comes into view
       const res = await api.postMessage({ threadId: t.id, text });
       if (my !== gen) return;
       if (seen.has(res.seq)) {
@@ -433,7 +441,8 @@
       {/if}
     </header>
 
-    <div class="scroll" bind:this={scroller} onscroll={onScroll}>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="scroll" bind:this={scroller} onscroll={onScroll} tabindex="0" role="region" aria-label="Conversation">
     <div class="scroll-inner" bind:this={content}>
     {#if error}<p class="danger">{error}</p>{/if}
     {#if stale}
@@ -448,7 +457,7 @@
         {#each items as m (m.seq)}
           {#if m.kind === "message"}
             <li class:human={m.human} class="msg">
-              {#if m.human && current?.visibility === "shared"}<span class="who">{m.author}</span>{/if}
+              {#if m.human && current?.visibility === "shared"}<span class="who">{m.author}</span>{:else}<span class="sr-only">{m.author}:</span>{/if}
               {#if m.human}
                 <p class="text">{m.text}</p>
               {:else}
@@ -458,7 +467,7 @@
           {/if}
         {/each}
         {#each pending as p (p.key)}
-          <li class="msg human pending" title="Sending"><p class="text">{p.text}</p></li>
+          <li class="msg human pending" aria-busy="true"><span class="sr-only">Sending:</span><p class="text">{p.text}</p></li>
         {/each}
       </ol>
     {:else}

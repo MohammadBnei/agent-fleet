@@ -193,3 +193,9 @@ button { white-space: nowrap; }
 .decision .title { font-size: var(--ukubi-body-size); }
 .head select.thread { flex: 0 1 auto; max-width: 100%; field-sizing: content; }
 .head .status, .head .seg { margin-left: auto; }
+
+/* Focus stays visible without the textarea's own outline (office's ochre-700
+   border alone is ~1.2:1 against line-strong). */
+.composer:focus-within { outline: 2px solid var(--ukubi-focus); outline-offset: 2px; }
+.scroll:focus-visible { outline: 2px solid var(--ukubi-focus); outline-offset: -2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -49,6 +49,7 @@
   --ukubi-chamfer-md: 12px;
 }
 :host, :host([theme="office"]) {
+  color-scheme: light;
   --ukubi-surface: #f5eee2;
   --ukubi-surface-raised: #fbf8f2;
   --ukubi-surface-sunken: #ebe1d0;
@@ -82,7 +83,8 @@
   --ukubi-shadow-float: 0 1px 2px rgba(60,40,20,0.08), 0 8px 24px rgba(60,40,20,0.10);
   --ukubi-shadow-led: 0 0 0 2px rgba(232,120,31,0.35), 0 0 12px rgba(232,120,31,0.45);
 }
-:host([theme="underground"]), :host(:not([theme])[data-auto="dark"]) {
+:host([theme="underground"]), :host(:not([theme])[data-fleet-scheme="dark"]) {
+  color-scheme: dark;
   --ukubi-surface: #1c1814;
   --ukubi-surface-raised: #25201b;
   --ukubi-surface-sunken: #14110e;
@@ -117,6 +119,7 @@
   --ukubi-shadow-led: 0 0 0 2px rgba(240,138,44,0.4), 0 0 16px rgba(240,138,44,0.55);
 }
 :host([theme="glow"]) {
+  color-scheme: dark;
   --ukubi-surface: #1c1814;
   --ukubi-surface-raised: #25201b;
   --ukubi-surface-sunken: #14110e;
