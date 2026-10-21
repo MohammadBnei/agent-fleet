@@ -19,6 +19,9 @@ import (
 // the caller answers Aborted and the client retries.
 var ErrBusy = errors.New("request in progress, retry")
 
+// ErrArchived: the thread was closed between resolving it and appending.
+var ErrArchived = errors.New("the thread was closed meanwhile, retry")
+
 // Lock holds session-level advisory locks on one pooled connection until
 // Release. A core crash drops the connection, which releases them.
 type Lock struct {
@@ -163,6 +166,13 @@ func (s *Store) AppendClaimed(ctx context.Context, invoker, key string, e Claime
 	// The transcript's own per-session lock (transcript.PostgresStore).
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, e.SessionID); err != nil {
 		return 0, fmt.Errorf("append claimed: lock: %w", err)
+	}
+	var open bool
+	if err := tx.QueryRow(ctx, `SELECT archived_at IS NULL FROM sessions WHERE id = $1`, e.SessionID).Scan(&open); err != nil {
+		return 0, fmt.Errorf("append claimed: %w", err)
+	}
+	if !open {
+		return 0, ErrArchived
 	}
 	var seq int64
 	err = tx.QueryRow(ctx, `SELECT seq FROM transcript WHERE session_id = $1 AND idempotency_key = $2`, e.SessionID, key).Scan(&seq)

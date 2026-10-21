@@ -121,11 +121,17 @@ func TestOpen(t *testing.T) {
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared", IdempotencyKey: "k4", Actor: "MohammadBnei"})); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("visibility change on resume: %v", err)
 	}
-	// The definition moved on: a waking Open replaces the thread.
+	// The definition moved on. A tainted waking message neither ends the
+	// thread nor opens a new one: it lands context-only on the old thread.
 	s.definitions = fakeHeads{{Name: "d", SHA: "sha2", Effective: spec}}
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha2', '{}', '{}', true)`); err != nil {
 		t.Fatal(err)
 	}
+	warms := len(dash.warms)
+	if r, err := open(bot, "k4b", "untrusted push", true, true, "MohammadBnei"); err != nil || r.GetThreadId() != first.GetThreadId() || len(dash.warms) != warms {
+		t.Fatalf("tainted wake on a stale thread: %v %v warms=%v", r, err, dash.warms)
+	}
+	// A trusted waking Open replaces it.
 	next, err := open(bot, "k5", "new push", true, false, "MohammadBnei")
 	if err != nil || next.GetThreadId() == first.GetThreadId() {
 		t.Fatalf("replace: %v %v", next, err)
@@ -139,6 +145,14 @@ func TestOpen(t *testing.T) {
 	if _, err := s.CloseThread(bot, connect.NewRequest(&agentfleetv1.CloseThreadRequest{Definition: "d", ThreadKey: "pr-1"})); code(err) != connect.CodeNotFound {
 		t.Errorf("CloseThread twice: %v", err)
 	}
+	// A done claim whose session was deleted answers from the claim and
+	// delivers nothing again.
+	if _, err := pool.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, first.GetThreadId()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open(bot, "k1", "review this", true, false, "MohammadBnei"); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("done claim, deleted session: %v", err)
+	}
 	// A busy key answers Aborted at once.
 	lock, err := store.TryLock(ctx, "req\x00client:bot\x00k9")
 	if err != nil {
@@ -148,4 +162,46 @@ func TestOpen(t *testing.T) {
 		t.Errorf("busy key: %v", err)
 	}
 	lock.Release()
+}
+
+// docs/adr/0066 §5: a client acts on its threads only while it and the
+// definition still list each other; reading stays open.
+func TestOpen_DelistedClient(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	transcr := transcript.NewPostgresStore(pool)
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	spec := &definitions.Spec{
+		Invokers: []string{"bot"}, Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
+		Model: &definitions.Model{Default: "claude-opus-5", Allow: []string{"claude-opus-5"}},
+		Mode:  &definitions.Mode{Default: "auto", Allow: []string{"auto"}},
+	}
+	testClients = []definitions.Client{{Name: "bot", Spec: definitions.ClientSpec{Actors: definitions.AllowList{Allow: []string{"MohammadBnei"}}, Definitions: []string{"d"}}}}
+	t.Cleanup(func() { testClients = nil })
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")}
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
+	bot := withPrincipal(ctx, Principal{Client: "bot"})
+	r, err := s.Open(bot, connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "t", Message: "x", Wake: true,
+		Interaction: "ask", Lifecycle: "resident", Visibility: "private", IdempotencyKey: "k", Actor: "MohammadBnei"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := r.Msg.GetThreadId()
+	req, err := transcr.Append(ctx, id, "agent", `{"tool":"Bash","input":{"command":"ls"}}`, "permission_request", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testClients = nil // de-listed on the next sync
+	if _, err := s.RespondToPermission(bot, connect.NewRequest(&agentfleetv1.AgentServiceRespondToPermissionRequest{ThreadId: id, Seq: req, Behavior: "allow"})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("de-listed client answers: %v", err)
+	}
+	if _, err := s.GetTranscript(bot, connect.NewRequest(&agentfleetv1.AgentServiceGetTranscriptRequest{ThreadId: id})); err != nil {
+		t.Errorf("de-listed client reads: %v", err)
+	}
 }

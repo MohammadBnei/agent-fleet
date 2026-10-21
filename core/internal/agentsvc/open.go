@@ -18,7 +18,17 @@ import (
 const (
 	maxKey   = 512
 	maxActor = 200
+	// A client's open threads; a member's is maxOpenThreads.
+	maxClientThreads = 500
 )
+
+// openSlots bounds concurrent Opens (each holds a pooled connection for its
+// locks). pgxpool's default is at least 4 connections.
+var openSlots = make(chan struct{}, 2)
+
+func threadLock(owner, definition, threadKey string) string {
+	return "thread\x00" + owner + "\x00" + definition + "\x00" + threadKey
+}
 
 // Open is a client's resume-or-create of a thread (docs/adr/0066 §6-7).
 // The request claims its idempotency key before any warm; a retry with the
@@ -61,8 +71,17 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("actor is not in this client's actors.allow"))
 	}
 
+	// Each Open holds one pooled connection for its locks while it runs, and
+	// its own queries need more: a bound keeps a burst from taking the whole
+	// pool (docs/adr/0066 §7's "nothing ever blocks in the database").
+	select {
+	case openSlots <- struct{}{}:
+		defer func() { <-openSlots }()
+	default:
+		return nil, connect.NewError(connect.CodeAborted, errors.New("too many requests in progress, retry"))
+	}
 	owner, key := p.owner(), m.GetIdempotencyKey()
-	lock, err := s.sessions.TryLock(ctx, "req\x00"+owner+"\x00"+key, "thread\x00"+owner+"\x00"+m.GetDefinition()+"\x00"+m.GetThreadKey())
+	lock, err := s.sessions.TryLock(ctx, "req\x00"+owner+"\x00"+key, threadLock(owner, m.GetDefinition(), m.GetThreadKey()))
 	if errors.Is(err, sessions.ErrBusy) {
 		return nil, connect.NewError(connect.CodeAborted, err)
 	}
@@ -71,14 +90,28 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 	}
 	defer lock.Release()
 
-	claim, err := s.sessions.ClaimRequest(ctx, owner, key, requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage()))
+	// Every field that decides trust is part of the request's identity, so a
+	// retry cannot quietly turn a tainted or non-waking message into another.
+	sha := requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), fmt.Sprint(m.GetTainted()),
+		m.GetActor(), m.GetCausationId(), m.GetVisibility(), m.GetInteraction(), m.GetLifecycle())
+	claim, err := s.sessions.ClaimRequest(ctx, owner, key, sha)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if claim.RequestSHA != requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage()) {
+	// Step 3 before step 2: a different request on a used key is refused,
+	// never answered with the earlier request's result.
+	if claim.RequestSHA != sha {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this idempotency_key was used for a different request"))
 	}
-	// Steps 2 and 4: delivered before, by this or an earlier attempt.
+	// Step 2: done is final, even when its session row was later deleted.
+	if claim.Done {
+		if claim.SessionID == "" {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this request was delivered to a thread that no longer exists"))
+		}
+		seq, _, _ := s.sessions.FinishClaim(ctx, owner, key, claim.SessionID)
+		return connect.NewResponse(&agentfleetv1.OpenResponse{ThreadId: claim.SessionID, Seq: seq}), nil
+	}
+	// Step 4: delivered by an earlier attempt that crashed before marking it.
 	if claim.SessionID != "" {
 		if seq, found, err := s.sessions.FinishClaim(ctx, owner, key, claim.SessionID); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
@@ -96,6 +129,11 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 		if !m.GetWake() {
 			// The dispatcher files a proposal instead (ADR-0071 §6).
 			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no open thread for this key, and a new one needs wake"))
+		}
+		if n, err := s.sessions.OpenThreads(ctx, owner); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		} else if n >= maxClientThreads {
+			return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this client has %d open threads; close some first", n))
 		}
 		if t, err = s.dash.CreateThread(ctx, head, m.GetThreadKey(), sessions.CreateParams{
 			Owner: owner, Visibility: m.GetVisibility(), Interaction: m.GetInteraction(), Lifecycle: m.GetLifecycle(),
@@ -125,6 +163,11 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 		Actor: m.GetActor(), CausationID: m.GetCausationId(),
 		ContextOnly: contextOnly, Untrusted: contextOnly || m.GetTainted(),
 	})
+	if errors.Is(err, sessions.ErrArchived) {
+		// Closed under us: the claim stays pending, and the retry resolves
+		// the thread again.
+		return nil, connect.NewError(connect.CodeAborted, err)
+	}
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -158,7 +201,10 @@ func (s *Server) resolveThread(ctx context.Context, p Principal, head definition
 	if deref(t.Interaction, "ask") != m.GetInteraction() || deref(t.Lifecycle, "resident") != m.GetLifecycle() || deref(t.Visibility, "") != m.GetVisibility() {
 		return nil, "", connect.NewError(connect.CodeFailedPrecondition, errors.New("this thread was opened with a different interaction, lifecycle or visibility"))
 	}
-	if m.GetWake() && (deref(t.DefinitionSHA, "") != head.SHA || t.SweptAt != nil) {
+	// Only a trusted waking message replaces a thread: a tainted one on an
+	// existing thread is context-only (§6), and must neither end the thread
+	// nor open a new one.
+	if m.GetWake() && !m.GetTainted() && (deref(t.DefinitionSHA, "") != head.SHA || t.SweptAt != nil) {
 		if _, err := s.dash.ArchiveSession(ctx, connect.NewRequest(&agentfleetv1.ArchiveSessionRequest{SessionId: t.ID})); err != nil {
 			return nil, "", err
 		}
@@ -174,6 +220,14 @@ func (s *Server) CloseThread(ctx context.Context, req *connect.Request[agentflee
 	if err != nil {
 		return nil, err
 	}
+	lock, err := s.sessions.TryLock(ctx, threadLock(p.owner(), req.Msg.GetDefinition(), req.Msg.GetThreadKey()))
+	if errors.Is(err, sessions.ErrBusy) {
+		return nil, connect.NewError(connect.CodeAborted, err)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer lock.Release()
 	t, err := s.sessions.OpenThread(ctx, p.Client, req.Msg.GetDefinition(), req.Msg.GetThreadKey())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)

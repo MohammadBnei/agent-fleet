@@ -403,10 +403,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		clientList = func() []definitions.Client { return nil }
 	}
 	clientMux := http.NewServeMux()
-	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(
+	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), connect.WithInterceptors(
 		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList)))
 	clientMux.Handle(agentPath, clientHandler)
-	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second}
+	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {
 		slog.Info("core client API listening", "port", cfg.ClientPort)
 		if err := clientServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

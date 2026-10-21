@@ -24,7 +24,7 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	if err != nil {
 		return nil, err
 	}
-	if !canAnswer(p, t) {
+	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker
@@ -162,6 +162,17 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 
 // ownsOrAdmin is who configures a thread. A tainted thread is admins' only
 // for configuration too: its mode decides what untrusted input may drive.
+// stillRegistered: a client acts on its threads only while the definition
+// and the client still list each other (docs/adr/0066 §5), so de-listing a
+// client revokes it without a restart. Reading and stopping stay open.
+func (s *Server) stillRegistered(p Principal, t *sessions.Session) bool {
+	if p.Client == "" {
+		return true
+	}
+	_, ok := s.definitions.MayOpen(p.Client, deref(t.DefinitionName, ""))
+	return ok
+}
+
 func ownsOrAdmin(p Principal, t *sessions.Session) bool {
 	return p.Admin() || (!t.Tainted && t.Owner != nil && *t.Owner == p.owner())
 }
@@ -184,7 +195,7 @@ func (s *Server) SetConfig(ctx context.Context, req *connect.Request[agentfleetv
 	if err != nil {
 		return nil, err
 	}
-	if !ownsOrAdmin(p, t) {
+	if !ownsOrAdmin(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its config"))
 	}
 	if req.Msg.GetModel() != "" {

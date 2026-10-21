@@ -233,7 +233,17 @@ func LoadAll(files map[string][]byte) (results []Result, valid []Client, fileErr
 		clientNames = append(clientNames, n)
 	}
 	sort.Strings(clientNames)
+	tokenOwner := map[string]string{}
 	for _, n := range clientNames {
+		// One token, one client: a shared tokenRef would authenticate as
+		// whichever name sorts first.
+		if ref := clientFiles[n].Spec.TokenRef; ref != "" && clientErrs[n] == nil {
+			if other, dup := tokenOwner[ref]; dup {
+				fileErrs = append(fileErrs, fmt.Errorf("%s: tokenRef %s is already client %q's", clients[n], ref, other))
+				continue
+			}
+			tokenOwner[ref] = n
+		}
 		if err := clientErrs[n]; err != nil {
 			fileErrs = append(fileErrs, fmt.Errorf("%s: %w", clients[n], err))
 			continue
@@ -361,9 +371,9 @@ func toSpec(merged map[string]any) (*Spec, error) {
 
 func validateClient(name string, s ClientSpec, defs map[string]*parsed, results []Result) error {
 	var errs []error
-	if s.TokenRef != "" && !envKeyRe.MatchString(s.TokenRef) {
+	if s.TokenRef != "" && (!envKeyRe.MatchString(s.TokenRef) || !strings.HasPrefix(s.TokenRef, "FLEET_CLIENT_TOKEN_")) {
 		// Never echo it: this check exists to catch a pasted value.
-		errs = append(errs, fmt.Errorf("tokenRef must be a secret KEY name matching %s, never a value (value not shown)", envKeyRe))
+		errs = append(errs, fmt.Errorf("tokenRef must be a secret KEY name FLEET_CLIENT_TOKEN_* matching %s, never a value (value not shown)", envKeyRe))
 	}
 	if len(s.Actors.Allow) == 0 {
 		errs = append(errs, errors.New("actors.allow must not be empty"))
