@@ -256,7 +256,7 @@ able to run up cost unattended. Three rules, all in core:
 - **Members start no threads.** `CreateThread` refuses a member who is not a
   steward. Members post and answer in threads shared with them.
 - **Lock.** `Lock(thread, true)` records the steward's email in
-  `sessions.locked_by` (migration 000018) and stops a live pod through the
+  `sessions.locked_by` (migration 000019) and stops a live pod through the
   console's `StopSession`. While set, `canAnswer` admits stewards and admins
   only: everyone who could read the thread still can, nobody else posts,
   answers or wakes it. `Lock(thread, false)` hands it back. An idle thread is
