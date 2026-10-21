@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.12.0](https://github.com/MohammadBnei/agent-fleet/compare/6.11.2...6.12.0) (2026-10-21)
+
+### Features
+
+* **agentsvc:** threads, messages, member capacity and the island Origin fence (ADR-0066/0067/0068) ([#299](https://github.com/MohammadBnei/agent-fleet/issues/299)) ([a740126](https://github.com/MohammadBnei/agent-fleet/commit/a74012646f9bb3ccffb8cdc0c5c759ee9eb6e91f))
+
 ## [6.11.2](https://github.com/MohammadBnei/agent-fleet/compare/6.11.1...6.11.2) (2026-10-21)
 
 ## [6.11.1](https://github.com/MohammadBnei/agent-fleet/compare/6.11.0...6.11.1) (2026-10-21)
