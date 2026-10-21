@@ -457,6 +457,15 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 	for _, name := range fleetSharedNames {
 		src := filepath.Join(contentRoot, name)
 		if _, err := os.Stat(src); os.IsNotExist(err) {
+			// docs/adr/0063 §8: CLAUDE.md and skills/ moved to packs/, and a
+			// resumed session's claude-home still holds the last synced copy.
+			// Never plugins/: without a source it is the image's copy, which
+			// the entrypoint seeds once per claude-home.
+			if name == "CLAUDE.md" || name == "skills" {
+				if err := os.RemoveAll(filepath.Join(claudeHomeDir, name)); err != nil {
+					return fmt.Errorf("remove %s: %w", name, err)
+				}
+			}
 			continue
 		}
 		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", src, claudeHomeDir+string(filepath.Separator))
