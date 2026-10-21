@@ -473,8 +473,28 @@ func TestCreateWorkerPod_RepoSessionUsesItsOwnerVault(t *testing.T) {
 		t.Fatalf("owner vault %+v", v)
 	}
 	env := workerEnv(t, k8sc, "repo-1")
-	if env["HTTPS_PROXY"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" {
+	// The worker proxies through the sidecar's egress router; only the
+	// sidecar holds the token.
+	if env["HTTPS_PROXY"] != "http://127.0.0.1:9093" {
 		t.Errorf("HTTPS_PROXY %q", env["HTTPS_PROXY"])
+	}
+	for k, val := range env {
+		if strings.Contains(val, v.Sessions[0].Token) {
+			t.Errorf("worker env %s holds the vault token", k)
+		}
+	}
+	job, _ := k8sc.Core.BatchV1().Jobs("agent-fleet").Get(context.Background(), k8s.WorkerResourceName("repo-1"), metav1.GetOptions{})
+	sidecar := map[string]string{}
+	for _, c := range job.Spec.Template.Spec.InitContainers {
+		if c.Name == "sidecar" {
+			for _, e := range c.Env {
+				sidecar[e.Name] = e.Value
+			}
+		}
+	}
+	if sidecar["FLEET_VAULT_PROXY"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" ||
+		sidecar["FLEET_VAULT_HOSTS"] != "api.anthropic.com,github.com,api.github.com" || sidecar["EGRESS_PORT"] != "9093" {
+		t.Errorf("sidecar env %v", sidecar)
 	}
 	for k, want := range map[string]string{
 		"GH_TOKEN": k8s.VaultPlaceholder, "CLAUDE_CODE_OAUTH_TOKEN": k8s.VaultPlaceholder,

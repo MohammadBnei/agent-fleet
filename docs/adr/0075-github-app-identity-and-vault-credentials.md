@@ -230,3 +230,14 @@ Each step is one PR, merged by the user.
   metric, alerts and `CREDENTIAL_STALE`. Until the opt-in lands, no fleet
   session can push a change under `.github/workflows/`.
 - **kind-local** has no Agent Vault, so repo sessions no longer start there.
+- **Egress router (follow-up PR).** A repo pod's `HTTPS_PROXY` is the
+  sidecar's CONNECT router on `127.0.0.1:9093` (`sidecar/internal/egress`),
+  not the vault. It sends `github.com`, `api.github.com` and
+  `api.anthropic.com` on :443 to the vault with the pod's session token and
+  tunnels every other host direct, untouched. The token lives in the
+  sidecar's env only. Agent Vault's MITM is HTTP/1.1 only and drops trailers
+  (`internal/mitm/proxy.go:24` in v0.40.0), so this is what keeps HTTP/2 and
+  gRPC working for every other host. It also takes most traffic out of the
+  vault's plaintext view and rate limit, and gives Chromium a proxy without
+  credentials, which it would otherwise not send. HTTP/2 and gRPC to the
+  three vault hosts stay broken until Agent Vault supports them.

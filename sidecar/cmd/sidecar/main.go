@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/egress"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
@@ -99,6 +100,24 @@ func main() {
 			slog.Error("health server exited", "error", err)
 		}
 	}()
+
+	// docs/adr/0075 §7: a repo pod's HTTPS_PROXY. Set by the provisioner on
+	// repo pods only; a definition pod talks to its vault directly.
+	if vp := os.Getenv("FLEET_VAULT_PROXY"); vp != "" {
+		router, err := egress.New(vp, os.Getenv("FLEET_VAULT_HOSTS"))
+		if err != nil {
+			slog.Error("egress router", "error", err)
+			os.Exit(1)
+		}
+		egressPort := env("EGRESS_PORT", "9093")
+		go func() {
+			slog.Info("sidecar egress listening", "port", egressPort)
+			// No access log: one line per tunnel would be most of the log.
+			if err := http.ListenAndServe("127.0.0.1:"+egressPort, router); err != nil {
+				slog.Error("egress router exited", "error", err)
+			}
+		}()
+	}
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
 // workerJobTTLSeconds is how long a finished worker Job (and the pod it
@@ -315,15 +317,17 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 var repoNoProxy = []string{".cluster.local", ".svc", ".bnei.lan", ".bnei.dev", "bnei.dev", "10.233.0.0/18", "10.233.64.0/18", "192.168.1.0/24"}
 
 // repoWorkerEnv is definitionWorkerEnv for a repo pod (docs/adr/0075 §7).
-// Egress is open, so direct TLS (NO_PROXY'd names) needs the system roots
-// too: the CA variables name bundle.pem. NODE_EXTRA_CA_CERTS adds to Node's
-// own roots, so it takes the vault root alone.
+// Its HTTPS_PROXY is the sidecar's egress router, which holds the vault
+// token and sends only vault.OwnerHosts to the vault: the worker's env holds
+// no token at all. Egress is open, so direct TLS needs the system roots too:
+// the CA variables name bundle.pem. NODE_EXTRA_CA_CERTS adds to Node's own
+// roots, so it takes the vault root alone.
 func repoWorkerEnv(env []corev1.EnvVar, r RepoVault, coreHost string) []corev1.EnvVar {
 	noProxy := append([]string{"127.0.0.1", "localhost"}, repoNoProxy...)
 	if coreHost != "" {
 		noProxy = append(noProxy, coreHost)
 	}
-	out := vaultWorkerEnv(env, r.ProxyURL, noProxy, vaultCADir+"/bundle.pem", "", r.GitAuthorName, r.GitAuthorEmail)
+	out := vaultWorkerEnv(env, fmt.Sprintf("http://127.0.0.1:%d", SidecarEgressPort), noProxy, vaultCADir+"/bundle.pem", "", r.GitAuthorName, r.GitAuthorEmail)
 	for i := range out {
 		if out[i].Name == "NODE_EXTRA_CA_CERTS" {
 			out[i].Value = vaultCADir + "/ca.pem"
@@ -341,7 +345,7 @@ func vaultWorkerEnv(env []corev1.EnvVar, proxyURL string, noProxy []string, caFi
 			out = append(out, e)
 		}
 	}
-	if u, err := url.Parse(proxyURL); err == nil && u.Hostname() != "" {
+	if u, err := url.Parse(proxyURL); err == nil && u.Hostname() != "" && !slices.Contains(noProxy, u.Hostname()) {
 		noProxy = append(noProxy, u.Hostname())
 	}
 	np := strings.Join(noProxy, ",")
@@ -786,6 +790,16 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(r.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: r.VaultLabel}
 		mountVaultCA(&job.Spec.Template.Spec)
+		// The token goes to the sidecar's egress router only.
+		for i := range job.Spec.Template.Spec.InitContainers {
+			if c := &job.Spec.Template.Spec.InitContainers[i]; c.Name == "sidecar" {
+				c.Env = append(c.Env,
+					corev1.EnvVar{Name: "FLEET_VAULT_PROXY", Value: r.ProxyURL},
+					corev1.EnvVar{Name: "FLEET_VAULT_HOSTS", Value: strings.Join(vault.OwnerHosts, ",")},
+					corev1.EnvVar{Name: "EGRESS_PORT", Value: fmt.Sprint(SidecarEgressPort)},
+				)
+			}
+		}
 	}
 	if d := spec.Definition; d != nil {
 		// docs/adr/0065: a fixed lifetime cap, and its token's TTL is longer,

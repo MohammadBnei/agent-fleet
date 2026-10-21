@@ -144,7 +144,9 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   (`owner-<login>`, reserved prefix, skipped by `Prune`) maps all of `github.com:443` and
   `api.github.com:443` to an installation-wide App token (never `workflows`) and
   `api.anthropic.com:443` to the model token; every other host passes through. Egress stays
-  open; `NO_PROXY` covers the cluster, the LAN and `.bnei.dev`, and the CA vars name
+  open, and the worker's `HTTPS_PROXY` is the sidecar's egress router (`127.0.0.1:9093`): only
+  those three hosts go to the vault, with the token the sidecar alone holds; the rest goes
+  direct (so h2/gRPC work). `NO_PROXY` covers the cluster, the LAN and `.bnei.dev`, and the CA vars name
   `bundle.pem` (system roots + vault root). Same 12h cap, per-warm token, revoke paths and
   local-only clone as a definition pod; commits as `FLEET_GIT_AUTHOR_*` (`ukubi`). The
   provisioner refreshes owner vaults on its own 5-min tick. Golden test pins the Job.
