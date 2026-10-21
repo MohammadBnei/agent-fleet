@@ -133,6 +133,9 @@ let consumedInputs: { message: { content: string } }[] = [];
 // scripted happy path never produces (auth_status, tool_progress, a
 // thinking block, …) through the real logSdkMessage.
 let extraMessages: Record<string, unknown>[] = [];
+// Yielded before init on the first round, as the SDK's SessionStart/Setup
+// hook messages can be.
+let preInitMessages: Record<string, unknown>[] = [];
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Record<string, unknown> }) => {
@@ -179,6 +182,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         round++;
         if (!sessionId) {
           sessionId = `agent-${crypto.randomUUID()}`;
+          for (const pre of preInitMessages) yield { ...pre, session_id: sessionId };
           // Mirrors the real init's field set, not just session_id — the
           // relay forwards the whole environment and a thinner fake would
           // let a dropped field pass unnoticed.
@@ -292,6 +296,7 @@ beforeEach(() => {
   queryOptions = null;
   consumedInputs = [];
   extraMessages = [];
+  preInitMessages = [];
   sessionAgentSpec = null;
   streamedSpecSha = undefined;
 });
@@ -1799,6 +1804,22 @@ test("repo session with a model and effort: both reach query(), init's model is 
   expect(queryOptions?.effort).toBe("high");
   expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
   expect(savedModels).toEqual(["claude-opus-4-8"]);
+}, 10000);
+
+// A hook message carries session_id and can precede init; the row still gets
+// init's model, and /clear reports it too.
+test("a hook message before init: init's model is still saved", async () => {
+  preInitMessages = [{ type: "system", subtype: "hook_response", hook_name: "SessionStart:startup", hook_event: "SessionStart", output: "", stdout: "", stderr: "", outcome: "success" }];
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("hello");
+  await Bun.sleep(50);
+  pushHuman("/clear");
+  await promise;
+
+  // The hook's session-id save leaves the model alone, init saves it, /clear reuses it.
+  expect(savedModels).toEqual(["", "claude-opus-4-8", "claude-opus-4-8"]);
+  expect(savedSessionIds.at(-1)).toBe("");
 }, 10000);
 
 test("definition session in auto: canUseTool allows inside tools.allow, denies outside the ceiling, asks the rest", async () => {

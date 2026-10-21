@@ -51,7 +51,7 @@ The New Session dialog had no model or effort control, although
    - `CreateSessionRequest.effort` (field 9) is validated in core against the
      SDK's `EffortLevel` (`low|medium|high|xhigh|max`, the list definitions
      already use for `thinking.default`). Empty stores NULL. It is stored in
-     `sessions.effort` (migration 000018) and carried to the worker on the
+     `sessions.effort` (migration 000017) and carried to the worker on the
      `Session` proto, the same way as `permission_mode`.
    - The worker uses `session.effort || spec.thinkingDefault`. When it is set,
      it passes `effort` plus `thinking: { type: "adaptive" }`, as the definition
@@ -72,6 +72,14 @@ The New Session dialog had no model or effort control, although
   row holds the model the CLI picked, so a resume passes it explicitly.
 - **Existing rows stay pinned.** Rows already stored as `claude-opus-5-5` keep
   it. Sessions are short-lived, so there is no data migration.
+- **Effort is not checked against the model.** Core validates the effort
+  level and the model separately, never the pair. If a model rejects adaptive
+  thinking or a given effort, the session fails at warm, not at create. A
+  post-deploy check covers the models the dialog offers.
+- **Rollback.** Once migration 000017 has run, rolling core back to an image
+  without it fails the PreSync migrate hook: golang-migrate finds a version it
+  has no file for. Roll back by applying `000017_sessions_effort.down.sql`
+  first, or roll forward.
 - **The default can differ by credential.** A subscription OAuth login (repo
   pods, `dev-notes`) and an API key (`opus-workspace`'s `ANTHROPIC_OPUS`) may
   default to different models. Check the `init` model in one pod of each after

@@ -1508,8 +1508,10 @@ export async function runSession(): Promise<SessionResult> {
             .catch(() => {});
         }
         input.setSessionId(sessionId);
-        // Save the session ID and the model init reported. The first message
-        // is init; were it not, "" leaves the row's model untouched.
+        // Save the session ID now, with init's model when this message is
+        // init. If it is not (a SessionStart/Setup hook message carries a
+        // session_id too and can arrive first), "" leaves the row's model
+        // untouched and the init branch below saves it.
         if (msg.type === "system" && msg.subtype === "init") initModel = msg.model;
         await sidecar
           .saveSessionId(sessionId, initModel)
@@ -1529,6 +1531,14 @@ export async function runSession(): Promise<SessionResult> {
       // stopped asking — and the badge would say auto for a session that isn't.
       if (msg.type === "system" && msg.subtype === "init" && !launchChecked) {
         launchChecked = true;
+        // The model Claude Code actually runs, for the row (docs/adr/0077),
+        // unless the session-id save above already sent it.
+        if (!initModel) {
+          initModel = msg.model;
+          await sidecar
+            .saveSessionId(sessionId, initModel)
+            .catch((err) => log("warn", "saveSessionId(init) failed", { taskId: SESSION_ID, error: String(err) }));
+        }
         // Not awaited: a control request can hang with the CLI (see q.interrupt).
         void reportContext(q).catch((err) => log("warn", "context report failed", { taskId: SESSION_ID, error: String(err) }));
         // A definition session in auto runs the SDK in default (sdkMode), so

@@ -73,7 +73,7 @@ func TestCreate_PersistsTheChosenPermissionMode(t *testing.T) {
 	}
 }
 
-// docs/adr/0077: effort round-trips through its column (000018), and empty
+// docs/adr/0077: effort round-trips through its column (000017), and empty
 // stores NULL so the worker passes none.
 func TestCreate_PersistsTheChosenEffort(t *testing.T) {
 	ctx := context.Background()
