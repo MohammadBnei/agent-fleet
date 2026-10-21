@@ -1,4 +1,4 @@
-import { Code, ConnectError, createClient, type Client, type Interceptor, type Transport } from "@connectrpc/connect";
+import { createClient, type Client, type Interceptor, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { AgentService } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
 
@@ -32,6 +32,4 @@ export function agentClient(): AgentClient {
   return createClient(AgentService, transport);
 }
 
-export const isUnauthenticated = (err: unknown) => ConnectError.from(err).code === Code.Unauthenticated;
-
-export const errorText = (err: unknown) => ConnectError.from(err).rawMessage || "Something went wrong.";
+export { errorText, isAlreadyAnswered, isStale, isUnauthenticated } from "./errors";
