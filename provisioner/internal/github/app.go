@@ -44,6 +44,9 @@ type App struct {
 	insts   []installation // allowlisted installations, cached for instTTL
 	instsAt time.Time
 	instErr error // the last listing failure, cached for instErrTTL
+	// lastGood is the last successful listing, for OwnerToken only: a repo
+	// warm must not fail on a listing blip while a minted token is cached.
+	lastGood []installation
 }
 
 type installation struct {
@@ -164,6 +167,9 @@ func (a *App) installations(ctx context.Context) ([]installation, error) {
 	}
 	out, err := a.listInstallations(ctx)
 	a.insts, a.instErr, a.instsAt = out, err, a.now()
+	if err == nil {
+		a.lastGood = out
+	}
 	return out, err
 }
 
@@ -219,7 +225,15 @@ func (a *App) installationToken(ctx context.Context, in installation) (string, e
 func (a *App) OwnerToken(ctx context.Context, owner string) (string, error) {
 	insts, err := a.installations(ctx)
 	if err != nil {
-		return "", err
+		a.instMu.Lock()
+		insts = a.lastGood
+		a.instMu.Unlock()
+		if len(insts) == 0 {
+			return "", err
+		}
+		// cached still serves a token with time left, and fails if a mint
+		// is due: the listing is only how owner maps to an installation id.
+		slog.Warn("github app: installations listing failed, using the last good one", "error", err)
 	}
 	for _, in := range insts {
 		if !strings.EqualFold(in.Account.Login, owner) {

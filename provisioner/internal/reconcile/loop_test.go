@@ -242,8 +242,8 @@ func (r orderReporter) ReportEvent(_ context.Context, e *agentfleetv1.PodEvent) 
 }
 
 // docs/adr/0065: a terminal definition Job's own token (exact label) is
-// revoked before the report that could trigger a re-warm, a repo Job never
-// calls the vault, and a lifetime-cap end is TERMINATED (an idle co-editor,
+// revoked before the report that could trigger a re-warm, a Job with no vault
+// label (created before docs/adr/0075) never calls the vault, and a lifetime-cap end is TERMINATED (an idle co-editor,
 // not a failing one) and reaped like a Succeeded Job.
 func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
 	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
@@ -260,5 +260,23 @@ func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
 	}
 	if len(kc.deleted) != 2 || kc.deleted[0] != "timed-out" {
 		t.Errorf("deleted %v", kc.deleted)
+	}
+}
+
+// A re-warm replaces a kept terminal Job under the same session within one
+// tick; the new Job's own end is still revoked and reported (docs/adr/0075).
+func TestGcTerminalWorkerJobs_RewarmedJobIsRevokedAndReportedAgain(t *testing.T) {
+	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{{TaskID: "repo-1", JobName: "worker-1", UID: "a", Phase: "Failed", VaultOwner: "owner-o", VaultLabel: "repo-1.1"}}}
+	o := &order{}
+	l := New(kc, orderReporter{o}, o, time.Hour)
+	l.gcTerminalWorkerJobs(context.Background())
+	kc.jobs = []k8s.LiveWorkerJob{{TaskID: "repo-1", JobName: "worker-1", UID: "b", Phase: "Failed", VaultOwner: "owner-o", VaultLabel: "repo-1.2"}}
+	l.gcTerminalWorkerJobs(context.Background())
+	want := []string{
+		"revoke owner-o repo-1.1", "report repo-1 POD_PHASE_CRASHED worker job reached a terminal Failed phase",
+		"revoke owner-o repo-1.2", "report repo-1 POD_PHASE_CRASHED worker job reached a terminal Failed phase",
+	}
+	if !slices.Equal(o.log, want) {
+		t.Errorf("log %q, want %q", o.log, want)
 	}
 }

@@ -308,10 +308,11 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 
 // repoNoProxy is what a repo pod reaches directly (docs/adr/0075 §7, spike
 // PR4a): the cluster, the LAN and the split-horizon names. The vault refuses
-// private ranges, so these would fail through it. Hostnames as well as CIDRs:
+// private ranges, so these would fail through it. The apex bnei.dev too:
+// Go's matcher reads ".bnei.dev" as subdomains only. Hostnames as well as CIDRs:
 // bun and python ignore CIDR entries. The CIDRs are the live cluster's
 // (kubespray: services 10.233.0.0/18, pods 10.233.64.0/18).
-var repoNoProxy = []string{".cluster.local", ".svc", ".bnei.lan", ".bnei.dev", "10.233.0.0/18", "10.233.64.0/18", "192.168.1.0/24"}
+var repoNoProxy = []string{".cluster.local", ".svc", ".bnei.lan", ".bnei.dev", "bnei.dev", "10.233.0.0/18", "10.233.64.0/18", "192.168.1.0/24"}
 
 // repoWorkerEnv is definitionWorkerEnv for a repo pod (docs/adr/0075 §7).
 // Egress is open, so direct TLS (NO_PROXY'd names) needs the system roots

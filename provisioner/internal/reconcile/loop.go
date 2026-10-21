@@ -71,15 +71,16 @@ type Loop struct {
 	core                      EventReporter
 	vault                     Revoker
 	sharedInstanceIdleTimeout time.Duration
-	// reported is the set of sessions whose terminal phase has already been
-	// reported. Only Failed Jobs can land in it more than once: they are no
+	// reported is the set of Jobs (by UID) whose terminal phase has already
+	// been reported. By UID, not session: a re-warm replaces a kept Job under
+	// the same session within one tick, and its own end must still report. Only Failed Jobs can land in it more than once: they are no
 	// longer deleted on sight (see gcTerminalWorkerJobs), so they stay listed
 	// for their whole TTL and would otherwise re-report every tick. In-memory
 	// on purpose — a provisioner restart re-reports once, which
 	// coreserver.ReportPodEvents already treats as a no-op against a session
 	// that is terminal.
 	reported map[string]struct{}
-	// revoked is the set of terminal definition Jobs whose token is revoked.
+	// revoked is the set of terminal Jobs (by UID) whose token is revoked.
 	// Its own set, retried every tick: a kept Failed Job carries the token in
 	// its pod env until its TTL, so one failed revoke must not be the last.
 	revoked map[string]struct{}
@@ -96,6 +97,9 @@ func New(k8sc JobLister, core EventReporter, vault Revoker, sharedInstanceIdleTi
 	}
 }
 
+// jobKey is one Job, not one session: TaskID plus the Job's UID.
+func jobKey(j k8s.LiveWorkerJob) string { return j.TaskID + "/" + j.UID }
+
 func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	jobs, err := l.k8sc.ListWorkerJobsByLabel(ctx)
 	if err != nil {
@@ -104,7 +108,7 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	}
 	live := make(map[string]struct{}, len(jobs))
 	for _, job := range jobs {
-		live[job.TaskID] = struct{}{}
+		live[jobKey(job)] = struct{}{}
 	}
 	for id := range l.reported {
 		if _, ok := live[id]; !ok {
@@ -120,17 +124,17 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		// Exactly its own label, so a re-warm's new token is never hit, even
 		// on a re-sighting after a provisioner restart. 3s budget, retried
 		// next tick while the Job is listed.
-		if _, done := l.revoked[job.TaskID]; !done && job.Vault() != "" && job.VaultLabel != "" {
+		if _, done := l.revoked[jobKey(job)]; !done && job.Vault() != "" && job.VaultLabel != "" {
 			if err := l.vault.Revoke(ctx, job.Vault(), job.VaultLabel); err != nil {
 				slog.Warn("reconcile: vault revoke failed, retried next tick", "sessionId", job.TaskID, "error", err)
 			} else {
-				l.revoked[job.TaskID] = struct{}{}
+				l.revoked[jobKey(job)] = struct{}{}
 			}
 		}
-		if _, done := l.reported[job.TaskID]; done {
+		if _, done := l.reported[jobKey(job)]; done {
 			continue
 		}
-		l.reported[job.TaskID] = struct{}{}
+		l.reported[jobKey(job)] = struct{}{}
 		// Terminal-phase report (reliability-findings.md #1) — reported
 		// before GC-ing the Job. core's own coreserver.ReportPodEvents
 		// scopes MarkCrashed to a non-terminal task, so this is a safe

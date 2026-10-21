@@ -25,6 +25,9 @@ func deleteOpts() metav1.DeleteOptions { return metav1.DeleteOptions{} }
 type LiveWorkerJob struct {
 	TaskID  string
 	JobName string
+	// UID tells apart two Jobs of one session: a re-warm replaces a kept
+	// terminal Job under the same name within seconds.
+	UID string
 	// Phase is one of jobPhase's strings (Terminal: "Succeeded"/"Failed"/
 	// "DeadlineExceeded") — derived from the
 	// Job's own status.conditions (jobPhase, below) rather than a Pod's
@@ -54,7 +57,7 @@ func (j LiveWorkerJob) Terminal() bool {
 
 func liveJob(job *batchv1.Job) LiveWorkerJob {
 	return LiveWorkerJob{
-		TaskID: job.Labels[TaskIDLabel], JobName: job.Name, Phase: jobPhase(job),
+		TaskID: job.Labels[TaskIDLabel], JobName: job.Name, UID: string(job.UID), Phase: jobPhase(job),
 		Definition: job.Labels[DefinitionLabel], VaultLabel: job.Annotations[VaultLabelAnnotation],
 		VaultOwner: job.Labels[VaultOwnerLabel],
 	}

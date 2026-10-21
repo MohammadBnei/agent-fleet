@@ -34,6 +34,7 @@ type fakeGitHub struct {
 	instLists    int
 	failPage2    bool // /installation/repositories page 2 answers 502
 	suspendOpus  bool
+	failList     bool // GET /app/installations answers 502
 }
 
 func (f *fakeGitHub) serveInstallationRepos(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +79,9 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 		}
+	case r.Method == http.MethodGet && r.URL.Path == "/app/installations" && f.failList:
+		http.Error(w, `{"message":"boom"}`, http.StatusBadGateway)
+		return
 	case r.Method == http.MethodGet && r.URL.Path == "/app/installations":
 		f.mu.Lock()
 		f.instLists++
@@ -368,5 +372,20 @@ func TestApp_OwnerTokenIsInstallationWide(t *testing.T) {
 	owners, err := a.Owners(context.Background())
 	if err != nil || strings.Join(owners, ",") != "MohammadBnei,opus-tech-hq" {
 		t.Errorf("owners %v %v", owners, err)
+	}
+}
+
+// A listing blip after instTTL must not fail a repo warm while the owner's
+// token is still cached: the last good listing maps the owner.
+func TestApp_OwnerTokenSurvivesAListingFailure(t *testing.T) {
+	a, f := newApp(t, false)
+	tok, err := a.OwnerToken(context.Background(), "MohammadBnei")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.now = func() time.Time { return time.Now().Add(instTTL + time.Minute) }
+	f.failList = true
+	if again, err := a.OwnerToken(context.Background(), "MohammadBnei"); err != nil || again != tok {
+		t.Fatalf("got %q, %v; want the cached %q", again, err, tok)
 	}
 }

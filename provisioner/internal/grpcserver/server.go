@@ -768,8 +768,13 @@ func (s *Server) ListGitHubRepos(ctx context.Context, _ *agentfleetv1.ListGitHub
 // ownerRe is a GitHub login: letters, digits, hyphens.
 var ownerRe = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
-// repoOwner is the <owner> of repos.url's .../<owner>/<repo>[.git].
+// repoOwner is the <owner> of repos.url's .../<owner>/<repo>[.git]. A URL
+// must be https://github.com/: the owner's token is minted for GitHub only.
+// A bare path is a test's local origin.
 func repoOwner(repoURL string) (string, error) {
+	if strings.Contains(repoURL, "://") && !strings.HasPrefix(strings.ToLower(repoURL), "https://github.com/") {
+		return "", fmt.Errorf("repo url %q is not on https://github.com: no owner vault (docs/adr/0075 §7)", repoURL)
+	}
 	parts := strings.Split(strings.TrimSuffix(strings.TrimSuffix(repoURL, "/"), ".git"), "/")
 	if len(parts) < 3 || !ownerRe.MatchString(parts[len(parts)-2]) {
 		return "", fmt.Errorf("repo url %q names no GitHub owner: no owner vault (docs/adr/0075 §7)", repoURL)

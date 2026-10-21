@@ -537,6 +537,8 @@ func TestRepoOwner(t *testing.T) {
 		"/tmp/x/MohammadBnei/origin":                      "MohammadBnei",
 		"repo":                                            "",
 		"https://github.com/a_b/r.git":                    "",
+		"https://evil.example/MohammadBnei/r":             "",
+		"http://github.com/MohammadBnei/r":                "",
 	} {
 		got, err := repoOwner(url)
 		if got != want || (want == "") != (err != nil) {

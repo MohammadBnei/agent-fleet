@@ -182,43 +182,36 @@ git config --global --add safe.directory '*'
 }
 
 // cloneTail is the part of the clone script from its workspace guard on. The
-// clone is the same for every pod since docs/adr/0075: none holds a credential
-// it could use, so none contacts the remote. The guard is not.
+// same for every pod since docs/adr/0075: none holds a credential its clone
+// could use, so none contacts the remote.
 func cloneTail(spec WorkerPodSpec, base string) string {
-	// A repo session's tree predates the marker: any .git means the agent
-	// may have worked there, and wiping it would lose uncommitted work. The
-	// cost is the old one, a clone killed mid-way is not retried.
-	guard := `if [ -d %[1]s/.git ]; then
-  echo "workspace already has a repository, leaving it alone"
-  exit 0
-fi
-mkdir -p %[1]s
-`
-	if spec.Definition != nil {
-		guard = `# The marker is the script's last step, so only a finished clone has it. A
-# clone killed mid-way (OOM, eviction, SIGKILL: no trap would run) left a
-# partial tree the agent never ran on, since the worker starts only after
-# this container succeeds: wipe it and clone again.
-if [ -f %[1]s/.git/fleet-clone-done ]; then
+	format := `# A finished clone has the marker (the script's last step) or, if it is a
+# repo session's tree from before the marker existed, an index (that clone
+# checked out in one step). Either way the agent may have worked there: keep
+# it. Anything else is a clone killed mid-way (OOM, eviction, a missing base
+# branch; no trap would run), which the agent never ran on, since the worker
+# starts only after this container succeeds: wipe it and clone again. A
+# --no-checkout clone writes no index until the checkout below.
+if [ -f %[1]s/.git/fleet-clone-done ] || [ -f %[1]s/.git/index ]; then
   echo "workspace already has a repository, leaving it alone"
   exit 0
 fi
 mkdir -p %[1]s
 find %[1]s -mindepth 1 -delete
-`
-	}
-	format := guard + `git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
+git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
 cd %[1]s
 # docs/adr/0064: local transport only. This container holds no credential and
 # never contacts the remote: the fetch names the cache's PATH, not "origin", so
 # no reordering can turn it into a remote fetch. It copies the cache's
 # REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
-# (git.Manager.EnsureRepoFetched, never skipped) just
-# before this pod was created, over the ones clone --shared made from the
-# cache's local branches (frozen at its first clone), so origin/* is current.
+# (git.Manager.EnsureRepoFetched, never skipped) just before this pod was
+# created, over the ones clone --shared made from the cache's local branches
+# (frozen at its first clone), so origin/* is current.
 git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
-git checkout -B %[3]s origin/%[3]s
+# Before the checkout: the index it writes is what keeps this tree, so the
+# remote must already be the real one by then.
 git remote set-url origin %[4]s
+git checkout -B %[3]s origin/%[3]s
 touch .git/fleet-clone-done
 `
 	return fmt.Sprintf(format, sessionWorkdir, spec.Repo, base, spec.RepoURL)
