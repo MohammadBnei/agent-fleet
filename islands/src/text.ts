@@ -34,3 +34,23 @@ export function displayNames(authorNames: string[]): Map<string, string> {
   }
   return out;
 }
+
+// Typing while a question is open answers it, as "Other" does in Claude Code:
+// an option already picked keeps its question, the text answers the rest.
+export function withOther(questions: string[], picked: Record<string, string>, text: string): Record<string, string> {
+  return Object.fromEntries(questions.map((q) => [q, picked[q] || text]));
+}
+
+// An answer entry's text for the feed: the distinct answers, one per line.
+export function answerText(json: string): string {
+  try {
+    const a = (JSON.parse(json) as { answers?: unknown }).answers;
+    if (a && typeof a === "object") {
+      const lines = Object.values(a).map((v) => (typeof v === "string" ? v : JSON.stringify(v)));
+      return [...new Set(lines)].join("\n");
+    }
+  } catch {
+    // Not ours to fix: show it as written.
+  }
+  return json;
+}

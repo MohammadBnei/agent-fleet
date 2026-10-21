@@ -15,7 +15,7 @@
   import { Code, ConnectError } from "@connectrpc/connect";
   import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isStale, isUnauthenticated } from "./api";
   import { conversation, decisions } from "./feed";
-  import { threadTitle } from "./text";
+  import { threadTitle, withOther } from "./text";
   import { createRenderer } from "./render";
   import { drawDiagrams } from "./diagram";
   import tokens from "./tokens.css?inline";
@@ -288,6 +288,44 @@
       error = "This message is too long (64 KiB at most).";
       return;
     }
+    // An open question takes the text as its answer, as "Other" does in Claude
+    // Code: a plain message would only queue behind the question it blocks on.
+    const q = current && !current.tainted ? open.find((d) => d.kind === "question") : undefined;
+    if (q?.kind === "question") {
+      if (busy) {
+        error = "Wait for the last answer to go through.";
+        return;
+      }
+      const answersJson = JSON.stringify({ answers: withOther(q.questions.map((x) => x.question), answers, text) });
+      if (new TextEncoder().encode(answersJson).length > MAX_MESSAGE) {
+        error = "This answer is too long (64 KiB at most).";
+        return;
+      }
+      sending = true;
+      draft = "";
+      const threadId = current!.id;
+      const key = ++pendingKey;
+      pending = [...pending, { key, text }];
+      pinned = true;
+      let seq: bigint | undefined;
+      const ok = await act(async (threadId) => {
+        seq = (await api.answerQuestion({ threadId, seq: q.seq, answersJson })).seq;
+      });
+      sending = false;
+      // They left the thread: nothing here is theirs now. Not gen: a reload
+      // of this same thread (someone answered first) must keep the text.
+      if (current?.id !== threadId) return;
+      const streaming = !!stream && !stream.signal.aborted;
+      if (ok && seq !== undefined && !seen.has(seq) && streaming) {
+        pending = pending.map((p) => (p.key === key ? { ...p, seq } : p));
+      } else {
+        pending = pending.filter((p) => p.key !== key);
+        if (ok && !streaming && current) await select(current); // no stream to echo it
+      }
+      if (ok) answers = {};
+      else draft = draft ? `${text}\n${draft}` : text;
+      return;
+    }
     sending = true;
     error = "";
     draft = "";
@@ -513,7 +551,7 @@
     <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
       <textarea
         aria-label="Message"
-        placeholder={current?.tainted ? "Only an admin can write in this thread" : "Reply to the agent"}
+        placeholder={current?.tainted ? "Only an admin can write in this thread" : open.some((d) => d.kind === "question") ? "Pick an answer, or type your own" : "Reply to the agent"}
         rows="1"
         disabled={current?.tainted || stale}
         bind:this={composer}
