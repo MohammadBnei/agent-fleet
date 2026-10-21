@@ -62,6 +62,7 @@ export function MobileSessionDetail({
     run,
     sendDiscuss,
     respondToPermission,
+    previewGrant,
     approvePlanDecision,
     answerQuestion,
     clearActionError,
@@ -199,6 +200,7 @@ export function MobileSessionDetail({
           compact
           dockPendingDecision
           onRespond={respondToPermission}
+          previewGrant={previewGrant}
           onApprovePlan={approvePlanDecision}
           onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
@@ -235,6 +237,7 @@ export function MobileSessionDetail({
         busyKey={busyKey}
         compact
         onRespond={respondToPermission}
+        previewGrant={previewGrant}
         onApprovePlan={approvePlanDecision}
         onAnswer={answerQuestion}
         onPlanFeedback={(text) => sendDiscuss(text)}

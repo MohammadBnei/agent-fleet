@@ -30,6 +30,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
+	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
@@ -255,6 +256,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	packStore := packs.NewStore(pool)
 	defs.SetOnFiles(packStore.OnDefinitionFiles)
 	dashboardSvc.SetPacks(packStore)
+	grantStore := grants.NewStore(pool)
+	dashboardSvc.SetGrants(grantStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that
@@ -284,6 +287,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 
 	dashboardSvc.SetFileDiffStore(fileDiffs)
 	coreSvc.SetFileDiffStore(fileDiffs)
+	coreSvc.SetGrants(grantStore)
 	// The fleet's only outbound "a session needs you" signal. Without this
 	// wire, a session blocked on a permission decision notifies nobody and
 	// is findable only by someone already watching the dashboard.

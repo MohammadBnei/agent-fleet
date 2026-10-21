@@ -28,6 +28,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
+	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
@@ -82,6 +83,8 @@ type Server struct {
 	// it has always had. Injected after construction like warm and
 	// notifyBlocked, because dashboard.Server is built later.
 	fileDiffs *filediff.Store
+	// grants is delivered on GetSession (docs/adr/0076 §3). nil sends none.
+	grants *grants.Store
 }
 
 func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *journal.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
@@ -440,7 +443,13 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 	if err != nil {
 		return nil, err
 	}
-	return &agentfleetv1.GetSessionResponse{Session: dashboard.SessionToProto(*t), AgentSpec: spec, AgentSpecSha: sha}, nil
+	resp := &agentfleetv1.GetSessionResponse{Session: dashboard.SessionToProto(*t), AgentSpec: spec, AgentSpecSha: sha}
+	if spec != nil && s.grants != nil {
+		if resp.Grants, err = s.grants.Rules(ctx, req.GetId()); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
 }
 
 // SetPermissionMode persists a worker pod's own permission mode (the
@@ -646,6 +655,8 @@ func (s *Server) PushToolTelemetry(ctx context.Context, req *agentfleetv1.PushTo
 // coreserver and dashboard.Server hold the same one. Same pattern as
 // SetWarmFunc above and for the same reason.
 func (s *Server) SetFileDiffStore(store *filediff.Store) { s.fileDiffs = store }
+
+func (s *Server) SetGrants(g *grants.Store) { s.grants = g }
 
 // StreamHumanMessages is the mechanism that lets the sidecar deliver new
 // human input to the wrapper live, for streamInput() (docs/adr/0021 point

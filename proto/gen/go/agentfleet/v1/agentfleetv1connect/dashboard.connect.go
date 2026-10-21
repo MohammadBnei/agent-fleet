@@ -87,6 +87,15 @@ const (
 	// DashboardServicePostMessageProcedure is the fully-qualified name of the DashboardService's
 	// PostMessage RPC.
 	DashboardServicePostMessageProcedure = "/agentfleet.v1.DashboardService/PostMessage"
+	// DashboardServicePreviewGrantProcedure is the fully-qualified name of the DashboardService's
+	// PreviewGrant RPC.
+	DashboardServicePreviewGrantProcedure = "/agentfleet.v1.DashboardService/PreviewGrant"
+	// DashboardServiceListGrantsProcedure is the fully-qualified name of the DashboardService's
+	// ListGrants RPC.
+	DashboardServiceListGrantsProcedure = "/agentfleet.v1.DashboardService/ListGrants"
+	// DashboardServiceRevokeGrantProcedure is the fully-qualified name of the DashboardService's
+	// RevokeGrant RPC.
+	DashboardServiceRevokeGrantProcedure = "/agentfleet.v1.DashboardService/RevokeGrant"
 	// DashboardServiceTranscribeProcedure is the fully-qualified name of the DashboardService's
 	// Transcribe RPC.
 	DashboardServiceTranscribeProcedure = "/agentfleet.v1.DashboardService/Transcribe"
@@ -204,6 +213,11 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error)
+	// docs/adr/0076 §3: remembered approvals. Live definition grants are listed
+	// and revoked here; a revoke reaches running sessions at their next warm.
+	PreviewGrant(context.Context, *connect.Request[v1.PreviewGrantRequest]) (*connect.Response[v1.PreviewGrantResponse], error)
+	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
+	RevokeGrant(context.Context, *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error)
 	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
 	// server-streaming: the browser cannot stream *up* under any transport gRPC
 	// offers, so audio arrives as discrete requests regardless — and each
@@ -380,6 +394,24 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
 			connect.WithClientOptions(opts...),
 		),
+		previewGrant: connect.NewClient[v1.PreviewGrantRequest, v1.PreviewGrantResponse](
+			httpClient,
+			baseURL+DashboardServicePreviewGrantProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("PreviewGrant")),
+			connect.WithClientOptions(opts...),
+		),
+		listGrants: connect.NewClient[v1.ListGrantsRequest, v1.ListGrantsResponse](
+			httpClient,
+			baseURL+DashboardServiceListGrantsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListGrants")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeGrant: connect.NewClient[v1.RevokeGrantRequest, v1.RevokeGrantResponse](
+			httpClient,
+			baseURL+DashboardServiceRevokeGrantProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RevokeGrant")),
+			connect.WithClientOptions(opts...),
+		),
 		transcribe: connect.NewClient[v1.TranscribeRequest, v1.TranscribeResponse](
 			httpClient,
 			baseURL+DashboardServiceTranscribeProcedure,
@@ -547,6 +579,9 @@ type dashboardServiceClient struct {
 	answerQuestion      *connect.Client[v1.AnswerQuestionRequest, v1.AppendResponse]
 	respondToPermission *connect.Client[v1.RespondToPermissionRequest, v1.AppendResponse]
 	postMessage         *connect.Client[v1.PostMessageRequest, v1.AppendResponse]
+	previewGrant        *connect.Client[v1.PreviewGrantRequest, v1.PreviewGrantResponse]
+	listGrants          *connect.Client[v1.ListGrantsRequest, v1.ListGrantsResponse]
+	revokeGrant         *connect.Client[v1.RevokeGrantRequest, v1.RevokeGrantResponse]
 	transcribe          *connect.Client[v1.TranscribeRequest, v1.TranscribeResponse]
 	deleteSession       *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
@@ -661,6 +696,21 @@ func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, req *c
 // PostMessage calls agentfleet.v1.DashboardService.PostMessage.
 func (c *dashboardServiceClient) PostMessage(ctx context.Context, req *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.postMessage.CallUnary(ctx, req)
+}
+
+// PreviewGrant calls agentfleet.v1.DashboardService.PreviewGrant.
+func (c *dashboardServiceClient) PreviewGrant(ctx context.Context, req *connect.Request[v1.PreviewGrantRequest]) (*connect.Response[v1.PreviewGrantResponse], error) {
+	return c.previewGrant.CallUnary(ctx, req)
+}
+
+// ListGrants calls agentfleet.v1.DashboardService.ListGrants.
+func (c *dashboardServiceClient) ListGrants(ctx context.Context, req *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error) {
+	return c.listGrants.CallUnary(ctx, req)
+}
+
+// RevokeGrant calls agentfleet.v1.DashboardService.RevokeGrant.
+func (c *dashboardServiceClient) RevokeGrant(ctx context.Context, req *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error) {
+	return c.revokeGrant.CallUnary(ctx, req)
 }
 
 // Transcribe calls agentfleet.v1.DashboardService.Transcribe.
@@ -826,6 +876,11 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error)
+	// docs/adr/0076 §3: remembered approvals. Live definition grants are listed
+	// and revoked here; a revoke reaches running sessions at their next warm.
+	PreviewGrant(context.Context, *connect.Request[v1.PreviewGrantRequest]) (*connect.Response[v1.PreviewGrantResponse], error)
+	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
+	RevokeGrant(context.Context, *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error)
 	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
 	// server-streaming: the browser cannot stream *up* under any transport gRPC
 	// offers, so audio arrives as discrete requests regardless — and each
@@ -996,6 +1051,24 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServicePostMessageProcedure,
 		svc.PostMessage,
 		connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServicePreviewGrantHandler := connect.NewUnaryHandler(
+		DashboardServicePreviewGrantProcedure,
+		svc.PreviewGrant,
+		connect.WithSchema(dashboardServiceMethods.ByName("PreviewGrant")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceListGrantsHandler := connect.NewUnaryHandler(
+		DashboardServiceListGrantsProcedure,
+		svc.ListGrants,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListGrants")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRevokeGrantHandler := connect.NewUnaryHandler(
+		DashboardServiceRevokeGrantProcedure,
+		svc.RevokeGrant,
+		connect.WithSchema(dashboardServiceMethods.ByName("RevokeGrant")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceTranscribeHandler := connect.NewUnaryHandler(
@@ -1180,6 +1253,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceRespondToPermissionHandler.ServeHTTP(w, r)
 		case DashboardServicePostMessageProcedure:
 			dashboardServicePostMessageHandler.ServeHTTP(w, r)
+		case DashboardServicePreviewGrantProcedure:
+			dashboardServicePreviewGrantHandler.ServeHTTP(w, r)
+		case DashboardServiceListGrantsProcedure:
+			dashboardServiceListGrantsHandler.ServeHTTP(w, r)
+		case DashboardServiceRevokeGrantProcedure:
+			dashboardServiceRevokeGrantHandler.ServeHTTP(w, r)
 		case DashboardServiceTranscribeProcedure:
 			dashboardServiceTranscribeHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteSessionProcedure:
@@ -1307,6 +1386,18 @@ func (UnimplementedDashboardServiceHandler) RespondToPermission(context.Context,
 
 func (UnimplementedDashboardServiceHandler) PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.PostMessage is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) PreviewGrant(context.Context, *connect.Request[v1.PreviewGrantRequest]) (*connect.Response[v1.PreviewGrantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.PreviewGrant is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListGrants is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RevokeGrant(context.Context, *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RevokeGrant is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) Transcribe(context.Context, *connect.Request[v1.TranscribeRequest]) (*connect.Response[v1.TranscribeResponse], error) {

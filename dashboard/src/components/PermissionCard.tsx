@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { ToolInputView } from "./ToolInputView";
+
+// A remembered allow (docs/adr/0076 §3): core renders the rule from the
+// request, and the card shows that exact rule before the click.
+export type Grant = { scope: "session" | "definition"; ruleForm: "exact" | "prefix" };
+export type GrantRules = { exact: string; prefix: string };
+export type GrantPreview = (seq: bigint) => Promise<GrantRules>;
 
 // Generic renderer for any PERMISSION_REQUEST entry canUseTool posts —
 // the fleet-wide replacement for docs/adr/0021's Write/Edit-absent-from-
@@ -29,6 +35,7 @@ export function PermissionCard({
   onAllow,
   onDeny,
   edgeClassName,
+  preview,
 }: {
   tool: string;
   input: unknown;
@@ -46,11 +53,30 @@ export function PermissionCard({
   // denial read as an unexplained refusal in the one place its reason
   // matters.
   denyMessage?: string;
-  onAllow: () => void;
+  onAllow: (grant?: Grant) => void;
   onDeny: (message: string) => void;
   edgeClassName: string;
+  // Set for a definition session's pending request: offers "allow for this
+  // session" and "allow for this definition" with the rule each would store.
+  preview?: () => Promise<GrantRules>;
 }) {
   const [reason, setReason] = useState("");
+  const [rules, setRules] = useState<GrantRules | null>(null);
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    if (!pending || !preview) return;
+    let live = true;
+    // No rules (a request no grant could cover) just means no remember row.
+    preview().then((r) => live && setRules(r), () => {});
+    return () => {
+      live = false;
+    };
+    // Callers pass a fresh closure every render; the request at this seq
+    // does not change, so fetch once per pending card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, !!preview]);
+  const form = wide && rules?.prefix ? "prefix" : "exact";
+  const rule = rules ? (form === "prefix" ? rules.prefix : rules.exact) : "";
   const [denying, setDenying] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const sendDeny = () => {
@@ -140,7 +166,7 @@ export function PermissionCard({
           <ActionButton
             className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
             busy={busy}
-            onClick={onAllow}
+            onClick={() => onAllow()}
           >
             allow
           </ActionButton>
@@ -152,6 +178,32 @@ export function PermissionCard({
           >
             deny
           </button>
+        </div>
+      )}
+      {!denying && rules && (
+        <div className="flex items-center gap-2 mt-2.5 flex-wrap text-xs text-dim">
+          <span>remember</span>
+          <code className="text-base-content break-all">{rule}</code>
+          {rules.prefix && (
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={wide} disabled={busy} onChange={(e) => setWide(e.target.checked)} />
+              wider: covers more than this call
+            </label>
+          )}
+          <ActionButton
+            className="border border-line px-3 py-1 hover:border-primary disabled:opacity-50"
+            busy={busy}
+            onClick={() => onAllow({ scope: "session", ruleForm: form })}
+          >
+            allow for this session
+          </ActionButton>
+          <ActionButton
+            className="border border-line px-3 py-1 hover:border-primary disabled:opacity-50"
+            busy={busy}
+            onClick={() => onAllow({ scope: "definition", ruleForm: form })}
+          >
+            allow for this definition
+          </ActionButton>
         </div>
       )}
     </div>

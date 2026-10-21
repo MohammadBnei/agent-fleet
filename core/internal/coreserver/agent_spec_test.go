@@ -18,6 +18,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -68,7 +69,9 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 		grpc.ChainUnaryInterceptor(grpcAuth.UnaryInterceptor),
 		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
 	)
-	agentfleetv1.RegisterCoreServiceServer(gs, New(transcr, store, journal.NewStore(pool), nil, nil, nil, nil))
+	svc := New(transcr, store, journal.NewStore(pool), nil, nil, nil, nil)
+	svc.SetGrants(grants.NewStore(pool))
+	agentfleetv1.RegisterCoreServiceServer(gs, svc)
 	go func() { _ = gs.Serve(lis) }()
 	t.Cleanup(gs.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
@@ -96,7 +99,15 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 		spec.GetSystemPromptAppend() != "Be brief." || spec.GetMaxTurns() != 60 || spec.GetInteraction() != "" || spec.GetLifecycle() != "" {
 		t.Errorf("spec not flattened from effective: %v", spec)
 	}
+	// A grant rides outside the spec (docs/adr/0076 §3): it changes the
+	// grants, never the sha, so delivery to a running worker never stops.
+	if err := grants.NewStore(pool).Add(ctx, def, "a", grants.ScopeSession, "Bash(npm test)", "test"); err != nil {
+		t.Fatal(err)
+	}
 	again, err := c.GetSession(asDef, &agentfleetv1.GetSessionRequest{Id: def})
+	if err != nil || !slices.Equal(again.GetGrants(), []string{"Bash(npm test)"}) || len(got.GetGrants()) != 0 {
+		t.Errorf("grants: before %v, after %v (%v)", got.GetGrants(), again.GetGrants(), err)
+	}
 	if err != nil || again.GetAgentSpecSha() != sha {
 		t.Errorf("sha not stable: %q then %q (%v)", sha, again.GetAgentSpecSha(), err)
 	}

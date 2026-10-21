@@ -27,6 +27,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
+	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
@@ -81,6 +82,9 @@ type Server struct {
 	definitions *definitions.Registry
 	// packs renders each warm's context packs (docs/adr/0063). nil sends none.
 	packs *packs.Store
+	// grants stores remembered approvals (docs/adr/0076 §3). nil refuses any
+	// scope but "once".
+	grants *grants.Store
 }
 
 func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
@@ -799,7 +803,15 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // permission-pending pod in the first place (see ListIdleSessionIDs).
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
 	sessionID := req.Msg.GetSessionId()
-	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq())
+	decision := req.Msg.GetDecisionJson()
+	if scope := req.Msg.GetScope(); scope != "" && scope != grants.ScopeOnce {
+		d, err := s.rememberGrant(ctx, sessionID, req.Msg.GetSeq(), decision, scope, req.Msg.GetRuleForm())
+		if err != nil {
+			return nil, grantErr("RespondToPermission", err)
+		}
+		decision = d
+	}
+	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", decision, "permission_response", uuid.NewString(), req.Msg.GetSeq())
 	if err != nil {
 		if errors.Is(err, transcript.ErrAlreadyAnswered) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, err)

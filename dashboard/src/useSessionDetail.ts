@@ -5,6 +5,7 @@ import { client, subscribeTranscript } from "./connectClient";
 import { withOptimistic } from "./transcript";
 import { pollVisible } from "./pollVisible";
 import { approvePlan } from "./approvePlan";
+import type { Grant, GrantPreview } from "./components/PermissionCard";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
@@ -211,14 +212,19 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     });
   }
 
-  const respondToPermission = (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) =>
+  const respondToPermission = (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) =>
     decide(
       seq,
       TranscriptEntryType.PERMISSION_RESPONSE,
       JSON.stringify(decision),
-      () => client.respondToPermission({ sessionId, seq, decisionJson: JSON.stringify(decision) }),
+      () => client.respondToPermission({ sessionId, seq, decisionJson: JSON.stringify(decision), scope: grant?.scope, ruleForm: grant?.ruleForm }),
       `permission:${seq}`,
     );
+
+  const previewGrant: GrantPreview = useCallback(
+    (seq: bigint) => client.previewGrant({ sessionId, seq }).then((r) => ({ exact: r.exact, prefix: r.prefix })),
+    [sessionId],
+  );
 
   // Approving a plan may also switch the session's permission mode, in that
   // order (approvePlan.ts) — but it still resolves through decide(), so the
@@ -311,6 +317,8 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     run,
     sendDiscuss,
     respondToPermission,
+    // Only a definition session remembers approvals (docs/adr/0076 §3).
+    previewGrant: session?.definitionName ? previewGrant : undefined,
     approvePlanDecision,
     answerQuestion,
     clearActionError: () => setActionError(null),
