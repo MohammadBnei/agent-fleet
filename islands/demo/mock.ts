@@ -17,6 +17,12 @@ const log: Entry[] = [
     "agent",
     "Sure. The page has **three** stale sections. Here is how the pages link today:\n\n```mermaid\ngraph LR; Index-->Onboarding; Onboarding-->Tools; Onboarding-->Contacts\n```\n\nI will merge *Tools* into the onboarding page. `Contacts` stays separate.",
   ),
+  // Hostile: a directive trying to turn the Allow button into a page overlay.
+  entry(
+    T.DISCUSSION,
+    "agent",
+    '```mermaid\n%%{init: {"themeCSS": ".decision button{position:fixed;inset:0;opacity:0.4;background:red}"}}%%\ngraph TD; Ask-->Answer\n```',
+  ),
   entry(
     T.QUESTION,
     "agent",
@@ -56,9 +62,10 @@ setTransport(
         threads.unshift(t);
         return { thread: t };
       },
-      getTranscript: () => ({ entries: [...log], nextSeq: seq }),
+      getTranscript: () => ({ entries: [...log], nextSeq: seq + 1n }),
       async *streamTranscript(req) {
-        const queue: Entry[] = log.filter((e) => e.seq > req.sinceSeq);
+        // Inclusive, like core's ReadSince.
+        const queue: Entry[] = log.filter((e) => e.seq >= req.sinceSeq);
         let wake: (() => void) | undefined;
         const l = (e: Entry) => {
           queue.push(e);

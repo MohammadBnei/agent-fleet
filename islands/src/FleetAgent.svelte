@@ -12,6 +12,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { Thread, Entry } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
+  import { Code, ConnectError } from "@connectrpc/connect";
   import { agentClient, errorText, fleetOrigin, isUnauthenticated } from "./api";
   import { conversation, decisions } from "./feed";
   import { createRenderer } from "./render";
@@ -33,7 +34,12 @@
   let draft = $state("");
   let busy = $state(false);
   let answers = $state<Record<string, string>>({});
+  let reconnecting = $state(false);
   let stream: AbortController | undefined;
+  // Bumped by every load/select/unmount. Work started under an older value
+  // writes nothing: a slow response for thread A never lands in thread B.
+  let gen = 0;
+  let seen = new Set<bigint>();
 
   const items = $derived(conversation(entries));
   const open = $derived(decisions(entries));
@@ -71,10 +77,14 @@
   }
 
   async function load() {
+    const my = ++gen;
+    stream?.abort();
     phase = "loading";
     error = "";
     await guard(async () => {
-      threads = (await api.listThreads({ definition })).threads;
+      const res = await api.listThreads({ definition });
+      if (my !== gen) return;
+      threads = res.threads;
       phase = "ready";
       const pick = threads.find((t) => t.id === thread) ?? threads[0];
       if (pick) await select(pick);
@@ -82,41 +92,58 @@
   }
 
   async function select(t: Thread) {
+    const my = ++gen;
     stream?.abort();
     current = t;
     entries = [];
+    seen = new Set();
     answers = {};
+    error = "";
     await guard(async () => {
       const res = await api.getTranscript({ threadId: t.id });
+      if (my !== gen) return;
       entries = res.entries;
-      follow(t.id, res.nextSeq);
+      seen = new Set(res.entries.map((e) => e.seq));
+      follow(t.id, res.nextSeq, my);
     });
   }
 
-  // Streams new entries; on a drop it backs off and resumes from the last seq.
-  async function follow(threadId: string, since: bigint) {
+  // Streams new entries from since_seq (inclusive, like core's ReadSince); on
+  // a drop it backs off and resumes after the last seq it saw. NotFound and
+  // PermissionDenied are final: the thread is gone or no longer visible.
+  async function follow(threadId: string, since: bigint, my: number) {
     const ctl = new AbortController();
     stream = ctl;
     let delay = 1000;
-    while (!ctl.signal.aborted) {
+    while (!ctl.signal.aborted && my === gen) {
       try {
         for await (const res of api.streamTranscript({ threadId, sinceSeq: since }, { signal: ctl.signal })) {
+          if (my !== gen) return;
+          reconnecting = false;
           const e = res.entry;
-          if (!e || entries.some((x) => x.seq === e.seq)) continue;
+          if (!e || seen.has(e.seq)) continue;
+          seen.add(e.seq);
           entries = [...entries, e];
-          since = e.seq;
+          since = e.seq + 1n;
           delay = 1000;
           if (e.from === "agent") {
             el.dispatchEvent(new CustomEvent("fleet-message", { detail: { seq: String(e.seq), type: e.type }, bubbles: true, composed: true }));
           }
         }
       } catch (err) {
-        if (ctl.signal.aborted) return;
+        if (ctl.signal.aborted || my !== gen) return;
         if (isUnauthenticated(err)) {
           phase = "signed-out";
           return;
         }
+        const code = ConnectError.from(err).code;
+        if (code === Code.NotFound || code === Code.PermissionDenied) {
+          error = "This thread is no longer available.";
+          return;
+        }
       }
+      if (my !== gen) return;
+      reconnecting = true;
       await new Promise((r) => setTimeout(r, delay));
       delay = Math.min(delay * 2, 30000);
     }
@@ -135,6 +162,7 @@
 
   async function act(fn: () => Promise<unknown>) {
     busy = true;
+    error = "";
     await guard(async () => {
       await fn();
     });
@@ -167,9 +195,13 @@
 
   onMount(() => {
     // Styles live in the shadow root: Ukubi tokens first, then the island's.
-    const style = document.createElement("style");
-    style.textContent = tokens + styles;
-    el.shadowRoot?.prepend(style);
+    // Once: the shadow root outlives a disconnect and remount.
+    if (!el.shadowRoot?.querySelector("style[data-fleet]")) {
+      const style = document.createElement("style");
+      style.dataset.fleet = "";
+      style.textContent = tokens + styles;
+      el.shadowRoot?.prepend(style);
+    }
     ensureFonts();
     load();
     const onFocus = () => {
@@ -178,6 +210,7 @@
     window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("focus", onFocus);
+      gen++;
       stream?.abort();
     };
   });
@@ -223,7 +256,7 @@
       {#if current}
         <span class="status" data-state={live}>
           {#if live === "waiting"}<span class="led" aria-hidden="true"></span>{/if}
-          {statusWord[live] ?? live}{#if current.status?.code} · {current.status.code}{/if}
+          {reconnecting ? "Reconnecting" : (statusWord[live] ?? live)}{#if current.status?.code} · {current.status.code}{/if}
         </span>
       {/if}
     </header>
@@ -263,7 +296,7 @@
                 {/each}
               </div>
             {/each}
-            <button class="primary chamfer" disabled={busy} onclick={() => answer(d.seq)}>Answer</button>
+            <button class="primary chamfer" disabled={busy || d.questions.some((q) => !answers[q.question])} onclick={() => answer(d.seq)}>Answer</button>
           {:else if d.kind === "plan"}
             <p class="title">The agent proposes a plan</p>
             <div class="md plan">{@html render.markdown(d.plan)}</div>

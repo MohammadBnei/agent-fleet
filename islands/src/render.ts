@@ -6,11 +6,17 @@ import { Marked } from "marked";
 // rendering bug is script on opus.bnei.dev. Two layers: markdown never emits
 // raw HTML, and everything it does emit goes through DOMPurify.
 
-// https:, mailto: and relative URLs only. DOMPurify's default also allows
-// http:, ftp:, tel: and others; none belongs in an agent transcript.
+// DOMPurify checks EVERY allowed attribute's value against this, not only
+// URLs, so it must pass plain values (class, viewBox): it is DOMPurify's
+// default minus http:, ftp:, tel: and the rest. The link hook below then
+// keeps only absolute https: and mailto: links: a relative URL would resolve
+// against the HOST and go out with its cookies (docs/adr/0068 §4).
 const ALLOWED_URI = /^(?:(?:https|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+const LINK = /^(?:https|mailto):/i;
+const URL_ATTRS = ["href", "xlink:href", "src", "action", "formaction"];
 
-const FORBID_TAGS = ["style", "form", "input", "button", "textarea", "select", "iframe", "object", "embed"];
+// No <img>: an image loads on render, a zero-click beacon. Images become links.
+const FORBID_TAGS = ["style", "form", "input", "button", "textarea", "select", "iframe", "object", "embed", "img"];
 
 const escape = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -20,7 +26,8 @@ const marked = new Marked({
   renderer: {
     // Raw HTML in markdown is shown as text, never parsed.
     html: ({ text }) => escape(text),
-    // Mermaid is drawn later, lazily (Diagram.svelte); here it stays source.
+    image: ({ href, text }) => `<a href="${escape(href)}">${escape(text || href)}</a>`,
+    // Mermaid is drawn later, lazily (diagram.ts); here it stays source.
     code({ text, lang }) {
       const cls = lang === "mermaid" ? ' class="mermaid-src"' : "";
       return `<pre${cls}><code>${escape(text)}</code></pre>`;
@@ -39,10 +46,19 @@ export function createRenderer(win: Window & typeof globalThis): Renderer {
   // DOMPurify returns its input unchanged when it cannot run. Fail closed.
   if (!purify.isSupported) throw new Error("DOMPurify unsupported in this window");
   purify.addHook("afterSanitizeAttributes", (node) => {
-    if (node.tagName === "A") {
+    for (const a of URL_ATTRS) {
+      const v = node.getAttribute(a);
+      if (v !== null && !LINK.test(v.trim())) node.removeAttribute(a);
+    }
+    if (node.tagName.toLowerCase() === "a") {
       node.setAttribute("target", "_blank");
       node.setAttribute("rel", "noopener noreferrer");
     }
+  });
+  // Mermaid's own <style> is kept in the SVG path; one that fetches or
+  // imports anything is not. url(#marker) points inside the SVG and stays.
+  purify.addHook("uponSanitizeElement", (node, data) => {
+    if (data.tagName === "style" && /url\(\s*['"]?\s*[^'"#\s)]|@import|expression\(/i.test(node.textContent ?? "")) node.parentNode?.removeChild(node);
   });
   return {
     markdown: (text) =>
@@ -60,7 +76,7 @@ export function createRenderer(win: Window & typeof globalThis): Renderer {
         USE_PROFILES: { svg: true, svgFilters: true },
         ADD_TAGS: ["style"],
         ALLOWED_URI_REGEXP: ALLOWED_URI,
-        FORBID_TAGS: ["form", "input", "button", "textarea", "select", "iframe", "object", "embed", "foreignObject", "script"],
+        FORBID_TAGS: ["form", "input", "button", "textarea", "select", "iframe", "object", "embed", "foreignObject", "script", "image", "img"],
       }),
   };
 }

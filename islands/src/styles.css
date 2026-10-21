@@ -106,7 +106,7 @@ pre, .code {
   background: var(--ukubi-surface-sunken); border-radius: var(--ukubi-radius-sm);
   padding: var(--ukubi-space-3); overflow-x: auto; margin: var(--ukubi-space-2) 0;
 }
-.diagram { margin: var(--ukubi-space-2) 0; overflow-x: auto; }
+.diagram { margin: var(--ukubi-space-2) 0; overflow: auto; position: relative; contain: paint; max-width: 100%; }
 
 .decision {
   background: var(--ukubi-surface-raised);
