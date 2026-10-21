@@ -169,10 +169,20 @@ boundaries either: the script calls the API, not the element.
 - All decisions are inline, the riskiest included. There is no fleet-origin
   confirmation step.
 - **Who can put a script on the host.**
-  - The agent: on a host it writes to (the Opus space is its workspace), the
-    **script-write ask** (P5 spike 5) asks a human for any write of
-    `.js`/`.mjs`, a `space-lua`/`space-script` fence, `${`, `js.import`,
-    `js.window` or a `Library/` install, even in `auto`.
+  - The agent: on a host it writes to (a definition with `embed.origins`,
+    which sets `AgentSpec.scriptAsk`), the **script-write ask** applies in
+    every mode, past any remembered grant (the request carries `noGrant`, so
+    no "remember" is offered). A Write or Edit asks when the file is not a
+    plain type (`.md`, `.txt`, `.csv`, `.pdf`, images: SilverBullet serves
+    space files from its own origin, so an `.html` or `.svg` would run
+    there), is under `Library/`, or would afterwards hold any active
+    content: a `space-*` fence (backtick or tilde), `${`, `js.import`,
+    `js.window`, or raw HTML that runs script. Any edit to such a file asks,
+    not only one that adds a marker. Residuals: a Bash command that writes a
+    file is not inspected (today's definitions list only git prefixes, and
+    a Bash grant would widen this); two edits judged in parallel could only
+    together form a marker; content pulled in with `git pull` is trusted as
+    the repo's collaborators wrote it.
   - Any member who can edit the space, through SilverBullet itself. The ask
     does not cover humans.
   - Whoever ships a fleet release: the island bundle runs in every host. That

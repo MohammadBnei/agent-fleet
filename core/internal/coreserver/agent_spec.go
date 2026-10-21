@@ -72,6 +72,9 @@ func agentSpec(eff *definitions.Spec) *agentfleetv1.AgentSpec {
 	if l := eff.Limits; l != nil {
 		a.MaxTurns = int32(l.MaxTurns)
 	}
+	// docs/adr/0068 §4: a workspace an island host serves gets the
+	// script-write ask in the worker.
+	a.ScriptAsk = eff.Embed != nil && len(eff.Embed.Origins) > 0
 	return a
 }
 

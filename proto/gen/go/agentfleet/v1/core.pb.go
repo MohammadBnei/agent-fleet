@@ -1616,8 +1616,12 @@ type AgentSpec struct {
 	MaxTurns           int32                  `protobuf:"varint,8,opt,name=max_turns,json=maxTurns,proto3" json:"max_turns,omitempty"`
 	Interaction        string                 `protobuf:"bytes,9,opt,name=interaction,proto3" json:"interaction,omitempty"`
 	Lifecycle          string                 `protobuf:"bytes,10,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// docs/adr/0068 §4: the definition's workspace is served to an island host
+	// (its embed.origins is not empty), so a write that leaves active content
+	// in it, or a non-plain file, asks a human in every mode.
+	ScriptAsk     bool `protobuf:"varint,11,opt,name=script_ask,json=scriptAsk,proto3" json:"script_ask,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AgentSpec) Reset() {
@@ -1718,6 +1722,13 @@ func (x *AgentSpec) GetLifecycle() string {
 		return x.Lifecycle
 	}
 	return ""
+}
+
+func (x *AgentSpec) GetScriptAsk() bool {
+	if x != nil {
+		return x.ScriptAsk
+	}
+	return false
 }
 
 // Sets an arbitrary SDK permission mode on a task. Reused by two very
@@ -3059,7 +3070,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"agent_spec\x18\x02 \x01(\v2\x18.agentfleet.v1.AgentSpecR\tagentSpec\x12$\n" +
 	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\x12\x16\n" +
-	"\x06grants\x18\x04 \x03(\tR\x06grants\"\xea\x02\n" +
+	"\x06grants\x18\x04 \x03(\tR\x06grants\"\x89\x03\n" +
 	"\tAgentSpec\x12\x1f\n" +
 	"\vtools_allow\x18\x01 \x03(\tR\n" +
 	"toolsAllow\x12\x1d\n" +
@@ -3075,7 +3086,9 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\tmax_turns\x18\b \x01(\x05R\bmaxTurns\x12 \n" +
 	"\vinteraction\x18\t \x01(\tR\vinteraction\x12\x1c\n" +
 	"\tlifecycle\x18\n" +
-	" \x01(\tR\tlifecycle\"M\n" +
+	" \x01(\tR\tlifecycle\x12\x1d\n" +
+	"\n" +
+	"script_ask\x18\v \x01(\bR\tscriptAsk\"M\n" +
 	"\x18SetPermissionModeRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +

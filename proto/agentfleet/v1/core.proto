@@ -365,6 +365,10 @@ message AgentSpec {
   int32 max_turns = 8;
   string interaction = 9;
   string lifecycle = 10;
+  // docs/adr/0068 §4: the definition's workspace is served to an island host
+  // (its embed.origins is not empty), so a write that leaves active content
+  // in it, or a non-plain file, asks a human in every mode.
+  bool script_ask = 11;
 }
 
 // Sets an arbitrary SDK permission mode on a task. Reused by two very

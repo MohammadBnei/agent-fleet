@@ -54,3 +54,14 @@ func TestPick(t *testing.T) {
 		t.Fatalf("unknown form: %v", err)
 	}
 }
+
+// docs/adr/0068 §4: the worker's script-write ask is never rememberable, so
+// no rule is rendered and the card offers none.
+func TestRender_NoGrant(t *testing.T) {
+	if _, err := Render(`{"tool":"Write","input":{"file_path":"/workspace/a.md","content":"${x}"},"noGrant":true}`); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("noGrant request rendered a rule: %v", err)
+	}
+	if _, err := Render(`{"tool":"Write","input":{"file_path":"/workspace/a.md","content":"x"}}`); err != nil {
+		t.Fatalf("an ordinary request: %v", err)
+	}
+}

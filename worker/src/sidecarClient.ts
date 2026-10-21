@@ -131,6 +131,9 @@ export type AgentSpec = {
   maxTurns: number;
   interaction: string;
   lifecycle: string;
+  // docs/adr/0068 §4: the workspace is served to an island host. Absent from
+  // an older sidecar's JSON, which reads as false.
+  scriptAsk?: boolean;
 };
 
 export type TranscriptEntry = { seq: number; from: string; text: string; type?: string; replyTo?: number };
