@@ -19,7 +19,7 @@ image:
   repository: registry.bnei.lan:5000/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "src-6428c476f9ff"
+  tag: "src-fe1d47a77b8e"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
 # dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
@@ -129,7 +129,7 @@ env:
   # the image tag is a hash of core's inputs, shared by every release that
   # doesn't change them, so the version can't come from the image.
   - name: FLEET_VERSION
-    value: "6.13.0"
+    value: "6.14.0"
   - name: CORE_PORT
     value: "8080"
   - name: CORE_GRPC_PORT
