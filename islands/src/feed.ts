@@ -37,3 +37,4 @@ export function decisions(entries: Entry[]): Item[] {
   }
   return out.sort((a, b) => (a.seq < b.seq ? -1 : 1));
 }
+

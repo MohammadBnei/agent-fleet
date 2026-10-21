@@ -14,10 +14,12 @@
   border-radius: var(--ukubi-radius-md);
   display: flex;
   flex-direction: column;
-  gap: var(--ukubi-space-4);
-  padding: var(--ukubi-space-4);
-  max-width: 720px;
+  gap: var(--ukubi-space-3);
+  padding: var(--ukubi-space-3);
+  min-width: 0;
 }
+.row { display: flex; flex-wrap: wrap; gap: var(--ukubi-space-2); align-items: center; }
+.grow { flex: 1 1 10rem; min-width: 0; }
 .pad { padding: var(--ukubi-space-4) 0; }
 .pad-x { padding: 0; }
 .stack { display: flex; flex-direction: column; gap: var(--ukubi-space-3); align-items: flex-start; }
@@ -25,8 +27,6 @@
 .danger { color: var(--ukubi-danger); margin: 0; }
 p { margin: 0; }
 
-.bar { display: flex; flex-wrap: wrap; gap: var(--ukubi-space-2); align-items: center; }
-.bar select { flex: 1 1 12rem; min-width: 0; }
 
 select, textarea {
   font: inherit;
@@ -36,7 +36,11 @@ select, textarea {
   border-radius: var(--ukubi-radius-sm);
   padding: var(--ukubi-space-2) var(--ukubi-space-3);
 }
-textarea { resize: vertical; width: 100%; }
+textarea {
+  resize: none; width: 100%; min-width: 0;
+  /* One line that grows with the text, up to ~8 lines. */
+  field-sizing: content; min-height: calc(var(--ukubi-body-line) + 2 * var(--ukubi-space-2) + 2px); max-height: 12rem;
+}
 textarea::placeholder { color: var(--ukubi-ink-subtle); }
 
 button {
@@ -64,8 +68,6 @@ button:disabled { opacity: 0.55; cursor: default; }
 .status {
   display: inline-flex; align-items: center; gap: var(--ukubi-space-1);
   font-size: var(--ukubi-label-size); color: var(--ukubi-ink-muted);
-  border: 1px solid var(--ukubi-line); border-radius: var(--ukubi-radius-xs);
-  padding: 2px var(--ukubi-space-2);
 }
 .status[data-state="error"] { color: var(--ukubi-danger); }
 .status[data-state="waiting"] { color: var(--ukubi-ink); }
@@ -82,12 +84,12 @@ button:disabled { opacity: 0.55; cursor: default; }
 }
 @media (prefers-reduced-motion: reduce) { .led { animation: none; } }
 
-.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ukubi-space-4); }
+.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ukubi-space-2); }
 .msg {
   background: var(--ukubi-surface-raised);
   border: 1px solid var(--ukubi-line);
   border-radius: var(--ukubi-radius-md);
-  padding: var(--ukubi-space-3) var(--ukubi-space-4);
+  padding: var(--ukubi-space-2) var(--ukubi-space-3);
 }
 .msg.human { background: var(--ukubi-ochre-100); border-color: transparent; }
 .who {
@@ -122,3 +124,18 @@ pre, .code {
 .plan { max-height: 16rem; overflow-y: auto; width: 100%; }
 
 .composer { display: flex; gap: var(--ukubi-space-2); align-items: flex-end; }
+.send { flex: none; white-space: nowrap; }
+button { white-space: nowrap; }
+
+.seg { display: inline-flex; border: 1px solid var(--ukubi-line-strong); border-radius: var(--ukubi-radius-sm); overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: var(--ukubi-surface-raised); color: var(--ukubi-ink-muted); padding: var(--ukubi-space-1) var(--ukubi-space-3); }
+.seg button.on { background: var(--ukubi-ochre-100); color: var(--ukubi-ochre-700); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ukubi-line-strong); }
+.status[data-state="working"] .dot, .status[data-state="loading"] .dot { background: var(--ukubi-palm-400); }
+.status[data-state="error"] .dot { background: var(--ukubi-danger); }
+.pending { opacity: 0.55; }
+/* Narrow screens (phones): the status word goes, the dot stays. */
+@media (max-width: 480px) { .status-word { display: none; } }
+/* Without field-sizing the textarea cannot grow: give it room instead. */
+@supports not (field-sizing: content) { textarea { min-height: 4.5rem; } }
