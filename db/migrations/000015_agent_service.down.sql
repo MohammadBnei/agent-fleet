@@ -1,0 +1,26 @@
+-- Reverses 000015. The duplicate replies the up step dropped are not restored.
+DROP TABLE definition_grants;
+DROP TABLE session_grants;
+DROP TABLE client_requests;
+DROP INDEX transcript_one_reply_idx;
+ALTER TABLE transcript
+  DROP CONSTRAINT transcript_context_only_untrusted,
+  DROP COLUMN author_sub,
+  DROP COLUMN author_name,
+  DROP COLUMN actor,
+  DROP COLUMN causation_id,
+  DROP COLUMN context_only,
+  DROP COLUMN untrusted;
+DROP INDEX sessions_open_thread_idx;
+ALTER TABLE sessions
+  DROP CONSTRAINT sessions_thread_key_invoker,
+  DROP CONSTRAINT sessions_invoker_owns,
+  DROP CONSTRAINT sessions_agent_fields_definition_only,
+  DROP COLUMN owner,
+  DROP COLUMN visibility,
+  DROP COLUMN invoker,
+  DROP COLUMN interaction,
+  DROP COLUMN lifecycle,
+  DROP COLUMN thread_key,
+  DROP COLUMN cold_from_seq,
+  DROP COLUMN pod_reason;

@@ -144,6 +144,9 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	} else {
 		seq, err = s.transcr.Append(ctx, req.GetSessionId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey())
 	}
+	if errors.Is(err, transcript.ErrAlreadyAnswered) {
+		return nil, status.Error(codes.AlreadyExists, err.Error())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}
