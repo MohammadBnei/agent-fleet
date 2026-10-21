@@ -202,22 +202,6 @@ RUN git clone --depth 1 --branch ${PONYTAIL_VERSION} https://github.com/Dietrich
 # plugin copy (above) still works post-USER-switch.
 RUN chmod -R o+rX /root
 
-# Add new system packages HERE, not in the base apt step: anything above this
-# line re-pushes ~850MB when it changes. After the chmod above on purpose: that
-# layer rewrites all of /root, so it must not sit below a line that changes.
-#
-# python3 is an agent utility here, not a target-repo toolchain: the agent
-# reaches for `python3 -c` constantly for JSON munging, arithmetic and one-off
-# scripts, the same way it reaches for git/curl/gh, and independently of what
-# the target repo is written in. That is why it belongs in the image rather
-# than in docs/adr/0054's per-repo tools directory, which is for the languages
-# a specific repo needs. fleet-shared/settings.json has meanwhile been
-# allow-listing `Bash(pytest:*)`, `Bash(python -m pytest:*)` and `Bash(uv run:*)`
-# against binaries that did not exist. uv (above) uses it at run time only.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 \
-    && rm -rf /var/lib/apt/lists/* \
-    && python3 -VV
-
 WORKDIR /app/worker
 # Dependencies before source: the install below is a ~300 MB layer (the SDK's
 # native CLI), and with docker.yml's --layers it is reused, built and pushed
@@ -264,6 +248,22 @@ RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache set -e
     fi; \
     rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl; \
     chown -R bun:bun /app
+
+# Add new system packages HERE, not in the base apt step: anything above this
+# line re-pushes ~850MB (and the ~300MB bun install) when it changes; here only
+# this step and the source COPY below rebuild. Runs as root: USER bun is last.
+#
+# python3 is an agent utility here, not a target-repo toolchain: the agent
+# reaches for `python3 -c` constantly for JSON munging, arithmetic and one-off
+# scripts, the same way it reaches for git/curl/gh, and independently of what
+# the target repo is written in. That is why it belongs in the image rather
+# than in docs/adr/0054's per-repo tools directory, which is for the languages
+# a specific repo needs. fleet-shared/settings.json has meanwhile been
+# allow-listing `Bash(pytest:*)`, `Bash(python -m pytest:*)` and `Bash(uv run:*)`
+# against binaries that did not exist. uv (above) uses it at run time only.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -VV
 
 # entrypoint.sh is 100755 in git, and COPY keeps the mode.
 COPY --chown=bun:bun worker ./
