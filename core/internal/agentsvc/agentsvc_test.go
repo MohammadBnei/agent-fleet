@@ -122,9 +122,6 @@ func TestMemberListener(t *testing.T) {
 	if _, err := c.Open(ctx, connect.NewRequest(&agentfleetv1.OpenRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("member Open: %v", err)
 	}
-	if _, err := c.Stop(ctx, connect.NewRequest(&agentfleetv1.StopRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Errorf("not yet implemented: %v", err)
-	}
 }
 
 // docs/adr/0068: an island's call is a member's, inside the definitions that

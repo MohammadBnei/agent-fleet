@@ -355,6 +355,15 @@ func (s *Store) Tainted(ctx context.Context, list []Session) error {
 	return rows.Err()
 }
 
+// Answered reports whether the prompt at seq already has its reply.
+func (s *Store) Answered(ctx context.Context, id string, seq int64) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM transcript WHERE session_id = $1 AND reply_to_seq = $2
+		                 AND type IN ('answer', 'permission_response'))`, id, seq).Scan(&ok)
+	return ok, err
+}
+
 // OpenThreads counts owner's open sessions, for CreateThread's cap.
 func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
 	var n int
