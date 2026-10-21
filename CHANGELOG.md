@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.23.0](https://github.com/MohammadBnei/agent-fleet/compare/6.22.2...6.23.0) (2026-10-21)
+
+### Features
+
+* **dashboard): show the release that built a pod; build(worker:** late apt step for new packages ([#317](https://github.com/MohammadBnei/agent-fleet/issues/317)) ([e10772c](https://github.com/MohammadBnei/agent-fleet/commit/e10772c644a48ed95befe51311912ddb3edb3196)), closes [#300](https://github.com/MohammadBnei/agent-fleet/issues/300) [#307](https://github.com/MohammadBnei/agent-fleet/issues/307)
+
 ## [6.22.2](https://github.com/MohammadBnei/agent-fleet/compare/6.22.1...6.22.2) (2026-10-21)
 
 ### Bug Fixes
