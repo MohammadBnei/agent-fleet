@@ -437,6 +437,9 @@ jobs:
     # ServiceAccount token with `create jobs` in vos/vos-dev (ADR-0022).
     # Builds must not land there and cluster jobs must not land here.
     runs-on: [self-hosted, ukubi-build]
+    # A stalled push must not hold the only runner for GitHub's 6h default;
+    # a cold six-image build is ~12 minutes.
+    timeout-minutes: 45
     # Same reset rule as the `changes` job above: declaring any permissions zeroes the
     # rest, so contents: read is explicit. id-token mints the OIDC token Infisical checks.
     permissions:
@@ -575,10 +578,7 @@ jobs:
           #  - the first release of each ISO week rebuilds all six and rolls
           #    core, the provisioner, the worker prepull and the migrate hook;
           #  - a _test.go or .md edit under a component's directory rebuilds it
-          #    (the hash is of git trees, not of the build context);
-          #  - a skipped component does not re-sync `latest`: if an earlier,
-          #    newest release pushed `latest` and then failed to deploy,
-          #    `latest` stays on that image until the component next rebuilds.
+          #    (the hash is of git trees, not of the build context).
           BUILD_WEEK=$(date -u +%G-%V)
 
           # src-<12 hex>: a hash of the git trees of the paths
@@ -605,10 +605,56 @@ jobs:
           # can still have been evicted by later pushes, while this asks the
           # registry what it holds right now.
           in_registry() {
-            curl -fsI -o /dev/null \
+            curl --connect-timeout 5 --max-time 30 -fsI -o /dev/null \
               -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
               -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
               "http://$REGISTRY/v2/agent-fleet-$1/manifests/$2"
+          }
+
+          # `latest` is set by copying the src manifest in the registry, not by
+          # a second buildah push. With every blob already present, buildah
+          # sends that manifest PUT with no credentials, and zot answers 401
+          # (release 6.16.x, 2026-10-21: three attempts in a row, `ci` had
+          # pushed the src tag a second earlier). curl sends them explicitly,
+          # as a config on stdin: no file left behind if the run is killed,
+          # nothing in argv. (Other runner instances on this box share the
+          # `runner` uid and could read /proc/<pid>/environ anyway; this is
+          # defence in depth, not a boundary.) Only when `latest` points elsewhere, so a
+          # skipped component is re-synced too: an earlier newest release
+          # that pushed `latest` but failed to deploy left it on the wrong
+          # image.
+          set_latest() {
+            local c=$1 src=$2 m ct want have attempt cred
+            m=$(mktemp -p "${RUNNER_TEMP:-/tmp}")
+            # curl config syntax: quote the value, escaping \ and ".
+            cred="$REGISTRY_USER:$REGISTRY_PASSWORD"; cred=${cred//\\/\\\\}; cred=${cred//\"/\\\"}
+            local t='--connect-timeout 5 --max-time 60'
+            for attempt in 1 2 3; do
+              if ct=$(curl $t -fsS -D - -o "$m" \
+                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+                    "http://$REGISTRY/v2/agent-fleet-$c/manifests/$src" \
+                  | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}') \
+                && [ -n "$ct" ] \
+                && want=$(sha256sum "$m" | cut -d' ' -f1) \
+                && have=$(curl $t -fsI \
+                    -H "Accept: $ct" \
+                    "http://$REGISTRY/v2/agent-fleet-$c/manifests/latest" 2>/dev/null \
+                  | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; true) \
+                && { [ "$have" = "sha256:$want" ] \
+                     || curl $t -fsS -K - -X PUT -H "Content-Type: $ct" \
+                          --data-binary @"$m" "http://$REGISTRY/v2/agent-fleet-$c/manifests/latest" \
+                          <<<"user = \"$cred\""; }; then
+                rm -f "$m"
+                [ "$have" = "sha256:$want" ] && echo "$c: latest already on $src" || echo "$c: latest -> $src"
+                return 0
+              fi
+              echo "::warning::setting agent-fleet-$c:latest failed (attempt $attempt), retrying"
+              sleep 5
+            done
+            rm -f "$m"
+            echo "::error::setting agent-fleet-$c:latest to $src failed 3 times"
+            return 1
           }
 
           : > /tmp/timings.txt
@@ -621,6 +667,11 @@ jobs:
             if in_registry "$c" "$src"; then
               echo "$c: skip (registry has agent-fleet-$c:$src)"
               printf '| %s | skip | - | %s |\n' "$c" "$src" >> /tmp/timings.txt
+              if [ "$DO_PUSH" = "true" ] && [ "$PUSH_LATEST" = "true" ]; then
+                # Nothing was built: a registry hiccup here must not block
+                # the deploy of images that already exist.
+                set_latest "$c" "$src" || echo "::warning::agent-fleet-$c:latest not re-synced to $src"
+              fi
               continue
             fi
             # A PR build is never pushed and never tagged `latest`, so it can't
@@ -679,11 +730,10 @@ jobs:
               .
             build_end=$(date +%s)
             if [ "$DO_PUSH" = "true" ]; then
-              # `latest` is pushed from the src image rather than tagged on it
-              # locally, so the box never holds a local `latest`.
-              tags="$src"
-              [ "$PUSH_LATEST" = "true" ] && tags="$tags latest"
-              for t in $tags; do
+              # Only the src tag goes through buildah; `latest` is a manifest
+              # copy afterwards (set_latest), so the box never holds a local
+              # `latest` either.
+              for t in "$src"; do
                 # Retried in the shell: twice on 2026-10-20, right after
                 # cross-repo blob mounts, buildah sent the next write (a blob
                 # POST, then a manifest PUT) with no credentials, got 401 from
@@ -703,6 +753,9 @@ jobs:
                   sleep 5
                 done
               done
+              if [ "$PUSH_LATEST" = "true" ]; then
+                set_latest "$c" "$src"
+              fi
             fi
             end=$(date +%s)
             # Keep the image just built: its layers are the next build's
