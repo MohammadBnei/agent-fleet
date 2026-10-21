@@ -20,8 +20,8 @@ COPY go.work.sum ./
 RUN go work init ./proto/gen/go ./sidecar
 WORKDIR /app/sidecar
 # Cache mounts: the Go build and module caches stay on the build box between
-# builds (docker.yml), outside the image.
-RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod \
+# builds, outside the image. See docker.yml for what that costs.
+RUN --mount=type=cache,id=agent-fleet-gobuild,target=/root/.cache/go-build --mount=type=cache,id=agent-fleet-gomod,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -o /out/sidecar ./cmd/sidecar
 
 FROM debian:12-slim

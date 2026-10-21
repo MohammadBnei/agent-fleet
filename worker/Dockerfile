@@ -236,12 +236,12 @@ COPY worker/package.json worker/bun.lock ./
 # alternative is an image whose agent binary is for the wrong architecture.
 #
 # The cache mount keeps bun's download cache on the build box between builds;
-# it is never part of the image.
+# it is never part of the image. See docker.yml for what that costs.
 #
 # chown here, in the same layer, not after the source COPY: a chown -R in a
 # later RUN rewrites every file under node_modules into a new layer, which is
 # the 300 MB this ordering exists to stop pushing.
-RUN --mount=type=cache,target=/root/.bun/install/cache set -eu; \
+RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache set -eu; \
     bun install --production --frozen-lockfile; \
     sdk_cli="$(node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --version | cut -d' ' -f1)"; \
     if [ "$sdk_cli" != "${CLAUDE_CODE_VERSION}" ]; then \
@@ -251,8 +251,8 @@ RUN --mount=type=cache,target=/root/.bun/install/cache set -eu; \
     rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl; \
     chown -R bun:bun /app
 
+# entrypoint.sh is 100755 in git, and COPY keeps the mode.
 COPY --chown=bun:bun worker ./
-RUN chmod +x entrypoint.sh
 
 USER bun
 CMD ["./entrypoint.sh"]

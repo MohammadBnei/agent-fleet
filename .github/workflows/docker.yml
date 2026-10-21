@@ -642,11 +642,19 @@ jobs:
             #
             # --layers: each RUN's result is cached, so an unchanged step
             # (the worker's 300 MB bun install, the apt layers) is neither
-            # rebuilt nor, having the same digest, pushed again. Go and bun
-            # also get cache mounts (the Dockerfiles). The cost is disk on a
-            # box shared with other repos: intermediates and cache mounts are
-            # not parents of a tagged image, so they pile up until the weekly
-            # `buildah rmi --prune`, which makes one build a week cold.
+            # rebuilt nor, having the same digest, pushed again. The cost is
+            # disk on a box shared with other repos. Builder-stage chains are
+            # not parents of a tagged image, so the weekly
+            # `buildah rmi --prune` removes them (one cold Go build a week);
+            # the kept final image's chain survives it.
+            #
+            # Go and bun also get cache mounts (the Dockerfiles), with
+            # agent-fleet-* ids. Nothing prunes those: /go/pkg/mod and the bun
+            # cache grow without bound (watch them with du under
+            # /var/tmp/buildah-cache-0), while Go's build cache trims entries
+            # unused for ~5 days on its own. They are also writable state
+            # shared by every Dockerfile built as root on this box: the same
+            # trust domain as the shared base-image store, no wider.
             #
             # --pull=newer: without it a cached base is reused forever, and
             # the weekly hash change would rebuild on the same stale base.
@@ -695,20 +703,24 @@ jobs:
             fi
             end=$(date +%s)
             # Keep the image just built: its layers are the next build's
-            # cache. Drop the one it replaces instead, the src tag deploy last
-            # pinned (k8s/images.env), so the box holds about one chain per
-            # component. Named tags only — NOT `rmi --all`, which would evict
-            # the base-image cache this box shares with every other build
-            # repo. A PR image is never needed again; its layers stay cached
-            # as intermediates. `|| true`: the previous image may never have
-            # been built on this box, or already be gone.
+            # cache. Untag every other local image of this component, so the
+            # box holds one tagged chain per component however earlier runs
+            # ended (dispatch, a failed push or deploy, a stale re-run all
+            # leave one behind). Named tags of this repo only — NOT
+            # `rmi --all`, which would evict the base-image cache this box
+            # shares with every other build repo. The listing is grepped by
+            # prefix rather than `--filter reference=`, whose matching of a
+            # host:port prefix depends on the buildah version.
+            #
+            # A PR image is never needed again: rmi removes the part of its
+            # chain no other image uses. Its builder-stage intermediates stay
+            # until the weekly prune, like everyone's.
             if [ "$EVENT" = pull_request ]; then
               sudo buildah rmi "$image" || true
             else
-              prev=$(printf '%s\n' "$deployed" | sed -n "s/^$c=//p")
-              if [ -n "$prev" ] && [ "$prev" != "$src" ]; then
-                sudo buildah rmi "$REGISTRY/agent-fleet-$c:$prev" || true
-              fi
+              sudo buildah images --format '{{.Name}}:{{.Tag}}' \
+                | grep -F "$REGISTRY/agent-fleet-$c:" | grep -vxF "$image" \
+                | xargs -r -n1 sudo buildah rmi || true
             fi
             printf '| %s | %s | %s | %s |\n' "$c" "$((build_end - start))" "$((end - build_end))" "$src" >> /tmp/timings.txt
           done
