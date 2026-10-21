@@ -217,6 +217,10 @@ export function SessionPanel({
         {/* The build this session's pod is actually on — recorded at dispatch,
             so it stays true after the fleet is upgraded underneath it. Absent
             until the session has had a pod. */}
+        {/* The release that built the pod. Images are tagged src-<input hash>
+            and reused across releases, so the tags below no longer name it.
+            Absent for a pod built before the provisioner reported it. */}
+        {session.fleetVersion && <Fact label="release" value={session.fleetVersion} />}
         {session.workerImage && <Fact label="worker" value={imageTag(session.workerImage)} />}
         {session.sidecarImage && <Fact label="sidecar" value={imageTag(session.sidecarImage)} />}
       </dl>

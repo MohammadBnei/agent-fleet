@@ -15,8 +15,8 @@ var update = flag.Bool("update", false, "rewrite testdata golden files")
 
 // A repo session's Job, whole, so any drift in the ordinary pod shows up here
 // as a diff, not as a review miss. Regenerate with -update only for a change
-// that means to alter repo-session pods (last: docs/adr/0075 §7, the owner
-// vault). GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN are set to prove neither
+// that means to alter repo-session pods (last: the agent-fleet.dev/version
+// label). GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN are set to prove neither
 // reaches the pod.
 func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 	for k, v := range map[string]string{
@@ -25,6 +25,7 @@ func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 		t.Setenv(k, v)
 	}
 	c := newTestClient()
+	c.Version = "6.22.1"
 	ctx := context.Background()
 	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
 		SessionID: "task-1", Repo: "dream-analyst", RepoURL: "https://github.com/o/dream-analyst.git", BaseBranch: "dev",

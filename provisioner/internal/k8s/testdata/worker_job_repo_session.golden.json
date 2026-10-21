@@ -6,6 +6,7 @@
       "agent-fleet.dev/component": "worker",
       "agent-fleet.dev/repo": "dream-analyst",
       "agent-fleet.dev/task-id": "task-1",
+      "agent-fleet.dev/version": "6.22.1",
       "app.kubernetes.io/part-of": "agent-fleet",
       "fleet.bnei.dev/vault-owner": "owner-o"
     },
@@ -22,6 +23,7 @@
           "agent-fleet.dev/component": "worker",
           "agent-fleet.dev/repo": "dream-analyst",
           "agent-fleet.dev/task-id": "task-1",
+          "agent-fleet.dev/version": "6.22.1",
           "app.kubernetes.io/part-of": "agent-fleet",
           "fleet.bnei.dev/vault-owner": "owner-o"
         }

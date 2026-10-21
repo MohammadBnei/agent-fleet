@@ -105,6 +105,10 @@ type Session struct {
 	// upgrade is still running the older build until its next warm.
 	WorkerImage  string `json:"workerImage"`
 	SidecarImage string `json:"sidecarImage"`
+	// FleetVersion is the release of the provisioner that built that pod,
+	// written alongside the images. Empty for a pod built before the
+	// provisioner reported it.
+	FleetVersion string `json:"fleetVersion"`
 
 	// DefinitionName/DefinitionSHA pin a session created from a defined agent
 	// to that version (docs/adr/0062). Both nil for a repo session. Pointers:
@@ -187,7 +191,7 @@ const selectCols = `
 	s.agent_session_id, s.model, s.permission_mode, s.effort,
 	s.last_entry_type, s.last_entry_from, s.activity_seen, s.seen_at,
 	s.last_active_at, s.swept_at, s.archived_at,
-	s.worker_image, s.sidecar_image,
+	s.worker_image, s.sidecar_image, s.fleet_version,
 	s.definition_name, s.definition_sha,
 	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
 	(SELECT count(*) FROM transcript q
@@ -207,7 +211,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.AgentSessionID, &s.Model, &s.PermissionMode, &s.Effort,
 		&s.LastEntryType, &s.LastEntryFrom, &s.ActivitySeen, &s.SeenAt,
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
-		&s.WorkerImage, &s.SidecarImage,
+		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
 		&s.PendingDecisions,
@@ -703,15 +707,16 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 }
 
 // SetPodImages records the images the provisioner actually stamped onto this
-// session's pod, straight from CreateWorkerPodResponse.
+// session's pod, and the release that built it, straight from
+// CreateWorkerPodResponse.
 //
 // Not lease-scoped, unlike SaveAgentSessionID: this is written synchronously by
 // the same call that created the pod, before that pod can report anything, so
 // there is no losing writer to guard against.
-func (s *Store) SetPodImages(ctx context.Context, id, workerImage, sidecarImage string) error {
+func (s *Store) SetPodImages(ctx context.Context, id, workerImage, sidecarImage, fleetVersion string) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE sessions SET worker_image = $2, sidecar_image = $3, updated_at = now() WHERE id = $1
-	`, id, workerImage, sidecarImage)
+		UPDATE sessions SET worker_image = $2, sidecar_image = $3, fleet_version = $4, updated_at = now() WHERE id = $1
+	`, id, workerImage, sidecarImage, fleetVersion)
 	if err != nil {
 		slog.Error("sessions SetPodImages", "sessionId", id, "error", err)
 		return fmt.Errorf("set pod images: %w", err)

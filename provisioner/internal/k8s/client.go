@@ -25,6 +25,9 @@ type Client struct {
 	Namespace    string
 	WorkerImage  string
 	SidecarImage string
+	// Version is the provisioner's own release (FLEET_VERSION, or "dev"),
+	// stamped on every worker Job and pod it builds as a label.
+	Version      string
 	WorkspacePVC string
 	// SessionStorageClass names the class for per-session working volumes
 	// (docs/adr/0048 §4). Empty means the cluster default — which on
@@ -80,6 +83,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		Core: core, Dynamic: dyn, Namespace: namespace,
 		WorkerImage:  cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
+		Version:             cfg.Version,
 		SessionStorageClass: cfg.SessionStorageClass,
 		SessionNodeSelector: cfg.SessionNodeSelector,
 		LogLevel:            cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
@@ -97,6 +101,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 type Images struct {
 	WorkerImage           string
 	SidecarImage          string
+	Version               string
 	WorkspacePVC          string
 	SessionStorageClass   string
 	SessionNodeSelector   map[string]string

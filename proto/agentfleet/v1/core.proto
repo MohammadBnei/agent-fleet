@@ -262,6 +262,10 @@ message Session {
   // none chosen: the worker passes no effort and Claude Code decides. A
   // definition session leaves it unset and uses its spec's thinking.default.
   optional string effort = 27;
+  // The release that built this session's pod, recorded next to
+  // worker_image/sidecar_image from CreateWorkerPodResponse.fleet_version.
+  // Unset for a pod created before the provisioner reported it.
+  optional string fleet_version = 28;
 }
 
 // What one agent can see of another session. Deliberately not the full

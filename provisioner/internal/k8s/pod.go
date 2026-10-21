@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/util/retry"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
@@ -409,6 +410,12 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
+	// A version that is not a valid label value (a ref with a slash) would
+	// fail the whole create, so it is left off; core still gets it from
+	// CreateWorkerPodResponse.fleet_version.
+	if c.Version != "" && len(validation.IsValidLabelValue(c.Version)) == 0 {
+		labels[VersionLabel] = c.Version
+	}
 	if spec.Definition != nil {
 		if spec.Definition.ProxyURL == "" || spec.Definition.DeadlineSeconds <= 0 {
 			return fmt.Errorf("definition pod %s: no vault token or deadline (docs/adr/0065)", taskID)

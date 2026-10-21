@@ -18,18 +18,16 @@ FROM oven/bun:1-slim
 # ENOENT *synchronously* (Node emits an async 'error' event tree-kill handles),
 # so the CLI died mid-session with "Claude Code process exited with code 1" —
 # task 41b11fd4, 2026-08-11, hit while requesting an e2e env.
-# python3 is an agent utility here, not a target-repo toolchain: the agent
-# reaches for `python3 -c` constantly for JSON munging, arithmetic and one-off
-# scripts, the same way it reaches for git/curl/gh, and independently of what
-# the target repo is written in. That is why it belongs in the image rather
-# than in docs/adr/0054's per-repo tools directory, which is for the languages
-# a specific repo needs. fleet-shared/settings.json has meanwhile been
-# allow-listing `Bash(pytest:*)`, `Bash(python -m pytest:*)` and `Bash(uv run:*)`
-# against binaries that did not exist.
+#
+# This is the BASE apt step: only what the heavy layers below need (git for the
+# plugin clones, curl + ca-certificates for gh/rtk/uv) plus procps. Every layer
+# after it is rebuilt and re-pushed when it changes, about 850 MB (#307 added
+# one package here and release 6.16.0's build-push took 630s). New system
+# packages go in the extras step further down, not here.
 # Unpinned installs below: docker.yml passes the ISO week, so a cached layer
 # is refreshed at least weekly instead of living forever.
 ARG CACHE_WEEK=none
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps python3 \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
@@ -155,7 +153,7 @@ ARG UV_VERSION=0.12.5
 RUN curl -fsSL https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin --strip-components=1 \
         uv-x86_64-unknown-linux-musl/uv uv-x86_64-unknown-linux-musl/uvx \
-    && python3 -VV && uv --version && uvx --version
+    && uv --version && uvx --version
 
 # ponytail + caveman plugins (lean-code / terse-output personas, match
 # Mohammad's own local Claude Code setup — github.com/DietrichGebert/ponytail,
@@ -250,6 +248,24 @@ RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache set -e
     fi; \
     rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl; \
     chown -R bun:bun /app
+
+# Add new system packages HERE, not in the base apt step: anything above this
+# line re-pushes ~850MB (and the ~300MB bun install) when it changes; an edit
+# to this line rebuilds only this step and the source COPY below. CACHE_WEEK
+# still busts the base apt step, so once a week is a full rebuild regardless.
+# Runs as root: USER bun is last.
+#
+# python3 is an agent utility here, not a target-repo toolchain: the agent
+# reaches for `python3 -c` constantly for JSON munging, arithmetic and one-off
+# scripts, the same way it reaches for git/curl/gh, and independently of what
+# the target repo is written in. That is why it belongs in the image rather
+# than in docs/adr/0054's per-repo tools directory, which is for the languages
+# a specific repo needs. fleet-shared/settings.json has meanwhile been
+# allow-listing `Bash(pytest:*)`, `Bash(python -m pytest:*)` and `Bash(uv run:*)`
+# against binaries that did not exist. uv (above) uses it at run time only.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -VV
 
 # entrypoint.sh is 100755 in git, and COPY keeps the mode.
 COPY --chown=bun:bun worker ./

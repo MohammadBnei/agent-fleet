@@ -170,6 +170,12 @@ message CreateWorkerPodResponse {
   // worker loaded it: a repo pinned to an older worker image (repos.image)
   // gets the mount but never reads it. Only the worker's own report can.
   bool genome_applied = 6;
+  // The release of the provisioner that built this pod (its FLEET_VERSION, or
+  // "dev"), also stamped on the Job and pod as agent-fleet.dev/version. Images
+  // are tagged by an input hash, not a release (src-<hash>), so the image refs
+  // above no longer say which release a pod came from. Empty from an older
+  // provisioner.
+  string fleet_version = 7;
 }
 
 // docs/adr/0065. Every valid definition's vault after core's last good

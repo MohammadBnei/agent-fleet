@@ -412,6 +412,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		DefinitionProfileApplied: definition != nil,
 		VaultTokenApplied:        true,
 		GenomeApplied:            true,
+		FleetVersion:             s.version,
 	}, nil
 }
 

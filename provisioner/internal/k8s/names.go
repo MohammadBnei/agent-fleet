@@ -37,7 +37,11 @@ const (
 	RepoLabel = "agent-fleet.dev/repo"
 	// DefinitionLabel marks a definition session's pod with its definition's
 	// name (docs/adr/0064). P3's vault ingress policy selects on it.
-	DefinitionLabel         = "fleet.bnei.dev/definition"
+	DefinitionLabel = "fleet.bnei.dev/definition"
+	// VersionLabel is the release of the provisioner that built the pod
+	// (FLEET_VERSION). Images are tagged src-<input hash> since #300, so the
+	// image ref alone no longer says which release a pod came from.
+	VersionLabel            = "agent-fleet.dev/version"
 	ComponentWorker         = "worker"
 	ComponentSharedInstance = "shared-instance"
 	// ServiceKeyLabel/LastUsedAtAnnotation are the shared-instance idle-GC
