@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.18.0](https://github.com/MohammadBnei/agent-fleet/compare/6.17.0...6.18.0) (2026-10-21)
+
+### Features
+
+* **agentsvc:** every message carries its sender (ADR-0067 §3) ([#311](https://github.com/MohammadBnei/agent-fleet/issues/311)) ([c4b9368](https://github.com/MohammadBnei/agent-fleet/commit/c4b93688fae37e79cc98df54d0d08aadc9f4d8e4))
+
 # [6.17.0](https://github.com/MohammadBnei/agent-fleet/compare/6.16.0...6.17.0) (2026-10-21)
 
 ### Features
