@@ -184,3 +184,37 @@ func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
 		}
 	}
 }
+
+// docs/adr/0066 §2: a member reaches only the routes the Gate lists for
+// them. Everything else, including DashboardService and the SPA, stays 403.
+func TestGate_MemberRoutes(t *testing.T) {
+	s := mustSigner(t, "key-one")
+	o := &OIDC{signer: s}
+	const prefix = "/agentfleet.v1.AgentService/"
+	handler := o.Gate(AdminOnly, Route{Prefix: prefix, Allow: AnyGroup([]string{"shared-notes"})})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	get := func(path string, groups ...string) int {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: s.Sign(Identity{Sub: "s", Email: "m@bnei.dev", Groups: groups})})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, c := range []struct {
+		path   string
+		groups []string
+		want   int
+	}{
+		{prefix + "ListThreads", []string{"shared-notes"}, http.StatusOK},
+		{prefix + "ListThreads", []string{RequiredGroup}, http.StatusOK},
+		{prefix + "ListThreads", []string{"opus-users"}, http.StatusForbidden},
+		{"/agentfleet.v1.DashboardService/ListSessions", []string{"shared-notes"}, http.StatusForbidden},
+		{"/", []string{"shared-notes"}, http.StatusForbidden},
+		{"/agentfleet.v1.AgentServiceX/ListThreads", []string{"shared-notes"}, http.StatusForbidden},
+		{"/agentfleet.v1.DashboardService/ListSessions", []string{RequiredGroup}, http.StatusOK},
+	} {
+		if got := get(c.path, c.groups...); got != c.want {
+			t.Errorf("%s as %v: %d, want %d", c.path, c.groups, got, c.want)
+		}
+	}
+}

@@ -92,4 +92,13 @@ func TestCallback_MintsTheSessionFromTheIDToken(t *testing.T) {
 	if rec, id := login("sub-123", []string{"opus-users"}); rec.Code != http.StatusForbidden || id.Email != "" {
 		t.Errorf("non-admin: %d, identity %+v; want 403 and no session", rec.Code, id)
 	}
+	// docs/adr/0066 §2: an admitted audience group logs in. What it may reach
+	// is the Gate's business, not the callback's.
+	o.admit = []string{"shared-notes"}
+	if rec, id := login("sub-456", []string{"shared-notes"}); rec.Code != http.StatusFound || id.Sub != "sub-456" {
+		t.Errorf("member: %d, identity %+v; want 302 carrying sub", rec.Code, id)
+	}
+	if rec, id := login("sub-456", []string{"opus-users"}); rec.Code != http.StatusForbidden || id.Email != "" {
+		t.Errorf("unknown group: %d, identity %+v; want 403 and no session", rec.Code, id)
+	}
 }

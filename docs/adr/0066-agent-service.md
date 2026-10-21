@@ -456,6 +456,11 @@ An ESLint import rule keeps embed code off `DashboardService`.
 3. Migration 000015 (ADR-0067), the proto, the handlers behind the authz
    table, and the gate allowlist. The member login widening ships in this
    PR, with the member test against `DashboardService` and `/`.
+   Shipped in three PRs: migration 000015 (#289); then the proto, the
+   authz table, the gate allowlist, the login widening and
+   `ListDefinitions`, with every other method `Unimplemented` behind the
+   table; then the thread, message, decision and control handlers with the
+   §8 caps.
 4. `:9091`, client tokens with the reload annotation, the NetworkPolicy
    port, `CoreService` and sidecar derivation, `GetStatus`.
 5. SDK helpers. The QA gate is the plan's P4 row: six sequential invokes,

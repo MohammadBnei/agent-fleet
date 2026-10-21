@@ -19,6 +19,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// KnownGroups is the audience groups a definition may name, and so the groups
+// that may log in to the console (docs/adr/0066 §2).
+func KnownGroups() []string { return slices.Clone(knownGroups) }
+
 // The fleet ceiling (docs/adr/0062 §1). A definition can only narrow within
 // these; every rule is judged on the EFFECTIVE spec, so a child cannot widen
 // what its parent was allowed.
