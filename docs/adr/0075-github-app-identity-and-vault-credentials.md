@@ -1,6 +1,6 @@
 # ADR-0075 — The fleet acts as a GitHub App; every pod gets its credentials from the vault
 
-- **Status:** Proposed
+- **Status:** Accepted (rollout complete 2026-10-21)
 - **Date:** 2026-10-20
 - **Related:** [ADR-0064](0064-definition-pod-profile.md) (amended: repo pods
   take the vault half of the definition profile, plus a 12h cap),
@@ -197,6 +197,11 @@ Each step is one PR, merged by the user.
    `gh api user` in the same PR.
 5. **Retire the bot.** Remove `argocd-ukubi-bot` from the fleet repos and
    delete `/GH_TOKEN`.
+
+   Done 2026-10-21: `/GH_TOKEN` deleted from agent-fleet-nygh, and the bot
+   removed from all 11 repos it was a collaborator on. Live checks on a
+   dream-analyst repo session: `git push`, `gh pr create`, `gh pr list`,
+   `bun install`, Claude through the vault, and the browser going direct.
 
 ## Step 4 as built (2026-10-21)
 
