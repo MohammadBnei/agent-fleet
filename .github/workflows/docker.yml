@@ -64,19 +64,24 @@ on:
     tags-ignore:
       - '*'
 
-# Moved here from release.yml when the two collapsed into one run. Concurrent releases:
-# keep the newest, cancel the rest. The survivor releases from main's tip, so it carries
-# the cancelled runs' commits with it — one tag covering the lot, rather than a queue of
-# one-commit releases each rebuilding an image the next one obsoletes.
+# Two lanes. PR runs get one group per ref and cancel their own older run:
+# only the newest push of a PR is worth building. Push and dispatch runs share
+# `release` and are never cancelled, only queued.
 #
-# Without a group at all, two runs compute the same version from the same latest tag, and
-# the loser's push is rejected non-fast-forward after it has already bumped package.json
-# and made a local tag — that release is simply lost.
+# They used to share one `release` group with cancel-in-progress, so a PR
+# push cancelled a running main release (v5.6.0 was lost that way, #278
+# shipped late), and back-to-back merges could starve the release of ever
+# finishing a build.
 #
-# Cancelling is only safe because the push is atomic: see git.pushArgs in package.json.
+# GitHub keeps one pending run per group: a third push while one release
+# runs and one waits replaces the waiting one. Nothing is lost by that: the
+# replaced run never reached release-it, and the release job checks out
+# main's tip, so the next release carries its commits. A run that finds
+# nothing new since the last tag (only deploy's bot commit) skips the
+# release entirely; see the release job.
 concurrency:
-  group: release
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: registry.bnei.lan:5000
@@ -130,12 +135,35 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      # ref: main, not the SHA that triggered the run. A queued run starts after
+      # the previous release pushed its tag and deploy commit; from the
+      # triggering SHA, release-it computes the version from an older tag and
+      # dies on "fatal: tag '6.6.0' already exists" (run 39600330555).
       - name: Checkout code
         uses: actions/checkout@v5
         with:
+          ref: main
           fetch-depth: 0
 
+      # Only deploy's "chore(deploy): bump image tag" commit since the last tag
+      # means the previous release already shipped everything. release-it
+      # would still cut a patch for it (the angular preset bumps patch for any
+      # commit), rebuilding every image for nothing. `version` stays empty and
+      # build-push and deploy skip on that.
+      - name: Anything to release?
+        id: check
+        run: |
+          set -euo pipefail
+          last=$(git describe --tags --abbrev=0)
+          if git log --format=%an "$last..HEAD" | grep -qvx agent-fleet-ci; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing but deploy commits since $last; skipping the release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Bun
+        if: steps.check.outputs.release == 'true'
         uses: oven-sh/setup-bun@v2
 
       # release-it 21 and conventional-changelog 12 require Node
@@ -143,22 +171,27 @@ jobs:
       # release-it under node (its bin has a node shebang), so the runner's
       # default Node is what runs it — pin one that satisfies both.
       - name: Set up Node
+        if: steps.check.outputs.release == 'true'
         uses: actions/setup-node@v5
         with:
           node-version: '24.15'
 
       - name: Install dependencies
+        if: steps.check.outputs.release == 'true'
         run: bun install
 
       - name: git config
+        if: steps.check.outputs.release == 'true'
         run: |
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
       - name: Run release-it
+        if: steps.check.outputs.release == 'true'
         run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && bun run release
 
       - name: Read the released version
+        if: steps.check.outputs.release == 'true'
         id: version
         run: |
           set -euo pipefail
@@ -316,6 +349,7 @@ jobs:
       always()
       && needs.release.result != 'failure'
       && (github.event_name != 'pull_request' || needs.changes.outputs.components != '')
+      && (github.event_name != 'push' || needs.release.outputs.version != '')
     # NOT `ukubi` — that label belongs to the in-cluster runner holding a
     # ServiceAccount token with `create jobs` in vos/vos-dev (ADR-0022).
     # Builds must not land there and cluster jobs must not land here.
@@ -606,4 +640,15 @@ jobs:
             exit 0
           fi
           git commit -m "chore(deploy): bump image tag to ${VERSION}"
-          git push origin HEAD:main
+          # A merge can land on main while this release builds. Rebase onto it
+          # rather than lose a built release to a non-fast-forward rejection.
+          # The commit only touches k8s/, which nothing else writes.
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "::warning::deploy push failed (attempt $attempt), retrying"
+            sleep 5
+          done
+          echo "::error::deploy push failed 3 times"
+          exit 1
