@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.10.0](https://github.com/MohammadBnei/agent-fleet/compare/6.9.1...6.10.0) (2026-10-21)
+
+### Features
+
+* **islands:** <fleet-agent>, a Svelte web component on AgentService (ADR-0068) ([#302](https://github.com/MohammadBnei/agent-fleet/issues/302)) ([a8f4cd7](https://github.com/MohammadBnei/agent-fleet/commit/a8f4cd7444826b4b59706aa10d8ae73ef724898c)), closes [#marker](https://github.com/MohammadBnei/agent-fleet/issues/marker) [#a-marker](https://github.com/MohammadBnei/agent-fleet/issues/a-marker)
+
 ## [6.9.1](https://github.com/MohammadBnei/agent-fleet/compare/6.9.0...6.9.1) (2026-10-21)
 
 # [6.9.0](https://github.com/MohammadBnei/agent-fleet/compare/6.8.0...6.9.0) (2026-10-21)
