@@ -41,11 +41,14 @@ export function withOther(questions: string[], picked: Record<string, string>, t
   return Object.fromEntries(questions.map((q) => [q, picked[q] || text]));
 }
 
-// An answer entry's text for the feed: the chosen answers, one per line.
+// An answer entry's text for the feed: the distinct answers, one per line.
 export function answerText(json: string): string {
   try {
-    const a = (JSON.parse(json) as { answers?: Record<string, unknown> }).answers;
-    if (a && typeof a === "object") return Object.values(a).map(String).join("\n");
+    const a = (JSON.parse(json) as { answers?: unknown }).answers;
+    if (a && typeof a === "object") {
+      const lines = Object.values(a).map((v) => (typeof v === "string" ? v : JSON.stringify(v)));
+      return [...new Set(lines)].join("\n");
+    }
   } catch {
     // Not ours to fix: show it as written.
   }

@@ -32,11 +32,24 @@ export function conversation(entries: Entry[]): Item[] {
     }));
 }
 
+// A question no longer blocks once the turn that asked it ended: a stop, or the
+// agent speaking again. Its card would otherwise turn the next message into an
+// answer to a question nobody is waiting on.
+function outlived(entries: Entry[], seq: bigint): boolean {
+  return entries.some(
+    (e) =>
+      e.seq > seq &&
+      (e.type === TranscriptEntryType.INTERRUPT ||
+        e.type === TranscriptEntryType.ABORT ||
+        (e.type === TranscriptEntryType.DISCUSSION && e.from === "agent")),
+  );
+}
+
 // Open decisions, oldest first. ExitPlanMode is a plan, not a tool call.
 export function decisions(entries: Entry[]): Item[] {
   const out: Item[] = [];
   const q = findPendingQuestion(entries);
-  const qs = q ? parseQuestions(q.text) : null;
+  const qs = q && !outlived(entries, q.seq) ? parseQuestions(q.text) : null;
   if (q && qs) out.push({ kind: "question", seq: q.seq, questions: qs });
   for (const p of findPendingPermissions(entries)) {
     if (p.tool === "ExitPlanMode") {

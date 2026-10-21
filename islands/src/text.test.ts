@@ -30,5 +30,7 @@ test("typed text answers what was not picked", () => {
 
 test("answer entries read as their answers", () => {
   expect(answerText(JSON.stringify({ answers: { "A?": "yes", "B?": "my own" } }))).toBe("yes\nmy own");
+  expect(answerText(JSON.stringify({ answers: { "A?": "same", "B?": "same" } }))).toBe("same");
+  expect(answerText(JSON.stringify({ answers: { "A?": ["x"] } }))).toBe('["x"]');
   expect(answerText("not json")).toBe("not json");
 });
