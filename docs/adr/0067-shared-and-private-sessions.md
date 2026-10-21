@@ -266,15 +266,16 @@ able to run up cost unattended. Three rules, all in core:
   `PostMessage` and every answer refuse with `FailedPrecondition`. A steward's
   `Wake` warms it through the usual caps; once the pod is live members post
   again, and their posts move the clock. Clients keep their own rules.
-  By design, a member who posts at least once a day keeps a thread wakeable:
-  the caps still bound the spend, and Lock is the stop.
+  By design, a member who appends anything at least once a day (a post, an
+  answer, a mode change) keeps a thread wakeable: the caps still bound the
+  spend, and Lock is the stop.
 - **Rechecked at the append.** A warm is slow enough for a lock to land
   meanwhile, so `PostMessage`, every answer and every mode change reread the
   thread right before the write (before `setMode` too). The wake window
   applies to every member answer and mode change, not only to those that
   warm: a pod can die with a request pending, and any append moves the clock.
-- **Residual race, accepted.** A member post that passed the reread just
-  before the lock commits is still appended. It can land before or after the
+- **Residual race, accepted.** A member post or mode change that passed the
+  reread just before the lock commits is still written. It can land before or after the
   lock's abort, so the pod may still see it. One message, not a stream: every
   later one is refused.
 - **Lock is safe to retry.** A second Lock keeps the first locker on record,
