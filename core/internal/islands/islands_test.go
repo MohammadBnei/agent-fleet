@@ -27,6 +27,17 @@ func TestHandler(t *testing.T) {
 		rec.Header().Get("Access-Control-Allow-Origin") != "*" || rec.Header().Get("Content-Type") != "text/javascript; charset=utf-8" {
 		t.Errorf("entry: %d %q %v", rec.Code, rec.Body.String(), rec.Header())
 	}
+	tag := rec.Header().Get("ETag")
+	if tag == "" {
+		t.Fatal("entry has no ETag")
+	}
+	r := httptest.NewRequest(http.MethodGet, "/islands/fleet-agent.js", nil)
+	r.Header.Set("If-None-Match", tag)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusNotModified {
+		t.Errorf("revalidation: %d, want 304", rec.Code)
+	}
 	rec = get("/islands/chunk-abc123.js")
 	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
 		t.Errorf("chunk: %d %v", rec.Code, rec.Header())
