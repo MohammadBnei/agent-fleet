@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.9.0](https://github.com/MohammadBnei/agent-fleet/compare/6.8.0...6.9.0) (2026-10-21)
+
+### Features
+
+* **agentsvc:** AgentService on :8080 behind its authz table; members can log in (ADR-0066) ([#295](https://github.com/MohammadBnei/agent-fleet/issues/295)) ([8f23b5a](https://github.com/MohammadBnei/agent-fleet/commit/8f23b5a7238544ef9343d6bb21e839aac9e8177b))
+
 # [6.8.0](https://github.com/MohammadBnei/agent-fleet/compare/6.7.0...6.8.0) (2026-10-21)
 
 ### Features
