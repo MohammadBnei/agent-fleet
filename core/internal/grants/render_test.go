@@ -11,7 +11,8 @@ func TestRender(t *testing.T) {
 		bad                      bool
 	}{
 		{name: "edit absolute", req: `{"tool":"Edit","input":{"file_path":"/workspace/notes/a.md"}}`, exact: "Edit(notes/a.md)", prefix: "Edit(notes/**)"},
-		{name: "write top level", req: `{"tool":"Write","input":{"file_path":"a.md"}}`, exact: "Write(a.md)", prefix: "Write(**)"},
+		{name: "write top level", req: `{"tool":"Write","input":{"file_path":"a.md"}}`, exact: "Write(a.md)"},
+		{name: "glob in path", req: `{"tool":"Write","input":{"file_path":"/workspace/notes/**"}}`, bad: true},
 		{name: "edit outside worktree", req: `{"tool":"Edit","input":{"file_path":"/etc/passwd"}}`, bad: true},
 		{name: "edit dotdot", req: `{"tool":"Edit","input":{"file_path":"/workspace/a/../../x"}}`, bad: true},
 		{name: "edit git dir", req: `{"tool":"Edit","input":{"file_path":"/workspace/.git/hooks/pre-commit"}}`, bad: true},

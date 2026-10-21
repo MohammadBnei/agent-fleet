@@ -344,27 +344,34 @@ export function definitionDecision(
   const pathKey = PATH_TOOLS[toolName];
   const rel = pathKey ? workspacePath(input[pathKey], worktree) : undefined;
   if (pathKey && rel === undefined) return { behavior: "deny", message: "outside this definition's workspace" };
+  // A grant is matched on its own, not only when tools.allow misses: a listed
+  // `Edit` that asks in `default`, or a listed prefix whose argument check
+  // fails, must not hide the human's exact approval of the same call.
   const listed = matchesToolRule(spec.toolsAllow, toolName, input);
-  const granted = listed === undefined ? matchesGrant(grants, toolName, input, rel) : undefined;
-  const rule = listed ?? granted;
-  if (rule === undefined) return ask;
-  // `default` (and `plan`, which the SDK already holds back from mutating)
-  // asks on an edit tools.allow matched, as Claude Code's `default` does. A
-  // grant is already a human's approval, so it does not ask again.
-  if (pathKey) return mode === "auto" || granted !== undefined ? allow : ask;
+  const granted = matchesGrant(grants, toolName, input, rel);
+  if (listed !== undefined && ruleRuns(listed, false, toolName, input, mode)) return allow;
+  if (granted !== undefined && ruleRuns(granted, true, toolName, input, mode)) return allow;
+  return ask;
+}
+
+// Whether a matched rule runs the call without asking. `default` (and `plan`,
+// which the SDK already holds back from mutating) asks on an edit tools.allow
+// matched, as Claude Code's `default` does; a grant is already a human's
+// approval, so it does not ask again.
+function ruleRuns(rule: string, isGrant: boolean, toolName: string, input: Record<string, unknown>, mode: PermissionMode): boolean {
+  if (PATH_TOOLS[toolName]) return mode === "auto" || isGrant;
   if (toolName === "Bash" && typeof input.command === "string") {
-    if (autoModeStillAsksCommand(toolName, input)) return ask;
+    if (autoModeStillAsksCommand(toolName, input)) return false;
     const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
     if (prefix !== undefined) {
       // A git prefix gets the argument check, so one the table does not name
       // (`git`, `git checkout`) always asks; any other prefix only needs to
       // be plain words: no metacharacter, expansion or chaining.
       const isGit = prefix === "git" || prefix.startsWith("git ");
-      const inert = isGit ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
-      if (!inert) return ask;
+      return isGit ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
     }
   }
-  return allow;
+  return true;
 }
 
 // A peer session's prompt arrives on the same feed as a human's and, until this

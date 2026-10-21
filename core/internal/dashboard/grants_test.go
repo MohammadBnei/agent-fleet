@@ -122,8 +122,24 @@ func TestGrants_RememberedAllow(t *testing.T) {
 	if err := respond(repo, repoReq, `{"behavior":"allow"}`, grants.ScopeSession, ""); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("repo session: %v", err)
 	}
-	// "once" is today's answer, for any session.
-	if err := respond(repo, repoReq, `{"behavior":"allow"}`, grants.ScopeOnce, ""); err != nil {
+	// "once" is today's answer, for any session, and only core writes
+	// "grant": an answer that names its own loses it.
+	if err := respond(repo, repoReq, `{"behavior":"allow","grant":"Bash"}`, grants.ScopeOnce, ""); err != nil {
 		t.Fatalf("once: %v", err)
+	}
+	if e, _, _ := transcr.ReadSince(ctx, repo, repoReq+1, 1); len(e) != 1 || e[0].Text != `{"behavior":"allow"}` {
+		t.Fatalf("once answer kept an answerer grant: %v", e)
+	}
+
+	// A prompt already answered remembers nothing: no grant is stored.
+	late := request(two, `{"tool":"Bash","input":{"command":"make"}}`)
+	if err := respond(two, late, `{"behavior":"deny"}`, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := respond(two, late, `{"behavior":"allow"}`, grants.ScopeDefinition, ""); code(err) != connect.CodeAlreadyExists {
+		t.Fatalf("answered prompt: %v", err)
+	}
+	if got, _ := g.Rules(ctx, two); slices.Contains(got, "Bash(make)") {
+		t.Fatalf("grant stored for an answered prompt: %v", got)
 	}
 }

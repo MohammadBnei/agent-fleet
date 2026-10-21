@@ -12,6 +12,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -68,35 +69,67 @@ func (s *Server) PreviewGrant(ctx context.Context, req *connect.Request[agentfle
 	return connect.NewResponse(&agentfleetv1.PreviewGrantResponse{Exact: r.Exact, Prefix: r.Prefix}), nil
 }
 
+// withoutGrant drops a "grant" key from an answerer's decision JSON. Text
+// that is not a JSON object passes through: the worker ignores it anyway.
+func withoutGrant(decisionJSON string) string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(decisionJSON), &m) != nil {
+		return decisionJSON
+	}
+	if _, ok := m["grant"]; !ok {
+		return decisionJSON
+	}
+	delete(m, "grant")
+	b, err := json.Marshal(m)
+	if err != nil {
+		return decisionJSON
+	}
+	return string(b)
+}
+
 // rememberGrant stores the rule a remembered allow names and returns the
 // decision the worker receives: {behavior, message} as the answerer sent it,
 // plus core's own "grant". Stored before the answer is appended, so a grant
-// the worker applies is never one the store lacks.
-func (s *Server) rememberGrant(ctx context.Context, sessionID string, seq int64, decisionJSON, scope, form string) (string, error) {
+// the worker applies is never one the store lacks; undo removes it again if
+// the append then fails.
+func (s *Server) rememberGrant(ctx context.Context, sessionID string, seq int64, decisionJSON, scope, form string) (string, func(), error) {
 	var d struct {
 		Behavior string `json:"behavior"`
 		Message  string `json:"message,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(decisionJSON), &d); err != nil || d.Behavior != "allow" {
-		return "", fmt.Errorf("%w: only an allow is remembered", grants.ErrInvalid)
+		return "", nil, fmt.Errorf("%w: only an allow is remembered", grants.ErrInvalid)
 	}
 	r, t, err := s.requestRules(ctx, sessionID, seq)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	rule, err := r.Pick(form)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	if err := s.grants.Add(ctx, sessionID, *t.DefinitionName, scope, rule, who(ctx)); err != nil {
-		return "", err
+	// A prompt someone already answered is not this answer's to remember.
+	answered, err := s.grants.Answered(ctx, sessionID, seq)
+	if err != nil {
+		return "", nil, err
+	}
+	if answered {
+		return "", nil, connect.NewError(connect.CodeAlreadyExists, transcript.ErrAlreadyAnswered)
+	}
+	undo, err := s.grants.Add(ctx, sessionID, *t.DefinitionName, scope, rule, who(ctx))
+	if err != nil {
+		return "", nil, err
 	}
 	b, err := json.Marshal(struct {
 		Behavior string `json:"behavior"`
 		Message  string `json:"message,omitempty"`
 		Grant    string `json:"grant"`
 	}{d.Behavior, d.Message, rule})
-	return string(b), err
+	if err != nil {
+		undo()
+		return "", nil, err
+	}
+	return string(b), undo, nil
 }
 
 func (s *Server) ListGrants(ctx context.Context, _ *connect.Request[agentfleetv1.ListGrantsRequest]) (*connect.Response[agentfleetv1.ListGrantsResponse], error) {

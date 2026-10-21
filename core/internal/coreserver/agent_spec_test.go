@@ -101,7 +101,7 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	}
 	// A grant rides outside the spec (docs/adr/0076 §3): it changes the
 	// grants, never the sha, so delivery to a running worker never stops.
-	if err := grants.NewStore(pool).Add(ctx, def, "a", grants.ScopeSession, "Bash(npm test)", "test"); err != nil {
+	if _, err := grants.NewStore(pool).Add(ctx, def, "a", grants.ScopeSession, "Bash(npm test)", "test"); err != nil {
 		t.Fatal(err)
 	}
 	again, err := c.GetSession(asDef, &agentfleetv1.GetSessionRequest{Id: def})

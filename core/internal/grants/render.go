@@ -62,11 +62,12 @@ func Render(requestText string) (Rules, error) {
 		if err != nil {
 			return Rules{}, err
 		}
-		prefix := "**"
+		r := Rules{Exact: req.Tool + "(" + rel + ")"}
+		// A top-level file's directory is the whole worktree: no prefix form.
 		if dir := path.Dir(rel); dir != "." {
-			prefix = dir + "/**"
+			r.Prefix = req.Tool + "(" + dir + "/**)"
 		}
-		return Rules{Exact: req.Tool + "(" + rel + ")", Prefix: req.Tool + "(" + prefix + ")"}, nil
+		return r, nil
 	case "Bash":
 		cmd, ok := req.Input["command"].(string)
 		if !ok || cmd == "" {
@@ -103,7 +104,9 @@ func worktreeRelative(p string) (string, error) {
 		}
 		p = rel
 	}
-	if p == "" || strings.ContainsAny(p, "()\n") {
+	// No glob characters: the worker reads `/**` as a directory, so a file
+	// literally named `**` would turn an exact rule into a wide one.
+	if p == "" || strings.ContainsAny(p, "()\n*?[") {
 		return "", fmt.Errorf("%w: unusable path", ErrInvalid)
 	}
 	for _, seg := range strings.Split(p, "/") {

@@ -803,16 +803,22 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // permission-pending pod in the first place (see ListIdleSessionIDs).
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
 	sessionID := req.Msg.GetSessionId()
-	decision := req.Msg.GetDecisionJson()
+	// Only core writes "grant" (docs/adr/0076 §3): an answer naming its own
+	// is stripped of it, whatever its scope.
+	decision := withoutGrant(req.Msg.GetDecisionJson())
+	undo := func() {}
 	if scope := req.Msg.GetScope(); scope != "" && scope != grants.ScopeOnce {
-		d, err := s.rememberGrant(ctx, sessionID, req.Msg.GetSeq(), decision, scope, req.Msg.GetRuleForm())
+		d, u, err := s.rememberGrant(ctx, sessionID, req.Msg.GetSeq(), decision, scope, req.Msg.GetRuleForm())
 		if err != nil {
 			return nil, grantErr("RespondToPermission", err)
 		}
-		decision = d
+		decision, undo = d, u
 	}
 	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", decision, "permission_response", uuid.NewString(), req.Msg.GetSeq())
 	if err != nil {
+		// The answer did not land (another one won, or the append failed), so
+		// neither does the grant it would have carried.
+		undo()
 		if errors.Is(err, transcript.ErrAlreadyAnswered) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, err)
 		}

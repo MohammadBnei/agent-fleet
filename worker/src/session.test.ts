@@ -1885,6 +1885,15 @@ test.each([
   expect(definitionDecision(DEF_NONE, tool, input as Record<string, unknown>, mode, WT, [...grants]).behavior).toBe(want);
 });
 
+// A tools.allow match must not hide a grant for the same call.
+test("a grant still runs where tools.allow matched but would ask", () => {
+  const spec = { ...DEF_SPEC, toolsAllow: ["Edit", "Bash(git push:*)"] };
+  expect(definitionDecision(spec, "Edit", { file_path: "notes/a.md" }, "default", WT, []).behavior).toBe("ask");
+  expect(definitionDecision(spec, "Edit", { file_path: "notes/a.md" }, "default", WT, ["Edit(notes/**)"]).behavior).toBe("allow");
+  expect(definitionDecision(spec, "Bash", { command: "git push origin +main" }, "auto", WT, []).behavior).toBe("ask");
+  expect(definitionDecision(spec, "Bash", { command: "git push origin +main" }, "auto", WT, ["Bash(git push origin +main)"]).behavior).toBe("allow");
+});
+
 test("a grant does not ask under interaction: deny", () => {
   const spec = { ...DEF_NONE, interaction: "deny" };
   expect(definitionDecision(spec, "Bash", { command: "npm test" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("allow");
