@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.7.0](https://github.com/MohammadBnei/agent-fleet/compare/6.6.0...6.7.0) (2026-10-21)
+
+### Features
+
+* **provisioner:** fleet repos come from the ukubi-fleet App's installations ([#290](https://github.com/MohammadBnei/agent-fleet/issues/290)) ([ae328b9](https://github.com/MohammadBnei/agent-fleet/commit/ae328b9dacc7b82cfe444aaa1dbaf35391c48cf9))
+
 # [6.6.0](https://github.com/MohammadBnei/agent-fleet/compare/6.5.0...6.6.0) (2026-10-21)
 
 ### Features
