@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.15.0](https://github.com/MohammadBnei/agent-fleet/compare/6.14.1...6.15.0) (2026-10-21)
+
+### Features
+
+* **agentsvc:** decisions, control and status (ADR-0066 §4, ADR-0067 §2) ([#304](https://github.com/MohammadBnei/agent-fleet/issues/304)) ([507ef8d](https://github.com/MohammadBnei/agent-fleet/commit/507ef8da9765fcc55152c26ecb0ace8f042e6de0))
+
 ## [6.14.1](https://github.com/MohammadBnei/agent-fleet/compare/6.14.0...6.14.1) (2026-10-21)
 
 ### Bug Fixes
