@@ -30,7 +30,7 @@ service AgentService {
   rpc SetConfig(SetConfigRequest) returns (SetConfigResponse);
   rpc Stop(StopRequest) returns (StopResponse);
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
-  // A steward's (docs/adr/0067 §11): a member of platform-admins, from the
+  // A steward's (docs/adr/0067 §6): a member of platform-admins, from the
   // console or an island.
   rpc Lock(LockRequest) returns (LockResponse);
   rpc Wake(WakeRequest) returns (WakeResponse);
@@ -76,7 +76,7 @@ message Thread {
   string created_at = 11;
   string last_active_at = 12;
   Status status = 13;
-  // The email of the admin who locked it (docs/adr/0067 §11); empty =
+  // The email of the admin who locked it (docs/adr/0067 §6); empty =
   // unlocked. While set, only stewards post or answer.
   string locked_by = 14;
 }
@@ -115,7 +115,7 @@ message ListThreadsRequest {
 
 message ListThreadsResponse {
   repeated Thread threads = 1;
-  // The caller is a steward (docs/adr/0067 §11): may start, lock and wake
+  // The caller is a steward (docs/adr/0067 §6): may start, lock and wake
   // threads.
   bool steward = 2;
 }

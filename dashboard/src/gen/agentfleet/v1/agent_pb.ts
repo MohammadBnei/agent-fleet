@@ -162,7 +162,7 @@ export type Thread = Message<"agentfleet.v1.Thread"> & {
   status?: Status | undefined;
 
   /**
-   * The email of the admin who locked it (docs/adr/0067 §11); empty =
+   * The email of the admin who locked it (docs/adr/0067 §6); empty =
    * unlocked. While set, only stewards post or answer.
    *
    * @generated from field: string locked_by = 14;
@@ -309,7 +309,7 @@ export type ListThreadsResponse = Message<"agentfleet.v1.ListThreadsResponse"> &
   threads: Thread[];
 
   /**
-   * The caller is a steward (docs/adr/0067 §11): may start, lock and wake
+   * The caller is a steward (docs/adr/0067 §6): may start, lock and wake
    * threads.
    *
    * @generated from field: bool steward = 2;
@@ -1155,7 +1155,7 @@ export const AgentService: GenService<{
     output: typeof GetStatusResponseSchema;
   },
   /**
-   * A steward's (docs/adr/0067 §11): a member of platform-admins, from the
+   * A steward's (docs/adr/0067 §6): a member of platform-admins, from the
    * console or an island.
    *
    * @generated from rpc agentfleet.v1.AgentService.Lock

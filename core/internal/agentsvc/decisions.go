@@ -28,7 +28,8 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
 	}
-	if needsWake(p, t, time.Now()) {
+	// Only an answer warms: a pending permission or plan implies a live pod.
+	if wantType == "question" && needsWake(p, t, time.Now()) {
 		return nil, errWake
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker
@@ -98,6 +99,9 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 		Behavior string `json:"behavior"`
 		Message  string `json:"message,omitempty"`
 	}{b, req.Msg.GetMessage()})
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+		return nil, err
+	}
 	seq := req.Msg.GetSeq()
 	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), string(decision), "permission_response", uuid.NewString(), &seq)
 	if err != nil {
@@ -122,6 +126,9 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 		return nil, err
 	}
 	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+		return nil, err
+	}
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
 		return nil, err
 	}
 	seq := req.Msg.GetSeq()
@@ -155,6 +162,9 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 		if err := s.setMode(ctx, t, mode); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+		return nil, err
 	}
 	seq := req.Msg.GetSeq()
 	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), `{"behavior":"allow"}`, "permission_response", uuid.NewString(), &seq)
@@ -206,6 +216,13 @@ func (s *Server) SetConfig(ctx context.Context, req *connect.Request[agentfleetv
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("changing a thread's model is not supported yet"))
 	}
 	if m := req.Msg.GetMode(); m != "" {
+		// A mode change reaches the pod like a post (docs/adr/0067 §6).
+		if !canAnswer(p, t) {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot change this thread's config"))
+		}
+		if needsWake(p, t, time.Now()) {
+			return nil, errWake
+		}
 		if err := s.setMode(ctx, t, m); err != nil {
 			return nil, err
 		}
@@ -250,18 +267,30 @@ func (s *Server) Lock(ctx context.Context, req *connect.Request[agentfleetv1.Loc
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin locks a thread"))
 	}
 	if !req.Msg.GetLocked() {
-		if err := s.sessions.SetLocked(ctx, t.ID, nil); err != nil {
+		if err := s.sessions.Unlock(ctx, t.ID); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
 	}
+	// Lock first, stop second: a failed stop leaves the thread locked, never
+	// the other way round. Locking a locked thread changes nothing and sends
+	// no second stop; the first locker stays on record.
 	by := p.author().Name
-	if err := s.sessions.SetLocked(ctx, t.ID, &by); err != nil {
+	locked, err := s.sessions.Lock(ctx, t.ID, by)
+	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	// Only a live pod: an abort entry on an idle thread would be replayed into
-	// the next warm and stop that one instead.
-	if sessions.IsPodPhaseLive(t.PodPhase) {
+	if !locked {
+		return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
+	}
+	// Reread: a post may have warmed the pod since the snapshot above. Only a
+	// live pod is stopped: an abort entry on an idle thread would be replayed
+	// into the next warm and stop that one instead.
+	now, err := s.sessions.Get(ctx, t.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if sessions.IsPodPhaseLive(now.PodPhase) {
 		reason := "stopped and locked by " + by
 		if _, err := s.dash.StopSession(ctx, connect.NewRequest(&agentfleetv1.StopSessionRequest{SessionId: t.ID, Reason: &reason})); err != nil {
 			return nil, err
@@ -284,6 +313,10 @@ func (s *Server) Wake(ctx context.Context, req *connect.Request[agentfleetv1.Wak
 	}
 	if !p.steward() {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin wakes a thread"))
+	}
+	// As canAnswer: a tainted thread is the console's (docs/adr/0067 §3).
+	if t.Tainted && !p.Admin() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin wakes this thread, from the console"))
 	}
 	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("DEFINITION_CHANGED: start a new thread"))

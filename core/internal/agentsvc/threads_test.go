@@ -238,6 +238,16 @@ func TestThreads_LockAndWake(t *testing.T) {
 	if err := post(bob); code(err) != connect.CodePermissionDenied {
 		t.Errorf("bob posts to a locked thread: %v", err)
 	}
+	if _, err := s.SetConfig(bob, connect.NewRequest(&agentfleetv1.SetConfigRequest{ThreadId: id, Mode: "plan"})); code(err) != connect.CodePermissionDenied {
+		t.Errorf("bob, the owner, changes mode on a locked thread: %v", err)
+	}
+	// Idempotent: a second steward's lock keeps the first on record.
+	if err := lock(as("root2", "shared-notes", auth.RequiredGroup), true); err != nil {
+		t.Fatalf("second lock: %v", err)
+	}
+	if _, th := listed(bob); th.GetLockedBy() != "root@bnei.dev" {
+		t.Errorf("second lock replaced the locker: %q", th.GetLockedBy())
+	}
 	if err := lock(steward, false); err != nil {
 		t.Fatalf("unlock: %v", err)
 	}
@@ -253,5 +263,16 @@ func TestThreads_LockAndWake(t *testing.T) {
 	}
 	if _, err := s.Wake(bob, connect.NewRequest(&agentfleetv1.WakeRequest{ThreadId: id})); code(err) != connect.CodePermissionDenied {
 		t.Errorf("bob calls Wake: %v", err)
+	}
+	if _, err := s.SetConfig(bob, connect.NewRequest(&agentfleetv1.SetConfigRequest{ThreadId: id, Mode: "plan"})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("bob wakes a thread idle 25h through a mode change: %v", err)
+	}
+	// A tainted thread is woken from the console only (docs/adr/0067 §3).
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
+		VALUES ($1, 0, 'human', 'event', 'discussion', 'e1', true, true)`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Wake(steward, connect.NewRequest(&agentfleetv1.WakeRequest{ThreadId: id})); code(err) != connect.CodePermissionDenied {
+		t.Errorf("an island steward wakes a tainted thread: %v", err)
 	}
 }

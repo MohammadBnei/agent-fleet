@@ -940,13 +940,24 @@ func (s *Store) TouchActive(ctx context.Context, id, from, entryType string) err
 	return nil
 }
 
-// SetLocked locks a thread for by (an email), or unlocks it when by is nil
-// (docs/adr/0067 §6). A plain column write: stopping the pod is the caller's.
-func (s *Store) SetLocked(ctx context.Context, id string, by *string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET locked_by = $2, updated_at = now() WHERE id = $1`, id, by)
+// Lock records by (an email) as the thread's locker (docs/adr/0067 §6) and
+// reports whether this call locked it: an already-locked thread keeps its
+// first locker and returns false. Stopping the pod is the caller's.
+func (s *Store) Lock(ctx context.Context, id, by string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET locked_by = $2, updated_at = now() WHERE id = $1 AND locked_by IS NULL`, id, by)
 	if err != nil {
-		slog.Error("sessions SetLocked", "sessionId", id, "error", err)
-		return fmt.Errorf("set locked: %w", err)
+		slog.Error("sessions Lock", "sessionId", id, "error", err)
+		return false, fmt.Errorf("lock: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// Unlock clears the lock (docs/adr/0067 §6).
+func (s *Store) Unlock(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET locked_by = NULL, updated_at = now() WHERE id = $1`, id)
+	if err != nil {
+		slog.Error("sessions Unlock", "sessionId", id, "error", err)
+		return fmt.Errorf("unlock: %w", err)
 	}
 	return nil
 }

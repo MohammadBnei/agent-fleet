@@ -392,7 +392,9 @@
   const approve = (seq: bigint) => act((threadId) => api.approvePlan({ threadId, seq }));
   // A steward's controls (docs/adr/0067 §6). Locking stops the turn in flight.
   async function lock(on: boolean) {
-    if (await act((threadId) => api.lock({ threadId, locked: on }))) await refreshCurrent();
+    // Refreshed either way: a lock that landed before its stop failed shows.
+    await act((threadId) => api.lock({ threadId, locked: on }));
+    await refreshCurrent();
   }
   async function wake() {
     if (await act((threadId) => api.wake({ threadId }))) await refreshCurrent();

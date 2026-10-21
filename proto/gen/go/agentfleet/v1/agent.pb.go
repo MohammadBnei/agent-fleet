@@ -198,7 +198,7 @@ type Thread struct {
 	CreatedAt    string  `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	LastActiveAt string  `protobuf:"bytes,12,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`
 	Status       *Status `protobuf:"bytes,13,opt,name=status,proto3" json:"status,omitempty"`
-	// The email of the admin who locked it (docs/adr/0067 §11); empty =
+	// The email of the admin who locked it (docs/adr/0067 §6); empty =
 	// unlocked. While set, only stewards post or answer.
 	LockedBy      string `protobuf:"bytes,14,opt,name=locked_by,json=lockedBy,proto3" json:"locked_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -565,7 +565,7 @@ func (x *ListThreadsRequest) GetDefinition() string {
 type ListThreadsResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Threads []*Thread              `protobuf:"bytes,1,rep,name=threads,proto3" json:"threads,omitempty"`
-	// The caller is a steward (docs/adr/0067 §11): may start, lock and wake
+	// The caller is a steward (docs/adr/0067 §6): may start, lock and wake
 	// threads.
 	Steward       bool `protobuf:"varint,2,opt,name=steward,proto3" json:"steward,omitempty"`
 	unknownFields protoimpl.UnknownFields

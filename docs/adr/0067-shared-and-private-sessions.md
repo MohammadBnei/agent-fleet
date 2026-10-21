@@ -266,6 +266,15 @@ able to run up cost unattended. Three rules, all in core:
   `PostMessage` and every answer refuse with `FailedPrecondition`. A steward's
   `Wake` warms it through the usual caps; once the pod is live members post
   again, and their posts move the clock. Clients keep their own rules.
+  By design, a member who posts at least once a day keeps a thread wakeable:
+  the caps still bound the spend, and Lock is the stop.
+- **Rechecked at the append.** A warm is slow enough for a lock to land
+  meanwhile, so `PostMessage` and every answer reread the thread right
+  before appending. The residual window is a post appended just before the
+  lock; Lock's abort follows it. Lock is idempotent: the first locker stays on
+  record and a second Lock sends no second stop. A mode change (`SetConfig`)
+  passes the same lock and wake checks. Locks bind members only, never
+  clients, and `Wake` on a tainted thread stays the console admin's.
 
 Why a steward may act from an island although ADR-0068 gives islands member
 rights only: the cookie authenticates the browser, not the gesture, so a

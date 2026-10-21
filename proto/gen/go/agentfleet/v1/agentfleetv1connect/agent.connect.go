@@ -99,7 +99,7 @@ type AgentServiceClient interface {
 	SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
-	// A steward's (docs/adr/0067 §11): a member of platform-admins, from the
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
 	// console or an island.
 	Lock(context.Context, *connect.Request[v1.LockRequest]) (*connect.Response[v1.LockResponse], error)
 	Wake(context.Context, *connect.Request[v1.WakeRequest]) (*connect.Response[v1.WakeResponse], error)
@@ -361,7 +361,7 @@ type AgentServiceHandler interface {
 	SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
-	// A steward's (docs/adr/0067 §11): a member of platform-admins, from the
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
 	// console or an island.
 	Lock(context.Context, *connect.Request[v1.LockRequest]) (*connect.Response[v1.LockResponse], error)
 	Wake(context.Context, *connect.Request[v1.WakeRequest]) (*connect.Response[v1.WakeResponse], error)

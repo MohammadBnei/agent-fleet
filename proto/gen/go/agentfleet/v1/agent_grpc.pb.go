@@ -66,7 +66,7 @@ type AgentServiceClient interface {
 	SetConfig(ctx context.Context, in *SetConfigRequest, opts ...grpc.CallOption) (*SetConfigResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
-	// A steward's (docs/adr/0067 §11): a member of platform-admins, from the
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
 	// console or an island.
 	Lock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResponse, error)
 	Wake(ctx context.Context, in *WakeRequest, opts ...grpc.CallOption) (*WakeResponse, error)
@@ -301,7 +301,7 @@ type AgentServiceServer interface {
 	SetConfig(context.Context, *SetConfigRequest) (*SetConfigResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
-	// A steward's (docs/adr/0067 §11): a member of platform-admins, from the
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
 	// console or an island.
 	Lock(context.Context, *LockRequest) (*LockResponse, error)
 	Wake(context.Context, *WakeRequest) (*WakeResponse, error)

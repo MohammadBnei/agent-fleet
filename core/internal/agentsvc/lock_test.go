@@ -8,7 +8,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
-// docs/adr/0067 §11 without a database: who posts to a locked thread, and
+// docs/adr/0067 §6 without a database: who posts to a locked thread, and
 // who may wake one idle past the window.
 func TestLockAndWakeRules(t *testing.T) {
 	member := func(origin string, groups ...string) Principal {
@@ -25,6 +25,11 @@ func TestLockAndWakeRules(t *testing.T) {
 	}
 	if !canAnswer(member(island, auth.RequiredGroup), locked) {
 		t.Error("a steward from an island is refused a locked thread")
+	}
+	// Locks bind members only: a client's own thread stays its own.
+	client := "client:bot"
+	if !canAnswer(Principal{Client: "bot"}, &sessions.Session{Owner: &client, LockedBy: &by}) {
+		t.Error("a lock refuses the owning client")
 	}
 	if !canAnswer(member("", "shared-notes"), &sessions.Session{Owner: &owner, Visibility: &shared}) {
 		t.Error("an unlocked shared thread refuses a member")
