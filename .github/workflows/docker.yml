@@ -165,18 +165,26 @@ jobs:
         run: |
           set -euo pipefail
           last=$(git describe --tags --abbrev=0)
-          humans() { git log --format=%an "$@" | grep -vx agent-fleet-ci || true; }
-          if [ -n "$(humans "$last..HEAD")" ]; then
-            # Same paths as `on.push.paths-ignore`: a docs-only merge gets no
-            # run of its own, so it must not hold this one back.
-            if [ -n "$(humans "$TESTED..HEAD" -- . ':(exclude,glob)**/*.md' ':(exclude,glob)k8s/*' ':(exclude)package.json')" ]; then
+          # grep's exit 1 (no match) is fine; a git error is not, and must not
+          # read as "no commits".
+          humans() { git log --format=%an "$@" | { grep -vx agent-fleet-ci || [ $? -eq 1 ]; }; }
+          all=$(humans "$last..HEAD")
+          # Same paths as `on.push.paths-ignore`: a docs-only merge gets no
+          # run of its own, so it must not hold this one back. A newer commit
+          # whose run never happens for another reason ([skip ci], a run
+          # cancelled by hand) holds the release until the next merge.
+          untested=$(humans "$TESTED..HEAD" -- . ':(exclude,glob)**/*.md' ':(exclude,glob)k8s/*' ':(exclude)package.json')
+          if [ -n "$all" ]; then
+            if [ -n "$untested" ]; then
               echo "main has untested commits past $TESTED; their own run releases them"
               echo "mode=skip" >> "$GITHUB_OUTPUT"
             else
               echo "mode=release" >> "$GITHUB_OUTPUT"
             fi
-          elif git log --format=%H --author=agent-fleet-ci --grep="bump image tag to $last\$" "$last..HEAD" | grep -q .; then
-            echo "nothing but deploy commits since $last; skipping the release"
+          # Deployed means the manifests pin it, not that a deploy commit
+          # exists: deploy commits nothing when the pin is already right.
+          elif grep -q "agent-fleet-provisioner:$last\$" k8s/provisioner/deployment.yaml; then
+            echo "nothing new since $last, and it is deployed; skipping the release"
             echo "mode=skip" >> "$GITHUB_OUTPUT"
           else
             echo "$last was never deployed; building and deploying it again"
@@ -416,6 +424,14 @@ jobs:
               echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
               echo "push=false" >> "$GITHUB_OUTPUT"
               ;;
+            workflow_dispatch)
+              # A measurement build, possibly from a branch: pushed under its
+              # own name, never as a release version or `latest`, which
+              # deployed pods, thot and catalog.go resolve.
+              echo "value=dispatch-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+              echo "push=true" >> "$GITHUB_OUTPUT"
+              echo "latest=false" >> "$GITHUB_OUTPUT"
+              ;;
             *)
               version=$(jq -r '.version' package.json)
               [ -n "$version" ] && [ "$version" != "null" ] || { echo "no .version in package.json"; exit 1; }
@@ -440,6 +456,14 @@ jobs:
               # would also fail every run, since on a branch push ref_name is "main".
               echo "value=$version" >> "$GITHUB_OUTPUT"
               echo "push=true" >> "$GITHUB_OUTPUT"
+              # A re-run of an old run must not move `latest` back.
+              newest=$(git tag --sort=-v:refname | head -1)
+              if [ "$version" = "$newest" ]; then
+                echo "latest=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "::notice::$version is not the newest tag ($newest); not moving latest"
+                echo "latest=false" >> "$GITHUB_OUTPUT"
+              fi
               ;;
           esac
 
@@ -498,6 +522,7 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.value }}
           DO_PUSH: ${{ steps.tag.outputs.push }}
+          PUSH_LATEST: ${{ steps.tag.outputs.latest }}
           # Only ever non-empty on a pull_request: the `changes` job is
           # PR-gated, and a skipped job's outputs are ''. So the shell's
           # fallback to $COMPONENTS below is what gives a release (and a
@@ -543,7 +568,9 @@ jobs:
               .
             build_end=$(date +%s)
             if [ "$DO_PUSH" = "true" ]; then
-              for t in "$TAG" latest; do
+              tags="$TAG"
+              [ "$PUSH_LATEST" = "true" ] && tags="$tags latest"
+              for t in $tags; do
                 # Retried in the shell: twice on 2026-10-20, right after
                 # cross-repo blob mounts, buildah sent the next write (a blob
                 # POST, then a manifest PUT) with no credentials, got 401 from
@@ -624,6 +651,13 @@ jobs:
       - name: Bump pinned image tags
         run: |
           set -euo pipefail
+          # "Re-run failed jobs" on an old run reuses its old version. Pinning
+          # that would silently roll production back past a newer release.
+          newest=$(git tag --sort=-v:refname | head -1)
+          if [ "$VERSION" != "$newest" ]; then
+            echo "::notice::$VERSION is not the newest tag ($newest); not deploying it"
+            exit 0
+          fi
           # Helm-values shape (k8s/core.yaml): image.tag / hooks.migrate.image.tag.
           # Blanket `tag: "..."` replace is safe here — every occurrence in
           # this file shape is genuinely an image tag, nothing else uses it.
