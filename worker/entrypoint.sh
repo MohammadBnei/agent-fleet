@@ -14,13 +14,4 @@ if [ -n "$CLAUDE_CONFIG_DIR" ] && [ ! -d "$CLAUDE_CONFIG_DIR/plugins" ]; then
   mkdir -p "$CLAUDE_CONFIG_DIR"
   cp -r /root/.claude/plugins "$CLAUDE_CONFIG_DIR/plugins"
 fi
-# docs/adr/0075: Chromium ignores the CA env vars and trusts only its NSS db,
-# so the vault's root goes in there. $HOME is the container's own layer, so
-# every start. Best-effort: without it only the browser fails TLS.
-if [ -f /etc/agent-vault/ca.pem ] && command -v certutil >/dev/null; then
-  mkdir -p "$HOME/.pki/nssdb"
-  { [ -f "$HOME/.pki/nssdb/cert9.db" ] || certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password; } &&
-    certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n agent-vault -i /etc/agent-vault/ca.pem ||
-    echo "entrypoint: vault CA not imported into NSS, the browser will reject TLS" >&2
-fi
 exec bun run src/index.ts

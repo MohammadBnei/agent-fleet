@@ -641,9 +641,13 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 						corev1.ResourceCPU:    resource.MustParse("50m"),
 						corev1.ResourceMemory: resource.MustParse("64Mi"),
 					},
+					// Raised from 250m/256Mi: in a repo pod every HTTPS
+					// connection the worker makes is tunnelled through this
+					// container (sidecar/internal/egress), and an OOM here
+					// drops all of them, MCP included.
 					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("250m"),
-						corev1.ResourceMemory: resource.MustParse("256Mi"),
+						corev1.ResourceCPU:    resource.MustParse("1000m"),
+						corev1.ResourceMemory: resource.MustParse("512Mi"),
 					},
 				},
 				// HTTP on /readyz, not a bare TCP check: a TCP probe only

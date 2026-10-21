@@ -198,8 +198,19 @@ func computeSummary(worktreePath string) (summary, error) {
 	return summary{Branch: branch, Files: files}, nil
 }
 
+// gitOutput runs git in the agent-writable tree, so the tree's own config
+// must not run anything here: this container holds the lease and, in a repo
+// pod, the vault token (sidecar/internal/egress). fsmonitor, hooks, external
+// diff and textconv are off.
+//
+// ponytail: a clean filter named in the tree's .gitattributes still runs on
+// `git diff`; a hardened diff (or reading files without git) if that matters.
 func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	pre := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"}
+	if len(args) > 0 && args[0] == "diff" {
+		args = append([]string{"diff", "--no-ext-diff", "--no-textconv"}, args[1:]...)
+	}
+	cmd := exec.Command("git", append(pre, args...)...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

@@ -216,8 +216,7 @@ Each step is one PR, merged by the user.
 - **CA bundle.** The provisioner writes `bundle.pem` (its image's system roots
   plus the vault root) next to `ca.pem` in `agent-vault-ca`. Repo pods point
   every CA variable at it except `NODE_EXTRA_CA_CERTS`, which adds to Node's
-  roots and takes `ca.pem`. Chromium gets the vault root in its NSS db at
-  start (`worker/entrypoint.sh`, `libnss3-tools`).
+  roots and takes `ca.pem`.
 - **`NO_PROXY`** for repo pods: loopback, core, the vault, `.cluster.local`,
   `.svc`, `.bnei.lan`, `.bnei.dev`, `10.233.0.0/18`, `10.233.64.0/18`,
   `192.168.1.0/24`.
@@ -234,10 +233,17 @@ Each step is one PR, merged by the user.
   sidecar's CONNECT router on `127.0.0.1:9093` (`sidecar/internal/egress`),
   not the vault. It sends `github.com`, `api.github.com` and
   `api.anthropic.com` on :443 to the vault with the pod's session token and
-  tunnels every other host direct, untouched. The token lives in the
-  sidecar's env only. Agent Vault's MITM is HTTP/1.1 only and drops trailers
+  tunnels every other host direct, untouched. The token sits in the
+  sidecar's env, not the worker's; that is tidiness, not a boundary, since
+  the worker can use the vault through the router anyway and a stolen token
+  works only from a pod the vault's NetworkPolicy admits. The sidecar's
+  telemetry git, which runs in the agent's tree, has fsmonitor, hooks,
+  external diff and textconv off; a `.gitattributes` clean filter still runs.
+  **The browser goes direct**, never through the router: through it, a page's
+  script would reach GitHub and Anthropic as the fleet (the vault injects on
+  the wire, and api.github.com answers CORS with `*`). Playwright starts with
+  empty proxy env, so no NSS import of the vault CA is needed. Agent Vault's MITM is HTTP/1.1 only and drops trailers
   (`internal/mitm/proxy.go:24` in v0.40.0), so this is what keeps HTTP/2 and
   gRPC working for every other host. It also takes most traffic out of the
-  vault's plaintext view and rate limit, and gives Chromium a proxy without
-  credentials, which it would otherwise not send. HTTP/2 and gRPC to the
+  vault's plaintext view and rate limit. HTTP/2 and gRPC to the
   three vault hosts stay broken until Agent Vault supports them.

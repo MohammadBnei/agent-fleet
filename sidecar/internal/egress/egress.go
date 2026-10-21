@@ -5,9 +5,15 @@
 // Agent Vault's MITM speaks HTTP/1.1 only and drops trailers, so sending
 // everything through it broke HTTP/2 and gRPC to every external host, showed
 // the vault all of the pod's HTTPS in plaintext, and spent its rate limit on
-// package installs. It also kept the vault token in the worker's env, where
-// Chromium ignored it (a proxy URL's userinfo) and the agent could read it.
-// Here the token lives in the sidecar's env only.
+// package installs. The token is in the sidecar's env, not the worker's. That
+// is tidiness, not a boundary: the worker can use the vault through this
+// router anyway, and a stolen token works only from a pod the vault's
+// NetworkPolicy admits.
+//
+// The browser must never come here: a page's script would reach GitHub and
+// Anthropic as the fleet (the vault injects on the wire, and api.github.com
+// answers CORS with *). The worker starts Playwright with no proxy env
+// (worker/src/session.ts playwrightMcpServer).
 package egress
 
 import (
@@ -37,7 +43,7 @@ type Router struct {
 // New parses FLEET_VAULT_PROXY and FLEET_VAULT_HOSTS (comma-separated).
 func New(vaultProxy, hosts string) (*Router, error) {
 	u, err := url.Parse(vaultProxy)
-	if err != nil || u.Host == "" || u.User == nil {
+	if err != nil || u.Scheme != "http" || u.Host == "" || u.User == nil {
 		return nil, errors.New("egress: FLEET_VAULT_PROXY is not a proxy URL with a token") // never quote it
 	}
 	r := &Router{Vault: u, Hosts: map[string]bool{}, Dial: (&net.Dialer{Timeout: 10 * time.Second}).DialContext}
@@ -49,9 +55,15 @@ func New(vaultProxy, hosts string) (*Router, error) {
 	return r, nil
 }
 
-func (r *Router) toVault(target string) bool {
+// toVault reports whether target goes to the vault, and the target in the
+// form the vault's services match (lowercase, no trailing dot).
+func (r *Router) toVault(target string) (string, bool) {
 	host, port, err := net.SplitHostPort(target)
-	return err == nil && port == "443" && r.Hosts[strings.ToLower(strings.TrimSuffix(host, "."))]
+	if err != nil || port != "443" {
+		return "", false
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	return net.JoinHostPort(host, port), r.Hosts[host]
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -63,8 +75,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	target := req.Host
 	var up net.Conn
 	var err error
-	if r.toVault(target) {
-		up, err = r.viaVault(req.Context(), target)
+	if vt, ok := r.toVault(target); ok {
+		up, err = r.viaVault(req.Context(), vt)
 	} else {
 		up, err = r.Dial(req.Context(), "tcp", target)
 	}
@@ -83,7 +95,17 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		_ = up.Close()
 		return
 	}
-	splice(client, buf.Reader, up) // buf reads the client conn, bytes it already buffered first
+	// Bytes the client sent before the 200 sit in buf; after those, copy from
+	// the raw conn so a direct tunnel is TCP to TCP (kernel splice).
+	if n := buf.Reader.Buffered(); n > 0 {
+		b, _ := buf.Peek(n)
+		if _, err := up.Write(b); err != nil {
+			_ = client.Close()
+			_ = up.Close()
+			return
+		}
+	}
+	splice(client, client, up)
 }
 
 // viaVault opens a tunnel to target through the vault, authenticated as this
@@ -132,6 +154,9 @@ func (b *bufConn) CloseWrite() error {
 
 // splice copies both ways, half-closing each side as its source ends, and
 // closes both once both directions are done.
+//
+// ponytail: no idle timeout; a peer that half-closes and never closes holds
+// two fds until the other side does. A deadline per direction if it shows.
 func splice(client net.Conn, clientR io.Reader, up net.Conn) {
 	done := make(chan struct{}, 2)
 	cp := func(dst net.Conn, src io.Reader) {

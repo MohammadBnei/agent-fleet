@@ -140,10 +140,16 @@ func TestRouter_VaultHostsGoThroughTheVaultWithTheToken(t *testing.T) {
 		}
 	}
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("tok:owner-o"))
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	for _, a := range v.auth {
 		if !strings.HasPrefix(a, "CONNECT ") || !strings.HasSuffix(a, " "+want) {
 			t.Errorf("vault got %q", a)
 		}
+	}
+	// The vault gets the target in the form its services match.
+	if len(v.auth) != 3 || !strings.HasPrefix(v.auth[2], "CONNECT github.com:443 ") {
+		t.Errorf("vault got %q", v.auth)
 	}
 }
 
@@ -157,9 +163,11 @@ func TestRouter_OtherHostsGoDirect(t *testing.T) {
 			t.Errorf("%s: %q, want direct", target, got)
 		}
 	}
+	v.mu.Lock()
 	if len(v.auth) != 0 {
 		t.Errorf("vault saw %v", v.auth)
 	}
+	v.mu.Unlock()
 	if !strings.Contains(strings.Join(*dialed, ","), "grpcb.in:9001") {
 		t.Errorf("dialed %v", *dialed)
 	}
@@ -185,12 +193,32 @@ func TestRouter_ConnectOnly(t *testing.T) {
 
 // The token never leaves through an error: New does not quote a bad URL.
 func TestNew_RefusesAProxyWithoutAToken(t *testing.T) {
-	for _, raw := range []string{"", "http://host:1", "::"} {
+	for _, raw := range []string{"", "http://host:1", "::", "https://tok:v@host:1"} {
 		if _, err := New(raw, "github.com"); err == nil {
 			t.Errorf("New(%q) accepted", raw)
 		}
 	}
 	if _, err := url.Parse("http://tok:v@h:1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A client that sends its first bytes right behind the CONNECT, before the
+// 200, still gets them delivered.
+func TestRouter_BytesBeforeTheReplyAreKept(t *testing.T) {
+	proxy, _, _ := setup(t, "200 Connection Established")
+	c, err := net.Dial("tcp", proxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	_, _ = io.WriteString(c, "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\nearly\n")
+	br := bufio.NewReader(c)
+	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("connect: %v %v", resp, err)
+	}
+	if line, _ := br.ReadString('\n'); strings.TrimSpace(line) != "direct:early" {
+		t.Errorf("got %q", line)
 	}
 }

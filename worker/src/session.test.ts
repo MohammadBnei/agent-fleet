@@ -272,7 +272,7 @@ for (const key of [
 }
 
 const { FLEET_TRAILER } = await import("./gitHooks.js");
-const { runSession, sumModelUsage, formatAnswerTurn, humanTurn, authorLabel, senderOf, denyReason, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert, sdkMode } = await import("./session.js");
+const { runSession, sumModelUsage, formatAnswerTurn, humanTurn, authorLabel, senderOf, denyReason, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert, sdkMode, playwrightMcpServer } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -2070,4 +2070,13 @@ test("formatAnswerTurn and denyReason name who answered", () => {
   expect(denyReason(undefined, "nadia@bnei.dev")).toBe("Denied by nadia@bnei.dev.");
   expect(denyReason(undefined)).toBe("Denied.");
   expect(denyReason("why")).toBe("why");
+});
+
+// docs/adr/0075 §7: the browser must not inherit the pod's proxy, or a page's
+// script would reach GitHub and Anthropic through the vault as the fleet.
+test("the browser runs with no proxy env", () => {
+  const env = playwrightMcpServer().env;
+  for (const k of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]) {
+    expect(env[k as keyof typeof env]).toBe("");
+  }
 });

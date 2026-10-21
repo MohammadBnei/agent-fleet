@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -75,11 +76,36 @@ func main() {
 
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
+	// docs/adr/0075 §7: a repo pod's HTTPS_PROXY. Set by the provisioner on
+	// repo pods only; a definition pod talks to its vault directly.
+	if vp := os.Getenv("FLEET_VAULT_PROXY"); vp != "" {
+		router, err := egress.New(vp, os.Getenv("FLEET_VAULT_HOSTS"))
+		if err != nil {
+			slog.Error("egress router", "error", err)
+			os.Exit(1)
+		}
+		// Bound before /readyz can pass: the worker starts only after it, and
+		// every HTTPS call it makes comes here. A failed bind fails the pod.
+		lis, err := net.Listen("tcp", "127.0.0.1:"+env("EGRESS_PORT", "9093"))
+		if err != nil {
+			slog.Error("egress router listen", "error", err)
+			os.Exit(1)
+		}
+		// No access log: one line per tunnel would be most of the log.
+		srv := &http.Server{Handler: router, ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			slog.Info("sidecar egress listening", "addr", lis.Addr().String())
+			if err := srv.Serve(lis); err != nil {
+				slog.Error("egress router exited", "error", err)
+			}
+		}()
+	}
+
 	// The FLEET_ENDPOINTS roster and the e2eclient that consumed it are gone
 	// with the sandbox they addressed (docs/adr/0048 §6). docs/adr/0045's
 	// direct-dial decision is not reversed — it is moot: there is no second pod
-	// to dial, so the sidecar's only outbound connection is the one to core
-	// that it always had.
+	// to dial. The sidecar's outbound connections are the one to core it always
+	// had and, in a repo pod, the egress router's tunnels.
 	mcpServer, localAPIServer, healthServer := servers(core, mcpPort, localAPIPort, healthPort)
 
 	go func() {
@@ -100,24 +126,6 @@ func main() {
 			slog.Error("health server exited", "error", err)
 		}
 	}()
-
-	// docs/adr/0075 §7: a repo pod's HTTPS_PROXY. Set by the provisioner on
-	// repo pods only; a definition pod talks to its vault directly.
-	if vp := os.Getenv("FLEET_VAULT_PROXY"); vp != "" {
-		router, err := egress.New(vp, os.Getenv("FLEET_VAULT_HOSTS"))
-		if err != nil {
-			slog.Error("egress router", "error", err)
-			os.Exit(1)
-		}
-		egressPort := env("EGRESS_PORT", "9093")
-		go func() {
-			slog.Info("sidecar egress listening", "port", egressPort)
-			// No access log: one line per tunnel would be most of the log.
-			if err := http.ListenAndServe("127.0.0.1:"+egressPort, router); err != nil {
-				slog.Error("egress router exited", "error", err)
-			}
-		}()
-	}
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
