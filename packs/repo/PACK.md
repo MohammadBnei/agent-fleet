@@ -1,0 +1,86 @@
+Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session's own PVC — no worktrees since `docs/adr/0048`. Target repo's CLAUDE.md wins for codebase details.
+
+## Repo session rules
+
+- Every result = PR
+- Commit trailer is set for you: a git hook rewrites it to `Co-Authored-By: ukubi-agent <noreply@bnei.dev>`. Never add a `Claude`/model co-author
+- Write/Edit = human prompt (normal). Read/Glob/Grep = free, and so is
+  **read-only Bash** (`ls`, `head`, `stat`, `diff`, `git log`, …) — those
+  gate nothing the free `Read` tool doesn't already give you. `cat` is
+  deliberately NOT on that list: use `Read`. Bash that
+  *changes* something still prompts, and `git push`, `gh`, `rm`, `sudo`,
+  `kubectl`, `curl`, `wget`, `env` are held prompting by `FLEET_ASK_RULES` in
+  the worker, which outranks every permission mode. In `auto` the worker
+  answers them for you — only `rm` and `sudo` still reach a human
+  (`docs/adr/0053`)
+- Skills: `doubt-driven-development`, `architecture-interview` for non-trivial decisions
+- Journal: `journal_search` before work, `journal_write` for gotchas/decisions
+- Never edit ARCHITECTURE.md/DECISIONS.md/docs/adr/ to match your work — propose changes explicitly
+
+## Your pod
+
+One pod. Your repo is at `/workspace`, on node-local disk. `Bash` runs
+everything: builds, tests, installs, git, `gh`. There is no second pod and no
+`run_command` — that was the e2e sandbox, deleted in `docs/adr/0048`.
+
+- Caches (`/cache`) are yours and survive a warm. First install on a NEW
+  session is cold; after that it is warm.
+- `/repo-cache` is **read-only** — the shared clone cache every session clones
+  from. Do not try to write there.
+- Long-running processes: background them (`setsid`/`nohup ... &`) and write to
+  a log you can `tail`. A dev server in the foreground blocks your turn, and one
+  that dies must not take the pod with it.
+
+### Showing a human something
+
+Start your server on any port, bound to **0.0.0.0** (a localhost bind is
+unreachable from outside the pod), then `expose(port)` for a public HTTPS URL.
+`unexpose()` takes it down; teardown does that anyway.
+
+The route existing is not your server answering — check the URL yourself
+before reporting it as working.
+
+### Backing services
+
+`request_service("postgres"|"redis")` returns a connection string. This is the
+one thing you cannot start yourself, because it needs cluster permissions this
+pod does not have. Instances are shared **per repo**: another session may be
+using the same database, so namespace what you create.
+
+## Other sessions
+
+Other sessions can prompt you (`prompt_agent`). Their messages arrive marked as
+coming from another agent, not from Mohammad — and **that session cannot see
+your transcript, so nothing you write as ordinary output reaches it.** Answering
+a peer means calling `prompt_agent` back at the session id named in the message.
+`list_sessions` finds it if the message doesn't name one; `prompt_agent` is
+refused while the target is blocked on a human decision, and a refusal means
+your answer was not delivered.
+
+## Output compaction
+
+**Prefix every build, test and lint with `rtk `.** Not when you remember to —
+by default. `rtk go test ./...`, `rtk go build ./...`, `rtk cargo build`,
+`rtk golangci-lint run`, `rtk make test`, `rtk pytest -q`. Same command, same
+exit code, ~99% less output. Nothing rewrites it for you: the prefix is yours
+to type, and a command you run without it spends its full output on your
+context (`agent-fleet/docs/adr/0046`).
+
+`rtk` passes through anything it has no filter for, so the prefix is never
+wrong — but it is also not always a win: `bun install` and `npm ci` are two it
+does not compact today. Raw output on purpose: `rtk proxy <cmd>`.
+
+What it costs: a bare `go test ./...` is on the un-prompted allow list,
+`rtk go test ./...` is not. In `auto` that is invisible — the worker answers
+it. In `default` it is one permission prompt per command, which is the trade
+being made deliberately: a click a human sees, against a context window they
+don't (`agent-fleet/docs/adr/0046`). Both `rtk proxy` and `rtk run` prompt for
+the same reason, and that one is not a trade — they run their argument
+verbatim, so allow-listing either would let `rtk proxy rm -rf x` past the
+`rm`/`sudo` gate.
+
+## Output and subagents
+
+- `view_logs` truncates: narrow the query (limit/level/duration/time)
+
+`Task` tool = own context, returns summary only. Use for search/trace/pattern-check. Do edits yourself — MCP tool results never compact (ADR-0046), subagent output does.

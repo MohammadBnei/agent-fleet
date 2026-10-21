@@ -248,3 +248,67 @@ func TestEnsureRepoFetched_RefusesACacheFromAnotherOrigin(t *testing.T) {
 		t.Errorf("a cache cloned from another URL was accepted: %v", err)
 	}
 }
+
+// docs/adr/0063 §8: once fleet-shared/CLAUDE.md and skills/ leave the source,
+// a resumed session's synced copies go too. settings.json and the image's
+// plugins/ stay.
+func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
+	m := NewManager(t.TempDir())
+	ctx := context.Background()
+	origin := newOriginRepo(t)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = origin
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@t.io", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@t.io")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	for _, p := range []string{"CLAUDE.md", "settings.json", "skills/x/SKILL.md"} {
+		dst := filepath.Join(origin, "fleet-shared", p)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("add", "-A")
+	git("commit", "-m", "fleet-shared")
+
+	home := m.ClaudeHomePath("s")
+	if err := os.MkdirAll(filepath.Join(home, "plugins", "p"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SyncFleetShared(ctx, origin, "main", home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "skills", "x", "SKILL.md")); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+
+	git("rm", "-rq", "fleet-shared/CLAUDE.md", "fleet-shared/skills")
+	git("commit", "-m", "moved to packs")
+	if err := m.SyncFleetShared(ctx, origin, "main", home); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]bool{"CLAUDE.md": false, "skills": false, "settings.json": true, "plugins/p": true} {
+		if _, err := os.Stat(filepath.Join(home, p)); (err == nil) != want {
+			t.Errorf("%s: present=%v, want %v", p, err == nil, want)
+		}
+	}
+	// A source without fleet-shared/ at all is a wrong ref: it errors and
+	// deletes nothing.
+	if err := os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("rm", "-rq", "fleet-shared")
+	git("commit", "-m", "wrong ref")
+	if err := m.SyncFleetShared(ctx, origin, "main", home); err == nil {
+		t.Error("a source with no fleet-shared/ synced without error")
+	}
+	if _, err := os.Stat(filepath.Join(home, "CLAUDE.md")); err != nil {
+		t.Errorf("CLAUDE.md removed on a source with no fleet-shared/: %v", err)
+	}
+}

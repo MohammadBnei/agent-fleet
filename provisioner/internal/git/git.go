@@ -454,17 +454,34 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 	// the repo root). contentRoot descends into the one subdirectory that
 	// actually holds this content.
 	contentRoot := filepath.Join(path, "fleet-shared")
+	if _, err := os.Stat(contentRoot); err != nil {
+		// A source without the directory at all is a wrong URL or ref, not
+		// a move: deleting on its word would wipe every warmed session.
+		return fmt.Errorf("fleet-shared source: %w", err)
+	}
+	var errs []error
 	for _, name := range fleetSharedNames {
 		src := filepath.Join(contentRoot, name)
 		if _, err := os.Stat(src); os.IsNotExist(err) {
+			// docs/adr/0063 §8: CLAUDE.md and skills/ moved to packs/, and a
+			// resumed session's claude-home still holds the last synced copy.
+			// Never plugins/: without a source it is the image's copy, which
+			// the entrypoint seeds once per claude-home.
+			if name == "CLAUDE.md" || name == "skills" {
+				if err := os.RemoveAll(filepath.Join(claudeHomeDir, name)); err != nil {
+					errs = append(errs, fmt.Errorf("remove %s: %w", name, err))
+				}
+			}
 			continue
 		}
+		// One name failing never skips the rest: settings.json is the
+		// session's permission rules.
 		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", src, claudeHomeDir+string(filepath.Separator))
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("rsync %s: %w: %s", name, err, strings.TrimSpace(string(out)))
+			errs = append(errs, fmt.Errorf("rsync %s: %w: %s", name, err, strings.TrimSpace(string(out))))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // lockCtx takes lock, giving up when ctx ends; a sync.Mutex cannot be waited

@@ -1,6 +1,9 @@
 package packs
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -37,5 +40,28 @@ func TestParseReviewed(t *testing.T) {
 		if good, bad := ParseReviewed(files); len(good) != 0 || bad["fleet"] == "" {
 			t.Errorf("%s: good %v bad %v, want fleet refused", name, good, bad)
 		}
+	}
+}
+
+// The repo's own packs/ must parse, or a merge ships a pack that fails at sync
+// and pods keep the last good copy without anyone noticing.
+func TestRepoPacksParse(t *testing.T) {
+	files := map[string][]byte{listedMarker: nil}
+	root := "../../.."
+	err := filepath.WalkDir(filepath.Join(root, "packs"), func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		rel, _ := filepath.Rel(root, p)
+		files[filepath.ToSlash(rel)] = b
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, bad := ParseReviewed(files)
+	if len(bad) != 0 || good["fleet"].Text == "" || good["repo"].Text == "" {
+		t.Fatalf("good %v, bad %v", good, bad)
 	}
 }
