@@ -228,7 +228,7 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
                       #{shortId(p.sessionId)}
-                      {p.version && ` · ${truncate(p.version, 14)}`}
+                      {p.version && ` · ${truncate(p.version.replace(/^src-/, ""), 14)}`}
                     </text>
                     <text x={8} y={58} className={`text-[9px] ${s.text} fill-current`}>
                       {p.status}

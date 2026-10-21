@@ -732,9 +732,13 @@ browser cannot reach it directly) and renders the live topology from
 
 `core` and `provisioner` report the release from their `FLEET_VERSION` env,
 which `docker.yml`'s deploy job sets alongside the image pins (`dev` without
-it). Images are tagged `src-<hash of their inputs>`, not by release, and an
-image whose inputs didn't change is reused (`k8s/images.env`), so a binary
-cannot know its release. `worker` and `sidecar` show their image tag, the
+it). Images are tagged `src-<hash of their inputs, the ISO week and a salt>`,
+not by release. An image whose tag the registry already holds is reused, not
+rebuilt, and only a run that deploys pushes (dispatch and stale re-runs build
+without pushing), so a binary cannot know its release. `k8s/images.env`
+records what deploy pinned. Accepted: the first release of each ISO week
+rebuilds and rolls everything, and a `_test.go`/`.md` edit inside a
+component's directory rebuilds it. `worker` and `sidecar` show their image tag, the
 `src-…` the provisioner puts in the pod spec, which is the truth actually
 deployed. The dashboard SPA
 is compiled into `core`'s binary, so its version is `core`'s.

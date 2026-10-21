@@ -10,7 +10,7 @@ import (
 // TestImageInputsCoverEveryCopy guards the skip in docker.yml's build-push.
 //
 // An image is tagged by a hash of the paths .github/image-inputs.txt lists
-// for it, and not rebuilt while that hash matches the deployed tag. If a
+// for it, and not rebuilt while the registry already holds that tag. If a
 // Dockerfile COPYs a path the list omits, a change to that path leaves the
 // hash alone: CI goes green, the release deploys, and the change is in no
 // image. This fails on any COPY/ADD source (other than --from a build stage)
@@ -93,12 +93,13 @@ func readImageInputs(t *testing.T, root string) map[string][]string {
 }
 
 // copySources returns the context paths a Dockerfile's COPY/ADD lines read.
-// One instruction per line, which is how every Dockerfile here is written; a
-// JSON-form or continued COPY yields junk sources that fail as uncovered,
-// never a silent pass.
+// Lines ending in `\` are joined first, so a continued COPY is parsed whole.
+// A JSON-form COPY yields junk sources that fail as uncovered, never a silent
+// pass.
 func copySources(dockerfile string) []string {
 	var out []string
-	for _, line := range strings.Split(dockerfile, "\n") {
+	joined := strings.ReplaceAll(strings.ReplaceAll(dockerfile, "\r\n", "\n"), "\\\n", " ")
+	for _, line := range strings.Split(joined, "\n") {
 		f := strings.Fields(line)
 		if len(f) < 3 || (!strings.EqualFold(f[0], "COPY") && !strings.EqualFold(f[0], "ADD")) {
 			continue
@@ -124,4 +125,24 @@ func covered(src string, inputs []string) bool {
 		}
 	}
 	return false
+}
+
+func TestCopySourcesJoinsContinuedLines(t *testing.T) {
+	cases := []struct {
+		name, dockerfile string
+		want             []string
+	}{
+		{"flag then continuation", "COPY --chown=a:b \\\n    foo /dst\n", []string{"foo"}},
+		{"sources across lines", "COPY a \\\n    b /dst\n", []string{"a", "b"}},
+		{"from stage skipped", "COPY --from=build \\\n    /out/x /x\n", nil},
+		{"plain", "FROM x\nADD worker ./worker\nRUN true\n", []string{"worker"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := copySources(c.dockerfile)
+			if strings.Join(got, ",") != strings.Join(c.want, ",") {
+				t.Errorf("copySources(%q) = %q, want %q", c.dockerfile, got, c.want)
+			}
+		})
+	}
 }

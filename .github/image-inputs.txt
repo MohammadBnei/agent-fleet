@@ -1,6 +1,6 @@
 # What each image is built from, as repo-root paths. docker.yml tags an image
-# src-<hash of these paths' git trees>, and skips building it when that tag is
-# the one already deployed (k8s/images.env). A path an image COPYs but this
+# src-<hash of these paths' git trees>, and skips building it when the
+# registry already holds that tag. A path an image COPYs but this
 # file omits would let a change ship nowhere, so
 # core/internal/buildguard/inputs_test.go fails on any Dockerfile COPY/ADD
 # source not covered here. Each Dockerfile lives in its own directory, so the

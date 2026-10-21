@@ -37,7 +37,9 @@ name: Build, Test and Deploy
 
 on:
   # workflow_dispatch is the cutover's seeding path, and it stays afterwards
-  # as the way to measure the loop without cutting a release.
+  # as the way to measure the loop without cutting a release. It now builds
+  # (main only) whatever the registry lacks and pushes nothing; see build-push.
+  # The history below is why it once pushed.
   #
   # The registry starts empty of this repo's images, so flipping k8s/*.yaml to
   # registry.bnei.lan:5000 while the pinned tag is one only Docker Hub ever
@@ -57,10 +59,19 @@ on:
     # CHANGELOG.md and deploy's commit touches k8s/ — all ignored here, and pushes made
     # with the built-in GITHUB_TOKEN do not trigger workflows anyway, so the loop is
     # closed twice over.
-    paths-ignore:
-      - '**.md'
-      - 'k8s/*'
-      - 'package.json'
+    #
+    # `paths` with negations rather than paths-ignore, because order matters
+    # here and the last match wins: definitions/ and packs/ are mostly .md,
+    # and a merge touching only them must still cut a release, since that is
+    # how they go live (FLEET_VERSION is the provisioner's definitions ref).
+    # The release job's `untested` check mirrors this list.
+    paths:
+      - '**'
+      - '!**.md'
+      - '!k8s/*'
+      - '!package.json'
+      - 'definitions/**'
+      - 'packs/**'
     tags-ignore:
       - '*'
 
@@ -177,7 +188,10 @@ jobs:
           # run of its own, so it must not hold this one back. A newer commit
           # whose run never happens for another reason ([skip ci], a run
           # cancelled by hand) holds the release until the next merge.
-          untested=$(humans "$TESTED..HEAD" -- . ':(exclude,glob)**/*.md' ':(exclude,glob)k8s/*' ':(exclude)package.json')
+          # Two calls because a pathspec exclude cannot be re-included:
+          # md under definitions/ and packs/ does trigger a run.
+          untested=$(humans "$TESTED..HEAD" -- . ':(exclude,glob)**/*.md' ':(exclude,glob)k8s/*' ':(exclude)package.json'
+            humans "$TESTED..HEAD" -- definitions packs)
           if [ -n "$all" ]; then
             if [ -n "$untested" ]; then
               echo "main has untested commits past $TESTED; their own run releases them"
@@ -433,9 +447,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # fetch-depth 0 also brings origin/main, whose k8s/images.env says
-          # what is deployed.
-          #
           # The tag release-it just made on a release run; otherwise whatever triggered
           # us (a PR head, or main on a dispatch). Checking out `main` on a release run
           # would race the next push and could build a version never tagged.
@@ -450,15 +461,13 @@ jobs:
       - name: Ensure buildah
         run: command -v buildah || (sudo apt-get update -qq && sudo apt-get install -y -qq buildah)
 
-      # jq, not `node -p`: the build box has no Node runtime, and `node -p`
-      # did not fail the step when it was missing — the command substitution
-      # returned empty and the failure surfaced far downstream as
-      # `agent-fleet-core::  invalid reference format`. set -euo pipefail plus
-      # an explicit emptiness check so the next such gap fails where it
-      # happens. Also deliberately not jaywcjlove/github-action-package,
-      # which resolves from github.com at job time.
       # What this run pushes, if anything. The tag itself is per component
       # and computed in the build step: src-<hash of its inputs>.
+      #
+      # Only a run that deploys pushes. zot keeps the last 3 tags per repo
+      # (plus `latest`), so every push of a tag nothing deploys moves the
+      # deployed one closer to eviction, and a later skip ("the registry has
+      # it") would then pin a tag that is gone or about to be.
       - name: Decide what to push
         id: tag
         run: |
@@ -468,22 +477,22 @@ jobs:
               echo "push=false" >> "$GITHUB_OUTPUT"
               ;;
             workflow_dispatch)
-              # A rebuild of main without a release: src tags only. Never
-              # `latest`, which thot and catalog.go resolve, and nothing is
-              # deployed. A src tag names its content, so pushing one can't
-              # claim to be something it isn't the way a version tag could.
-              echo "push=true" >> "$GITHUB_OUTPUT"
-              echo "latest=false" >> "$GITHUB_OUTPUT"
+              # A measurement run on main: builds whatever the registry
+              # doesn't already hold, pushes nothing, deploys nothing.
+              echo "push=false" >> "$GITHUB_OUTPUT"
               ;;
             *)
               version="${{ needs.release.outputs.version }}"
-              echo "push=true" >> "$GITHUB_OUTPUT"
-              # A re-run of an old run must not move `latest` back.
+              # A re-run of an old run deploys nothing (deploy checks the
+              # same thing), so it pushes nothing either, and must not move
+              # `latest` back.
               newest=$(git tag --sort=-v:refname | head -1)
               if [ "$version" = "$newest" ]; then
+                echo "push=true" >> "$GITHUB_OUTPUT"
                 echo "latest=true" >> "$GITHUB_OUTPUT"
               else
-                echo "::notice::$version is not the newest tag ($newest); not moving latest"
+                echo "::notice::$version is not the newest tag ($newest); building without pushing"
+                echo "push=false" >> "$GITHUB_OUTPUT"
                 echo "latest=false" >> "$GITHUB_OUTPUT"
               fi
               ;;
@@ -558,6 +567,15 @@ jobs:
           # Part of the hash: every image is rebuilt at least weekly, so the
           # floating bases (golang:1.27, debian:12-slim, oven/bun:1-slim) and
           # the unpinned apt installs (CACHE_WEEK) don't go stale forever.
+          #
+          # Accepted costs of hashing this way:
+          #  - the first release of each ISO week rebuilds all six and rolls
+          #    core, the provisioner, the worker prepull and the migrate hook;
+          #  - a _test.go or .md edit under a component's directory rebuilds it
+          #    (the hash is of git trees, not of the build context);
+          #  - a skipped component does not re-sync `latest`: if an earlier,
+          #    newest release pushed `latest` and then failed to deploy,
+          #    `latest` stays on that image until the component next rebuilds.
           BUILD_WEEK=$(date -u +%G-%V)
 
           # src-<12 hex>: a hash of the git trees of the paths
@@ -576,12 +594,19 @@ jobs:
             printf '%sweek %s\nsalt %s\n' "$s" "$BUILD_WEEK" "$BUILD_SALT" | sha256sum | cut -c1-12
           }
 
-          # Skip a component only when its hash IS the deployed tag, from the
-          # k8s/images.env deploy last wrote to main. Not "the registry has
-          # this tag": the deployed tag is always its repo's newest push (PRs
-          # never push), so retention keeps it, while an older tag may be
-          # gone. No file or no line means build.
-          deployed=$(git show origin/main:k8s/images.env 2>/dev/null || true)
+          # Skip a component when the registry already has its src tag: same
+          # inputs, same week, so an image built from them exists. Neither
+          # built nor pushed again (a src tag is never re-pushed), and deploy
+          # pins it. Anonymous reads are open; any non-200, a network error
+          # included, means build. Not k8s/images.env: a tag deploy pinned
+          # can still have been evicted by later pushes, while this asks the
+          # registry what it holds right now.
+          in_registry() {
+            curl -fsI -o /dev/null \
+              -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+              -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+              "http://$REGISTRY/v2/agent-fleet-$1/manifests/$2"
+          }
 
           : > /tmp/timings.txt
           images=""
@@ -590,14 +615,17 @@ jobs:
             h=$(image_hash "$c")
             src="src-$h"
             images="$images $c=$src"
-            # Dispatch is the forced rebuild: it never skips.
-            if [ "$EVENT" != workflow_dispatch ] && printf '%s\n' "$deployed" | grep -qx "$c=$src"; then
-              echo "$c: skip ($src = deployed tag in k8s/images.env)"
+            if in_registry "$c" "$src"; then
+              echo "$c: skip (registry has agent-fleet-$c:$src)"
               printf '| %s | skip | - | %s |\n' "$c" "$src" >> /tmp/timings.txt
               continue
             fi
             # A PR build is never pushed and never tagged `latest`, so it can't
             # be mistaken for a real image on this shared box.
+            build_args=()
+            # Only Dockerfiles that declare it: buildah warns on an unconsumed
+            # build-arg, and core has no unpinned install to refresh.
+            grep -q '^ARG CACHE_WEEK' "$c/Dockerfile" && build_args+=(--build-arg "CACHE_WEEK=$BUILD_WEEK")
             if [ "$EVENT" = pull_request ]; then
               tags="$PR_TAG"
             else
@@ -634,7 +662,7 @@ jobs:
               --isolation chroot \
               --format docker \
               --pull=newer \
-              --build-arg "CACHE_WEEK=$BUILD_WEEK" \
+              ${build_args[@]+"${build_args[@]}"} \
               -f "$c/Dockerfile" \
               "${tag_args[@]}" \
               .
@@ -721,8 +749,8 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # Each image is pinned to its own src-<hash> tag, built this run or
-      # skipped because that tag is already deployed. The release version
+      # Each image is pinned to its own src-<hash> tag, built and pushed this
+      # run or skipped because the registry already had it. The release version
       # goes into FLEET_VERSION on core and the provisioner instead, so a
       # release that changes no image (definitions only) still rolls the
       # provisioner onto the new definitions ref.
