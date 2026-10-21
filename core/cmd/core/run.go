@@ -49,15 +49,20 @@ import (
 
 // checkCapacity: the definition pool sits INSIDE the global cap so admins are
 // never locked out by defined agents (docs/adr/0062).
-func checkCapacity(maxInFlight, maxDef int) error {
+func checkCapacity(maxInFlight, maxDef, maxExternal int) error {
 	if maxDef < 0 || maxDef >= maxInFlight {
 		return fmt.Errorf("MAX_DEFINITION_SESSIONS (%d) must be >= 0 and < MAX_IN_FLIGHT_TASKS (%d): definition sessions draw from a pool inside the global cap so admins are never locked out", maxDef, maxInFlight)
+	}
+	// docs/adr/0066 §8: the same rule one level down. With no definition
+	// pool, 0 is the only value.
+	if maxExternal < 0 || (maxExternal > 0 && maxExternal >= maxDef) {
+		return fmt.Errorf("MAX_EXTERNAL_SESSIONS (%d) must be >= 0 and < MAX_DEFINITION_SESSIONS (%d): member and client sessions draw from a pool inside the definition pool", maxExternal, maxDef)
 	}
 	return nil
 }
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
-	if err := checkCapacity(cfg.MaxInFlight, cfg.MaxDefinitionSessions); err != nil {
+	if err := checkCapacity(cfg.MaxInFlight, cfg.MaxDefinitionSessions, cfg.MaxExternalSessions); err != nil {
 		return err
 	}
 	store := transcript.NewPostgresStore(pool)
@@ -253,7 +258,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions}, loki, prom, scheduleStore, version)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions, MaxExternal: cfg.MaxExternalSessions, MaxPerMember: cfg.MaxSessionsPerMember}, loki, prom, scheduleStore, version)
 	dashboardSvc.SetDefinitions(defs)
 	packStore := packs.NewStore(pool)
 	defs.SetOnFiles(packStore.OnDefinitionFiles)
@@ -376,7 +381,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// call is Unauthenticated: the service has no unauthenticated mode.
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor())...)
-	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(defs), connect.WithInterceptors(memberInterceptors...))
+	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub), connect.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
 	mux.Handle("/", webui.Handler())
 	// The gate wraps the WHOLE mux, with an explicit exempt list inside it,

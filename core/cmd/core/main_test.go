@@ -33,14 +33,16 @@ func TestResolveLogLevel(t *testing.T) {
 // large as the cap would let defined agents lock admins out.
 func TestCheckCapacity(t *testing.T) {
 	for _, c := range []struct {
-		inFlight, def int
-		ok            bool
+		inFlight, def, ext int
+		ok                 bool
 	}{
-		{5, 0, true}, {5, 2, true}, {5, 4, true},
-		{5, 5, false}, {5, 6, false}, {5, -1, false},
+		{5, 0, 0, true}, {5, 2, 0, true}, {5, 4, 0, true},
+		{5, 5, 0, false}, {5, 6, 0, false}, {5, -1, 0, false},
+		// docs/adr/0066 §8: the external pool sits inside the definition pool.
+		{5, 2, 1, true}, {5, 2, 2, false}, {5, 0, 1, false}, {5, 2, -1, false},
 	} {
-		if err := checkCapacity(c.inFlight, c.def); (err == nil) != c.ok {
-			t.Errorf("checkCapacity(%d, %d) = %v, want ok=%v", c.inFlight, c.def, err, c.ok)
+		if err := checkCapacity(c.inFlight, c.def, c.ext); (err == nil) != c.ok {
+			t.Errorf("checkCapacity(%d, %d, %d) = %v, want ok=%v", c.inFlight, c.def, c.ext, err, c.ok)
 		}
 	}
 }

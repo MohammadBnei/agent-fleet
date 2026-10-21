@@ -122,7 +122,7 @@ func TestMemberListener(t *testing.T) {
 	if _, err := c.Open(ctx, connect.NewRequest(&agentfleetv1.OpenRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("member Open: %v", err)
 	}
-	if _, err := c.ListThreads(ctx, connect.NewRequest(&agentfleetv1.ListThreadsRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
+	if _, err := c.Stop(ctx, connect.NewRequest(&agentfleetv1.StopRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Errorf("not yet implemented: %v", err)
 	}
 }

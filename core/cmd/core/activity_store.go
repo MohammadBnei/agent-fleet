@@ -92,3 +92,11 @@ func (s activityTrackingStore) AppendReply(ctx context.Context, taskID, from, te
 	}
 	return seq, err
 }
+
+func (s activityTrackingStore) AppendAuthored(ctx context.Context, taskID string, author transcript.Author, text, msgType, idempotencyKey string, replyToSeq *int64) (int64, error) {
+	seq, err := s.Store.AppendAuthored(ctx, taskID, author, text, msgType, idempotencyKey, replyToSeq)
+	if err == nil {
+		s.touch(taskID, "human", msgType)
+	}
+	return seq, err
+}

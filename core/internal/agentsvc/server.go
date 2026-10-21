@@ -6,7 +6,10 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 )
@@ -16,6 +19,10 @@ import (
 type Server struct {
 	agentfleetv1connect.UnimplementedAgentServiceHandler
 	definitions heads
+	dash        *dashboard.Server
+	sessions    *sessions.Store
+	transcr     transcript.Store
+	hub         *dashboard.Hub
 }
 
 // heads is the part of *definitions.Registry this reads.
@@ -26,8 +33,10 @@ type heads interface {
 
 var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
 
-func NewServer(defs *definitions.Registry) *Server {
-	s := &Server{}
+// NewServer reuses the console's server for creates and warms, so every pod
+// still goes through WarmIfIdle (docs/adr/0066 §8).
+func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub) *Server {
+	s := &Server{dash: dash, sessions: store, transcr: transcr, hub: hub}
 	if defs != nil {
 		s.definitions = defs
 	}

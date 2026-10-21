@@ -313,3 +313,7 @@ func TestGetTranscript_OpensOnTheNewestPageAndWalksBack(t *testing.T) {
 			len(got), got[0].GetSeq(), got[len(got)-1].GetSeq())
 	}
 }
+
+func (*recordingStore) AppendAuthored(context.Context, string, transcript.Author, string, string, string, *int64) (int64, error) {
+	return 0, nil
+}

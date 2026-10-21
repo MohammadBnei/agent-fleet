@@ -72,6 +72,12 @@ type Config struct {
 	// (docs/adr/0062). 0 (the default) means no definition session can warm;
 	// run refuses to start unless it is >= 0 and < MaxInFlight.
 	MaxDefinitionSessions int
+	// MaxExternalSessions is the member and client pool INSIDE
+	// MaxDefinitionSessions, MaxSessionsPerMember one member's share of it
+	// (docs/adr/0066 §8). 0 (the default) means no member or client session
+	// can warm.
+	MaxExternalSessions  int
+	MaxSessionsPerMember int
 	// RepoOverridesPath is FLEET_REPO_OVERRIDES, infra-bootstrap's
 	// fleet-repo-overrides file as mounted (docs/adr/0074). Empty turns the
 	// GitHub repos sync off, and repos keeps whatever rows it has (kind).
@@ -197,6 +203,8 @@ func Load() Config {
 		STTToken:              os.Getenv("STT_TOKEN_FLEET"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxDefinitionSessions: envInt("MAX_DEFINITION_SESSIONS", 0),
+		MaxExternalSessions:   envInt("MAX_EXTERNAL_SESSIONS", 0),
+		MaxSessionsPerMember:  envInt("MAX_SESSIONS_PER_MEMBER", 1),
 		RepoOverridesPath:     os.Getenv("FLEET_REPO_OVERRIDES"),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,

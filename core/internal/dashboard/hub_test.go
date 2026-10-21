@@ -109,3 +109,7 @@ func TestHub_PollOnceOnlyPollsSubscribedTasks(t *testing.T) {
 		t.Errorf("seen[task-1] = %d, want 1 (advanced past the delivered entry)", seen)
 	}
 }
+
+func (*fakeStore) AppendAuthored(context.Context, string, transcript.Author, string, string, string, *int64) (int64, error) {
+	return 0, nil
+}
