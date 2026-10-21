@@ -28,7 +28,7 @@ ALTER TABLE sessions
   ),
   -- A client-opened session is owned by that client, and only a client has
   -- threads.
-  ADD CONSTRAINT sessions_invoker_owns CHECK (invoker IS NULL OR owner = 'client:' || invoker),
+  ADD CONSTRAINT sessions_invoker_owns CHECK (invoker IS NULL OR (owner IS NOT NULL AND owner = 'client:' || invoker)),
   ADD CONSTRAINT sessions_thread_key_invoker CHECK (thread_key IS NULL OR invoker IS NOT NULL);
 
 -- At most one open thread per (client, definition, key): Open's resume target
@@ -49,12 +49,15 @@ ALTER TABLE transcript
   ADD CONSTRAINT transcript_context_only_untrusted CHECK (NOT context_only OR untrusted);
 
 -- One answer per prompt (docs/adr/0066 §4): two members answering at once get
--- one answer and one AlreadyExists. The worker's own on-behalf resolution
--- races the human's today, and live data holds such pairs (2026-10-21: 4
--- pairs, human + agent permission_response). The first by seq is the one the
--- worker acted on; the later copy is dropped so the index can build.
-DELETE FROM transcript t
- USING transcript first
+-- one answer and one AlreadyExists. Live data holds 4 earlier pairs
+-- (2026-10-21: a plan approval into auto, where the worker records the mode
+-- switch's resolution and the dashboard then answers the same seq). The later
+-- copy is unlinked, not deleted: its seq stays taken, so MAX(seq)+1 never
+-- reuses a number a live cursor has passed, and a response with no
+-- reply_to_seq is skipped by every reader.
+UPDATE transcript t
+   SET reply_to_seq = NULL
+  FROM transcript first
  WHERE t.type IN ('answer', 'permission_response')
    AND first.type IN ('answer', 'permission_response')
    AND t.session_id = first.session_id
@@ -78,6 +81,9 @@ CREATE TABLE client_requests (
   claimed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (invoker, idempotency_key)
 );
+
+-- For the ON DELETE SET NULL when a session row is deleted.
+CREATE INDEX client_requests_session_idx ON client_requests (session_id) WHERE session_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- Grants: remembered approvals (docs/adr/0076 §3). Core renders the rule from

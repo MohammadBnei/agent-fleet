@@ -1,4 +1,4 @@
--- Reverses 000015. The duplicate replies the up step dropped are not restored.
+-- Reverses 000015. The duplicate replies the up step unlinked stay unlinked.
 DROP TABLE definition_grants;
 DROP TABLE session_grants;
 DROP TABLE client_requests;
