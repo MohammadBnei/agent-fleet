@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.5.0](https://github.com/MohammadBnei/agent-fleet/compare/6.4.0...6.5.0) (2026-10-21)
+
+### Features
+
+* **repos:** per-repo active switch and a repo manager for ~200 repos ([#291](https://github.com/MohammadBnei/agent-fleet/issues/291)) ([7917237](https://github.com/MohammadBnei/agent-fleet/commit/79172373c70a920b5e3e02755ae7231c6b5599f4))
+
 # [6.4.0](https://github.com/MohammadBnei/agent-fleet/compare/6.3.0...6.4.0) (2026-10-21)
 
 ### Features
