@@ -292,6 +292,12 @@ func TestStore_AllTargets(t *testing.T) {
 			t.Errorf("%s renders %v, want %v", repo, got, want)
 		}
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url, github_id) VALUES ('noid', 'https://github.com/o/noid', NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := s.RenderContext(ctx, KindRepo, "noid"); err != nil || len(r.Versions) == 0 || !strings.Contains(strings.Join(r.Versions, ","), "skills@") {
+		t.Errorf("a repo with no GitHub id rendered %+v, %v; want the wildcard pack", r.Versions, err)
+	}
 	if live, err := latest(ctx, pool, KindDefinition, "dev-notes"); err != nil || len(live) != 1 {
 		t.Errorf("definition got %v, %v; want the wildcard pack", live, err)
 	}

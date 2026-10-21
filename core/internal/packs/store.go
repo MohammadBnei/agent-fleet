@@ -290,7 +290,7 @@ func (s *Store) Detach(ctx context.Context, kind, name, pack string) error {
 // RenderContext renders what a warm of this target loads: its attached live
 // packs at their latest version, plus the last good reviewed packs (fleet for
 // every pod, repo for a repo session). A repo with no GitHub id renders
-// without live packs rather than failing the warm.
+// with only its kind's "*" packs rather than failing the warm.
 func (s *Store) RenderContext(ctx context.Context, kind, name string) (Rendered, error) {
 	repo, fleet, notes, err := reviewed(ctx, s.pool, kind == KindRepo)
 	if err != nil {
@@ -300,7 +300,11 @@ func (s *Store) RenderContext(ctx context.Context, kind, name string) (Rendered,
 	target, err := targetID(ctx, s.pool, kind, name)
 	switch {
 	case errors.Is(err, ErrNotFound):
+		// Its own packs are unreachable, the kind's "*" packs are not.
 		notes = append(notes, err.Error())
+		if live, err = latest(ctx, s.pool, kind, AllTargets); err != nil {
+			return Rendered{}, err
+		}
 	case err != nil:
 		return Rendered{}, err
 	default:
@@ -336,31 +340,25 @@ func checkComposed(ctx context.Context, tx pgx.Tx, kind, target string) error {
 		}
 		targets = append(targets, more...)
 	}
-	for _, t := range targets {
-		if err := checkOne(ctx, tx, kind, t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func checkOne(ctx context.Context, tx pgx.Tx, kind, target string) error {
-	live, err := latest(ctx, tx, kind, target)
-	if err != nil {
-		return err
-	}
 	repo, fleet, _, err := reviewed(ctx, tx, kind == KindRepo)
 	if err != nil {
 		return err
 	}
-	for _, v := range []*Version{repo, fleet} {
-		if v != nil {
-			live = append(live, *v)
+	for _, t := range targets {
+		live, err := latest(ctx, tx, kind, t)
+		if err != nil {
+			return err
 		}
-	}
-	text, skills := composedSize(live)
-	if text > MaxText || skills > MaxSkills {
-		return fmt.Errorf("%w: composed size %d text / %d skill bytes, max %d / %d", ErrInvalid, text, skills, MaxText, MaxSkills)
+		for _, v := range []*Version{repo, fleet} {
+			if v != nil {
+				live = append(live, *v)
+			}
+		}
+		// Named, since under "*" it may be any target of the kind, a repo
+		// that left the fleet (#<github id>) included.
+		if text, skills := composedSize(live); text > MaxText || skills > MaxSkills {
+			return fmt.Errorf("%w: %s %s: composed size %d text / %d skill bytes, max %d / %d", ErrInvalid, kind, t, text, skills, MaxText, MaxSkills)
+		}
 	}
 	return nil
 }
