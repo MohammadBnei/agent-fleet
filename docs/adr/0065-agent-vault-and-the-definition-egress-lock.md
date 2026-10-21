@@ -264,8 +264,8 @@ open egress. Presence, not enforcement: that was verified live (spike 1).
 
 What breaks in a definition pod, deliberately: `WebFetch` and any HTTP outside
 the vault's rules (403 `no_match`); `npm`/`bun`/`pip`/`go`/`cargo` installs;
-`gh` outside `/repos/<o>/<r>/*`; Playwright/Chromium browsing (Chromium ignores
-`HTTPS_PROXY`, the CNP drops it direct); submodules and LFS objects on other
+`gh` outside `/repos/<o>/<r>/*`; Playwright/Chromium browsing (Playwright MCP
+starts it with empty proxy env, docs/adr/0075, and the CNP drops it direct); submodules and LFS objects on other
 hosts; Claude Code auto-update and telemetry; any MCP server that needs the
 network. What works: Claude Code to `api.anthropic.com` (every path), server-side
 `WebSearch`, git fetch/pull/push to the one repo, local tools, the sidecar to

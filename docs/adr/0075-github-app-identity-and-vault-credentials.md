@@ -238,11 +238,15 @@ Each step is one PR, merged by the user.
   the worker can use the vault through the router anyway and a stolen token
   works only from a pod the vault's NetworkPolicy admits. The sidecar's
   telemetry git, which runs in the agent's tree, has fsmonitor, hooks,
-  external diff and textconv off; a `.gitattributes` clean filter still runs.
+  external diff, textconv and lazy fetches off; a `.gitattributes` clean
+  filter still runs (git 2.39 has no `GIT_ATTR_SOURCE`).
   **The browser goes direct**, never through the router: through it, a page's
   script would reach GitHub and Anthropic as the fleet (the vault injects on
   the wire, and api.github.com answers CORS with `*`). Playwright starts with
-  empty proxy env, so no NSS import of the vault CA is needed. Agent Vault's MITM is HTTP/1.1 only and drops trailers
+  empty proxy env, so no NSS import of the vault CA is needed. Accepted
+  residual: a browser the agent starts from Bash (`playwright test`) inherits
+  the router, and a config with `ignoreHTTPSErrors` lets its pages reach the
+  three vault hosts as the fleet. Agent Vault's MITM is HTTP/1.1 only and drops trailers
   (`internal/mitm/proxy.go:24` in v0.40.0), so this is what keeps HTTP/2 and
   gRPC working for every other host. It also takes most traffic out of the
   vault's plaintext view and rate limit. HTTP/2 and gRPC to the

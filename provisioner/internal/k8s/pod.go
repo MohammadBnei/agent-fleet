@@ -644,7 +644,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// Raised from 250m/256Mi: in a repo pod every HTTPS
 					// connection the worker makes is tunnelled through this
 					// container (sidecar/internal/egress), and an OOM here
-					// drops all of them, MCP included.
+					// drops all of them, MCP included. Definition pods get
+					// the same limit: one number, requests unchanged.
 					Limits: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("1000m"),
 						corev1.ResourceMemory: resource.MustParse("512Mi"),
