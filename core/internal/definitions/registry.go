@@ -62,6 +62,7 @@ type Registry struct {
 	mu       sync.RWMutex
 	synced   bool
 	heads    map[string]Head
+	clients  map[string]Client
 	syncErrs []string
 	// lastErr is the last failed sync's error, cleared by a good one: the
 	// heads are then last-known-good, and List says so.
@@ -104,7 +105,7 @@ func (r *Registry) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	results, fileErrs := Load(files)
+	results, validClients, fileErrs := LoadAll(files)
 	syncErrs := make([]string, 0, len(fileErrs))
 	for _, e := range fileErrs {
 		syncErrs = append(syncErrs, e.Error())
@@ -219,7 +220,11 @@ func (r *Registry) sync(ctx context.Context) error {
 	}
 
 	r.mu.Lock()
-	r.synced, r.heads, r.syncErrs, r.lastGood = true, heads, syncErrs, time.Now()
+	clients := make(map[string]Client, len(validClients))
+	for _, c := range validClients {
+		clients[c.Name] = c
+	}
+	r.synced, r.heads, r.clients, r.syncErrs, r.lastGood = true, heads, clients, syncErrs, time.Now()
 	r.mu.Unlock()
 	if r.onFiles != nil {
 		hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncTimeout)
@@ -362,6 +367,35 @@ func (r *Registry) Resolve(name string) (Head, error) {
 		return Head{}, fmt.Errorf("%w: %s", ErrInvalid, h.Err)
 	}
 	return h, nil
+}
+
+// Clients is every valid client registration after the last good sync,
+// empty before the first and once stale (the same rule as Resolve).
+func (r *Registry) Clients() []Client {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.synced || time.Since(r.lastGood) > staleAfter {
+		return nil
+	}
+	out := make([]Client, 0, len(r.clients))
+	for _, c := range r.clients {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// MayOpen is docs/adr/0066 §5 for a client: it lists the definition, and the
+// definition's current head lists it in invokers. Both from the last sync.
+func (r *Registry) MayOpen(client, definition string) (Head, bool) {
+	h, err := r.Resolve(definition)
+	if err != nil {
+		return Head{}, false
+	}
+	r.mu.RLock()
+	c, ok := r.clients[client]
+	r.mu.RUnlock()
+	return h, ok && slices.Contains(c.Spec.Definitions, definition) && slices.Contains(h.Effective.Invokers, client)
 }
 
 // EmbedOrigins is every exact origin a valid HEAD definition lists in

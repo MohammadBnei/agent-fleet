@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -180,6 +181,12 @@ func (s *Server) WaitForMessages(ctx context.Context, req *agentfleetv1.ReadTran
 		entries, nextSeq, err := s.transcr.ReadSince(ctx, taskID, sinceSeq, 1000)
 		if err != nil {
 			return nil, fmt.Errorf("WaitForMessages: %w", err)
+		}
+		// Context-only entries are not the agent's input (docs/adr/0067 §3);
+		// the cursor still moves past them.
+		entries = slices.DeleteFunc(entries, func(e transcript.Entry) bool { return e.ContextOnly })
+		if len(entries) == 0 && nextSeq > sinceSeq {
+			sinceSeq = nextSeq
 		}
 		if len(entries) > 0 || time.Now().After(deadline) {
 			if len(entries) == 0 {
@@ -687,6 +694,12 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 			// target's own from="agent" output — must not be streamed back,
 			// or a session feeds itself forever.
 			if e.From != "human" && e.From != "session" {
+				continue
+			}
+			// A context-only entry never starts a turn (docs/adr/0067 §3).
+			// ponytail: not delivered at all yet; the labelled hand-over at
+			// the next turn comes with the dispatcher's follow-ups.
+			if e.ContextOnly {
 				continue
 			}
 			if err := stream.Send(entryToProto(taskID, e)); err != nil {

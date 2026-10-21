@@ -2,6 +2,7 @@ package agentsvc
 
 import (
 	"context"
+	"slices"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,6 +54,24 @@ func TestAllowed(t *testing.T) {
 type fakeHeads []definitions.Head
 
 func (f fakeHeads) List() ([]definitions.Head, []string) { return f, nil }
+
+// testClients is what fakeHeads reports as the sync's client registrations.
+var testClients []definitions.Client
+
+func (f fakeHeads) Clients() []definitions.Client { return testClients }
+
+func (f fakeHeads) MayOpen(client, definition string) (definitions.Head, bool) {
+	h, err := f.Resolve(definition)
+	if err != nil {
+		return definitions.Head{}, false
+	}
+	for _, c := range testClients {
+		if c.Name == client {
+			return h, slices.Contains(c.Spec.Definitions, definition) && slices.Contains(h.Effective.Invokers, client)
+		}
+	}
+	return definitions.Head{}, false
+}
 
 func (f fakeHeads) Resolve(name string) (definitions.Head, error) {
 	for _, h := range f {

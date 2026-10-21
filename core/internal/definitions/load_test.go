@@ -559,3 +559,29 @@ func TestLoad_IslandWorkspaceIsNotShared(t *testing.T) {
 		t.Fatalf("plain shares the island's repo without embed: %v", err)
 	}
 }
+
+// docs/adr/0066 §3: a tokenRef is a FLEET_CLIENT_TOKEN_* name, owned by one
+// client; none is an in-process client.
+func TestLoad_ClientTokenRefs(t *testing.T) {
+	other := strings.ReplaceAll(clientWith("", "", ""), "name: bridge", "name: other")
+	_, valid, fileErrs := LoadAll(map[string][]byte{
+		"definitions/base.yaml":           []byte(baseYAML),
+		"definitions/clients/bridge.yaml": []byte(clientWith("", "", "")),
+		"definitions/clients/other.yaml":  []byte(other),
+	})
+	if len(valid) != 1 || len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), "already client") {
+		t.Fatalf("shared tokenRef: valid %v, errs %v", valid, fileErrs)
+	}
+	_, _, fileErrs = LoadAll(map[string][]byte{
+		"definitions/base.yaml":           []byte(baseYAML),
+		"definitions/clients/bridge.yaml": []byte(clientWith("", "AGENTFLEET_DB_PASSWORD", "")),
+	})
+	if len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), "FLEET_CLIENT_TOKEN_") {
+		t.Fatalf("tokenRef outside the prefix: %v", fileErrs)
+	}
+	noRef := strings.Replace(clientWith("", "", ""), "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n", "", 1)
+	_, valid, fileErrs = LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(noRef)})
+	if len(fileErrs) != 0 || len(valid) != 1 || valid[0].Spec.TokenRef != "" {
+		t.Fatalf("in-process client: %v %v", valid, fileErrs)
+	}
+}

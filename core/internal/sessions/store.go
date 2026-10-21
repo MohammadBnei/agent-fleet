@@ -261,6 +261,9 @@ type CreateParams struct {
 	Visibility  string
 	Interaction string
 	Lifecycle   string
+	// Invoker and ThreadKey name a client's thread (docs/adr/0066 §6).
+	Invoker   string
+	ThreadKey string
 }
 
 func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
@@ -281,12 +284,12 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort,
-		                      owner, visibility, interaction, lifecycle)
+		                      owner, visibility, interaction, lifecycle, invoker, thread_key)
 		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''),
-		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''))
+		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), NULLIF($14, ''))
 		RETURNING id
 	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort,
-		p.Owner, p.Visibility, p.Interaction, p.Lifecycle).Scan(&id)
+		p.Owner, p.Visibility, p.Interaction, p.Lifecycle, p.Invoker, p.ThreadKey).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)

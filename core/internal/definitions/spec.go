@@ -153,7 +153,17 @@ type Limits struct {
 }
 
 type ClientSpec struct {
-	TokenRef    string    `yaml:"tokenRef"    json:"tokenRef"`
+	// TokenRef names core's env var holding the client's bearer for :9091.
+	// Empty is an in-process client (the bridge's dispatcher, docs/adr/0066
+	// §3): it never matches a bearer, so its rights are not reachable from the
+	// network.
+	TokenRef    string    `yaml:"tokenRef,omitempty" json:"tokenRef,omitempty"`
 	Actors      AllowList `yaml:"actors"      json:"actors"`
 	Definitions []string  `yaml:"definitions" json:"definitions"`
+}
+
+// Client is a valid client registration after a sync.
+type Client struct {
+	Name string
+	Spec ClientSpec
 }

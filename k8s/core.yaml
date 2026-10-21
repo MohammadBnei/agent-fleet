@@ -44,6 +44,11 @@ service:
       port: 9090
     - name: metrics
       port: 9093
+    # docs/adr/0066 §3: AgentService for registered clients, bearer only.
+    # ClusterIP: no IngressRoute or Traefik route ever reaches it, and the
+    # NetworkPolicy below admits only client namespaces.
+    - name: clients
+      port: 9091
 
 # This app's first public-facing surface (the dashboard) — hostname itself
 # is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
@@ -382,6 +387,17 @@ extraManifests:
                   app: provisioner
           ports:
             - port: 9090
+              protocol: TCP
+        # :9091 AgentService for clients (docs/adr/0066 §3). Only namespaces
+        # labelled fleet.bnei.dev/client; agent-fleet itself is never one, so
+        # worker and definition pods cannot reach it.
+        - from:
+            - namespaceSelector:
+                matchExpressions:
+                  - key: fleet.bnei.dev/client
+                    operator: Exists
+          ports:
+            - port: 9091
               protocol: TCP
         # :9093 /metrics. Prometheus (the ServiceMonitor above).
         - from:

@@ -19,16 +19,29 @@ import (
 type Server struct {
 	agentfleetv1connect.UnimplementedAgentServiceHandler
 	definitions heads
-	dash        *dashboard.Server
+	dash        console
 	sessions    *sessions.Store
 	transcr     transcript.Store
 	hub         *dashboard.Hub
+}
+
+// console is the part of *dashboard.Server AgentService reuses, so every pod
+// still goes through WarmIfIdle (docs/adr/0066 §8). An interface so a test
+// can stand in for the warm, which needs a provisioner.
+type console interface {
+	CreateThread(ctx context.Context, head definitions.Head, title string, thread sessions.CreateParams) (*sessions.Session, error)
+	WarmIfIdle(ctx context.Context, sessionID string) (string, error)
+	ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error)
+	SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error)
+	StopSession(ctx context.Context, req *connect.Request[agentfleetv1.StopSessionRequest]) (*connect.Response[agentfleetv1.StopSessionResponse], error)
 }
 
 // heads is the part of *definitions.Registry this reads.
 type heads interface {
 	List() ([]definitions.Head, []string)
 	Resolve(name string) (definitions.Head, error)
+	MayOpen(client, definition string) (definitions.Head, bool)
+	Clients() []definitions.Client
 }
 
 var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
@@ -36,7 +49,10 @@ var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
 // NewServer reuses the console's server for creates and warms, so every pod
 // still goes through WarmIfIdle (docs/adr/0066 §8).
 func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub) *Server {
-	s := &Server{dash: dash, sessions: store, transcr: transcr, hub: hub}
+	s := &Server{sessions: store, transcr: transcr, hub: hub}
+	if dash != nil {
+		s.dash = dash
+	}
 	if defs != nil {
 		s.definitions = defs
 	}
@@ -49,6 +65,19 @@ func principal(ctx context.Context) (Principal, error) {
 		return Principal{}, connect.NewError(connect.CodeUnauthenticated, errNoPrincipal)
 	}
 	return p, nil
+}
+
+// usable is the head of definition if p may use it now: a member through
+// mayUse, a client through the registry's two-sided agreement.
+func (s *Server) usable(p Principal, definition string) (definitions.Head, bool) {
+	if p.Client != "" {
+		return s.definitions.MayOpen(p.Client, definition)
+	}
+	h, err := s.definitions.Resolve(definition)
+	if err != nil || !mayUse(p, h.Effective) {
+		return definitions.Head{}, false
+	}
+	return h, true
 }
 
 // mayUse is docs/adr/0066 §5 for a member, judged on the current head: in the
@@ -74,15 +103,15 @@ func (s *Server) ListDefinitions(ctx context.Context, _ *connect.Request[agentfl
 		return nil, err
 	}
 	out := &agentfleetv1.AgentServiceListDefinitionsResponse{}
-	if s.definitions == nil || p.Member == nil {
+	if s.definitions == nil {
 		return connect.NewResponse(out), nil
 	}
 	listed, _ := s.definitions.List()
 	for _, l := range listed {
 		// Resolve, not the listed head: it fails closed before the first
 		// sync and once the last good one is stale, as creating does.
-		h, err := s.definitions.Resolve(l.Name)
-		if err != nil || !mayUse(p, h.Effective) {
+		h, ok := s.usable(p, l.Name)
+		if !ok {
 			continue
 		}
 		e := h.Effective

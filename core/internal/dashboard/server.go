@@ -230,6 +230,8 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		Visibility:     thread.Visibility,
 		Interaction:    thread.Interaction,
 		Lifecycle:      thread.Lifecycle,
+		Invoker:        thread.Invoker,
+		ThreadKey:      thread.ThreadKey,
 	}
 	// No capacity check for either kind: a create provisions nothing
 	// (docs/adr/0048 §1), so ReserveSlot at warm is the one capacity gate

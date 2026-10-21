@@ -140,7 +140,7 @@ func (s *Server) ListThreads(ctx context.Context, req *connect.Request[agentflee
 			if req.Msg.GetDefinition() != "" && l.Name != req.Msg.GetDefinition() {
 				continue
 			}
-			if h, err := s.definitions.Resolve(l.Name); p.Admin() || (err == nil && p.Member != nil && mayUse(p, h.Effective)) || p.Client != "" {
+			if _, ok := s.usable(p, l.Name); ok || p.Admin() {
 				names = append(names, l.Name)
 			}
 		}
