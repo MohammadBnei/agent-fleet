@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.16.0](https://github.com/MohammadBnei/agent-fleet/compare/6.15.0...6.16.0) (2026-10-21)
+
+### Features
+
+* **provisioner:** repo pods behind their owner's vault (ADR-0075 step 4) ([#307](https://github.com/MohammadBnei/agent-fleet/issues/307)) ([a8cee4d](https://github.com/MohammadBnei/agent-fleet/commit/a8cee4dff0f0da1537eef33424f024bd6f108fa8))
+
 # [6.15.0](https://github.com/MohammadBnei/agent-fleet/compare/6.14.1...6.15.0) (2026-10-21)
 
 ### Features
