@@ -64,9 +64,11 @@ on:
     tags-ignore:
       - '*'
 
-# Two lanes. PR runs get one group per ref and cancel their own older run:
-# only the newest push of a PR is worth building. Push and dispatch runs share
-# `release` and are never cancelled, only queued.
+# Three lanes. PR runs get one group per ref and cancel their own older run:
+# only the newest push of a PR is worth building. Push runs share `release`
+# and are never cancelled, only queued. Dispatch gets its own lane: in
+# `release` it could replace a pending push run, and since dispatch never
+# releases, that push's commits would wait for some later merge.
 #
 # They used to share one `release` group with cancel-in-progress, so a PR
 # push cancelled a running main release (v5.6.0 was lost that way, #278
@@ -80,7 +82,7 @@ on:
 # nothing new since the last tag (only deploy's bot commit) skips the
 # release entirely; see the release job.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'release' }}
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || github.event_name == 'push' && 'release' || 'dispatch' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -133,7 +135,7 @@ jobs:
     permissions:
       contents: write
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.version.outputs.version || steps.check.outputs.version }}
     steps:
       # ref: main, not the SHA that triggered the run. A queued run starts after
       # the previous release pushed its tag and deploy commit; from the
@@ -145,25 +147,45 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # Only deploy's "chore(deploy): bump image tag" commit since the last tag
-      # means the previous release already shipped everything. release-it
-      # would still cut a patch for it (the angular preset bumps patch for any
-      # commit), rebuilding every image for nothing. `version` stays empty and
-      # build-push and deploy skip on that.
+      # Three outcomes, decided before anything is installed:
+      #  - release: human commits since the last tag. Only when none of them is
+      #    newer than the commit THIS run tested: checking out main can pick up
+      #    a merge whose tests are still running in its own (queued) run, and
+      #    that run releases it once its tests pass.
+      #  - redeploy: nothing new, but the last tag never got its deploy commit
+      #    (its build or deploy failed). Build and deploy that tag again,
+      #    without release-it.
+      #  - skip: only deploy's bot commit since the last tag. release-it would
+      #    still cut a patch (the angular preset bumps patch for any commit) and
+      #    rebuild every image for nothing.
       - name: Anything to release?
         id: check
+        env:
+          TESTED: ${{ github.sha }}
         run: |
           set -euo pipefail
           last=$(git describe --tags --abbrev=0)
-          if git log --format=%an "$last..HEAD" | grep -qvx agent-fleet-ci; then
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
+          humans() { git log --format=%an "$@" | grep -vx agent-fleet-ci || true; }
+          if [ -n "$(humans "$last..HEAD")" ]; then
+            # Same paths as `on.push.paths-ignore`: a docs-only merge gets no
+            # run of its own, so it must not hold this one back.
+            if [ -n "$(humans "$TESTED..HEAD" -- . ':(exclude,glob)**/*.md' ':(exclude,glob)k8s/*' ':(exclude)package.json')" ]; then
+              echo "main has untested commits past $TESTED; their own run releases them"
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=release" >> "$GITHUB_OUTPUT"
+            fi
+          elif git log --format=%H --author=agent-fleet-ci --grep="bump image tag to $last\$" "$last..HEAD" | grep -q .; then
             echo "nothing but deploy commits since $last; skipping the release"
-            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+          else
+            echo "$last was never deployed; building and deploying it again"
+            echo "mode=redeploy" >> "$GITHUB_OUTPUT"
+            echo "version=$last" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Bun
-        if: steps.check.outputs.release == 'true'
+        if: steps.check.outputs.mode == 'release'
         uses: oven-sh/setup-bun@v2
 
       # release-it 21 and conventional-changelog 12 require Node
@@ -171,27 +193,27 @@ jobs:
       # release-it under node (its bin has a node shebang), so the runner's
       # default Node is what runs it — pin one that satisfies both.
       - name: Set up Node
-        if: steps.check.outputs.release == 'true'
+        if: steps.check.outputs.mode == 'release'
         uses: actions/setup-node@v5
         with:
           node-version: '24.15'
 
       - name: Install dependencies
-        if: steps.check.outputs.release == 'true'
+        if: steps.check.outputs.mode == 'release'
         run: bun install
 
       - name: git config
-        if: steps.check.outputs.release == 'true'
+        if: steps.check.outputs.mode == 'release'
         run: |
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
       - name: Run release-it
-        if: steps.check.outputs.release == 'true'
+        if: steps.check.outputs.mode == 'release'
         run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && bun run release
 
       - name: Read the released version
-        if: steps.check.outputs.release == 'true'
+        if: steps.check.outputs.mode == 'release'
         id: version
         run: |
           set -euo pipefail
@@ -648,6 +670,7 @@ jobs:
               exit 0
             fi
             echo "::warning::deploy push failed (attempt $attempt), retrying"
+            git rebase --abort 2>/dev/null || true
             sleep 5
           done
           echo "::error::deploy push failed 3 times"
