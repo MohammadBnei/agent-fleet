@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.21.0](https://github.com/MohammadBnei/agent-fleet/compare/6.20.0...6.21.0) (2026-10-21)
+
+### Features
+
+* **agentsvc:** the client listener, Open and CloseThread (ADR-0066 §3, §6, §7) ([#313](https://github.com/MohammadBnei/agent-fleet/issues/313)) ([e3457e6](https://github.com/MohammadBnei/agent-fleet/commit/e3457e68a67eddb911acba5ffd966ad976c6c927))
+
 # [6.20.0](https://github.com/MohammadBnei/agent-fleet/compare/6.19.0...6.20.0) (2026-10-21)
 
 ### Features
