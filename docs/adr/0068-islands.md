@@ -99,10 +99,10 @@ The owner rejected the iframe on four counts:
     `Access-Control-Allow-Credentials: true`; `Vary: Origin` goes on every
     `AgentService` response, CORS or not;
   - `Access-Control-Allow-Headers` lists the Connect headers and
-    AgentService's CSRF header only, never `DashboardService`'s. Every other
-    path, `DashboardService` and `/auth/*` included, still sends no CORS
-    header, so the dashboard's CSRF header keeps forcing a preflight that is
-    never answered.
+    `X-Fleet-Dashboard`, the CSRF header both services share, and only on the
+    AgentService prefix. A preflight is answered per path, and every other
+    path (`DashboardService` and `/auth/*` included) sends no CORS header, so
+    a cross-origin call there still dies at its unanswered preflight.
 - **What `Origin` means** (amends ADR-0066 §1 and §4). `Origin` is a browser
   signal; a non-browser caller can set anything, and on `:8080` it still needs
   a member cookie.
@@ -118,17 +118,21 @@ The owner rejected the iframe on four counts:
     cannot reach another.
   - **Anything else, `null` included:** refused, by the CORS layer itself
     with a 403 before the Gate or any handler runs: a refused preflight alone
-    does not stop a simple POST. AgentService's interceptor refuses the same
+    does not stop a simple POST. A non-browser caller sending an odd
+    `Origin` is refused too; machine clients belong on `:9091`. AgentService's interceptor refuses the same
     origins again as a second layer.
   The CSRF header stays mandatory on every `AgentService` call, unary GETs
   included.
-- **Static bundles.** `/islands/*` joins the gate's exempt paths as the
-  first prefix, matched on the same escaped string the file server uses, with
-  a path-traversal test. The entry module (`/islands/fleet-agent.js`) has a
-  stable URL and `Cache-Control: no-cache` with an ETag, so a fix or rollback
-  reaches hosts at once. Its chunks are content-hashed and `immutable`. All of
-  it is served with `Access-Control-Allow-Origin: *`: it holds no data, and
-  module scripts load in CORS mode.
+- **Static bundles.** `/islands/*` becomes the gate's first exempt prefix
+  (the other exemptions are exact paths), matched on the same escaped string
+  the file server uses, with a path-traversal test. The entry module
+  (`/islands/fleet-agent.js`) has a stable URL and `Cache-Control: no-cache`
+  with an ETag, so a fix or rollback reaches hosts at once. It is one file;
+  the only lazy chunk is mermaid, content-hashed and `immutable`. A page that
+  still runs the previous entry after a release can miss that chunk, and then
+  shows the diagram's source instead. All of it is served with
+  `Access-Control-Allow-Origin: *`: it holds no data, and module scripts load
+  in CORS mode.
 - **Login.** On `Unauthenticated` the element shows "Sign in", which opens
   `fleet.bnei.dev/auth/login?popup=1` top-level in a popup. `popup=1` only
   selects the fixed local landing page `/auth/done`, which joins the exempt
@@ -176,8 +180,12 @@ boundaries either: the script calls the API, not the element.
   output, other members' messages in shared threads, text the agent read from
   the web or the space. A rendering bug there is script in the host. So:
   markdown renders with raw HTML off, every produced HTML string goes through
-  a sanitizer before it reaches the DOM, links get `rel="noopener"` and
-  never a `javascript:` URL, and mermaid runs with `securityLevel: "strict"`.
+  DOMPurify (default profile, no `style`, no `<form>`, URLs limited to
+  `https:`, `mailto:` and relative) before it reaches the DOM, links get
+  `rel="noopener noreferrer"`, and mermaid runs with
+  `securityLevel: "strict"`. A test renders a fixed XSS corpus (script tags,
+  event handlers, `javascript:` links, SVG payloads, mermaid click
+  directives) and asserts no script runs.
 - **Accepted residual:** one approved or member-written script, a sanitizer
   bug, or any XSS on an allowlisted host can act as every member who opens
   that page, within that member's rights on the host's definitions:

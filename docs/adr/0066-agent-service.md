@@ -95,8 +95,8 @@ ignored.
   copied into a user table.
 - **The `:8080` gate stays `AdminOnly` by default.** A member reaches only
   an explicit allowlist of paths: the `AgentService` path prefix, `/auth/*`,
-  and later `/islands/*` and `/auth/done` (ADR-0068, which drops the
-  planned `/embed/*`). Any route added later is admin-only unless
+  and later the `/islands/*` prefix and the exact path `/auth/done`
+  (ADR-0068, which drops the planned `/embed/*`). Any route added later is admin-only unless
   someone adds it to that list. `DashboardService` keeps its own `AdminOnly`
   interceptor as a second layer, and ADR-0069's test matrix gains a member
   identity that gets `PermissionDenied` on every `DashboardService` method
