@@ -300,7 +300,12 @@ func waitForMessagesHandler(core MessageWaiter) server.ToolHandlerFunc {
 			// crowd out the five short directives that came after it.
 			text := truncate(e.GetText(), maxMessageEntryBytes,
 				"This one message was long; the rest of the batch is intact. Ask the sender to re-send the specific part you need.")
-			messages = append(messages, map[string]any{"from": e.GetFrom(), "text": text, "type": protoTypeToString(e.GetType())})
+			m := map[string]any{"from": e.GetFrom(), "text": text, "type": protoTypeToString(e.GetType())}
+			// Who wrote it, in a shared thread (docs/adr/0067 §3).
+			if a := e.GetAuthorName(); a != "" {
+				m["author"] = a
+			}
+			messages = append(messages, m)
 		}
 		body, _ := json.Marshal(map[string]any{"messages": messages, "nextIndex": nextSeq})
 		return mcp.NewToolResultText(string(body)), nil

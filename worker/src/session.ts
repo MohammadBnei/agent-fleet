@@ -469,7 +469,21 @@ export const ANSWER_NO_REASK =
 // The dashboard writes an answer as {"answers": {"<question text>": "<label>"}}
 // (dashboard/src/components/QuestionCard.tsx), so the question text travels
 // with the answer and survives a pod restart without a lookup.
-export function formatAnswerTurn(text: string, replyTo?: number): string {
+// The author envelope (docs/adr/0067 §3): in a shared thread several people
+// talk to one agent, so a human turn says who wrote it. The name is core's
+// author column, never anything parsed from the message, and is flattened so
+// it cannot open a line of its own.
+export function authorLabel(authorName?: string): string | undefined {
+  const name = authorName?.replace(/[\r\n\t\[\]]+/g, " ").trim().slice(0, 120);
+  return name ? name : undefined;
+}
+
+export function humanTurn(text: string, authorName?: string): string {
+  const who = authorLabel(authorName);
+  return who ? `[message from ${who}]\n${text}` : text;
+}
+
+export function formatAnswerTurn(text: string, replyTo?: number, authorName?: string): string {
   let body = text;
   try {
     const answers = (JSON.parse(text) as { answers?: unknown }).answers;
@@ -482,7 +496,9 @@ export function formatAnswerTurn(text: string, replyTo?: number): string {
   } catch {
     // Not JSON: deliver the raw text rather than nothing.
   }
-  return `Answer to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
+  const who = authorLabel(authorName);
+  const from = who ? ` from ${who}` : "";
+  return `Answer${from} to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
 }
 
 // The sidecar's per-call ceiling, set here rather than left to the CLI's
@@ -1339,7 +1355,7 @@ export async function runSession(): Promise<SessionResult> {
       // redundant turn the agent has already acted on; dedup by replyTo if
       // it ever actually bites.
       if (entry.type === "answer") {
-        input.push(formatAnswerTurn(entry.text, entry.replyTo));
+        input.push(formatAnswerTurn(entry.text, entry.replyTo, entry.authorName));
         return;
       }
       if (entry.type === "abort") {
@@ -1510,9 +1526,9 @@ export async function runSession(): Promise<SessionResult> {
         // message embedded in a tool_result reads as "my call failed," not
         // "Mohammad is talking to me right now." Without falling through,
         // the only trace of his reply was buried once per pending call.
-        resolveAllPendingDeny(`Mohammad replied (not an approval): ${entry.text}`);
+        resolveAllPendingDeny(`${authorLabel(entry.authorName) ?? "Mohammad"} replied (not an approval): ${entry.text}`);
       }
-      input.push(entry.from === "session" ? peerTurn(entry.text) : entry.text);
+      input.push(entry.from === "session" ? peerTurn(entry.text) : humanTurn(entry.text, entry.authorName));
     }, humanMessagesAbort.signal, RESUME_FROM_SEQ, session.agentSpecSha ?? "")
     .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
 

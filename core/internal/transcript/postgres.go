@@ -115,7 +115,7 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) ([]Entry, int64, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq, created_at,
-		       COALESCE(author_name, ''), context_only, untrusted
+		       COALESCE(author_name, ''), COALESCE(author_sub, ''), context_only, untrusted
 		FROM transcript
 		WHERE session_id = $1 AND seq >= $2
 		ORDER BY seq
@@ -133,7 +133,7 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 	nextSeq := sinceSeq
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo, &e.CreatedAt, &e.AuthorName, &e.ContextOnly, &e.Untrusted); err != nil {
+		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo, &e.CreatedAt, &e.AuthorName, &e.AuthorSub, &e.ContextOnly, &e.Untrusted); err != nil {
 			return nil, sinceSeq, fmt.Errorf("scan: %w", err)
 		}
 		entries = append(entries, e)

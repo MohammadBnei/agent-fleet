@@ -153,7 +153,11 @@ type TranscriptEntry struct {
 	// but never sent until now, which left every client unable to say when
 	// anything happened or how long a turn took — `seq` orders a feed, it
 	// does not time one.
-	CreatedAt     string `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedAt string `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// docs/adr/0067 §3: who wrote a human entry, as a display name (the
+	// member's email, or "client:<name>"). Empty for console entries. The
+	// worker shows it to the model; it is never parsed from text.
+	AuthorName    string `protobuf:"bytes,8,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -233,6 +237,13 @@ func (x *TranscriptEntry) GetReplyTo() int64 {
 func (x *TranscriptEntry) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *TranscriptEntry) GetAuthorName() string {
+	if x != nil {
+		return x.AuthorName
 	}
 	return ""
 }
@@ -466,7 +477,7 @@ var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
-	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xee\x01\n" +
+	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\x8f\x02\n" +
 	"\x0fTranscriptEntry\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -476,7 +487,9 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x04type\x18\x05 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12\x1e\n" +
 	"\breply_to\x18\x06 \x01(\x03H\x00R\areplyTo\x88\x01\x01\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\tR\tcreatedAtB\v\n" +
+	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x1f\n" +
+	"\vauthor_name\x18\b \x01(\tR\n" +
+	"authorNameB\v\n" +
 	"\t_reply_to\"\xc6\x01\n" +
 	"\x1cAppendTranscriptEntryRequest\x12\x1d\n" +
 	"\n" +

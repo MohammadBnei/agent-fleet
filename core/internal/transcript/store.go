@@ -39,7 +39,9 @@ type Entry struct {
 	// docs/adr/0067 §3: who wrote a human entry (display only; the sub is
 	// not read back), and whether it is context for the agent rather than
 	// something to act on.
-	AuthorName  string `json:"authorName,omitempty"`
+	AuthorName string `json:"authorName,omitempty"`
+	// AuthorSub is read back for "is this mine" only, and never serialized.
+	AuthorSub   string `json:"-"`
 	ContextOnly bool   `json:"contextOnly,omitempty"`
 	Untrusted   bool   `json:"untrusted,omitempty"`
 }
