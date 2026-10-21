@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
@@ -24,7 +25,7 @@ type specRecorder struct {
 
 func (f *specRecorder) GetSession(context.Context, *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
 	return &agentfleetv1.GetSessionResponse{
-		Session:      &agentfleetv1.Session{Id: "s1"},
+		Session:      &agentfleetv1.Session{Id: "s1", Effort: proto.String("high")},
 		AgentSpec:    &agentfleetv1.AgentSpec{ToolsAllow: []string{"Read"}, SidecarTools: []string{"send_message"}, MaxTurns: 60},
 		AgentSpecSha: "abc",
 	}, nil
@@ -72,6 +73,7 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 	var task struct {
 		AgentSpec    map[string]any `json:"agentSpec"`
 		AgentSpecSha string         `json:"agentSpecSha"`
+		Effort       string         `json:"effort"`
 	}
 	err = json.NewDecoder(resp.Body).Decode(&task)
 	_ = resp.Body.Close()
@@ -80,6 +82,10 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 	}
 	if task.AgentSpecSha != "abc" || task.AgentSpec["maxTurns"] != float64(60) || task.AgentSpec["toolsDeny"] == nil {
 		t.Fatalf("/task: %+v, want the spec in camelCase with every field and its sha", task)
+	}
+	// docs/adr/0077: the row's effort reaches the worker.
+	if task.Effort != "high" {
+		t.Fatalf("/task effort %q, want high", task.Effort)
 	}
 
 	resp, err = http.Get(srv.URL + "/human-messages?sinceSeq=0&agentSpecSha=abc")

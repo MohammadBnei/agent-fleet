@@ -179,6 +179,7 @@ func createDef(s *Server, name string, mut func(*agentfleetv1.CreateSessionReque
 }
 
 func TestCreateSession_Definition(t *testing.T) {
+	t.Setenv("CLAUDE_MODEL", "claude-sonnet-5")
 	s, _, _, _ := newDefinitionsServer(t)
 
 	for _, tc := range []struct {
@@ -192,6 +193,7 @@ func TestCreateSession_Definition(t *testing.T) {
 		{"opus-workspace", nil, connect.CodeFailedPrecondition, `targets repo "opus-workspace", which is not onboarded`},
 		{"dev-dream-analyst", func(r *agentfleetv1.CreateSessionRequest) { r.Repo = "dream-analyst" }, connect.CodeInvalidArgument, ""},
 		{"dev-dream-analyst", func(r *agentfleetv1.CreateSessionRequest) { m := "auto"; r.PermissionMode = &m }, connect.CodeInvalidArgument, ""},
+		{"dev-dream-analyst", func(r *agentfleetv1.CreateSessionRequest) { e := "high"; r.Effort = &e }, connect.CodeInvalidArgument, ""},
 	} {
 		_, err := createDef(s, tc.name, tc.mut)
 		if code(err) != tc.want || !strings.Contains(errText(err), tc.msg) {
@@ -207,8 +209,10 @@ func TestCreateSession_Definition(t *testing.T) {
 		t.Fatalf("pin: %q %q", sess.GetDefinitionName(), sess.GetDefinitionSha())
 	}
 	// mode.default, written explicitly: workspace-base's is auto (docs/adr/0076).
-	if sess.GetPermissionMode() != "auto" || sess.GetModel() != "claude-opus-5" || sess.GetRepo() != "dream-analyst" {
-		t.Fatalf("got mode %q model %q repo %q", sess.GetPermissionMode(), sess.GetModel(), sess.GetRepo())
+	// No model: workspace-base sets none, so it stays NULL and Claude Code
+	// picks; core never fills it from CLAUDE_MODEL (docs/adr/0077).
+	if sess.GetPermissionMode() != "auto" || sess.Model != nil || sess.GetRepo() != "dream-analyst" {
+		t.Fatalf("got mode %q model %v repo %q", sess.GetPermissionMode(), sess.Model, sess.GetRepo())
 	}
 
 	// A definition only narrows, for admins too, and a refusal appends

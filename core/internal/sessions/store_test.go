@@ -73,6 +73,26 @@ func TestCreate_PersistsTheChosenPermissionMode(t *testing.T) {
 	}
 }
 
+// docs/adr/0077: effort round-trips through its column (000017), and empty
+// stores NULL so the worker passes none.
+func TestCreate_PersistsTheChosenEffort(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(dbtest.NewPool(t))
+	for _, effort := range []string{"xhigh", ""} {
+		id, err := s.Create(ctx, CreateParams{Repo: "agent-fleet", Effort: effort})
+		if err != nil {
+			t.Fatalf("create %q: %v", effort, err)
+		}
+		got, err := s.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("get %q: %v", effort, err)
+		}
+		if (effort == "" && got.Effort != nil) || (effort != "" && (got.Effort == nil || *got.Effort != effort)) {
+			t.Errorf("Effort = %v, want %q (empty = NULL)", got.Effort, effort)
+		}
+	}
+}
+
 // Create makes a row and NOTHING else. This is the human gate, expressed
 // structurally: no pod exists until a message arrives, and nothing
 // machine-initiated produces a message.

@@ -73,6 +73,11 @@ message CreateSessionRequest {
   // valid version, and the mode is written explicitly, so the 'auto' column
   // default never applies to a definition session.
   optional string definition = 8;
+  // Effort level, docs/adr/0077: "low"|"medium"|"high"|"xhigh"|"max", the
+  // SDK's EffortLevel. Absent or empty stores NULL and the CLI decides.
+  // Validated server-side for the same reason as permission_mode. Refused
+  // with a definition, whose spec carries its own thinking.default.
+  optional string effort = 9;
 }
 
 message CreateSessionResponse {
@@ -452,6 +457,8 @@ message AgentDefinition {
   // "" when valid.
   string error = 4;
   // Effective workspace.repo, model.default and mode.default ("" when invalid).
+  // model is also "" for a valid definition that sets no model: Claude Code
+  // picks (docs/adr/0077).
   string repo = 5;
   string model = 6;
   string permission_mode = 7;
@@ -471,6 +478,10 @@ message ListReposRequest {}
 
 message ListReposResponse {
   repeated Repo repos = 1;
+  // The models CreateSession accepts, minus the legacy dated snapshots kept
+  // only so old rows stay valid (docs/adr/0077). The New Session dialog's
+  // model picker reads this, so the dashboard holds no list of its own.
+  repeated string models = 2;
 }
 
 // CreateRepo, UpdateRepo and DeleteRepo used to live here. Repos now come

@@ -997,7 +997,7 @@ running.
 | `RESUME_SESSION_ID` | `""` | non-empty when this pod is warming an existing session — set from `sessions.agent_session_id`, passed as `resume:` into `query()` (`adr/0029`) |
 | `RESUME_FROM_SEQ` | `0` | the transcript cursor this pod streams from, computed as `LatestSeq` at provisioning time. **This is why ordering is warm-then-append**: a message written before the pod exists lands below this and is never delivered |
 | `GH_TOKEN` | – | the worker's *own* `git push`/`gh pr create` auth — separate from the provisioner's, since the two are different pods that don't share `$HOME` |
-| `CLAUDE_MODEL` | `claude-opus-5-5` | Empty means core's `defaultModel` (`docs/adr/0061`) |
+| `CLAUDE_MODEL` | `""` | Operator override, used only when the session row has no model. Empty too, the worker passes no model and Claude Code picks (`docs/adr/0077`) |
 | `MAX_TURNS` | unbounded | opt-in cap |
 | `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token`. In a definition pod both it and `GH_TOKEN` are `fleet-vault-placeholder`: Agent Vault injects the real values on the wire (`adr/0065`) |
 | `HTTPS_PROXY` (+ lowercase, no `HTTP_PROXY`), `NO_PROXY`, `NODE_USE_ENV_PROXY`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` | definition pods only | the per-warm vault token in the proxy URL; the vault CA at `/etc/agent-vault/ca.pem` (`adr/0065` §4) |

@@ -204,9 +204,9 @@ message Session {
   // message reports it.
   optional string agent_session_id = 12;
   // Which Claude model this session runs. The worker reads it back on every
-  // warm and falls back to the CLAUDE_MODEL env default when unset — it was
-  // stored but never returned before, so a per-session model choice silently
-  // did nothing.
+  // warm; unset, it falls back to CLAUDE_MODEL, and with that empty too it
+  // passes no model and Claude Code picks (docs/adr/0077). A repo session's
+  // row then records the model the SDK's init reported.
   optional string model = 22;
 
   // Last time a transcript entry was appended — the clock the idle sweep and
@@ -258,6 +258,10 @@ message Session {
   // pinned to that version. Both or neither.
   optional string definition_name = 25;
   optional string definition_sha = 26;
+  // The effort level a repo session launches with (docs/adr/0077). Unset =
+  // none chosen: the worker passes no effort and Claude Code decides. A
+  // definition session leaves it unset and uses its spec's thinking.default.
+  optional string effort = 27;
 }
 
 // What one agent can see of another session. Deliberately not the full
