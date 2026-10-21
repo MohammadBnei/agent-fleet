@@ -115,6 +115,11 @@ func (o *Overrides) Load() (map[string]Override, bool) {
 // many repos vanishing at once, a real removal like one or two.
 const maxGonePerTick = 2
 
+// bigGrowth: more new repos than this in one tick is logged loudly. Not a
+// guard: both installations are repository_selection=all by the user's
+// choice (docs/adr/0075 §4), so the first tick after the cutover adds ~150.
+const bigGrowth = 10
+
 // fleetName bounds a name the sync may write: lowercase like definition repo
 // names, and at most 63 characters because it becomes a pod label.
 var fleetName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
@@ -180,6 +185,7 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	ov = lower
 	sort.Slice(gh, func(i, j int) bool { return gh[i].ID < gh[j].ID })
 	listed := map[int64]bool{}
+	var added []string // new rows this tick
 	for _, g := range gh {
 		listed[g.ID] = true
 	}
@@ -269,6 +275,7 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 				return 0, fmt.Errorf("repos sync: insert %s: %w", g.FullName, err)
 			}
 			tag = t.RowsAffected()
+			added = append(added, name)
 		}
 		if cluster {
 			granted = append(granted, name)
@@ -277,6 +284,9 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 			changed++
 			slog.Info("repos: synced", "name", name, "repo", g.FullName, "baseBranch", base, "image", image, "clusterAccess", cluster)
 		}
+	}
+	if len(added) > bigGrowth {
+		slog.Warn("repos: many new repos in one tick; check the App's installations if unexpected", "count", len(added), "repos", added)
 	}
 	for k := range ov {
 		if !usedOverride[k] {

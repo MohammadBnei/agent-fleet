@@ -95,10 +95,6 @@ type Config struct {
 	AgentVaultAPI        string
 	AgentVaultProxy      string
 	AgentVaultSecretsDir string
-	// FleetRepoInviters is FLEET_REPO_INVITERS, comma-separated GitHub logins
-	// whose repo invitations the bot auto-accepts (docs/adr/0074). Empty
-	// accepts none.
-	FleetRepoInviters string
 	// GitHubAppDir holds the App ukubi-fleet's GITHUB_APP_ID and
 	// GITHUB_APP_PRIVATE_KEY as files (docs/adr/0075). GitHubAccounts is
 	// FLEET_GITHUB_ACCOUNTS, comma-separated account ids whose installations
@@ -143,7 +139,6 @@ func Load() Config {
 		AgentVaultAPI:               env("AGENT_VAULT_API_ADDR", "http://agent-vault.agent-vault.svc.cluster.local:14321"),
 		AgentVaultProxy:             env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
 		AgentVaultSecretsDir:        env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
-		FleetRepoInviters:           env("FLEET_REPO_INVITERS", ""),
 		GitHubAppDir:                env("GITHUB_APP_DIR", "/var/run/github-app"),
 		GitHubAccounts:              env("FLEET_GITHUB_ACCOUNTS", ""),
 	}

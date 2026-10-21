@@ -37,8 +37,29 @@ type App struct {
 
 	now   func() time.Time
 	mu    sync.Mutex
-	cache map[string]token // owner/repo -> last minted token
+	cache map[string]token // "owner/repo" or "install:<id>" -> last minted token
+
+	instMu  sync.Mutex
+	insts   []installation // allowlisted installations, cached for instTTL
+	instsAt time.Time
 }
+
+type installation struct {
+	ID      int64 `json:"id"`
+	Account struct {
+		ID    int64  `json:"id"`
+		Login string `json:"login"`
+	} `json:"account"`
+}
+
+// instTTL: how long the installation list is reused. Installing the App on a
+// new account is rare; a new repo under an existing installation needs no
+// refresh of this list.
+const instTTL = 10 * time.Minute
+
+// installationPermissions is what the provisioner's own git and the repos
+// listing need from an owner-wide token: read only.
+var installationPermissions = map[string]string{"contents": "read", "metadata": "read"}
 
 type token struct {
 	value   string
@@ -82,26 +103,136 @@ func (a *App) Configured() bool {
 // ponytail: one lock across the mint's network calls, so a slow GitHub
 // serialises every vault's mint (10s timeouts). Per-repo locks if warms stall.
 func (a *App) Token(ctx context.Context, owner, repo string) (string, error) {
+	return a.cached(ctx, strings.ToLower(owner+"/"+repo), func(ctx context.Context) (token, error) {
+		return a.mint(ctx, owner, repo)
+	})
+}
+
+// cached serves key's token while it has refreshBefore left, else mints. A
+// failed re-mint returns the last token while it is still valid.
+func (a *App) cached(ctx context.Context, key string, mint func(context.Context) (token, error)) (string, error) {
 	if !a.Configured() {
 		return "", fmt.Errorf("github app: not mounted at %s", a.Dir)
 	}
-	key := strings.ToLower(owner + "/" + repo)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	last, ok := a.cache[key]
 	if ok && a.now().Add(refreshBefore).Before(last.expires) {
 		return last.value, nil
 	}
-	t, err := a.mint(ctx, owner, repo)
+	t, err := mint(ctx)
 	if err != nil {
 		if ok && a.now().Before(last.expires) {
-			slog.Error("github app: re-mint failed, serving the last token", "repo", key, "expires", last.expires, "error", err)
+			slog.Error("github app: re-mint failed, serving the last token", "key", key, "expires", last.expires, "error", err)
 			return last.value, nil
 		}
 		return "", err
 	}
 	a.cache[key] = t
 	return t.value, nil
+}
+
+// installations lists the App's installations by allowlisted accounts, all
+// pages, reused for instTTL. Others are logged and skipped: the App is
+// public, and only a human removes a foreign installation (infra-bootstrap
+// ADR-0062).
+func (a *App) installations(ctx context.Context) ([]installation, error) {
+	a.instMu.Lock()
+	defer a.instMu.Unlock()
+	if a.insts != nil && a.now().Before(a.instsAt.Add(instTTL)) {
+		return a.insts, nil
+	}
+	jwt, err := a.jwt()
+	if err != nil {
+		return nil, err
+	}
+	var out []installation
+	for page := 1; ; page++ {
+		var batch []installation
+		if err := a.call(ctx, jwt, http.MethodGet, fmt.Sprintf("/app/installations?per_page=%d&page=%d", perPage, page), nil, &batch); err != nil {
+			return nil, err
+		}
+		for _, in := range batch {
+			if a.Accounts[in.Account.ID] {
+				out = append(out, in)
+			} else {
+				slog.Error("github app: installation by a non-allowlisted account, ignored; remove it by hand (infra-bootstrap ADR-0062)", "account", in.Account.Login, "accountId", in.Account.ID, "installation", in.ID)
+			}
+		}
+		if len(batch) < perPage {
+			break
+		}
+	}
+	a.insts, a.instsAt = out, a.now()
+	return out, nil
+}
+
+// installationToken is a read-only token over everything installation in
+// covers: the provisioner's own git and the repos listing.
+func (a *App) installationToken(ctx context.Context, in installation) (string, error) {
+	return a.cached(ctx, "install:"+strconv.FormatInt(in.ID, 10), func(ctx context.Context) (token, error) {
+		jwt, err := a.jwt()
+		if err != nil {
+			return token{}, err
+		}
+		return a.accessToken(ctx, jwt, in.ID, map[string]any{"permissions": installationPermissions})
+	})
+}
+
+// ListRepos is the fleet's repo list (docs/adr/0075 §4): every non-archived,
+// non-fork repo of every allowlisted installation. All pages of all
+// installations or an error: a partial list would read as removals.
+func (a *App) ListRepos(ctx context.Context) ([]Repo, error) {
+	insts, err := a.installations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []Repo
+	for _, in := range insts {
+		tok, err := a.installationToken(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		for page := 1; ; page++ {
+			var batch struct {
+				Repositories []Repo `json:"repositories"`
+			}
+			if err := request(ctx, a.HTTP, a.API, tok, http.MethodGet, fmt.Sprintf("/installation/repositories?per_page=%d&page=%d", perPage, page), nil, &batch); err != nil {
+				return nil, err
+			}
+			for _, r := range batch.Repositories {
+				if !r.Archived && !r.Fork {
+					out = append(out, r)
+				}
+			}
+			if len(batch.Repositories) < perPage {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// GitEnv authenticates the provisioner's own git (repo cache, definitions,
+// fleet-shared) per invocation: one http.<url>.extraHeader per allowlisted
+// owner, as GIT_CONFIG_* env, never argv (errors quote argv). Read-only.
+func (a *App) GitEnv(ctx context.Context) ([]string, error) {
+	insts, err := a.installations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	env := []string{"GIT_CONFIG_COUNT=" + strconv.Itoa(len(insts))}
+	for i, in := range insts {
+		tok, err := a.installationToken(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + tok))
+		env = append(env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=http.https://github.com/%s/.extraHeader", i, in.Account.Login),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", i, basic))
+	}
+	return env, nil
 }
 
 func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
@@ -113,16 +244,19 @@ func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
 	if err != nil {
 		return token{}, err
 	}
+	return a.accessToken(ctx, jwt, id, map[string]any{"repositories": []string{repo}, "permissions": definitionPermissions})
+}
+
+func (a *App) accessToken(ctx context.Context, jwt string, id int64, body map[string]any) (token, error) {
 	var out struct {
 		Token     string    `json:"token"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
-	body := map[string]any{"repositories": []string{repo}, "permissions": definitionPermissions}
 	if err := a.call(ctx, jwt, http.MethodPost, "/app/installations/"+strconv.FormatInt(id, 10)+"/access_tokens", body, &out); err != nil {
 		return token{}, err
 	}
 	if out.Token == "" {
-		return token{}, fmt.Errorf("github app: mint for %s/%s returned no token", owner, repo)
+		return token{}, fmt.Errorf("github app: installation %d returned no token", id)
 	}
 	return token{value: out.Token, expires: out.ExpiresAt}, nil
 }

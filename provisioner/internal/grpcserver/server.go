@@ -59,17 +59,23 @@ type Server struct {
 	// vault is the Agent Vault client (docs/adr/0065); it fails closed on its
 	// own without an agent token. Repo sessions never call it.
 	vault *vault.Client
-	// gh lists the bot's repos for core's repos sync (docs/adr/0074).
-	gh *github.Client
+	// gh lists the fleet's repos for core's repos sync (docs/adr/0074,
+	// amended by 0075: the App's allowlisted installations).
+	gh RepoLister
 	// specs is core's last full vault set, kept so RefreshVaults can push
 	// re-minted tokens while core is down (docs/adr/0075 §5).
 	specsMu sync.Mutex
 	specs   []*agentfleetv1.VaultSpec
 }
 
+// RepoLister is the repos sync source: the App ukubi-fleet (docs/adr/0075 §4).
+type RepoLister interface {
+	ListRepos(ctx context.Context) ([]github.Repo, error)
+}
+
 // SetGitHub wires the repos sync source (docs/adr/0074). Unset, ListGitHubRepos
 // fails closed.
-func (s *Server) SetGitHub(gh *github.Client) { s.gh = gh }
+func (s *Server) SetGitHub(gh RepoLister) { s.gh = gh }
 
 // SetDefinitionsRef sets FLEET_DEFINITIONS_REF (docs/adr/0062). A setter
 // rather than an eighth positional string on New, which already takes six.
@@ -661,9 +667,6 @@ func (s *Server) ListDefinitionFiles(ctx context.Context, _ *agentfleetv1.ListDe
 func (s *Server) ListGitHubRepos(ctx context.Context, _ *agentfleetv1.ListGitHubReposRequest) (*agentfleetv1.ListGitHubReposResponse, error) {
 	if s.gh == nil {
 		return nil, status.Error(codes.FailedPrecondition, "no GitHub client: repos sync source is unset")
-	}
-	if _, err := s.gh.AcceptInvites(ctx); err != nil {
-		slog.Error("github: list invitations", "error", err)
 	}
 	list, err := s.gh.ListRepos(ctx)
 	if err != nil {

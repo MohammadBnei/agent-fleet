@@ -53,6 +53,11 @@ type Manager struct {
 	// `--shared` clones from that gets a broken repository. Empty after a
 	// restart, which only costs a wait.
 	cached map[string]bool
+	// GitEnv, when set, authenticates clone/fetch with the App's read-only
+	// installation tokens (docs/adr/0075 §9), passed as GIT_CONFIG_* env so
+	// no token reaches argv, which run() quotes in errors. An error falls back
+	// to the ambient git credentials.
+	GitEnv func(context.Context) ([]string, error)
 }
 
 func NewManager(root string) *Manager {
@@ -136,6 +141,13 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	if m.GitEnv != nil && len(args) > 0 && (args[0] == "clone" || args[0] == "fetch") {
+		if env, err := m.GitEnv(ctx); err != nil {
+			slog.Warn("git: no App credentials, using ambient git auth", "error", err)
+		} else {
+			cmd.Env = append(os.Environ(), env...)
+		}
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s (in %s): %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))

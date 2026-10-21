@@ -1,6 +1,9 @@
 # ADR-0074 — Fleet repos come from GitHub; overrides come from infra-bootstrap
 
-- **Status:** Accepted. **Amended 2026-10-21:** the console writes one
+- **Status:** Accepted. Amended by [ADR-0075](0075-github-app-identity-and-vault-credentials.md) §4:
+  membership is the GitHub App's allowlisted installations, not the bot's
+  collaborator list; invitations and `FLEET_REPO_INVITERS` are gone.
+  **Amended 2026-10-21:** the console writes one
   column, `repos.active` (migration 000016, `SetReposActive`). The GitHub
   installation is what the fleet can reach; `active` is what it uses. New
   repos arrive active, the sync never touches the column, and an inactive

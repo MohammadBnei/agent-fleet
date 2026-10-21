@@ -102,6 +102,11 @@ func main() {
 	// Traefik CRD, which is one less thing the local harness has to fake.
 
 	gitMgr := git.NewManager(cfg.WorkspaceRoot)
+	// docs/adr/0075 §9: the provisioner's own clone/fetch uses the App's
+	// read-only installation tokens; the bot PAT's credential helper
+	// (ConfigureAuth) stays as the fallback until repo pods move (step 4).
+	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
+	gitMgr.GitEnv = app.GitEnv
 	if err := gitMgr.ConfigureAuth(ctx); err != nil {
 		slog.Error("git auth configuration failed", "error", err)
 		os.Exit(1)
@@ -145,7 +150,6 @@ func main() {
 	// Always wired: Token re-checks the mount per call, so a Secret synced
 	// after boot is used without a restart; unmounted, the vault falls back
 	// to the Infisical files.
-	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
 	vc.Forge = app
 	if !app.Configured() {
 		slog.Warn("github app not mounted yet: vault GitHub keys come from Infisical files", "dir", cfg.GitHubAppDir)
@@ -154,7 +158,7 @@ func main() {
 	}
 	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
-	provSvc.SetGitHub(github.New(os.Getenv("GH_TOKEN"), strings.Split(cfg.FleetRepoInviters, ",")))
+	provSvc.SetGitHub(app)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
