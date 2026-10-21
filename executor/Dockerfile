@@ -16,11 +16,15 @@ COPY go.work.sum ./
 # workspace whose members are missing. Same pattern as sidecar/Dockerfile.
 RUN go work init ./proto/gen/go ./executor
 WORKDIR /app/executor
-RUN CGO_ENABLED=0 go build -o /out/executor ./cmd/executor
+# Cache mounts: the Go build and module caches stay on the build box between
+# builds (docker.yml), outside the image.
+RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /out/executor ./cmd/executor
 # The kubectl shim ships in this same image so the provisioner's
 # cluster-access ingredient can copy it into a session pod, and so shim
 # and service are always the same build (docs/adr/0037).
-RUN CGO_ENABLED=0 go build -o /out/kubectl-shim ./cmd/kubectlshim
+RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /out/kubectl-shim ./cmd/kubectlshim
 
 # kubectl is the whole point of this image: the executor is the only
 # process in the fleet holding cluster RBAC, and it reaches the API server

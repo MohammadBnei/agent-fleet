@@ -627,13 +627,10 @@ jobs:
             # build-arg, and core has no unpinned install to refresh.
             grep -q '^ARG CACHE_WEEK' "$c/Dockerfile" && build_args+=(--build-arg "CACHE_WEEK=$BUILD_WEEK")
             if [ "$EVENT" = pull_request ]; then
-              tags="$PR_TAG"
+              image="$REGISTRY/agent-fleet-$c:$PR_TAG"
             else
-              tags="$src"
-              [ "$PUSH_LATEST" = "true" ] && tags="$tags latest"
+              image="$REGISTRY/agent-fleet-$c:$src"
             fi
-            tag_args=()
-            for t in $tags; do tag_args+=(-t "$REGISTRY/agent-fleet-$c:$t"); done
             start=$(date +%s)
             # chroot isolation, and NO --storage-driver: the driver is pinned
             # to overlay on the box itself (/etc/containers/storage.conf, set
@@ -643,11 +640,13 @@ jobs:
             # was genuinely required; on a real-root LXC it was just slower
             # and fatter. Measured across all six images: 340s -> 273s.
             #
-            # Still deliberately NOT --layers. It would cache intermediate
-            # layers on a 40GB disk shared with editable-blog's builds, and
-            # the win it chases is already had: the expensive-over-WAN part is
-            # the base-image cache, which persists regardless, while Go
-            # recompiles are local CPU on 4 cores.
+            # --layers: each RUN's result is cached, so an unchanged step
+            # (the worker's 300 MB bun install, the apt layers) is neither
+            # rebuilt nor, having the same digest, pushed again. Go and bun
+            # also get cache mounts (the Dockerfiles). The cost is disk on a
+            # box shared with other repos: intermediates and cache mounts are
+            # not parents of a tagged image, so they pile up until the weekly
+            # `buildah rmi --prune`, which makes one build a week cold.
             #
             # --pull=newer: without it a cached base is reused forever, and
             # the weekly hash change would rebuild on the same stale base.
@@ -661,13 +660,18 @@ jobs:
             sudo buildah bud \
               --isolation chroot \
               --format docker \
+              --layers \
               --pull=newer \
               ${build_args[@]+"${build_args[@]}"} \
               -f "$c/Dockerfile" \
-              "${tag_args[@]}" \
+              -t "$image" \
               .
             build_end=$(date +%s)
             if [ "$DO_PUSH" = "true" ]; then
+              # `latest` is pushed from the src image rather than tagged on it
+              # locally, so the box never holds a local `latest`.
+              tags="$src"
+              [ "$PUSH_LATEST" = "true" ] && tags="$tags latest"
               for t in $tags; do
                 # Retried in the shell: twice on 2026-10-20, right after
                 # cross-repo blob mounts, buildah sent the next write (a blob
@@ -677,7 +681,7 @@ jobs:
                 # buildah's own --retry only covers network errors, not a 401.
                 for attempt in 1 2 3; do
                   if sudo buildah push --tls-verify=false \
-                    "$REGISTRY/agent-fleet-$c:$t"; then
+                    "$image" "docker://$REGISTRY/agent-fleet-$c:$t"; then
                     break
                   fi
                   if [ "$attempt" = 3 ]; then
@@ -690,14 +694,22 @@ jobs:
               done
             fi
             end=$(date +%s)
-            # Drop this component's own images as soon as they are pushed, so
-            # peak disk is one image rather than six. Named tags only — NOT
-            # `rmi --all`, which would evict the base-image cache this box
-            # shares with every other build repo. The weekly timer prunes
-            # what is genuinely dangling.
-            for t in $tags; do
-              sudo buildah rmi "$REGISTRY/agent-fleet-$c:$t" || true
-            done
+            # Keep the image just built: its layers are the next build's
+            # cache. Drop the one it replaces instead, the src tag deploy last
+            # pinned (k8s/images.env), so the box holds about one chain per
+            # component. Named tags only — NOT `rmi --all`, which would evict
+            # the base-image cache this box shares with every other build
+            # repo. A PR image is never needed again; its layers stay cached
+            # as intermediates. `|| true`: the previous image may never have
+            # been built on this box, or already be gone.
+            if [ "$EVENT" = pull_request ]; then
+              sudo buildah rmi "$image" || true
+            else
+              prev=$(printf '%s\n' "$deployed" | sed -n "s/^$c=//p")
+              if [ -n "$prev" ] && [ "$prev" != "$src" ]; then
+                sudo buildah rmi "$REGISTRY/agent-fleet-$c:$prev" || true
+              fi
+            fi
             printf '| %s | %s | %s | %s |\n' "$c" "$((build_end - start))" "$((end - build_end))" "$src" >> /tmp/timings.txt
           done
           echo "images=${images# }" >> "$GITHUB_OUTPUT"

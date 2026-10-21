@@ -8,7 +8,7 @@
 FROM oven/bun:1-slim AS spa
 WORKDIR /app/dashboard
 COPY dashboard/package.json dashboard/bun.lock ./
-RUN bun install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 COPY dashboard/ ./
 RUN bun run build
 
@@ -30,7 +30,10 @@ RUN go work init ./proto/gen/go ./core
 WORKDIR /app/core
 # No version compiled in: core reads FLEET_VERSION at run time, so one image
 # serves every release that doesn't change its inputs (docker.yml).
-RUN CGO_ENABLED=0 go build -o /out/core ./cmd/core
+# Cache mounts: the Go build and module caches stay on the build box between
+# builds (docker.yml), outside the image.
+RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /out/core ./cmd/core
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/core /core
