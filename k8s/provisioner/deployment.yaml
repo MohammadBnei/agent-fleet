@@ -65,6 +65,12 @@ spec:
           value: "6.22.0"
         - name: NAMESPACE
           value: agent-fleet
+        # The model a repo session runs when it has none of its own
+        # (worker/src/session.ts: the session's model, else this). Unset, it
+        # was whatever Claude Code defaults to for the subscription.
+        # Definitions keep their model.default.
+        - name: CLAUDE_MODEL
+          value: claude-opus-5-5
         # BASE domain, not the old deeper e2e.bnei.dev. Previews are now
         # <shortID>-e2e.bnei.dev — first-level, so Cloudflare's free Universal
         # SSL (apex + one wildcard level only) actually covers them.
