@@ -45,11 +45,13 @@ export function errorText(err: unknown): string {
     case Code.NotFound:
       return "This thread is no longer available.";
     case Code.PermissionDenied:
-      return "You cannot do that in this thread.";
+      return "You cannot do that in this thread. If it holds untrusted input, only an admin can answer it, from the console.";
     default:
       return e.rawMessage || "Something went wrong.";
   }
 }
+
+export const isStale = (err: unknown) => ConnectError.from(err).rawMessage.includes("DEFINITION_CHANGED");
 
 // Someone else answered first: the stream shows their answer.
 export const isAlreadyAnswered = (err: unknown) => ConnectError.from(err).code === Code.AlreadyExists;

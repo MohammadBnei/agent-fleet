@@ -13,7 +13,7 @@
   import { onMount } from "svelte";
   import type { Thread, Entry } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
   import { Code, ConnectError } from "@connectrpc/connect";
-  import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isUnauthenticated } from "./api";
+  import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isStale, isUnauthenticated } from "./api";
   import { conversation, decisions } from "./feed";
   import { createRenderer } from "./render";
   import { drawDiagrams } from "./diagram";
@@ -35,6 +35,8 @@
   let busy = $state(false);
   let answers = $state<Record<string, string>>({});
   let reconnecting = $state(false);
+  // DEFINITION_CHANGED: this thread is pinned to an older definition.
+  let stale = $state(false);
   let composer = $state<HTMLTextAreaElement | undefined>();
   let stream: AbortController | undefined;
   // Bumped by every load/select/unmount. Work started under an older value
@@ -100,6 +102,9 @@
     seen = new Set();
     answers = {};
     error = "";
+    busy = false;
+    stale = false;
+    reconnecting = false;
     await guard(async () => {
       const res = await api.getTranscript({ threadId: t.id });
       if (my !== gen) return;
@@ -134,11 +139,13 @@
       } catch (err) {
         if (ctl.signal.aborted || my !== gen) return;
         if (isUnauthenticated(err)) {
+          reconnecting = false;
           phase = "signed-out";
           return;
         }
         const code = ConnectError.from(err).code;
         if (code === Code.NotFound || code === Code.PermissionDenied) {
+          reconnecting = false;
           error = "This thread is no longer available.";
           return;
         }
@@ -161,30 +168,68 @@
     });
   }
 
-  async function act(fn: () => Promise<unknown>) {
+  // One action at a time, bound to the thread it was clicked in: a reply for
+  // a thread the user has left touches nothing (gen, as in select).
+  async function act(fn: (threadId: string) => Promise<unknown>): Promise<boolean> {
+    if (busy || !current) return false;
+    const my = gen;
+    const threadId = current.id;
     busy = true;
     error = "";
-    await guard(async () => {
-      await fn();
-    });
-    busy = false;
+    try {
+      await fn(threadId);
+      return my === gen;
+    } catch (err) {
+      if (my !== gen) return false;
+      if (isUnauthenticated(err)) phase = "signed-out";
+      else if (isStale(err)) stale = true;
+      else if (isAlreadyAnswered(err)) {
+        // Another member answered first. Reload, in case the stream is down.
+        if (current) await select(current);
+      } else {
+        error = errorText(err);
+        // A refusal may mean the thread became tainted since it was listed.
+        if (ConnectError.from(err).code === Code.PermissionDenied) await refreshCurrent();
+      }
+      return false;
+    } finally {
+      if (my === gen) busy = false;
+    }
   }
+
+  async function refreshCurrent() {
+    const my = gen;
+    try {
+      const res = await api.listThreads({ definition });
+      if (my !== gen) return;
+      threads = res.threads;
+      current = threads.find((t) => t.id === current?.id) ?? current;
+    } catch {
+      // Best effort: the error already shown stands.
+    }
+  }
+
+  const MAX_MESSAGE = 64 * 1024;
 
   function send() {
     const text = draft.trim();
-    if (!text || !current) return;
-    const threadId = current.id;
-    act(async () => {
+    if (!text) return;
+    if (new TextEncoder().encode(text).length > MAX_MESSAGE) {
+      error = "This message is too long (64 KiB at most).";
+      return;
+    }
+    act(async (threadId) => {
       await api.postMessage({ threadId, text });
-      draft = "";
+      // Keep anything typed while the message was on its way.
+      if (draft.trim() === text) draft = "";
     });
   }
 
-  const answer = (seq: bigint) =>
-    act(() => api.answerQuestion({ threadId: current!.id, seq, answersJson: JSON.stringify({ answers }) }));
-  const permit = (seq: bigint, behavior: "allow" | "deny") =>
-    act(() => api.respondToPermission({ threadId: current!.id, seq, behavior }));
-  const approve = (seq: bigint) => act(() => api.approvePlan({ threadId: current!.id, seq }));
+  async function answer(seq: bigint) {
+    if (await act((threadId) => api.answerQuestion({ threadId, seq, answersJson: JSON.stringify({ answers }) }))) answers = {};
+  }
+  const permit = (seq: bigint, behavior: "allow" | "deny") => act((threadId) => api.respondToPermission({ threadId, seq, behavior }));
+  const approve = (seq: bigint) => act((threadId) => api.approvePlan({ threadId, seq }));
 
   // Login runs top-level on the fleet (authentik refuses to be framed). No
   // reliance on window.opener: the island retries when its window regains focus.
@@ -263,6 +308,12 @@
     </header>
 
     {#if error}<p class="danger pad-x">{error}</p>{/if}
+    {#if stale}
+      <div class="stack">
+        <p class="danger">This agent was updated since this thread started. Continue in a new thread.</p>
+        <button class="primary chamfer" onclick={() => newThread(current?.visibility === "private" ? "private" : "shared")}>Start a new thread</button>
+      </div>
+    {/if}
 
     {#if !current}
       <div class="pad stack">
@@ -325,12 +376,12 @@
           aria-label="Message"
           placeholder={current.tainted ? "Only an admin can write in this thread" : "Write to the agent"}
           rows="2"
-          disabled={current.tainted}
+          disabled={current.tainted || stale}
           bind:this={composer}
           bind:value={draft}
           onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
         ></textarea>
-        <button class="primary chamfer" type="submit" disabled={busy || current.tainted || !draft.trim()}>Send</button>
+        <button class="primary chamfer" type="submit" disabled={busy || current.tainted || stale || !draft.trim()}>Send</button>
       </form>
     {/if}
   {/if}
