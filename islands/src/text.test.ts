@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { threadTitle } from "./text";
+import { displayNames, threadTitle } from "./text";
 
 // CreateThread refuses titles over 200 bytes: multi-byte text must fit and
 // never be cut mid-character.
@@ -14,9 +14,11 @@ test("titles fit in bytes and keep whole characters", () => {
   expect(emoji.includes("�")).toBe(false);
 });
 
-test("a member is shown by the name part of their email", () => {
-  const { displayName } = require("./text");
-  expect(displayName("nadia@opus.tech")).toBe("nadia");
-  expect(displayName("")).toBe("Member");
-  expect(displayName("Nadia")).toBe("Nadia");
+test("members are named by their email's local part, in full on a collision", () => {
+  const n = displayNames(["nadia@opus.tech", "sam@a.com", "sam@b.com", "", "Nadia"]);
+  expect(n.get("nadia@opus.tech")).toBe("nadia");
+  expect(n.get("sam@a.com")).toBe("sam@a.com");
+  expect(n.get("sam@b.com")).toBe("sam@b.com");
+  expect(n.get("")).toBe("Another member");
+  expect(n.get("Nadia")).toBe("Nadia");
 });

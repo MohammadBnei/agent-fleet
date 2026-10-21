@@ -200,7 +200,11 @@ button { white-space: nowrap; }
 .scroll:focus-visible { outline: 2px solid var(--ukubi-focus); outline-offset: -2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-/* Who said it (agent-fleet #311 Entry.mine): your messages on the right, other
-   members' on the left under their name, the agent as plain text. */
-.msg.human.other { align-self: flex-start; background: var(--ukubi-surface-sunken); }
-.msg.human.mine { align-self: flex-end; }
+/* Who said it (agent-fleet #311 Entry.mine), each in its own colour (Ukubi:
+   ochre-100 is the user's own bubble): yours ochre on the right, other
+   members' palm on the left under their name, the agent as text behind a
+   wire-agent rule. */
+.msg.human.mine { align-self: flex-end; background: var(--ukubi-ochre-100); border-color: transparent; }
+.msg.human.other { align-self: flex-start; background: var(--ukubi-palm-100); border-color: transparent; }
+.msg.human.other .who { color: var(--ukubi-palm-700); }
+.msg:not(.human) { border-left: 2px solid var(--ukubi-wire-agent); padding-left: var(--ukubi-space-3); }

@@ -12,10 +12,25 @@ export function threadTitle(text: string, max = 120): string {
   return out;
 }
 
-// A member's label: author_name is their email, shown without the domain.
-export function displayName(authorName: string): string {
-  const n = authorName.trim();
-  if (!n) return "Member";
-  const at = n.indexOf("@");
-  return at > 0 ? n.slice(0, at) : n;
+// Members' labels: author_name is their email, shown without the domain
+// unless two members in the same thread share that part, then in full. No
+// name at all reads "Another member", never a name someone else could have.
+export function displayNames(authorNames: string[]): Map<string, string> {
+  const local = (n: string) => {
+    const at = n.indexOf("@");
+    return at > 0 ? n.slice(0, at) : n;
+  };
+  const owners = new Map<string, Set<string>>();
+  for (const raw of authorNames) {
+    const n = raw.trim();
+    if (!n) continue;
+    const l = local(n);
+    owners.set(l, (owners.get(l) ?? new Set()).add(n));
+  }
+  const out = new Map<string, string>();
+  for (const raw of authorNames) {
+    const n = raw.trim();
+    out.set(raw, !n ? "Another member" : (owners.get(local(n))?.size ?? 0) > 1 ? n : local(n));
+  }
+  return out;
 }
