@@ -816,9 +816,9 @@ type Session struct {
 	// message reports it.
 	AgentSessionId *string `protobuf:"bytes,12,opt,name=agent_session_id,json=agentSessionId,proto3,oneof" json:"agent_session_id,omitempty"`
 	// Which Claude model this session runs. The worker reads it back on every
-	// warm and falls back to the CLAUDE_MODEL env default when unset — it was
-	// stored but never returned before, so a per-session model choice silently
-	// did nothing.
+	// warm; unset, it falls back to CLAUDE_MODEL, and with that empty too it
+	// passes no model and Claude Code picks (docs/adr/0077). A repo session's
+	// row then records the model the SDK's init reported.
 	Model *string `protobuf:"bytes,22,opt,name=model,proto3,oneof" json:"model,omitempty"`
 	// Last time a transcript entry was appended — the clock the idle sweep and
 	// the retention GC both read. RFC3339. Unset for a session with no
@@ -864,8 +864,12 @@ type Session struct {
 	// pinned to that version. Both or neither.
 	DefinitionName *string `protobuf:"bytes,25,opt,name=definition_name,json=definitionName,proto3,oneof" json:"definition_name,omitempty"`
 	DefinitionSha  *string `protobuf:"bytes,26,opt,name=definition_sha,json=definitionSha,proto3,oneof" json:"definition_sha,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The effort level a repo session launches with (docs/adr/0077). Unset =
+	// none chosen: the worker passes no effort and Claude Code decides. A
+	// definition session leaves it unset and uses its spec's thinking.default.
+	Effort        *string `protobuf:"bytes,27,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -1027,6 +1031,13 @@ func (x *Session) GetDefinitionName() string {
 func (x *Session) GetDefinitionSha() string {
 	if x != nil && x.DefinitionSha != nil {
 		return *x.DefinitionSha
+	}
+	return ""
+}
+
+func (x *Session) GetEffort() string {
+	if x != nil && x.Effort != nil {
+		return *x.Effort
 	}
 	return ""
 }
@@ -2964,7 +2975,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\"*\n" +
 	"\x16RequestServiceResponse\x12\x10\n" +
-	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\x91\b\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\xb9\b\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -2989,7 +3000,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"R\vworkerImage\x88\x01\x01\x12(\n" +
 	"\rsidecar_image\x18\x18 \x01(\tH\vR\fsidecarImage\x88\x01\x01\x12,\n" +
 	"\x0fdefinition_name\x18\x19 \x01(\tH\fR\x0edefinitionName\x88\x01\x01\x12*\n" +
-	"\x0edefinition_sha\x18\x1a \x01(\tH\rR\rdefinitionSha\x88\x01\x01B\b\n" +
+	"\x0edefinition_sha\x18\x1a \x01(\tH\rR\rdefinitionSha\x88\x01\x01\x12\x1b\n" +
+	"\x06effort\x18\x1b \x01(\tH\x0eR\x06effort\x88\x01\x01B\b\n" +
 	"\x06_titleB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +
@@ -3004,7 +3016,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\r_worker_imageB\x10\n" +
 	"\x0e_sidecar_imageB\x12\n" +
 	"\x10_definition_nameB\x11\n" +
-	"\x0f_definition_shaJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"\x0f_definition_shaB\t\n" +
+	"\a_effortJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
 	"\x10\vJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11J\x04\b\x05\x10\x06R\x06statusR\x06pr_urlR\fheartbeat_atR\vretry_countR\x0eawaiting_humanR\x04kindR\tthread_id\"\x9c\x01\n" +
 	"\x0eSessionSummary\x12\x1d\n" +

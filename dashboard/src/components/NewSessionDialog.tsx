@@ -11,6 +11,12 @@ import { InlineError } from "./InlineError";
 // human-facing labels the agent never reads (db/migrations/000001_init.up.sql
 // :66-71), so this is a copy for the list — never the prompt itself, which
 // goes out as a real transcript entry below.
+// The label for "pass nothing": core stores NULL, the worker omits the option,
+// and Claude Code picks (docs/adr/0077).
+const CLAUDE_DEFAULT = "Claude's default";
+// The SDK's EffortLevel; core validates against the same list.
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
 function labelFrom(message: string): string {
   const line = message.trim().split("\n", 1)[0]?.trim() ?? "";
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
@@ -33,6 +39,10 @@ export function NewSessionDialog({
   const [dialogOpen, setDialogOpen] = useState(autoOpen);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repo, setRepo] = useState("");
+  // From ListRepos, so core's allowlist is the only list. "" = Claude's default.
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
   // docs/adr/0062: a defined agent fixes repo, model and mode itself, so
   // choosing one hides those controls rather than letting them disagree.
   const [definitions, setDefinitions] = useState<AgentDefinition[]>([]);
@@ -63,6 +73,7 @@ export function NewSessionDialog({
         // remembered pick that has since been switched off falls back too.
         const active = activeRepos(res.repos);
         setRepos(active);
+        setModels(res.models);
         setRepo((current) => (active.some((r) => r.name === current) ? current : active[0]?.name || ""));
       })
       .catch((err: Error) => setError(err.message));
@@ -100,6 +111,8 @@ export function NewSessionDialog({
     setMessage("");
     setModeChoice(null);
     setDefinition("");
+    setModel("");
+    setEffort("");
   }
 
   // Without an explicit pick, "auto" — the fleet's launch default since
@@ -136,6 +149,9 @@ export function NewSessionDialog({
               // two-call shape only worked because it happened to run in the right
               // order. One call cannot be ordered wrongly.
               permissionMode: effectiveMode,
+              // Omitted when unpicked, so core stores NULL and Claude Code decides.
+              ...(model ? { model } : {}),
+              ...(effort ? { effort } : {}),
             },
       );
       const sessionId = res.session?.id;
@@ -197,14 +213,14 @@ export function NewSessionDialog({
                     title={d.valid ? undefined : d.error}
                   >
                     {d.valid
-                      ? `${d.name} · ${d.repo} · ${d.model} · ${d.permissionMode}`
+                      ? `${d.name} · ${d.repo} · ${d.model || CLAUDE_DEFAULT} · ${d.permissionMode}`
                       : `${d.name} · invalid`}
                   </option>
                 ))}
               </select>
               {chosen && (
                 <span className="text-dim text-xs">
-                  Runs {chosen.repo} as {chosen.permissionMode} on {chosen.model} — {chosen.name}@{chosen.sha.slice(0, 7)}
+                  Runs {chosen.repo} as {chosen.permissionMode} on {chosen.model || CLAUDE_DEFAULT} — {chosen.name}@{chosen.sha.slice(0, 7)}
                 </span>
               )}
               {syncErrors.length > 0 && (
@@ -251,6 +267,34 @@ export function NewSessionDialog({
               rows={6}
             />
           </label>
+          {/* Repo sessions only: a definition carries its own model and
+              thinking (docs/adr/0062), and core refuses both here. */}
+          {!definition && (
+            <div className="flex gap-3">
+              <label className="flex flex-col gap-1 text-sm flex-1 min-w-0">
+                Model
+                <select value={model} onChange={(e) => setModel(e.target.value)} className="select select-sm select-bordered">
+                  <option value="">{CLAUDE_DEFAULT}</option>
+                  {models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm flex-1 min-w-0">
+                Effort
+                <select value={effort} onChange={(e) => setEffort(e.target.value)} className="select select-sm select-bordered">
+                  <option value="">{CLAUDE_DEFAULT}</option>
+                  {EFFORTS.map((e) => (
+                    <option key={e} value={e}>
+                      {e}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           {!definition && (
             <label className="flex flex-col gap-1 text-sm">
               <span>Launch mode</span>

@@ -42,7 +42,7 @@ var (
 	// skipsCanUseTool is rejected BY NAME, so the error says why.
 	skipsCanUseTool = []string{"acceptEdits", "bypassPermissions"}
 	// SDK 0.3.301 EffortLevel.
-	effortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
+	EffortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta"}
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
@@ -529,11 +529,13 @@ func validate(name string, s *Spec) error {
 			}
 		}
 	}
-	if need(s.Model != nil, "model") {
+	// Optional (docs/adr/0077): absent, the session passes no model and
+	// Claude Code picks. Present, it is bounded as before.
+	if s.Model != nil {
 		checkAllow(&errs, "model", s.Model.Default, s.Model.Allow, ModelCeiling, nil)
 	}
-	if need(s.Thinking != nil, "thinking") && !slices.Contains(effortLevels, s.Thinking.Default) {
-		bad("thinking.default %q is not an effort level %v", s.Thinking.Default, effortLevels)
+	if need(s.Thinking != nil, "thinking") && !slices.Contains(EffortLevels, s.Thinking.Default) {
+		bad("thinking.default %q is not an effort level %v", s.Thinking.Default, EffortLevels)
 	}
 	if need(s.Mode != nil, "mode") {
 		checkAllow(&errs, "mode", s.Mode.Default, s.Mode.Allow, ModeCeiling, skipsCanUseTool)

@@ -15,6 +15,10 @@ import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 const pushedMessages: { seq: number; from: string; text: string; type?: string; replyTo?: number }[] = [];
 const savedSessionIds: string[] = [];
+const savedModels: string[] = [];
+// The row's model and effort as GET /task returns them (docs/adr/0077).
+let sessionModel: string | undefined = undefined;
+let sessionEffort: string | undefined = undefined;
 const savedPermissionModes: string[] = [];
 let nextSeq = 1;
 // A definition session's spec as GET /task returns it; null = a repo session.
@@ -46,6 +50,7 @@ mock.module("./sidecarClient.js", () => ({
   }),
   saveSessionId: mock(async (id: string, model: string) => {
     savedSessionIds.push(id);
+    savedModels.push(model);
   }),
   savePermissionMode: mock(async (mode: string) => {
     savedPermissionModes.push(mode);
@@ -53,7 +58,8 @@ mock.module("./sidecarClient.js", () => ({
   getSession: mock(async () => ({
     description: "test session",
     permissionMode: sessionPermissionMode,
-    model: undefined,
+    model: sessionModel,
+    effort: sessionEffort,
     ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha" } : {}),
   })),
   streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal, _startSeq?: number, agentSpecSha?: string) => {
@@ -268,6 +274,9 @@ beforeEach(() => {
   pushedMessages.length = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
+  savedModels.length = 0;
+  sessionModel = undefined;
+  sessionEffort = undefined;
   savedPermissionModes.length = 0;
   humanMessageHandler = null;
   mockMessageText = "mock agent message";
@@ -1760,6 +1769,36 @@ test("repo session: no spec, so nothing of it reaches query() and the stream car
   expect(queryOptions?.systemPrompt).toBeUndefined();
   expect(queryOptions && "tools" in queryOptions).toBe(false);
   expect(streamedSpecSha).toBe("");
+}, 10000);
+
+// docs/adr/0077: nothing chosen, nothing passed — Claude Code picks both.
+test("repo session with no model or effort: query() gets neither", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
+
+  expect(queryOptions && "model" in queryOptions).toBe(false);
+  expect(queryOptions && "effort" in queryOptions).toBe(false);
+  expect(queryOptions && "thinking" in queryOptions).toBe(false);
+}, 10000);
+
+// docs/adr/0077: the dialog's picks reach query(), and the row records the
+// model init reported, not the one asked for.
+test("repo session with a model and effort: both reach query(), init's model is saved", async () => {
+  sessionModel = "claude-sonnet-5";
+  sessionEffort = "high";
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("hello");
+  await Bun.sleep(50);
+  pushHuman("stop", "abort");
+  await promise;
+
+  expect(queryOptions?.model).toBe("claude-sonnet-5");
+  expect(queryOptions?.effort).toBe("high");
+  expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
+  expect(savedModels).toEqual(["claude-opus-4-8"]);
 }, 10000);
 
 test("definition session in auto: canUseTool allows inside tools.allow, denies outside the ceiling, asks the rest", async () => {

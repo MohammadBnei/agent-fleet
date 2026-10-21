@@ -466,6 +466,22 @@ func TestLoad_RequiresBounds(t *testing.T) {
 	}
 }
 
+// docs/adr/0077: model is optional. Absent everywhere, the definition is
+// valid and its effective spec carries no model.
+func TestLoad_ModelOptional(t *testing.T) {
+	noModel := strings.Replace(baseYAML, "  model: { default: claude-opus-5, allow: [claude-opus-5] }\n", "", 1)
+	if noModel == baseYAML {
+		t.Fatal("fixture did not change")
+	}
+	got, fileErrs := load(t, map[string]string{"definitions/base.yaml": noModel, "definitions/cee.yaml": childYAML("cee", nil)})
+	if len(fileErrs) != 0 {
+		t.Fatalf("file errors: %v", fileErrs)
+	}
+	if r := got["cee"]; r.Err != nil || r.Effective == nil || r.Effective.Model != nil {
+		t.Fatalf("want valid with no model, got err %v effective %+v", r.Err, r.Effective)
+	}
+}
+
 // The KEY-name checks exist to catch a pasted secret, so they never echo it.
 func TestLoad_SecretValuesNeverEchoed(t *testing.T) {
 	const leaked = "ghp_PASTEDtokenVALUE123"

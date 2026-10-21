@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -141,15 +143,16 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 // `description` is optional now, and is a label rather than an instruction:
 // the session's actual instruction is its first transcript entry.
 func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
-	repo, model, mode := req.Msg.GetRepo(), req.Msg.GetModel(), req.Msg.GetPermissionMode()
+	repo, model, mode, effort := req.Msg.GetRepo(), req.Msg.GetModel(), req.Msg.GetPermissionMode(), req.Msg.GetEffort()
 	// A definition session (docs/adr/0062) is pinned to the definition's
-	// current valid version, and repo, model and mode all come from it. The
+	// current valid version, and repo, model, mode and effort (its
+	// thinking.default) all come from it. The
 	// mode is written EXPLICITLY from mode.default, never the column default:
 	// workspace-base's is auto (docs/adr/0076), but a definition may narrow.
 	var head *definitions.Head
 	if name := req.Msg.GetDefinition(); name != "" {
-		if repo != "" || model != "" || mode != "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model and mode from the definition"))
+		if repo != "" || model != "" || mode != "" || effort != "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model, mode and effort from the definition"))
 		}
 		if s.definitions == nil {
 			return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
@@ -164,7 +167,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 			return nil, connect.NewError(connect.CodeUnavailable, err)
 		}
 		head = &h
-		repo, model, mode = h.Effective.Workspace.Repo, h.Effective.Model.Default, h.Effective.Mode.Default
+		repo, model, mode = h.Effective.Workspace.Repo, defaultModelOf(h.Effective), h.Effective.Mode.Default
 	}
 
 	repoCfg, err := s.startableRepo(ctx, repo)
@@ -178,10 +181,17 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
 
-	if model == "" {
+	// A definition with no model.default stays NULL (docs/adr/0077): its
+	// model comes from the definition, and that one leaves it to Claude Code.
+	switch {
+	case model == "" && head == nil:
 		model = fallbackModel()
-	} else if !isValidModel(model) {
+	case model != "" && !isValidModel(model):
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
+	}
+	// Reaches the SDK verbatim as `effort`, like mode via launchMode.
+	if effort != "" && !slices.Contains(definitions.EffortLevels, effort) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid effort %q", effort))
 	}
 
 	// Same allowlist SetPermissionMode uses, for the same reason: the value
@@ -198,6 +208,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 		Description:    req.Msg.GetDescription(),
 		Model:          model,
 		PermissionMode: mode,
+		Effort:         effort,
 	}
 	// No capacity check for either kind: a create provisions nothing
 	// (docs/adr/0048 §1), so ReserveSlot at warm is the one capacity gate
@@ -230,7 +241,7 @@ func (s *Server) ListDefinitions(_ context.Context, _ *connect.Request[agentflee
 	for _, h := range heads {
 		d := &agentfleetv1.AgentDefinition{Name: h.Name, Sha: h.SHA, Valid: h.SHA != "", Error: h.Err}
 		if h.Effective != nil {
-			d.Repo, d.Model, d.PermissionMode = h.Effective.Workspace.Repo, h.Effective.Model.Default, h.Effective.Mode.Default
+			d.Repo, d.Model, d.PermissionMode = h.Effective.Workspace.Repo, defaultModelOf(h.Effective), h.Effective.Mode.Default
 			d.AudienceGroup = h.Effective.Audience.Group
 			d.SyncedAt = h.SyncedAt.UTC().Format(time.RFC3339)
 		}
@@ -418,21 +429,37 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 	return out
 }
 
-// defaultModel is what a session runs when neither the request nor CLAUDE_MODEL
-// names one. worker/src/session.ts has its own fallback for a row with no
-// model; every path here writes one (fallbackModel), so that fallback only
-// serves rows created before this did.
-const defaultModel = "claude-opus-5-5"
-
-// fallbackModel is the model for a session whose creator named none. Shared by
-// CreateSession and OpenFromProposal — the proposal path used to store NULL and
-// leave the choice to the worker, which got whatever the CLI defaulted to.
+// fallbackModel is the model for a repo session whose creator named none:
+// CLAUDE_MODEL, the operator's override, or "" — stored as NULL, so the worker
+// passes no model and Claude Code picks (docs/adr/0077). The fleet used to pin
+// claude-opus-5-5 here. Shared by CreateSession and OpenFromProposal.
 func fallbackModel() string {
-	if m := os.Getenv("CLAUDE_MODEL"); m != "" {
-		return m
-	}
-	return defaultModel
+	return os.Getenv("CLAUDE_MODEL")
 }
+
+// defaultModelOf is a definition's model.default, "" when it sets no model
+// (optional since docs/adr/0077).
+func defaultModelOf(s *definitions.Spec) string {
+	if s.Model == nil {
+		return ""
+	}
+	return s.Model.Default
+}
+
+// pickableModels is validModels minus the dated snapshots kept only so old
+// rows stay valid: what the New Session dialog offers (ListRepos.models).
+func pickableModels() []string {
+	var out []string
+	for m := range validModels {
+		if !datedModel.MatchString(m) {
+			out = append(out, m)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+var datedModel = regexp.MustCompile(`-\d{8}$`)
 
 // validModels is the allowlist of Claude models that can be selected per-task.
 // This prevents injection of arbitrary model names and ensures only supported
@@ -1314,7 +1341,7 @@ func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.
 	for i, r := range list {
 		out[i] = repoToProto(r)
 	}
-	return connect.NewResponse(&agentfleetv1.ListReposResponse{Repos: out}), nil
+	return connect.NewResponse(&agentfleetv1.ListReposResponse{Repos: out, Models: pickableModels()}), nil
 }
 
 // SyncRepo refreshes the provisioner's clone cache for one repo. Until this
@@ -1514,6 +1541,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		AgentSessionId: t.AgentSessionID,
 		Model:          t.Model,
 		PermissionMode: t.PermissionMode,
+		Effort:         t.Effort,
 		LastActiveAt:   rfc3339(t.LastActiveAt),
 		SweptAt:        rfc3339(t.SweptAt),
 		ArchivedAt:     rfc3339(t.ArchivedAt),

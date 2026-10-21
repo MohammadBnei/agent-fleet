@@ -164,9 +164,10 @@ func TestValidModels_AreRealModelIDs(t *testing.T) {
 		t.Error("claude-haiku-4-5-20250929 is back — that is Sonnet 4.5's date on Haiku's name; " +
 			"it passes this allowlist and then 404s at the API")
 	}
-	if !validModels[defaultModel] {
-		t.Errorf("defaultModel %q is not in validModels — the default would be rejected "+
-			"if a caller ever passed it explicitly", defaultModel)
+	for _, m := range pickableModels() {
+		if !validModels[m] || strings.Contains(m, "-20") {
+			t.Errorf("pickableModels offers %q: want only validModels' aliases, no dated snapshot", m)
+		}
 	}
 
 	for model := range validModels {

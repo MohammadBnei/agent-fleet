@@ -70,6 +70,9 @@ type Session struct {
 	AgentSessionID *string `json:"agentSessionId,omitempty"`
 	Model          *string `json:"model,omitempty"`
 	PermissionMode *string `json:"permissionMode,omitempty"`
+	// Effort is the repo session's chosen effort level; NULL = Claude Code's
+	// default (docs/adr/0077).
+	Effort *string `json:"effort,omitempty"`
 
 	// Liveness inputs (docs/adr/0040), maintained by the activity-tracking
 	// decorator in cmd/core, so DeriveLiveState can be a pure function of
@@ -160,7 +163,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 const selectCols = `
 	s.id, s.repo, s.title, COALESCE(s.description, ''),
 	s.pod_phase, s.pod_message, s.last_error, s.lease_id,
-	s.agent_session_id, s.model, s.permission_mode,
+	s.agent_session_id, s.model, s.permission_mode, s.effort,
 	s.last_entry_type, s.last_entry_from, s.activity_seen, s.seen_at,
 	s.last_active_at, s.swept_at, s.archived_at,
 	s.worker_image, s.sidecar_image,
@@ -179,7 +182,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 	err := row.Scan(
 		&s.ID, &s.Repo, &s.Title, &s.Description,
 		&s.PodPhase, &s.PodMessage, &s.LastError, &leaseID,
-		&s.AgentSessionID, &s.Model, &s.PermissionMode,
+		&s.AgentSessionID, &s.Model, &s.PermissionMode, &s.Effort,
 		&s.LastEntryType, &s.LastEntryFrom, &s.ActivitySeen, &s.SeenAt,
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
 		&s.WorkerImage, &s.SidecarImage,
@@ -222,6 +225,9 @@ type CreateParams struct {
 	// dashboard.validPermissionModes before calling: the value reaches a real
 	// SDK call by way of worker/src/session.ts's launchMode.
 	PermissionMode string
+	// Effort is the SDK effort level; empty writes NULL. Validate against
+	// definitions.EffortLevels before calling, as for PermissionMode.
+	Effort string
 	// DefinitionName/DefinitionSHA pin the session to a definition version
 	// (docs/adr/0062). Both or neither; empty writes NULL.
 	DefinitionName string
@@ -245,10 +251,10 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// constraint. 'auto' matches the column default (db/migrations/000007,
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha)
-		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''))
+		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort)
+		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''))
 		RETURNING id
-	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA).Scan(&id)
+	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)

@@ -19,10 +19,10 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
-// docs/adr/0061. A proposal-opened session used to store no model at all, so
-// the worker ran whatever the CLI defaulted to — CreateSession's default never
-// reached it. Asserts the row, not the call.
-func TestOpenFromProposal_StoresDefaultModelAndAutoMode(t *testing.T) {
+// docs/adr/0061, amended by docs/adr/0077: with no CLAUDE_MODEL a
+// proposal-opened session stores no model, the worker passes none, and Claude
+// Code picks — the same as a dashboard-created one. Asserts the row, not the call.
+func TestOpenFromProposal_StoresNoModelAndAutoMode(t *testing.T) {
 	t.Setenv("CLAUDE_MODEL", "")
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -65,8 +65,8 @@ func TestOpenFromProposal_StoresDefaultModelAndAutoMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.Model == nil || *got.Model != defaultModel {
-		t.Errorf("model = %v, want %q", got.Model, defaultModel)
+	if got.Model != nil {
+		t.Errorf("model = %q, want NULL (Claude Code's default)", *got.Model)
 	}
 	if got.PermissionMode == nil || *got.PermissionMode != "auto" {
 		t.Errorf("permission mode = %v, want auto", got.PermissionMode)

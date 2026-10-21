@@ -14,12 +14,11 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 // Job goes Failed, and a human sees CRASHED with the error attached.
 
 const SESSION_ID = process.env.SESSION_ID ?? "";
-// Kept in step with core/internal/dashboard/server.go's defaultModel. Only
-// reached when a session row carries no model of its own (pre-dating the
-// column, or created outside the dashboard) — a normal session's model comes
-// from the row, not from here.
-// `||` not `??`: the provisioner always sets CLAUDE_MODEL, empty when core has none.
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+// The operator's override, reached only when the session row carries no model.
+// Unset too, query() gets no model and Claude Code picks (docs/adr/0077).
+// `||` not `??`: the provisioner always sets CLAUDE_MODEL, empty when core has
+// none, and an empty string must never reach the SDK as a model.
+const MODEL = process.env.CLAUDE_MODEL || undefined;
 const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
 
 const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "127.0.0.1:9090";
@@ -878,6 +877,13 @@ export async function runSession(): Promise<SessionResult> {
   // Remembered approvals (docs/adr/0076 §3): this session's and its
   // definition's live grants at warm, plus any a human makes while it runs.
   const grants = new Set(session.grants ?? []);
+  // The effort picked at creation (repo session, docs/adr/0077), else the
+  // definition's thinking.default (docs/adr/0067 §4), else none: the CLI decides.
+  const effort = (session.effort || spec?.thinkingDefault || undefined) as EffortLevel | undefined;
+  // What the SDK's init says this session runs on, so a repo session's row
+  // records Claude Code's own pick, not the configured value (docs/adr/0077).
+  // core ignores it for a definition session.
+  let initModel = "";
 
   // The mode this pod BOOTS in — restored from the column so a warm resumes in
   // the mode a human left the session in, rather than reverting to "default".
@@ -1021,9 +1027,9 @@ export async function runSession(): Promise<SessionResult> {
     options: {
       executable: "bun",
       cwd: WORKTREE_PATH,
-      // Use the task's model from the database, falling back to global env
-      // var or default if not set. This allows per-task model selection.
-      model: session.model ?? MODEL,
+      // The row's model, else CLAUDE_MODEL, else none at all: Claude Code
+      // picks (docs/adr/0077). `||`, so an empty string is never passed.
+      ...((session.model || MODEL) ? { model: session.model || MODEL } : {}),
       // Continues the prior conversation instead of starting fresh when
       // this pod is warming an existing session (Phase 4's Warm action) —
       // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
@@ -1226,7 +1232,9 @@ export async function runSession(): Promise<SessionResult> {
       // The definition's thinking and prompt (docs/adr/0067 §4). systemPrompt
       // is otherwise unset, which the SDK sends as an empty custom prompt, so a
       // plain string IS "append" to what this worker runs today.
-      ...(spec?.thinkingDefault ? { effort: spec.thinkingDefault as EffortLevel, thinking: { type: "adaptive" as const } } : {}),
+      // `effort` is the repo session's pick or the definition's thinking
+      // (see above). Unset, both are omitted and the CLI decides.
+      ...(effort ? { effort, thinking: { type: "adaptive" as const } } : {}),
       ...(spec?.systemPromptAppend ? { systemPrompt: spec.systemPromptAppend } : {}),
       abortController,
     },
@@ -1432,7 +1440,7 @@ export async function runSession(): Promise<SessionResult> {
         resolveAllPendingDeny("Conversation cleared.", true, true);
         // Empty id => next warm passes resume: undefined => fresh session.
         await sidecar
-          .saveSessionId("", session.model ?? MODEL)
+          .saveSessionId("", initModel)
           .catch((err) => log("warn", "saveSessionId(clear) failed", { taskId: SESSION_ID, error: String(err) }));
         await sidecar
           .pushMessage("agent", "Conversation cleared — re-warm this session for a fresh start.", "system")
@@ -1500,10 +1508,11 @@ export async function runSession(): Promise<SessionResult> {
             .catch(() => {});
         }
         input.setSessionId(sessionId);
-        // Save the session ID and model to the database
-        const modelToSave = session.model ?? MODEL;
+        // Save the session ID and the model init reported. The first message
+        // is init; were it not, "" leaves the row's model untouched.
+        if (msg.type === "system" && msg.subtype === "init") initModel = msg.model;
         await sidecar
-          .saveSessionId(sessionId, modelToSave)
+          .saveSessionId(sessionId, initModel)
           .catch((err) => log("warn", "saveSessionId failed", { taskId: SESSION_ID, error: String(err) }));
         // Also persist the initial permission mode if not already set. This
         // ensures the mode shows up in the dashboard instead of "?".

@@ -8,6 +8,10 @@
   (the auth this builds on), ADR-0064 (the definition pod profile, next slice),
   `VISION.md` principles 4 and 8 (amended). infra-bootstrap ADR-0060 (the event
   bridge) shares the gate amendment below.
+- **Amended 2026-10-21:** `model` is optional
+  ([ADR-0077](0077-claude-code-picks-the-model.md)). A definition with no
+  `model.default` stores no model and Claude Code picks; when present it is
+  checked as below. `workspace-base` no longer sets one.
 
 ## Context
 

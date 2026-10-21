@@ -210,6 +210,9 @@ export function SessionPanel({
         <Fact label="id" value={shortId(session.id)} />
         <Fact label="model" value={session.model || model || "—"} />
         <Fact label="mode" value={session.permissionMode || "default"} />
+        {/* Only when picked at creation (docs/adr/0077); otherwise the CLI's
+            own, or a definition's thinking.default. */}
+        {session.effort && <Fact label="effort" value={session.effort} />}
         {session.podPhase && <Fact label="pod" value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()} />}
         {/* The build this session's pod is actually on — recorded at dispatch,
             so it stays true after the fleet is upgraded underneath it. Absent

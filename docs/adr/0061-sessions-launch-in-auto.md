@@ -12,6 +12,10 @@
   "snippet's suggested mode" below no longer exists: a session launches in
   `auto` unless a human picks another mode, and plan mode is now only that
   explicit pick.
+- **Amended 2026-10-21:** §4 is reversed by
+  [ADR-0077](0077-claude-code-picks-the-model.md). The fleet pins no model:
+  with no explicit pick and no `CLAUDE_MODEL`, the row stores NULL, the worker
+  passes no model, and Claude Code picks. The `||` in the worker stays.
 
 ## Context
 

@@ -221,7 +221,12 @@ type CreateSessionRequest struct {
 	// permission_mode must be empty: they come from the definition's current
 	// valid version, and the mode is written explicitly, so the 'auto' column
 	// default never applies to a definition session.
-	Definition    *string `protobuf:"bytes,8,opt,name=definition,proto3,oneof" json:"definition,omitempty"`
+	Definition *string `protobuf:"bytes,8,opt,name=definition,proto3,oneof" json:"definition,omitempty"`
+	// Effort level, docs/adr/0077: "low"|"medium"|"high"|"xhigh"|"max", the
+	// SDK's EffortLevel. Absent or empty stores NULL and the CLI decides.
+	// Validated server-side for the same reason as permission_mode. Refused
+	// with a definition, whose spec carries its own thinking.default.
+	Effort        *string `protobuf:"bytes,9,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -294,6 +299,13 @@ func (x *CreateSessionRequest) GetPermissionMode() string {
 func (x *CreateSessionRequest) GetDefinition() string {
 	if x != nil && x.Definition != nil {
 		return *x.Definition
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetEffort() string {
+	if x != nil && x.Effort != nil {
+		return *x.Effort
 	}
 	return ""
 }
@@ -2377,6 +2389,8 @@ type AgentDefinition struct {
 	// "" when valid.
 	Error string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	// Effective workspace.repo, model.default and mode.default ("" when invalid).
+	// model is also "" for a valid definition that sets no model: Claude Code
+	// picks (docs/adr/0077).
 	Repo           string `protobuf:"bytes,5,opt,name=repo,proto3" json:"repo,omitempty"`
 	Model          string `protobuf:"bytes,6,opt,name=model,proto3" json:"model,omitempty"`
 	PermissionMode string `protobuf:"bytes,7,opt,name=permission_mode,json=permissionMode,proto3" json:"permission_mode,omitempty"`
@@ -2571,8 +2585,12 @@ func (*ListReposRequest) Descriptor() ([]byte, []int) {
 }
 
 type ListReposResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repos         []*Repo                `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Repos []*Repo                `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"`
+	// The models CreateSession accepts, minus the legacy dated snapshots kept
+	// only so old rows stay valid (docs/adr/0077). The New Session dialog's
+	// model picker reads this, so the dashboard holds no list of its own.
+	Models        []string `protobuf:"bytes,2,rep,name=models,proto3" json:"models,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2610,6 +2628,13 @@ func (*ListReposResponse) Descriptor() ([]byte, []int) {
 func (x *ListReposResponse) GetRepos() []*Repo {
 	if x != nil {
 		return x.Repos
+	}
+	return nil
+}
+
+func (x *ListReposResponse) GetModels() []string {
+	if x != nil {
+		return x.Models
 	}
 	return nil
 }
@@ -4793,7 +4818,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x14\n" +
 	"\x05query\x18\x02 \x01(\tR\x05query\"J\n" +
 	"\x14ListSessionsResponse\x122\n" +
-	"\bsessions\x18\x01 \x03(\v2\x16.agentfleet.v1.SessionR\bsessions\"\xab\x02\n" +
+	"\bsessions\x18\x01 \x03(\v2\x16.agentfleet.v1.SessionR\bsessions\"\xd3\x02\n" +
 	"\x14CreateSessionRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x19\n" +
@@ -4802,11 +4827,13 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x0fpermission_mode\x18\a \x01(\tH\x02R\x0epermissionMode\x88\x01\x01\x12#\n" +
 	"\n" +
 	"definition\x18\b \x01(\tH\x03R\n" +
-	"definition\x88\x01\x01B\b\n" +
+	"definition\x88\x01\x01\x12\x1b\n" +
+	"\x06effort\x18\t \x01(\tH\x04R\x06effort\x88\x01\x01B\b\n" +
 	"\x06_modelB\b\n" +
 	"\x06_titleB\x12\n" +
 	"\x10_permission_modeB\r\n" +
-	"\v_definitionJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06R\vsnippet_idsR\x04kind\"I\n" +
+	"\v_definitionB\t\n" +
+	"\a_effortJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06R\vsnippet_idsR\x04kind\"I\n" +
 	"\x15CreateSessionResponse\x120\n" +
 	"\asession\x18\x01 \x01(\v2\x16.agentfleet.v1.SessionR\asession\"U\n" +
 	"\x17StreamTranscriptRequest\x12\x1d\n" +
@@ -4956,9 +4983,10 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\vdefinitions\x18\x01 \x03(\v2\x1e.agentfleet.v1.AgentDefinitionR\vdefinitions\x12\x1f\n" +
 	"\vsync_errors\x18\x02 \x03(\tR\n" +
 	"syncErrors\"\x12\n" +
-	"\x10ListReposRequest\">\n" +
+	"\x10ListReposRequest\"V\n" +
 	"\x11ListReposResponse\x12)\n" +
-	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\"E\n" +
+	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\x12\x16\n" +
+	"\x06models\x18\x02 \x03(\tR\x06models\"E\n" +
 	"\x15SetReposActiveRequest\x12\x14\n" +
 	"\x05names\x18\x01 \x03(\tR\x05names\x12\x16\n" +
 	"\x06active\x18\x02 \x01(\bR\x06active\"2\n" +

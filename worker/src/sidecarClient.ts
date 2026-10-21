@@ -78,6 +78,8 @@ export async function getSession(): Promise<{
   description: string;
   permissionMode?: string;
   model?: string;
+  // docs/adr/0077: a repo session's chosen effort level; absent = the CLI's.
+  effort?: string;
   agentSpec?: AgentSpec;
   agentSpecSha?: string;
   grants?: string[];

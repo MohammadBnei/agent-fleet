@@ -6,7 +6,6 @@ kind: AgentDefinition
 metadata: { name: workspace-base }
 spec:
   abstract: true
-  model: { default: claude-opus-5, allow: [claude-opus-5, claude-sonnet-5] }
   thinking: { default: medium }
   mode: { default: auto, allow: [auto, default, plan] }
   tools:
