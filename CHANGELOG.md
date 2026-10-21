@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.19.0](https://github.com/MohammadBnei/agent-fleet/compare/6.18.0...6.19.0) (2026-10-21)
+
+### Features
+
+* **islands:** every message shows who sent it ([#312](https://github.com/MohammadBnei/agent-fleet/issues/312)) ([29c34a8](https://github.com/MohammadBnei/agent-fleet/commit/29c34a81b7997e2da133769b6cbcc6696463bb8e)), closes [#311](https://github.com/MohammadBnei/agent-fleet/issues/311)
+
 # [6.18.0](https://github.com/MohammadBnei/agent-fleet/compare/6.17.0...6.18.0) (2026-10-21)
 
 ### Features
