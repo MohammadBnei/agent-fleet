@@ -27,18 +27,14 @@ RUN --mount=type=cache,id=agent-fleet-gobuild,target=/root/.cache/go-build --mou
     CGO_ENABLED=0 go build -o /out/provisioner ./cmd/provisioner
 
 # Not distroless: as of docs/adr/0019, the provisioner owns the shared
-# PVC's entire git lifecycle itself (clone/fetch/worktree add+remove,
-# internal/git) — it shells out to `git` and `gh` directly, the same tools
-# worker/Dockerfile already installs for the same reason (git.ts's
-# configureGitAuth, ported here as git.Manager.ConfigureAuth).
+# PVC's entire git lifecycle itself (clone/fetch, internal/git) and shells out
+# to `git`. No `gh` since docs/adr/0075: its git auth is App tokens in env.
+# ca-certificates is also the base of the repo pods' CA bundle (EnsureVaultCA).
 FROM debian:12-slim
 # Unpinned installs below: docker.yml passes the ISO week, so a cached layer
 # is refreshed at least weekly instead of living forever.
 ARG CACHE_WEEK=none
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates rsync \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/provisioner /provisioner
 ENTRYPOINT ["/provisioner"]

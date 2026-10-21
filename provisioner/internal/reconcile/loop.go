@@ -116,12 +116,12 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		if !job.Terminal() {
 			continue
 		}
-		// docs/adr/0065: a definition Job's token dies before the report.
+		// docs/adr/0065, 0075 §7: a session Job's token dies before the report.
 		// Exactly its own label, so a re-warm's new token is never hit, even
 		// on a re-sighting after a provisioner restart. 3s budget, retried
 		// next tick while the Job is listed.
-		if _, done := l.revoked[job.TaskID]; !done && job.Definition != "" && job.VaultLabel != "" {
-			if err := l.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+		if _, done := l.revoked[job.TaskID]; !done && job.Vault() != "" && job.VaultLabel != "" {
+			if err := l.vault.Revoke(ctx, job.Vault(), job.VaultLabel); err != nil {
 				slog.Warn("reconcile: vault revoke failed, retried next tick", "sessionId", job.TaskID, "error", err)
 			} else {
 				l.revoked[job.TaskID] = struct{}{}

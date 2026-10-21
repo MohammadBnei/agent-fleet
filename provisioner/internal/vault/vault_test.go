@@ -293,10 +293,14 @@ func TestPrune_EmptiesAbsentKeepsExecutor(t *testing.T) {
 	f.Configure(func(f *vaulttest.Server) {
 		f.Vaults["executor-x"] = &vaulttest.Vault{Services: json.RawMessage(`[{"name":"x","host":"h"}]`), Creds: map[string]string{"K": "v"}}
 	})
+	// An owner vault: core's set never names it (ReconcileOwner owns it).
+	if _, err := c.ReconcileOwner(ctx, "MohammadBnei", "ghs-x"); err != nil {
+		t.Fatal(err)
+	}
 	if err := c.Prune(ctx, map[string]bool{"keep-me": true}); err != nil {
 		t.Fatal(err)
 	}
-	for n, want := range map[string]int{"keep-me": 1, "drop-me": 0, "executor-x": 1} {
+	for n, want := range map[string]int{"keep-me": 1, "drop-me": 0, "executor-x": 1, "owner-mohammadbnei": 3} {
 		if got := len(services(t, f, n)); got != want {
 			t.Errorf("%s: %d services, want %d", n, got, want)
 		}
@@ -530,5 +534,74 @@ func TestReconcile_ForgeFailureFallsBackToTheMountedFile(t *testing.T) {
 	}
 	if v, _ := f.Get("dev-notes"); v.Creds["GH_DEV_NOTES"] != "ghp-sentinel-value" {
 		t.Errorf("GH_DEV_NOTES = %q, want the mounted file", v.Creds["GH_DEV_NOTES"])
+	}
+}
+
+// docs/adr/0075 §7: an owner vault passes unmatched hosts through, from its
+// creation on, and maps the whole of both GitHub hosts to the owner token.
+func TestReconcileOwner_PassthroughWholeHosts(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ctx := context.Background()
+	widened, err := c.ReconcileOwner(ctx, "MohammadBnei", "ghs-owner")
+	if err != nil || !widened {
+		t.Fatalf("widened %v err %v", widened, err)
+	}
+	v, _ := f.Get("owner-mohammadbnei")
+	if v.Policy != "passthrough" || v.Creds["GH_OWNER_MOHAMMADBNEI"] != "ghs-owner" || v.Creds["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-sentinel-value" {
+		t.Fatalf("vault %+v", v)
+	}
+	hosts := map[string]string{}
+	for _, s := range services(t, f, "owner-mohammadbnei") {
+		hosts[s.Host] = s.Auth.Type + ":" + s.Auth.Token + s.Auth.Password
+	}
+	want := map[string]string{
+		"github.com:443":        "basic:GH_OWNER_MOHAMMADBNEI",
+		"api.github.com:443":    "bearer:GH_OWNER_MOHAMMADBNEI",
+		"api.anthropic.com:443": "bearer:CLAUDE_CODE_OAUTH_TOKEN",
+	}
+	if len(hosts) != len(want) {
+		t.Fatalf("services %v", hosts)
+	}
+	for h, w := range want {
+		if hosts[h] != w {
+			t.Errorf("%s: %q, want %q", h, hosts[h], w)
+		}
+	}
+	// The policy is set right after the create, before any credential lands.
+	writes := f.Writes()
+	if len(writes) < 2 || writes[0] != "POST /v1/vaults" || !strings.HasPrefix(writes[1], "PATCH /v1/vaults/owner-mohammadbnei/settings") {
+		t.Errorf("writes %v", writes)
+	}
+	// A re-mint only rewrites the credential, never widens.
+	f.AddSession("owner-mohammadbnei", "live")
+	if widened, err := c.ReconcileOwner(ctx, "mohammadbnei", "ghs-owner-2"); err != nil || widened {
+		t.Fatalf("widened %v err %v", widened, err)
+	}
+	if v, _ := f.Get("owner-mohammadbnei"); v.Creds["GH_OWNER_MOHAMMADBNEI"] != "ghs-owner-2" || len(v.Sessions) != 1 {
+		t.Errorf("vault %+v", v)
+	}
+}
+
+// A missing model token or GitHub token writes nothing: narrowing an owner
+// vault would widen back later and revoke every repo pod's token.
+func TestReconcileOwner_MissingValueWritesNothing(t *testing.T) {
+	c, f, _ := setup(t, map[string]string{})
+	if _, err := c.ReconcileOwner(context.Background(), "MohammadBnei", "ghs"); err == nil || !strings.Contains(err.Error(), "CLAUDE_CODE_OAUTH_TOKEN") {
+		t.Fatalf("err %v", err)
+	}
+	c2, f2, _ := setup(t, notesSecrets)
+	if _, err := c2.ReconcileOwner(context.Background(), "MohammadBnei", ""); err == nil {
+		t.Fatal("no GitHub token accepted")
+	}
+	if w := append(f.Writes(), f2.Writes()...); len(w) != 0 {
+		t.Errorf("writes %v", w)
+	}
+}
+
+// The owner- prefix is reserved: no definition may name its vault so.
+func TestReconcile_RefusesOwnerPrefix(t *testing.T) {
+	c, _, _ := setup(t, notesSecrets)
+	if _, err := c.Reconcile(context.Background(), vault.Spec{Name: "owner-x", Services: notesSpec().Services[2:]}); err == nil {
+		t.Fatal("a definition took the owner- prefix")
 	}
 }

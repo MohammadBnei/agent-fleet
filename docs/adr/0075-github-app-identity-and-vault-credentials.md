@@ -197,3 +197,36 @@ Each step is one PR, merged by the user.
    `gh api user` in the same PR.
 5. **Retire the bot.** Remove `argocd-ukubi-bot` from the fleet repos and
    delete `/GH_TOKEN`.
+
+## Step 4 as built (2026-10-21)
+
+- **Owner vaults** are `owner-<login lowercased>`, reconciled by the
+  provisioner at every repo warm and on its 5-minute refresh tick for every
+  allowlisted owner, without core. A missing model token or a failed owner
+  mint is an error before any vault write, so an owner vault never narrows.
+  A new vault gets its `unmatched_host_policy` right after creation, for
+  definition vaults too.
+- **No pod clones from the remote.** The repo pods' clone init container held
+  no credential and fetched its base from GitHub, so it only ever worked for
+  public repos. Every pod now clones the provisioner's cache, fetched with the
+  App token just before the pod is created (`EnsureRepoFetched`, never
+  skipped). A repo warm therefore waits for a concurrent fetch of the same
+  repo, up to its own deadline. A repo session's existing tree is kept as
+  before: any `.git` means the clone is skipped, never wiped.
+- **CA bundle.** The provisioner writes `bundle.pem` (its image's system roots
+  plus the vault root) next to `ca.pem` in `agent-vault-ca`. Repo pods point
+  every CA variable at it except `NODE_EXTRA_CA_CERTS`, which adds to Node's
+  roots and takes `ca.pem`. Chromium gets the vault root in its NSS db at
+  start (`worker/entrypoint.sh`, `libnss3-tools`).
+- **`NO_PROXY`** for repo pods: loopback, core, the vault, `.cluster.local`,
+  `.svc`, `.bnei.lan`, `.bnei.dev`, `10.233.0.0/18`, `10.233.64.0/18`,
+  `192.168.1.0/24`.
+- **Removed:** `GH_TOKEN` and the real `CLAUDE_CODE_OAUTH_TOKEN` from every
+  pod, `ConfigureAuth` and `gh` from the provisioner, the worker's
+  `configureGitAuth` (`gh api user`), `EnsureRepoCachedForSession`.
+- **Deferred to their own PRs:** the workflows opt-in (an owner vault is
+  shared by every repo pod of its owner, so a per-session `workflows` grant
+  needs a second vault per owner, not a column), and decision 10's pushed-age
+  metric, alerts and `CREDENTIAL_STALE`. Until the opt-in lands, no fleet
+  session can push a change under `.github/workflows/`.
+- **kind-local** has no Agent Vault, so repo sessions no longer start there.

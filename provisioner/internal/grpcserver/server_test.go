@@ -20,7 +20,9 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault/vaulttest"
 )
 
 // newFakeK8sClient has the definition egress lock in place (docs/adr/0065 §5).
@@ -55,9 +57,15 @@ func (f *fakeEventReporter) ReportEvent(ctx context.Context, event *agentfleetv1
 // newTestOriginRepo creates a real local git repo (a commit on "main") to
 // clone from — same "real temp git repo, no mocking" convention
 // worker/src/git.test.ts already used for this exact kind of logic.
+//
+// It sits at .../MohammadBnei/origin: a repo warm reads its owner vault from
+// the URL's owner segment (docs/adr/0075 §7).
 func newTestOriginRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "MohammadBnei", "origin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
@@ -84,7 +92,31 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", "", "", "test"), k8sc, reporter
+	s := New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", "", "", "test")
+	withRepoVault(t, s)
+	return s, k8sc, reporter
+}
+
+// fakeApp stands in for the App ukubi-fleet: one owner, a fixed token.
+type fakeApp struct {
+	token string
+	err   error
+}
+
+func (f *fakeApp) ListRepos(context.Context) ([]github.Repo, error) { return nil, nil }
+func (f *fakeApp) Owners(context.Context) ([]string, error)         { return []string{"MohammadBnei"}, nil }
+func (f *fakeApp) OwnerToken(context.Context, string) (string, error) {
+	return f.token, f.err
+}
+
+// withRepoVault gives s what a repo warm needs (docs/adr/0075 §7): a fake
+// vault with the model token, and a fake App minting the owner token.
+func withRepoVault(t *testing.T, s *Server) *vaulttest.Server {
+	t.Helper()
+	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	s.SetGitHub(&fakeApp{token: "ghs-owner"})
+	s.SetGitIdentity("ukubi", "ukubi@bnei.dev")
+	return f
 }
 
 func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
@@ -216,6 +248,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	run("commit", "-m", "init")
 
 	s := New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", fleetSharedOrigin, "main", "test")
+	withRepoVault(t, s)
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
 

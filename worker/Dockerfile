@@ -29,7 +29,7 @@ FROM oven/bun:1-slim
 # Unpinned installs below: docker.yml passes the ISO week, so a cached layer
 # is refreshed at least weekly instead of living forever.
 ARG CACHE_WEEK=none
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps python3 \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps python3 libnss3-tools \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
@@ -198,8 +198,8 @@ RUN git clone --depth 1 --branch ${PONYTAIL_VERSION} https://github.com/Dietrich
 # (`--dangerously-skip-permissions`) as root/sudo — a real crash hit live
 # (task 405e2cd0, 2026-08-10) once a task's mode got set to
 # bypassPermissions via the dashboard and every resume inherited it. `git`/
-# `gh` push still work non-root; auth is a token (GH_TOKEN), not an
-# OS-level credential. Reuses the base image's own `bun` user (uid 1000)
+# `gh` push still work non-root; auth is the vault's, on the wire
+# (docs/adr/0075), not an OS-level credential. Reuses the base image's own `bun` user (uid 1000)
 # rather than creating a new one. chmod opens /root so entrypoint.sh's
 # plugin copy (above) still works post-USER-switch.
 RUN chmod -R o+rX /root

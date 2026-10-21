@@ -504,19 +504,22 @@ func TestLoad_SecretValuesNeverEchoed(t *testing.T) {
 	}
 }
 
-// docs/adr/0065: vault slug minimum and the executor's reserved prefix, which
-// the provisioner's prune never empties.
+// docs/adr/0065, 0075: vault slug minimum and the executor's and owner
+// vaults' reserved prefixes, which the provisioner's prune never empties.
 func TestLoad_VaultNames(t *testing.T) {
 	got, _ := load(t, map[string]string{
 		"definitions/base.yaml":       baseYAML,
 		"definitions/ab.yaml":         childYAML("ab", nil),
 		"definitions/executor-x.yaml": childYAML("executor-x", nil),
+		"definitions/owner-x.yaml":    childYAML("owner-x", nil),
 	})
 	if msg := errText(got["ab"].Err); !strings.Contains(msg, "at least 3") {
 		t.Errorf("ab: %q", msg)
 	}
-	if msg := errText(got["executor-x"].Err); !strings.Contains(msg, "reserved") {
-		t.Errorf("executor-x: %q", msg)
+	for _, n := range []string{"executor-x", "owner-x"} {
+		if msg := errText(got[n].Err); !strings.Contains(msg, "reserved") {
+			t.Errorf("%s: %q", n, msg)
+		}
 	}
 }
 

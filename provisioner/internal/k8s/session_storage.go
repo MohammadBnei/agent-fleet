@@ -181,36 +181,21 @@ git config --global --add safe.directory '*'
 	}
 }
 
-// cloneTail is the part of the clone script from its workspace guard on.
+// cloneTail is the part of the clone script from its workspace guard on. The
+// clone is the same for every pod since docs/adr/0075: none holds a credential
+// it could use, so none contacts the remote. The guard is not.
 func cloneTail(spec WorkerPodSpec, base string) string {
-	format := `if [ -d %[1]s/.git ]; then
+	// A repo session's tree predates the marker: any .git means the agent
+	// may have worked there, and wiping it would lose uncommitted work. The
+	// cost is the old one, a clone killed mid-way is not retried.
+	guard := `if [ -d %[1]s/.git ]; then
   echo "workspace already has a repository, leaving it alone"
   exit 0
 fi
 mkdir -p %[1]s
-git clone --shared /repo-cache/%[2]s %[1]s
-cd %[1]s
-# The clone's origin points at the local cache, which is useless to the agent:
-# it needs to fetch from and push to the real remote.
-git remote set-url origin %[4]s
-
-# Then take the base branch from the REAL remote, not from the cache.
-#
-# EnsureRepoCloned only ever runs "git fetch origin" on the cache, which
-# advances its remote-tracking refs and leaves its LOCAL branches frozen at
-# whenever it was first cloned. "git clone --shared" copies the source's LOCAL
-# branches — so checking out from the cache alone starts every session on a
-# base that may be months stale, and a branch created after the cache existed
-# would not be found at all. Neither failure is visible: the agent gets a
-# perfectly valid repository and branches from the wrong commit.
-#
-# Objects still arrive through the alternates link, so this transfers only the
-# delta the cache is genuinely missing.
-git fetch origin %[3]s
-git checkout -B %[3]s FETCH_HEAD
 `
 	if spec.Definition != nil {
-		format = `# The marker is the script's last step, so only a finished clone has it. A
+		guard = `# The marker is the script's last step, so only a finished clone has it. A
 # clone killed mid-way (OOM, eviction, SIGKILL: no trap would run) left a
 # partial tree the agent never ran on, since the worker starts only after
 # this container succeeds: wipe it and clone again.
@@ -220,13 +205,15 @@ if [ -f %[1]s/.git/fleet-clone-done ]; then
 fi
 mkdir -p %[1]s
 find %[1]s -mindepth 1 -delete
-git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
+`
+	}
+	format := guard + `git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
 cd %[1]s
 # docs/adr/0064: local transport only. This container holds no credential and
 # never contacts the remote: the fetch names the cache's PATH, not "origin", so
 # no reordering can turn it into a remote fetch. It copies the cache's
 # REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
-# (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
+# (git.Manager.EnsureRepoFetched, never skipped) just
 # before this pod was created, over the ones clone --shared made from the
 # cache's local branches (frozen at its first clone), so origin/* is current.
 git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
@@ -234,6 +221,5 @@ git checkout -B %[3]s origin/%[3]s
 git remote set-url origin %[4]s
 touch .git/fleet-clone-done
 `
-	}
 	return fmt.Sprintf(format, sessionWorkdir, spec.Repo, base, spec.RepoURL)
 }

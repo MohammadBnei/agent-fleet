@@ -434,6 +434,9 @@ func validate(name string, s *Spec) error {
 		if strings.HasPrefix(c.Vault, "executor-") {
 			bad("credentials.vault %q: the executor- prefix is reserved for the event bridge's executor", c.Vault)
 		}
+		if strings.HasPrefix(c.Vault, "owner-") {
+			bad("credentials.vault %q: the owner- prefix is reserved for repo pods' vaults (docs/adr/0075)", c.Vault)
+		}
 		if len(c.Services) == 0 {
 			bad("credentials.services must not be empty")
 		}

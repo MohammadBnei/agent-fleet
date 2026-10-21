@@ -35,6 +35,16 @@ type LiveWorkerJob struct {
 	// (docs/adr/0065): its vault, and its token's exact session label.
 	Definition string
 	VaultLabel string
+	// VaultOwner is a repo session's owner vault (docs/adr/0075 §7).
+	VaultOwner string
+}
+
+// Vault is the vault the Job's token is on: its definition's or its owner's.
+func (j LiveWorkerJob) Vault() string {
+	if j.Definition != "" {
+		return j.Definition
+	}
+	return j.VaultOwner
 }
 
 // Terminal is every phase jobPhase reports for a finished Job.
@@ -46,6 +56,7 @@ func liveJob(job *batchv1.Job) LiveWorkerJob {
 	return LiveWorkerJob{
 		TaskID: job.Labels[TaskIDLabel], JobName: job.Name, Phase: jobPhase(job),
 		Definition: job.Labels[DefinitionLabel], VaultLabel: job.Annotations[VaultLabelAnnotation],
+		VaultOwner: job.Labels[VaultOwnerLabel],
 	}
 }
 

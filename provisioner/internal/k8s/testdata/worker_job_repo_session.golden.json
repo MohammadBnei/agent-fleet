@@ -6,10 +6,15 @@
       "agent-fleet.dev/component": "worker",
       "agent-fleet.dev/repo": "dream-analyst",
       "agent-fleet.dev/task-id": "task-1",
-      "app.kubernetes.io/part-of": "agent-fleet"
+      "app.kubernetes.io/part-of": "agent-fleet",
+      "fleet.bnei.dev/vault-owner": "owner-o"
+    },
+    "annotations": {
+      "fleet.bnei.dev/vault-label": "task-1.1"
     }
   },
   "spec": {
+    "activeDeadlineSeconds": 43200,
     "backoffLimit": 0,
     "template": {
       "metadata": {
@@ -17,7 +22,8 @@
           "agent-fleet.dev/component": "worker",
           "agent-fleet.dev/repo": "dream-analyst",
           "agent-fleet.dev/task-id": "task-1",
-          "app.kubernetes.io/part-of": "agent-fleet"
+          "app.kubernetes.io/part-of": "agent-fleet",
+          "fleet.bnei.dev/vault-owner": "owner-o"
         }
       },
       "spec": {
@@ -33,6 +39,12 @@
             "persistentVolumeClaim": {
               "claimName": "agent-fleet-workspace"
             }
+          },
+          {
+            "name": "agent-vault-ca",
+            "configMap": {
+              "name": "agent-vault-ca"
+            }
           }
         ],
         "initContainers": [
@@ -42,7 +54,7 @@
             "command": [
               "sh",
               "-c",
-              "set -eu\n# Git's ownership guard (CVE-2022-24765) refuses every command in a repository\n# whose directory belongs to another user. The PVC's mount point is created by\n# the kubelet as root and this container runs as the image's non-root user, so\n# without this the clone SUCCEEDS and the very next command fails with\n# \"detected dubious ownership\" — which is what happened the first time this\n# ran in kind. worker/src/index.ts already carries the same line for the same\n# reason; both containers need it because they do not share $HOME.\n#\n# The wildcard, not the two paths this used to list, because safe.directory is\n# an exact compare against the path git NAMES — and a local-transport clone\n# enters the cache as a bare gitdir, so the path it wants is\n# /repo-cache/\u003crepo\u003e/.git, not the directory above it. Listing the parent\n# looked right, matched nothing, and every session died on \"Could not read from\n# remote repository\" — the clone's report of a failure that was really the\n# ownership guard. The sidecar container next door already wildcards the same\n# way (pod.go's GIT_CONFIG_VALUE_0). This container runs as uid 1000 and\n# mounts only its own workspace plus the read-only cache; there is nothing else\n# here for a wildcard to over-trust.\ngit config --global --add safe.directory '*'\n\nif [ -d /workspace/.git ]; then\n  echo \"workspace already has a repository, leaving it alone\"\n  exit 0\nfi\nmkdir -p /workspace\ngit clone --shared /repo-cache/dream-analyst /workspace\ncd /workspace\n# The clone's origin points at the local cache, which is useless to the agent:\n# it needs to fetch from and push to the real remote.\ngit remote set-url origin https://github.com/o/dream-analyst.git\n\n# Then take the base branch from the REAL remote, not from the cache.\n#\n# EnsureRepoCloned only ever runs \"git fetch origin\" on the cache, which\n# advances its remote-tracking refs and leaves its LOCAL branches frozen at\n# whenever it was first cloned. \"git clone --shared\" copies the source's LOCAL\n# branches — so checking out from the cache alone starts every session on a\n# base that may be months stale, and a branch created after the cache existed\n# would not be found at all. Neither failure is visible: the agent gets a\n# perfectly valid repository and branches from the wrong commit.\n#\n# Objects still arrive through the alternates link, so this transfers only the\n# delta the cache is genuinely missing.\ngit fetch origin dev\ngit checkout -B dev FETCH_HEAD\n"
+              "set -eu\n# Git's ownership guard (CVE-2022-24765) refuses every command in a repository\n# whose directory belongs to another user. The PVC's mount point is created by\n# the kubelet as root and this container runs as the image's non-root user, so\n# without this the clone SUCCEEDS and the very next command fails with\n# \"detected dubious ownership\" — which is what happened the first time this\n# ran in kind. worker/src/index.ts already carries the same line for the same\n# reason; both containers need it because they do not share $HOME.\n#\n# The wildcard, not the two paths this used to list, because safe.directory is\n# an exact compare against the path git NAMES — and a local-transport clone\n# enters the cache as a bare gitdir, so the path it wants is\n# /repo-cache/\u003crepo\u003e/.git, not the directory above it. Listing the parent\n# looked right, matched nothing, and every session died on \"Could not read from\n# remote repository\" — the clone's report of a failure that was really the\n# ownership guard. The sidecar container next door already wildcards the same\n# way (pod.go's GIT_CONFIG_VALUE_0). This container runs as uid 1000 and\n# mounts only its own workspace plus the read-only cache; there is nothing else\n# here for a wildcard to over-trust.\ngit config --global --add safe.directory '*'\n\nif [ -d /workspace/.git ]; then\n  echo \"workspace already has a repository, leaving it alone\"\n  exit 0\nfi\nmkdir -p /workspace\ngit clone --shared --no-checkout /repo-cache/dream-analyst /workspace\ncd /workspace\n# docs/adr/0064: local transport only. This container holds no credential and\n# never contacts the remote: the fetch names the cache's PATH, not \"origin\", so\n# no reordering can turn it into a remote fetch. It copies the cache's\n# REMOTE-TRACKING refs, which the provisioner fetched with its own credentials\n# (git.Manager.EnsureRepoFetched, never skipped) just\n# before this pod was created, over the ones clone --shared made from the\n# cache's local branches (frozen at its first clone), so origin/* is current.\ngit fetch --no-tags /repo-cache/dream-analyst '+refs/remotes/origin/*:refs/remotes/origin/*'\ngit checkout -B dev origin/dev\ngit remote set-url origin https://github.com/o/dream-analyst.git\ntouch .git/fleet-clone-done\n"
             ],
             "resources": {
               "limits": {
@@ -173,24 +185,12 @@
                 "value": "dream-analyst"
               },
               {
-                "name": "LEASE_ID",
-                "value": "lease-1"
-              },
-              {
                 "name": "SIDECAR_MCP_ADDR",
                 "value": "127.0.0.1:9090"
               },
               {
                 "name": "SIDECAR_API_ADDR",
                 "value": "127.0.0.1:9091"
-              },
-              {
-                "name": "GH_TOKEN",
-                "value": "gh-token"
-              },
-              {
-                "name": "CLAUDE_CODE_OAUTH_TOKEN",
-                "value": "oauth-token"
               },
               {
                 "name": "CLAUDE_MODEL",
@@ -226,6 +226,90 @@
               {
                 "name": "CLAUDE_CODE_CONTAINER_ID",
                 "value": "task-1"
+              },
+              {
+                "name": "HTTPS_PROXY",
+                "value": "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322"
+              },
+              {
+                "name": "https_proxy",
+                "value": "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322"
+              },
+              {
+                "name": "NO_PROXY",
+                "value": "127.0.0.1,localhost,.cluster.local,.svc,.bnei.lan,.bnei.dev,10.233.0.0/18,10.233.64.0/18,192.168.1.0/24,agent-vault.agent-vault.svc.cluster.local"
+              },
+              {
+                "name": "no_proxy",
+                "value": "127.0.0.1,localhost,.cluster.local,.svc,.bnei.lan,.bnei.dev,10.233.0.0/18,10.233.64.0/18,192.168.1.0/24,agent-vault.agent-vault.svc.cluster.local"
+              },
+              {
+                "name": "NODE_USE_ENV_PROXY",
+                "value": "1"
+              },
+              {
+                "name": "SSL_CERT_FILE",
+                "value": "/etc/agent-vault/bundle.pem"
+              },
+              {
+                "name": "REQUESTS_CA_BUNDLE",
+                "value": "/etc/agent-vault/bundle.pem"
+              },
+              {
+                "name": "NODE_EXTRA_CA_CERTS",
+                "value": "/etc/agent-vault/ca.pem"
+              },
+              {
+                "name": "GIT_SSL_CAINFO",
+                "value": "/etc/agent-vault/bundle.pem"
+              },
+              {
+                "name": "CURL_CA_BUNDLE",
+                "value": "/etc/agent-vault/bundle.pem"
+              },
+              {
+                "name": "CLAUDE_CODE_OAUTH_TOKEN",
+                "value": "fleet-vault-placeholder"
+              },
+              {
+                "name": "GH_TOKEN",
+                "value": "fleet-vault-placeholder"
+              },
+              {
+                "name": "GIT_TERMINAL_PROMPT",
+                "value": "0"
+              },
+              {
+                "name": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                "value": "1"
+              },
+              {
+                "name": "GIT_AUTHOR_NAME",
+                "value": "ukubi"
+              },
+              {
+                "name": "GIT_COMMITTER_NAME",
+                "value": "ukubi"
+              },
+              {
+                "name": "GIT_AUTHOR_EMAIL",
+                "value": "ukubi@bnei.dev"
+              },
+              {
+                "name": "GIT_COMMITTER_EMAIL",
+                "value": "ukubi@bnei.dev"
+              },
+              {
+                "name": "GIT_CONFIG_COUNT",
+                "value": "1"
+              },
+              {
+                "name": "GIT_CONFIG_KEY_0",
+                "value": "safe.directory"
+              },
+              {
+                "name": "GIT_CONFIG_VALUE_0",
+                "value": "/workspace"
               },
               {
                 "name": "BUN_INSTALL_CACHE_DIR",
@@ -315,6 +399,11 @@
                 "readOnly": true,
                 "mountPath": "/ms-playwright",
                 "subPath": "browsers"
+              },
+              {
+                "name": "agent-vault-ca",
+                "readOnly": true,
+                "mountPath": "/etc/agent-vault"
               }
             ]
           }

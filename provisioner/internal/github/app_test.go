@@ -342,3 +342,31 @@ func TestApp_GitEnvUnmountedIsNoop(t *testing.T) {
 		t.Fatalf("env %v err %v", env, err)
 	}
 }
+
+// docs/adr/0075 §7: a repo pods' token covers the owner's whole allowlisted
+// installation, never the foreign one with the same login, never workflows.
+func TestApp_OwnerTokenIsInstallationWide(t *testing.T) {
+	a, f := newApp(t, false)
+	tok, err := a.OwnerToken(context.Background(), "mohammadbnei")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := a.OwnerToken(context.Background(), "MohammadBnei"); again != tok || len(f.mints) != 1 {
+		t.Fatalf("not cached: %q then %q, %d mints", tok, again, len(f.mints))
+	}
+	m := f.mints[0]
+	if m["path"] != "/app/installations/2/access_tokens" || m["repositories"] != nil {
+		t.Errorf("mint %v, want installation 2 unnarrowed", m)
+	}
+	perms, _ := m["permissions"].(map[string]any)
+	if perms["contents"] != "write" || perms["issues"] != "write" || perms["checks"] != "read" || perms["workflows"] != nil {
+		t.Errorf("permissions %v", perms)
+	}
+	if _, err := a.OwnerToken(context.Background(), "someone-else"); err == nil {
+		t.Error("a non-allowlisted owner got a token")
+	}
+	owners, err := a.Owners(context.Background())
+	if err != nil || strings.Join(owners, ",") != "MohammadBnei,opus-tech-hq" {
+		t.Errorf("owners %v %v", owners, err)
+	}
+}
