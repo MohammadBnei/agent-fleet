@@ -38,6 +38,9 @@ func (s *Server) CreateSchedule(ctx context.Context, req *connect.Request[agentf
 	if err != nil {
 		return nil, err
 	}
+	if s.repos.Inactive(ctx, in.Repo) {
+		return nil, errInactive(in.Repo)
+	}
 
 	sc, err := s.schedules.Create(ctx, in, runAt)
 	if err != nil {
@@ -54,6 +57,17 @@ func (s *Server) UpdateSchedule(ctx context.Context, req *connect.Request[agentf
 		req.Msg.GetCron(), req.Msg.GetIntervalSeconds(), req.Msg.GetEnabled(), req.Msg.GetRunAt())
 	if err != nil {
 		return nil, err
+	}
+	// Retargeting onto an inactive repo is refused; editing or pausing a
+	// schedule whose repo was switched off since is not.
+	if s.repos.Inactive(ctx, in.Repo) {
+		cur, err := s.scheduleRepo(ctx, in.ID)
+		if err != nil {
+			return nil, scheduleErr("UpdateSchedule", err)
+		}
+		if cur != in.Repo {
+			return nil, errInactive(in.Repo)
+		}
 	}
 
 	sc, err := s.schedules.Update(ctx, in, runAt)
@@ -157,4 +171,20 @@ func scheduleToProto(sc schedules.Schedule) *agentfleetv1.Schedule {
 		LastStatus:      sc.LastStatus,
 		RunNow:          sc.RunNow,
 	}
+}
+
+// scheduleRepo is the stored repo of one schedule, "" when there is none.
+// ponytail: scans List, only reached when the target repo is inactive; add
+// Store.Get if a hotter path needs it.
+func (s *Server) scheduleRepo(ctx context.Context, id string) (string, error) {
+	list, err := s.schedules.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, sc := range list {
+		if sc.ID == id {
+			return sc.Repo, nil
+		}
+	}
+	return "", nil
 }

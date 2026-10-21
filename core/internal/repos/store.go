@@ -100,12 +100,20 @@ func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 	return &r, nil
 }
 
-// SetActive sets active on the named, non-gone repos and returns how many it
-// updated; unknown names are ignored.
+// SetActive sets active on the named, non-gone repos and returns how many
+// actually changed; unknown names and rows already at the value are skipped.
 func (s *Store) SetActive(ctx context.Context, names []string, active bool) (int64, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE repos SET active = $2, updated_at = now() WHERE name = ANY($1) AND gone_since IS NULL`, names, active)
+	tag, err := s.pool.Exec(ctx, `UPDATE repos SET active = $2, updated_at = now() WHERE name = ANY($1) AND gone_since IS NULL AND active IS DISTINCT FROM $2`, names, active)
 	if err != nil {
 		return 0, fmt.Errorf("set repos active: %w", err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+// Inactive reports whether name is a known, non-gone repo that is switched
+// off. Unknown, gone and a failed lookup all report false: machine-filed
+// proposals keep their old behaviour there, and opening one is gated anyway.
+func (s *Store) Inactive(ctx context.Context, name string) bool {
+	r, err := s.Get(ctx, name)
+	return err == nil && r != nil && !r.Active
 }

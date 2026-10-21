@@ -11,6 +11,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
+	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -68,5 +69,37 @@ func TestReposActive(t *testing.T) {
 	}
 	if blog == nil || blog.GetActive() || blog.GetCreatedAt() == "" {
 		t.Fatalf("ListRepos blog = %v, want listed, inactive, with created_at", blog)
+	}
+}
+
+// A schedule cannot be created on, or retargeted onto, an inactive repo, but
+// one already there can still be edited and paused.
+func TestSchedulesRefuseInactiveRepo(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	s := &Server{repos: repos.NewStore(pool), schedules: schedules.NewStore(pool)}
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('blog', 'https://example.invalid/blog.git'), ('notes', 'https://example.invalid/notes.git')`); err != nil {
+		t.Fatal(err)
+	}
+	created, err := s.CreateSchedule(ctx, connect.NewRequest(&agentfleetv1.CreateScheduleRequest{Name: "weekly", Repo: "blog", Prompt: "p", IntervalSeconds: 3600}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetReposActive(ctx, connect.NewRequest(&agentfleetv1.SetReposActiveRequest{Names: []string{"blog", "notes"}, Active: false})); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = s.CreateSchedule(ctx, connect.NewRequest(&agentfleetv1.CreateScheduleRequest{Name: "other", Repo: "notes", Prompt: "p", IntervalSeconds: 3600}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("CreateSchedule on inactive: %v (%v)", connect.CodeOf(err), err)
+	}
+	upd := &agentfleetv1.UpdateScheduleRequest{Id: created.Msg.GetSchedule().GetId(), Name: "weekly", Repo: "blog", Prompt: "p", IntervalSeconds: 3600}
+	if _, err := s.UpdateSchedule(ctx, connect.NewRequest(upd)); err != nil {
+		t.Fatalf("pausing a schedule on its own inactive repo: %v", err)
+	}
+	upd.Repo = "notes"
+	_, err = s.UpdateSchedule(ctx, connect.NewRequest(upd))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("retarget onto inactive: %v (%v)", connect.CodeOf(err), err)
 	}
 }

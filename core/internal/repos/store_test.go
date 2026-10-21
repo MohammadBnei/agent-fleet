@@ -252,6 +252,9 @@ func TestSetActive(t *testing.T) {
 	if err != nil || n != 2 {
 		t.Fatalf("SetActive = %d (%v), want 2: gone and unknown names are skipped", n, err)
 	}
+	if n, err := s.SetActive(ctx, []string{"dream-analyst", "infra-bootstrap"}, false); err != nil || n != 1 {
+		t.Fatalf("SetActive = %d (%v), want 1: a row already inactive is not a change", n, err)
+	}
 	var goneActive bool
 	if err := pool.QueryRow(ctx, `SELECT active FROM repos WHERE name = 'agent-fleet'`).Scan(&goneActive); err != nil || !goneActive {
 		t.Fatalf("gone row active = %v (%v), want untouched", goneActive, err)
@@ -261,8 +264,8 @@ func TestSetActive(t *testing.T) {
 	if r := get(t, s, "dream-analyst"); r == nil || r.Active {
 		t.Fatalf("dream-analyst after sync = %+v, want still inactive", r)
 	}
-	if r := get(t, s, "infra-bootstrap"); !r.Active {
-		t.Fatal("an unlisted repo was deactivated")
+	if r := get(t, s, "agent-fleet"); !r.Active {
+		t.Fatal("a gone repo was deactivated")
 	}
 	list, err := s.List(ctx)
 	if err != nil {
@@ -274,7 +277,19 @@ func TestSetActive(t *testing.T) {
 			inactive++
 		}
 	}
-	if inactive != 2 {
-		t.Fatalf("List carries %d inactive rows, want 2", inactive)
+	if inactive != 3 {
+		t.Fatalf("List carries %d inactive rows, want 3", inactive)
+	}
+}
+
+func TestInactive(t *testing.T) {
+	s, _ := setup(t)
+	ctx := context.Background()
+	runSync(t, s, seeded, seededOverrides)
+	if _, err := s.SetActive(ctx, []string{"dream-analyst"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Inactive(ctx, "dream-analyst") || s.Inactive(ctx, "agent-fleet") || s.Inactive(ctx, "nope") {
+		t.Fatal("Inactive must be true only for a known, switched-off repo")
 	}
 }

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { Repo, SyncRepoResponse } from "../gen/agentfleet/v1/dashboard_pb";
 import { useToggleSet } from "../useToggleSet";
-import { filterRepos, isNew, ownerOf, toggleAll, type RepoStatus } from "../repoFilter";
+import { filterRepos, isNew, keepShown, ownerOf, toggleAll, type RepoFilter, type RepoStatus } from "../repoFilter";
 import { ConfirmModal } from "./ConfirmModal";
 import { InlineError } from "./InlineError";
 
@@ -44,9 +44,11 @@ type SyncState = { text: string; failed: boolean };
 // A bulk deactivation past this many repos asks first.
 const CONFIRM_OVER = 10;
 
-function RepoRow({ repo, isNewRepo, selected, onSelect, onActive, onSync, syncing, busy, sync }: {
+function RepoRow({ repo, isNewRepo, selected, onSelect, onActive, writing, onSync, syncing, busy, sync }: {
   repo: Repo;
   isNewRepo: boolean;
+  // An active write is in flight: the switch waits for its reload.
+  writing: boolean;
   selected: boolean;
   onSelect: () => void;
   onActive: (active: boolean) => void;
@@ -75,6 +77,7 @@ function RepoRow({ repo, isNewRepo, selected, onSelect, onActive, onSync, syncin
         role="switch"
         checked={repo.active}
         onChange={(e) => onActive(e.target.checked)}
+        disabled={writing}
         aria-label={`${repo.name} active`}
         title={repo.active ? "Active: new sessions allowed" : "Inactive: no new sessions"}
         className="toggle toggle-xs toggle-success flex-none"
@@ -110,17 +113,22 @@ export function ReposPanel() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<Record<string, SyncState>>({});
-  const [query, setQuery] = useState("");
-  const [owner, setOwner] = useState("");
-  const [status, setStatus] = useState<RepoStatus>("all");
-  const { set: selected, toggle: select, setSet: setSelected } = useToggleSet();
-  const [writing, setWriting] = useState(false);
+  const [filter, setFilter] = useState<RepoFilter>({ query: "", owner: "", status: "all" });
+  const { set: selected, toggle: select, setSet: setSelected, clear: clearSelected } = useToggleSet();
+  // A count, not a flag: two overlapping writes must not end "writing" when
+  // the first one finishes.
+  const [writes, setWrites] = useState(0);
+  const writing = writes > 0;
+  // Only the latest reload may land: a slow one must not overwrite a newer list.
+  const loadSeq = useRef(0);
   const [pendingDeactivate, setPendingDeactivate] = useState<string[] | null>(null);
 
   function load() {
+    const seq = ++loadSeq.current;
     return client
       .listRepos({})
       .then((res) => {
+        if (seq !== loadSeq.current) return;
         setRepos(res.repos);
         setLoaded(true);
       })
@@ -139,32 +147,43 @@ export function ReposPanel() {
   // Mount time: "new" is a 7-day window, so a stale clock costs nothing.
   const [now] = useState(() => Date.now());
   const owners = useMemo(() => [...new Set(repos.map(ownerOf).filter(Boolean))].sort(), [repos]);
-  const shown = filterRepos(repos, { query, owner, status }, now);
+  const shown = filterRepos(repos, filter, now);
   // Bulk actions act on what is both selected and shown: a row the filter
   // hides is never switched off by a click the operator could not see.
-  const picked = shown.filter((r) => selected.has(r.name)).map((r) => r.name);
+  // updateFilter already drops hidden rows; this covers a reload removing one.
+  const picked = shown.filter((r) => selected.has(r.name));
   const allShownPicked = shown.length > 0 && picked.length === shown.length;
+
+  function updateFilter(patch: Partial<RepoFilter>) {
+    const next = { ...filter, ...patch };
+    setFilter(next);
+    setSelected((prev) => keepShown(prev, filterRepos(repos, next, now)));
+  }
   const activeCount = repos.filter((r) => r.active).length;
   const newCount = repos.filter((r) => isNew(r, now)).length;
 
   // Reload rather than patch locally: the server skips gone and unknown
   // names, and the list is what it says.
   async function setActive(names: string[], active: boolean) {
-    setWriting(true);
+    setWrites((n) => n + 1);
     setError(null);
+    clearSelected();
     try {
       await client.setReposActive({ names, active });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setWriting(false);
+      setWrites((n) => n - 1);
     }
   }
 
+  // Only rows that would actually change are sent, and counted for the confirm.
   function bulk(active: boolean) {
-    if (!active && picked.length > CONFIRM_OVER) setPendingDeactivate(picked);
-    else void setActive(picked, active);
+    const changing = picked.filter((r) => r.active !== active).map((r) => r.name);
+    if (changing.length === 0) clearSelected();
+    else if (!active && changing.length > CONFIRM_OVER) setPendingDeactivate(changing);
+    else void setActive(changing, active);
   }
 
   // The error message is shown verbatim rather than reduced to "sync failed":
@@ -214,22 +233,24 @@ export function ReposPanel() {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 mb-2">
+        {/* w-auto: DaisyUI sizes inputs and selects at 20rem, which wrapped
+            this row at 1280px. */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-2">
           <input
             type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={filter.query}
+            onChange={(e) => updateFilter({ query: e.target.value })}
             placeholder="search repos"
             aria-label="search repos"
-            className={`${field} flex-1 min-w-40`}
+            className={`${field} w-auto flex-1 min-w-0`}
           />
-          <select value={owner} onChange={(e) => setOwner(e.target.value)} aria-label="owner" className="select select-sm select-bordered">
+          <select value={filter.owner} onChange={(e) => updateFilter({ owner: e.target.value })} aria-label="owner" className="select select-sm select-bordered w-auto flex-none">
             <option value="">all owners</option>
             {owners.map((o) => (
               <option key={o} value={o}>{o}</option>
             ))}
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value as RepoStatus)} aria-label="status" className="select select-sm select-bordered">
+          <select value={filter.status} onChange={(e) => updateFilter({ status: e.target.value as RepoStatus })} aria-label="status" className="select select-sm select-bordered w-auto flex-none">
             <option value="all">all</option>
             <option value="active">active</option>
             <option value="inactive">inactive</option>
@@ -266,6 +287,7 @@ export function ReposPanel() {
               selected={selected.has(r.name)}
               onSelect={() => select(r.name)}
               onActive={(active) => void setActive([r.name], active)}
+              writing={writing}
               onSync={syncOne}
               syncing={syncing === r.name}
               busy={syncing !== null}

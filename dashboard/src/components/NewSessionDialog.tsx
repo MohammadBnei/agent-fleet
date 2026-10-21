@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
+import { activeRepos } from "../repoFilter";
 import { queueFirstMessage } from "../useSessionDetail";
 import { Modal } from "./Modal";
 import type { AgentDefinition, Repo } from "../gen/agentfleet/v1/dashboard_pb";
@@ -58,10 +59,11 @@ export function NewSessionDialog({
     client
       .listRepos({})
       .then((res) => {
-        // Inactive repos start no session; core would refuse them anyway.
-        const active = res.repos.filter((r) => r.active);
+        // Inactive repos start no session; core would refuse them anyway. A
+        // remembered pick that has since been switched off falls back too.
+        const active = activeRepos(res.repos);
         setRepos(active);
-        setRepo((current) => current || active[0]?.name || "");
+        setRepo((current) => (active.some((r) => r.name === current) ? current : active[0]?.name || ""));
       })
       .catch((err: Error) => setError(err.message));
   }, [dialogOpen]);

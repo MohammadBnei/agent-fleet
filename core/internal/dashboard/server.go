@@ -167,19 +167,13 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 		repo, model, mode = h.Effective.Workspace.Repo, h.Effective.Model.Default, h.Effective.Mode.Default
 	}
 
-	repoCfg, err := s.repos.Get(ctx, repo)
-	if err != nil {
-		slog.Error("dashboard CreateSession: repo lookup", "repo", repo, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
+	repoCfg, err := s.startableRepo(ctx, repo)
 	switch {
-	case repoCfg == nil && head != nil:
+	case connect.CodeOf(err) == connect.CodeNotFound && head != nil:
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("definition %q targets repo %q, which is not onboarded (add it under manage repos)", head.Name, repo))
-	case repoCfg == nil:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown repo %q", repo))
-	case !repoCfg.Active:
-		return nil, errInactive(repo)
+	case err != nil:
+		return nil, err
 	case head != nil && repoCfg.ClusterAccess:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
@@ -313,15 +307,8 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	}
 	// Checked before anything is consumed: a schedule or alert must not open
 	// a session on a repo the admin switched off, and the proposal stays open.
-	r, err := s.repos.Get(ctx, p.Repo)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if r == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("repo %q is gone", p.Repo))
-	}
-	if !r.Active {
-		return nil, errInactive(p.Repo)
+	if _, err := s.startableRepo(ctx, p.Repo); err != nil {
+		return nil, err
 	}
 
 	// Title for both the label fields: the body is not a label, it is the
@@ -1347,19 +1334,9 @@ func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1
 	if name == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name is required"))
 	}
-	r, err := s.repos.Get(ctx, name)
+	r, err := s.startableRepo(ctx, name)
 	if err != nil {
-		slog.Error("dashboard SyncRepo lookup", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	// repos.Store.Get reports "no such repo" as (nil, nil), not
-	// pgx.ErrNoRows. Checking for the sentinel here compiles, passes every
-	// test with a repo that exists, and panics on the first typo'd name.
-	if r == nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
-	}
-	if !r.Active {
-		return nil, errInactive(name)
+		return nil, err
 	}
 	resp, err := s.e2e.SyncRepoCache(ctx, r.Name, r.URL)
 	if err != nil {
@@ -1395,9 +1372,29 @@ func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 	}
 }
 
-// errInactive is the one refusal for every way of starting a session on a
-// switched-off repo. Existing sessions are not refused: WarmIfIdle never
+// startableRepo is the one repo gate for starting work: every path that
+// opens a new session (and SyncRepo) must go through it, so an inactive repo
+// is refused everywhere at once. Unknown or gone is NotFound, inactive is
+// FailedPrecondition. Existing sessions are not gated: WarmIfIdle never
 // checks active.
+func (s *Server) startableRepo(ctx context.Context, name string) (*repos.Repo, error) {
+	r, err := s.repos.Get(ctx, name)
+	if err != nil {
+		slog.Error("dashboard repo lookup", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// repos.Store.Get reports "no such repo" as (nil, nil), not
+	// pgx.ErrNoRows. Checking for the sentinel here compiles, passes every
+	// test with a repo that exists, and panics on the first typo'd name.
+	if r == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
+	}
+	if !r.Active {
+		return nil, errInactive(name)
+	}
+	return r, nil
+}
+
 func errInactive(name string) error {
 	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("repo %s is inactive; enable it in Settings → Repos", name))
 }

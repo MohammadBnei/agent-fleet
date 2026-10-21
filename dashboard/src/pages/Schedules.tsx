@@ -1,6 +1,7 @@
 import { relativeTime } from "../relativeTime";
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
+import { activeRepos } from "../repoFilter";
 import type { Schedule, Proposal, Repo } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
@@ -275,7 +276,7 @@ function ScheduleForm({
           <select value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="repo" className={field}>
             {/* Active repos only, except the one an existing schedule already
                 targets: hiding it would silently retarget the schedule on save. */}
-            {repos.filter((r) => r.active || r.name === schedule?.repo).map((r) => (
+            {activeRepos(repos, schedule?.repo).map((r) => (
               <option key={r.name} value={r.name}>
                 {`${r.name}${r.clusterAccess ? " · cluster access" : ""}${r.active ? "" : " · inactive"}`}
               </option>

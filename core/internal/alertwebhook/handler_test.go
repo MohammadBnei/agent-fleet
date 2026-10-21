@@ -222,3 +222,17 @@ func TestMalformedAlertDoesNotDropTheBatch(t *testing.T) {
 		t.Errorf("the well-formed alert should still be filed, got %v", tasks.calls)
 	}
 }
+
+// An inactive repo files nothing; the webhook still answers 200 so
+// Alertmanager does not retry the batch.
+func TestInactiveRepoFilesNothing(t *testing.T) {
+	tasks := &fakeTasks{}
+	h := New(tasks, nil, Config{Token: "t", Repo: "infra-bootstrap"})
+	h.SetInactive(func(_ context.Context, repo string) bool { return repo == "infra-bootstrap" })
+	if rec := post(t, h, "t", firing); rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rec.Code)
+	}
+	if len(tasks.calls) != 0 {
+		t.Fatalf("filed %v on an inactive repo", tasks.calls)
+	}
+}

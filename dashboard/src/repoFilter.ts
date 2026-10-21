@@ -42,3 +42,15 @@ export function toggleAll(selected: Set<string>, shown: Repo[]): Set<string> {
   }
   return next;
 }
+
+// What a selection keeps after the filter changes: only rows still shown, so a
+// bulk action never reaches a row the operator cannot see.
+export function keepShown(selected: Set<string>, shown: Repo[]): Set<string> {
+  return new Set(shown.filter((r) => selected.has(r.name)).map((r) => r.name));
+}
+
+// Repos a new session may target, plus `keep` (an existing schedule's repo,
+// switched off since) so editing the schedule does not silently retarget it.
+export function activeRepos(list: Repo[], keep?: string): Repo[] {
+  return list.filter((r) => r.active || r.name === keep);
+}

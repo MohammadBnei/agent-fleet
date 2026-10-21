@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import type { Repo } from "./gen/agentfleet/v1/dashboard_pb";
-import { filterRepos, isNew, ownerOf, toggleAll } from "./repoFilter";
+import { activeRepos, filterRepos, isNew, keepShown, ownerOf, toggleAll } from "./repoFilter";
 
 const now = Date.parse("2026-10-21T00:00:00Z");
 
@@ -40,4 +40,13 @@ test("toggleAll selects every filtered row, then clears only those", () => {
   const picked = toggleAll(new Set(["workspace", "blog"]), shown);
   expect([...picked].sort()).toEqual(["blog", "notes", "workspace"]);
   expect([...toggleAll(picked, shown)]).toEqual(["workspace"]);
+});
+
+test("keepShown drops selected rows the filter now hides", () => {
+  expect([...keepShown(new Set(["blog", "notes", "gone"]), repos.slice(0, 1))]).toEqual(["blog"]);
+});
+
+test("activeRepos keeps active rows plus the one named", () => {
+  expect(activeRepos(repos).map((r) => r.name)).toEqual(["blog", "workspace"]);
+  expect(activeRepos(repos, "notes").map((r) => r.name)).toEqual(["blog", "notes", "workspace"]);
 });
