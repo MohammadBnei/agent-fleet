@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.4.0](https://github.com/MohammadBnei/agent-fleet/compare/6.3.0...6.4.0) (2026-10-21)
+
+### Features
+
+* **grants:** remembered approvals for definition sessions (ADR-0076 §3) ([#292](https://github.com/MohammadBnei/agent-fleet/issues/292)) ([4eae31e](https://github.com/MohammadBnei/agent-fleet/commit/4eae31e77a80dd5a0989d8ab8a8b60aa7abdaa6c))
+
 # [6.3.0](https://github.com/MohammadBnei/agent-fleet/compare/6.2.1...6.3.0) (2026-10-21)
 
 ### Features
