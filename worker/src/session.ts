@@ -3,7 +3,7 @@ import * as sidecar from "./sidecarClient.js";
 import type { AgentSpec } from "./sidecarClient.js";
 import { log } from "./log.js";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // TransientError used to be thrown when an SDK result looked like a
@@ -307,6 +307,36 @@ function workspacePath(path: unknown, worktree: string): string | undefined {
   return segments.join("/");
 }
 
+// docs/adr/0068 §4: a SilverBullet space runs scripts its pages carry, and an
+// island on that host acts as whoever opens the page. So a write that adds a
+// script always asks a human, in every mode, and no remembered grant covers
+// it: a .js/.mjs file, anything under Library/ (installed libraries), or
+// content that gains a Space Lua/Script fence, a ${…} expression, js.import or
+// js.window. Counted on the file as it would be AFTER the edit, so pieces an
+// Edit joins to text already there are caught too.
+const SCRIPT_MARKERS = /```\s*space-(?:lua|script)|\$\{|js\.import|js\.window/g;
+const countMarkers = (text: string) => text.match(SCRIPT_MARKERS)?.length ?? 0;
+
+export function writesScript(toolName: string, input: Record<string, unknown>, rel: string, abs: string): boolean {
+  if (/\.m?js$/i.test(rel) || rel === "Library" || rel.startsWith("Library/")) return true;
+  let before = "";
+  try {
+    before = readFileSync(abs, "utf8");
+  } catch {
+    // A new file.
+  }
+  let after: string;
+  if (toolName === "Write") {
+    after = typeof input.content === "string" ? input.content : "";
+  } else {
+    const oldS = typeof input.old_string === "string" ? input.old_string : "";
+    const newS = typeof input.new_string === "string" ? input.new_string : "";
+    // An edit the file cannot take fails anyway; judge the new text alone.
+    after = oldS && before.includes(oldS) ? (input.replace_all === true ? before.replaceAll(oldS, newS) : before.replace(oldS, newS)) : before + newS;
+  }
+  return countMarkers(after) > countMarkers(before);
+}
+
 // The grant a call matches (docs/adr/0076 §3), or undefined. Core renders
 // grants as tools.allow's forms plus `Edit(<path>)` / `Edit(<dir>/**)` (and
 // Write), with paths relative to the worktree; `rel` is the call's resolved
@@ -343,6 +373,7 @@ export function definitionDecision(
   const pathKey = PATH_TOOLS[toolName];
   const rel = pathKey ? workspacePath(input[pathKey], worktree) : undefined;
   if (pathKey && rel === undefined) return { behavior: "deny", message: "outside this definition's workspace" };
+  if (rel !== undefined && writesScript(toolName, input, rel, join(worktree, rel))) return ask;
   // A grant is matched on its own, not only when tools.allow misses: a listed
   // `Edit` that asks in `default`, or a listed prefix whose argument check
   // fails, must not hide the human's exact approval of the same call.

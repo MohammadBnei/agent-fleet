@@ -5,10 +5,10 @@
 // result-subtype classification — without a real Claude session or
 // sidecar. Mocks must be registered before importing session.js (Bun
 // resolves mock.module() calls ahead of subsequent static imports).
-import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, expect, mock, beforeEach, afterAll } from "bun:test";
+import { test, expect, mock, beforeEach, afterAll, describe } from "bun:test";
 
 
 // --- fake sidecarClient.js ---
@@ -1958,4 +1958,41 @@ test("a grant does not ask under interaction: deny", () => {
   const spec = { ...DEF_NONE, interaction: "deny" };
   expect(definitionDecision(spec, "Bash", { command: "npm test" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("allow");
   expect(definitionDecision(spec, "Bash", { command: "ls" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("deny");
+});
+
+// docs/adr/0068 §4: a write that adds a script to a SilverBullet space asks a
+// human in every mode, and no remembered grant covers it.
+describe("script-write ask", () => {
+  const page = join(WT, "page.md");
+  writeFileSync(page, "Price {total} today.\n```lua\nprint(1)\n```\n${already}\n");
+  const decide = (tool: string, input: Record<string, unknown>, grants: string[] = []) =>
+    definitionDecision(DEF_ALLOW, tool, input, "auto", WT, grants).behavior;
+
+  test.each([
+    ["a space-lua fence", { file_path: "new.md", content: "```space-lua\nprint(1)\n```" }],
+    ["a space-script fence", { file_path: "new.md", content: "``` space-script\nx\n```" }],
+    ["an expression", { file_path: "new.md", content: "Total: ${query[[from index.tag 'x']]}" }],
+    ["js.import", { file_path: "new.md", content: "local m = js.import('https://x')" }],
+    ["js.window", { file_path: "new.md", content: "js.window.alert(1)" }],
+    ["a .js file", { file_path: "lib/x.js", content: "1" }],
+    ["a .mjs file", { file_path: "x.MJS", content: "1" }],
+    ["a library install", { file_path: "Library/Std/x.md", content: "plain" }],
+  ])("Write with %s asks", (_, input) => {
+    expect(decide("Write", input)).toBe("ask");
+    expect(decide("Write", input, ["Write"])).toBe("ask");
+  });
+
+  test("an Edit that joins a marker from pieces asks", () => {
+    expect(decide("Edit", { file_path: "page.md", old_string: "Price ", new_string: "Price $" })).toBe("ask");
+    expect(decide("Edit", { file_path: "page.md", old_string: "```lua", new_string: "```space-lua" })).toBe("ask");
+  });
+
+  test("plain writes and edits that add no marker still run", () => {
+    expect(decide("Write", { file_path: "new.md", content: "# Notes\nNothing to run." })).toBe("allow");
+    expect(decide("Edit", { file_path: "page.md", old_string: "today", new_string: "tomorrow" })).toBe("allow");
+    // Removing an existing expression adds none.
+    expect(decide("Edit", { file_path: "page.md", old_string: "${already}", new_string: "already" })).toBe("allow");
+    // Rewriting a page that already holds one, without adding another.
+    expect(decide("Write", { file_path: "page.md", content: "${already} and more text" })).toBe("allow");
+  });
 });
