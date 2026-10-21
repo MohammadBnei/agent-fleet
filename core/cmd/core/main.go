@@ -11,18 +11,20 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/db"
 )
 
-// version is stamped at image build time via
-// `-ldflags "-X main.version=$VERSION"` (see core/Dockerfile and
-// .github/workflows/docker.yml, which passes the same string it tags the image
-// with). "dev" for a plain local `go build` — there is no other source: the
-// binary is built from a partial context with no .git, so debug.ReadBuildInfo
-// has no VCS stamp to read.
+// version is the release this binary runs as: FLEET_VERSION, which deploy
+// sets on the Deployment (.github/workflows/docker.yml), or "dev" without it.
+// Not compiled in any more: an image is tagged by a hash of its inputs and
+// reused across releases that don't touch them, so the binary cannot know
+// which release it is part of.
 //
 // It covers the dashboard SPA too: that is compiled into this binary
 // (core/Dockerfile's spa stage → go:embed), so it has no version of its own.
 var version = "dev"
 
 func main() {
+	if v := os.Getenv("FLEET_VERSION"); v != "" {
+		version = v
+	}
 	cfg := config.Load()
 
 	// JSON, not slog's default TextHandler — Loki/LogQL queries against

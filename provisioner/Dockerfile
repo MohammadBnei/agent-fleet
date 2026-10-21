@@ -20,10 +20,8 @@ COPY go.work.sum ./
 # portable across a partial build context.
 RUN go work init ./proto/gen/go ./provisioner
 WORKDIR /app/provisioner
-# See core/Dockerfile: same string docker.yml tags the image with, so the
-# binary and the tag cannot drift.
-ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/provisioner ./cmd/provisioner
+# No version compiled in: FLEET_VERSION at run time (see core/Dockerfile).
+RUN CGO_ENABLED=0 go build -o /out/provisioner ./cmd/provisioner
 
 # Not distroless: as of docs/adr/0019, the provisioner owns the shared
 # PVC's entire git lifecycle itself (clone/fetch/worktree add+remove,
@@ -31,6 +29,9 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/provisi
 # worker/Dockerfile already installs for the same reason (git.ts's
 # configureGitAuth, ported here as git.Manager.ConfigureAuth).
 FROM debian:12-slim
+# Unpinned installs below: docker.yml passes the ISO week, so a cached layer
+# is refreshed at least weekly instead of living forever.
+ARG CACHE_WEEK=none
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates rsync \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \

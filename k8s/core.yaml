@@ -125,6 +125,11 @@ ingress:
       sourceHeader: ""
 
 env:
+  # The release core reports (dashboard, logs). Set by docker.yml's deploy job:
+  # the image tag is a hash of core's inputs, shared by every release that
+  # doesn't change them, so the version can't come from the image.
+  - name: FLEET_VERSION
+    value: ""
   - name: CORE_PORT
     value: "8080"
   - name: CORE_GRPC_PORT

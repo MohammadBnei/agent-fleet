@@ -49,7 +49,7 @@ type Server struct {
 	// tests that don't care about fleet-shared content).
 	fleetSharedRepoURL string
 	fleetSharedBranch  string
-	// version is this binary's build, compiled in via -ldflags (see
+	// version is the release this provisioner runs as, FLEET_VERSION (see
 	// cmd/provisioner/main.go). Reported by GetVersion, and the default ref
 	// ListDefinitionFiles reads definitions at.
 	version string

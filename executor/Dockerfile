@@ -27,6 +27,9 @@ RUN CGO_ENABLED=0 go build -o /out/kubectl-shim ./cmd/kubectlshim
 # as its own in-cluster ServiceAccount (auto-detected from the projected
 # token mount — no kubeconfig, no credential outside the cluster).
 FROM debian:bookworm-slim
+# Unpinned installs below: docker.yml passes the ISO week, so a cached layer
+# is refreshed at least weekly instead of living forever.
+ARG CACHE_WEEK=none
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \

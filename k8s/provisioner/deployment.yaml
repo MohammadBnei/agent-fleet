@@ -56,6 +56,13 @@ spec:
           initialDelaySeconds: 2
           periodSeconds: 10
         env:
+        # The release this provisioner runs as, and the ref it reads
+        # definitions/ at (docs/adr/0062). Set by docker.yml's deploy job:
+        # the image tag is a hash of the provisioner's inputs, so a
+        # definitions-only release changes only this value, which is what
+        # rolls the pod onto the new definitions.
+        - name: FLEET_VERSION
+          value: ""
         - name: NAMESPACE
           value: agent-fleet
         # BASE domain, not the old deeper e2e.bnei.dev. Previews are now
