@@ -867,7 +867,11 @@ type Session struct {
 	// The effort level a repo session launches with (docs/adr/0077). Unset =
 	// none chosen: the worker passes no effort and Claude Code decides. A
 	// definition session leaves it unset and uses its spec's thinking.default.
-	Effort        *string `protobuf:"bytes,27,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
+	Effort *string `protobuf:"bytes,27,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
+	// The release that built this session's pod, recorded next to
+	// worker_image/sidecar_image from CreateWorkerPodResponse.fleet_version.
+	// Unset for a pod created before the provisioner reported it.
+	FleetVersion  *string `protobuf:"bytes,28,opt,name=fleet_version,json=fleetVersion,proto3,oneof" json:"fleet_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1038,6 +1042,13 @@ func (x *Session) GetDefinitionSha() string {
 func (x *Session) GetEffort() string {
 	if x != nil && x.Effort != nil {
 		return *x.Effort
+	}
+	return ""
+}
+
+func (x *Session) GetFleetVersion() string {
+	if x != nil && x.FleetVersion != nil {
+		return *x.FleetVersion
 	}
 	return ""
 }
@@ -2986,7 +2997,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\"*\n" +
 	"\x16RequestServiceResponse\x12\x10\n" +
-	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\xb9\b\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\xf5\b\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -3012,7 +3023,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\rsidecar_image\x18\x18 \x01(\tH\vR\fsidecarImage\x88\x01\x01\x12,\n" +
 	"\x0fdefinition_name\x18\x19 \x01(\tH\fR\x0edefinitionName\x88\x01\x01\x12*\n" +
 	"\x0edefinition_sha\x18\x1a \x01(\tH\rR\rdefinitionSha\x88\x01\x01\x12\x1b\n" +
-	"\x06effort\x18\x1b \x01(\tH\x0eR\x06effort\x88\x01\x01B\b\n" +
+	"\x06effort\x18\x1b \x01(\tH\x0eR\x06effort\x88\x01\x01\x12(\n" +
+	"\rfleet_version\x18\x1c \x01(\tH\x0fR\ffleetVersion\x88\x01\x01B\b\n" +
 	"\x06_titleB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +
@@ -3028,7 +3040,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x0e_sidecar_imageB\x12\n" +
 	"\x10_definition_nameB\x11\n" +
 	"\x0f_definition_shaB\t\n" +
-	"\a_effortJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"\a_effortB\x10\n" +
+	"\x0e_fleet_versionJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
 	"\x10\vJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11J\x04\b\x05\x10\x06R\x06statusR\x06pr_urlR\fheartbeat_atR\vretry_countR\x0eawaiting_humanR\x04kindR\tthread_id\"\x9c\x01\n" +
 	"\x0eSessionSummary\x12\x1d\n" +

@@ -237,6 +237,9 @@ type WorkerPod struct {
 	// row so the dashboard can report the build a session is running.
 	WorkerImage  string
 	SidecarImage string
+	// FleetVersion is the release of the provisioner that built the pod. An
+	// older provisioner never sets it.
+	FleetVersion string
 	// DefinitionProfileApplied is the provisioner's confirmation that this pod
 	// got the definition profile (docs/adr/0064). An older provisioner never
 	// sets it.
@@ -275,6 +278,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		PodName:                  resp.GetPodName(),
 		WorkerImage:              resp.GetWorkerImage(),
 		SidecarImage:             resp.GetSidecarImage(),
+		FleetVersion:             resp.GetFleetVersion(),
 		DefinitionProfileApplied: resp.GetDefinitionProfileApplied(),
 		VaultTokenApplied:        resp.GetVaultTokenApplied(),
 		GenomeApplied:            resp.GetGenomeApplied(),

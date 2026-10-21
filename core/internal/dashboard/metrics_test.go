@@ -218,3 +218,20 @@ func TestImageTag(t *testing.T) {
 		}
 	}
 }
+
+// podVersion names the release first and keeps the src tag beside it; a pod
+// built before the provisioner reported a release shows the tag alone.
+func TestPodVersion(t *testing.T) {
+	for _, tt := range []struct{ release, image, want string }{
+		{"6.22.1", "reg:5000/agent-fleet-worker:src-8a19aa40c3d2", "6.22.1 (src-8a19aa40)"},
+		{"dev", "reg:5000/agent-fleet-worker:src-8a19aa40c3d2", "dev (src-8a19aa40)"},
+		{"", "reg:5000/agent-fleet-worker:src-8a19aa40c3d2", "src-8a19aa40"},
+		{"6.22.1", "agent-fleet-worker:3.5.4", "6.22.1 (3.5.4)"},
+		{"6.22.1", "", "6.22.1"},
+		{"", "", ""},
+	} {
+		if got := podVersion(tt.release, tt.image); got != tt.want {
+			t.Errorf("podVersion(%q, %q) = %q, want %q", tt.release, tt.image, got, tt.want)
+		}
+	}
+}

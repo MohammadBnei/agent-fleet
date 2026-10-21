@@ -143,7 +143,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 			// The image this pod actually got, not today's default — the two
 			// differ for the whole window between a fleet upgrade and this
 			// session's next warm.
-			Version: imageTag(t.WorkerImage),
+			Version: podVersion(t.FleetVersion, t.WorkerImage),
 		})
 	}
 
@@ -187,6 +187,25 @@ func imageTag(ref string) string {
 		return ref
 	}
 	return ref[i+1:]
+}
+
+// podVersion is what a worker cell shows: the release that built the pod, then
+// its image tag — "6.22.1 (src-8a19aa40)". Images are tagged by an input hash
+// since #300 and reused across releases, so the tag alone no longer names the
+// release. A pod from before the provisioner reported one shows the tag only.
+// Mirrored by the dashboard's podVersion (dashboard/src/imageTag.ts).
+func podVersion(release, image string) string {
+	tag := imageTag(image)
+	if hash, ok := strings.CutPrefix(tag, "src-"); ok && len(hash) > 8 {
+		tag = "src-" + hash[:8]
+	}
+	switch {
+	case release == "":
+		return tag
+	case tag == "":
+		return release
+	}
+	return release + " (" + tag + ")"
 }
 
 // cellStatus maps a task onto the four colours the topology view renders.

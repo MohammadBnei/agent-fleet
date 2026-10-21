@@ -2,7 +2,7 @@
 import { shortId } from "../sessionState";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import type { ToolCallSummary, TodoItem, SubagentRun, BackgroundTask } from "../transcript";
-import { imageTag } from "../imageTag";
+import { podVersion } from "../imageTag";
 import { TickBar, todoProgress } from "./TickBar";
 import { ActionsMenu } from "./ActionsMenu";
 
@@ -217,8 +217,8 @@ export function SessionPanel({
         {/* The build this session's pod is actually on — recorded at dispatch,
             so it stays true after the fleet is upgraded underneath it. Absent
             until the session has had a pod. */}
-        {session.workerImage && <Fact label="worker" value={imageTag(session.workerImage)} />}
-        {session.sidecarImage && <Fact label="sidecar" value={imageTag(session.sidecarImage)} />}
+        {session.workerImage && <Fact label="worker" value={podVersion(session.fleetVersion, session.workerImage)} />}
+        {session.sidecarImage && <Fact label="sidecar" value={podVersion(session.fleetVersion, session.sidecarImage)} />}
       </dl>
       <ActionsMenu
         sessionId={session.id}

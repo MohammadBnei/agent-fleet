@@ -77,6 +77,7 @@ func main() {
 	k8sc, err := k8s.New(cfg.Namespace, k8s.Images{
 		WorkerImage:           cfg.WorkerImage,
 		SidecarImage:          cfg.SidecarImage,
+		Version:               version,
 		ThotAuthToken:         cfg.ThotAuthToken,
 		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,

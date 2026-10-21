@@ -227,12 +227,16 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                 ) : (
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
-                      #{shortId(p.sessionId)}
-                      {p.version && ` · ${truncate(p.version.replace(/^src-/, ""), 14)}`}
+                      #{shortId(p.sessionId)} ·{" "}
+                      <tspan className={`${s.text} fill-current`}>{p.status}</tspan>
                     </text>
-                    <text x={8} y={58} className={`text-[9px] ${s.text} fill-current`}>
-                      {p.status}
-                    </text>
+                    {/* core's podVersion, "6.22.1 (src-8a19aa40)": its own line,
+                        since release + tag outgrow the id line. */}
+                    {p.version && (
+                      <text x={8} y={58} className="fill-dim2 text-[9px]">
+                        {truncate(p.version, 26)}
+                      </text>
+                    )}
                   </>
                 )}
               </g>

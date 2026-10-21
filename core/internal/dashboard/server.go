@@ -1166,7 +1166,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
 	// would trade a working session for a cosmetic one.
-	if err := s.sessions.SetPodImages(ctx, sessionID, pod.WorkerImage, pod.SidecarImage); err != nil {
+	if err := s.sessions.SetPodImages(ctx, sessionID, pod.WorkerImage, pod.SidecarImage, pod.FleetVersion); err != nil {
 		slog.Warn("dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
 	}
 	return pod.PodName, nil
@@ -1581,6 +1581,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		// ever run" from "a pod ran on an unnamed image".
 		WorkerImage:    optional(t.WorkerImage),
 		SidecarImage:   optional(t.SidecarImage),
+		FleetVersion:   optional(t.FleetVersion),
 		DefinitionName: t.DefinitionName,
 		DefinitionSha:  t.DefinitionSHA,
 	}

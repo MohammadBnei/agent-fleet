@@ -790,15 +790,15 @@ func TestSetPodImages_RoundTrips(t *testing.T) {
 		t.Errorf("a session with no pod must report no images, got %q/%q", fresh.WorkerImage, fresh.SidecarImage)
 	}
 
-	if err := store.SetPodImages(ctx, id, "reg/worker:3.5.4", "reg/sidecar:3.5.4"); err != nil {
+	if err := store.SetPodImages(ctx, id, "reg/worker:3.5.4", "reg/sidecar:3.5.4", "6.22.1"); err != nil {
 		t.Fatalf("set pod images: %v", err)
 	}
 	got, err := store.Get(ctx, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.WorkerImage != "reg/worker:3.5.4" || got.SidecarImage != "reg/sidecar:3.5.4" {
-		t.Errorf("images = %q/%q, want the pair that was written", got.WorkerImage, got.SidecarImage)
+	if got.WorkerImage != "reg/worker:3.5.4" || got.SidecarImage != "reg/sidecar:3.5.4" || got.FleetVersion != "6.22.1" {
+		t.Errorf("images = %q/%q @ %q, want what was written", got.WorkerImage, got.SidecarImage, got.FleetVersion)
 	}
 
 	// List shares selectCols with Get; a column added to one and forgotten in

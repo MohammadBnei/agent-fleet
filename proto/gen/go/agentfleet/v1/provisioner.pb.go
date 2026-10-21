@@ -538,6 +538,12 @@ type CreateWorkerPodResponse struct {
 	// worker loaded it: a repo pinned to an older worker image (repos.image)
 	// gets the mount but never reads it. Only the worker's own report can.
 	GenomeApplied bool `protobuf:"varint,6,opt,name=genome_applied,json=genomeApplied,proto3" json:"genome_applied,omitempty"`
+	// The release of the provisioner that built this pod (its FLEET_VERSION, or
+	// "dev"), also stamped on the Job and pod as agent-fleet.dev/version. Images
+	// are tagged by an input hash, not a release (src-<hash>), so the image refs
+	// above no longer say which release a pod came from. Empty from an older
+	// provisioner.
+	FleetVersion  string `protobuf:"bytes,7,opt,name=fleet_version,json=fleetVersion,proto3" json:"fleet_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -612,6 +618,13 @@ func (x *CreateWorkerPodResponse) GetGenomeApplied() bool {
 		return x.GenomeApplied
 	}
 	return false
+}
+
+func (x *CreateWorkerPodResponse) GetFleetVersion() string {
+	if x != nil {
+		return x.FleetVersion
+	}
+	return ""
 }
 
 // docs/adr/0065. Every valid definition's vault after core's last good
@@ -2004,14 +2017,15 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\fVaultService\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x14\n" +
 	"\x05paths\x18\x02 \x03(\tR\x05paths\x12\x16\n" +
-	"\x06secret\x18\x03 \x01(\tR\x06secret\"\x91\x02\n" +
+	"\x06secret\x18\x03 \x01(\tR\x06secret\"\xb6\x02\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
 	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x12<\n" +
 	"\x1adefinition_profile_applied\x18\x04 \x01(\bR\x18definitionProfileApplied\x12.\n" +
 	"\x13vault_token_applied\x18\x05 \x01(\bR\x11vaultTokenApplied\x12%\n" +
-	"\x0egenome_applied\x18\x06 \x01(\bR\rgenomeApplied\"J\n" +
+	"\x0egenome_applied\x18\x06 \x01(\bR\rgenomeApplied\x12#\n" +
+	"\rfleet_version\x18\a \x01(\tR\ffleetVersion\"J\n" +
 	"\x16ReconcileVaultsRequest\x120\n" +
 	"\x06vaults\x18\x01 \x03(\v2\x18.agentfleet.v1.VaultSpecR\x06vaults\"p\n" +
 	"\x17ReconcileVaultsResponse\x124\n" +
