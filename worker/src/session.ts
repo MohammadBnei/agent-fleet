@@ -549,7 +549,7 @@ function sidecarMcpServer() {
 // the tool list is whatever the installed version actually exposes, there is
 // no registration racing a pod that is still starting, and a failure surfaces
 // as a real error instead of an empty result from a swallowed hop.
-function playwrightMcpServer() {
+export function playwrightMcpServer() {
   return {
     type: "stdio" as const,
     command: "playwright-mcp",
@@ -560,6 +560,12 @@ function playwrightMcpServer() {
     // build alongside it (see worker/Dockerfile) — the two halves have to
     // stay together.
     args: ["--headless", "--isolated", "--browser", "chromium"],
+    // docs/adr/0075 §7: the browser goes direct, never through the pod's
+    // proxy. Through it, a page's script would reach GitHub and Anthropic as
+    // the fleet: the vault injects the credential on the wire, and
+    // api.github.com answers CORS with *. Chromium reads these from env; an
+    // empty value is no proxy. Egress is open, so direct works.
+    env: { HTTPS_PROXY: "", https_proxy: "", HTTP_PROXY: "", http_proxy: "", ALL_PROXY: "", all_proxy: "" },
   };
 }
 

@@ -135,12 +135,24 @@
               {
                 "name": "GIT_CONFIG_VALUE_0",
                 "value": "*"
+              },
+              {
+                "name": "FLEET_VAULT_PROXY",
+                "value": "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322"
+              },
+              {
+                "name": "FLEET_VAULT_HOSTS",
+                "value": "api.anthropic.com,github.com,api.github.com"
+              },
+              {
+                "name": "EGRESS_PORT",
+                "value": "9093"
               }
             ],
             "resources": {
               "limits": {
-                "cpu": "250m",
-                "memory": "256Mi"
+                "cpu": "1",
+                "memory": "512Mi"
               },
               "requests": {
                 "cpu": "50m",
@@ -229,19 +241,19 @@
               },
               {
                 "name": "HTTPS_PROXY",
-                "value": "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322"
+                "value": "http://127.0.0.1:9093"
               },
               {
                 "name": "https_proxy",
-                "value": "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322"
+                "value": "http://127.0.0.1:9093"
               },
               {
                 "name": "NO_PROXY",
-                "value": "127.0.0.1,localhost,.cluster.local,.svc,.bnei.lan,.bnei.dev,bnei.dev,10.233.0.0/18,10.233.64.0/18,192.168.1.0/24,agent-vault.agent-vault.svc.cluster.local"
+                "value": "127.0.0.1,localhost,.cluster.local,.svc,.bnei.lan,.bnei.dev,bnei.dev,10.233.0.0/18,10.233.64.0/18,192.168.1.0/24"
               },
               {
                 "name": "no_proxy",
-                "value": "127.0.0.1,localhost,.cluster.local,.svc,.bnei.lan,.bnei.dev,bnei.dev,10.233.0.0/18,10.233.64.0/18,192.168.1.0/24,agent-vault.agent-vault.svc.cluster.local"
+                "value": "127.0.0.1,localhost,.cluster.local,.svc,.bnei.lan,.bnei.dev,bnei.dev,10.233.0.0/18,10.233.64.0/18,192.168.1.0/24"
               },
               {
                 "name": "NODE_USE_ENV_PROXY",

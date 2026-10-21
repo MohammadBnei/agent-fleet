@@ -26,6 +26,9 @@ const (
 	// sidecar itself perfectly healthy. This listener serves /readyz and
 	// nothing else.
 	SidecarHealthPort = 9092
+	// SidecarEgressPort is a repo pod's HTTPS_PROXY: the sidecar's CONNECT
+	// router (sidecar/internal/egress), loopback-bound like the two above.
+	SidecarEgressPort = 9093
 	ComponentLabel    = "agent-fleet.dev/component"
 	TaskIDLabel       = "agent-fleet.dev/task-id"
 	// RepoLabel lets the provisioner recover which repo a session's pod

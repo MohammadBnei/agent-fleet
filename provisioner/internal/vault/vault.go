@@ -133,6 +133,11 @@ const OwnerPrefix = "owner-"
 // OwnerVault is owner's vault name. Logins are case-insensitive on GitHub.
 func OwnerVault(owner string) string { return OwnerPrefix + strings.ToLower(owner) }
 
+// OwnerHosts are the hosts an owner vault injects on, all on :443. Repo
+// pods send only these to the vault; the rest goes direct (sidecar/internal/
+// egress).
+var OwnerHosts = []string{"api.anthropic.com", "github.com", "api.github.com"}
+
 // oauthKey is the model token every owner vault injects: the same mounted key
 // the definitions name.
 const oauthKey = "CLAUDE_CODE_OAUTH_TOKEN"
@@ -345,10 +350,11 @@ func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (wid
 		return false, missingErr(name, []string{oauthKey})
 	}
 	gh := GitHubKey(name)
+	// One service per OwnerHosts entry, in its order.
 	desired := []service{
-		{Name: "anthropic", Host: "api.anthropic.com:443", Auth: auth{Type: "bearer", Token: oauthKey}},
-		{Name: "github", Host: "github.com:443", Auth: gitAuth(gh)},
-		{Name: "github-api", Host: "api.github.com:443", Auth: auth{Type: "bearer", Token: gh}},
+		{Name: "anthropic", Host: OwnerHosts[0] + ":443", Auth: auth{Type: "bearer", Token: oauthKey}},
+		{Name: "github", Host: OwnerHosts[1] + ":443", Auth: gitAuth(gh)},
+		{Name: "github-api", Host: OwnerHosts[2] + ":443", Auth: auth{Type: "bearer", Token: gh}},
 	}
 	values := map[string]string{gitUsernameKey: "x-access-token", gh: ghToken, oauthKey: oauth}
 	err = c.apply(ctx, name, desired, values, "passthrough", &widened)

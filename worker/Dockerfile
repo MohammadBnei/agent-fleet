@@ -29,7 +29,7 @@ FROM oven/bun:1-slim
 # Unpinned installs below: docker.yml passes the ISO week, so a cached layer
 # is refreshed at least weekly instead of living forever.
 ARG CACHE_WEEK=none
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps python3 libnss3-tools \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps python3 \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \

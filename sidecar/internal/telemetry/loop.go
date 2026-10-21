@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -198,8 +199,26 @@ func computeSummary(worktreePath string) (summary, error) {
 	return summary{Branch: branch, Files: files}, nil
 }
 
+// gitOutput runs git in the agent-writable tree, so the tree's own config
+// should not run anything here: this container holds the lease and, in a repo
+// pod, the vault token (sidecar/internal/egress). fsmonitor, hooks, external
+// diff and textconv are off; GIT_ALLOW_PROTOCOL=none stops a promisor lazy
+// fetch (and its sshCommand, uploadpack or credential helper); a hang is cut
+// at 30s.
+//
+// ponytail: a clean filter named in the tree's .gitattributes still runs on
+// `git diff`. Blocking it needs GIT_ATTR_SOURCE (git 2.40; the image has
+// 2.39) or reading the files without git. Accepted: the lease and the token
+// already act only as this session, from inside the cluster.
 func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	pre := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"}
+	if len(args) > 0 && args[0] == "diff" {
+		args = append([]string{"diff", "--no-ext-diff", "--no-textconv"}, args[1:]...)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append(pre, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_ALLOW_PROTOCOL=none")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
