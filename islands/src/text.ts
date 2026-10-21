@@ -11,3 +11,11 @@ export function threadTitle(text: string, max = 120): string {
   }
   return out;
 }
+
+// A member's label: author_name is their email, shown without the domain.
+export function displayName(authorName: string): string {
+  const n = authorName.trim();
+  if (!n) return "Member";
+  const at = n.indexOf("@");
+  return at > 0 ? n.slice(0, at) : n;
+}

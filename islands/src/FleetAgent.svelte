@@ -456,8 +456,8 @@
       <ol class="feed" use:drawDiagrams={{ items, svg: render.svg }}>
         {#each items as m (m.seq)}
           {#if m.kind === "message"}
-            <li class:human={m.human} class="msg">
-              {#if m.human && current?.visibility === "shared"}<span class="who">{m.author}</span>{:else}<span class="sr-only">{m.author}:</span>{/if}
+            <li class:human={m.human} class:mine={m.mine} class:other={m.human && !m.mine} class="msg">
+              {#if m.human && !m.mine}<span class="who">{m.author}</span>{:else}<span class="sr-only">{m.mine ? "You" : m.author}:</span>{/if}
               {#if m.human}
                 <p class="text">{m.text}</p>
               {:else}
@@ -467,7 +467,7 @@
           {/if}
         {/each}
         {#each pending as p (p.key)}
-          <li class="msg human pending" aria-busy="true"><span class="sr-only">Sending:</span><p class="text">{p.text}</p></li>
+          <li class="msg human mine pending" aria-busy="true"><span class="sr-only">Sending:</span><p class="text">{p.text}</p></li>
         {/each}
       </ol>
     {:else}

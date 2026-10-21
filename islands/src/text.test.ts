@@ -13,3 +13,10 @@ test("titles fit in bytes and keep whole characters", () => {
   expect(emoji).toBe("😀".repeat(30));
   expect(emoji.includes("�")).toBe(false);
 });
+
+test("a member is shown by the name part of their email", () => {
+  const { displayName } = require("./text");
+  expect(displayName("nadia@opus.tech")).toBe("nadia");
+  expect(displayName("")).toBe("Member");
+  expect(displayName("Nadia")).toBe("Nadia");
+});
