@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.14.0](https://github.com/MohammadBnei/agent-fleet/compare/6.13.0...6.14.0) (2026-10-21)
+
+### Features
+
+* **islands:** script writes always ask; dev-notes embeds on notes.bnei.dev ([#306](https://github.com/MohammadBnei/agent-fleet/issues/306)) ([becaedc](https://github.com/MohammadBnei/agent-fleet/commit/becaedca6abc57ae5d11d69a29031ae13857e373)), closes [#359](https://github.com/MohammadBnei/agent-fleet/issues/359) [#99](https://github.com/MohammadBnei/agent-fleet/issues/99)
+
 # [6.13.0](https://github.com/MohammadBnei/agent-fleet/compare/6.12.0...6.13.0) (2026-10-21)
 
 ### Features
