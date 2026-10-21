@@ -22,6 +22,9 @@ WORKDIR /app/sidecar
 RUN CGO_ENABLED=0 go build -o /out/sidecar ./cmd/sidecar
 
 FROM debian:12-slim
+# Unpinned installs below: docker.yml passes the ISO week, so a cached layer
+# is refreshed at least weekly instead of living forever.
+ARG CACHE_WEEK=none
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/sidecar /sidecar

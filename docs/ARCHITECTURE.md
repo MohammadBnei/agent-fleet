@@ -730,11 +730,13 @@ browser cannot reach it directly) and renders the live topology from
 
 ### Which build is running
 
-`core` and `provisioner` carry their version compiled in
-(`-ldflags "-X main.version=$VERSION"`, with `docker.yml` passing the same
-string it tags the image with, so binary and tag cannot drift). `worker` and
-`sidecar` get no such stamp: their version *is* the image tag the provisioner
-puts in the pod spec, which is the truth actually deployed. The dashboard SPA
+`core` and `provisioner` report the release from their `FLEET_VERSION` env,
+which `docker.yml`'s deploy job sets alongside the image pins (`dev` without
+it). Images are tagged `src-<hash of their inputs>`, not by release, and an
+image whose inputs didn't change is reused (`k8s/images.env`), so a binary
+cannot know its release. `worker` and `sidecar` show their image tag, the
+`src-…` the provisioner puts in the pod spec, which is the truth actually
+deployed. The dashboard SPA
 is compiled into `core`'s binary, so its version is `core`'s.
 
 Two different questions, answered from two different places:
@@ -957,7 +959,8 @@ them rather than serving unauthenticated.
 | `PORT` | `8080` | HTTP (currently unused beyond health, kept for parity) |
 | `GRPC_PORT` | `9090` | `ProvisionerService` |
 | `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
-| `FLEET_DEFINITIONS_REF` | – | ref `ListDefinitionFiles` reads `definitions/` at from `FLEET_SHARED_REPO_URL` (`adr/0062`). **Empty = this build's release tag**, so definitions ship with the core that judges them; a `dev` build without it answers `FailedPrecondition`. kind sets a branch. Own clone at `<root>/definitions-src`, own lock; fails closed |
+| `FLEET_DEFINITIONS_REF` | – | ref `ListDefinitionFiles` reads `definitions/` at from `FLEET_SHARED_REPO_URL` (`adr/0062`). **Empty = `FLEET_VERSION`, the release deploy pinned**, so definitions ship with the core that judges them; a `dev` build without it answers `FailedPrecondition`. kind sets a branch. Own clone at `<root>/definitions-src`, own lock; fails closed |
+| `FLEET_VERSION` | `dev` | the release this provisioner runs as (core reads the same var for the dashboard). Set by `docker.yml`'s deploy job; images carry no version |
 | `RECONCILE_INTERVAL_MS` | `10000` | terminal-Job GC + idle shared-instance GC poll (`internal/reconcile`) |
 | `FLEET_CORE_PROVISIONER_TOKEN` | *(required)* | the bearer core must present to `ProvisionerService`. Empty, blank or under 32 bytes makes the provisioner **refuse to start** (`adr/0069`) |
 | `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |

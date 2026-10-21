@@ -1,0 +1,15 @@
+# What each image is built from, as repo-root paths. docker.yml tags an image
+# src-<hash of these paths' git trees>, and skips building it when that tag is
+# the one already deployed (k8s/images.env). A path an image COPYs but this
+# file omits would let a change ship nowhere, so
+# core/internal/buildguard/inputs_test.go fails on any Dockerfile COPY/ADD
+# source not covered here. Each Dockerfile lives in its own directory, so the
+# directory covers it. .dockerignore shapes every build context.
+#
+# component: path...
+core: core dashboard proto/gen/go go.work.sum .dockerignore
+provisioner: provisioner proto/gen/go go.work.sum .dockerignore
+sidecar: sidecar proto/gen/go go.work.sum .dockerignore
+executor: executor proto/gen/go go.work.sum .dockerignore
+worker: worker .dockerignore
+migration: migration db/migrations .dockerignore

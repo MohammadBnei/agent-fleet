@@ -28,12 +28,9 @@ COPY go.work.sum ./
 # isn't portable across a partial build context.
 RUN go work init ./proto/gen/go ./core
 WORKDIR /app/core
-# The version the dashboard reports for core (and for the SPA embedded above,
-# which has no version of its own). docker.yml passes the same string it tags
-# the image with, so the binary and the tag cannot drift. Nothing else can
-# supply it: this context has no .git, so debug.ReadBuildInfo has no VCS stamp.
-ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/core ./cmd/core
+# No version compiled in: core reads FLEET_VERSION at run time, so one image
+# serves every release that doesn't change its inputs (docker.yml).
+RUN CGO_ENABLED=0 go build -o /out/core ./cmd/core
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/core /core
