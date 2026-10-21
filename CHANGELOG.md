@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.8.0](https://github.com/MohammadBnei/agent-fleet/compare/6.7.0...6.8.0) (2026-10-21)
+
+### Features
+
+* **packs:** attach a live pack to all agents or all repos (ADR-0063) ([#294](https://github.com/MohammadBnei/agent-fleet/issues/294)) ([4dd2e08](https://github.com/MohammadBnei/agent-fleet/commit/4dd2e08556c77fb19c074f6177ff7f3c4cec2340))
+
 # [6.7.0](https://github.com/MohammadBnei/agent-fleet/compare/6.6.0...6.7.0) (2026-10-21)
 
 ### Features
