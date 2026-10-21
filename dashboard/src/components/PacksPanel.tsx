@@ -17,6 +17,9 @@ type SkillDraft = { id: number; name: string; description: string; body: string 
 type Use = { kind: string; target: string };
 
 const keyOf = (u: Use) => `${u.kind}/${u.target}`;
+// "*" is core's AllTargets: every agent or repo, including ones added later.
+const ALL = "*";
+const labelOf = (u: Use) => (u.target === ALL ? (u.kind === "repo" ? "all repos" : "all agents") : u.target);
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 // What the server stores, without the editor's own ids.
 const contentOf = (text: string, skills: SkillDraft[]) =>
@@ -234,11 +237,11 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
         <div className="flex flex-wrap items-center gap-1.5">
           {uses.map((u) => (
             <span key={keyOf(u)} className="badge gap-1">
-              {u.target}
-              <span className="text-dim">{u.kind === "repo" ? "repo" : "agent"}</span>
+              {labelOf(u)}
+              {u.target !== ALL && <span className="text-dim">{u.kind === "repo" ? "repo" : "agent"}</span>}
               <button
                 type="button"
-                aria-label={`stop using in ${u.target}`}
+                aria-label={`stop using in ${labelOf(u)}`}
                 className="hover:text-error"
                 onClick={() => setUses((l) => l.filter((x) => keyOf(x) !== keyOf(u)))}
               >
@@ -257,6 +260,7 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
           >
             <option value="">+ add agent or repo</option>
             <optgroup label="Agents">
+              {!used.has(`definition/${ALL}`) && <option value={`definition/${ALL}`}>all agents</option>}
               {targets.definition
                 .filter((t) => !used.has(`definition/${t}`))
                 .map((t) => (
@@ -266,6 +270,7 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
                 ))}
             </optgroup>
             <optgroup label="Repos">
+              {!used.has(`repo/${ALL}`) && <option value={`repo/${ALL}`}>all repos</option>}
               {targets.repo
                 .filter((t) => !used.has(`repo/${t}`))
                 .map((t) => (
@@ -359,7 +364,7 @@ export function PacksPanel() {
               <span className="font-medium font-mono">{p.name}</span>
               <span className="text-xs text-dim w-8">{p.latestVersion ? `v${p.latestVersion}` : "—"}</span>
               <span className="text-xs text-dim flex-1 truncate">
-                {p.attachments.length ? `used by: ${p.attachments.map((a) => a.target).join(", ")}` : "not used yet"}
+                {p.attachments.length ? `used by: ${p.attachments.map(labelOf).join(", ")}` : "not used yet"}
               </span>
               <span className="text-dim">›</span>
             </button>

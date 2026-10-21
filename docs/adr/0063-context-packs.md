@@ -68,6 +68,11 @@ renamed.
     definitions sync no longer lists that name, core deletes its attachments,
     so a later definition with the same name, possibly another audience,
     starts with none.
+  - Amended 2026-10-21: the target `*` attaches a pack to every target of its
+    kind, current and future ("all agents", "all repos" in the console). It
+    is how a preference such as a skill set reaches the whole fleet while
+    staying editable live, instead of going into a reviewed pack. Each
+    concrete target's cap check includes the `*` packs of its kind.
 - **Reviewed packs** live in this repo under `packs/<name>/`, next to
   `definitions/`. The provisioner reads them at the release tag together with
   the definitions, and core keeps the last good copy in a `reviewed_packs`
