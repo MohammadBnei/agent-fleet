@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.17.0](https://github.com/MohammadBnei/agent-fleet/compare/6.16.0...6.17.0) (2026-10-21)
+
+### Features
+
+* **islands:** host dark mode, bounded scroll, Claude-app chat layout ([#309](https://github.com/MohammadBnei/agent-fleet/issues/309)) ([d5dedeb](https://github.com/MohammadBnei/agent-fleet/commit/d5dedeb02ccb3acdc7feedffcd16278916d7daa2))
+
 # [6.16.0](https://github.com/MohammadBnei/agent-fleet/compare/6.15.0...6.16.0) (2026-10-21)
 
 ### Features
