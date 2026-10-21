@@ -1,5 +1,15 @@
 # Changelog
 
+# [6.11.0](https://github.com/MohammadBnei/agent-fleet/compare/6.10.0...6.11.0) (2026-10-21)
+
+### Bug Fixes
+
+* **islands:** follow AgentService's answer rules ([#303](https://github.com/MohammadBnei/agent-fleet/issues/303)) ([2b4dcdc](https://github.com/MohammadBnei/agent-fleet/commit/2b4dcdc96c0d83dd353a8c276f3b912151b53de6))
+
+### Features
+
+* Claude Code picks the default model; pick model and effort per session ([#298](https://github.com/MohammadBnei/agent-fleet/issues/298)) ([2a42f22](https://github.com/MohammadBnei/agent-fleet/commit/2a42f22da187e29a4e90f5d40099c81dd0c3d774))
+
 # [6.10.0](https://github.com/MohammadBnei/agent-fleet/compare/6.9.1...6.10.0) (2026-10-21)
 
 ### Features
