@@ -199,7 +199,9 @@ ingress; what shipped is narrower, and the webhook does not.*
 
 - Core sends `Content-Security-Policy: frame-ancestors 'none'` on every
   response except `/embed/*`. ADR-0068 sets the `/embed/*` policy from its
-  origin allowlist.
+  origin allowlist. *(Amended by [ADR-0068](0068-islands.md): there is no `/embed/*`;
+  islands are web components in the host page, so `frame-ancestors 'none'`
+  holds on every path, and each host must send `frame-ancestors 'self'`.)*
 - `frame-ancestors` only. A full script/style CSP for the SPA is a separate
   piece of work and is not claimed here.
 
