@@ -55,10 +55,16 @@ export function createRenderer(win: Window & typeof globalThis): Renderer {
       node.setAttribute("rel", "noopener noreferrer");
     }
   });
-  // Mermaid's own <style> is kept in the SVG path; one that fetches or
-  // imports anything is not. url(#marker) points inside the SVG and stays.
+  // Mermaid's own <style> is kept in the SVG path. Anything that could fetch
+  // is refused outright, escapes included (u\72l( spells url( to CSS):
+  // backslashes, image-set, @import, @font-face, src:, and any url() that
+  // does not point at #a-marker inside the SVG.
   purify.addHook("uponSanitizeElement", (node, data) => {
-    if (data.tagName === "style" && /url\(\s*['"]?\s*[^'"#\s)]|@import|expression\(/i.test(node.textContent ?? "")) node.parentNode?.removeChild(node);
+    if (data.tagName !== "style") return;
+    const css = node.textContent ?? "";
+    if (/\\|image-set|@import|@font-face|\bsrc\s*:|expression\(/i.test(css) || /url\(\s*['"]?\s*[^'"#\s]/i.test(css)) {
+      node.parentNode?.removeChild(node);
+    }
   });
   return {
     markdown: (text) =>

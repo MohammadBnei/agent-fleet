@@ -6,8 +6,21 @@
 let mermaid: Promise<typeof import("mermaid").default> | undefined;
 
 // Diagram text is untrusted (§4). Directives and front-matter config can set
-// themeCSS and other options, so both are cut before mermaid reads it.
-export const stripConfig = (src: string) => src.replace(/^\s*---[\s\S]*?\n---\s*\n/, "").replace(/%%\{[\s\S]*?\}%%/g, "");
+// themeCSS and other options, so both go before mermaid reads it: every line
+// holding "%%{" (closed or not, mermaid accepts both), and every leading
+// front-matter block, until nothing changes, so a removal cannot assemble a
+// new one.
+export function stripConfig(src: string): string {
+  for (;;) {
+    const next = src
+      .split(/\r?\n/)
+      .filter((line) => !line.includes("%%{"))
+      .join("\n")
+      .replace(/^\s*---[\s\S]*?\n\s*---\s*(\n|$)/, "");
+    if (next === src) return next;
+    src = next;
+  }
+}
 
 export function drawDiagrams(node: HTMLElement, opts: { items: unknown; svg: (s: string) => string }) {
   let svg = opts.svg;

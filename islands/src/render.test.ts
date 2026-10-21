@@ -107,3 +107,15 @@ test("svg style may reference its own markers", () => {
   expect(r.svg("<svg><style>.a{fill:url( https://evil.example/x)}</style><rect/></svg>")).not.toContain("evil.example");
   expect(r.svg("<svg><style>.a{fill:url('//evil.example/x')}</style><rect/></svg>")).not.toContain("evil.example");
 });
+
+test("svg style escapes and other fetchers are refused", () => {
+  for (const css of [
+    ".a{fill:u\\72l(https://evil.example/x)}",
+    ".a{fill:\\75rl(https://evil.example/x)}",
+    '@\\69mport "https://evil.example/x.css";',
+    '.a{background:image-set("https://evil.example/x.png" 1x)}',
+    '@font-face{font-family:x;src:local(x)}',
+  ]) {
+    expect(r.svg(`<svg><style>${css}</style><rect/></svg>`)).not.toContain("<style");
+  }
+});
