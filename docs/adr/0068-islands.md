@@ -52,6 +52,15 @@ The owner rejected the iframe on four counts:
 - The island shares plain TypeScript with the console (transcript parsing,
   the generated `AgentService` client and the SDK helpers), not its React
   components. The UI is written a second time, in Svelte.
+- **The look is the Ukubi design system** (the organization's default in
+  Claude Design, https://claude.ai/artifact/B8nzjukaMY8HRQnjLRRKMc): its
+  three themes, Readex Pro and JetBrains Mono, stone radii, the chamfer on
+  the send button and on the "needs you" card, and the LED, lit only while
+  the thread waits on a human (a question, a plan, a permission). Its tokens
+  are copied into `islands/` as CSS custom properties; that artifact stays
+  the source, and a copy is refreshed by PR. Fonts are declared in the host
+  document (`@font-face` does not apply inside a shadow root): the element
+  adds the Google Fonts link to `<head>` once, if the host has not.
 - It calls **`AgentService` only.** A lint import guard keeps `islands/` off
   `DashboardService` and off `dashboard/src` components.
 
@@ -63,8 +72,10 @@ The owner rejected the iframe on four counts:
 - **Events** (DOM `CustomEvent`, bubbling, composed): `fleet-status`
   (`loading | working | waiting | idle | error`), `fleet-message` (a new
   agent entry, its id and kind only).
-- **Theme:** the element reads the host's CSS custom properties
-  (`--fleet-*`, falling back to sensible defaults) through its Shadow DOM.
+- **Theme:** a `theme` attribute (`office`, the default, `underground` or
+  `glow`). Every colour, size and radius is a `--ukubi-*` custom property,
+  which CSS inheritance carries into the Shadow DOM, so a host can override
+  any of them.
 - Nothing else. The host cannot call methods that act on the session; the
   element acts only on its own user's clicks.
 
