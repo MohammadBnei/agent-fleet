@@ -298,3 +298,7 @@ func TestAskUserQuestion_ARewordedReAskSupersedesTheOldOne(t *testing.T) {
 		}
 	}
 }
+
+func (*fakeQAStore) AppendAuthored(context.Context, string, transcript.Author, string, string, string, *int64) (int64, error) {
+	return 0, nil
+}

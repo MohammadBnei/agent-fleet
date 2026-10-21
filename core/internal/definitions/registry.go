@@ -364,6 +364,33 @@ func (r *Registry) Resolve(name string) (Head, error) {
 	return h, nil
 }
 
+// EmbedOrigins is every exact origin a valid HEAD definition lists in
+// embed.origins (docs/adr/0068): the origins core answers cross-origin.
+// Empty before the first sync and once the last good one is stale, the same
+// fail-closed rule as Resolve.
+func (r *Registry) EmbedOrigins() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.synced || time.Since(r.lastGood) > staleAfter {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, h := range r.heads {
+		if h.SHA == "" || h.Effective == nil || h.Effective.Embed == nil {
+			continue
+		}
+		for _, o := range h.Effective.Embed.Origins {
+			if !seen[o] {
+				seen[o] = true
+				out = append(out, o)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Vaults is every valid HEAD definition's vault after the last good sync
 // (docs/adr/0065): the full desired set core pushes with ReconcileVaults. An
 // invalid-at-HEAD or deleted definition is simply absent, and the

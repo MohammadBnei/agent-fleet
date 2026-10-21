@@ -36,6 +36,19 @@ type Entry struct {
 	// happened, order a feed by time, or show how long a turn took —
 	// `seq` gives order but not duration.
 	CreatedAt time.Time `json:"createdAt"`
+	// docs/adr/0067 §3: who wrote a human entry (display only; the sub is
+	// not read back), and whether it is context for the agent rather than
+	// something to act on.
+	AuthorName  string `json:"authorName,omitempty"`
+	ContextOnly bool   `json:"contextOnly,omitempty"`
+	Untrusted   bool   `json:"untrusted,omitempty"`
+}
+
+// Author is who wrote an AgentService entry: a member's sub and display name,
+// or a client's "client:<name>" for both.
+type Author struct {
+	Sub  string
+	Name string
 }
 
 // Store is the durable, per-task append/read-since transcript.
@@ -50,6 +63,10 @@ type Store interface {
 	// call sites that never need this don't all have to pass a meaningless
 	// zero value.
 	AppendReply(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq int64) (seq int64, err error)
+
+	// AppendAuthored is a "human" entry with its author recorded
+	// (docs/adr/0067 §3). replyToSeq is nil for anything but a reply.
+	AppendAuthored(ctx context.Context, taskID string, author Author, text, msgType, idempotencyKey string, replyToSeq *int64) (seq int64, err error)
 
 	// ReadSince mirrors LRANGE(key, sinceSeq, -1): every entry with
 	// seq >= sinceSeq, in seq order, plus the next cursor to poll from.

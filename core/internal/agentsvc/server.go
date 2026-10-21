@@ -6,7 +6,10 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 )
@@ -16,6 +19,10 @@ import (
 type Server struct {
 	agentfleetv1connect.UnimplementedAgentServiceHandler
 	definitions heads
+	dash        *dashboard.Server
+	sessions    *sessions.Store
+	transcr     transcript.Store
+	hub         *dashboard.Hub
 }
 
 // heads is the part of *definitions.Registry this reads.
@@ -26,8 +33,10 @@ type heads interface {
 
 var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
 
-func NewServer(defs *definitions.Registry) *Server {
-	s := &Server{}
+// NewServer reuses the console's server for creates and warms, so every pod
+// still goes through WarmIfIdle (docs/adr/0066 §8).
+func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub) *Server {
+	s := &Server{dash: dash, sessions: store, transcr: transcr, hub: hub}
 	if defs != nil {
 		s.definitions = defs
 	}
@@ -44,7 +53,13 @@ func principal(ctx context.Context) (Principal, error) {
 
 // mayUse is docs/adr/0066 §5 for a member, judged on the current head: in the
 // audience group, or an admin.
+//
+// From an island, the definition must also list the island's origin
+// (docs/adr/0068): a host page reaches only the definitions embedded in it.
 func mayUse(p Principal, spec *definitions.Spec) bool {
+	if p.Origin != "" && (spec.Embed == nil || !slices.Contains(spec.Embed.Origins, p.Origin)) {
+		return false
+	}
 	if p.Admin() {
 		return true
 	}

@@ -143,14 +143,31 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 // `description` is optional now, and is a label rather than an instruction:
 // the session's actual instruction is its first transcript entry.
 func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
-	repo, model, mode, effort := req.Msg.GetRepo(), req.Msg.GetModel(), req.Msg.GetPermissionMode(), req.Msg.GetEffort()
+	sess, err := s.createSession(ctx, req.Msg, nil, sessions.CreateParams{})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
+}
+
+// CreateThread is CreateSession's definition path for AgentService
+// (docs/adr/0066), pinned to the head the caller already resolved and
+// judged: the same repo checks, plus the thread's owner, visibility,
+// interaction and lifecycle.
+func (s *Server) CreateThread(ctx context.Context, head definitions.Head, title string, thread sessions.CreateParams) (*sessions.Session, error) {
+	return s.createSession(ctx, &agentfleetv1.CreateSessionRequest{Title: &title}, &head, thread)
+}
+
+func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSessionRequest, head *definitions.Head, thread sessions.CreateParams) (*sessions.Session, error) {
+	repo, model, mode, effort := msg.GetRepo(), msg.GetModel(), msg.GetPermissionMode(), msg.GetEffort()
 	// A definition session (docs/adr/0062) is pinned to the definition's
 	// current valid version, and repo, model, mode and effort (its
 	// thinking.default) all come from it. The
 	// mode is written EXPLICITLY from mode.default, never the column default:
 	// workspace-base's is auto (docs/adr/0076), but a definition may narrow.
-	var head *definitions.Head
-	if name := req.Msg.GetDefinition(); name != "" {
+	if head != nil {
+		repo, model, mode = head.Effective.Workspace.Repo, defaultModelOf(head.Effective), head.Effective.Mode.Default
+	} else if name := msg.GetDefinition(); name != "" {
 		if repo != "" || model != "" || mode != "" || effort != "" {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model, mode and effort from the definition"))
 		}
@@ -204,11 +221,15 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 
 	params := sessions.CreateParams{
 		Repo:           repo,
-		Title:          req.Msg.GetTitle(),
-		Description:    req.Msg.GetDescription(),
+		Title:          msg.GetTitle(),
+		Description:    msg.GetDescription(),
 		Model:          model,
 		PermissionMode: mode,
 		Effort:         effort,
+		Owner:          thread.Owner,
+		Visibility:     thread.Visibility,
+		Interaction:    thread.Interaction,
+		Lifecycle:      thread.Lifecycle,
 	}
 	// No capacity check for either kind: a create provisions nothing
 	// (docs/adr/0048 §1), so ReserveSlot at warm is the one capacity gate
@@ -227,7 +248,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo, "definition", params.DefinitionName, "sha", params.DefinitionSHA)
-	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
+	return sess, nil
 }
 
 // ListDefinitions lists each present definition's current version
@@ -1707,3 +1728,6 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 		TotalCount: int32(len(entries)),
 	}), nil
 }
+
+// ProtoType is stringToProtoType for AgentService's own Entry.
+func ProtoType(s string) agentfleetv1.TranscriptEntryType { return stringToProtoType(s) }

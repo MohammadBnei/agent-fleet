@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"slices"
 
 	"connectrpc.com/connect"
 
@@ -19,10 +21,17 @@ import (
 type Principal struct {
 	Member *auth.Identity
 	Client string
+	// Origin is set when a member calls from an island on another site
+	// (docs/adr/0068): that page's scripts can send the cookie, so the call
+	// gets member rights only, within the definitions listing Origin.
+	Origin string
 }
 
-// Admin is a member in platform-admins on this request's cookie.
-func (p Principal) Admin() bool { return p.Member != nil && auth.AdminOnly(*p.Member) }
+// Admin is a member in platform-admins on this request's cookie, calling
+// from the console, never from an island.
+func (p Principal) Admin() bool {
+	return p.Member != nil && p.Origin == "" && auth.AdminOnly(*p.Member)
+}
 
 type principalKey struct{}
 
@@ -76,16 +85,35 @@ func allowed(procedure string, p Principal) bool {
 // identity auth's ConnectInterceptor established, and a cookie without a
 // stable sub is refused so the widget logs in again (docs/adr/0066 §2).
 // It must run after that interceptor.
-func MemberInterceptor() connect.Interceptor { return memberAuth{} }
+//
+// The request's Origin (docs/adr/0068): absent or fleetOrigin is the
+// console; one of embedOrigins() is an island, member rights only; anything
+// else, "null" included, is refused. The CORS layer refuses those first;
+// this is the second layer.
+func MemberInterceptor(fleetOrigin string, embedOrigins func() []string) connect.Interceptor {
+	return memberAuth{fleet: fleetOrigin, embed: embedOrigins}
+}
 
-type memberAuth struct{}
+type memberAuth struct {
+	fleet string
+	embed func() []string
+}
 
-func (memberAuth) principal(ctx context.Context, procedure string) (context.Context, error) {
+var errOrigin = errors.New("calls from this origin are not accepted")
+
+func (m memberAuth) principal(ctx context.Context, procedure string, h http.Header) (context.Context, error) {
 	id, ok := auth.FromContext(ctx)
 	if !ok || id.Sub == "" {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errNoPrincipal)
 	}
 	p := Principal{Member: &id}
+	if o := h.Get("Origin"); o != "" && o != m.fleet {
+		if m.embed == nil || !slices.Contains(m.embed(), o) {
+			slog.Warn("agentsvc: refused origin", "email", id.Email, "origin", o, "procedure", procedure)
+			return nil, connect.NewError(connect.CodePermissionDenied, errOrigin)
+		}
+		p.Origin = o
+	}
 	if !allowed(procedure, p) {
 		slog.Warn("agentsvc: refused member call", "email", id.Email, "procedure", procedure)
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not available to members"))
@@ -95,7 +123,7 @@ func (memberAuth) principal(ctx context.Context, procedure string) (context.Cont
 
 func (m memberAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		ctx, err := m.principal(ctx, req.Spec().Procedure)
+		ctx, err := m.principal(ctx, req.Spec().Procedure, req.Header())
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +137,7 @@ func (memberAuth) WrapStreamingClient(next connect.StreamingClientFunc) connect.
 
 func (m memberAuth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		ctx, err := m.principal(ctx, conn.Spec().Procedure)
+		ctx, err := m.principal(ctx, conn.Spec().Procedure, conn.RequestHeader())
 		if err != nil {
 			return err
 		}

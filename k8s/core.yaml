@@ -154,6 +154,12 @@ env:
   # core refuses to start. Unset = 0 = no definition session can warm.
   - name: MAX_DEFINITION_SESSIONS
     value: "2"
+  # docs/adr/0066 §8: sessions members and clients own draw from a pool
+  # INSIDE the definition pool above, so they never take an admin's
+  # definition slot. Must be < MAX_DEFINITION_SESSIONS. Unset = 0 = no member
+  # or client session can warm. MAX_SESSIONS_PER_MEMBER defaults to 1.
+  - name: MAX_EXTERNAL_SESSIONS
+    value: "1"
   # How long an untouched session keeps its disk before the retention GC
   # reclaims it (core/internal/config/config.go). The sweep deletes the working
   # tree and the SDK resume state and marks the session swept; the row and its

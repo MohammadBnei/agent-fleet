@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -110,6 +111,20 @@ type Session struct {
 	// the columns are nullable, and a NULL scanned into a string fails the row.
 	DefinitionName *string `json:"definitionName,omitempty"`
 	DefinitionSHA  *string `json:"definitionSha,omitempty"`
+
+	// docs/adr/0067 §1, AgentService sessions only. A nil Owner (every
+	// console-created session) reads as admin-only; nil Interaction and
+	// Lifecycle read as ask and resident.
+	Owner       *string `json:"owner,omitempty"`
+	Visibility  *string `json:"visibility,omitempty"`
+	Invoker     *string `json:"invoker,omitempty"`
+	Interaction *string `json:"interaction,omitempty"`
+	Lifecycle   *string `json:"lifecycle,omitempty"`
+	// Tainted is derived (docs/adr/0067 §3): an untrusted entry is in the
+	// transcript. Never stored, and filled only by Tainted below, not on every
+	// read: the console's list must not pay for it.
+	Tainted   bool      `json:"tainted"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // Caps is the pair of ceilings ReserveSlot enforces. A struct, not two ints:
@@ -122,6 +137,12 @@ type Caps struct {
 	// (MAX_DEFINITION_SESSIONS, docs/adr/0062). Repo sessions never count
 	// against it, so a full pool still leaves MaxLive-MaxDefinition slots.
 	MaxDefinition int
+	// MaxExternal is the pool INSIDE MaxDefinition for sessions a member or
+	// client owns (docs/adr/0066 §8), and MaxPerMember a member's own share
+	// of it. Owner-less (console) definition sessions draw only on
+	// MaxDefinition, so members and clients cannot take it from an admin.
+	MaxExternal  int
+	MaxPerMember int
 }
 
 // ErrAtCapacity is returned by ReserveSlot when the fleet already has
@@ -168,6 +189,7 @@ const selectCols = `
 	s.last_active_at, s.swept_at, s.archived_at,
 	s.worker_image, s.sidecar_image,
 	s.definition_name, s.definition_sha,
+	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
 	(SELECT count(*) FROM transcript q
 	   WHERE q.session_id = s.id
 	     AND q.type IN ('question', 'permission_request')
@@ -187,6 +209,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
 		&s.WorkerImage, &s.SidecarImage,
 		&s.DefinitionName, &s.DefinitionSHA,
+		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
 		&s.PendingDecisions,
 	)
 	if err != nil {
@@ -232,6 +255,12 @@ type CreateParams struct {
 	// (docs/adr/0062). Both or neither; empty writes NULL.
 	DefinitionName string
 	DefinitionSHA  string
+	// Owner, Visibility, Interaction and Lifecycle are set for AgentService
+	// threads only (docs/adr/0067 §1); empty writes NULL.
+	Owner       string
+	Visibility  string
+	Interaction string
+	Lifecycle   string
 }
 
 func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
@@ -251,16 +280,86 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// constraint. 'auto' matches the column default (db/migrations/000007,
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort)
-		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''))
+		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort,
+		                      owner, visibility, interaction, lifecycle)
+		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''),
+		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''))
 		RETURNING id
-	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort).Scan(&id)
+	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort,
+		p.Owner, p.Visibility, p.Interaction, p.Lifecycle).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
 	}
 	slog.Info("sessions Create", "sessionId", id, "repo", p.Repo, "permissionMode", p.PermissionMode, "definition", p.DefinitionName)
 	return id, nil
+}
+
+// ListThreads is the open definition sessions of definitions that owner may
+// see (docs/adr/0067 §2): its own, and with shared the shared ones. admin
+// sees every one, owner-less console sessions included. Newest first.
+//
+// ponytail: no pagination; 500 rows, and CreateThread caps a member's open
+// threads well below that. Add a cursor when a definition's shared threads
+// outgrow it.
+func (s *Store) ListThreads(ctx context.Context, definitions []string, owner string, shared, admin bool) ([]Session, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+selectCols+` FROM sessions s
+		WHERE s.archived_at IS NULL AND s.definition_name = ANY($1)
+		  AND ($4 OR s.owner = $2 OR ($3 AND s.visibility = 'shared'))
+		ORDER BY s.created_at DESC LIMIT 500`, definitions, owner, shared, admin)
+	if err != nil {
+		return nil, fmt.Errorf("list threads: %w", err)
+	}
+	defer rows.Close()
+	var out []Session
+	for rows.Next() {
+		t, err := scanSession(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list threads: %w", err)
+		}
+		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// Tainted sets each session's Tainted: an untrusted entry is in its
+// transcript (docs/adr/0067 §3).
+//
+// ponytail: no index on transcript.untrusted, so this reads each session's
+// transcript through its primary key. Fine at today's size; a partial index
+// ON transcript (session_id) WHERE untrusted is the upgrade.
+func (s *Store) Tainted(ctx context.Context, list []Session) error {
+	if len(list) == 0 {
+		return nil
+	}
+	ids := make([]string, len(list))
+	for i := range list {
+		ids[i] = list[i].ID
+	}
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT session_id::text FROM transcript WHERE session_id = ANY($1::uuid[]) AND untrusted`, ids)
+	if err != nil {
+		return fmt.Errorf("tainted: %w", err)
+	}
+	defer rows.Close()
+	tainted := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("tainted: %w", err)
+		}
+		tainted[id] = true
+	}
+	for i := range list {
+		list[i].Tainted = tainted[list[i].ID]
+	}
+	return rows.Err()
+}
+
+// OpenThreads counts owner's open sessions, for CreateThread's cap.
+func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE owner = $1 AND archived_at IS NULL`, owner).Scan(&n)
+	return n, err
 }
 
 // Get returns ErrNotFound when no such session exists.
@@ -369,22 +468,31 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	// Definition sessions also draw from the definition pool and their own
 	// limits.concurrency (docs/adr/0062), counted under the same lock.
 	var (
-		defName           *string
-		defValid          bool
-		concurrency       *int
-		poolLive, defLive int
+		defName, owner          *string
+		defValid                bool
+		concurrency             *int
+		poolLive, defLive       int
+		externalLive, ownerLive int
 	)
+	// defLive counts only external sessions of this definition when this one
+	// is external (docs/adr/0066 §8): limits.concurrency bounds members and
+	// clients, never an admin's console session.
 	err = tx.QueryRow(ctx, `
-		SELECT s.definition_name, COALESCE(d.valid, false),
+		SELECT s.definition_name, s.owner, COALESCE(d.valid, false),
 		       (d.effective->'limits'->>'concurrency')::int,
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
 		                                          AND o.definition_name IS NOT NULL),
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.definition_name = s.definition_name)
+		                                          AND o.definition_name = s.definition_name
+		                                          AND (s.owner IS NULL OR o.owner IS NOT NULL)),
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.definition_name IS NOT NULL AND o.owner IS NOT NULL),
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.owner = s.owner)
 		  FROM sessions s
 		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
 		 WHERE s.id = $1 AND s.archived_at IS NULL
-	`, id, livePhases).Scan(&defName, &defValid, &concurrency, &poolLive, &defLive)
+	`, id, livePhases).Scan(&defName, &owner, &defValid, &concurrency, &poolLive, &defLive, &externalLive, &ownerLive)
 	if err == pgx.ErrNoRows {
 		return "", ErrNotFound
 	}
@@ -403,6 +511,16 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		}
 		if defLive >= *concurrency {
 			return "", fmt.Errorf("%w: definition %q at its concurrency limit (%d)", ErrAtCapacity, *defName, *concurrency)
+		}
+		if owner != nil {
+			if externalLive >= caps.MaxExternal {
+				return "", fmt.Errorf("%w: member and client pool full (%d/%d)", ErrAtCapacity, externalLive, caps.MaxExternal)
+			}
+			// A client's sessions share MaxExternal only; a member also has
+			// their own share.
+			if !strings.HasPrefix(*owner, "client:") && ownerLive >= caps.MaxPerMember {
+				return "", fmt.Errorf("%w: you already have %d live session(s)", ErrAtCapacity, ownerLive)
+			}
 		}
 	}
 

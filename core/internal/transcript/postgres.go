@@ -33,17 +33,21 @@ func (s *PostgresStore) SetNudge(nudge func()) {
 }
 
 func (s *PostgresStore) Append(ctx context.Context, taskID, from, text, msgType, idempotencyKey string) (int64, error) {
-	return s.appendInternal(ctx, taskID, from, text, msgType, idempotencyKey, nil)
+	return s.appendInternal(ctx, taskID, from, text, msgType, idempotencyKey, nil, Author{})
+}
+
+func (s *PostgresStore) AppendAuthored(ctx context.Context, taskID string, author Author, text, msgType, idempotencyKey string, replyToSeq *int64) (int64, error) {
+	return s.appendInternal(ctx, taskID, "human", text, msgType, idempotencyKey, replyToSeq, author)
 }
 
 // AppendReply is Append plus reply-to-seq correlation (reliability-
 // findings.md #0) — see Store interface's own doc comment for why this is
 // a second method, not a signature change to Append.
 func (s *PostgresStore) AppendReply(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq int64) (int64, error) {
-	return s.appendInternal(ctx, taskID, from, text, msgType, idempotencyKey, &replyToSeq)
+	return s.appendInternal(ctx, taskID, from, text, msgType, idempotencyKey, &replyToSeq, Author{})
 }
 
-func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq *int64) (int64, error) {
+func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq *int64, author Author) (int64, error) {
 	if idempotencyKey == "" {
 		// The dedup guarantee lives here, not in each caller — an empty key
 		// must never reach the query below as a literal value: every
@@ -86,11 +90,11 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		msgTypePtr = &msgType
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
-		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq, author_sub, author_name)
+		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, '')
 		FROM transcript WHERE session_id = $1
 		RETURNING seq
-	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq).Scan(&seq)
+	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq, author.Sub, author.Name).Scan(&seq)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "transcript_one_reply_idx" {
@@ -110,7 +114,8 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 
 func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) ([]Entry, int64, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq, created_at
+		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq, created_at,
+		       COALESCE(author_name, ''), context_only, untrusted
 		FROM transcript
 		WHERE session_id = $1 AND seq >= $2
 		ORDER BY seq
@@ -128,7 +133,7 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 	nextSeq := sinceSeq
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo, &e.CreatedAt, &e.AuthorName, &e.ContextOnly, &e.Untrusted); err != nil {
 			return nil, sinceSeq, fmt.Errorf("scan: %w", err)
 		}
 		entries = append(entries, e)
