@@ -611,6 +611,46 @@ jobs:
               "http://$REGISTRY/v2/agent-fleet-$1/manifests/$2"
           }
 
+          # `latest` is set by copying the src manifest in the registry, not by
+          # a second buildah push. With every blob already present, buildah
+          # sends that manifest PUT with no credentials, and zot answers 401
+          # (release 6.16.x, 2026-10-21: three attempts in a row, `ci` had
+          # pushed the src tag a second earlier). curl sends them explicitly,
+          # from a 0600 netrc, never on the command line, which other runners
+          # on this box can read. Only when `latest` points elsewhere, so a
+          # skipped component is re-synced too: an earlier newest release
+          # that pushed `latest` but failed to deploy left it on the wrong
+          # image.
+          set_latest() {
+            local c=$1 src=$2 m n ct want have attempt
+            m=$(mktemp); n=$(mktemp); chmod 600 "$n"
+            printf 'machine %s login %s password %s\n' "${REGISTRY%%:*}" "$REGISTRY_USER" "$REGISTRY_PASSWORD" > "$n"
+            for attempt in 1 2 3; do
+              if ct=$(curl -fsS -D - -o "$m" \
+                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+                    "http://$REGISTRY/v2/agent-fleet-$c/manifests/$src" \
+                  | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}') \
+                && want=$(sha256sum "$m" | cut -d' ' -f1) \
+                && have=$(curl -fsI \
+                    -H "Accept: $ct" \
+                    "http://$REGISTRY/v2/agent-fleet-$c/manifests/latest" 2>/dev/null \
+                  | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; true) \
+                && { [ "$have" = "sha256:$want" ] \
+                     || curl -fsS --netrc-file "$n" -X PUT -H "Content-Type: $ct" \
+                          --data-binary @"$m" "http://$REGISTRY/v2/agent-fleet-$c/manifests/latest"; }; then
+                rm -f "$m" "$n"
+                [ "$have" = "sha256:$want" ] && echo "$c: latest already on $src" || echo "$c: latest -> $src"
+                return 0
+              fi
+              echo "::warning::setting agent-fleet-$c:latest failed (attempt $attempt), retrying"
+              sleep 5
+            done
+            rm -f "$m" "$n"
+            echo "::error::setting agent-fleet-$c:latest to $src failed 3 times"
+            return 1
+          }
+
           : > /tmp/timings.txt
           images=""
           total_start=$(date +%s)
@@ -621,6 +661,9 @@ jobs:
             if in_registry "$c" "$src"; then
               echo "$c: skip (registry has agent-fleet-$c:$src)"
               printf '| %s | skip | - | %s |\n' "$c" "$src" >> /tmp/timings.txt
+              if [ "$DO_PUSH" = "true" ] && [ "$PUSH_LATEST" = "true" ]; then
+                set_latest "$c" "$src"
+              fi
               continue
             fi
             # A PR build is never pushed and never tagged `latest`, so it can't
@@ -679,11 +722,10 @@ jobs:
               .
             build_end=$(date +%s)
             if [ "$DO_PUSH" = "true" ]; then
-              # `latest` is pushed from the src image rather than tagged on it
-              # locally, so the box never holds a local `latest`.
-              tags="$src"
-              [ "$PUSH_LATEST" = "true" ] && tags="$tags latest"
-              for t in $tags; do
+              # Only the src tag goes through buildah; `latest` is a manifest
+              # copy afterwards (set_latest), so the box never holds a local
+              # `latest` either.
+              for t in "$src"; do
                 # Retried in the shell: twice on 2026-10-20, right after
                 # cross-repo blob mounts, buildah sent the next write (a blob
                 # POST, then a manifest PUT) with no credentials, got 401 from
@@ -703,6 +745,9 @@ jobs:
                   sleep 5
                 done
               done
+              if [ "$PUSH_LATEST" = "true" ]; then
+                set_latest "$c" "$src"
+              fi
             fi
             end=$(date +%s)
             # Keep the image just built: its layers are the next build's
