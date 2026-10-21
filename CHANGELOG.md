@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.22.0](https://github.com/MohammadBnei/agent-fleet/compare/6.21.0...6.22.0) (2026-10-21)
+
+### Features
+
+* **definitions:** opus-workspace runs on the fleet's model token for now ([#314](https://github.com/MohammadBnei/agent-fleet/issues/314)) ([df8d7f7](https://github.com/MohammadBnei/agent-fleet/commit/df8d7f72c0324fe93b03fd856c3adbad06771ce2))
+
 # [6.21.0](https://github.com/MohammadBnei/agent-fleet/compare/6.20.0...6.21.0) (2026-10-21)
 
 ### Features
