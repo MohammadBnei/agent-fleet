@@ -340,6 +340,9 @@ message GetSessionResponse {
   // core delivers a definition session nothing without the current one
   // (docs/adr/0066 §8). Empty for a repo session.
   string agent_spec_sha = 3;
+  // docs/adr/0076 §3: the session's grants and its definition's live ones,
+  // outside agent_spec and its sha so a new grant never stops delivery.
+  repeated string grants = 4;
 }
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).

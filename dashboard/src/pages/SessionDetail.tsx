@@ -60,6 +60,7 @@ export function SessionDetail({
     run,
     sendDiscuss,
     respondToPermission,
+    previewGrant,
     approvePlanDecision,
     answerQuestion,
     clearActionError,
@@ -159,6 +160,7 @@ export function SessionDetail({
               onLoadOlder={() => anchorPrepend(loadOlder)}
               dockPendingDecision
               onRespond={respondToPermission}
+              previewGrant={previewGrant}
               onApprovePlan={approvePlanDecision}
               onAnswer={answerQuestion}
               onPlanFeedback={(text) => sendDiscuss(text)}
@@ -194,6 +196,7 @@ export function SessionDetail({
           swept={session.sweptAt !== undefined}
           busyKey={busyKey}
           onRespond={respondToPermission}
+          previewGrant={previewGrant}
           onApprovePlan={approvePlanDecision}
           onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}

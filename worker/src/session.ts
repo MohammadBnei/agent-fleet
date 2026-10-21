@@ -296,15 +296,31 @@ function realPath(p: string): string | undefined {
 // git config or hooks.
 // ponytail: a `..` segment is refused outright rather than resolved, since a
 // lexical resolve and the kernel disagree when it follows a symlink.
-function insideWorkspace(path: unknown, worktree: string): boolean {
-  if (typeof path !== "string" || path === "" || path.split(/[\/]/).includes("..")) return false;
+function workspacePath(path: unknown, worktree: string): string | undefined {
+  if (typeof path !== "string" || path === "" || path.split(/[\/]/).includes("..")) return undefined;
   const root = realPath(worktree);
   const real = realPath(resolve(worktree, path));
-  if (root === undefined || real === undefined) return false;
+  if (root === undefined || real === undefined) return undefined;
   const rel = relative(root, real);
-  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return false;
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
   const segments = rel.split(sep);
-  return !segments.some((s) => s === ".git" || s === ".claude") && !GIT_CONFIG_FILES.has(segments[segments.length - 1]);
+  if (segments.some((s) => s === ".git" || s === ".claude") || GIT_CONFIG_FILES.has(segments[segments.length - 1])) return undefined;
+  return segments.join("/");
+}
+
+// The grant a call matches (docs/adr/0076 §3), or undefined. Core renders
+// grants as tools.allow's forms plus `Edit(<path>)` / `Edit(<dir>/**)` (and
+// Write), with paths relative to the worktree; `rel` is the call's resolved
+// worktree path for Edit/Write.
+export function matchesGrant(grants: string[], toolName: string, input: Record<string, unknown>, rel: string | undefined): string | undefined {
+  if (rel === undefined) return matchesToolRule(grants, toolName, input);
+  return grants.find((g) => {
+    const m = /^(Edit|Write)\((.+)\)$/.exec(g);
+    if (!m || m[1] !== toolName) return false;
+    if (m[2] === "**") return true;
+    if (m[2].endsWith("/**")) return rel.startsWith(m[2].slice(0, -2));
+    return rel === m[2];
+  });
 }
 
 // The SDK's built-in tool set for a definition session (query()'s `tools`):
@@ -318,6 +334,7 @@ export function definitionDecision(
   input: Record<string, unknown>,
   mode: PermissionMode,
   worktree: string,
+  grants: string[] = [],
 ): DefinitionDecision {
   const allow: DefinitionDecision = { behavior: "allow" };
   const ask: DefinitionDecision = spec.interaction === "deny" ? { behavior: "deny", message: "not allowed in a headless run" } : { behavior: "ask" };
@@ -325,25 +342,36 @@ export function definitionDecision(
   // The ceiling first: tools.allow cannot widen it.
   if (!DEFINITION_TOOL_CEILING.has(toolName)) return { behavior: "deny", message: "not available to definitions" };
   const pathKey = PATH_TOOLS[toolName];
-  if (pathKey && !insideWorkspace(input[pathKey], worktree)) return { behavior: "deny", message: "outside this definition's workspace" };
-  const rule = matchesToolRule(spec.toolsAllow, toolName, input);
-  if (rule === undefined) return ask;
-  // `default` (and `plan`, which the SDK already holds back from mutating)
-  // asks on a matched edit, as Claude Code's `default` does.
-  if (pathKey) return mode === "auto" ? allow : ask;
+  const rel = pathKey ? workspacePath(input[pathKey], worktree) : undefined;
+  if (pathKey && rel === undefined) return { behavior: "deny", message: "outside this definition's workspace" };
+  // A grant is matched on its own, not only when tools.allow misses: a listed
+  // `Edit` that asks in `default`, or a listed prefix whose argument check
+  // fails, must not hide the human's exact approval of the same call.
+  const listed = matchesToolRule(spec.toolsAllow, toolName, input);
+  const granted = matchesGrant(grants, toolName, input, rel);
+  if (listed !== undefined && ruleRuns(listed, false, toolName, input, mode)) return allow;
+  if (granted !== undefined && ruleRuns(granted, true, toolName, input, mode)) return allow;
+  return ask;
+}
+
+// Whether a matched rule runs the call without asking. `default` (and `plan`,
+// which the SDK already holds back from mutating) asks on an edit tools.allow
+// matched, as Claude Code's `default` does; a grant is already a human's
+// approval, so it does not ask again.
+function ruleRuns(rule: string, isGrant: boolean, toolName: string, input: Record<string, unknown>, mode: PermissionMode): boolean {
+  if (PATH_TOOLS[toolName]) return mode === "auto" || isGrant;
   if (toolName === "Bash" && typeof input.command === "string") {
-    if (autoModeStillAsksCommand(toolName, input)) return ask;
+    if (autoModeStillAsksCommand(toolName, input)) return false;
     const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
     if (prefix !== undefined) {
       // A git prefix gets the argument check, so one the table does not name
       // (`git`, `git checkout`) always asks; any other prefix only needs to
       // be plain words: no metacharacter, expansion or chaining.
       const isGit = prefix === "git" || prefix.startsWith("git ");
-      const inert = isGit ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
-      if (!inert) return ask;
+      return isGit ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
     }
   }
-  return allow;
+  return true;
 }
 
 // A peer session's prompt arrives on the same feed as a human's and, until this
@@ -847,6 +875,9 @@ export async function runSession(): Promise<SessionResult> {
   // docs/adr/0067 §4: set for a definition session only. Everything below
   // that reads it narrows; a repo session (no spec) runs exactly as before.
   const spec = session.agentSpec;
+  // Remembered approvals (docs/adr/0076 §3): this session's and its
+  // definition's live grants at warm, plus any a human makes while it runs.
+  const grants = new Set(session.grants ?? []);
 
   // The mode this pod BOOTS in — restored from the column so a warm resumes in
   // the mode a human left the session in, rather than reverting to "default".
@@ -1113,7 +1144,7 @@ export async function runSession(): Promise<SessionResult> {
         if (spec) {
           // Only the sidecar tools this definition lists are the fleet's own.
           if (definitionSidecarTools.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
-          const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH);
+          const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
           if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
           if (decision.behavior === "deny") return decision;
           // "ask": the ordinary prompt below. definitionDecision already
@@ -1298,11 +1329,16 @@ export async function runSession(): Promise<SessionResult> {
       // generalization of AskUserQuestion's own ask-and-answer plumbing).
       if (entry.type === "permission_response") {
         if (typeof entry.replyTo !== "number") return;
-        let decision: { behavior?: "allow" | "deny"; updatedInput?: Record<string, unknown>; message?: string } = {};
+        let decision: { behavior?: "allow" | "deny"; updatedInput?: Record<string, unknown>; message?: string; grant?: string } = {};
         try {
           decision = JSON.parse(entry.text);
         } catch {
           return;
+        }
+        // `grant` is core's own rendering of a remembered allow, and only a
+        // human answer carries one: an agent cannot append as "human".
+        if (spec && entry.from === "human" && decision.behavior === "allow" && typeof decision.grant === "string") {
+          grants.add(decision.grant);
         }
         // A definition session's answer is {behavior, message} only
         // (docs/adr/0067 §4): the call runs as the agent asked for it, so a

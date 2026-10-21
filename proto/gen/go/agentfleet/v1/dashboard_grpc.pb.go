@@ -37,6 +37,9 @@ const (
 	DashboardService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.DashboardService/AnswerQuestion"
 	DashboardService_RespondToPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToPermission"
 	DashboardService_PostMessage_FullMethodName         = "/agentfleet.v1.DashboardService/PostMessage"
+	DashboardService_PreviewGrant_FullMethodName        = "/agentfleet.v1.DashboardService/PreviewGrant"
+	DashboardService_ListGrants_FullMethodName          = "/agentfleet.v1.DashboardService/ListGrants"
+	DashboardService_RevokeGrant_FullMethodName         = "/agentfleet.v1.DashboardService/RevokeGrant"
 	DashboardService_Transcribe_FullMethodName          = "/agentfleet.v1.DashboardService/Transcribe"
 	DashboardService_DeleteSession_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteSession"
 	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
@@ -108,6 +111,11 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	// docs/adr/0076 §3: remembered approvals. Live definition grants are listed
+	// and revoked here; a revoke reaches running sessions at their next warm.
+	PreviewGrant(ctx context.Context, in *PreviewGrantRequest, opts ...grpc.CallOption) (*PreviewGrantResponse, error)
+	ListGrants(ctx context.Context, in *ListGrantsRequest, opts ...grpc.CallOption) (*ListGrantsResponse, error)
+	RevokeGrant(ctx context.Context, in *RevokeGrantRequest, opts ...grpc.CallOption) (*RevokeGrantResponse, error)
 	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
 	// server-streaming: the browser cannot stream *up* under any transport gRPC
 	// offers, so audio arrives as discrete requests regardless — and each
@@ -356,6 +364,36 @@ func (c *dashboardServiceClient) PostMessage(ctx context.Context, in *PostMessag
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_PostMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) PreviewGrant(ctx context.Context, in *PreviewGrantRequest, opts ...grpc.CallOption) (*PreviewGrantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewGrantResponse)
+	err := c.cc.Invoke(ctx, DashboardService_PreviewGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) ListGrants(ctx context.Context, in *ListGrantsRequest, opts ...grpc.CallOption) (*ListGrantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListGrantsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListGrants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) RevokeGrant(ctx context.Context, in *RevokeGrantRequest, opts ...grpc.CallOption) (*RevokeGrantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeGrantResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RevokeGrant_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -647,6 +685,11 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error)
+	// docs/adr/0076 §3: remembered approvals. Live definition grants are listed
+	// and revoked here; a revoke reaches running sessions at their next warm.
+	PreviewGrant(context.Context, *PreviewGrantRequest) (*PreviewGrantResponse, error)
+	ListGrants(context.Context, *ListGrantsRequest) (*ListGrantsResponse, error)
+	RevokeGrant(context.Context, *RevokeGrantRequest) (*RevokeGrantResponse, error)
 	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
 	// server-streaming: the browser cannot stream *up* under any transport gRPC
 	// offers, so audio arrives as discrete requests regardless — and each
@@ -765,6 +808,15 @@ func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, 
 }
 func (UnimplementedDashboardServiceServer) PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostMessage not implemented")
+}
+func (UnimplementedDashboardServiceServer) PreviewGrant(context.Context, *PreviewGrantRequest) (*PreviewGrantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewGrant not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListGrants(context.Context, *ListGrantsRequest) (*ListGrantsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListGrants not implemented")
+}
+func (UnimplementedDashboardServiceServer) RevokeGrant(context.Context, *RevokeGrantRequest) (*RevokeGrantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeGrant not implemented")
 }
 func (UnimplementedDashboardServiceServer) Transcribe(context.Context, *TranscribeRequest) (*TranscribeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Transcribe not implemented")
@@ -1172,6 +1224,60 @@ func _DashboardService_PostMessage_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).PostMessage(ctx, req.(*PostMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_PreviewGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).PreviewGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_PreviewGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).PreviewGrant(ctx, req.(*PreviewGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_ListGrants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListGrantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListGrants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListGrants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListGrants(ctx, req.(*ListGrantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_RevokeGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RevokeGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RevokeGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RevokeGrant(ctx, req.(*RevokeGrantRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1682,6 +1788,18 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostMessage",
 			Handler:    _DashboardService_PostMessage_Handler,
+		},
+		{
+			MethodName: "PreviewGrant",
+			Handler:    _DashboardService_PreviewGrant_Handler,
+		},
+		{
+			MethodName: "ListGrants",
+			Handler:    _DashboardService_ListGrants_Handler,
+		},
+		{
+			MethodName: "RevokeGrant",
+			Handler:    _DashboardService_RevokeGrant_Handler,
 		},
 		{
 			MethodName: "Transcribe",

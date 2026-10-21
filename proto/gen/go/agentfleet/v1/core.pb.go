@@ -1522,7 +1522,10 @@ type GetSessionResponse struct {
 	// on StreamHumanMessages and WaitForMessages once it has applied the spec;
 	// core delivers a definition session nothing without the current one
 	// (docs/adr/0066 §8). Empty for a repo session.
-	AgentSpecSha  string `protobuf:"bytes,3,opt,name=agent_spec_sha,json=agentSpecSha,proto3" json:"agent_spec_sha,omitempty"`
+	AgentSpecSha string `protobuf:"bytes,3,opt,name=agent_spec_sha,json=agentSpecSha,proto3" json:"agent_spec_sha,omitempty"`
+	// docs/adr/0076 §3: the session's grants and its definition's live ones,
+	// outside agent_spec and its sha so a new grant never stops delivery.
+	Grants        []string `protobuf:"bytes,4,rep,name=grants,proto3" json:"grants,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1576,6 +1579,13 @@ func (x *GetSessionResponse) GetAgentSpecSha() string {
 		return x.AgentSpecSha
 	}
 	return ""
+}
+
+func (x *GetSessionResponse) GetGrants() []string {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
 }
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).
@@ -3030,12 +3040,13 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"live_state\x18\x01 \x01(\tR\tliveState\x12\x1b\n" +
 	"\ttimed_out\x18\x02 \x01(\bR\btimedOut\"#\n" +
 	"\x11GetSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xa5\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xbd\x01\n" +
 	"\x12GetSessionResponse\x120\n" +
 	"\asession\x18\x01 \x01(\v2\x16.agentfleet.v1.SessionR\asession\x127\n" +
 	"\n" +
 	"agent_spec\x18\x02 \x01(\v2\x18.agentfleet.v1.AgentSpecR\tagentSpec\x12$\n" +
-	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\"\xea\x02\n" +
+	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\x12\x16\n" +
+	"\x06grants\x18\x04 \x03(\tR\x06grants\"\xea\x02\n" +
 	"\tAgentSpec\x12\x1f\n" +
 	"\vtools_allow\x18\x01 \x03(\tR\n" +
 	"toolsAllow\x12\x1d\n" +

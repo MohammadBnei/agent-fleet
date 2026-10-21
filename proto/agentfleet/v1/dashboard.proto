@@ -288,7 +288,45 @@ message RespondToPermissionRequest {
   string session_id = 1;
   int64 seq = 2;
   string decision_json = 3;
+  // docs/adr/0076 §3, definition sessions only: "once" (the default),
+  // "session" or "definition". A remembered allow is rendered by core from
+  // the request at seq, never from decision_json.
+  string scope = 4;
+  // "exact" (the default) or "prefix", as PreviewGrant offered them.
+  string rule_form = 5;
 }
+
+message PreviewGrantRequest {
+  string session_id = 1;
+  int64 seq = 2;
+}
+
+// The rules a remembered allow of the request would store. prefix is empty
+// when the request has no wider form.
+message PreviewGrantResponse {
+  string exact = 1;
+  string prefix = 2;
+}
+
+message DefinitionGrant {
+  int64 id = 1;
+  string definition = 2;
+  string rule = 3;
+  string granted_by = 4;
+  string granted_at = 5;
+}
+
+message ListGrantsRequest {}
+
+message ListGrantsResponse {
+  repeated DefinitionGrant grants = 1;
+}
+
+message RevokeGrantRequest {
+  int64 id = 1;
+}
+
+message RevokeGrantResponse {}
 
 message KillE2eRequest {
   string session_id = 1;
@@ -604,6 +642,11 @@ service DashboardService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc PostMessage(PostMessageRequest) returns (AppendResponse);
+  // docs/adr/0076 §3: remembered approvals. Live definition grants are listed
+  // and revoked here; a revoke reaches running sessions at their next warm.
+  rpc PreviewGrant(PreviewGrantRequest) returns (PreviewGrantResponse);
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse);
+  rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse);
 
   // Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
   // server-streaming: the browser cannot stream *up* under any transport gRPC

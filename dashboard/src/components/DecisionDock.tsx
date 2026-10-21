@@ -1,6 +1,6 @@
 import type { TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { decisionAnswerable, findPendingPermissions, findPendingQuestion, hasPendingDecision } from "../transcript";
-import { PermissionCard } from "./PermissionCard";
+import { PermissionCard, type Grant, type GrantPreview } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -24,6 +24,7 @@ export function DecisionDock({
   swept = false,
   compact = false,
   onRespond,
+  previewGrant,
   onApprovePlan,
   onAnswer,
   onPlanFeedback,
@@ -33,7 +34,8 @@ export function DecisionDock({
   podLive?: boolean;
   swept?: boolean;
   compact?: boolean;
-  onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) => void;
+  onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) => void;
+  previewGrant?: GrantPreview;
   // Plan approval is its own path, not an allow decision: it may also switch
   // the session's permission mode, and the order of those two calls matters
   // (approvePlan.ts).
@@ -95,7 +97,8 @@ export function DecisionDock({
             input={permission.input}
             pending
             busy={busyKey === `permission:${permission.entry.seq}`}
-            onAllow={() => onRespond(permission.entry.seq, { behavior: "allow" })}
+            onAllow={(grant) => onRespond(permission.entry.seq, { behavior: "allow" }, grant)}
+            preview={previewGrant && (() => previewGrant(permission.entry.seq))}
             onDeny={(message) => onRespond(permission.entry.seq, { behavior: "deny", message })}
             edgeClassName={edge}
           />

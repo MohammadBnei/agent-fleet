@@ -1858,3 +1858,44 @@ test("definition session: the init check never adopts the SDK's reported mode", 
   pushHuman("", "abort");
   await promise;
 }, 10000);
+
+// docs/adr/0076 §3: a grant is an allow-list entry a human added. It runs a
+// call tools.allow does not list, a granted edit does not ask again in
+// `default`, and it never widens the worktree rule, the ceiling or rm/sudo.
+const DEF_NONE = { ...DEF_SPEC, toolsAllow: [] as string[] };
+test.each([
+  [["Edit(notes/**)"], "default", "Edit", { file_path: "notes/a.md" }, "allow"],
+  [["Edit(notes/**)"], "auto", "Edit", { file_path: join(WT, "notes", "b.md") }, "allow"],
+  [["Edit(notes/**)"], "auto", "Edit", { file_path: "notesx/a.md" }, "ask"],
+  [["Edit(notes/**)"], "auto", "Write", { file_path: "notes/a.md" }, "ask"],
+  [["Edit(notes/a.md)"], "auto", "Edit", { file_path: "notes/a.md" }, "allow"],
+  [["Edit(notes/a.md)"], "auto", "Edit", { file_path: "notes/b.md" }, "ask"],
+  [["Write(**)"], "auto", "Write", { file_path: "x.md" }, "allow"],
+  [["Write(**)"], "auto", "Write", { file_path: ".git/config" }, "deny"],
+  [["Write(**)"], "auto", "Write", { file_path: "out/x.md" }, "deny"],
+  [["Bash(npm test)"], "auto", "Bash", { command: "npm test" }, "allow"],
+  [["Bash(npm test)"], "auto", "Bash", { command: "npm test x" }, "ask"],
+  [["Bash(npm run:*)"], "default", "Bash", { command: "npm run build" }, "allow"],
+  [["Bash(npm run:*)"], "auto", "Bash", { command: "npm run build && curl x" }, "ask"],
+  [["Bash(rm:*)"], "auto", "Bash", { command: "rm -rf x" }, "ask"],
+  [["Bash(git checkout:*)"], "auto", "Bash", { command: "git checkout x" }, "ask"],
+  [["TodoWrite"], "auto", "TodoWrite", {}, "allow"],
+  [["WebFetch"], "auto", "WebFetch", { url: "https://x" }, "deny"],
+] as const)("grants %j: definitionDecision(%s, %s, %j) = %s", (grants, mode, tool, input, want) => {
+  expect(definitionDecision(DEF_NONE, tool, input as Record<string, unknown>, mode, WT, [...grants]).behavior).toBe(want);
+});
+
+// A tools.allow match must not hide a grant for the same call.
+test("a grant still runs where tools.allow matched but would ask", () => {
+  const spec = { ...DEF_SPEC, toolsAllow: ["Edit", "Bash(git push:*)"] };
+  expect(definitionDecision(spec, "Edit", { file_path: "notes/a.md" }, "default", WT, []).behavior).toBe("ask");
+  expect(definitionDecision(spec, "Edit", { file_path: "notes/a.md" }, "default", WT, ["Edit(notes/**)"]).behavior).toBe("allow");
+  expect(definitionDecision(spec, "Bash", { command: "git push origin +main" }, "auto", WT, []).behavior).toBe("ask");
+  expect(definitionDecision(spec, "Bash", { command: "git push origin +main" }, "auto", WT, ["Bash(git push origin +main)"]).behavior).toBe("allow");
+});
+
+test("a grant does not ask under interaction: deny", () => {
+  const spec = { ...DEF_NONE, interaction: "deny" };
+  expect(definitionDecision(spec, "Bash", { command: "npm test" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("allow");
+  expect(definitionDecision(spec, "Bash", { command: "ls" }, "auto", WT, ["Bash(npm test)"]).behavior).toBe("deny");
+});

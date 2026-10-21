@@ -400,6 +400,7 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 			}
 			response["agentSpec"] = json.RawMessage(b)
 			response["agentSpecSha"] = resp.GetAgentSpecSha()
+			response["grants"] = resp.GetGrants()
 		}
 		writeJSON(w, http.StatusOK, response)
 	}

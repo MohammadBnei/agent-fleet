@@ -192,5 +192,9 @@ already accepts.
   ADR-0067 §4 already accepts.
 - Rollout: the mode mapping, the `auto` ceiling and the `workspace-base`
   default ship with the worker's `AgentSpec` PR (ADR-0066 rollout step 2),
-  with `once` as the only scope. Grants (`session`, `definition`, both tables
-  and the console list) ship with the AgentService schema PR.
+  with `once` as the only scope. The grant tables shipped in migration 000015
+  (#289); the grant logic (rendering, storage, delivery, the worker's
+  matching, the answer card's choices and the console list under Settings ›
+  Grants) ships next, on DashboardService. Every DashboardService caller is a
+  platform-admin, so `definition` scope is open to all of them there; the
+  member rule applies when AgentService's member principal lands.

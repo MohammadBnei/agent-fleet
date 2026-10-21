@@ -80,6 +80,7 @@ export async function getSession(): Promise<{
   model?: string;
   agentSpec?: AgentSpec;
   agentSpecSha?: string;
+  grants?: string[];
 }> {
   const res = await fetch(`${base()}/task`);
   if (!res.ok) throw new Error(`sidecar /task failed: ${res.status} ${await res.text()}`);

@@ -29,7 +29,7 @@ import { Collapse } from "./Collapse";
 import { TranscriptEntryView } from "./TranscriptEntryView";
 import { ToolCallDetailModal } from "./DetailModal";
 import { ToolCallLine } from "./ToolCallLine";
-import { PermissionCard } from "./PermissionCard";
+import { PermissionCard, type Grant, type GrantPreview } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
 import { deniedToolUseIds, parseToolCallSummary, shortTool } from "../transcript";
@@ -245,6 +245,7 @@ export function SessionFeed({
   // inline, so the feed must not also render it.
   dockPendingDecision = false,
   onRespond,
+  previewGrant,
   onApprovePlan,
   onAnswer,
   onPlanFeedback,
@@ -263,7 +264,8 @@ export function SessionFeed({
   onLoadOlder?: () => void;
   compact?: boolean;
   dockPendingDecision?: boolean;
-  onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) => void;
+  onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) => void;
+  previewGrant?: GrantPreview;
   // Plan approval carries an optional permission-mode switch, so it is its own
   // path rather than an allow decision (approvePlan.ts).
   onApprovePlan: (seq: bigint, mode?: "auto") => void;
@@ -394,7 +396,7 @@ export function SessionFeed({
       if (isPending && dockPendingDecision) continue;
       flush();
       const permissionKey = `permission:${entry.seq}`;
-      const respond = (decision: { behavior: "allow" | "deny"; message?: string }) => onRespond(entry.seq, decision);
+      const respond = (decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) => onRespond(entry.seq, decision, grant);
 
       if (parsed.tool === "ExitPlanMode") {
         const plan = (parsed.input as { plan?: string } | undefined)?.plan;
@@ -423,9 +425,10 @@ export function SessionFeed({
             busy={busyKey === permissionKey}
             decision={decisions.get(entry.seq)}
             denyMessage={denyMessages.get(entry.seq)}
-            onAllow={() => respond({ behavior: "allow" })}
+            onAllow={(grant) => respond({ behavior: "allow" }, grant)}
             onDeny={(message) => respond({ behavior: "deny", message })}
             edgeClassName={edge}
+            preview={isPending && previewGrant ? () => previewGrant(entry.seq) : undefined}
           />
         </div>,
       );
