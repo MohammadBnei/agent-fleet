@@ -298,4 +298,17 @@ func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
 			t.Errorf("%s: present=%v, want %v", p, err == nil, want)
 		}
 	}
+	// A source without fleet-shared/ at all is a wrong ref: it errors and
+	// deletes nothing.
+	if err := os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("rm", "-rq", "fleet-shared")
+	git("commit", "-m", "wrong ref")
+	if err := m.SyncFleetShared(ctx, origin, "main", home); err == nil {
+		t.Error("a source with no fleet-shared/ synced without error")
+	}
+	if _, err := os.Stat(filepath.Join(home, "CLAUDE.md")); err != nil {
+		t.Errorf("CLAUDE.md removed on a source with no fleet-shared/: %v", err)
+	}
 }

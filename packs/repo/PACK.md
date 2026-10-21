@@ -79,3 +79,8 @@ the same reason, and that one is not a trade — they run their argument
 verbatim, so allow-listing either would let `rtk proxy rm -rf x` past the
 `rm`/`sudo` gate.
 
+## Output and subagents
+
+- `view_logs` truncates: narrow the query (limit/level/duration/time)
+
+`Task` tool = own context, returns summary only. Use for search/trace/pattern-check. Do edits yourself — MCP tool results never compact (ADR-0046), subagent output does.

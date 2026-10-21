@@ -4,7 +4,7 @@
 - Stop > guess. Halting = valid outcome
 - Structural fix > comment. Test/type > doc
 - Scope = what you can verify. Report second problems, don't widen into them
-- Never conclude from truncated output when the answer is not shown. `view_logs` truncates: narrow the query (limit/level/duration/time)
+- Never conclude from truncated output when the answer is not shown
 
 ## Diagrams
 
@@ -43,7 +43,3 @@ Rules that keep them readable:
 - Keep prose for the *why*. The diagram carries structure; it cannot carry a
   trade-off or a reason, and a diagram with no prose around it is a puzzle.
 - If it does not fit on a phone screen, it is two diagrams.
-
-## Subagents
-
-`Task` tool = own context, returns summary only. Use for search/trace/pattern-check. Do edits yourself — MCP tool results never compact (ADR-0046), subagent output does.
