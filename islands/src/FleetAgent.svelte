@@ -234,7 +234,8 @@
   // Login runs top-level on the fleet (authentik refuses to be framed). No
   // reliance on window.opener: the island retries when its window regains focus.
   function signIn() {
-    const url = `${fleetOrigin}/auth/login?popup=1`;
+    // return_to is local-only (safeReturnTo); /auth/done closes the popup.
+    const url = `${fleetOrigin}/auth/login?return_to=${encodeURIComponent("/auth/done")}`;
     const w = window.open(url, "fleet-login", "popup,width=480,height=680");
     if (!w) window.open(url, "_blank", "noopener");
   }

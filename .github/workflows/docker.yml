@@ -299,6 +299,8 @@ jobs:
               # core's image. Without this a dashboard change triggered no
               # build at all and CI went green having compiled nothing.
               - 'dashboard/**'
+              # The islands are compiled in the same way (docs/adr/0068).
+              - 'islands/**'
             dashboard:
               - 'dashboard/**'
             # The island shares dashboard/src/gen and transcript.ts.
@@ -397,7 +399,8 @@ jobs:
         run: bun run build
 
   # docs/adr/0068: the <fleet-agent> island. Same shape as dashboard-test.
-  # Not in core's image yet; serving /islands/* lands with the CORS layer.
+  # Its bundle ships inside core's image (core/Dockerfile's islands stage);
+  # this job adds the tests and type checks that stage skips.
   islands-test:
     needs: changes
     if: always() && (github.event_name == 'push' || needs.changes.outputs.islands == 'true')

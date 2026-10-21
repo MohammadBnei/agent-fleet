@@ -1,10 +1,14 @@
 node_modules/
 dist/
-# Exception: fleet-core/internal/webui/dist/ needs a tracked placeholder —
+# Exception: core/internal/{webui,islands}/dist/ need a tracked placeholder —
 # go:embed all:dist fails on a truly empty/nonexistent directory, and a
-# fresh CI checkout has no built SPA output sitting there yet.
-!fleet-core/internal/webui/dist/
-!fleet-core/internal/webui/dist/.gitkeep
+# fresh CI checkout has no built output sitting there yet.
+!core/internal/webui/dist/
+core/internal/webui/dist/*
+!core/internal/webui/dist/.gitkeep
+!core/internal/islands/dist/
+core/internal/islands/dist/*
+!core/internal/islands/dist/.gitkeep
 
 # local/kind testing ground: Mac-side view of the kind node's hostPath mount
 # (worktrees/clones from real local test runs) — never committed.

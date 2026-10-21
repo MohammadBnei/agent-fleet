@@ -135,9 +135,9 @@ The owner rejected the iframe on four counts:
   `Access-Control-Allow-Origin: *`: it holds no data, and module scripts load
   in CORS mode.
 - **Login.** On `Unauthenticated` the element shows "Sign in", which opens
-  `fleet.bnei.dev/auth/login?popup=1` top-level in a popup. `popup=1` only
-  selects the fixed local landing page `/auth/done`, which joins the exempt
-  paths; the return target stays local-only (`safeReturnTo`). The landing page
+  `fleet.bnei.dev/auth/login?return_to=/auth/done` top-level in a popup. The
+  return target is the existing local-only `return_to` (`safeReturnTo`), and
+  `/auth/done`, a static page, joins the exempt paths. The landing page
   closes itself. The element does not rely on `window.opener`: it retries
   when its window regains focus and offers a manual "Retry". When the popup
   is blocked, "Sign in" opens a new tab instead. Core never sets
