@@ -32,7 +32,8 @@ export function drawDiagrams(node: HTMLElement, opts: { items: unknown; svg: (s:
       mermaid ??= import("mermaid").then((m) => m.default);
       const m = await mermaid;
       // The host's Ukubi theme picks mermaid's: light office, dark tunnels.
-      const theme = root.host?.getAttribute("theme");
+      const host = root.host as HTMLElement | undefined;
+      const theme = host?.getAttribute("theme") ?? (host?.dataset.auto === "dark" ? "underground" : "office");
       m.initialize({
         startOnLoad: false,
         securityLevel: "strict",

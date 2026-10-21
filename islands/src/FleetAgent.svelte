@@ -63,6 +63,50 @@
     el.dispatchEvent(new CustomEvent("fleet-status", { detail: { state: live }, bubbles: true, composed: true }));
   });
 
+  // With no theme attribute the island follows the host page: its <html>
+  // data-theme (SilverBullet), a "dark" class, else the system setting. The
+  // result lands in data-auto, which tokens.css maps to underground.
+  function hostScheme(): "dark" | "light" {
+    const h = document.documentElement;
+    const t = h.dataset.theme ?? h.dataset.colorScheme;
+    if (t === "dark" || t === "light") return t;
+    if (h.classList.contains("dark")) return "dark";
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function followHost(): () => void {
+    const apply = () => (el.dataset.auto = hostScheme());
+    apply();
+    const obs = new MutationObserver(apply);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-color-scheme", "class"] });
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", apply);
+    return () => {
+      obs.disconnect();
+      mq.removeEventListener("change", apply);
+    };
+  }
+
+  // The conversation scrolls between a fixed header and composer, and stays
+  // pinned to the newest entry unless the reader has scrolled up.
+  let scroller = $state<HTMLElement | undefined>();
+  let content = $state<HTMLElement | undefined>();
+  let pinned = true;
+  const onScroll = () => {
+    if (scroller) pinned = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+  };
+  // Any growth counts (new entries, a diagram drawn later, a decision card),
+  // so watch the content's size rather than the entry count.
+  $effect(() => {
+    if (!content || !scroller) return;
+    const box = scroller;
+    const ro = new ResizeObserver(() => {
+      if (pinned) box.scrollTop = box.scrollHeight;
+    });
+    ro.observe(content);
+    ro.observe(box);
+    return () => ro.disconnect();
+  });
+
   // Fonts cannot be declared inside a shadow root; add them to the page once.
   function ensureFonts() {
     if (document.querySelector("link[data-fleet-fonts]")) return;
@@ -105,6 +149,7 @@
     const my = ++gen;
     stream?.abort();
     current = t;
+    pinned = true;
     entries = [];
     seen = new Set();
     answers = {};
@@ -310,6 +355,7 @@
       el.shadowRoot?.prepend(style);
     }
     ensureFonts();
+    const unfollow = followHost();
     load();
     const onFocus = () => {
       if (phase === "signed-out") load();
@@ -317,6 +363,7 @@
     window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("focus", onFocus);
+      unfollow();
       gen++;
       stream?.abort();
     };
@@ -358,9 +405,9 @@
       <button class="secondary" onclick={load}>Retry</button>
     </div>
   {:else}
-    <header class="row">
+    <header class="row head">
       <select
-        class="grow"
+        class="grow thread"
         aria-label="Thread"
         onchange={(e) => {
           const v = e.currentTarget.value;
@@ -386,6 +433,8 @@
       {/if}
     </header>
 
+    <div class="scroll" bind:this={scroller} onscroll={onScroll}>
+    <div class="scroll-inner" bind:this={content}>
     {#if error}<p class="danger">{error}</p>{/if}
     {#if stale}
       <div class="row">
@@ -399,7 +448,7 @@
         {#each items as m (m.seq)}
           {#if m.kind === "message"}
             <li class:human={m.human} class="msg">
-              <span class="who">{m.author}</span>
+              {#if m.human && current?.visibility === "shared"}<span class="who">{m.author}</span>{/if}
               {#if m.human}
                 <p class="text">{m.text}</p>
               {:else}
@@ -409,7 +458,7 @@
           {/if}
         {/each}
         {#each pending as p (p.key)}
-          <li class="msg human pending"><span class="who">You · sending</span><p class="text">{p.text}</p></li>
+          <li class="msg human pending" title="Sending"><p class="text">{p.text}</p></li>
         {/each}
       </ol>
     {:else}
@@ -449,11 +498,13 @@
         {/if}
       </div>
     {/each}
+    </div>
+    </div>
 
     <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
       <textarea
         aria-label="Message"
-        placeholder={current?.tainted ? "Only an admin can write in this thread" : "Write to the agent"}
+        placeholder={current?.tainted ? "Only an admin can write in this thread" : "Reply to the agent"}
         rows="1"
         disabled={current?.tainted || stale}
         bind:this={composer}
@@ -463,7 +514,9 @@
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
         }}
       ></textarea>
-      <button class="primary chamfer send" type="submit" disabled={current?.tainted || stale || !draft.trim()}>Send</button>
+      <button class="send" type="submit" aria-label="Send" title="Send (Enter)" disabled={current?.tainted || stale || !draft.trim()}>
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter" /></svg>
+      </button>
     </form>
   {/if}
 </section>
