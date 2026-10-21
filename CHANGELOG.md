@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.14.1](https://github.com/MohammadBnei/agent-fleet/compare/6.14.0...6.14.1) (2026-10-21)
+
+### Bug Fixes
+
+* **islands:** compact UI, optimistic send, threads start with a message ([#308](https://github.com/MohammadBnei/agent-fleet/issues/308)) ([badaf7c](https://github.com/MohammadBnei/agent-fleet/commit/badaf7c4141629914de0a7009491216097b14459))
+
 # [6.14.0](https://github.com/MohammadBnei/agent-fleet/compare/6.13.0...6.14.0) (2026-10-21)
 
 ### Features
