@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -288,5 +289,28 @@ func TestReadDefinitions_DeadCallerRunsNoGit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "definitions-src")); !os.IsNotExist(err) {
 		t.Fatalf("a dead caller started a clone: %v", err)
+	}
+}
+
+// docs/adr/0075 §9: App credentials ride only on clone/fetch, as env; an
+// error falls back to ambient git auth instead of failing the call.
+func TestGitEnv_OnlyNetworkCommandsAndFallsBack(t *testing.T) {
+	m := NewManager(t.TempDir())
+	var calls []string
+	m.GitEnv = func(context.Context) ([]string, error) {
+		calls = append(calls, "env")
+		return []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=fleet.test", "GIT_CONFIG_VALUE_0=1"}, nil
+	}
+	origin := newDefinitionsOrigin(t)
+	if _, _, err := m.ReadDefinitions(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("GitEnv asked %d times for one clone, want 1 (clone/fetch only)", len(calls))
+	}
+	m.GitEnv = func(context.Context) ([]string, error) { return nil, errors.New("app down") }
+	commitFile(t, origin, "definitions/c.yaml", "c")
+	if _, _, err := m.ReadDefinitions(context.Background(), origin, "main"); err != nil {
+		t.Fatalf("an App error failed the fetch instead of falling back: %v", err)
 	}
 }

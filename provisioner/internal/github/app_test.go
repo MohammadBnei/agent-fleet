@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,9 +29,42 @@ type fakeGitHub struct {
 	mints   []map[string]any
 	expires time.Time
 	fail    bool
+	// tokenInstall maps a minted token to the installation it was minted on.
+	tokenInstall map[string]string
+	instLists    int
+	failPage2    bool // /installation/repositories page 2 answers 502
+	suspendOpus  bool
+}
+
+func (f *fakeGitHub) serveInstallationRepos(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	inst := f.tokenInstall[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+	f.mu.Unlock()
+	var repos []map[string]any
+	switch {
+	case inst == "/app/installations/2/access_tokens" && r.URL.Query().Get("page") == "1":
+		for i := range perPage {
+			repos = append(repos, map[string]any{"id": i + 1, "name": fmt.Sprintf("r%d", i), "full_name": fmt.Sprintf("MohammadBnei/r%d", i), "archived": i == 0, "fork": i == 1})
+		}
+	case inst == "/app/installations/2/access_tokens" && r.URL.Query().Get("page") == "2" && f.failPage2:
+		http.Error(w, `{"message":"boom"}`, http.StatusBadGateway)
+		return
+	case inst == "/app/installations/2/access_tokens" && r.URL.Query().Get("page") == "2":
+		repos = []map[string]any{{"id": 999, "name": "last", "full_name": "MohammadBnei/last"}}
+	case inst == "/app/installations/3/access_tokens":
+		repos = []map[string]any{{"id": 1424343192, "name": "workspace", "full_name": "opus-tech-hq/workspace"}}
+	case inst == "":
+		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"repositories": repos})
 }
 
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/installation/repositories" {
+		f.serveInstallationRepos(w, r)
+		return
+	}
 	f.checkJWT(r.Header.Get("Authorization"))
 	switch {
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/installation"):
@@ -44,6 +78,16 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 		}
+	case r.Method == http.MethodGet && r.URL.Path == "/app/installations":
+		f.mu.Lock()
+		f.instLists++
+		f.mu.Unlock()
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 1, "account": map[string]any{"id": 666, "login": "MohammadBnei"}}, // foreign, same login
+			{"id": 2, "account": map[string]any{"id": 43962695, "login": "MohammadBnei"}},
+			opus(f.suspendOpus),
+		})
+		return
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/app/installations/"):
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -55,8 +99,13 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		body["path"] = r.URL.Path
 		f.mints = append(f.mints, body)
+		tok := fmt.Sprintf("ghs_%d", len(f.mints))
+		if f.tokenInstall == nil {
+			f.tokenInstall = map[string]string{}
+		}
+		f.tokenInstall[tok] = r.URL.Path
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{"token": "ghs_" + string(rune('a'+len(f.mints))), "expires_at": f.expires.Format(time.RFC3339)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": tok, "expires_at": f.expires.Format(time.RFC3339)})
 	default:
 		http.NotFound(w, r)
 	}
@@ -181,5 +230,115 @@ func TestApp_ConfiguredOnlyWithBothFiles(t *testing.T) {
 	a, _ := newApp(t, false)
 	if !a.Configured() {
 		t.Error("both files present, not configured")
+	}
+}
+
+// docs/adr/0075 §4: the fleet's repos are the allowlisted installations'
+// repos, all pages, never archived or forks; a foreign installation with the
+// same login contributes nothing.
+func TestApp_ListReposFromAllowlistedInstallations(t *testing.T) {
+	a, f := newApp(t, false)
+	repos, err := a.ListRepos(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range repos {
+		got[r.FullName] = true
+	}
+	if len(repos) != perPage-2+2 || !got["MohammadBnei/last"] || !got["opus-tech-hq/workspace"] || got["MohammadBnei/r0"] || got["MohammadBnei/r1"] {
+		t.Fatalf("repos %d: %v", len(repos), got)
+	}
+	for _, m := range f.mints {
+		if m["path"] == "/app/installations/1/access_tokens" {
+			t.Error("minted on the foreign installation")
+		}
+		if m["repositories"] != nil {
+			t.Errorf("listing token narrowed to repositories: %v", m)
+		}
+		if perms, _ := m["permissions"].(map[string]any); perms["contents"] != "read" || perms["metadata"] != "read" || len(perms) != 2 {
+			t.Errorf("listing token permissions %v, want read-only", perms)
+		}
+	}
+	if _, err := a.ListRepos(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if f.instLists != 1 {
+		t.Errorf("installations listed %d times within instTTL", f.instLists)
+	}
+}
+
+// The provisioner's own git gets one read-only extraHeader per allowlisted
+// owner, as env, never argv.
+func TestApp_GitEnvPerOwner(t *testing.T) {
+	a, _ := newApp(t, false)
+	env, err := a.GitEnv(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{
+		"GIT_CONFIG_COUNT=3",
+		"GIT_CONFIG_KEY_0=http.https://github.com/MohammadBnei/.extraHeader",
+		"GIT_CONFIG_KEY_1=http.https://github.com/mohammadbnei/.extraHeader",
+		"GIT_CONFIG_KEY_2=http.https://github.com/opus-tech-hq/.extraHeader",
+		"GIT_CONFIG_VALUE_0=Authorization: Basic ",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("env missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+func opus(suspended bool) map[string]any {
+	in := map[string]any{"id": 3, "account": map[string]any{"id": 344349211, "login": "opus-tech-hq"}}
+	if suspended {
+		in["suspended_at"] = "2026-10-21T00:00:00Z"
+	}
+	return in
+}
+
+// A failed later page is an error, never a short list: core would read the
+// missing repos as removed.
+func TestApp_ListReposPartialIsError(t *testing.T) {
+	a, f := newApp(t, false)
+	f.failPage2 = true
+	if repos, err := a.ListRepos(context.Background()); err == nil {
+		t.Fatalf("partial listing returned %d repos and no error", len(repos))
+	}
+}
+
+// No allowlisted installation is an error, never an empty fleet.
+func TestApp_NoAllowlistedInstallationIsError(t *testing.T) {
+	a, _ := newApp(t, false)
+	a.Accounts = map[int64]bool{}
+	if _, err := a.ListRepos(context.Background()); err == nil {
+		t.Fatal("empty allowlist listed as an empty fleet")
+	}
+}
+
+// A suspended installation is skipped, so the other one still syncs.
+func TestApp_SuspendedInstallationIsSkipped(t *testing.T) {
+	a, f := newApp(t, false)
+	f.suspendOpus = true
+	repos, err := a.ListRepos(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range repos {
+		if r.FullName == "opus-tech-hq/workspace" {
+			t.Fatal("a suspended installation's repo was listed")
+		}
+	}
+	if len(repos) == 0 {
+		t.Fatal("the healthy installation's repos were lost too")
+	}
+}
+
+// Unmounted, GitEnv adds nothing and calls nothing.
+func TestApp_GitEnvUnmountedIsNoop(t *testing.T) {
+	env, err := NewApp(t.TempDir(), []int64{1}).GitEnv(context.Background())
+	if err != nil || env != nil {
+		t.Fatalf("env %v err %v", env, err)
 	}
 }

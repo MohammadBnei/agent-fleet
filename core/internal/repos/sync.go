@@ -115,6 +115,11 @@ func (o *Overrides) Load() (map[string]Override, bool) {
 // many repos vanishing at once, a real removal like one or two.
 const maxGonePerTick = 2
 
+// bigGrowth: more new repos than this in one tick is logged loudly. Not a
+// guard: both installations are repository_selection=all by the user's
+// choice (docs/adr/0075 §4), so the first tick after the cutover adds ~150.
+const bigGrowth = 10
+
 // fleetName bounds a name the sync may write: lowercase like definition repo
 // names, and at most 63 characters because it becomes a pod label.
 var fleetName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
@@ -180,6 +185,7 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	ov = lower
 	sort.Slice(gh, func(i, j int) bool { return gh[i].ID < gh[j].ID })
 	listed := map[int64]bool{}
+	var added []string // new rows this tick
 	for _, g := range gh {
 		listed[g.ID] = true
 	}
@@ -269,6 +275,7 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 				return 0, fmt.Errorf("repos sync: insert %s: %w", g.FullName, err)
 			}
 			tag = t.RowsAffected()
+			added = append(added, name)
 		}
 		if cluster {
 			granted = append(granted, name)
@@ -278,9 +285,12 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 			slog.Info("repos: synced", "name", name, "repo", g.FullName, "baseBranch", base, "image", image, "clusterAccess", cluster)
 		}
 	}
+	if len(added) > bigGrowth {
+		slog.Warn("repos: many new repos in one tick; check the App's installations if unexpected", "count", len(added), "repos", added)
+	}
 	for k := range ov {
 		if !usedOverride[k] {
-			slog.Warn("repos: override matches no repo the bot reaches", "repo", k)
+			slog.Warn("repos: override matches no repo the fleet App lists", "repo", k)
 		}
 	}
 
@@ -310,13 +320,13 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	// A token that sees nothing (wrong account, lost scope) answers 200 with
 	// [], which on a small fleet would otherwise stay under the per-tick cap.
 	case len(gone) > maxGonePerTick || (len(gone) > 0 && len(gone) == active):
-		slog.Error("repos: shrink guard, too many repos vanished in one tick; nothing marked gone. Check the bot's token and GitHub", "gone", gone, "active", active)
+		slog.Error("repos: shrink guard, too many repos vanished in one tick; nothing marked gone. Check the ukubi-fleet App's installations and GitHub", "gone", gone, "active", active)
 	case len(gone) > 0:
 		if _, err := tx.Exec(ctx, `UPDATE repos SET gone_since = now(), updated_at = now() WHERE name = ANY($1)`, gone); err != nil {
 			return 0, fmt.Errorf("repos sync: mark gone: %w", err)
 		}
 		changed += len(gone)
-		slog.Warn("repos: no longer listed for the bot, hidden; deleted after 7 days", "repos", gone)
+		slog.Warn("repos: no longer listed by the fleet App, hidden; deleted after 7 days", "repos", gone)
 	}
 
 	// Never a row a listed repo matched this tick, even one skipped on a
