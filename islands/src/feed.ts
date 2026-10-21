@@ -32,17 +32,11 @@ export function conversation(entries: Entry[]): Item[] {
     }));
 }
 
-// A question no longer blocks once the turn that asked it ended: a stop, or the
-// agent speaking again. Its card would otherwise turn the next message into an
-// answer to a question nobody is waiting on.
+// A stop or an interrupt ends the turn that asked: its question then blocks
+// nothing, and its card would turn the next message into an answer nobody
+// waits for. Agent text is no such signal: it can follow the ask in the turn.
 function outlived(entries: Entry[], seq: bigint): boolean {
-  return entries.some(
-    (e) =>
-      e.seq > seq &&
-      (e.type === TranscriptEntryType.INTERRUPT ||
-        e.type === TranscriptEntryType.ABORT ||
-        (e.type === TranscriptEntryType.DISCUSSION && e.from === "agent")),
-  );
+  return entries.some((e) => e.seq > seq && (e.type === TranscriptEntryType.INTERRUPT || e.type === TranscriptEntryType.ABORT));
 }
 
 // Open decisions, oldest first. ExitPlanMode is a plan, not a tool call.

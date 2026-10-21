@@ -292,7 +292,10 @@
     // Code: a plain message would only queue behind the question it blocks on.
     const q = current && !current.tainted ? open.find((d) => d.kind === "question") : undefined;
     if (q?.kind === "question") {
-      if (busy) return; // another decision is on its way; the text stays put
+      if (busy) {
+        error = "Wait for the last answer to go through.";
+        return;
+      }
       const answersJson = JSON.stringify({ answers: withOther(q.questions.map((x) => x.question), answers, text) });
       if (new TextEncoder().encode(answersJson).length > MAX_MESSAGE) {
         error = "This answer is too long (64 KiB at most).";
@@ -300,7 +303,7 @@
       }
       sending = true;
       draft = "";
-      const my = gen;
+      const threadId = current!.id;
       const key = ++pendingKey;
       pending = [...pending, { key, text }];
       pinned = true;
@@ -309,12 +312,15 @@
         seq = (await api.answerQuestion({ threadId, seq: q.seq, answersJson })).seq;
       });
       sending = false;
-      if (my !== gen) return; // they left the thread: nothing here is theirs now
-      if (ok && seq !== undefined && !seen.has(seq) && stream && !stream.signal.aborted) {
+      // They left the thread: nothing here is theirs now. Not gen: a reload
+      // of this same thread (someone answered first) must keep the text.
+      if (current?.id !== threadId) return;
+      const streaming = !!stream && !stream.signal.aborted;
+      if (ok && seq !== undefined && !seen.has(seq) && streaming) {
         pending = pending.map((p) => (p.key === key ? { ...p, seq } : p));
       } else {
         pending = pending.filter((p) => p.key !== key);
-        if (ok && current) await select(current); // no stream to echo it
+        if (ok && !streaming && current) await select(current); // no stream to echo it
       }
       if (ok) answers = {};
       else draft = draft ? `${text}\n${draft}` : text;
