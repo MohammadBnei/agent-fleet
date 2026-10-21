@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { client } from "./connectClient";
 
 // What switching a session to `auto` actually grants (docs/adr/0053). One
@@ -42,11 +43,20 @@ export const PERMISSION_MODES = [
 // may find nothing left to resolve — it still writes the PERMISSION_RESPONSE
 // every surface reads as "this plan was approved", and the dashboard's own
 // optimistic echo is built on that entry existing.
+//
+// One reply per prompt (migration 000015): when the worker's own "allowed by a
+// permission-mode change" record lands first, this answer gets AlreadyExists.
+// The plan is approved either way, so that is success.
 export async function approvePlan(sessionId: string, seq: bigint, mode?: "auto"): Promise<void> {
   if (mode) await client.setPermissionMode({ sessionId, mode });
-  await client.respondToPermission({
-    sessionId,
-    seq,
-    decisionJson: JSON.stringify({ behavior: "allow" }),
-  });
+  try {
+    await client.respondToPermission({
+      sessionId,
+      seq,
+      decisionJson: JSON.stringify({ behavior: "allow" }),
+    });
+  } catch (err) {
+    if (mode && err instanceof ConnectError && err.code === Code.AlreadyExists) return;
+    throw err;
+  }
 }

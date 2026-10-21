@@ -4,6 +4,7 @@ package transcript
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -135,6 +136,31 @@ func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 	}
 	if entries[0].ReplyTo != nil {
 		t.Fatalf("expected the question entry's own ReplyTo to be nil, got %v", *entries[0].ReplyTo)
+	}
+}
+
+// One reply per prompt (migration 000015): a second answer to the same seq,
+// whether a second member's or the worker's on-behalf resolution racing a
+// human, is ErrAlreadyAnswered, and a retry of the first keeps its seq.
+func TestPostgresStore_SecondReplyToOnePromptIsRefused(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewPostgresStore(pool)
+	sessionID := newTestTask(t, ctx, pool)
+
+	reqSeq, err := store.Append(ctx, sessionID, "agent", `{"tool":"Bash"}`, "permission_request", "")
+	if err != nil {
+		t.Fatalf("append request: %v", err)
+	}
+	first, err := store.AppendReply(ctx, sessionID, "human", `{"behavior":"allow"}`, "permission_response", "k1", reqSeq)
+	if err != nil {
+		t.Fatalf("first reply: %v", err)
+	}
+	if _, err := store.AppendReply(ctx, sessionID, "agent", `{"behavior":"deny"}`, "permission_response", "k2", reqSeq); !errors.Is(err, ErrAlreadyAnswered) {
+		t.Fatalf("second reply: want ErrAlreadyAnswered, got %v", err)
+	}
+	if again, err := store.AppendReply(ctx, sessionID, "human", `{"behavior":"allow"}`, "permission_response", "k1", reqSeq); err != nil || again != first {
+		t.Fatalf("retried first reply: want seq %d, got %d, %v", first, again, err)
 	}
 }
 

@@ -7,8 +7,14 @@ package transcript
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrAlreadyAnswered is AppendReply's answer when the prompt at replyToSeq
+// already has its answer or permission response: one reply per prompt
+// (migration 000015, docs/adr/0066 §4).
+var ErrAlreadyAnswered = errors.New("already answered")
 
 // Entry is one transcript message, seq-ordered per task. JSON
 // tags: also serialized directly by the dashboard API (internal/dashboard,

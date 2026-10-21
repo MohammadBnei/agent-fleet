@@ -2,10 +2,12 @@ package transcript
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -90,6 +92,10 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		RETURNING seq
 	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq).Scan(&seq)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "transcript_one_reply_idx" {
+			return 0, ErrAlreadyAnswered
+		}
 		return 0, fmt.Errorf("insert: %w", err)
 	}
 

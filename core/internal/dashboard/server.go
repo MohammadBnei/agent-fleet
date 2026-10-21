@@ -772,6 +772,9 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 	}
 	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq())
 	if err != nil {
+		if errors.Is(err, transcript.ErrAlreadyAnswered) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+		}
 		slog.Error("dashboard AnswerQuestion", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -798,6 +801,9 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 	sessionID := req.Msg.GetSessionId()
 	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq())
 	if err != nil {
+		if errors.Is(err, transcript.ErrAlreadyAnswered) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+		}
 		slog.Error("dashboard RespondToPermission", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
