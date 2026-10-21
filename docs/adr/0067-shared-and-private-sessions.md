@@ -93,8 +93,9 @@ untrusted input can approve a turn that input drove.
 
 - Admins see and act on every session, in the console and through
   AgentService. The console stays the full mirror.
-- A member chooses `shared` or `private` at `CreateThread`. A client must
-  choose at `Open` (ADR-0066 §6).
+- A steward (§6) chooses `shared` or `private` at `CreateThread`; since
+  2026-10-21 other members start no threads. A client must choose at `Open`
+  (ADR-0066 §6).
 - `SetConfig` and `Stop` are the owner's or an admin's, never every member's
   (ADR-0066 §4).
 - **Audience applies to every member row, private ones included.** A member
@@ -241,6 +242,37 @@ against the definition's `allow` list and the pinned row. Mode keeps today's
 live path (`SetPermissionMode`). The model is stored on the session and takes
 effect at the next warm. The response says which values are live and which
 are pending, so the widget can show it.
+
+### 6. Stewards, locks and the wake window (amended 2026-10-21)
+
+Reported on the Opus pilot: with two members on one shared thread, the
+owner needs to cut the other's spending at once, and a member must not be
+able to run up cost unattended. Three rules, all in core:
+
+- **Steward.** A member of `platform-admins`, from the console **or an
+  island**. `Admin()` (console only, ADR-0068) keeps every other power; a
+  steward has three more, and only these: start a thread, lock or unlock
+  one, and wake one. `ListThreadsResponse.steward` tells the widget.
+- **Members start no threads.** `CreateThread` refuses a member who is not a
+  steward. Members post and answer in threads shared with them.
+- **Lock.** `Lock(thread, true)` records the steward's email in
+  `sessions.locked_by` (migration 000018) and stops a live pod through the
+  console's `StopSession`. While set, `canAnswer` admits stewards and admins
+  only: everyone who could read the thread still can, nobody else posts,
+  answers or wakes it. `Lock(thread, false)` hands it back. An idle thread is
+  locked without a stop: an abort entry would be replayed into the next warm.
+- **Wake window.** A non-steward member cannot boot the pod of a thread whose
+  last activity (`last_active_at`, else `created_at`) is over 24 hours old;
+  `PostMessage` and every answer refuse with `FailedPrecondition`. A steward's
+  `Wake` warms it through the usual caps; once the pod is live members post
+  again, and their posts move the clock. Clients keep their own rules.
+
+Why a steward may act from an island although ADR-0068 gives islands member
+rights only: the cookie authenticates the browser, not the gesture, so a
+host page's script could call these too. Two of the powers only take rights
+away (lock) or are visible and capped spend on a thread an admin started
+(wake), and starting a thread is what members could already do before this
+section. The residual is ADR-0068's, unchanged in kind.
 
 ## Alternatives considered
 

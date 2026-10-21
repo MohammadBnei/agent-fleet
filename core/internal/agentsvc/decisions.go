@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -26,6 +27,9 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	}
 	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
+	}
+	if needsWake(p, t, time.Now()) {
+		return nil, errWake
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker
 	// asks nothing.
@@ -228,6 +232,66 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.StopResponse{}), nil
+}
+
+// Lock is a steward's (docs/adr/0067 §6): locking stops the turn in flight
+// and leaves the thread to stewards; everyone who could read it still can.
+// Unlocking hands it back.
+func (s *Server) Lock(ctx context.Context, req *connect.Request[agentfleetv1.LockRequest]) (*connect.Response[agentfleetv1.LockResponse], error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, _, err := s.thread(ctx, p, req.Msg.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	if !p.steward() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin locks a thread"))
+	}
+	if !req.Msg.GetLocked() {
+		if err := s.sessions.SetLocked(ctx, t.ID, nil); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
+	}
+	by := p.author().Name
+	if err := s.sessions.SetLocked(ctx, t.ID, &by); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// Only a live pod: an abort entry on an idle thread would be replayed into
+	// the next warm and stop that one instead.
+	if sessions.IsPodPhaseLive(t.PodPhase) {
+		reason := "stopped and locked by " + by
+		if _, err := s.dash.StopSession(ctx, connect.NewRequest(&agentfleetv1.StopSessionRequest{SessionId: t.ID, Reason: &reason})); err != nil {
+			return nil, err
+		}
+	}
+	return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
+}
+
+// Wake is a steward's (docs/adr/0067 §6): boot the pod of a thread members
+// may no longer wake, through the same caps as any warm. A live pod lets
+// members post again; their posts move the activity clock.
+func (s *Server) Wake(ctx context.Context, req *connect.Request[agentfleetv1.WakeRequest]) (*connect.Response[agentfleetv1.WakeResponse], error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, h, err := s.thread(ctx, p, req.Msg.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	if !p.steward() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin wakes a thread"))
+	}
+	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("DEFINITION_CHANGED: start a new thread"))
+	}
+	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.WakeResponse{}), nil
 }
 
 func (s *Server) GetStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetStatusRequest]) (*connect.Response[agentfleetv1.GetStatusResponse], error) {
