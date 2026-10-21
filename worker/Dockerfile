@@ -204,8 +204,12 @@ RUN git clone --depth 1 --branch ${PONYTAIL_VERSION} https://github.com/Dietrich
 # plugin copy (above) still works post-USER-switch.
 RUN chmod -R o+rX /root
 
-WORKDIR /app
-COPY worker ./worker
+WORKDIR /app/worker
+# Dependencies before source: the install below is a ~300 MB layer (the SDK's
+# native CLI), and with docker.yml's --layers it is reused, built and pushed
+# again only when package.json or bun.lock change. COPYing the whole of
+# worker/ first made every source edit re-push it.
+COPY worker/package.json worker/bun.lock ./
 # --frozen-lockfile: the SDK bundles the whole Claude Code CLI, so a version
 # drift here swaps the agent's entire runtime — including which binaries it
 # shells out to. `^0.1.0` let that happen silently on any rebuild; the version
@@ -230,8 +234,14 @@ COPY worker ./worker
 # linux-x64 is hardcoded because PLATFORMS in .github/workflows/docker.yml is
 # linux/amd64. Adding an arch there breaks this line — deliberately: the
 # alternative is an image whose agent binary is for the wrong architecture.
-RUN set -eu; \
-    cd worker; \
+#
+# The cache mount keeps bun's download cache on the build box between builds;
+# it is never part of the image. See docker.yml for what that costs.
+#
+# chown here, in the same layer, not after the source COPY: a chown -R in a
+# later RUN rewrites every file under node_modules into a new layer, which is
+# the 300 MB this ordering exists to stop pushing.
+RUN --mount=type=cache,id=agent-fleet-bun,target=/root/.bun/install/cache set -eu; \
     bun install --production --frozen-lockfile; \
     sdk_cli="$(node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --version | cut -d' ' -f1)"; \
     if [ "$sdk_cli" != "${CLAUDE_CODE_VERSION}" ]; then \
@@ -239,9 +249,10 @@ RUN set -eu; \
         exit 1; \
     fi; \
     rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl; \
-    chmod +x entrypoint.sh; \
     chown -R bun:bun /app
 
-WORKDIR /app/worker
+# entrypoint.sh is 100755 in git, and COPY keeps the mode.
+COPY --chown=bun:bun worker ./
+
 USER bun
 CMD ["./entrypoint.sh"]

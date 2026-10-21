@@ -21,7 +21,10 @@ COPY go.work.sum ./
 RUN go work init ./proto/gen/go ./provisioner
 WORKDIR /app/provisioner
 # No version compiled in: FLEET_VERSION at run time (see core/Dockerfile).
-RUN CGO_ENABLED=0 go build -o /out/provisioner ./cmd/provisioner
+# Cache mounts: the Go build and module caches stay on the build box between
+# builds, outside the image. See docker.yml for what that costs.
+RUN --mount=type=cache,id=agent-fleet-gobuild,target=/root/.cache/go-build --mount=type=cache,id=agent-fleet-gomod,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /out/provisioner ./cmd/provisioner
 
 # Not distroless: as of docs/adr/0019, the provisioner owns the shared
 # PVC's entire git lifecycle itself (clone/fetch/worktree add+remove,
