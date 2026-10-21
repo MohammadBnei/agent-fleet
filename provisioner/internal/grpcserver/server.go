@@ -659,11 +659,9 @@ func (s *Server) ListDefinitionFiles(ctx context.Context, _ *agentfleetv1.ListDe
 	return out, nil
 }
 
-// ListGitHubRepos is core's repos sync source (docs/adr/0074): it accepts
-// allowlisted invitations first, so a repo shows up on the tick its invite
-// is accepted, then lists every repo the bot reaches. A failed accept is
-// logged and retried next tick; a failed listing is an error, never a
-// shorter list.
+// ListGitHubRepos is core's repos sync source (docs/adr/0074, amended by
+// 0075 §4): every repo of the ukubi-fleet App's allowlisted installations.
+// A failed listing is an error, never a shorter list.
 func (s *Server) ListGitHubRepos(ctx context.Context, _ *agentfleetv1.ListGitHubReposRequest) (*agentfleetv1.ListGitHubReposResponse, error) {
 	if s.gh == nil {
 		return nil, status.Error(codes.FailedPrecondition, "no GitHub client: repos sync source is unset")

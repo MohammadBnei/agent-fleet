@@ -205,14 +205,15 @@ go wrong, and a fragment that gets misread is worse than a few extra words.
 
 ## Current targets
 
-Every repo `argocd-ukubi-bot` is a collaborator on (`adr/0074`): core projects
-the bot's GitHub repos into the `repos` table each minute, and overrides (name,
-base branch, image, cluster access) come only from infra-bootstrap's
-`gitops/bootstrap/fleet-repo-overrides.yaml`. The console writes one field,
-`active` (Settings → Repos): installation = what the fleet can reach, active =
-what it uses. An inactive repo starts no new session; open ones keep working.
-Onboarding = invite the bot; the repo arrives active. No per-repo
-Deployment/PVC.
+Every repo of the GitHub App `ukubi-fleet`'s allowlisted installations
+(`adr/0074` as amended by `adr/0075` §4; both installations are "All
+repositories"): core projects them into the `repos` table each minute, and
+overrides (name, base branch, image, cluster access) come only from
+infra-bootstrap's `gitops/bootstrap/fleet-repo-overrides.yaml`. The console
+writes one field, `active` (Settings → Repos): installation = what the fleet
+can reach, active = what it uses. An inactive repo starts no new session; open
+ones keep working. Onboarding = install the App (or create the repo under an
+installed account); the repo arrives active. No per-repo Deployment/PVC.
 
 ## Verification traps
 

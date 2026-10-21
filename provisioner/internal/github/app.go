@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,11 +43,13 @@ type App struct {
 	instMu  sync.Mutex
 	insts   []installation // allowlisted installations, cached for instTTL
 	instsAt time.Time
+	instErr error // the last listing failure, cached for instErrTTL
 }
 
 type installation struct {
-	ID      int64 `json:"id"`
-	Account struct {
+	ID          int64      `json:"id"`
+	SuspendedAt *time.Time `json:"suspended_at"`
+	Account     struct {
 		ID    int64  `json:"id"`
 		Login string `json:"login"`
 	} `json:"account"`
@@ -56,6 +59,10 @@ type installation struct {
 // new account is rare; a new repo under an existing installation needs no
 // refresh of this list.
 const instTTL = 10 * time.Minute
+
+// instErrTTL: a failed listing is not retried for this long, so a broken
+// App or GitHub costs one slow call per minute, not one per git fetch.
+const instErrTTL = time.Minute
 
 // installationPermissions is what the provisioner's own git and the repos
 // listing need from an owner-wide token: read only.
@@ -139,9 +146,20 @@ func (a *App) cached(ctx context.Context, key string, mint func(context.Context)
 func (a *App) installations(ctx context.Context) ([]installation, error) {
 	a.instMu.Lock()
 	defer a.instMu.Unlock()
-	if a.insts != nil && a.now().Before(a.instsAt.Add(instTTL)) {
-		return a.insts, nil
+	if !a.instsAt.IsZero() {
+		if a.instErr != nil && a.now().Before(a.instsAt.Add(instErrTTL)) {
+			return nil, a.instErr
+		}
+		if a.instErr == nil && a.now().Before(a.instsAt.Add(instTTL)) {
+			return a.insts, nil
+		}
 	}
+	out, err := a.listInstallations(ctx)
+	a.insts, a.instErr, a.instsAt = out, err, a.now()
+	return out, err
+}
+
+func (a *App) listInstallations(ctx context.Context) ([]installation, error) {
 	jwt, err := a.jwt()
 	if err != nil {
 		return nil, err
@@ -153,9 +171,14 @@ func (a *App) installations(ctx context.Context) ([]installation, error) {
 			return nil, err
 		}
 		for _, in := range batch {
-			if a.Accounts[in.Account.ID] {
+			switch {
+			case a.Accounts[in.Account.ID] && in.SuspendedAt != nil:
+				// Suspended by its owner: it mints nothing, and treating it as
+				// an error would stop the sync for every other installation.
+				slog.Warn("github app: allowlisted installation suspended, its repos are not listed", "account", in.Account.Login, "installation", in.ID)
+			case a.Accounts[in.Account.ID]:
 				out = append(out, in)
-			} else {
+			default:
 				slog.Error("github app: installation by a non-allowlisted account, ignored; remove it by hand (infra-bootstrap ADR-0062)", "account", in.Account.Login, "accountId", in.Account.ID, "installation", in.ID)
 			}
 		}
@@ -163,7 +186,10 @@ func (a *App) installations(ctx context.Context) ([]installation, error) {
 			break
 		}
 	}
-	a.insts, a.instsAt = out, a.now()
+	if len(out) == 0 {
+		// Never an empty fleet: that reads as every repo removed.
+		return nil, errors.New("github app: no allowlisted installation (check FLEET_GITHUB_ACCOUNTS and the App's installs)")
+	}
 	return out, nil
 }
 
@@ -216,21 +242,34 @@ func (a *App) ListRepos(ctx context.Context) ([]Repo, error) {
 // GitEnv authenticates the provisioner's own git (repo cache, definitions,
 // fleet-shared) per invocation: one http.<url>.extraHeader per allowlisted
 // owner, as GIT_CONFIG_* env, never argv (errors quote argv). Read-only.
+// Unmounted, it adds nothing. An owner whose token fails is left out (its
+// repos fall back to ambient git auth), not every owner.
 func (a *App) GitEnv(ctx context.Context) ([]string, error) {
+	if !a.Configured() {
+		return nil, nil
+	}
 	insts, err := a.installations(ctx)
 	if err != nil {
 		return nil, err
 	}
-	env := []string{"GIT_CONFIG_COUNT=" + strconv.Itoa(len(insts))}
-	for i, in := range insts {
+	var keys, vals []string
+	for _, in := range insts {
 		tok, err := a.installationToken(ctx, in)
 		if err != nil {
-			return nil, err
+			slog.Warn("github app: no token for an owner, its git falls back to ambient auth", "account", in.Account.Login, "error", err)
+			continue
 		}
-		basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + tok))
-		env = append(env,
-			fmt.Sprintf("GIT_CONFIG_KEY_%d=http.https://github.com/%s/.extraHeader", i, in.Account.Login),
-			fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", i, basic))
+		header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+tok))
+		// git matches the URL path case-sensitively; repos.url rows predating
+		// 0074 may carry the lowercased owner.
+		for _, owner := range slices.Compact([]string{in.Account.Login, strings.ToLower(in.Account.Login)}) {
+			keys = append(keys, "http.https://github.com/"+owner+"/.extraHeader")
+			vals = append(vals, header)
+		}
+	}
+	env := []string{"GIT_CONFIG_COUNT=" + strconv.Itoa(len(keys))}
+	for i := range keys {
+		env = append(env, fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", i, keys[i]), fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", i, vals[i]))
 	}
 	return env, nil
 }

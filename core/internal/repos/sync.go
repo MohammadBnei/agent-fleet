@@ -290,7 +290,7 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	}
 	for k := range ov {
 		if !usedOverride[k] {
-			slog.Warn("repos: override matches no repo the bot reaches", "repo", k)
+			slog.Warn("repos: override matches no repo the fleet App lists", "repo", k)
 		}
 	}
 
@@ -320,13 +320,13 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	// A token that sees nothing (wrong account, lost scope) answers 200 with
 	// [], which on a small fleet would otherwise stay under the per-tick cap.
 	case len(gone) > maxGonePerTick || (len(gone) > 0 && len(gone) == active):
-		slog.Error("repos: shrink guard, too many repos vanished in one tick; nothing marked gone. Check the bot's token and GitHub", "gone", gone, "active", active)
+		slog.Error("repos: shrink guard, too many repos vanished in one tick; nothing marked gone. Check the ukubi-fleet App's installations and GitHub", "gone", gone, "active", active)
 	case len(gone) > 0:
 		if _, err := tx.Exec(ctx, `UPDATE repos SET gone_since = now(), updated_at = now() WHERE name = ANY($1)`, gone); err != nil {
 			return 0, fmt.Errorf("repos sync: mark gone: %w", err)
 		}
 		changed += len(gone)
-		slog.Warn("repos: no longer listed for the bot, hidden; deleted after 7 days", "repos", gone)
+		slog.Warn("repos: no longer listed by the fleet App, hidden; deleted after 7 days", "repos", gone)
 	}
 
 	// Never a row a listed repo matched this tick, even one skipped on a
