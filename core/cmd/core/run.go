@@ -307,7 +307,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// auth" is always something someone wrote down.
 	var authInterceptors, memberInterceptors []connect.Interceptor
 	gate := func(h http.Handler) http.Handler { return h }
-	agentPath, _ := agentfleetv1connect.NewAgentServiceHandler(nil)
+	// The constant, not NewAgentServiceHandler(nil): the generated constructor
+	// reads method values off its argument and panics on nil.
+	agentPath := "/" + agentfleetv1connect.AgentServiceName + "/"
 	if cfg.AuthDisabled {
 		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
 	} else {

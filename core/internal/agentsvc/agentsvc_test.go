@@ -54,6 +54,15 @@ type fakeHeads []definitions.Head
 
 func (f fakeHeads) List() ([]definitions.Head, []string) { return f, nil }
 
+func (f fakeHeads) Resolve(name string) (definitions.Head, error) {
+	for _, h := range f {
+		if h.Name == name && h.SHA != "" {
+			return h, nil
+		}
+	}
+	return definitions.Head{}, definitions.ErrUnknown
+}
+
 // The member listener over a real Connect handler: no identity or no sub is
 // Unauthenticated, a client-only method is PermissionDenied, and
 // ListDefinitions shows only the definitions whose audience the member is in.

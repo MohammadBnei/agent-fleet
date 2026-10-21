@@ -5,6 +5,7 @@ package agentsvc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 
@@ -86,6 +87,7 @@ func (memberAuth) principal(ctx context.Context, procedure string) (context.Cont
 	}
 	p := Principal{Member: &id}
 	if !allowed(procedure, p) {
+		slog.Warn("agentsvc: refused member call", "email", id.Email, "procedure", procedure)
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not available to members"))
 	}
 	return withPrincipal(ctx, p), nil

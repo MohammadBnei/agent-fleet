@@ -21,6 +21,7 @@ type Server struct {
 // heads is the part of *definitions.Registry this reads.
 type heads interface {
 	List() ([]definitions.Head, []string)
+	Resolve(name string) (definitions.Head, error)
 }
 
 var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
@@ -61,9 +62,12 @@ func (s *Server) ListDefinitions(ctx context.Context, _ *connect.Request[agentfl
 	if s.definitions == nil || p.Member == nil {
 		return connect.NewResponse(out), nil
 	}
-	heads, _ := s.definitions.List()
-	for _, h := range heads {
-		if h.Effective == nil || !mayUse(p, h.Effective) {
+	listed, _ := s.definitions.List()
+	for _, l := range listed {
+		// Resolve, not the listed head: it fails closed before the first
+		// sync and once the last good one is stale, as creating does.
+		h, err := s.definitions.Resolve(l.Name)
+		if err != nil || !mayUse(p, h.Effective) {
 			continue
 		}
 		e := h.Effective
