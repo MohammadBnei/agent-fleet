@@ -32,10 +32,6 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	if deref(t.Interaction, "ask") == "deny" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this thread takes no answers"))
 	}
-	// A client answers only its own threads (docs/adr/0066 §4).
-	if p.Client != "" && (t.Owner == nil || *t.Owner != p.owner()) {
-		return nil, errNoThread
-	}
 	entries, _, err := s.transcr.ReadSince(ctx, t.ID, seq, 1)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -54,6 +50,15 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 			}
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is a plan: use ApprovePlan", seq))
 		}
+	}
+	// Checked before anything with a side effect (a warm, a mode switch):
+	// the one-reply index still decides a race at the append.
+	answered, err := s.sessions.Answered(ctx, t.ID, seq)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if answered {
+		return nil, connect.NewError(connect.CodeAlreadyExists, transcript.ErrAlreadyAnswered)
 	}
 	return t, nil
 }
@@ -105,7 +110,7 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 		return nil, err
 	}
 	var answers map[string]any
-	if len(req.Msg.GetAnswersJson()) > maxText || json.Unmarshal([]byte(req.Msg.GetAnswersJson()), &answers) != nil {
+	if len(req.Msg.GetAnswersJson()) > maxText || json.Unmarshal([]byte(req.Msg.GetAnswersJson()), &answers) != nil || answers == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("answers_json must be a JSON object"))
 	}
 	t, err := s.answerable(ctx, p, req.Msg.GetThreadId(), req.Msg.GetSeq(), "question", false)
@@ -124,9 +129,10 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 }
 
 // ApprovePlan is the console's approvePlan (dashboard/src/approvePlan.ts):
-// switch the mode first, within mode.allow, then answer the plan. The worker
-// records the mode switch's own resolution, so the answer may find the plan
-// already approved; that is success.
+// switch the mode first, within mode.allow, then answer the plan. Unlike a
+// repo session, a definition session's worker resolves nothing on a mode
+// switch (worker/src/session.ts), so an existing answer is someone else's
+// and AlreadyExists, never success.
 func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentfleetv1.ApprovePlanRequest]) (*connect.Response[agentfleetv1.ApprovePlanResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -148,17 +154,16 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 	}
 	seq := req.Msg.GetSeq()
 	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), `{"behavior":"allow"}`, "permission_response", uuid.NewString(), &seq)
-	if errors.Is(err, transcript.ErrAlreadyAnswered) && mode != "" {
-		return connect.NewResponse(&agentfleetv1.ApprovePlanResponse{}), nil
-	}
 	if err != nil {
 		return nil, replyErr(err)
 	}
 	return connect.NewResponse(&agentfleetv1.ApprovePlanResponse{Seq: n}), nil
 }
 
+// ownsOrAdmin is who configures a thread. A tainted thread is admins' only
+// for configuration too: its mode decides what untrusted input may drive.
 func ownsOrAdmin(p Principal, t *sessions.Session) bool {
-	return p.Admin() || (t.Owner != nil && *t.Owner == p.owner())
+	return p.Admin() || (!t.Tainted && t.Owner != nil && *t.Owner == p.owner())
 }
 
 // setMode goes through the console's SetPermissionMode, which checks the
@@ -203,7 +208,8 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 	if err != nil {
 		return nil, err
 	}
-	if !ownsOrAdmin(p, t) {
+	// Not ownsOrAdmin: stopping a tainted thread only takes power away.
+	if !p.Admin() && (t.Owner == nil || *t.Owner != p.owner()) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner stops it"))
 	}
 	reason := "stopped by " + p.author().Name

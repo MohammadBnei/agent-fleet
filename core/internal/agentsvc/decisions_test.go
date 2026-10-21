@@ -101,8 +101,20 @@ func TestDecisions(t *testing.T) {
 		t.Errorf("recorded answer: %+v", resp)
 	}
 
-	if _, err := s.AnswerQuestion(bob, connect.NewRequest(&agentfleetv1.AgentServiceAnswerQuestionRequest{ThreadId: shared, Seq: question, AnswersJson: "[1]"})); code(err) != connect.CodeInvalidArgument {
-		t.Errorf("answers not an object: %v", err)
+	for _, a := range []string{"[1]", "null"} {
+		if _, err := s.AnswerQuestion(bob, connect.NewRequest(&agentfleetv1.AgentServiceAnswerQuestionRequest{ThreadId: shared, Seq: question, AnswersJson: a})); code(err) != connect.CodeInvalidArgument {
+			t.Errorf("answers %s: %v", a, err)
+		}
+	}
+	// An answered question refuses before warming (no provisioner here, so a
+	// warm would fail with something else).
+	answeredQ := entry(shared, `{"questions":[]}`, "question")
+	aq := answeredQ
+	if _, err := transcr.AppendAuthored(ctx, shared, transcript.Author{Sub: "alice"}, `{}`, "answer", "", &aq); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerQuestion(bob, connect.NewRequest(&agentfleetv1.AgentServiceAnswerQuestionRequest{ThreadId: shared, Seq: answeredQ, AnswersJson: "{}"})); code(err) != connect.CodeAlreadyExists {
+		t.Errorf("answered question: %v", err)
 	}
 
 	approve := func(c context.Context, mode string) error {
@@ -114,6 +126,21 @@ func TestDecisions(t *testing.T) {
 	}
 	if err := approve(alice, "acceptEdits"); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("mode outside mode.allow: %v", err)
+	}
+	// A plan someone else already denied: no mode switch, no success.
+	denied := entry(shared, `{"tool":"ExitPlanMode","input":{"plan":"y"}}`, "permission_request")
+	if err := respond(bob, shared, denied, "deny"); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("plan via RespondToPermission: %v", err)
+	}
+	dq := denied
+	if _, err := transcr.AppendAuthored(ctx, shared, transcript.Author{Sub: "bob"}, `{"behavior":"deny"}`, "permission_response", "", &dq); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApprovePlan(alice, connect.NewRequest(&agentfleetv1.ApprovePlanRequest{ThreadId: shared, Seq: denied, Mode: "plan"})); code(err) != connect.CodeAlreadyExists {
+		t.Errorf("approve a denied plan: %v", err)
+	}
+	if got, _ := store.Get(ctx, shared); deref(got.PermissionMode, "") != "auto" {
+		t.Errorf("mode switched for a closed plan: %v", deref(got.PermissionMode, ""))
 	}
 	if err := approve(alice, "plan"); err != nil {
 		t.Fatalf("alice approves into plan: %v", err)
@@ -148,6 +175,18 @@ func TestDecisions(t *testing.T) {
 	}
 	if r, err := s.GetStatus(bob, connect.NewRequest(&agentfleetv1.GetStatusRequest{ThreadId: shared})); err != nil || r.Msg.GetStatus().GetState() != "idle" {
 		t.Errorf("GetStatus: %v, %v", r, err)
+	}
+
+	// A tainted thread is configured by admins only, owner included.
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
+		VALUES ($1, 1000, 'human', 'event', 'discussion', 'taint', true, true)`, shared); err != nil {
+		t.Fatal(err)
+	}
+	if err := setConfig(alice, "auto", ""); code(err) != connect.CodePermissionDenied {
+		t.Errorf("owner SetConfig on tainted: %v", err)
+	}
+	if err := setConfig(as("root", auth.RequiredGroup), "auto", ""); err != nil {
+		t.Errorf("admin SetConfig on tainted: %v", err)
 	}
 
 	// A headless thread takes no answers.
