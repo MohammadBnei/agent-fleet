@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.6.0](https://github.com/MohammadBnei/agent-fleet/compare/6.5.0...6.6.0) (2026-10-21)
+
+### Features
+
+* **packs:** fleet and repo reviewed packs, release N of the fleet-shared move (ADR-0063 §8) ([#293](https://github.com/MohammadBnei/agent-fleet/issues/293)) ([2968796](https://github.com/MohammadBnei/agent-fleet/commit/296879616cf317350f31a7bc4a7f3c6b0c477f94))
+
 # [6.5.0](https://github.com/MohammadBnei/agent-fleet/compare/6.4.0...6.5.0) (2026-10-21)
 
 ### Features
