@@ -255,8 +255,17 @@ func TestThreads_LockAndWake(t *testing.T) {
 		t.Errorf("still locked by %q", th.GetLockedBy())
 	}
 
+	// A pod that died with a permission pending: answering it would move the
+	// clock, so it waits for a steward like a post.
+	permSeq, err := transcr.Append(ctx, id, "agent", `{"tool":"Bash","input":{"command":"ls"}}`, "permission_request", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET last_active_at = now() - interval '25 hours' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := s.RespondToPermission(bob, connect.NewRequest(&agentfleetv1.AgentServiceRespondToPermissionRequest{ThreadId: id, Seq: permSeq, Behavior: "allow"})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("bob answers a stale permission on a thread idle 25h: %v", err)
 	}
 	if err := post(bob); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("bob wakes a thread idle 25h: %v", err)
@@ -269,7 +278,7 @@ func TestThreads_LockAndWake(t *testing.T) {
 	}
 	// A tainted thread is woken from the console only (docs/adr/0067 §3).
 	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
-		VALUES ($1, 0, 'human', 'event', 'discussion', 'e1', true, true)`, id); err != nil {
+		VALUES ($1, 100, 'human', 'event', 'discussion', 'e1', true, true)`, id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Wake(steward, connect.NewRequest(&agentfleetv1.WakeRequest{ThreadId: id})); code(err) != connect.CodePermissionDenied {

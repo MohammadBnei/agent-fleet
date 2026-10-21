@@ -28,8 +28,9 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
 	}
-	// Only an answer warms: a pending permission or plan implies a live pod.
-	if wantType == "question" && needsWake(p, t, time.Now()) {
+	// Every answer, not only those that warm: a pod can die with a request
+	// still pending, and the append would move the clock (docs/adr/0067 §6).
+	if needsWake(p, t, time.Now()) {
 		return nil, errWake
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker
@@ -159,6 +160,9 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 		if !ownsOrAdmin(p, t) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its mode"))
 		}
+		if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+			return nil, err
+		}
 		if err := s.setMode(ctx, t, mode); err != nil {
 			return nil, err
 		}
@@ -223,6 +227,9 @@ func (s *Server) SetConfig(ctx context.Context, req *connect.Request[agentfleetv
 		if needsWake(p, t, time.Now()) {
 			return nil, errWake
 		}
+		if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+			return nil, err
+		}
 		if err := s.setMode(ctx, t, m); err != nil {
 			return nil, err
 		}
@@ -273,15 +280,12 @@ func (s *Server) Lock(ctx context.Context, req *connect.Request[agentfleetv1.Loc
 		return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
 	}
 	// Lock first, stop second: a failed stop leaves the thread locked, never
-	// the other way round. Locking a locked thread changes nothing and sends
-	// no second stop; the first locker stays on record.
+	// the other way round. Locking a locked thread keeps the first locker on
+	// record but still stops a live pod, so a retry after a failed stop works;
+	// the live check bounds duplicate aborts.
 	by := p.author().Name
-	locked, err := s.sessions.Lock(ctx, t.ID, by)
-	if err != nil {
+	if _, err := s.sessions.Lock(ctx, t.ID, by); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if !locked {
-		return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
 	}
 	// Reread: a post may have warmed the pod since the snapshot above. Only a
 	// live pod is stopped: an abort entry on an idle thread would be replayed
