@@ -62,7 +62,7 @@ spec:
         # definitions-only release changes only this value, which is what
         # rolls the pod onto the new definitions.
         - name: FLEET_VERSION
-          value: "6.22.1"
+          value: "6.22.2"
         - name: NAMESPACE
           value: agent-fleet
         # The model a repo session runs when it has none of its own
