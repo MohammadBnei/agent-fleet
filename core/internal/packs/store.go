@@ -26,6 +26,9 @@ var (
 const (
 	KindDefinition = "definition"
 	KindRepo       = "repo"
+	// AllTargets attaches a pack to every target of its kind, current and
+	// future, so a pack meant for the whole fleet needs no per-repo rows.
+	AllTargets = "*"
 )
 
 type Pack struct {
@@ -111,7 +114,7 @@ func (s *Store) List(ctx context.Context) ([]Pack, error) {
 	}
 
 	rows, err = s.pool.Query(ctx, `
-		SELECT a.pack, a.target_kind, CASE WHEN a.target_kind = 'repo' THEN COALESCE(r.name, '#' || a.target) ELSE a.target END
+		SELECT a.pack, a.target_kind, CASE WHEN a.target_kind = 'repo' AND a.target <> '*' THEN COALESCE(r.name, '#' || a.target) ELSE a.target END
 		FROM pack_attachments a LEFT JOIN repos r
 		  -- CASE, not AND: Postgres does not promise to short-circuit, and a
 		  -- definition name must never reach the cast.
@@ -202,7 +205,11 @@ func (s *Store) SaveVersion(ctx context.Context, v Version, by string) (int, err
 
 // targetID maps a fleet-facing target to the stored key: a definition by
 // name, a repo by its GitHub id (ADR-0074), so an override rename keeps it.
+// AllTargets is stored as itself.
 func targetID(ctx context.Context, q querier, kind, name string) (string, error) {
+	if name == AllTargets && (kind == KindDefinition || kind == KindRepo) {
+		return AllTargets, nil
+	}
 	switch kind {
 	case KindDefinition:
 		return name, nil
@@ -233,7 +240,7 @@ func (s *Store) Attach(ctx context.Context, kind, name, pack, by string) error {
 		if err != nil {
 			return err
 		}
-		if kind == KindDefinition {
+		if kind == KindDefinition && target != AllTargets {
 			var known bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM agent_definitions WHERE name = $1)`, name).Scan(&known); err != nil {
 				return err
@@ -307,13 +314,37 @@ func (s *Store) RenderContext(ctx context.Context, kind, name string) (Rendered,
 }
 
 // checkComposed refuses a target whose attached latest versions, plus the
-// reviewed packs it gets, exceed the caps. The per-target advisory lock makes
-// two concurrent attaches or saves see each other's rows. Render still
-// enforces the sum at warm time, when a reviewed pack may have grown.
+// reviewed packs it gets, exceed the caps. AllTargets checks every target of
+// the kind that has its own packs, since each composes with it. The per-kind
+// advisory lock makes two concurrent attaches or saves see each other's rows,
+// a wildcard one included. Render still enforces the sum at warm time, when a
+// reviewed pack may have grown.
+// ponytail: one lock per kind; per-target locks if attach contention shows.
 func checkComposed(ctx context.Context, tx pgx.Tx, kind, target string) error {
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('packs:' || $1 || ':' || $2))`, kind, target); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('packs:' || $1))`, kind); err != nil {
 		return err
 	}
+	targets := []string{target}
+	if target == AllTargets {
+		rows, err := tx.Query(ctx, `SELECT DISTINCT target FROM pack_attachments WHERE target_kind = $1 AND target <> '*'`, kind)
+		if err != nil {
+			return err
+		}
+		more, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		targets = append(targets, more...)
+	}
+	for _, t := range targets {
+		if err := checkOne(ctx, tx, kind, t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkOne(ctx context.Context, tx pgx.Tx, kind, target string) error {
 	live, err := latest(ctx, tx, kind, target)
 	if err != nil {
 		return err
@@ -338,7 +369,7 @@ func latest(ctx context.Context, q querier, kind, target string) ([]Version, err
 	rows, err := q.Query(ctx, `
 		SELECT DISTINCT ON (v.pack) v.pack, v.version, v.text, v.skills
 		FROM pack_attachments a JOIN pack_versions v ON v.pack = a.pack
-		WHERE a.target_kind = $1 AND a.target = $2
+		WHERE a.target_kind = $1 AND a.target IN ($2, '*')
 		ORDER BY v.pack, v.version DESC`, kind, target)
 	if err != nil {
 		return nil, fmt.Errorf("load attached packs: %w", err)

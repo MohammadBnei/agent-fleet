@@ -245,3 +245,87 @@ func TestStore_DetachOrphanedRepo(t *testing.T) {
 		t.Fatalf("Detach orphan: %v", err)
 	}
 }
+
+// AllTargets reaches every target of its kind, current and future, and a
+// pack attached both ways renders once.
+func TestStore_AllTargets(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	s := NewStore(pool)
+	ctx := context.Background()
+
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url, github_id) VALUES ('a', 'https://github.com/o/a', 1), ('b', 'https://github.com/o/b', 2)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"skills", "local"} {
+		if err := s.Create(ctx, name, "platform-admins"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.SaveVersion(ctx, Version{Pack: name, Text: name}, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Attach(ctx, KindRepo, AllTargets, "skills", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Attach(ctx, KindRepo, "a", "skills", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Attach(ctx, KindRepo, "a", "local", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Attach(ctx, KindDefinition, AllTargets, "skills", "admin"); err != nil {
+		t.Fatalf("a definition wildcard needs no agent_definitions row: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url, github_id) VALUES ('later', 'https://github.com/o/later', 3)`); err != nil {
+		t.Fatal(err)
+	}
+	for repo, want := range map[string][]string{"a": {"local", "skills"}, "b": {"skills"}, "later": {"skills"}} {
+		live, err := latest(ctx, pool, KindRepo, mustTarget(t, s, repo))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, v := range live {
+			got = append(got, v.Pack)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s renders %v, want %v", repo, got, want)
+		}
+	}
+	if live, err := latest(ctx, pool, KindDefinition, "dev-notes"); err != nil || len(live) != 1 {
+		t.Errorf("definition got %v, %v; want the wildcard pack", live, err)
+	}
+
+	// A wildcard save is checked against every target that composes with it.
+	big := strings.Repeat("x", MaxText/2+1)
+	if _, err := s.SaveVersion(ctx, Version{Pack: "local", Text: big}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveVersion(ctx, Version{Pack: "skills", Text: big}, "admin"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("wildcard save over repo a's cap = %v, want ErrInvalid", err)
+	}
+
+	packs, err := s.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range packs {
+		for _, a := range p.Attachments {
+			if strings.HasPrefix(a.Target, "#") {
+				t.Errorf("%s lists %s/%s", p.Name, a.Kind, a.Target)
+			}
+		}
+	}
+	if err := s.Detach(ctx, KindRepo, AllTargets, "skills"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustTarget(t *testing.T, s *Store, repo string) string {
+	t.Helper()
+	id, err := targetID(context.Background(), s.pool, KindRepo, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
