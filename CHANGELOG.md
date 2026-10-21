@@ -1,5 +1,7 @@
 # Changelog
 
+## [6.11.1](https://github.com/MohammadBnei/agent-fleet/compare/6.11.0...6.11.1) (2026-10-21)
+
 # [6.11.0](https://github.com/MohammadBnei/agent-fleet/compare/6.10.0...6.11.0) (2026-10-21)
 
 ### Bug Fixes
