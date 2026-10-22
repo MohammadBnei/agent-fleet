@@ -56,9 +56,10 @@ on:
     branches:
       - main
     # Mirrors the old release.yml's filter. The release commit bumps package.json and
-    # CHANGELOG.md and deploy's commit touches k8s/ — all ignored here, and pushes made
-    # with the built-in GITHUB_TOKEN do not trigger workflows anyway, so the loop is
-    # closed twice over.
+    # CHANGELOG.md, both ignored here, and release-it's tag is in tags-ignore. Both are
+    # pushed with the release App's token, which (unlike GITHUB_TOKEN) does trigger
+    # workflows — so deploy's commit, which touches k8s/provisioner/ (not matched by
+    # `!k8s/*`), carries [skip ci].
     #
     # `paths` with negations rather than paths-ignore, because order matters
     # here and the last match wins: definitions/ and packs/ are mostly .md,
@@ -74,6 +75,12 @@ on:
       - 'packs/**'
     tags-ignore:
       - '*'
+
+# Read-only by default; the test jobs run PR code. Nothing here writes with
+# GITHUB_TOKEN: release and deploy push with the release App's token. Guarded
+# by core/internal/buildguard (TestWorkflowsNeverWriteWithGithubToken).
+permissions:
+  contents: read
 
 # Three lanes. PR runs get one group per ref and cancel their own older run:
 # only the newest push of a PR is worth building. Push runs share `release`
@@ -144,14 +151,29 @@ jobs:
       && needs.worker-test.result != 'failure'
       && needs.dashboard-test.result != 'failure'
     runs-on: ubuntu-latest
-    # contents: write so release-it can push the version commit and tag with the built-in
-    # token. release-it needs nothing beyond that here — github.release is false in its
+    # release-it pushes the version commit and tag with the release App's token (below),
+    # not GITHUB_TOKEN. It needs nothing beyond contents — github.release is false in its
     # config, so it never touches the Releases API.
+    environment: release
     permissions:
-      contents: write
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version || steps.check.outputs.version }}
     steps:
+      # main is behind a ruleset only the owner and the release App bypass
+      # (never the fleet's own App, never GITHUB_TOKEN, which any job with
+      # contents: write could use). The key lives in the `release`
+      # environment, whose deployment-branch policy is main only, so no PR
+      # job can mint this token. Scoped to this one repo.
+      - name: Release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
       # ref: main, not the SHA that triggered the run. A queued run starts after
       # the previous release pushed its tag and deploy commit; from the
       # triggering SHA, release-it computes the version from an older tag and
@@ -161,6 +183,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       # Three outcomes, decided before anything is installed:
       #  - release: human commits since the last tag. Only when none of them is
@@ -814,8 +837,9 @@ jobs:
       needs.release.result == 'success' &&
       needs.build-push.result == 'success'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
-      contents: write
+      contents: read
     # One version for the whole run, from the release job. This was the tag name,
     # which only worked because the workflow was tag-triggered; on a branch push that is
     # "main", and this job would have sed-ed `tag: "main"` across every k8s/ manifest.
@@ -823,11 +847,26 @@ jobs:
       VERSION: ${{ needs.release.outputs.version }}
       IMAGES: ${{ needs.build-push.outputs.images }}
     steps:
+      # main is behind a ruleset only the owner and the release App bypass
+      # (never the fleet's own App, never GITHUB_TOKEN, which any job with
+      # contents: write could use). The key lives in the `release`
+      # environment, whose deployment-branch policy is main only, so no PR
+      # job can mint this token. Scoped to this one repo.
+      - name: Release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
       - name: Checkout main
         uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       # Each image is pinned to its own src-<hash> tag, built and pushed this
       # run or skipped because the registry already had it. The release version
@@ -845,6 +884,13 @@ jobs:
             exit 0
           fi
           fail() { echo "::error::$*"; exit 1; }
+          # Both values are spliced into sed expressions below, in the job
+          # holding the release token. IMAGES comes from build-push, which
+          # runs on the shared build box: accept exactly the shape it emits.
+          printf '%s\n' "$VERSION" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' \
+            || fail "unexpected VERSION '$VERSION'"
+          bad=$(printf '%s\n' $IMAGES | grep -Evx '[a-z]+=src-[0-9a-f]+' || true)
+          [ -z "$bad" ] || fail "unexpected entries in build-push's images output: $bad"
           tag_of() { printf '%s\n' $IMAGES | sed -n "s/^$1=//p"; }
 
           # What build-push compares against next time. All six, including
@@ -893,10 +939,11 @@ jobs:
               || fail "$f: FLEET_VERSION was not set to $VERSION"
           done
 
-      # Pushing with the default GITHUB_TOKEN (via actions/checkout's
-      # auto-configured credential) deliberately does NOT trigger other
-      # workflow runs — this commit won't re-enter release.yml's push-to-main
-      # trigger, avoiding the release-it self-triggering loop hit earlier.
+      # Pushed with the release App's token (actions/checkout's configured
+      # credential), which DOES trigger workflows, and this commit touches
+      # k8s/provisioner/, which the push filter does not exclude. [skip ci]
+      # keeps it from starting a run of its own: such a run would take the
+      # `release` group's one pending slot and only find nothing to release.
       - name: Commit and push
         run: |
           set -euo pipefail
@@ -907,7 +954,7 @@ jobs:
             echo "no tag changes to commit"
             exit 0
           fi
-          git commit -m "chore(deploy): pin images for ${VERSION}"
+          git commit -m "chore(deploy): pin images for ${VERSION} [skip ci]"
           # A merge can land on main while this release builds. Rebase onto it
           # rather than lose a built release to a non-fast-forward rejection.
           # The commit only touches k8s/, which nothing else writes.

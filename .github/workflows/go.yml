@@ -12,6 +12,13 @@ on:
   push:
     branches: [main]
 
+# Read-only by default. Every job here runs code from the PR (tests, bun
+# install scripts, buf plugins), and a PR may be an agent's: a write token in
+# a PR job would be a way around the default-branch ruleset. A job that
+# genuinely needs more asks for it explicitly — none does today.
+permissions:
+  contents: read
+
 env:
   BUF_VERSION: '1.72.0'
   PROTOC_GEN_GO_VERSION: 'v1.36.12'
@@ -54,6 +61,10 @@ jobs:
               - 'proto/**'
             core:
               - 'core/**'
+              # dbtest.NewPool applies db/migrations/ (docs/adr/0030), so a
+              # migration-only PR must run core's integration tests — before
+              # this line it ran nothing.
+              - 'db/migrations/**'
               # core/internal/definitions/repo_test.go validates this
               # directory (docs/adr/0062), so a definitions-only PR runs it.
               - 'definitions/**'
@@ -101,16 +112,12 @@ jobs:
     needs: changes
     if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup buf
         uses: bufbuild/buf-setup-action@v1
@@ -132,7 +139,7 @@ jobs:
         run: |
           # A deliberate removal opts out by saying so in a commit message,
           # rather than by weakening the check for everyone. `BREAKING CHANGE:`
-          # is not a new convention invented here — release.yml already reads
+          # is not a new convention invented here — docker.yml's release-it already reads
           # it (conventional-commits) to drive the version bump, so the same
           # footer that makes this pass also shows up in the changelog and the
           # release. No blanket `|| true`, and the skip is visible in the log.
@@ -194,24 +201,18 @@ jobs:
           export PATH="$HOME/go/bin:$PATH"
           buf generate
 
-      - name: Check for drift and auto-commit
+      # Fails, never auto-commits. Committing back needed contents: write on a
+      # job that runs the PR's own plugins (bun install, buf generate), which
+      # is exactly the token the default-branch ruleset must not hand a PR.
+      - name: Check for drift
         run: |
           if ! git diff --quiet -- proto/gen dashboard/src/gen; then
-            echo "Generated files are out of sync with proto definitions"
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              echo "Auto-committing regenerated proto files"
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add proto/gen dashboard/src/gen
-              git commit -m "chore: regenerate proto files after schema changes"
-              git push
-            else
-              echo "Not a PR - failing the check"
-              exit 1
-            fi
-          else
-            echo "Generated files are up to date"
+            echo "::error::Generated files are out of sync with proto/. Regenerate and commit:"
+            echo "  (cd dashboard && bun install --frozen-lockfile) && (cd proto && buf generate)"
+            git diff --stat -- proto/gen dashboard/src/gen
+            exit 1
           fi
+          echo "Generated files are up to date"
 
   go:
     needs: changes
@@ -286,3 +287,22 @@ jobs:
           AGENTFLEET_DB_USER: agentfleet
           AGENTFLEET_DB_PASSWORD: agentfleet
         run: go test -tags=integration ./... -count=1
+
+  # Unfiltered on purpose: the drift it catches (an ADR index row that
+  # disagrees with its file, a skill citing a path that was renamed, a
+  # workflow handing GITHUB_TOKEN a write scope) comes as often from a
+  # code-only PR as from a docs-only one. One package, no Postgres, seconds.
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      - name: go test (docs + workflow guards)
+        working-directory: core
+        run: go test ./internal/buildguard -run 'TestDocs|TestWorkflows' -count=1
