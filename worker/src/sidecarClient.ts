@@ -50,14 +50,9 @@ export async function appendJournal(
 
 // Lease-checked by core (docs/adr/0041): the session id is what the next
 // resume reads, so a dead pod setting it would resume the wrong conversation.
-// The sidecar now sends its own lease and ignores this one (docs/adr/0064); it
-// is still sent for one release, for a worker image newer than its sidecar
-// (a repos.image floating on `latest` before the provisioner rolls), whose
-// older sidecar still forwards the body's. A definition pod's worker has no
-// LEASE_ID and sends "".
-// ponytail: drop leaseId once every SIDECAR_IMAGE is past the provisioner rollout.
+// The sidecar attaches its own lease (docs/adr/0064); the worker sends none.
 export async function saveSessionId(sessionId: string, model: string): Promise<void> {
-  await postJSON("/session-id", { sessionId, model, leaseId: process.env.LEASE_ID ?? "" });
+  await postJSON("/session-id", { sessionId, model });
 }
 
 // getSession reads the session row fresh at startup.

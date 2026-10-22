@@ -136,7 +136,7 @@ func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 			// No leaseId: the sidecar sends its own lease, so core can still
 			// reject the write if this pod was replaced (docs/adr/0041), and
 			// the worker holds no copy (docs/adr/0064). An older worker's
-			// leaseId is an unknown key, ignored.
+			// leaseId (sent until 6.23) is an unknown key, ignored.
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
