@@ -19,8 +19,8 @@ holds shape. This is the part with a metabolism.
 
 It is also, for now, a foetus in an artificial womb. It is gestating inside
 a substrate that is still being built around it, on borrowed circulation:
-source from GitHub, base images from Docker Hub, identity from an external
-bot account. It works, and it is not yet self-contained.
+source from GitHub, base images from Docker Hub, identity from a GitHub App
+(`ukubi-fleet`, `docs/adr/0075`). It works, and it is not yet self-contained.
 
 **The metaphor is literal here, not analogical.** Elsewhere "cells" is a
 figure of speech. In this repo it is the actual design:
@@ -46,16 +46,17 @@ detail; this is only the mapping.
 
 | Principle | Mechanism here | State |
 |---|---|---|
-| 4 · Propose, never author *(initiation)* | Machine-created work lands in `proposals`, a separate table with no path to a pod. Sessions are created only through the OIDC-gated dashboard API, so nothing self-initiated can run until a human opens the proposal (`OpenFromProposal`, `adr/0048`). Once a session exists, another session may prompt and warm it (`prompt_agent`, `adr/0041`). Amended by `adr/0062`: the provisioning message comes from an audience member, a registered client, or an allowlisted actor's event delivered via a registered client — in P1 only platform-admins create sessions, so the de facto gate is unchanged | **Real — structural** |
+| 4 · Propose, never author *(initiation)* | Machine-created work lands in `proposals`, a separate table with no path to a pod. Sessions are created only by an authenticated principal: an admin in the OIDC-gated console, a definition's audience member, or a registered client on `AgentService` (`:9091`, `adr/0066`, `adr/0062`). Nothing self-initiated runs until a human opens the proposal (`OpenFromProposal`, `adr/0048`). Once a session exists, another session may prompt and warm it (`prompt_agent`, `adr/0041`). Today a non-admin audience exists (`opus-workspace`, group `shared-notes`), and no client is registered to open anything (`bridge` lists no definitions) | **Real — structural** |
 | 3 · The gap is the work | Scheduled cluster checks and firing alerts become deduped proposals against `infra-bootstrap`, so a durable fix is an ordinary PR (`adr/0035`, `adr/0037`) | **Real** |
 | 6 · Apoptosis over degradation | Single-shot pods, `RestartPolicy: Never`, crash-fast path (`adr/0024`) | **Real** |
 | 7 · Structural before asked | `buildguard`, the LimitRange↔pod-spec pin, migrations as the single schema source (`adr/0030`) | **Real** |
-| 8 · Reversibility | Nothing merges itself; one volume per session, never shared writable (`adr/0048`). A PR is the intended result, but no code checks that one was opened. A defined agent with `git.mode: push` (`adr/0062`) will be the declared exception, decided by the planned Headless ADR; schema only in P1 | **Partial** |
+| 8 · Reversibility | One volume per session, never shared writable (`adr/0048`). A PR is the intended result, but no code checks that one was opened. In `auto` — the default (migration 000007) — a repo session's `git push` and `gh` are answered without a prompt (only `rm`, `sudo` and a plan still ask, `worker/src/session.ts`), and its App token can write contents and PRs (never `workflows`). So "nothing merges itself" rests on branch rulesets: `infra-bootstrap` has `protect-main`; `agent-fleet` and `ukubi-bridge` are getting theirs. A definition with `git.mode: push` pushes straight to its branch — the declared exception, shipped with `adr/0065` | **Structural once the rulesets are live** |
 | 9 · It remembers | `knowledge_journal` + `journal_search` (`adr/0033`) | **Real** |
 | 2 · Declared intent is truth | The docs are canonical and alerts feed the audit loop, but nothing yet diffs *declared intent* against reality — `mission-drift` lives in the parent and is report-only | **Partial** |
 | 5 · Staged, checkpointed repair | Per-session volumes and PRs give the shape; nothing enforces that an *interrupted* run leaves a valid state, and interruption is the common case | **Partial** |
-| 4 · Genome authored *(spec edits)* | Nothing stops an agent editing a spec to make its own work compliant. Only a rule in `fleet-shared/CLAUDE.md` — the weakest tier | **Rule only** |
-| 1 · Self-contained substrate | Fleet images build and live in-cluster (Zot); source on GitHub, base images from Docker Hub, an external bot identity | **Partial** |
+| 4 · Genome authored *(spec edits)* | Nothing stops an agent editing a spec to make its own work compliant. Only a rule in the `packs/repo` context pack (and `fleet-shared/CLAUDE.md`) — the weakest tier | **Rule only** |
+| 1 · Self-contained substrate | Fleet images build and live in-cluster (Zot); source on GitHub, base images from Docker Hub, identity a GitHub App (`ukubi-fleet`) | **Partial** |
+| — · Known gap: the build box | Every repo's CI builds as root on one shared build-runner box — PRs and unprotected app repos included. Accepted for now (2026-10-22) | **Accepted gap** |
 
 Two things worth noticing.
 
@@ -75,12 +76,16 @@ argument for moving rules down it.
 
 ## Where it goes next
 
-Direction only — each becomes an ADR when actually taken.
+Direction only — each becomes an ADR when actually taken. The owner's order
+(2026-10-22): converge first, then an agent per service, then originate.
 
-- **Widen the loop's input, not its authority.** The alert→proposal path
-  works; what feeds it is narrow. Declared-intent drift (`mission-drift`, in
-  the parent) is the obvious second source, and it needs no new authority —
-  it lands in the same `proposals` table behind the same human.
+- **Converge first: widen the loop's input, not its authority.** Alerts and
+  declared-intent drift both become proposals. The first feature is
+  mission-drift → proposals (`mission-drift`, in the parent); it needs no new
+  authority — it lands in the same `proposals` table behind the same human.
+- **Then an agent per service or app, staged.** A steward per repo first —
+  agent-fleet itself is the pilot. Then calls embedded in apps through
+  `AgentService`. Resident agents last.
 - **Move principle 4's other half down a tier.** "Don't edit the genome" should be
   detectable, not merely requested — a check that a PR touching
   `ARCHITECTURE.md`/`DECISIONS.md`/`docs/adr/` is flagged as a spec change
@@ -95,9 +100,12 @@ Direction only — each becomes an ADR when actually taken.
 ## The frontier
 
 Same as the parent's, and it applies most sharply here because this is the
-part that could act: **the fleet converges, it does not originate.** Every
-task begins with a human. An agent may propose, never author.
+part that could act: **today the fleet converges, it does not originate.**
+Every session begins with a human. An agent may propose, never author.
 
-Whether a cell ever gets to originate rather than express is the open
-question. It is not answered here, and it should not be answered until the
-convergent loop above is running and trusted.
+The stated next frontier is **origination with human selection**: agents may
+propose new work, not only repairs. Sources, in order: drift and alerts;
+usage and observability; repo activity; cross-project synergy (hq's map). A
+human selects every proposal. Agents never merge.
+
+It is not taken until the convergent loop above is running and trusted.
