@@ -11,9 +11,17 @@ import { InlineError } from "./InlineError";
 // human-facing labels the agent never reads (db/migrations/000001_init.up.sql
 // :66-71), so this is a copy for the list — never the prompt itself, which
 // goes out as a real transcript entry below.
-// The label for "pass nothing": core stores NULL, the worker omits the option,
-// and Claude Code picks (docs/adr/0077).
+// The label for "pass nothing" on effort: core stores NULL, the worker omits
+// the option, and Claude Code picks (docs/adr/0077).
 const CLAUDE_DEFAULT = "Claude's default";
+// The same "pass nothing" on model is not Claude's pick: the worker falls back
+// to the operator's CLAUDE_MODEL first (adr/0077 §1, set in
+// k8s/provisioner/deployment.yaml), and only without one does Claude Code
+// choose. Core never sees that env, so the label can't name the model; the
+// session shows the one it actually ran once it starts.
+const FLEET_MODEL_DEFAULT = "Fleet default";
+const FLEET_MODEL_DEFAULT_HINT =
+  "The operator's CLAUDE_MODEL if set, else Claude Code's default. The session shows the model it ran once it starts.";
 // The SDK's EffortLevel; core validates against the same list.
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
@@ -39,7 +47,7 @@ export function NewSessionDialog({
   const [dialogOpen, setDialogOpen] = useState(autoOpen);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repo, setRepo] = useState("");
-  // From ListRepos, so core's allowlist is the only list. "" = Claude's default.
+  // From ListRepos, so core's allowlist is the only list. "" = the fleet default.
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
@@ -213,14 +221,14 @@ export function NewSessionDialog({
                     title={d.valid ? undefined : d.error}
                   >
                     {d.valid
-                      ? `${d.name} · ${d.repo} · ${d.model || CLAUDE_DEFAULT} · ${d.permissionMode}`
+                      ? `${d.name} · ${d.repo} · ${d.model || FLEET_MODEL_DEFAULT} · ${d.permissionMode}`
                       : `${d.name} · invalid`}
                   </option>
                 ))}
               </select>
               {chosen && (
                 <span className="text-dim text-xs">
-                  Runs {chosen.repo} as {chosen.permissionMode} on {chosen.model || CLAUDE_DEFAULT} — {chosen.name}@{chosen.sha.slice(0, 7)}
+                  Runs {chosen.repo} as {chosen.permissionMode} on {chosen.model || FLEET_MODEL_DEFAULT} — {chosen.name}@{chosen.sha.slice(0, 7)}
                 </span>
               )}
               {syncErrors.length > 0 && (
@@ -273,8 +281,13 @@ export function NewSessionDialog({
             <div className="flex gap-3">
               <label className="flex flex-col gap-1 text-sm flex-1 min-w-0">
                 Model
-                <select value={model} onChange={(e) => setModel(e.target.value)} className="select select-sm select-bordered">
-                  <option value="">{CLAUDE_DEFAULT}</option>
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="select select-sm select-bordered"
+                  title={model === "" ? FLEET_MODEL_DEFAULT_HINT : undefined}
+                >
+                  <option value="">{FLEET_MODEL_DEFAULT}</option>
                   {models.map((m) => (
                     <option key={m} value={m}>
                       {m}
