@@ -63,15 +63,13 @@ Any doc, code, comment, or memory that contradicts this file or an
   Loki/Prometheus, not here.** Reading it is `journal_search(repo?, query?,
   since?, until?, limit?)` — every argument optional, because "all repos, last
   seven days" is the question it exists to answer.
-- **One repo, one version/CHANGELOG.** `release.yml` runs from the repo
-  root, not per-package — the fleet ships as one unit even though
-  `worker/`, `core/`, `provisioner/`, `sidecar/` are deployed as separate
-  images. As of the Zot cutover this is enforced rather than assumed:
-  `docker.yml` tags all six images with `package.json`'s version and fails
-  the build if it disagrees with the git tag, because `deploy` pins
-  `GITHUB_REF_NAME` into the manifests. Previously `worker` read
-  `package.json` while the Go and migration builds used the ref name — the
-  same value on a release-it release, so the split was invisible.
+- **One repo, one version/CHANGELOG.** `release-it` runs once, from the repo
+  root, in `docker.yml`'s `release` job — the fleet ships as one unit even
+  though `worker/`, `core/`, `provisioner/`, `sidecar/` are deployed as
+  separate images. Images carry no version: each is tagged `src-<hash>` of
+  its inputs, and `deploy` pins those tags plus `FLEET_VERSION` (the release)
+  into the manifests and `k8s/images.env` (`docs/ARCHITECTURE.md` §5, "Which
+  build is running").
 - **Images come from ukubi-cluster's own registry, built on its own
   hardware.** `registry.bnei.lan:5000` (Zot, Garage-backed), built with
   `buildah` on the `build-runner` LXC — never Docker Hub, never in-cluster
