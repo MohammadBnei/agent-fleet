@@ -71,8 +71,8 @@ The agent's browser tools come from `@playwright/mcp` running as a **stdio
 MCP server inside the worker container itself** (`worker/src/session.ts`'s
 `playwrightMcpServer()`), so there is no snapshot to refresh and no tool list
 to fetch — the SDK discovers them over the pipe it owns. The committed
-`sidecar/internal/mcpserver/playwright_tools.json` and the `e2e-runner`
-image that served it both died with `docs/adr/0048` §6.
+playwright tool snapshot the sidecar used to serve, and the `e2e-runner`
+image behind it, both died with `docs/adr/0048` §6.
 
 What does need care is the pair of pinned versions in `worker/Dockerfile`:
 
