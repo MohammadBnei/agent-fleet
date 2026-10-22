@@ -59,13 +59,14 @@ proposal; a human opens it.
   ([`docs/adr/0037`](./docs/adr/0037-thot-is-a-worker-task.md)).
 - `dashboard/` — React SPA, built into the `core` binary.
 - `proto/` — buf-managed `.proto` schema for `CoreService`/
-  `ProvisionerService`/`DashboardService` — the only inter-process
+  `ProvisionerService`/`DashboardService`/`AgentService`/`ExecutorService`
+  — the only inter-process
   protocol in the fleet (MCP is local-only, agent ↔ its own pod's
   sidecar).
 - `db/migrations/` — sole source of truth (golang-migrate, see
   `docs/adr/0030`) for `sessions`, `proposals`, `transcript`, `repos`,
-  `schedules`, `scheduled_audits` and
-  `knowledge_journal`, in the fleet-wide `agentfleetdb` Postgres database
+  `schedules`, `knowledge_journal` and the definitions, packs and grants
+  tables, in the fleet-wide `agentfleetdb` Postgres database
   (Pigsty).
 
 How this compares with another self-hosted fleet built for the same reason:

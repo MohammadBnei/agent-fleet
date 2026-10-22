@@ -32,12 +32,16 @@ Any doc, code, comment, or memory that contradicts this file or an
   directly. No npm/pnpm/yarn workspace tooling; `worker/` keeps its own
   `package.json`/`bun.lock`, and each Go module keeps its own `go.mod`
   under the shared `go.work`.
-- **Git auth goes through the `gh` CLI**, not a hand-rolled token-in-header
-  client — `gh auth setup-git` wires `GH_TOKEN` into git's credential
-  helper once, and `gh pr create`/`gh api` reuse the same token. Both the
-  provisioner (its own clone/fetch on the shared PVC) and the worker (its
-  own push/PR) configure this independently — separate pods, no shared
-  `$HOME`.
+- **The fleet's GitHub identity is the App `ukubi-fleet`, and no pod holds
+  its token** ([`adr/0075`](adr/0075-github-app-identity-and-vault-credentials.md)).
+  The provisioner alone holds the App key (mounted files) and mints
+  installation tokens (`provisioner/internal/github`). Its own clone/fetch
+  carries a read-only token in git's `http.extraHeader`; a worker pod gets
+  placeholder `GH_TOKEN`/`CLAUDE_CODE_OAUTH_TOKEN`, and Agent Vault injects
+  the real token on the wire for `github.com`, `api.github.com` and
+  `api.anthropic.com` (repo pods through the sidecar's egress router,
+  definition pods through an egress lock). `git` and `gh` in the pod work
+  unchanged. No token carries `workflows`.
 - **`knowledge_journal` is append-only**, not a mutable shared doc — avoids
   write-conflict issues a shared mutable record would hit across
   concurrently dispatched worker pods. Written only by `core` now (`core`
@@ -247,9 +251,11 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Defined agents are reviewed files, judged on their effective spec**
   ([`adr/0062`](adr/0062-defined-agents.md)). `definitions/<name>.yaml` is
   strict-decoded, `extends` replaces whole top-level keys, and the resolved spec
-  must sit inside the fleet ceiling in `core/internal/definitions` (no `auto`,
-  `acceptEdits` or `bypassPermissions`; exact same-site embed origins; anchored
-  vault paths). The provisioner reads them **at its release tag**, not `main`,
+  must sit inside the fleet ceiling in `core/internal/definitions` (modes
+  `auto`/`default`/`plan` only, `auto` being the fleet's: the worker runs the SDK
+  in `default` so `canUseTool` still sees every call,
+  [`adr/0076`](adr/0076-definition-sessions-run-in-auto.md); exact same-site
+  embed origins; anchored vault paths). The provisioner reads them **at its release tag**, not `main`,
   so they ship with the core that judges them (a rollout overlap can still mix
   versions: a core never revokes a stored row it cannot decode). A session pins `(name, sha)` and
   warms only while that is the version at the synced commit (an invalid HEAD
@@ -270,9 +276,12 @@ Any doc, code, comment, or memory that contradicts this file or an
   proxy URL, the vault CA, and a `CiliumNetworkPolicy` allowing only the vault
   proxy, core's `CoreService` and DNS for both. The provisioner, the vault's
   only client, reconciles each definition's vault from git and mints and
-  revokes the tokens; core sends key names, never values. P1 does not bound its tool
-  surface: the worker's `allowedTools` and the target repo's project allow rules
-  still skip `canUseTool` until P4. A definition lease may call only a fixed
+  revokes the tokens; core sends key names, never values. The worker bounds its
+  tool surface ([`adr/0067`](adr/0067-shared-and-private-sessions.md) §4):
+  `settingSources: ["user"]` (the target repo's allow rules are never read),
+  `allowedTools` holding only the definition's `sidecarTools`, built-ins capped at
+  a fixed ceiling, `tools.deny` in flag scope, everything else decided in
+  `canUseTool`. A definition lease may call only a fixed
   `CoreService` allowlist, nobody may `PromptSession` into a definition session,
   and every lease caller authors `SendMessage` as `agent`/`worker` only. Core
   tears a definition warm down if the create does not confirm
@@ -280,6 +289,32 @@ Any doc, code, comment, or memory that contradicts this file or an
   never in `lease_id`, so an older core can neither mint (000008's
   `sessions_definition_no_lease`) nor verify one; it counts only while
   `pod_phase` is live, because an older core's teardown cannot clear it.
+
+### Since 0065 (pointers; the ADR is the decision)
+
+- [`0066`](adr/0066-agent-service.md) — AgentService: one API for members (`:8080`)
+  and registered clients (`:9091`), a fail-closed per-method authz table.
+- [`0067`](adr/0067-shared-and-private-sessions.md) — shared and private sessions,
+  authorship and taint, and the definition's tool surface in the worker.
+- [`0068`](adr/0068-islands.md) — islands: `<fleet-agent>` web components on other
+  `bnei.dev` apps, calling AgentService only.
+- [`0069`](adr/0069-component-auth-and-network-fences.md) — every gRPC surface needs
+  a credential; ingress fences; console CSP; per-request admin check.
+- [`0070`](adr/0070-headless-invoke.md) — headless invoke: deny instead of ask, one
+  structured result (Proposed).
+- [`0071`](adr/0071-events-reach-sessions-through-the-bridge.md) — events reach
+  sessions through the bridge (Accepted, not built).
+- [`0072`](adr/0072-approval-gated-executor.md) — an approval button runs exactly
+  the step it showed (Accepted, not built).
+- 0073 — number never used.
+- [`0074`](adr/0074-fleet-repos-come-from-github.md) — fleet repos come from GitHub;
+  overrides from infra-bootstrap; the console toggles `active`.
+- [`0075`](adr/0075-github-app-identity-and-vault-credentials.md) — the fleet acts as
+  the GitHub App `ukubi-fleet`; every pod gets its credentials from the vault.
+- [`0076`](adr/0076-definition-sessions-run-in-auto.md) — definition sessions run in
+  the fleet's `auto`; their allow list grows by remembered approvals (grants).
+- [`0077`](adr/0077-claude-code-picks-the-model.md) — Claude Code picks the default
+  model; a repo session can pick model and effort.
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -350,10 +385,12 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Anything inside the e2e container deciding to end the pod.** PID 1
   outlives every child; pod lifetime belongs to `kill_env`, core's teardowns
   and the reconcile sweep — see `adr/0044`.
-- **Hardcoding git commit identity.** Always derived live from the
-  authenticated bot GitHub account — see `adr/0006`. The one exception is a
-  definition pod, whose identity is the reviewed definition file's
-  `git.identity` (config under review, not code) — see `adr/0064`.
+- **Hardcoding git commit identity.** Identity is configuration: repo pods
+  commit as `FLEET_GIT_AUTHOR_NAME`/`FLEET_GIT_AUTHOR_EMAIL` set on the
+  provisioner (`ukubi`, [`adr/0075`](adr/0075-github-app-identity-and-vault-credentials.md)
+  §8, replacing `adr/0006`'s live `gh api user` lookup, which installation
+  tokens refuse); a definition pod uses its reviewed file's `git.identity`
+  — see `adr/0064`.
 - **A declared-but-never-incremented metric.** A metric that renders as
   absent is indistinguishable from a broken feature, and shipping twenty of
   them is how the first attempt at the observability layer passed review.
