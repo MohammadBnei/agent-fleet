@@ -1,6 +1,6 @@
 ---
 name: fleet-ops
-description: Onboard a new target repo (invite the bot), walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
+description: Onboard a new target repo (install the ukubi-fleet GitHub App), walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
 user-invocable: true
 allowed-tools:
   - Read
@@ -54,10 +54,12 @@ manifest, no redeploy, no console form:
 
    An entry whose `id` does not match is ignored with an ERROR. An empty file
    revokes every override; a missing one changes nothing.
-3. **Removal**: remove the bot. The repo is hidden on the next tick and its
-   row is deleted 7 days later, once no open session references it. More than
-   2 repos vanishing in one tick changes nothing and logs an ERROR (shrink
-   guard): check the bot's token first.
+3. **Removal**: take the repo out of the App's installation (or delete it).
+   The repo is hidden on the next tick and its row is deleted 7 days later,
+   once no open session references it. More than 2 repos vanishing in one
+   tick changes nothing and logs an ERROR (shrink guard): check the
+   provisioner's `github app:` log lines first. To keep the fleet off a repo
+   without removing it, switch it off in Settings → Repos instead.
 
 There is nothing else to configure. No profile, no start command, no e2e
 preview, no `run_command` — `docs/adr/0048` §6 deleted all of it along with
@@ -98,39 +100,37 @@ dead for the fleet's entire history behind that.
 populated `/browsers` and a launching MCP server are different claims — the
 mismatch fails at launch, never at `ls`.
 
-No `infra-bootstrap` edit needed (that repo only knows about `core`'s and
-`provisioner`'s own Applications, not individual target repos). Unlike the
-old code-review-gated flow, a dashboard-added repo is live immediately —
-weigh that before adding one on a whim, since it becomes selectable in the
-dashboard's new-session dialog fleet-wide right away.
+A newly installed repo is live on the next tick, selectable in the
+new-session dialog fleet-wide. The only infra-bootstrap edit is an override
+(step 2), never a per-repo Application.
 
 ## 2. Release / deploy walkthrough
 
+`.github/workflows/docker.yml` is the pipeline; read it for the detail.
+One workflow, three jobs on a push to `main`:
+
 ```
-git push origin <tag>              # any tag push triggers docker.yml
-  → changes (ubuntu-latest, PR only): paths-filter -> the component list
+push to main
+  → release (ubuntu-latest; gated on worker-test and dashboard-test):
+      release-it computes the version from Conventional Commits, bumps
+      package.json + CHANGELOG.md, pushes the version commit and tag
   → build-push (ONE job, on [self-hosted, ukubi-build] — the build-runner LXC):
-      loops core provisioner sidecar executor worker migration, and for each
-      runs `sudo buildah bud` then pushes <version> + latest to
+      loops $COMPONENTS (core provisioner sidecar executor worker migration),
+      `buildah` builds, pushes content-addressed `src-<hash>` tags to
       registry.bnei.lan:5000 (ukubi's own Zot, infra-bootstrap ADR-0034).
-      One job, not one per image: the runner executes one job at a time, so a
-      matrix would serialize anyway and each leg's cleanup would evict the
-      shared golang:1.27 / oven/bun:1-slim cache. On a PR only the changed
-      components build, and nothing is pushed.
-  → deploy (on tag push only — NOT on workflow_dispatch, needs build-push):
-      sed-bumps k8s/*.yaml's `tag: "..."` (Helm-values shape) and
-      every `image: repo:tag` in k8s/provisioner/*.yaml (plain-manifest
-      shape, scoped to registry.bnei.lan:5000/agent-fleet-{core,provisioner,
-      worker,sidecar}), then greps to prove the bump landed, commits to main
-      (uses the default GITHUB_TOKEN — deliberately doesn't re-trigger release.yml)
+      An image whose inputs did not change is not rebuilt. On a PR only the
+      changed components build, and nothing is pushed.
+  → deploy (push only): pins each image's tag in k8s/core.yaml (core,
+      migration) and k8s/provisioner/*.yaml (provisioner, worker, sidecar),
+      writes k8s/images.env and FLEET_VERSION, checks every pin landed,
+      commits to main with the built-in token (no workflow re-trigger)
   → ArgoCD: core (two-source Application, chart from infra-bootstrap +
       k8s/core.yaml here) and provisioner (standalone plain-manifest
-      Application, k8s/provisioner/ here) both pick up their new tags and sync
+      Application, k8s/provisioner/ here) sync the new pins
 ```
 
-`release.yml` is separate and unrelated to the above — it runs
-`release-it` on ordinary pushes to `main` to bump the version/CHANGELOG
-from Conventional Commits. It does not build or deploy anything.
+`workflow_dispatch` builds what the registry lacks on `main` and pushes
+nothing: it measures the build loop without cutting a release.
 
 Check current live tags: `grep 'tag:' k8s/core.yaml; grep 'image:'
 k8s/provisioner/deployment.yaml`. Check what actually reached the registry —
@@ -143,8 +143,9 @@ curl -s http://registry.bnei.lan:5000/v2/agent-fleet-worker/tags/list
 
 Retention keeps only the **last 3 tags per image** plus `latest`
 (infra-bootstrap `gitops/platform/values/zot/values.yaml`), so a rollback
-deeper than 3 releases needs the image rebuilt — `workflow_dispatch` after
-checking out the older tag. Runner/build/disk problems on the box itself go
+deeper than 3 releases needs the images rebuilt and pushed, which no
+workflow path does today (`workflow_dispatch` builds `main` and pushes
+nothing). Runner/build/disk problems on the box itself go
 through infra-bootstrap's `/build-runner-ops`.
 
 Check what's actually running:
@@ -155,8 +156,9 @@ Check what's actually running:
 a completed `agent-fleet-browser-cache` Job (via `/k8s-ops` in
 `infra-bootstrap` if you need cluster access set up).
 
-Never push a tag or edit `k8s/core.yaml`/`k8s/provisioner/*.yaml`'s
-pinned versions without confirming — this redeploys the two persistent
+Never merge to `main` or edit `k8s/core.yaml`/`k8s/provisioner/*.yaml`'s
+pinned versions without confirming — every push to `main` cuts a release, and
+a release redeploys the two persistent
 services and changes what image every *future* worker/sidecar pod spawns
 with (in-flight pods keep running their already-pinned image).
 
@@ -175,7 +177,7 @@ FROM sessions
 WHERE archived_at IS NULL AND pod_phase IS NOT NULL
 ORDER BY last_active_at DESC NULLS LAST;
 
--- the live count MAX_LIVE_SESSIONS is checked against. Keep this list in
+-- the live count MAX_IN_FLIGHT_TASKS (default 5) is checked against. Keep this list in
 -- step with `livePhases` in core/internal/sessions/store.go, which is the
 -- real one. A session stuck non-terminal costs one permanent slot and
 -- nothing errors until the cap is hit — which is why the check for that
@@ -190,23 +192,17 @@ WHERE archived_at IS NULL AND pod_phase IN (
 SELECT id, title, pod_phase, last_error, created_at, updated_at
 FROM sessions WHERE repo = '<repo>' ORDER BY created_at DESC LIMIT 20;
 
--- what a session's worker/provisioner actually did
-SELECT event_type, payload, created_at
-FROM knowledge_journal
-WHERE payload->>'sessionId' = '<sessionId>'
-ORDER BY created_at;
+-- what a session actually did: its transcript
+SELECT seq, "from", type, left(text, 200), created_at
+FROM transcript WHERE session_id = '<sessionId>' ORDER BY seq;
 
--- currently configured repos (docs/adr/0028)
-SELECT name, url, base_branch, image, cluster_access FROM repos ORDER BY name;
+-- the repos the fleet can reach, and which it uses (docs/adr/0074)
+SELECT name, url, base_branch, image, cluster_access, active FROM repos ORDER BY name;
 ```
 
 Connect via the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh`
 project) — `core` is the **only** component with these
 (`docs/adr/0020` point 1); `provisioner`/`sidecar`/`worker` hold none.
-`knowledge_journal` also carries provisioner-reported pod-lifecycle events,
-pushed live over gRPC and journaled by `core`'s `ReportPodEvents` — useful
-for seeing whether a stuck session even got a pod at all. `event_type` is
-`"pod." + PodPhase.String()`, so the values are
-`pod.POD_PHASE_CREATED`/`_SCHEDULED`/`_RUNNING`/`_CRASHED`/`_TERMINATED` —
-the full enum name, not a lowercased one. For diagnosing *why* a specific
+Pod lifecycle events update `pod_phase` but are not journaled
+(`docs/adr/0055`); their history is in Loki. For diagnosing *why* a specific
 session is stuck rather than just listing state, use `/fleet-debug` instead.

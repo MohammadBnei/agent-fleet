@@ -100,7 +100,9 @@ mkdir -p /tmp/agent-fleet-e2e-provisioner
 #                        but its warm is torn down: the stub's create never
 #                        sets definition_profile_applied (docs/adr/0064),
 #                        which is correct for a stub that builds no pod.
-# listening on 127.0.0.1:9091.
+# listening on 127.0.0.1:9094. Not 9091: core itself listens on :9091
+# (AgentService for registered clients, docs/adr/0066 §3, CORE_CLIENT_PORT),
+# so a stub there makes core fail to bind.
 #
 # go.mod: module e2estub, plus
 #   replace github.com/MohammadBnei/agent-fleet/proto/gen/go => <repo>/proto/gen/go
@@ -117,7 +119,7 @@ Same DB env vars as above, still exported in this shell.
 ```bash
 # FLEET_AUTH_DISABLED=1: since docs/adr/0056 core refuses to start without OIDC
 # config, and this stack has no authentik.
-(cd core && FLEET_AUTH_DISABLED=1 PROVISIONER_GRPC_ADDR=127.0.0.1:9091 LOG_LEVEL=debug go run ./cmd/core) &
+(cd core && FLEET_AUTH_DISABLED=1 PROVISIONER_GRPC_ADDR=127.0.0.1:9094 LOG_LEVEL=debug go run ./cmd/core) &
 CORE_PID=$!
 until curl -sf http://localhost:8080/healthz >/dev/null 2>&1; do sleep 0.5; done
 ```
@@ -226,5 +228,5 @@ Verify nothing's left before ending the session:
 
 ```bash
 docker ps --filter name=agent-fleet-e2e-pg   # expect empty (just the header row)
-lsof -i :8080 -i :5173 -i :9091 -i :9093    # expect empty (9093 = core's metrics listener)
+lsof -i :8080 -i :5173 -i :9091 -i :9093 -i :9094  # expect empty (9091 = core's AgentService client port, 9093 = its metrics, 9094 = the stub)
 ```

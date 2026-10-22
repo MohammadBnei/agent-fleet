@@ -19,6 +19,27 @@ allowed-tools:
 
 # /kind-local — local kind testing ground for the real fleet
 
+> **⚠ Not yet updated for `docs/adr/0075` (GitHub App + Agent Vault). The
+> `GH_TOKEN` path below no longer works.** The provisioner reads no
+> `GH_TOKEN`: its own git uses GitHub App installation tokens, and every
+> worker pod — repo or definition — gets a token minted from Agent Vault at
+> warm, so `CreateWorkerPod` fails before any Job exists unless the vault is
+> reachable. A working kind run needs, on top of what this file sets up:
+>
+> - `GITHUB_APP_DIR` (default `/var/run/github-app`) holding the files
+>   `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`, plus
+>   `FLEET_GITHUB_ACCOUNTS` (comma-separated account ids whose installations
+>   count);
+> - an Agent Vault the provisioner can reach: `AGENT_VAULT_API_ADDR`,
+>   `AGENT_VAULT_PROXY_ADDR`, and `AGENT_VAULT_SECRETS_DIR` (default
+>   `/var/run/agent-vault`) holding the agent token and credential values
+>   (`provisioner/internal/vault`);
+> - optionally `FLEET_GIT_AUTHOR_NAME`/`FLEET_GIT_AUTHOR_EMAIL` (default
+>   `ukubi`/`ukubi@bnei.dev`).
+>
+> The full list, with defaults, is `provisioner/internal/config/config.go`.
+> None of this is in `local/kind/*.yaml` yet.
+
 Unlike `/dashboard-e2e` (which runs `core` bare-metal with zero Kubernetes
 involvement), this spins up a real [kind](https://kind.sigs.k8s.io/)
 cluster and runs `core`, `provisioner`, and real worker/sidecar `Job`s — the
@@ -77,7 +98,7 @@ done
 ```
 
 Re-run this (both the build AND the load) after any code change before
-creating a new task — see `local/kind/README.md`'s image-staleness caveat:
+warming a new session — see `local/kind/README.md`'s image-staleness caveat:
 worker/sidecar Jobs default to `imagePullPolicy: IfNotPresent`, so a
 forgotten reload silently reuses the old image.
 
@@ -109,7 +130,9 @@ kubectl apply -n agent-fleet \
 **Read `local/kind/README.md`'s Secret section before touching this step.**
 `AGENTFLEET_DB_*` are always the hardcoded literals below — never sourced
 from Infisical. Only `GH_TOKEN`/`CLAUDE_CODE_OAUTH_TOKEN` come from the
-`infisical run` wrapper.
+`infisical run` wrapper. (Stale: the provisioner ignores `GH_TOKEN` since
+`docs/adr/0075`, and worker pods take both tokens from the vault — see the
+note at the top.)
 
 ```bash
 infisical run --domain=https://infisical.bnei.dev/api \
@@ -159,8 +182,8 @@ kubectl apply -f local/kind/40-provisioner.yaml
 kubectl set env deploy/provisioner -n agent-fleet FLEET_DEFINITIONS_REF="$(git rev-parse --abbrev-ref HEAD)"
 kubectl wait --for=condition=available deploy/provisioner -n agent-fleet --timeout=60s
 
-# git.Manager.ConfigureAuth runs `gh auth setup-git` at startup — check this
-# didn't fail on a bad/missing GH_TOKEN before creating a task.
+# Check startup: `github app not mounted yet` means no GITHUB_APP_DIR files
+# (see the note at the top). There is no ConfigureAuth step any more.
 kubectl logs -n agent-fleet deploy/provisioner --tail=50
 ```
 
@@ -172,11 +195,13 @@ CORE_PF_PID=$!
 until curl -sf http://localhost:8080/healthz >/dev/null 2>&1; do sleep 0.5; done
 ```
 
-**Real side effect**: a session against a real repo with a real `GH_TOKEN`
-can open an actual PR on GitHub — the agent runs `git push`/`gh pr create`
-itself, whenever it decides to. Target repos live in the `repos` table
-(seeded by the migration, editable from the dashboard), so for routine
-iteration prefer a disposable scratch repo added there over the real ones.
+**Real side effect**: a session against a real repo with working vault
+credentials can open an actual PR on GitHub — the agent runs `git push`/`gh
+pr create` itself, whenever it decides to. Target repos live in the `repos`
+table. `30-core.yaml` sets no `FLEET_REPO_OVERRIDES`, so core's GitHub sync
+is off and the table keeps the rows migration 000001 seeded (the console only
+toggles `active`); for routine iteration insert a disposable scratch repo row
+rather than using the real ones.
 
 **Two calls, not one** (docs/adr/0048). `CreateSession` makes a row and
 nothing else — no pod, no directory. The FIRST MESSAGE is what provisions,
@@ -213,8 +238,8 @@ Once a `Job` appears, follow both containers — the worker container only
 starts after the sidecar's `/readyz` passes:
 
 ```bash
-kubectl logs -n agent-fleet job/<taskId> -c sidecar -f
-kubectl logs -n agent-fleet job/<taskId> -c worker -f
+kubectl logs -n agent-fleet job/worker-<shortId> -c sidecar -f
+kubectl logs -n agent-fleet job/worker-<shortId> -c worker -f
 ```
 
 Confirm the Job reaches `Completed`, then check the real PR:
@@ -235,7 +260,7 @@ kubectl delete namespace agent-fleet           # Level 1: iterate again soon, ke
 # --- or ---
 kind delete cluster --name agent-fleet-local   # Level 2: full reset, keeps Mac-side workspace data
 # --- or, additionally ---
-rm -rf local/kind/workspace-data               # Level 3: also wipes worktrees/clones on the Mac side
+rm -rf local/kind/workspace-data               # Level 3: also wipes the shared volume on the Mac side
 ```
 
 Verify nothing's left before ending the session:
