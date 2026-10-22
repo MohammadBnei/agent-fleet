@@ -1,6 +1,10 @@
 # ADR-0068 — Islands: fleet UI as web components in other apps
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22)
+- **Built:** `<fleet-agent>` (Svelte 5, `islands/`) served by core at `/islands/`
+  (`core/internal/islands`), its host API (attributes, `fleet-status`/`fleet-message`, themes),
+  the login popup, and AgentService CORS plus the origin fence for `embed.origins`. **Not yet
+  built:** the shared SDK helpers it was to import (ADR-0066 §11); it uses the generated client.
 - **Date:** 2026-10-21
 - **Related:** [ADR-0066](0066-agent-service.md) (AgentService; this ADR
   amends its §1 and the `/embed/*` mentions in §2),

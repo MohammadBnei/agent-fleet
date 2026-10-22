@@ -6,7 +6,7 @@
   (`ukubi-bridge`), infra-bootstrap ADR-0055 (`netbird-agent` short-lived JWT),
   infra-bootstrap ADR-0034 (one build runner per build repo),
   [ADR-0035](0035-thot-cluster-agent.md) / [ADR-0037](0037-thot-is-a-worker-task.md)
-  (thot and its executor), ADR-0062–0070 and 0073 (defined agents, Agent Vault,
+  (thot and its executor), ADR-0062–0070 (0073: number never used) (defined agents, Agent Vault,
   security phase G0), `executor/cmd/executor/main.go`
 
 ## Context
@@ -81,5 +81,5 @@ own environment could skip any button.
   allowlist.
 - A tainted-session step can run with one click. Accepted risk, made
   visible.
-- Prerequisites: G0's executor fail-closed fix, Agent Vault (ADR-0062–0070 and 0073),
+- Prerequisites: G0's executor fail-closed fix, Agent Vault (ADR-0062–0070; 0073: number never used),
   and ADR-0071's dispatcher.

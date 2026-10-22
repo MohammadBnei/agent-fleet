@@ -1,6 +1,11 @@
 # ADR-0067 — Shared and private sessions, authorship, and the definition's tool surface in the worker
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22) — §4 amended by [ADR-0076](0076-definition-sessions-run-in-auto.md) (modes; a call outside `tools.allow` asks, not denied)
+- **Built:** §1–§4: owner, visibility, interaction, lifecycle and thread key (migration
+  000015); authorship, trust and taint recorded by core; the worker applying the `AgentSpec`
+  (`settingSources: ["user"]`, the tool ceiling, `tools.deny` in flag scope, prompt, turns,
+  effort). **Not yet built:** §5's model change (`SetConfig` answers `Unimplemented` for a
+  model; mode only); stewards (§6, open PR #318).
 - **Date:** 2026-10-20
 - **Related:** [ADR-0066](0066-agent-service.md) (the AgentService and its
   authz table, which reads the rules here), [ADR-0062](0062-defined-agents.md)

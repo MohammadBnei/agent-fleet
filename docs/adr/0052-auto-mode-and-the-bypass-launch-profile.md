@@ -1,6 +1,6 @@
 # ADR-0052 — `auto` is the working mode; `bypassPermissions` is a launch profile
 
-- **Status:** Accepted
+- **Status:** Accepted — its `bypassPermissions`-as-launch-profile half superseded by [ADR-0053](0053-the-gate-is-canusetool-not-a-rule-list.md); amended by [ADR-0061](0061-sessions-launch-in-auto.md)
 - **Date:** 2026-08-16
 - **Supersedes:** [ADR-0027](0027-arbitrary-permission-mode-and-command-palette.md)'s
   "must not pass `allowDangerouslySkipPermissions`" section, and the

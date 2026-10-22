@@ -1,6 +1,6 @@
 # ADR-0021: One continuous streaming-input session per task, live setPermissionMode() on approval
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md)
 **Date:** 2026-08-04
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0065 — Agent Vault holds definition credentials; definition pods hold placeholders and an egress lock
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [ADR-0075](0075-github-app-identity-and-vault-credentials.md): a GitHub credential is a minted installation token
 - **Date:** 2026-10-19
 - **Related:** [ADR-0064](0064-definition-pod-profile.md) (amended: its INTERIM
   model token, "cannot push" for `git.mode: push`, the open-egress consequence

@@ -10,7 +10,7 @@
 
 ## Context
 
-Defined agents (ADR-0062–0070 and 0073) are dedicated to one app or one platform
+Defined agents (ADR-0062–0070; 0073: number never used) are dedicated to one app or one platform
 component. To be useful they must hear about that thing without a human
 relaying it: a PR to review, an alert, a hand-off from another agent. And
 agents must be able to talk to each other asynchronously — one finishes a

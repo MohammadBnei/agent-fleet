@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (P1 part). Amended by [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md)
   (P3): the INTERIM model token is a vault placeholder, push mode pushes, the
-  egress lock and the URL binding are built.
+  egress lock and the URL binding are built. Amended by [ADR-0075](0075-github-app-identity-and-vault-credentials.md): repo pods take the vault half of this profile, plus a 12h cap.
 - **Date:** 2026-10-19
 - **Related:** [ADR-0062](0062-defined-agents.md) (defined agents; this replaces
   its unconditional warm refusal), [ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md)

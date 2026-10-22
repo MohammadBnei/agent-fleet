@@ -1,6 +1,6 @@
 # ADR-0020: Hub-and-spoke gRPC between fleet-core/provisioner/worker sidecar — Postgres centralized, MCP kept local to the agent
 
-**Status:** Accepted
+**Status:** Accepted — amended by [ADR-0064](0064-definition-pod-profile.md) (hub-and-spoke made literal for definition pods) and [ADR-0069](0069-component-auth-and-network-fences.md) (point 4: the provisioner needs a credential)
 **Date:** 2026-08-04
 
 ## Context

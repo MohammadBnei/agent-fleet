@@ -1,6 +1,12 @@
 # ADR-0063 — Context packs: one surface for the rules and skills fleet agents load
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22). Amended by [ADR-0067](0067-shared-and-private-sessions.md) §4: definition sessions use
+  `settingSources: ["user"]`, with pack skills mounted read-only at `/claude-home/skills`.
+- **Built:** live and reviewed packs (migrations 000011/000012, `core/internal/packs`), the
+  per-session read-only `/genome`, the `context_loaded` report, the console Packs panel, and
+  Decision 8's release N (`packs/fleet`, `packs/repo`; the sync removes a name missing from the
+  source). **Not yet built:** Decision 8's release N+1: `fleet-shared/CLAUDE.md` and
+  `fleet-shared/skills/` are still in the tree and still synced.
 - **Date:** 2026-10-19
 - **Related:** replaces the plan's "P2 Genome" (a SHA-pinned slice of the
   private claude-config repo; this ADR keeps the read-only delivery and drops

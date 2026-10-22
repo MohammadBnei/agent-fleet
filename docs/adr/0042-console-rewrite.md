@@ -1,6 +1,6 @@
 # ADR-0042 — The dashboard becomes a console: full-width views, ranked feed tiers, and decisions answerable from the list
 
-**Status:** Accepted
+**Status:** Accepted — §5 (the desktop decision spine) superseded by [ADR-0043](0043-one-decision-surface.md)
 **Date:** 2026-08-12
 **Supersedes:** the resizable-panel and dual-feed-toggle mechanisms introduced
 alongside [0027](0027-arbitrary-permission-mode-and-command-palette.md); the

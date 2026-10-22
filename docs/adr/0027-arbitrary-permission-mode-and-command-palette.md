@@ -3,7 +3,8 @@
 **Status:** Accepted; the `allowDangerouslySkipPermissions` section superseded by
 [ADR-0052](0052-auto-mode-and-the-bypass-launch-profile.md), which also adds
 `auto` to the selector and makes `bypassPermissions` a launch profile rather
-than a live switch. The selector and palette themselves stand.
+than a live switch. The selector and palette themselves stand. Its resizable-panel and
+dual-feed-toggle mechanisms are superseded by [ADR-0042](0042-console-rewrite.md).
 **Date:** 2026-08-06
 
 ## Context

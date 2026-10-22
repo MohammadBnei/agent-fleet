@@ -1,6 +1,7 @@
 # ADR-0024: Pod-crash fast-path detection, a real retry cap, and a `knowledge_journal` read path
 
-**Status:** Accepted
+**Status:** Accepted — the retry cap is gone with the retry counter ([ADR-0048](0048-one-session-one-pod-one-shared-home.md) §2: no
+queue, no lease, no retry); the journal-write half is amended by [ADR-0055](0055-the-journal-is-agent-knowledge-not-pod-telemetry.md).
 **Date:** 2026-08-05
 
 ## Context

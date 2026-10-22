@@ -1,6 +1,6 @@
 # ADR-0033: Journal search/write tools, and a persistent worker-plugin mechanism
 
-**Status:** Accepted
+**Status:** Accepted — `journal_search`'s signature amended by [ADR-0055](0055-the-journal-is-agent-knowledge-not-pod-telemetry.md)
 **Date:** 2026-08-10
 
 ## Context

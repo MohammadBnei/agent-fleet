@@ -1,6 +1,8 @@
 # ADR-0006: Git commit identity derived live from the authenticated bot account
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0075](0075-github-app-identity-and-vault-credentials.md) §8 for repo pods: commits are authored from config
+(`FLEET_GIT_AUTHOR_*`, `ukubi`) and the `gh api user` calls are gone. Definition pods take
+their file's `git.identity` ([ADR-0064](0064-definition-pod-profile.md)).
 **Date:** 2026-07-31
 
 ## Context

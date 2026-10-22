@@ -2,7 +2,7 @@
 
 - **Status:** Accepted — amended by [0059](0059-metrics-off-the-gated-port.md),
   which moves core's `/metrics` off 8080 onto its own port. The metrics, their
-  names and their labels are untouched
+  names and their labels are untouched; also amended by [ADR-0048](0048-one-session-one-pod-one-shared-home.md) (`TasksCurrent{repo,status}` has no statuses left)
 - **Date:** 2026-08-14
 - **Relates to:** [ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md) (core's zero-RBAC rule,
   which shapes how the topology view gets its data),

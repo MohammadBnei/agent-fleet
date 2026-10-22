@@ -1,6 +1,7 @@
 # ADR-0028: dashboard-editable, DB-backed repo config
 
-**Status:** Accepted
+**Status:** Accepted — amended by [ADR-0074](0074-fleet-repos-come-from-github.md): the `repos` table is a projection of GitHub plus
+infra-bootstrap's overrides file, no longer dashboard-editable.
 **Date:** 2026-08-06
 
 ## Context

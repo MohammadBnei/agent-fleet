@@ -11,7 +11,7 @@
 
 ## Context
 
-Defined agents (ADRs 0062–0070 and 0073) widen who can start a session and, later, put
+Defined agents (ADRs 0062–0070; 0073: number never used) widen who can start a session and, later, put
 a public webhook in front of core. Before that, five gaps that were tolerable
 for one admin on a private fleet have to close. All five were verified in code
 on 2026-10-18:

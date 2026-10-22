@@ -1,6 +1,6 @@
 # ADR-0060 — Claude Code's own cross-session channel is open
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [ADR-0064](0064-definition-pod-profile.md) (closed for definition pods)
 - **Date:** 2026-10-03
 - **Related:** [ADR-0041](0041-inter-agent-prompting.md) (the fleet's own
   inter-session channel, which stays),
