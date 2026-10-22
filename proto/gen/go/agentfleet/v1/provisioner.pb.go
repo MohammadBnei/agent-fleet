@@ -87,13 +87,19 @@ type CreateWorkerPodRequest struct {
 	Repo       string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	RepoUrl    string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
 	BaseBranch string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	// description and lease_id are handed straight through to the worker
-	// pod's env (for a definition pod, lease_id goes to the sidecar only,
-	// docs/adr/0064) — the worker no longer fetches its own session row at all
-	// (docs/adr/0020 point 1: it holds no DB credentials, direct or
-	// otherwise), so whatever it needs has to arrive at pod creation time.
+	// Unread. It was meant for the worker pod's env, but no provisioner ever
+	// read it, and the worker takes its instructions from the transcript, never
+	// from a description (CLAUDE.md: "Sending a human's instruction as
+	// `description`"). core stopped sending it; deprecated rather than
+	// reserved because buf breaking (PACKAGE) forbids deleting a field.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/provisioner.proto.
 	Description string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
-	LeaseId     string `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	// lease_id goes to the pod's env (for a definition pod, to the sidecar
+	// only, docs/adr/0064) — the worker no longer fetches its own session row
+	// at all (docs/adr/0020 point 1: it holds no DB credentials, direct or
+	// otherwise), so whatever it needs has to arrive at pod creation time.
+	LeaseId string `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	// Non-empty when this task already has a saved Claude SDK session
 	// (sessions.agent_session_id) — threaded straight to the worker pod's
 	// RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
@@ -198,6 +204,7 @@ func (x *CreateWorkerPodRequest) GetBaseBranch() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/provisioner.proto.
 func (x *CreateWorkerPodRequest) GetDescription() string {
 	if x != nil {
 		return x.Description
@@ -1981,15 +1988,15 @@ var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
-	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xee\x03\n" +
+	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xf2\x03\n" +
 	"\x16CreateWorkerPodRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
 	"\brepo_url\x18\x03 \x01(\tR\arepoUrl\x12\x1f\n" +
 	"\vbase_branch\x18\x04 \x01(\tR\n" +
-	"baseBranch\x12 \n" +
-	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
+	"baseBranch\x12$\n" +
+	"\vdescription\x18\x05 \x01(\tB\x02\x18\x01R\vdescription\x12\x19\n" +
 	"\blease_id\x18\x06 \x01(\tR\aleaseId\x12*\n" +
 	"\x11resume_session_id\x18\a \x01(\tR\x0fresumeSessionId\x12&\n" +
 	"\x0fresume_from_seq\x18\b \x01(\x03R\rresumeFromSeq\x12\x1b\n" +

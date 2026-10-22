@@ -48,12 +48,16 @@ message CreateWorkerPodRequest {
   string repo = 2;
   string repo_url = 3;
   string base_branch = 4;
-  // description and lease_id are handed straight through to the worker
-  // pod's env (for a definition pod, lease_id goes to the sidecar only,
-  // docs/adr/0064) — the worker no longer fetches its own session row at all
-  // (docs/adr/0020 point 1: it holds no DB credentials, direct or
+  // Unread. It was meant for the worker pod's env, but no provisioner ever
+  // read it, and the worker takes its instructions from the transcript, never
+  // from a description (CLAUDE.md: "Sending a human's instruction as
+  // `description`"). core stopped sending it; deprecated rather than
+  // reserved because buf breaking (PACKAGE) forbids deleting a field.
+  string description = 5 [deprecated = true];
+  // lease_id goes to the pod's env (for a definition pod, to the sidecar
+  // only, docs/adr/0064) — the worker no longer fetches its own session row
+  // at all (docs/adr/0020 point 1: it holds no DB credentials, direct or
   // otherwise), so whatever it needs has to arrive at pod creation time.
-  string description = 5;
   string lease_id = 6;
   // Non-empty when this task already has a saved Claude SDK session
   // (sessions.agent_session_id) — threaded straight to the worker pod's

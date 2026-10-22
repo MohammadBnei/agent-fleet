@@ -1132,7 +1132,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// row, which a concurrent "manage repos" edit could have straddled, so a
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
-	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile, genome)
+	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile, genome)
 	switch {
 	case err != nil && profile != nil:
 		// docs/adr/0064: an error can come after the Job exists (the call's
