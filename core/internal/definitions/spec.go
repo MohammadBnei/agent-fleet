@@ -162,7 +162,8 @@ type ClientSpec struct {
 	Definitions []string  `yaml:"definitions" json:"definitions"`
 	// AnnounceSessions: core publishes dev.bnei.fleet.session.waiting and
 	// .resumed to the bridge for the sessions this client opened, under
-	// fleet/client/<name>/ (docs/adr/0078). Never for anyone else's sessions.
+	// fleet/client/<name>/ (docs/adr/0078, core/internal/announce). Never for
+	// anyone else's sessions.
 	AnnounceSessions bool `yaml:"announceSessions,omitempty" json:"announceSessions,omitempty"`
 }
 

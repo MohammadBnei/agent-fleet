@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 )
 
 type Config struct {
@@ -85,6 +87,12 @@ type Config struct {
 	// fleet-repo-overrides file as mounted (docs/adr/0074). Empty turns the
 	// GitHub repos sync off, and repos keeps whatever rows it has (kind).
 	RepoOverridesPath string
+
+	// Bridge is core's event-bridge client (docs/adr/0078 §1): BRIDGE_URL,
+	// BRIDGE_TOKEN_URL, BRIDGE_AUTH_HOST, BRIDGE_CLIENT_ID, BRIDGE_USERNAME and
+	// BRIDGE_PASSWORD_FILE. Unset URL or no usable password file: core runs
+	// without the bridge.
+	Bridge bridgeclient.Config
 	// StopGrace is how long sessions.Loop waits after a Stop request before
 	// force-tearing down a worker pod that hasn't gone terminal on its own —
 	// long enough for a healthy pod to notice the cooperative abort message
@@ -225,6 +233,14 @@ func Load() Config {
 		GarageFilesBucket:     env("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  os.Getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
 		GarageFilesSecret:     os.Getenv("AGENTFLEET_FILES_S3_SECRET"),
+		Bridge: bridgeclient.Config{
+			URL:          os.Getenv("BRIDGE_URL"),
+			TokenURL:     os.Getenv("BRIDGE_TOKEN_URL"),
+			AuthHost:     os.Getenv("BRIDGE_AUTH_HOST"),
+			ClientID:     env("BRIDGE_CLIENT_ID", "ukubi-bridge-api"),
+			Username:     env("BRIDGE_USERNAME", "bridge-core"),
+			PasswordFile: env("BRIDGE_PASSWORD_FILE", "/etc/bridge-core/app_password"),
+		},
 	}
 }
 

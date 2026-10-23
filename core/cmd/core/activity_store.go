@@ -32,16 +32,29 @@ import (
 type activityTrackingStore struct {
 	transcript.Store
 	tasks *sessions.Store
+	// decided nudges the session announcements (docs/adr/0078 §3) after an
+	// append that asks or answers; nil without a bridge.
+	decided func(sessionID string)
 }
 
-func newActivityTrackingStore(store transcript.Store, sessionStore *sessions.Store) activityTrackingStore {
-	return activityTrackingStore{Store: store, tasks: sessionStore}
+func newActivityTrackingStore(store transcript.Store, sessionStore *sessions.Store, decided func(string)) activityTrackingStore {
+	return activityTrackingStore{Store: store, tasks: sessionStore, decided: decided}
+}
+
+// decisionTypes are the entries that can change a session's pending-decision
+// count: an ask, its answer, and the two that end everything pending.
+var decisionTypes = map[string]bool{
+	"question": true, "permission_request": true, "answer": true, "permission_response": true,
+	"abort": true, "interrupt": true,
 }
 
 // touch is best-effort and fire-and-forget — a transcript append must
 // never be slowed down or failed by the activity-tracking side effect
 // (matches sessions.Store.TouchActive's own best-effort framing).
 func (s activityTrackingStore) touch(taskID, from, msgType string) {
+	if s.decided != nil && decisionTypes[msgType] {
+		s.decided(taskID)
+	}
 	go func() {
 		if err := s.tasks.TouchActive(context.Background(), taskID, from, msgType); err != nil {
 			slog.Warn("activityTrackingStore: touch active failed", "sessionId", taskID, "error", err)

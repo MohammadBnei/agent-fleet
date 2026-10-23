@@ -71,9 +71,9 @@ in several ways:
      - The count is `pending_decisions`: unanswered `question` and `permission_request` entries. A plan to approve is
        a `permission_request` for `ExitPlanMode`.
      - `waiting` is published when the count goes from 0 to above 0, and `resumed` when it returns to 0.
-     - One reconcile function computes the count. It is called after every append that asks or answers, after
-       `ReserveSlot`'s stale close, and on the sessions loop's tick, which also catches paths that bypass the
-       store decorator.
+     - One reconcile function (`core/internal/announce`) computes the count. It is nudged after every append that asks
+       or answers (the transcript decorator) and runs over every opted-in session on a 30-second tick, which catches
+       `ReserveSlot`'s stale close and any other path that bypasses the decorator.
    - **Data:** `{thread_id, pending, reasons, position}`.
      - `reasons` lists `question`, `permission` and `plan`.
      - `position` is the transcript `seq` of the entry that changed the count. It is durable and grows per session.
