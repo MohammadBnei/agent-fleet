@@ -8,6 +8,7 @@ package bridgeclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -54,17 +55,19 @@ func New(cfg Config) *Client {
 
 // password reads the mounted file. An Infisical key that does not exist
 // renders as the literal "<no value>" (infra-bootstrap ADR-0049): unset.
+// Each refusal wraps ErrNotConfigured with its reason, which the caller logs
+// once: a Secret delivered under the wrong name or key must not be silent.
 func (c *Client) password() (string, error) {
-	if c.cfg.URL == "" || c.cfg.PasswordFile == "" {
-		return "", ErrNotConfigured
+	if c.cfg.URL == "" {
+		return "", fmt.Errorf("%w: BRIDGE_URL is unset", ErrNotConfigured)
 	}
 	b, err := os.ReadFile(c.cfg.PasswordFile)
 	if err != nil {
-		return "", ErrNotConfigured
+		return "", fmt.Errorf("%w: app password file %s: %v", ErrNotConfigured, c.cfg.PasswordFile, err)
 	}
 	pw := strings.TrimSpace(string(b))
 	if pw == "" || pw == "<no value>" {
-		return "", ErrNotConfigured
+		return "", fmt.Errorf("%w: app password file %s is empty or a missing Infisical key", ErrNotConfigured, c.cfg.PasswordFile)
 	}
 	return pw, nil
 }
@@ -112,7 +115,7 @@ func (c *Client) API() (bridgev1connect.BridgeServiceClient, error) {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			t, err := src.Token()
 			if err != nil {
-				return nil, connect.NewError(connect.CodeUnauthenticated, err)
+				return nil, fmt.Errorf("authentik grant as %s: %w", c.cfg.Username, err)
 			}
 			req.Header().Set("Authorization", "Bearer "+t.AccessToken)
 			return next(ctx, req)
@@ -131,5 +134,12 @@ func (c *Client) Publish(ctx context.Context, e *bridgev1.CloudEvent) error {
 		return err
 	}
 	_, err = api.Publish(ctx, connect.NewRequest(&bridgev1.PublishRequest{Event: e}))
+	if connect.CodeOf(err) == connect.CodeUnauthenticated {
+		// The bridge rejected the cached token (a rotated signing cert, a
+		// changed client table): sign in afresh on the next call.
+		c.mu.Lock()
+		c.api = nil
+		c.mu.Unlock()
+	}
 	return err
 }

@@ -50,10 +50,10 @@ in several ways:
      public one.
    - It reuses the token until 10 seconds before expiry (`golang.org/x/oauth2`'s default), under the bridge's
      5-second floor for opening a stream.
-   - **Configuration** is an optional mounted file (`bridge-core-secret` from infra-bootstrap), re-read before every
-     attempt:
-     - absent, or holding the literal `<no value>`, means the bridge is not configured: one Info line, and no
-       dispatcher;
+   - **Configuration** is an optional mounted file, re-read before every attempt: key `app_password` of the Secret
+     `bridge-core` in `agent-fleet`, delivered by infra-bootstrap.
+     - absent, or holding the literal `<no value>`, means the bridge is not configured: one Info line naming the
+       reason, and no dispatcher;
      - a failed grant or a lost stream is a WARN with backoff up to 5 minutes, never an error loop.
    - **Core always starts**, whatever happens with the bridge.
    - This is a second identity, never core's console OIDC client (ADR-0056).
@@ -79,7 +79,8 @@ in several ways:
      - `position` is the transcript `seq` of the entry that changed the count. It is durable and grows per session.
      - Never the definition, the opener, a prompt, a tool input or any transcript text.
    - **Envelope:** `actor=machine`, `actor_login=core`, `trusted=false`, no `owner`, no `causation_id`. The CloudEvent
-     id is `<thread id>:<position>`.
+     id is `<thread id>:<position>:<edge>` (`waiting` or `resumed`): a session archived while waiting resumes at the
+     position of its wait, and the bridge dedups on the id.
    - **They are hints.** Core keeps per session the last edge it published (`session_announcements`), written only
      after the bridge accepted it. The next tick compares it with the current count and publishes again if they
      differ. It is the session's current state, like `pod_phase`, not a queue of messages (ADR-0048 §2 stands): an
@@ -187,5 +188,5 @@ in several ways:
 3. The alert rule on the direct webhook (useful alone).
 4. The bridge client and the dispatcher.
 5. `PublishEvent` and the tool.
-6. Live, once the cluster is up: infra-bootstrap delivers `bridge-core-secret`, core restarts, and a PR event opens
+6. Live, once the cluster is up: infra-bootstrap delivers the `bridge-core` Secret, and a PR event opens
    a definition thread end to end.

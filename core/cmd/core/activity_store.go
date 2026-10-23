@@ -41,11 +41,11 @@ func newActivityTrackingStore(store transcript.Store, sessionStore *sessions.Sto
 	return activityTrackingStore{Store: store, tasks: sessionStore, decided: decided}
 }
 
-// decisionTypes are the entries that can change a session's pending-decision
-// count: an ask, its answer, and the two that end everything pending.
+// decisionTypes are the entries that change a session's pending-decision
+// count: an ask and its reply. abort and interrupt write no reply rows, so the
+// count, and the announcement, follow the replies the worker writes after.
 var decisionTypes = map[string]bool{
 	"question": true, "permission_request": true, "answer": true, "permission_response": true,
-	"abort": true, "interrupt": true,
 }
 
 // touch is best-effort and fire-and-forget — a transcript append must

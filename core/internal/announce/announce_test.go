@@ -3,10 +3,13 @@
 package announce
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -94,7 +97,7 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 	if data.Thread != game || data.Pending != 2 || len(data.Reasons) != 2 || data.Reasons[0] != "question" || data.Reasons[1] != "plan" || data.Position != plan {
 		t.Fatalf("data %+v", data)
 	}
-	if string(w.Data) != "" && (contains(w.Data, "secret") || contains(w.Data, "colour")) {
+	if bytes.Contains(w.Data, []byte("secret")) || bytes.Contains(w.Data, []byte("colour")) {
 		t.Fatal("transcript text leaked into the announcement")
 	}
 
@@ -123,7 +126,7 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 	if err := a.Check(ctx, game); err != nil {
 		t.Fatal(err)
 	}
-	if len(pub.events) != 2 || pub.events[1].Type != TypeResumed || pub.events[1].Id != game+":"+itoa(last) {
+	if len(pub.events) != 2 || pub.events[1].Type != TypeResumed || pub.events[1].Id != game+":"+strconv.FormatInt(last, 10)+":resumed" {
 		t.Fatalf("resumed: %+v", pub.events[len(pub.events)-1])
 	}
 
@@ -137,15 +140,52 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 	}
 }
 
-func contains(b []byte, s string) bool { return len(s) > 0 && bytesIndex(b, s) >= 0 }
-
-func bytesIndex(b []byte, s string) int {
-	for i := 0; i+len(s) <= len(b); i++ {
-		if string(b[i:i+len(s)]) == s {
-			return i
-		}
+// A session archived while waiting resumes, with an id distinct from its wait
+// (same position: no reply row is written), so the bridge does not dedup it.
+func TestArchivedWhileWaitingResumes(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	ctx := context.Background()
+	tr := transcript.NewPostgresStore(pool)
+	pub := &fakePub{}
+	a := New(pool, pub, func() []string { return []string{"game"} })
+	id := thread(t, pool, "game")
+	if _, err := tr.Append(ctx, id, "agent", "?", "question", ""); err != nil {
+		t.Fatal(err)
 	}
-	return -1
+	if err := a.Tick(ctx); err != nil || len(pub.events) != 1 {
+		t.Fatalf("waiting: %d %v", len(pub.events), err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET archived_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Tick(ctx); err != nil || len(pub.events) != 2 {
+		t.Fatalf("resumed on archive: %d %v", len(pub.events), err)
+	}
+	if pub.events[1].Type != TypeResumed || pub.events[1].Id == pub.events[0].Id {
+		t.Fatalf("archive resume %q reuses the wait's id %q", pub.events[1].Id, pub.events[0].Id)
+	}
+	if err := a.Tick(ctx); err != nil || len(pub.events) != 2 {
+		t.Fatalf("an archived, resumed session was announced again: %d %v", len(pub.events), err)
+	}
 }
 
-func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+// A failed publish backs off and then catches up.
+func TestBackoff(t *testing.T) {
+	a := New(nil, &fakePub{}, nil)
+	now := time.Unix(0, 0)
+	a.now = func() time.Time { return now }
+	a.settle(errors.New("down"))
+	if a.backoff != BackoffMin || !a.retryAt.Equal(now.Add(BackoffMin)) {
+		t.Fatalf("first failure: %v %v", a.backoff, a.retryAt)
+	}
+	for range 10 {
+		a.settle(errors.New("down"))
+	}
+	if a.backoff != BackoffMax {
+		t.Fatalf("backoff %v, want capped at %v", a.backoff, BackoffMax)
+	}
+	a.settle(nil)
+	if a.backoff != 0 || !a.retryAt.IsZero() {
+		t.Fatal("a success did not reset the backoff")
+	}
+}
