@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 
 	"connectrpc.com/connect"
@@ -43,7 +44,48 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 	if err != nil {
 		return nil, err
 	}
-	m := req.Msg
+	return s.open(ctx, p, req.Msg, false)
+}
+
+// ErrNeedsWake is Open's FailedPrecondition for an event with no open thread
+// that may not open one (docs/adr/0078 §5): the one case the dispatcher turns
+// into a proposal. errors.Is sees it through the connect error.
+var ErrNeedsWake = errors.New("no open thread for this key, and a new one needs wake")
+
+// AsClient is the context an in-process client (no tokenRef, docs/adr/0066
+// §3) calls AgentService with, the bridge's dispatcher. A client reachable
+// over :9091 is refused: its rights belong to its bearer.
+func (s *Server) AsClient(ctx context.Context, client string) (context.Context, error) {
+	for _, c := range s.definitions.Clients() {
+		if c.Name == client {
+			if c.Spec.TokenRef != "" {
+				return nil, fmt.Errorf("client %q is not in-process", client)
+			}
+			return withPrincipal(ctx, Principal{Client: client}), nil
+		}
+	}
+	return nil, fmt.Errorf("client %q is not registered", client)
+}
+
+// OpenAsAdmin opens an event proposal (docs/adr/0078 §5): a platform admin's
+// click is the human gate (docs/adr/0048 §1), so the thread opens through
+// client's Open, waking, with the admin as the actor and no actors.allow
+// check. The caller has checked the admin.
+func (s *Server) OpenAsAdmin(ctx context.Context, client, adminSub string, m *agentfleetv1.OpenRequest) (*agentfleetv1.OpenResponse, error) {
+	ctx, err := s.AsClient(ctx, client)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	p, _ := FromContext(ctx)
+	m.Actor, m.Wake = "admin:"+adminSub, true
+	res, err := s.open(ctx, p, m, true)
+	if err != nil {
+		return nil, err
+	}
+	return res.Msg, nil
+}
+
+func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequest, adminActor bool) (*connect.Response[agentfleetv1.OpenResponse], error) {
 	switch {
 	case m.GetThreadKey() == "" || len(m.GetThreadKey()) > maxKey:
 		return nil, invalid("thread_key is required and at most %d bytes", maxKey)
@@ -67,7 +109,7 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 	}
 	// A waking message needs an actor the client may claim (§6): exact,
 	// fail closed, an empty actor never wakes.
-	if m.GetWake() && !s.mayClaim(p.Client, m.GetActor()) {
+	if m.GetWake() && !adminActor && !s.mayClaim(p.Client, m.GetActor()) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("actor is not in this client's actors.allow"))
 	}
 
@@ -128,7 +170,7 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 	if fresh {
 		if !m.GetWake() {
 			// The dispatcher files a proposal instead (ADR-0071 §6).
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no open thread for this key, and a new one needs wake"))
+			return nil, connect.NewError(connect.CodeFailedPrecondition, ErrNeedsWake)
 		}
 		if n, err := s.sessions.OpenThreads(ctx, owner); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
@@ -155,6 +197,14 @@ func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.Ope
 	}
 	if !contextOnly {
 		if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+			if fresh && connect.CodeOf(err) == connect.CodeResourceExhausted {
+				// A thread this call created and could not start would hold
+				// the key with nothing in it (docs/adr/0078 §5): archive it,
+				// and a retry creates the thread again.
+				if _, aerr := s.dash.ArchiveSession(ctx, connect.NewRequest(&agentfleetv1.ArchiveSessionRequest{SessionId: t.ID})); aerr != nil {
+					slog.Warn("agentsvc Open: archive a thread the warm refused", "sessionId", t.ID, "error", aerr)
+				}
+			}
 			return nil, err // the claim stays pending; a retry resumes here
 		}
 	}

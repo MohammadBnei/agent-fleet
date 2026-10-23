@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -566,5 +567,43 @@ func TestCreate_ReapRollsBackWhenTheInsertFails(t *testing.T) {
 	if err := store.Dismiss(ctx, id); err != nil {
 		t.Fatalf("the reap committed despite the insert failing, so the key was freed with "+
 			"nothing filed: %v", err)
+	}
+}
+
+// Event proposals (docs/adr/0078 §5): later events of the thread fold in,
+// once each, up to a bound, and taint the proposal.
+func TestFoldEvent(t *testing.T) {
+	s, _, ctx := newStore(t)
+	id, created, err := s.CreateEvent(ctx, "notes", "event:d:t", "title", "[e1] first", "", Event{Definition: "d", ThreadKey: "t", CausationID: "src:e1"})
+	if err != nil || !created {
+		t.Fatal(created, err)
+	}
+	for range 2 {
+		if ok, err := s.FoldEvent(ctx, "notes", "event:d:t", "[e2]", "[e2] second", true); err != nil || !ok {
+			t.Fatal(ok, err)
+		}
+	}
+	big := strings.Repeat("x", maxFoldedBody)
+	for range 2 {
+		if _, err := s.FoldEvent(ctx, "notes", "event:d:t", "[e3]", big, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := s.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Body != "[e1] first\n\n[e2] second\n\n[later events were dropped]" || p.Event == nil || !p.Event.Tainted || p.Event.CausationID != "src:e1" {
+		t.Fatalf("body %q event %+v", p.Body, p.Event)
+	}
+	if ok, err := s.DismissUnopened(ctx, "notes", "event:d:t"); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if ok, _ := s.FoldEvent(ctx, "notes", "event:d:t", "[e4]", "x", false); ok {
+		t.Fatal("folded into a dismissed proposal")
+	}
+	// The schema keeps event fields to event proposals.
+	if _, err := s.pool.Exec(ctx, `INSERT INTO proposals (repo, source, title, body) VALUES ('r', 'event', 't', 'b')`); err == nil {
+		t.Fatal("an event proposal without its definition and thread")
 	}
 }
