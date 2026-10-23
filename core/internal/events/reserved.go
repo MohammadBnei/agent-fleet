@@ -26,25 +26,42 @@ func TypeReaches(p string) bool {
 }
 
 // SubjectReaches reports whether subject glob g (the bridge's * and ?) is
-// aimed at a reserved subject: its literal head, up to the first wildcard,
-// starts with one or could still become one. A glob with no literal head
-// ("*", "?x") matches everything like an empty subject list and is not
-// refused: the reserved types are the fence, this only refuses a filter that
+// aimed at a reserved subject: it can match some subject that starts with one.
+// A glob of only '*' matches everything, like an empty subject list, and is
+// not refused: the reserved types are the fence; this refuses a filter that
 // targets those threads.
 func SubjectReaches(g string) bool {
-	head, wild := g, false
-	if i := strings.IndexAny(g, "*?"); i >= 0 {
-		head, wild = g[:i], true
-	}
-	if head == "" {
+	if strings.Trim(g, "*") == "" {
 		return false
 	}
 	for _, r := range ReservedSubjects {
-		if strings.HasPrefix(head, r) || (wild && strings.HasPrefix(r, head)) {
+		if canStartWith(g, r) {
 			return true
 		}
 	}
 	return false
+}
+
+// canStartWith: some string matching glob g starts with prefix p. Walking p,
+// '*' can absorb the rest, '?' takes any one byte, a literal must be equal;
+// running out of glob first means every match is shorter than p.
+func canStartWith(g, p string) bool {
+	for i := 0; i < len(p); i++ {
+		if len(g) == 0 {
+			return false
+		}
+		switch g[0] {
+		case '*':
+			return true
+		case '?':
+		default:
+			if g[0] != p[i] {
+				return false
+			}
+		}
+		g = g[1:]
+	}
+	return true
 }
 
 // Reserved reports whether a concrete event type or subject is human-facing

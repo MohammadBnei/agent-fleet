@@ -30,7 +30,7 @@ func TestSubjectReaches(t *testing.T) {
 		"fleet/*":               true,
 		"fleet/client/game/t1":  true,
 		"game/x":                true,
-		"?ame/x":                false,
+		"?ame/x":                true,
 		"github/*":              false,
 		"github/MohammadBnei/*": false,
 		"alert/abc":             false,

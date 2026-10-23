@@ -2,9 +2,9 @@ package agentsvc
 
 import (
 	"context"
+	"slices"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 
 	"connectrpc.com/connect"

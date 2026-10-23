@@ -4,8 +4,8 @@
 - **Date:** 2026-10-23
 - **Amends:** [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §2–4 and §6 (how core signs in, which types
   it reads, how the dispatcher calls `Open`, what a proposal carries); infra-bootstrap ADR-0066 §3–4 on three points
-  recorded there: `owns` may leave its types empty, `position` is the transcript `seq`, and the last published edge
-  is stored and retried
+  recorded there: `owns` may leave its types empty, a match-all subject is accepted (only globs aimed at `fleet/` or
+  `game/` are refused), `position` is the transcript `seq`, and the last published edge is stored and retried
 - **Related:** infra-bootstrap ADR-0060 (the bus) and ADR-0066 (API clients sign in through authentik; reserved
   human-facing types), [ADR-0048](0048-one-session-one-pod-one-shared-home.md) §2 (no queue),
   [ADR-0066](0066-agent-service.md) and [ADR-0067](0067-shared-and-private-sessions.md) (what a client may see),
@@ -91,10 +91,9 @@ in several ways:
      - a `subscribes` with no `types`, since an empty list matches everything;
      - in `owns` or `subscribes`, a type prefix that is a prefix of, or starts with, a reserved type (so `""` and
        `dev.bnei.` are refused);
-     - a subject glob aimed at their threads: one whose literal head starts with `fleet/` or `game/`, or could still
-       become one.
+     - a subject glob aimed at their threads: one that can match some subject starting with `fleet/` or `game/`.
 
-     The types are the fence. A match-all subject (`*`, or no subjects) is accepted, because only reserved types are
+     The types are the fence. A match-all subject (only `*`, or no subjects) is accepted, because only reserved types are
      published on those threads. An `owns` may still leave its types empty, because it routes by repo or component.
      Core's own bridge subscription never carries the reserved types (infra-bootstrap ADR-0066 §3), and the bridge
      enforces that.
@@ -123,7 +122,8 @@ in several ways:
      `causation_id` and taint (migration columns; the source gains `event`). Opening one is the clicking admin's own
      act, ADR-0048 §1's human gate: core opens the definition's thread through `Open`'s in-process path as client
      `bridge`, waking, with the event's taint. The actor is the admin, recorded as `admin:<authentik sub>`, which
-     skips the `actors.allow` check. It becomes the definition's thread with its profile, not a plain repo session.
+     skips the `actors.allow` check, and the idempotency key is `proposal:<proposal id>`: the dispatcher's own key
+     already holds a claim with another actor. It becomes the definition's thread with its profile, not a plain repo session.
    - **Closing.** A PR closed or merged calls `CloseThread`. An alert never opens a thread (it is `machine`), so a
      resolved alert dismisses its proposal if nobody opened it.
    - **Gaps.** A bridge gap message triggers a reconcile of the open event threads against GitHub, then
@@ -174,8 +174,8 @@ in several ways:
   from the stored edge. Reconciling is the consumer's job.
 - **New tables:** `session_announcements` and `dispatch_decisions`, plus proposal columns. All come as new migration
   pairs.
-- **The alert handler** gains `startsAt` and thread semantics on the bridge path. The direct path keeps dropping
-  `resolved`.
+- **The alert handler** is shared by both paths. The direct path keeps dropping `resolved`; the bridge path dismisses
+  an unopened proposal on it.
 - **Core depends on the bridge module's generated client** (`github.com/MohammadBnei/ukubi-bridge`, a pseudo-version
   of its main).
 
