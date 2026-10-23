@@ -1,6 +1,6 @@
 # ADR-0078 — Core on the bridge: its sign-in, session announcements, the dispatcher's rules, and what agents cannot touch
 
-- **Status:** Proposed
+- **Status:** Proposed; §5's closing and §8's echo are amended by [ADR-0079](0079-provenance-ledger.md) (proposed)
 - **Date:** 2026-10-23
 - **Amends:** [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §2–4 and §6 (how core signs in, which types
   it reads, how the dispatcher calls `Open`, what a proposal carries); infra-bootstrap ADR-0066 §3–4 on three points
@@ -196,10 +196,10 @@ in several ways:
      events an hour (`published_events`), which bounds its width. The dispatcher caps the wakes `PublishEvent` causes
      at 3 per thread and definition per 24 hours, since hops do not survive a GitHub round-trip; past that, a hand-off
      arrives as context.
-   - **Open: the fleet's own echo taints.** A definition that comments or pushes on its PR as the fleet's GitHub
-     identity gets that event back as `actor=agent`, untrusted, appended `context_only` to its own thread, which
-     taints the session: its later hand-offs are untrusted and never wake. Whether the fleet's own echo should count
-     as taint is undecided.
+   - **The fleet's own echo taints.** A definition that comments or pushes on its PR as the fleet's GitHub identity
+     gets that event back as `actor=agent`, untrusted, appended `context_only` to its own thread, which taints the
+     session: its later hand-offs are untrusted and never wake. [ADR-0079](0079-provenance-ledger.md) proposes the
+     answer: writes through core are recorded, and their echoes carry the writer's trust.
 
 ## Alternatives considered
 
