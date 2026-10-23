@@ -1,5 +1,11 @@
 # Changelog
 
+# [6.24.0](https://github.com/MohammadBnei/agent-fleet/compare/6.23.1...6.24.0) (2026-10-23)
+
+### Features
+
+* **definitions:** ADR-0078; the loader refuses the human-facing event types; announceSessions ([#322](https://github.com/MohammadBnei/agent-fleet/issues/322)) ([3ef600c](https://github.com/MohammadBnei/agent-fleet/commit/3ef600c05d381d101c2178257fec090cf50b6a83))
+
 ## [6.23.1](https://github.com/MohammadBnei/agent-fleet/compare/6.23.0...6.23.1) (2026-10-21)
 
 # [6.23.0](https://github.com/MohammadBnei/agent-fleet/compare/6.22.2...6.23.0) (2026-10-21)
