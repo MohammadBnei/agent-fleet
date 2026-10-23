@@ -169,7 +169,8 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"subscribes game type", map[string]string{"subscribes": `{ types: [dev.bnei.game.] }`}, "human-facing types"},
 		{"subscribes too wide a type", map[string]string{"subscribes": `{ types: [dev.bnei.] }`}, "human-facing types"},
 		{"subscribes fleet subject", map[string]string{"subscribes": `{ types: [dev.bnei.github.], subjects: ["fleet/*"] }`}, "human-facing subjects"},
-		{"subscribes match-all subject", map[string]string{"subscribes": `{ types: [dev.bnei.github.], subjects: ["*"] }`}, "human-facing subjects"},
+		{"subscribes match-all subject ok", map[string]string{"subscribes": `{ types: [dev.bnei.github.], subjects: ["*"] }`}, ""},
+		{"subscribes subject aimed at game", map[string]string{"subscribes": `{ types: [dev.bnei.github.], subjects: ["g*"] }`}, "human-facing subjects"},
 		{"owns game type", map[string]string{"owns": `{ types: [dev.bnei.game.needs_you.] }`}, "owns.types"},
 		{"owns fleet subject", map[string]string{"owns": `{ subjects: ["fleet/client/game/*"] }`}, "owns.subjects"},
 		{"owns repos without types ok", map[string]string{"owns": `{ repos: [x] }`}, ""},
@@ -588,6 +589,10 @@ func TestLoad_ClientTokenRefs(t *testing.T) {
 	})
 	if len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), "FLEET_CLIENT_TOKEN_") {
 		t.Fatalf("tokenRef outside the prefix: %v", fileErrs)
+	}
+	announce := strings.Replace(clientWith("", "", ""), "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n", "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n  announceSessions: true\n", 1)
+	if _, _, fileErrs = LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(announce)}); len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), "announceSessions") {
+		t.Fatalf("announceSessions before it is built: %v", fileErrs)
 	}
 	noRef := strings.Replace(clientWith("", "", ""), "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n", "", 1)
 	_, valid, fileErrs = LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(noRef)})

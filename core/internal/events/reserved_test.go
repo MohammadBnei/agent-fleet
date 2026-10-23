@@ -25,12 +25,12 @@ func TestTypeReaches(t *testing.T) {
 
 func TestSubjectReaches(t *testing.T) {
 	for g, want := range map[string]bool{
-		"*":                     true,
+		"*":                     false, // matches all, like no subjects: the types fence it
 		"f*":                    true,
 		"fleet/*":               true,
 		"fleet/client/game/t1":  true,
 		"game/x":                true,
-		"?ame/x":                true,
+		"?ame/x":                false,
 		"github/*":              false,
 		"github/MohammadBnei/*": false,
 		"alert/abc":             false,

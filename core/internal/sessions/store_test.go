@@ -643,7 +643,7 @@ func TestListRetentionExpired_NeverIncludesALivePod(t *testing.T) {
 // string, so a single NULL row failed the scan — and List() returns one error
 // for the whole query, so that one row emptied the console, the reconcile
 // loop's view of the fleet, and the live-state gauge at once. Create() writes
-// '' rather than NULL, which is exactly why this went unnoticed: docs/adr/0048
+// ” rather than NULL, which is exactly why this went unnoticed: docs/adr/0048
 // made description a vestigial label nothing sets on purpose any more, so
 // "every writer passes a non-NULL" is a convention, not a constraint.
 //
@@ -773,7 +773,7 @@ func TestUpdateMeta_LeavesOmittedFieldUnchanged(t *testing.T) {
 // next warm. Reading today's defaults instead would be right only outside the
 // window anyone asks in.
 //
-// Also guards the scan: both columns are NOT NULL DEFAULT '' and land in plain
+// Also guards the scan: both columns are NOT NULL DEFAULT ” and land in plain
 // Go strings, so a session that never had a pod must still read back — the
 // failure mode a nullable column would have is not one bad row, it is List
 // returning a single error and blanking the whole console.

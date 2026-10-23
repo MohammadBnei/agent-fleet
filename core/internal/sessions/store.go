@@ -181,7 +181,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // description is COALESCEd because the column is nullable and Session.Description
 // is a plain string: one row with a NULL description fails the scan, and that
 // takes down the whole of ListSessions rather than that one row. Create() writes
-// '' rather than NULL, so nothing in the app produces one today — but
+// ” rather than NULL, so nothing in the app produces one today — but
 // docs/adr/0048 made description a vestigial label that new sessions leave
 // empty, so "nobody writes NULL" is a convention, and one row is enough to blank
 // the console. Title stays a pointer; it is optional on the wire too.

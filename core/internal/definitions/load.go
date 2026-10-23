@@ -380,6 +380,11 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 	if len(s.Actors.Allow) == 0 {
 		errs = append(errs, errors.New("actors.allow must not be empty"))
 	}
+	if s.AnnounceSessions {
+		// Refused until core publishes them (docs/adr/0078 rollout 2): a
+		// reviewed true that reaches nothing would look like it works.
+		errs = append(errs, errors.New("announceSessions: not built yet (docs/adr/0078 rollout step 2)"))
+	}
 	for _, a := range s.Actors.Allow {
 		if !loginRe.MatchString(a) {
 			errs = append(errs, fmt.Errorf("actors.allow: %q is not a GitHub login", a))
@@ -700,11 +705,10 @@ func validBashSpecifier(spec string) bool {
 	return cmd != "" && cmd == strings.TrimSpace(cmd) && !strings.Contains(cmd, "*")
 }
 
-// shapeList: non-empty strings, no duplicates, none of the forbidden runes or
-// whitespace.
-// humanFacing refuses a type prefix or subject glob that can reach the
-// human-facing events (infra-bootstrap ADR-0066 §4, docs/adr/0078 §4): an
-// agent woken by its own wait loops, and a game event's text becomes a prompt.
+// humanFacing refuses a type prefix that can reach the human-facing events,
+// and a subject glob aimed at their threads (infra-bootstrap ADR-0066 §4,
+// docs/adr/0078 §4): an agent woken by its own wait loops, and a game event's
+// text becomes a prompt. The types are the fence; a match-all subject is fine.
 func humanFacing(errs *[]error, field string, types, subjects []string) {
 	for _, t := range types {
 		if events.TypeReaches(t) {
@@ -718,6 +722,8 @@ func humanFacing(errs *[]error, field string, types, subjects []string) {
 	}
 }
 
+// shapeList: non-empty strings, no duplicates, none of the forbidden runes or
+// whitespace.
 func shapeList(errs *[]error, field string, list []string, forbidden string) {
 	seen := map[string]bool{}
 	for _, v := range list {

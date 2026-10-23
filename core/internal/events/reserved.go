@@ -25,13 +25,19 @@ func TypeReaches(p string) bool {
 	return false
 }
 
-// SubjectReaches reports whether subject glob g (the bridge's * and ?) can
-// match a reserved subject. Only its literal head, up to the first wildcard,
-// is compared, so the answer errs towards yes.
+// SubjectReaches reports whether subject glob g (the bridge's * and ?) is
+// aimed at a reserved subject: its literal head, up to the first wildcard,
+// starts with one or could still become one. A glob with no literal head
+// ("*", "?x") matches everything like an empty subject list and is not
+// refused: the reserved types are the fence, this only refuses a filter that
+// targets those threads.
 func SubjectReaches(g string) bool {
 	head, wild := g, false
 	if i := strings.IndexAny(g, "*?"); i >= 0 {
 		head, wild = g[:i], true
+	}
+	if head == "" {
+		return false
 	}
 	for _, r := range ReservedSubjects {
 		if strings.HasPrefix(head, r) || (wild && strings.HasPrefix(r, head)) {
