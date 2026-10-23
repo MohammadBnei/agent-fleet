@@ -104,6 +104,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/PromptSession": func(r any) string {
 		return r.(*agentfleetv1.PromptSessionRequest).GetCallerSessionId() // NOT GetTargetSessionId
 	},
+	"/agentfleet.v1.CoreService/PublishEvent": func(r any) string {
+		return r.(*agentfleetv1.PublishEventRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -149,6 +152,9 @@ var definitionMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/UpdateSessionMeta":   true,
 	"/agentfleet.v1.CoreService/SaveAgentSessionId":  true,
 	"/agentfleet.v1.CoreService/PushToolTelemetry":   true,
+	// Granted per definition: the handler checks the pinned spec's
+	// sidecarTools for publish_event (docs/adr/0078 §8).
+	"/agentfleet.v1.CoreService/PublishEvent": true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents

@@ -402,6 +402,28 @@ message UpdateSessionMetaRequest {
 
 message UpdateSessionMetaResponse {}
 
+// PublishEventRequest is a definition session handing work to whoever owns or
+// subscribes to the event (docs/adr/0071 §2, docs/adr/0078 §8). The caller
+// names only what it says: core sets the actor (agent:<definition>), the
+// causation (the bridge event that last woke the session), hops and trust.
+message PublishEventRequest {
+  string session_id = 1;
+  // Under dev.bnei.agent., never a reserved type.
+  string type = 2;
+  // The thread it is about, e.g. github/<owner>/<repo>/pr/<n>.
+  string subject = 3;
+  // What the receiving agent reads, quoted.
+  string text = 4;
+  // Optional: a retry with the same key publishes nothing new.
+  string idempotency_key = 5;
+}
+
+message PublishEventResponse {
+  string id = 1;
+  bool trusted = 2;
+  int32 hops = 3;
+}
+
 // HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
 // here. Both are deleted in docs/adr/0048.
 //
@@ -653,5 +675,8 @@ service CoreService {
   rpc PromptSession(PromptSessionRequest) returns (PromptSessionResponse);
   rpc WaitForSessionState(WaitForSessionStateRequest) returns (WaitForSessionStateResponse);
 
+  // Publishes an event to the bridge as the calling definition session
+  // (docs/adr/0078 §8). Only for a definition granting publish_event.
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
 }
 

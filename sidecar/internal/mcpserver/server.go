@@ -174,6 +174,16 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 		mcp.WithString("description", mcp.Description("Longer human-facing description for this session")),
 	), setSessionMetaHandler(core))
 
+	// docs/adr/0078 §8. Registered in every sidecar like the rest; core
+	// refuses it unless the session's definition grants publish_event.
+	s.AddTool(mcp.NewTool("publish_event",
+		mcp.WithDescription("Hand work to whichever agent owns or subscribes to it, through the event bridge: an event of `type` on the thread `subject`, carrying `text`. Core records you as its author and how far it is from the person who started the chain; past a few hops it is refused. The receiving agent reads your text quoted. Only for definitions that grant it."),
+		mcp.WithString("type", mcp.Required(), mcp.Description("Event type under dev.bnei.agent., e.g. dev.bnei.agent.registry.onboard")),
+		mcp.WithString("subject", mcp.Required(), mcp.Description("The thread it is about, e.g. github/<owner>/<repo>/pr/<n>")),
+		mcp.WithString("text", mcp.Required(), mcp.Description("What the receiving agent needs to know and do")),
+		mcp.WithString("idempotencyKey", mcp.Description("Optional: a retry with the same key publishes nothing new")),
+	), publishEventHandler(core))
+
 	// Inter-agent coordination (docs/adr/0041). Registered statically for
 	// the same reason run_command is: a resumed session must have them from
 	// turn one, not only after some other call happens to register them.
@@ -355,6 +365,28 @@ func setSessionMetaHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(`{"status":"updated"}`), nil
+	}
+}
+
+// EventPublisher is publish_event's slice of *coreclient.Client.
+type EventPublisher interface {
+	PublishEvent(ctx context.Context, typ, subject, text, key string) (*agentfleetv1.PublishEventResponse, error)
+}
+
+func publishEventHandler(core EventPublisher) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		typ, subject, text := req.GetString("type", ""), req.GetString("subject", ""), req.GetString("text", "")
+		if typ == "" || subject == "" || text == "" {
+			return mcp.NewToolResultError("type, subject and text are required"), nil
+		}
+		res, err := core.PublishEvent(ctx, typ, subject, text, req.GetString("idempotencyKey", ""))
+		if err != nil {
+			slog.Error("mcp publish_event", "type", typ, "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		slog.Info("mcp publish_event", "type", typ, "id", res.GetId(), "hops", res.GetHops(), "trusted", res.GetTrusted())
+		b, _ := json.Marshal(map[string]any{"id": res.GetId(), "trusted": res.GetTrusted(), "hops": res.GetHops()})
+		return mcp.NewToolResultText(string(b)), nil
 	}
 }
 

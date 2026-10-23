@@ -84,6 +84,10 @@ type Server struct {
 	// it has always had. Injected after construction like warm and
 	// notifyBlocked, because dashboard.Server is built later.
 	fileDiffs *filediff.Store
+
+	// publish is PublishEvent's dispatch.Publish (docs/adr/0078 §8). nil
+	// answers Unavailable.
+	publish PublishFunc
 	// grants is delivered on GetSession (docs/adr/0076 §3). nil sends none.
 	grants *grants.Store
 }

@@ -3,7 +3,14 @@
 // subjects nothing an agent runs may read or publish.
 package events
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrPublishRefused is a PublishEvent request core will never take: its type,
+// subject, size or depth (docs/adr/0078 §8).
+var ErrPublishRefused = errors.New("publish refused")
 
 // ReservedTypes are the human-facing type prefixes: a session waiting on a
 // person, and mountain's game. An agent woken by its own wait would loop, and

@@ -1,0 +1,117 @@
+//go:build integration
+
+package dispatch
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	bridgev1 "github.com/MohammadBnei/ukubi-bridge/proto/gen/go/bridge/v1"
+)
+
+type recPub struct{ events []*bridgev1.CloudEvent }
+
+func (r *recPub) Publish(_ context.Context, e *bridgev1.CloudEvent) error {
+	r.events = append(r.events, e)
+	return nil
+}
+
+// docs/adr/0078 §8: core sets actor, causation, hops and trust; the agent
+// sets none of them.
+func TestPublish(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	var sid string
+	if err := pool.QueryRow(ctx, `INSERT INTO sessions (repo, definition_name, definition_sha) VALUES ('r', 'd', 'sha') RETURNING id`).Scan(&sid); err != nil {
+		t.Fatal(err)
+	}
+	pub := &recPub{}
+	publish := func(typ, subject, text, key string) (PublishResult, error) {
+		return Publish(ctx, pool, pub, sid, "d", typ, subject, text, key)
+	}
+	entry := func(seq int, causation string, contextOnly, untrusted bool) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, causation_id, context_only, untrusted)
+			VALUES ($1, $2, 'human', 'x', 'discussion', gen_random_uuid()::text, $3, $4, $5)`, sid, seq, causation, contextOnly, untrusted); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, bad := range [][3]string{
+		{"dev.bnei.github.push", "s", "t"},
+		{"dev.bnei.agent.", "s", "t"},
+		{"dev.bnei.agent.x", "fleet/client/game/1", "t"},
+		{"dev.bnei.agent.x", "", "t"},
+		{"dev.bnei.agent.x", "s", ""},
+	} {
+		if _, err := publish(bad[0], bad[1], bad[2], ""); !errors.Is(err, ErrPublishRefused) {
+			t.Fatalf("%v: %v", bad, err)
+		}
+	}
+
+	// Nothing woke the session: one hop, untrusted.
+	r, err := publish("dev.bnei.agent.x", "github/o/r/pr/1", "onboard it", "")
+	if err != nil || r.Trusted || r.Hops != 1 {
+		t.Fatalf("no cause: %+v %v", r, err)
+	}
+	e := pub.events[0]
+	var data struct{ Text, Definition string }
+	_ = json.Unmarshal(e.GetData(), &data)
+	if e.GetActor() != "agent" || e.GetActorLogin() != "agent:d" || e.GetCausationId() != "" || data.Text != "onboard it" || data.Definition != "d" {
+		t.Fatalf("event %+v", e)
+	}
+
+	// Woken by a trusted event at hop 1: trusted, hop 2, caused by it.
+	if _, err := pool.Exec(ctx, `INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, hops)
+		VALUES ('github.com/o/r', 'ev:1', 'd', true, false, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	entry(1, "github.com/o/r:ev:1", false, false)
+	r, err = publish("dev.bnei.agent.x", "s", "t", "k1")
+	if err != nil || !r.Trusted || r.Hops != 2 || pub.events[1].GetCausationId() != "github.com/o/r:ev:1" {
+		t.Fatalf("trusted cause: %+v %v", r, err)
+	}
+	if again, _ := publish("dev.bnei.agent.x", "s", "t", "k1"); again.ID != r.ID {
+		t.Fatal("the same idempotency key gave another id")
+	}
+
+	// A context-only entry taints the session: untrusted from then on.
+	entry(2, "", true, true)
+	if r, _ := publish("dev.bnei.agent.x", "s", "t", ""); r.Trusted {
+		t.Fatal("a tainted session published a trusted event")
+	}
+
+	// Past the chain bound: refused.
+	if _, err := pool.Exec(ctx, `INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, hops)
+		VALUES ('client/bridge-core', 'deep', 'd', true, false, 3)`); err != nil {
+		t.Fatal(err)
+	}
+	entry(3, "client/bridge-core:deep", false, false)
+	if _, err := publish("dev.bnei.agent.x", "s", "t", ""); !errors.Is(err, ErrPublishRefused) {
+		t.Fatalf("hop 4: %v", err)
+	}
+}
+
+// Wakes caused by PublishEvent are capped per thread.
+func TestAgentWakesAreCapped(t *testing.T) {
+	d, agents, _, _ := setup(t)
+	ctx := context.Background()
+	for i := range MaxAgentWakes + 1 {
+		agents.opens = nil
+		e := &bridgev1.CloudEvent{Seq: int64(i + 1), Id: string(rune('a' + i)), Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
+			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Trusted: true, Hops: 1,
+			Data: []byte(`{"text":"go"}`)}
+		if err := d.Handle(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		if want := i < MaxAgentWakes; len(agents.opens) != 1 || agents.opens[0].GetWake() != want {
+			t.Fatalf("hand-off %d: wake=%v, want %v", i, agents.opens[0].GetWake(), want)
+		}
+	}
+}

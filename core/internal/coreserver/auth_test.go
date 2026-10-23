@@ -294,6 +294,8 @@ func requestFor(method string) any {
 		return &agentfleetv1.ListPeerSessionsRequest{CallerSessionId: "s1"}
 	case "/agentfleet.v1.CoreService/PromptSession":
 		return &agentfleetv1.PromptSessionRequest{CallerSessionId: "s1", TargetSessionId: "peer"}
+	case "/agentfleet.v1.CoreService/PublishEvent":
+		return &agentfleetv1.PublishEventRequest{SessionId: "s1"}
 	}
 	return nil // unbound methods: the request names no caller
 }

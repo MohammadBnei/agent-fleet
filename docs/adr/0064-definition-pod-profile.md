@@ -271,6 +271,7 @@ one column or the other.
 | `UpdateSessionMeta` | `set_session_meta` |
 | `SaveAgentSessionId` | resume identity (its model is ignored for definitions, ADR-0062) |
 | `PushToolTelemetry` | the sidecar's telemetry loop |
+| `PublishEvent` | `publish_event`; the handler checks the pinned spec's `sidecarTools` for it (ADR-0078 §8) |
 
 | Denied | Why |
 |---|---|

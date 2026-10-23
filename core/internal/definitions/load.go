@@ -46,7 +46,7 @@ var (
 	// SDK 0.3.301 EffortLevel.
 	EffortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
-	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta"}
+	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event"}
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
 	interactions   = []string{"ask", "deny"}
 	lifecycles     = []string{"resident", "single-shot"}
