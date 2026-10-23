@@ -591,8 +591,8 @@ func TestLoad_ClientTokenRefs(t *testing.T) {
 		t.Fatalf("tokenRef outside the prefix: %v", fileErrs)
 	}
 	announce := strings.Replace(clientWith("", "", ""), "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n", "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n  announceSessions: true\n", 1)
-	if _, _, fileErrs = LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(announce)}); len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), "announceSessions") {
-		t.Fatalf("announceSessions before it is built: %v", fileErrs)
+	if _, valid, fileErrs = LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(announce)}); len(fileErrs) != 0 || len(valid) != 1 || !valid[0].Spec.AnnounceSessions {
+		t.Fatalf("announceSessions: %v %v", valid, fileErrs)
 	}
 	noRef := strings.Replace(clientWith("", "", ""), "  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE\n", "", 1)
 	_, valid, fileErrs = LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(noRef)})

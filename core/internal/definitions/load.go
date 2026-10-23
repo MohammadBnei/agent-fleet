@@ -380,11 +380,6 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 	if len(s.Actors.Allow) == 0 {
 		errs = append(errs, errors.New("actors.allow must not be empty"))
 	}
-	if s.AnnounceSessions {
-		// Refused until core publishes them (docs/adr/0078 rollout 2): a
-		// reviewed true that reaches nothing would look like it works.
-		errs = append(errs, errors.New("announceSessions: not built yet (docs/adr/0078 rollout step 2)"))
-	}
 	for _, a := range s.Actors.Allow {
 		if !loginRe.MatchString(a) {
 			errs = append(errs, fmt.Errorf("actors.allow: %q is not a GitHub login", a))

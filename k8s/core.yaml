@@ -227,6 +227,20 @@ env:
   # owned by infra-bootstrap's gitops/bootstrap/fleet-repo-overrides.yaml.
   - name: FLEET_REPO_OVERRIDES
     value: /etc/fleet-repo-overrides/overrides.yaml
+  # docs/adr/0078 §1: core on the event bridge as the authentik service account
+  # bridge-core (infra-bootstrap ADR-0066). The token request goes to
+  # authentik's Service with the public Host, so the issuer is the public one
+  # and nothing depends on Cloudflare. The app password is a file from the
+  # optional bridge-core Secret below, re-read before every call: absent, or
+  # authentik not set up yet, and core runs without the bridge.
+  - name: BRIDGE_URL
+    value: "http://ukubi-bridge.ukubi-bridge.svc.cluster.local:8080"
+  - name: BRIDGE_TOKEN_URL
+    value: "http://platform-authentik-server.authentik.svc.cluster.local/application/o/token/"
+  - name: BRIDGE_AUTH_HOST
+    value: "authentik.bnei.dev"
+  - name: BRIDGE_PASSWORD_FILE
+    value: /etc/bridge-core/app_password
 
 # The whole ConfigMap as a directory, never subPath: a subPath mount never
 # sees updates. optional: a missing ConfigMap is an empty directory, which
@@ -236,9 +250,20 @@ extraVolumes:
     configMap:
       name: fleet-repo-overrides
       optional: true
+  # bridge-core's app password, from infra-bootstrap's bridge-core Secret
+  # (ADR-0066 rollout step 2). optional: no Secret yet is an empty directory,
+  # and core runs without the bridge. A directory, not subPath, so a rotation
+  # reaches the file without a restart.
+  - name: bridge-core
+    secret:
+      secretName: bridge-core
+      optional: true
 extraVolumeMounts:
   - name: fleet-repo-overrides
     mountPath: /etc/fleet-repo-overrides
+    readOnly: true
+  - name: bridge-core
+    mountPath: /etc/bridge-core
     readOnly: true
 
 podLabels:
