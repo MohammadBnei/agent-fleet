@@ -287,7 +287,7 @@ func (d *Dispatcher) route(e *bridgev1.CloudEvent) []definitions.Head {
 	heads, _ := d.defs.List()
 	var out []definitions.Head
 	for _, h := range heads {
-		if h.SHA == "" || !(owns(h.Effective.Owns, e) || subscribes(h.Effective.Subscribes, e)) {
+		if h.SHA == "" || !owns(h.Effective.Owns, e) && !subscribes(h.Effective.Subscribes, e) {
 			continue
 		}
 		cur, ok := d.defs.MayOpen(Client, h.Name)
