@@ -87,6 +87,15 @@ type Server struct {
 	// grants stores remembered approvals (docs/adr/0076 §3). nil refuses any
 	// scope but "once".
 	grants *grants.Store
+	// openEvent opens an event proposal as the clicking admin (docs/adr/0078
+	// §5, dispatch.OpenProposal), injected since AgentService sits above
+	// this package. nil refuses event proposals.
+	openEvent func(ctx context.Context, p *proposals.Proposal, adminSub string) (threadID string, err error)
+}
+
+// SetEventOpener installs how an event proposal opens its definition's thread.
+func (s *Server) SetEventOpener(f func(ctx context.Context, p *proposals.Proposal, adminSub string) (string, error)) {
+	s.openEvent = f
 }
 
 func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
@@ -339,6 +348,9 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	if p == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such proposal"))
 	}
+	if p.Event != nil {
+		return s.openEventProposal(ctx, p)
+	}
 	// Checked before anything is consumed: a schedule or alert must not open
 	// a session on a repo the admin switched off, and the proposal stays open.
 	if _, err := s.startableRepo(ctx, p.Repo); err != nil {
@@ -402,6 +414,65 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	slog.Info("dashboard OpenFromProposal", "proposalId", p.ID, "sessionId", id, "repo", p.Repo)
+	return connect.NewResponse(&agentfleetv1.OpenFromProposalResponse{Session: SessionToProto(*sess)}), nil
+}
+
+// openEventProposal opens the definition's thread an event proposal was filed
+// for, as the clicking admin (docs/adr/0078 §5). The thread comes first and
+// the proposal is marked after: Open's idempotency key makes a second click
+// land on the same thread, and a failed Open leaves the proposal standing to
+// click again. It is marked only while its body is the one delivered: an
+// event folded in meanwhile would otherwise retire with it, so the current
+// body is delivered again (a new key, the same thread). The repo check is
+// Open's own, against the definition's repo.
+func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (*connect.Response[agentfleetv1.OpenFromProposalResponse], error) {
+	if p.SessionID != nil || p.DismissedAt != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+	}
+	if s.openEvent == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("event proposals need the defined-agents registry"))
+	}
+	id, _ := auth.FromContext(ctx)
+	sub := id.Sub
+	if sub == "" {
+		sub = id.Email // a cookie minted before Sub existed
+	}
+	if sub == "" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("no identity on the request: an event proposal is opened as its admin"))
+	}
+	var threadID string
+	var err error
+	for attempt := 0; ; attempt++ {
+		threadID, err = s.openEvent(ctx, p, sub)
+		if err != nil {
+			slog.Error("dashboard OpenFromProposal: open event thread", "proposalId", p.ID, "error", err)
+			return nil, err
+		}
+		err = s.proposals.OpenIfBody(ctx, p.ID, threadID, p.Body)
+		if !errors.Is(err, proposals.ErrBodyChanged) || attempt == 2 {
+			break
+		}
+		if p, err = s.proposals.Get(ctx, p.ID); err != nil || p == nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reread proposal: %v", err))
+		}
+		if p.SessionID != nil || p.DismissedAt != nil {
+			err = proposals.ErrNotOpen
+			break
+		}
+	}
+	switch {
+	case errors.Is(err, proposals.ErrNotOpen):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+	case errors.Is(err, proposals.ErrBodyChanged):
+		return nil, connect.NewError(connect.CodeAborted, errors.New("events keep arriving on this thread; open it again"))
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	sess, err := s.sessions.Get(ctx, threadID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard OpenFromProposal: event thread", "proposalId", p.ID, "sessionId", threadID, "definition", p.Event.Definition)
 	return connect.NewResponse(&agentfleetv1.OpenFromProposalResponse{Session: SessionToProto(*sess)}), nil
 }
 

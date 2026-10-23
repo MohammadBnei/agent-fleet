@@ -657,9 +657,10 @@ var livePhases = []string{
 // backs ReserveSlot's concurrency cap and all four sweeps, and an exported var
 // would let any importer mutate it out from under them.
 //
-// The one caller outside this package is proposals.Create, which needs to know
-// whether a schedule's previous run still has a pod. It reads this rather than
-// re-spelling the enum so the two cannot drift.
+// The callers outside this package are proposals.Create, which needs to know
+// whether a schedule's previous run still has a pod, and the bridge's
+// dispatcher, whose gate asks whether a thread waits on a person. They read
+// this rather than re-spelling the enum so they cannot drift.
 func LivePhases() []string {
 	return slices.Clone(livePhases)
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
+	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -88,7 +89,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// bridge (no BRIDGE_URL or no app password file) the announcer only
 	// waits; core starts either way.
 	var announceClients func() []string
-	announcer := announce.New(pool, bridgeclient.New(cfg.Bridge), func() []string {
+	bridge := bridgeclient.New(cfg.Bridge)
+	announcer := announce.New(pool, bridge, func() []string {
 		if announceClients == nil {
 			return nil
 		}
@@ -417,6 +419,22 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub)
+	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
+	// definition threads through agentSvc as client bridge, and a firing
+	// alert reaches the same handler as /webhook/alertmanager.
+	if defs != nil {
+		var alerts dispatch.Alerts
+		if cfg.ThotRepo != "" {
+			alerts = alertHandler
+		}
+		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
+		dashboardSvc.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, sub string) (string, error) {
+			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
+		})
+		if cfg.Bridge.URL != "" {
+			go dispatcher.Run(ctx)
+		}
+	}
 	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
 

@@ -29,7 +29,7 @@ import (
 type Proposal struct {
 	ID     string
 	Repo   string
-	Source string // "alert" | "audit" (legacy rows) | "schedule"
+	Source string // "alert" | "audit" (legacy rows) | "schedule" | "event"
 	// DedupKey is an Alertmanager fingerprint or "schedule:<id>". See Create
 	// for the window it is unique over.
 	DedupKey string
@@ -39,9 +39,22 @@ type Proposal struct {
 	// alert object for source "alert", "{}" for anything else. Body is a
 	// lossy flattening of it written for the agent to read; this is what the
 	// dashboard renders so a human can see the actual alert.
-	Payload   string
-	SessionID *string // set once a human opened it
-	CreatedAt time.Time
+	Payload     string
+	SessionID   *string // set once a human opened it
+	DismissedAt *time.Time
+	CreatedAt   time.Time
+	// Event is set for source "event" (docs/adr/0078 §5): opening the
+	// proposal opens this definition's thread, not a plain repo session.
+	Event *Event
+}
+
+// Event is what an event proposal carries so that opening it opens the
+// definition's thread with the event's causation and taint.
+type Event struct {
+	Definition  string
+	ThreadKey   string
+	CausationID string
+	Tainted     bool
 }
 
 // ErrNotOpen is returned by Open and Dismiss when the proposal is already
@@ -115,6 +128,12 @@ func NewStore(pool *pgxpool.Pool) *Store {
 //     proposal; opening it is still a human click, so the cost of being wrong
 //     is one inbox row, not a second agent.
 //
+// Event proposals (docs/adr/0078 §5) share the schedule rule. Their key is
+// the thread, and once opened the body lives on in that thread's transcript,
+// so retiring it loses nothing; holding it until the thread is archived would
+// drop the thread's next over-capacity event, which needs a new proposal to
+// reach a human.
+//
 // pod_phase IS NOT NULL is load-bearing: a session that has never been warmed
 // has no phase, which is the window inside OpenFromProposal between the
 // committed Open and ReserveSlot's write. Without it, a Create landing there
@@ -128,6 +147,16 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // normalisation journal.Store.Append does — the column is NOT NULL so that no
 // reader has to handle a nil.
 func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (id string, created bool, err error) {
+	return s.create(ctx, repo, source, dedupKey, title, body, payloadJSON, nil)
+}
+
+// CreateEvent files an event proposal (source "event"), under Create's dedup
+// and the schedule's re-arm rule.
+func (s *Store) CreateEvent(ctx context.Context, repo, dedupKey, title, body, payloadJSON string, ev Event) (id string, created bool, err error) {
+	return s.create(ctx, repo, "event", dedupKey, title, body, payloadJSON, &ev)
+}
+
+func (s *Store) create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string, ev *Event) (id string, created bool, err error) {
 	var keyPtr *string
 	if dedupKey != "" {
 		keyPtr = &dedupKey
@@ -185,7 +214,7 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body,
 			       AND (
 			         s.archived_at IS NOT NULL
 			         OR s.swept_at IS NOT NULL
-			         OR (p.source = 'schedule'
+			         OR (p.source IN ('schedule', 'event')
 			             AND s.pod_phase IS NOT NULL
 			             AND NOT (s.pod_phase = ANY($3)))
 			       )
@@ -196,12 +225,17 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body,
 		}
 	}
 
+	var def, thread, causation *string
+	tainted := false
+	if ev != nil {
+		def, thread, causation, tainted = &ev.Definition, &ev.ThreadKey, &ev.CausationID, ev.Tainted
+	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO proposals (repo, source, dedup_key, title, body, payload)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO proposals (repo, source, dedup_key, title, body, payload, definition_name, thread_key, causation_id, tainted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT DO NOTHING
 		RETURNING id
-	`, repo, source, keyPtr, title, body, payloadJSON).Scan(&id)
+	`, repo, source, keyPtr, title, body, payloadJSON, def, thread, causation, tainted).Scan(&id)
 	if err == pgx.ErrNoRows {
 		// The partial unique index rejected it: one is already standing.
 		//
@@ -258,7 +292,8 @@ func (s *Store) StandingFor(ctx context.Context, repo, dedupKey string) (string,
 // only ones a human can still act on.
 func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at
+		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at,
+		       definition_name, thread_key, COALESCE(causation_id, ''), tainted, dismissed_at
 		FROM proposals
 		WHERE session_id IS NULL AND dismissed_at IS NULL
 		ORDER BY created_at DESC
@@ -274,7 +309,7 @@ func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 	out := []Proposal{}
 	for rows.Next() {
 		var p Proposal
-		if err := rows.Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.Payload, &p.SessionID, &p.CreatedAt); err != nil {
+		if err := scanProposal(rows, &p); err != nil {
 			return nil, fmt.Errorf("scan proposal: %w", err)
 		}
 		out = append(out, p)
@@ -285,10 +320,12 @@ func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 // Get returns nil, nil when no such proposal exists.
 func (s *Store) Get(ctx context.Context, id string) (*Proposal, error) {
 	var p Proposal
-	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at,
+		       definition_name, thread_key, COALESCE(causation_id, ''), tainted, dismissed_at
 		FROM proposals WHERE id = $1
-	`, id).Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.Payload, &p.SessionID, &p.CreatedAt)
+	`, id)
+	err := scanProposal(row, &p)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -320,6 +357,39 @@ func (s *Store) Open(ctx context.Context, id, sessionID string) error {
 	}
 	slog.Info("proposals Open", "proposalId", id, "sessionId", sessionID)
 	return nil
+}
+
+// ErrBodyChanged is OpenIfBody's answer when an event folded in after the
+// caller read the proposal: open it again with the current body.
+var ErrBodyChanged = fmt.Errorf("proposal body changed")
+
+// OpenIfBody is Open for an event proposal, only while its body is still the
+// one the caller delivered: an event folded in between would otherwise be
+// retired with the proposal and never reach the thread.
+func (s *Store) OpenIfBody(ctx context.Context, id, sessionID, body string) error {
+	var same bool
+	err := s.pool.QueryRow(ctx, `
+		WITH upd AS (
+		  UPDATE proposals SET session_id = $2
+		   WHERE id = $1 AND session_id IS NULL AND dismissed_at IS NULL AND body = $3
+		  RETURNING 1)
+		SELECT EXISTS (SELECT 1 FROM upd)`, id, sessionID, body).Scan(&same)
+	if err != nil {
+		slog.Error("proposals OpenIfBody", "proposalId", id, "error", err)
+		return fmt.Errorf("open proposal: %w", err)
+	}
+	if same {
+		slog.Info("proposals Open", "proposalId", id, "sessionId", sessionID)
+		return nil
+	}
+	p, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if p != nil && p.SessionID == nil && p.DismissedAt == nil {
+		return ErrBodyChanged
+	}
+	return ErrNotOpen
 }
 
 // Dismiss declines a proposal, which re-arms its dedup key: a still-firing
@@ -407,4 +477,74 @@ func (s *Store) DismissStanding(ctx context.Context, repo, dedupKey string) erro
 		slog.Info("proposals DismissStanding", "repo", repo, "dedupKey", dedupKey)
 	}
 	return nil
+}
+
+// scanProposal reads the columns ListOpen and Get select, in their order.
+func scanProposal(row pgx.Row, p *Proposal) error {
+	var def, thread *string
+	var causation string
+	var tainted bool
+	if err := row.Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.Payload, &p.SessionID, &p.CreatedAt,
+		&def, &thread, &causation, &tainted, &p.DismissedAt); err != nil {
+		return err
+	}
+	if def != nil && thread != nil {
+		p.Event = &Event{Definition: *def, ThreadKey: *thread, CausationID: causation, Tainted: tainted}
+	}
+	return nil
+}
+
+// maxFoldedBody bounds, in bytes, what FoldEvent grows a standing proposal
+// to: its body is the opening message, which AgentService caps at 64 KiB.
+const maxFoldedBody = 60 << 10
+
+// UntrustedSuffix marks an event proposal's title once any of its events is
+// untrusted, so the inbox shows it before the body is opened.
+const UntrustedSuffix = " (untrusted)"
+
+// FoldEvent appends a later event of the same thread to the standing,
+// unopened event proposal holding (repo, dedupKey), so it is not lost while
+// the proposal waits (docs/adr/0078 §5). marker names the event and starts
+// its text; a body that already holds it at the start of a paragraph is left
+// alone, so a redelivery folds nothing twice (quoted text is indented, so a
+// comment cannot plant one). Past maxFoldedBody bytes the event is dropped
+// with one note. A tainted event taints the proposal and its title. It
+// reports whether a proposal was there to fold into.
+func (s *Store) FoldEvent(ctx context.Context, repo, dedupKey, marker, text string, tainted bool) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE proposals SET
+		       body = CASE
+		         WHEN position(E'\n\n' || $3 in E'\n\n' || body) > 0 THEN body
+		         WHEN octet_length(body) + octet_length($4) + 2 <= $6 THEN body || E'\n\n' || $4
+		         WHEN position(E'\n\n[later events were dropped]' in body) > 0 THEN body
+		         ELSE body || E'\n\n[later events were dropped]'
+		       END,
+		       title = CASE WHEN $5 AND NOT tainted THEN title || $7 ELSE title END,
+		       tainted = tainted OR $5
+		 WHERE repo = $1 AND dedup_key = $2 AND source = 'event'
+		   AND session_id IS NULL AND dismissed_at IS NULL
+	`, repo, dedupKey, marker, text, tainted, maxFoldedBody, UntrustedSuffix)
+	if err != nil {
+		slog.Error("proposals FoldEvent", "repo", repo, "dedupKey", dedupKey, "error", err)
+		return false, fmt.Errorf("fold event into proposal: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// DismissUnopened retires the proposal holding (repo, dedupKey) if nobody
+// opened it: a resolved alert needs no investigation any more (docs/adr/0078
+// §5). An opened one stays with its session.
+func (s *Store) DismissUnopened(ctx context.Context, repo, dedupKey string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE proposals SET dismissed_at = now()
+		WHERE repo = $1 AND dedup_key = $2 AND session_id IS NULL AND dismissed_at IS NULL
+	`, repo, dedupKey)
+	if err != nil {
+		slog.Error("proposals DismissUnopened", "repo", repo, "dedupKey", dedupKey, "error", err)
+		return false, fmt.Errorf("dismiss unopened proposal: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		slog.Info("proposals DismissUnopened", "repo", repo, "dedupKey", dedupKey)
+	}
+	return tag.RowsAffected() > 0, nil
 }

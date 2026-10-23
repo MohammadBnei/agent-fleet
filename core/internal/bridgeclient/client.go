@@ -40,8 +40,7 @@ type Config struct {
 }
 
 type Client struct {
-	cfg  Config
-	http *http.Client
+	cfg Config
 
 	mu  sync.Mutex
 	pw  string
@@ -50,7 +49,7 @@ type Client struct {
 }
 
 func New(cfg Config) *Client {
-	return &Client{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{cfg: cfg}
 }
 
 // password reads the mounted file. An Infisical key that does not exist
@@ -91,14 +90,21 @@ func (h hostRewrite) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // API returns the bridge client, signing in again when the password changed.
 func (c *Client) API() (bridgev1connect.BridgeServiceClient, error) {
+	api, _, err := c.session()
+	return api, err
+}
+
+// session is the client and its token source, rebuilt when the password
+// changed.
+func (c *Client) session() (bridgev1connect.BridgeServiceClient, oauth2.TokenSource, error) {
 	pw, err := c.password()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.api != nil && pw == c.pw {
-		return c.api, nil
+		return c.api, c.src, nil
 	}
 	cc := clientcredentials.Config{
 		ClientID:       c.cfg.ClientID,
@@ -109,21 +115,41 @@ func (c *Client) API() (bridgev1connect.BridgeServiceClient, error) {
 	tokenHTTP := &http.Client{Timeout: 15 * time.Second, Transport: hostRewrite{host: c.cfg.AuthHost, base: http.DefaultTransport}}
 	// The token source reuses a token until 10 s before it expires
 	// (oauth2's expiry delta), above the bridge's 5 s floor for a stream.
-	c.src = cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenHTTP))
-	src := c.src
+	src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenHTTP))
 	bearer := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			t, err := src.Token()
-			if err != nil {
-				return nil, fmt.Errorf("authentik grant as %s: %w", c.cfg.Username, err)
+			if err := c.authorize(src, req.Header()); err != nil {
+				return nil, err
 			}
-			req.Header().Set("Authorization", "Bearer "+t.AccessToken)
 			return next(ctx, req)
 		}
 	})
-	c.pw = pw
-	c.api = bridgev1connect.NewBridgeServiceClient(c.http, c.cfg.URL, connect.WithInterceptors(bearer))
-	return c.api, nil
+	c.pw, c.src = pw, src
+	// The stream's client has no timeout: Subscribe is long-lived and ends
+	// at the token's expiry or the caller's context.
+	c.api = bridgev1connect.NewBridgeServiceClient(&http.Client{Transport: http.DefaultTransport}, c.cfg.URL, connect.WithInterceptors(bearer))
+	return c.api, src, nil
+}
+
+func (c *Client) authorize(src oauth2.TokenSource, h http.Header) error {
+	t, err := src.Token()
+	if err != nil {
+		return fmt.Errorf("authentik grant as %s: %w", c.cfg.Username, err)
+	}
+	h.Set("Authorization", "Bearer "+t.AccessToken)
+	return nil
+}
+
+// settle drops the cached client when the bridge rejected its token (a
+// rotated signing cert, a changed client table): the next call signs in
+// afresh.
+func (c *Client) settle(err error) error {
+	if connect.CodeOf(err) == connect.CodeUnauthenticated {
+		c.mu.Lock()
+		c.api = nil
+		c.mu.Unlock()
+	}
+	return err
 }
 
 // Publish appends one event as core. A duplicate (same source and id) is not
@@ -134,12 +160,65 @@ func (c *Client) Publish(ctx context.Context, e *bridgev1.CloudEvent) error {
 		return err
 	}
 	_, err = api.Publish(ctx, connect.NewRequest(&bridgev1.PublishRequest{Event: e}))
-	if connect.CodeOf(err) == connect.CodeUnauthenticated {
-		// The bridge rejected the cached token (a rotated signing cert, a
-		// changed client table): sign in afresh on the next call.
-		c.mu.Lock()
-		c.api = nil
-		c.mu.Unlock()
+	return c.settle(err)
+}
+
+// Stream is one Subscribe call: Receive until it returns false, then Err.
+type Stream interface {
+	Receive() bool
+	Msg() *bridgev1.SubscribeResponse
+	Err() error
+	Close() error
+}
+
+type stream struct {
+	c *Client
+	*connect.ServerStreamForClient[bridgev1.SubscribeResponse]
+}
+
+func (s stream) Err() error { return s.c.settle(s.ServerStreamForClient.Err()) }
+
+// Subscribe opens core's subscription. The stream ends Unauthenticated when
+// its token expires (the bridge's rule): reconnect.
+func (c *Client) Subscribe(ctx context.Context, r *bridgev1.SubscribeRequest) (Stream, error) {
+	api, src, err := c.session()
+	if err != nil {
+		return nil, err
 	}
-	return err
+	req := connect.NewRequest(r)
+	if err := c.authorize(src, req.Header()); err != nil {
+		return nil, err
+	}
+	st, err := api.Subscribe(ctx, req)
+	if err != nil {
+		return nil, c.settle(err)
+	}
+	return stream{c, st}, nil
+}
+
+func (c *Client) Ack(ctx context.Context, subscription string, seq int64) error {
+	api, err := c.API()
+	if err != nil {
+		return err
+	}
+	_, err = api.Ack(ctx, connect.NewRequest(&bridgev1.AckRequest{Subscription: subscription, Seq: seq}))
+	return c.settle(err)
+}
+
+func (c *Client) Nack(ctx context.Context, subscription string, seq int64, reason string) error {
+	api, err := c.API()
+	if err != nil {
+		return err
+	}
+	_, err = api.Nack(ctx, connect.NewRequest(&bridgev1.NackRequest{Subscription: subscription, Seq: seq, Reason: reason}))
+	return c.settle(err)
+}
+
+func (c *Client) ConfirmGap(ctx context.Context, subscription string, version int64) error {
+	api, err := c.API()
+	if err != nil {
+		return err
+	}
+	_, err = api.ConfirmGap(ctx, connect.NewRequest(&bridgev1.ConfirmGapRequest{Subscription: subscription, Version: version}))
+	return c.settle(err)
 }
