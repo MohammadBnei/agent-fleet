@@ -351,6 +351,10 @@ func TestAuth_DefinitionLeaseOnlyReachesItsAllowlist(t *testing.T) {
 			t.Errorf("%s: a repo-session lease is unchanged, got %v", full, err)
 		}
 	}
+	// The provisioner token never publishes as a session.
+	if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), "/agentfleet.v1.CoreService/PublishEvent", &agentfleetv1.PublishEventRequest{SessionId: "s1"}); codeOf(err) != codes.PermissionDenied {
+		t.Errorf("provisioner PublishEvent: %v", err)
+	}
 	// The provisioner never reaches the table.
 	if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), "/agentfleet.v1.CoreService/Expose", &agentfleetv1.ExposeRequest{SessionId: "s1"}); err != nil {
 		t.Errorf("provisioner: %v", err)
