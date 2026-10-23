@@ -104,6 +104,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/PromptSession": func(r any) string {
 		return r.(*agentfleetv1.PromptSessionRequest).GetCallerSessionId() // NOT GetTargetSessionId
 	},
+	"/agentfleet.v1.CoreService/PublishEvent": func(r any) string {
+		return r.(*agentfleetv1.PublishEventRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -149,6 +152,9 @@ var definitionMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/UpdateSessionMeta":   true,
 	"/agentfleet.v1.CoreService/SaveAgentSessionId":  true,
 	"/agentfleet.v1.CoreService/PushToolTelemetry":   true,
+	// Granted per definition: the handler checks the pinned spec's
+	// sidecarTools for publish_event (docs/adr/0078 §8).
+	"/agentfleet.v1.CoreService/PublishEvent": true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents
@@ -159,6 +165,13 @@ var provisionerMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/ReportPodEvents": true,
 }
 
+// sessionOnlyMethods are never callable with the provisioner token: they
+// carry a session's own authority outward (PublishEvent inherits the
+// session's trust, docs/adr/0078 §8), which no component may borrow.
+var sessionOnlyMethods = map[string]bool{
+	"/agentfleet.v1.CoreService/PublishEvent": true,
+}
+
 var (
 	errNoCredential   = status.Error(codes.Unauthenticated, "missing session lease")
 	errBadLease       = status.Error(codes.PermissionDenied, "lease does not match session")
@@ -166,6 +179,7 @@ var (
 	errNotProvisioner = status.Error(codes.PermissionDenied, "provisioner credential required")
 	errDefinition     = status.Error(codes.PermissionDenied, "method not allowed for definition sessions (docs/adr/0064)")
 	errAuthor         = status.Error(codes.PermissionDenied, "sessions may only author as agent or worker")
+	errSessionOnly    = status.Error(codes.PermissionDenied, "only the session itself may call this")
 )
 
 // Authenticator verifies the credential on every CoreService call.
@@ -201,6 +215,9 @@ func (a *Authenticator) authenticate(ctx context.Context, method string) (caller
 	// The provisioner is also allowed to call ordinary methods; it is a
 	// trusted component, not a session.
 	if a.checkProvisioner(md) {
+		if sessionOnlyMethods[method] {
+			return caller{}, errSessionOnly
+		}
 		return caller{}, nil
 	}
 

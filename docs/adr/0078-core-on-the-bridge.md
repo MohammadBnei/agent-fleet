@@ -177,13 +177,29 @@ in several ways:
      deploy decision.
    - A share per client (the bridge against the game) is decided when the game's client goes live, not here.
 
-8. **`PublishEvent` and the `publish_event` tool** (ADR-0071 §2):
-   - `causation_id` is the bridge event of the session's latest waking entry, and `hops` is one more than that
-     event's. Both are stored with the entry when the dispatcher appends it.
-   - Trust is the lowest along that chain, and false when the session is tainted.
-   - `actor=agent`, `actor_login=agent:<definition>`.
-   - It is refused above `maxPromptDepth` (3), and wakes caused by it are capped per thread.
-   - The tool joins `sidecarCeiling`. No definition grants it yet.
+8. **`PublishEvent` and the `publish_event` tool** (ADR-0071 §2, as built in `core/internal/dispatch/publish.go`):
+   - **Who:** a definition session whose pinned spec lists `publish_event` in `sidecarTools`. The tool is registered in
+     every sidecar, so core's handler checks the grant; a repo session, an archived one, or a definition without the
+     grant gets `PermissionDenied`, and so does the provisioner token. The tool joins `sidecarCeiling`; no definition
+     grants it yet. The worker sends it through `canUseTool`, which asks in `plan` mode, like `prompt_agent`.
+   - **What the agent sets:** a type under `dev.bnei.agent.` (lowercase letters, digits, `.`, `_`, `-`), a subject on
+     a `github/` or `agent/` thread with no whitespace or control characters (both become lines of the receiver's
+     message), text up to 16 KiB, and an optional idempotency key. A reused key with another type, subject or text is
+     refused, never dropped by the bridge's dedup. The data is `{text, definition}`, quoted in the receiver's message.
+   - **What core sets:** `actor=agent`, `actor_login=agent:<definition>`, and `causation_id`, the bridge event
+     (`<source>:<id>`) of the session's latest waking entry written by the dispatcher (author `client:bridge`): any
+     other client may put what it likes in `causation_id`, so its entries vouch for nothing. The dispatcher stores
+     each delivered event's hops with its decision (migration 000021), so `hops` is that event's plus one.
+   - **Trust:** the causing event's (its stored taint), false once the session has any context-only or untrusted entry,
+     and false when no event caused the session, since nothing vouches for it.
+   - **Bounds:** refused past `maxPromptDepth` (3 hops), which bounds a chain's length; a session publishes at most 10
+     events an hour (`published_events`), which bounds its width. The dispatcher caps the wakes `PublishEvent` causes
+     at 3 per thread and definition per 24 hours, since hops do not survive a GitHub round-trip; past that, a hand-off
+     arrives as context.
+   - **Open: the fleet's own echo taints.** A definition that comments or pushes on its PR as the fleet's GitHub
+     identity gets that event back as `actor=agent`, untrusted, appended `context_only` to its own thread, which
+     taints the session: its later hand-offs are untrusted and never wake. Whether the fleet's own echo should count
+     as taint is undecided.
 
 ## Alternatives considered
 
@@ -202,7 +218,8 @@ in several ways:
 
 - **Hints can be lost or late.** While the bridge or authentik is down, announcements lag, and they are retried
   from the stored edge. Reconciling is the consumer's job.
-- **New tables:** `session_announcements` (000019) and `dispatch_decisions` (000020), plus proposal columns (000020).
+- **New tables:** `session_announcements` (000019) and `dispatch_decisions` (000020, with thread, hops and agent
+  columns in 000021), plus proposal columns (000020).
 - **The alert handler** is shared by both paths. The direct path keeps dropping `resolved`; the bridge path dismisses
   an unopened proposal on it.
 - **Core depends on the bridge module's generated client** (`github.com/MohammadBnei/ukubi-bridge`, a pseudo-version

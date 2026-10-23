@@ -1723,6 +1723,26 @@ test("definition session: query() options come from the spec, and the stream car
   expect(streamedSpecSha).toBe("spec-sha");
 }, 10000);
 
+// docs/adr/0078 §8: publish_event wakes other agents, so a definition granting
+// it still reaches canUseTool, and plan mode asks for it.
+test("definition session: publish_event goes through canUseTool and asks in plan", async () => {
+  sessionAgentSpec = { ...DEF_SPEC, sidecarTools: ["send_message", "publish_event"] };
+  sessionPermissionMode = "plan";
+  const promise = runSession();
+  await Bun.sleep(20);
+  expect(queryOptions?.allowedTools).toEqual(["mcp__agent-fleet-sidecar__send_message"]);
+
+  let resolved: unknown = null;
+  const call = capturedCanUseTool!("mcp__agent-fleet-sidecar__publish_event", { type: "dev.bnei.agent.x" }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("mcp__agent-fleet-sidecar__publish_event")).toBeDefined();
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
 // docs/adr/0076 §1: the SDK never runs in its own auto for a definition, and
 // the session is not saved back as default when the SDK reports it.
 test("definition session in auto: the SDK gets default, the session stays auto, a live auto switch sends default", async () => {

@@ -42,6 +42,7 @@ const (
 	CoreService_ListPeerSessions_FullMethodName    = "/agentfleet.v1.CoreService/ListPeerSessions"
 	CoreService_PromptSession_FullMethodName       = "/agentfleet.v1.CoreService/PromptSession"
 	CoreService_WaitForSessionState_FullMethodName = "/agentfleet.v1.CoreService/WaitForSessionState"
+	CoreService_PublishEvent_FullMethodName        = "/agentfleet.v1.CoreService/PublishEvent"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -123,6 +124,9 @@ type CoreServiceClient interface {
 	ListPeerSessions(ctx context.Context, in *ListPeerSessionsRequest, opts ...grpc.CallOption) (*ListPeerSessionsResponse, error)
 	PromptSession(ctx context.Context, in *PromptSessionRequest, opts ...grpc.CallOption) (*PromptSessionResponse, error)
 	WaitForSessionState(ctx context.Context, in *WaitForSessionStateRequest, opts ...grpc.CallOption) (*WaitForSessionStateResponse, error)
+	// Publishes an event to the bridge as the calling definition session
+	// (docs/adr/0078 §8). Only for a definition granting publish_event.
+	PublishEvent(ctx context.Context, in *PublishEventRequest, opts ...grpc.CallOption) (*PublishEventResponse, error)
 }
 
 type coreServiceClient struct {
@@ -375,6 +379,16 @@ func (c *coreServiceClient) WaitForSessionState(ctx context.Context, in *WaitFor
 	return out, nil
 }
 
+func (c *coreServiceClient) PublishEvent(ctx context.Context, in *PublishEventRequest, opts ...grpc.CallOption) (*PublishEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishEventResponse)
+	err := c.cc.Invoke(ctx, CoreService_PublishEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -454,6 +468,9 @@ type CoreServiceServer interface {
 	ListPeerSessions(context.Context, *ListPeerSessionsRequest) (*ListPeerSessionsResponse, error)
 	PromptSession(context.Context, *PromptSessionRequest) (*PromptSessionResponse, error)
 	WaitForSessionState(context.Context, *WaitForSessionStateRequest) (*WaitForSessionStateResponse, error)
+	// Publishes an event to the bridge as the calling definition session
+	// (docs/adr/0078 §8). Only for a definition granting publish_event.
+	PublishEvent(context.Context, *PublishEventRequest) (*PublishEventResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -532,6 +549,9 @@ func (UnimplementedCoreServiceServer) PromptSession(context.Context, *PromptSess
 }
 func (UnimplementedCoreServiceServer) WaitForSessionState(context.Context, *WaitForSessionStateRequest) (*WaitForSessionStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WaitForSessionState not implemented")
+}
+func (UnimplementedCoreServiceServer) PublishEvent(context.Context, *PublishEventRequest) (*PublishEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -950,6 +970,24 @@ func _CoreService_WaitForSessionState_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).PublishEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_PublishEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).PublishEvent(ctx, req.(*PublishEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1040,6 +1078,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WaitForSessionState",
 			Handler:    _CoreService_WaitForSessionState_Handler,
+		},
+		{
+			MethodName: "PublishEvent",
+			Handler:    _CoreService_PublishEvent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

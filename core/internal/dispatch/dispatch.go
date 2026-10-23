@@ -67,6 +67,10 @@ var (
 	NotReadyPoll = 10 * time.Second
 	// CallTimeout bounds each unary bridge call and query outside Handle.
 	CallTimeout = 30 * time.Second
+	// MaxAgentWakes bounds the wakes PublishEvent causes per thread and
+	// definition within AgentWakeWindow (docs/adr/0071 §6).
+	MaxAgentWakes   = 3
+	AgentWakeWindow = 24 * time.Hour
 	// BusyRetry spaces retries of an Open or CloseThread answering Aborted
 	// (another Open holds the thread, or every slot is taken).
 	BusyRetry = 2 * time.Second
@@ -393,9 +397,11 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 		return dec, err
 	}
 	err = d.pool.QueryRow(ctx, `
-		INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted) VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, thread, hops, by_agent)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (source, event_id, definition) DO UPDATE SET source = dispatch_decisions.source
-		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, !e.GetTrusted()).Scan(&dec.wake, &dec.tainted, &dec.outcome)
+		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, !e.GetTrusted(),
+		e.GetSubject(), e.GetHops(), e.GetActor() == "agent").Scan(&dec.wake, &dec.tainted, &dec.outcome)
 	return dec, err
 }
 
@@ -405,9 +411,24 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 // Only a live pod waits: an unanswered request left by a pod that is gone is
 // closed as stale at the next warm (ReserveSlot), so it blocks nothing.
 func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def string) (bool, error) {
-	actor := e.GetActor() == "human" || (e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:"))
-	if !e.GetTrusted() || e.GetReplayed() || !actor || !d.mayClaim(e.GetActorLogin()) {
+	agent := e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:")
+	if !e.GetTrusted() || e.GetReplayed() || (e.GetActor() != "human" && !agent) || !d.mayClaim(e.GetActorLogin()) {
 		return false, nil
+	}
+	if agent {
+		// PublishEvent's hops end at a GitHub round-trip (an agent's push
+		// comes back as a fresh event), so its wakes are capped per thread.
+		var n int
+		if err := d.pool.QueryRow(ctx, `
+			SELECT count(*) FROM dispatch_decisions
+			 WHERE definition = $1 AND thread = $2 AND by_agent AND wake AND decided_at > now() - $3::interval`,
+			def, e.GetSubject(), AgentWakeWindow.String()).Scan(&n); err != nil {
+			return false, err
+		}
+		if n >= MaxAgentWakes {
+			slog.Warn("dispatch: agent hand-offs reached their cap on this thread, delivering as context", "definition", def, "subject", e.GetSubject(), "wakes", n)
+			return false, nil
+		}
 	}
 	var blocked bool
 	err := d.pool.QueryRow(ctx, `
@@ -523,7 +544,7 @@ func retryBusy(ctx context.Context, f func() error) error {
 // while it waits, and opening it delivers them all.
 func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head, tainted bool) error {
 	repo, key, text := h.Effective.Workspace.Repo, proposalKey(h.Name, e.GetSubject()), Render(e)
-	title := truncate(fmt.Sprintf("%s: %s on %s", h.Name, strings.TrimPrefix(e.GetType(), "dev.bnei."), e.GetSubject()), 100)
+	title := truncate(fmt.Sprintf("%s: %s on %s", h.Name, oneLine(strings.TrimPrefix(e.GetType(), "dev.bnei.")), oneLine(e.GetSubject())), 100)
 	if tainted {
 		title += proposals.UntrustedSuffix // FoldEvent adds it when a later event taints the proposal
 	}
@@ -553,7 +574,7 @@ func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h defi
 // unique only per source.
 func Causation(e *bridgev1.CloudEvent) string { return e.GetSource() + ":" + e.GetId() }
 
-func marker(e *bridgev1.CloudEvent) string { return "[bridge event " + Causation(e) + "]" }
+func marker(e *bridgev1.CloudEvent) string { return "[bridge event " + oneLine(Causation(e)) + "]" }
 
 // maxQuoted bounds what Render quotes from an event's own text; maxMessage
 // keeps an opened proposal's body under Open's 64 KiB.
@@ -572,8 +593,18 @@ func Render(e *bridgev1.CloudEvent) string {
 	if !e.GetTrusted() {
 		trust = "untrusted"
 	}
-	fmt.Fprintf(&b, "%s\ntype: %s\nsubject: %s\nactor: %s (%s, %s)\n", marker(e), e.GetType(), e.GetSubject(), e.GetActorLogin(), e.GetActor(), trust)
-	line := func(label, v string) { fmt.Fprintf(&b, "%s: %s\n", label, truncate(v, 500)) }
+	fmt.Fprintf(&b, "%s\ntype: %s\nsubject: %s\nactor: %s (%s, %s)\n", marker(e), oneLine(e.GetType()), oneLine(e.GetSubject()),
+		oneLine(e.GetActorLogin()), oneLine(e.GetActor()), trust)
+	line := func(label, v string) { fmt.Fprintf(&b, "%s: %s\n", label, oneLine(truncate(v, 500))) }
+	if strings.HasPrefix(e.GetType(), "dev.bnei.agent.") {
+		var ag struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(e.GetData(), &ag) == nil && ag.Text != "" {
+			b.WriteString("\ntext:\n" + quoted(ag.Text) + "\n")
+			return b.String()
+		}
+	}
 	if !strings.HasPrefix(e.GetType(), "dev.bnei.github.") {
 		if len(e.GetData()) > 0 {
 			b.WriteString("\ndata:\n" + quoted(string(e.GetData())) + "\n")
@@ -631,6 +662,17 @@ func Render(e *bridgev1.CloudEvent) string {
 		}
 	}
 	return b.String()
+}
+
+// oneLine keeps an envelope field on its line: no field, wherever it came
+// from, can start a line of its own that passes for the envelope.
+func oneLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '\u2028' || r == '\u2029' || r == '\u0085' {
+			return ' '
+		}
+		return r
+	}, truncate(s, 512))
 }
 
 // quoted is text someone wrote, bounded and indented: no line of it can pass

@@ -246,6 +246,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
+	// docs/adr/0078 §8: a definition session hands work on through the
+	// bridge, with core setting actor, causation, hops and trust.
+	coreSvc.SetPublishFunc(func(ctx context.Context, sessionID, definition, typ, subject, text, key string) (string, bool, int32, error) {
+		r, err := dispatch.Publish(ctx, pool, bridge, sessionID, definition, typ, subject, text, key)
+		return r.ID, r.Trusted, r.Hops, err
+	})
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
