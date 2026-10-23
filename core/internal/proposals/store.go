@@ -359,6 +359,39 @@ func (s *Store) Open(ctx context.Context, id, sessionID string) error {
 	return nil
 }
 
+// ErrBodyChanged is OpenIfBody's answer when an event folded in after the
+// caller read the proposal: open it again with the current body.
+var ErrBodyChanged = fmt.Errorf("proposal body changed")
+
+// OpenIfBody is Open for an event proposal, only while its body is still the
+// one the caller delivered: an event folded in between would otherwise be
+// retired with the proposal and never reach the thread.
+func (s *Store) OpenIfBody(ctx context.Context, id, sessionID, body string) error {
+	var same bool
+	err := s.pool.QueryRow(ctx, `
+		WITH upd AS (
+		  UPDATE proposals SET session_id = $2
+		   WHERE id = $1 AND session_id IS NULL AND dismissed_at IS NULL AND body = $3
+		  RETURNING 1)
+		SELECT EXISTS (SELECT 1 FROM upd)`, id, sessionID, body).Scan(&same)
+	if err != nil {
+		slog.Error("proposals OpenIfBody", "proposalId", id, "error", err)
+		return fmt.Errorf("open proposal: %w", err)
+	}
+	if same {
+		slog.Info("proposals Open", "proposalId", id, "sessionId", sessionID)
+		return nil
+	}
+	p, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if p != nil && p.SessionID == nil && p.DismissedAt == nil {
+		return ErrBodyChanged
+	}
+	return ErrNotOpen
+}
+
 // Dismiss declines a proposal, which re-arms its dedup key: a still-firing
 // alert is proposed again on its next fire. Dismissing means "not now", not
 // "never" — permanent suppression is an Alertmanager silence, which is where
@@ -461,29 +494,36 @@ func scanProposal(row pgx.Row, p *Proposal) error {
 	return nil
 }
 
-// maxFoldedBody bounds what FoldEvent adds to a standing proposal: its body
-// is the opening message, which AgentService caps at 64 KiB.
+// maxFoldedBody bounds, in bytes, what FoldEvent grows a standing proposal
+// to: its body is the opening message, which AgentService caps at 64 KiB.
 const maxFoldedBody = 60 << 10
+
+// UntrustedSuffix marks an event proposal's title once any of its events is
+// untrusted, so the inbox shows it before the body is opened.
+const UntrustedSuffix = " (untrusted)"
 
 // FoldEvent appends a later event of the same thread to the standing,
 // unopened event proposal holding (repo, dedupKey), so it is not lost while
-// the proposal waits (docs/adr/0078 §5). marker names the event; a body that
-// already holds it is left alone, so a redelivery folds nothing twice. Past
-// maxFoldedBody the event is dropped with one note. A tainted event taints
-// the proposal. It reports whether a proposal was there to fold into.
+// the proposal waits (docs/adr/0078 §5). marker names the event and starts
+// its text; a body that already holds it at the start of a paragraph is left
+// alone, so a redelivery folds nothing twice (quoted text is indented, so a
+// comment cannot plant one). Past maxFoldedBody bytes the event is dropped
+// with one note. A tainted event taints the proposal and its title. It
+// reports whether a proposal was there to fold into.
 func (s *Store) FoldEvent(ctx context.Context, repo, dedupKey, marker, text string, tainted bool) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE proposals SET
 		       body = CASE
-		         WHEN position($3 in body) > 0 THEN body
-		         WHEN length(body) + length($4) + 2 <= $6 THEN body || E'\n\n' || $4
-		         WHEN position('[later events were dropped]' in body) > 0 THEN body
+		         WHEN position(E'\n\n' || $3 in E'\n\n' || body) > 0 THEN body
+		         WHEN octet_length(body) + octet_length($4) + 2 <= $6 THEN body || E'\n\n' || $4
+		         WHEN position(E'\n\n[later events were dropped]' in body) > 0 THEN body
 		         ELSE body || E'\n\n[later events were dropped]'
 		       END,
+		       title = CASE WHEN $5 AND NOT tainted THEN title || $7 ELSE title END,
 		       tainted = tainted OR $5
 		 WHERE repo = $1 AND dedup_key = $2 AND source = 'event'
 		   AND session_id IS NULL AND dismissed_at IS NULL
-	`, repo, dedupKey, marker, text, tainted, maxFoldedBody)
+	`, repo, dedupKey, marker, text, tainted, maxFoldedBody, UntrustedSuffix)
 	if err != nil {
 		slog.Error("proposals FoldEvent", "repo", repo, "dedupKey", dedupKey, "error", err)
 		return false, fmt.Errorf("fold event into proposal: %w", err)

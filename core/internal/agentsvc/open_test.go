@@ -300,4 +300,31 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 	if _, err := s.OpenAsAdmin(ctx, "net", "admin-sub", req("proposal:p2", true)); err == nil {
 		t.Fatal("OpenAsAdmin through a network client")
 	}
+
+	// An admin opening a tainted proposal onto an existing thread wakes it,
+	// still marked untrusted: the click is the gate.
+	dash.warmErr = nil
+	warms := len(dash.warms)
+	tm := req("proposal:p3", false)
+	tm.Tainted = true
+	r3, err := s.OpenAsAdmin(ctx, "bridge", "admin-sub", tm)
+	if err != nil || r3.GetThreadId() != res.GetThreadId() || len(dash.warms) != warms+1 {
+		t.Fatalf("tainted admin open: %v warms=%v", err, dash.warms)
+	}
+	entries, _, _ = transcr.ReadSince(ctx, res.GetThreadId(), 0, 10)
+	if last := entries[len(entries)-1]; last.ContextOnly || !last.Untrusted {
+		t.Fatalf("tainted admin open landed %+v", last)
+	}
+
+	// A fresh thread whose warm fails for any reason is archived, so later
+	// events do not land in a session that never ran.
+	dash.warmErr = connect.NewError(connect.CodeUnavailable, errors.New("provisioner down"))
+	other := req("e3", true)
+	other.ThreadKey = "github/o/notes/pr/2"
+	if _, err := s.Open(bridge, connect.NewRequest(other)); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("warm failure: %v", err)
+	}
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/2"); open != nil {
+		t.Fatal("a fresh thread whose warm failed stayed open")
+	}
 }

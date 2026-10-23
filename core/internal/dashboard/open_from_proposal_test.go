@@ -110,3 +110,39 @@ func TestOpenFromProposal_EventProposal(t *testing.T) {
 		t.Fatalf("second click: %v %v", err, subs)
 	}
 }
+
+// An event folded in while the admin's open is in flight is delivered too:
+// the proposal is marked only once the delivered body is the current one.
+func TestOpenFromProposal_EventFoldedDuringOpen(t *testing.T) {
+	ctx := auth.WithIdentity(context.Background(), auth.Identity{Sub: "sub-1"})
+	pool := dbtest.NewPool(t)
+	propStore := proposals.NewStore(pool)
+	s := &Server{sessions: sessions.NewStore(pool), proposals: propStore}
+	pid, _, err := propStore.CreateEvent(ctx, "notes", "event:d:t", "title", "[e1] first", "", proposals.Event{Definition: "d", ThreadKey: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var thread string
+	if err := pool.QueryRow(ctx, `INSERT INTO sessions (repo) VALUES ('notes') RETURNING id`).Scan(&thread); err != nil {
+		t.Fatal(err)
+	}
+	var bodies []string
+	s.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, _ string) (string, error) {
+		bodies = append(bodies, p.Body)
+		if len(bodies) == 1 {
+			if _, err := propStore.FoldEvent(ctx, "notes", "event:d:t", "[e2]", "[e2] second", false); err != nil {
+				return "", err
+			}
+		}
+		return thread, nil
+	})
+	if _, err := s.OpenFromProposal(ctx, connect.NewRequest(&agentfleetv1.OpenFromProposalRequest{ProposalId: pid})); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 2 || bodies[1] != "[e1] first\n\n[e2] second" {
+		t.Fatalf("delivered %q", bodies)
+	}
+	if p, _ := propStore.Get(ctx, pid); p.SessionID == nil || *p.SessionID != thread {
+		t.Fatalf("proposal not opened: %+v", p)
+	}
+}

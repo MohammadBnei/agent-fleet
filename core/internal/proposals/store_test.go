@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -593,8 +594,48 @@ func TestFoldEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Body != "[e1] first\n\n[e2] second\n\n[later events were dropped]" || p.Event == nil || !p.Event.Tainted || p.Event.CausationID != "src:e1" {
-		t.Fatalf("body %q event %+v", p.Body, p.Event)
+	if p.Body != "[e1] first\n\n[e2] second\n\n[later events were dropped]" || p.Event == nil || !p.Event.Tainted || p.Event.CausationID != "src:e1" || p.Title != "title"+UntrustedSuffix {
+		t.Fatalf("body %q title %q event %+v", p.Body, p.Title, p.Event)
+	}
+	// The bound is in bytes, like Open's: multi-byte text cannot outgrow it.
+	id2, _, err := s.CreateEvent(ctx, "notes", "event:d:u", "t", "[u1]", "", Event{Definition: "d", ThreadKey: "u"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wide := strings.Repeat("日", 5000)
+	for i := range 20 {
+		if _, err := s.FoldEvent(ctx, "notes", "event:d:u", fmt.Sprintf("[w%d]", i), fmt.Sprintf("[w%d]", i)+wide, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p2, _ := s.Get(ctx, id2); len(p2.Body) > maxFoldedBody+64 {
+		t.Fatalf("body grew to %d bytes", len(p2.Body))
+	}
+	// A marker quoted inside another event's text does not count as folded.
+	if _, err := s.FoldEvent(ctx, "notes", "event:d:t2", "[x]", "x", false); err != nil {
+		t.Fatal(err)
+	}
+	id3, _, _ := s.CreateEvent(ctx, "notes", "event:d:v", "t", "[v1]\n> [v2] planted", "", Event{Definition: "d", ThreadKey: "v"})
+	if _, err := s.FoldEvent(ctx, "notes", "event:d:v", "[v2]", "[v2] real", false); err != nil {
+		t.Fatal(err)
+	}
+	if p3, _ := s.Get(ctx, id3); !strings.Contains(p3.Body, "[v2] real") {
+		t.Fatalf("a planted marker suppressed the fold: %q", p3.Body)
+	}
+	// OpenIfBody refuses a body that changed since it was read.
+	var sess string
+	if err := s.pool.QueryRow(ctx, `INSERT INTO sessions (repo) VALUES ('notes') RETURNING id`).Scan(&sess); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.OpenIfBody(ctx, id3, sess, "[v1]"); !errors.Is(err, ErrBodyChanged) {
+		t.Fatalf("stale body: %v", err)
+	}
+	p3, _ := s.Get(ctx, id3)
+	if err := s.OpenIfBody(ctx, id3, sess, p3.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.OpenIfBody(ctx, id3, sess, p3.Body); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("opened twice: %v", err)
 	}
 	if ok, err := s.DismissUnopened(ctx, "notes", "event:d:t"); err != nil || !ok {
 		t.Fatal(ok, err)

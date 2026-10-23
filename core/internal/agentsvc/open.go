@@ -189,18 +189,22 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	}
 
 	// A tainted follow-up on an existing thread never wakes (§6); only an
-	// opening message can be tainted and wake.
-	contextOnly := !m.GetWake() || (m.GetTainted() && !fresh)
+	// opening message can be tainted and wake. An admin opening a proposal
+	// is the human gate itself (docs/adr/0078 §5), so it wakes either way,
+	// still marked untrusted.
+	contextOnly := !m.GetWake() || (m.GetTainted() && !fresh && !adminActor)
 	text := m.GetMessage()
 	if predecessor != "" {
 		text = fmt.Sprintf("[continues thread %s, which can no longer run]\n%s", predecessor, text)
 	}
 	if !contextOnly {
 		if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
-			if fresh && connect.CodeOf(err) == connect.CodeResourceExhausted {
+			if fresh {
 				// A thread this call created and could not start would hold
-				// the key with nothing in it (docs/adr/0078 §5): archive it,
-				// and a retry creates the thread again.
+				// the key with nothing in it, and later events would land
+				// in a session that never ran (docs/adr/0078 §5): archive
+				// it, whatever refused the warm, and a retry creates the
+				// thread again.
 				if _, aerr := s.dash.ArchiveSession(ctx, connect.NewRequest(&agentfleetv1.ArchiveSessionRequest{SessionId: t.ID})); aerr != nil {
 					slog.Warn("agentsvc Open: archive a thread the warm refused", "sessionId", t.ID, "error", aerr)
 				}

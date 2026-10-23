@@ -31,6 +31,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	bridgev1 "github.com/MohammadBnei/ukubi-bridge/proto/gen/go/bridge/v1"
 )
@@ -62,6 +63,13 @@ var (
 	// KeepDecisions outlives the bridge's 30-day retention, after which no
 	// redelivery can need a decision.
 	KeepDecisions = 31 * 24 * time.Hour
+	// NotReadyPoll is how often an unsynced registry is checked again.
+	NotReadyPoll = 10 * time.Second
+	// CallTimeout bounds each unary bridge call and query outside Handle.
+	CallTimeout = 30 * time.Second
+	// BusyRetry spaces retries of an Open or CloseThread answering Aborted
+	// (another Open holds the thread, or every slot is taken).
+	BusyRetry = 2 * time.Second
 )
 
 // Bridge is bridgeclient.Client; tests fake it.
@@ -133,6 +141,9 @@ func (d *Dispatcher) Run(ctx context.Context) {
 				d.lastNote = note
 			}
 			backoff = BackoffMax
+			if errors.Is(err, errNotReady) {
+				backoff = NotReadyPoll
+			}
 		case time.Since(start) >= HealthyAfter:
 			d.lastNote = ""
 			backoff = 0
@@ -189,12 +200,20 @@ func (d *Dispatcher) stream(ctx context.Context) error {
 		hctx, cancel := context.WithTimeout(ctx, HandleTimeout)
 		herr := d.Handle(hctx, e)
 		cancel()
+		if errors.Is(herr, errBusy) {
+			// Contention is not a failure: a Nack would dead-letter the event
+			// after the bridge's few quick retries. Left unsettled, it is
+			// redelivered on the next stream (the bridge counts no drops).
+			return herr
+		}
+		sctx, cancel := context.WithTimeout(ctx, CallTimeout)
 		if herr != nil {
 			slog.Warn("dispatch: event not handled, nacking", "seq", e.GetSeq(), "type", e.GetType(), "subject", e.GetSubject(), "error", herr)
-			err = d.bridge.Nack(ctx, Subscription, e.GetSeq(), truncate(herr.Error(), 500))
+			err = d.bridge.Nack(sctx, Subscription, e.GetSeq(), truncate(herr.Error(), 500))
 		} else {
-			err = d.bridge.Ack(ctx, Subscription, e.GetSeq())
+			err = d.bridge.Ack(sctx, Subscription, e.GetSeq())
 		}
+		cancel()
 		if err != nil {
 			// Unsettled, the event is redelivered on the next stream, and
 			// the stored decisions make that a no-op where it was handled.
@@ -209,6 +228,8 @@ func (d *Dispatcher) stream(ctx context.Context) error {
 // so it names what may be stale and confirms (docs/adr/0078 §5): a thread
 // whose closing event was lost stays open until someone closes it.
 func (d *Dispatcher) gap(ctx context.Context, g *bridgev1.Gap) {
+	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
+	defer cancel()
 	var open int
 	if err := d.pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE invoker = $1 AND archived_at IS NULL`, Client).Scan(&open); err != nil {
 		slog.Warn("dispatch: count event threads after a gap", "error", err)
@@ -287,7 +308,15 @@ func (d *Dispatcher) route(e *bridgev1.CloudEvent) []definitions.Head {
 	heads, _ := d.defs.List()
 	var out []definitions.Head
 	for _, h := range heads {
-		if h.SHA == "" || !owns(h.Effective.Owns, e) && !subscribes(h.Effective.Subscribes, e) {
+		if h.SHA == "" {
+			// Invalid at HEAD: no spec says whether it owns this event, and
+			// nacking would dead-letter every event until it is fixed.
+			if d.lists(h.Name) {
+				slog.Warn("dispatch: a definition the bridge opens is invalid at HEAD; it receives no events", "definition", h.Name, "type", e.GetType(), "subject", e.GetSubject())
+			}
+			continue
+		}
+		if !owns(h.Effective.Owns, e) && !subscribes(h.Effective.Subscribes, e) {
 			continue
 		}
 		cur, ok := d.defs.MayOpen(Client, h.Name)
@@ -297,6 +326,15 @@ func (d *Dispatcher) route(e *bridgev1.CloudEvent) []definitions.Head {
 		out = append(out, cur)
 	}
 	return out
+}
+
+func (d *Dispatcher) lists(def string) bool {
+	for _, c := range d.defs.Clients() {
+		if c.Name == Client {
+			return slices.Contains(c.Spec.Definitions, def)
+		}
+	}
+	return false
 }
 
 func allows(l *definitions.AllowList, v string) bool { return l == nil || slices.Contains(l.Allow, v) }
@@ -364,6 +402,8 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 // gate is docs/adr/0071 §6: only a trusted person (or a trusted hand-off
 // through PublishEvent) the bridge client may claim wakes, never a replay,
 // and never a thread that waits on a person, whose follow-ups are context.
+// Only a live pod waits: an unanswered request left by a pod that is gone is
+// closed as stale at the next warm (ReserveSlot), so it blocks nothing.
 func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def string) (bool, error) {
 	actor := e.GetActor() == "human" || (e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:"))
 	if !e.GetTrusted() || e.GetReplayed() || !actor || !d.mayClaim(e.GetActorLogin()) {
@@ -374,9 +414,10 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 		SELECT EXISTS (
 		  SELECT 1 FROM sessions s JOIN transcript q ON q.session_id = s.id
 		   WHERE s.invoker = $1 AND s.definition_name = $2 AND s.thread_key = $3 AND s.archived_at IS NULL
+		     AND s.pod_phase = ANY($4)
 		     AND q.type IN ('question', 'permission_request')
 		     AND NOT EXISTS (SELECT 1 FROM transcript r WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq))`,
-		Client, def, e.GetSubject()).Scan(&blocked)
+		Client, def, e.GetSubject(), sessions.LivePhases()).Scan(&blocked)
 	return !blocked, err
 }
 
@@ -411,19 +452,25 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	if e.GetType() == typePRClosed && !e.GetReplayed() {
 		return d.close(ctx, actx, e, h)
 	}
-	_, err = d.agents.Open(actx, connect.NewRequest(&agentfleetv1.OpenRequest{
+	req := &agentfleetv1.OpenRequest{
 		Definition: h.Name, ThreadKey: e.GetSubject(), Message: Render(e),
 		Wake: dec.wake, Tainted: dec.tainted,
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: e.GetSource() + ":" + e.GetId() + ":" + h.Name,
 		Actor:          e.GetActorLogin(), CausationId: Causation(e),
-	}))
+	}
+	err = retryBusy(ctx, func() error {
+		_, err := d.agents.Open(actx, connect.NewRequest(req))
+		return err
+	})
 	switch {
 	case err == nil:
 		return d.finish(ctx, e, h.Name, "delivered")
-	case errors.Is(err, agentsvc.ErrNeedsWake), connect.CodeOf(err) == connect.CodeResourceExhausted:
-		// No thread and not waking, or no slot: a person decides. Acked
-		// either way, since the bridge delivers head-of-line.
+	case errors.Is(err, agentsvc.ErrNeedsWake), connect.CodeOf(err) == connect.CodeResourceExhausted,
+		connect.CodeOf(err) == connect.CodePermissionDenied:
+		// No thread and not waking, no slot, or a stored wake whose actor
+		// left actors.allow since: a person decides. Acked either way,
+		// since the bridge delivers head-of-line.
 		if err := d.propose(ctx, e, h, dec.tainted); err != nil {
 			return err
 		}
@@ -435,7 +482,10 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 
 // close ends the PR's thread, and retires a proposal for it nobody opened.
 func (d *Dispatcher) close(ctx, actx context.Context, e *bridgev1.CloudEvent, h definitions.Head) error {
-	_, err := d.agents.CloseThread(actx, connect.NewRequest(&agentfleetv1.CloseThreadRequest{Definition: h.Name, ThreadKey: e.GetSubject()}))
+	err := retryBusy(ctx, func() error {
+		_, err := d.agents.CloseThread(actx, connect.NewRequest(&agentfleetv1.CloseThreadRequest{Definition: h.Name, ThreadKey: e.GetSubject()}))
+		return err
+	})
 	if err != nil && connect.CodeOf(err) != connect.CodeNotFound {
 		return err
 	}
@@ -447,16 +497,36 @@ func (d *Dispatcher) close(ctx, actx context.Context, e *bridgev1.CloudEvent, h 
 
 func proposalKey(def, thread string) string { return "event:" + def + ":" + thread }
 
+// errBusy: Open or CloseThread kept answering Aborted (the thread's lock is
+// held, say by an admin's open warming a pod, or every Open slot is taken)
+// until Handle's deadline. The event is left unsettled, never nacked.
+var errBusy = errors.New("the thread stayed busy")
+
+// retryBusy calls f again while it answers Aborted, every BusyRetry, until
+// ctx ends.
+func retryBusy(ctx context.Context, f func() error) error {
+	for {
+		err := f()
+		if connect.CodeOf(err) != connect.CodeAborted {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", errBusy, err)
+		case <-time.After(BusyRetry):
+		}
+	}
+}
+
 // propose files the event as a proposal for the definition's thread, one per
 // thread while it stands: a later event folds into it, so nothing is lost
 // while it waits, and opening it delivers them all.
 func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head, tainted bool) error {
 	repo, key, text := h.Effective.Workspace.Repo, proposalKey(h.Name, e.GetSubject()), Render(e)
-	trust := "trusted"
+	title := truncate(fmt.Sprintf("%s: %s on %s", h.Name, strings.TrimPrefix(e.GetType(), "dev.bnei."), e.GetSubject()), 100)
 	if tainted {
-		trust = "untrusted"
+		title += proposals.UntrustedSuffix // FoldEvent adds it when a later event taints the proposal
 	}
-	title := truncate(fmt.Sprintf("%s: %s on %s (%s)", h.Name, strings.TrimPrefix(e.GetType(), "dev.bnei."), e.GetSubject(), trust), 120)
 	payload, _ := json.Marshal(map[string]any{
 		"seq": e.GetSeq(), "source": e.GetSource(), "id": e.GetId(), "type": e.GetType(), "subject": e.GetSubject(),
 		"actor": e.GetActor(), "actor_login": e.GetActorLogin(), "trusted": e.GetTrusted(),
@@ -485,8 +555,12 @@ func Causation(e *bridgev1.CloudEvent) string { return e.GetSource() + ":" + e.G
 
 func marker(e *bridgev1.CloudEvent) string { return "[bridge event " + Causation(e) + "]" }
 
-// maxQuoted bounds what Render quotes from an event's own text.
-const maxQuoted = 16 << 10
+// maxQuoted bounds what Render quotes from an event's own text; maxMessage
+// keeps an opened proposal's body under Open's 64 KiB.
+const (
+	maxQuoted  = 16 << 10
+	maxMessage = 63 << 10
+)
 
 // Render is the message an event delivers: its envelope, then what a person
 // wrote in it (a PR's title and body, a comment, a review), never the whole
@@ -502,7 +576,7 @@ func Render(e *bridgev1.CloudEvent) string {
 	line := func(label, v string) { fmt.Fprintf(&b, "%s: %s\n", label, truncate(v, 500)) }
 	if !strings.HasPrefix(e.GetType(), "dev.bnei.github.") {
 		if len(e.GetData()) > 0 {
-			b.WriteString("\n" + truncate(string(e.GetData()), maxQuoted) + "\n")
+			b.WriteString("\ndata:\n" + quoted(string(e.GetData())) + "\n")
 		}
 		return b.String()
 	}
@@ -529,7 +603,7 @@ func Render(e *bridgev1.CloudEvent) string {
 	_ = json.Unmarshal(e.GetData(), &gh)
 	quote := func(label, s string) {
 		if s != "" {
-			b.WriteString("\n" + label + ":\n" + truncate(s, maxQuoted) + "\n")
+			b.WriteString("\n" + label + ":\n" + quoted(s) + "\n")
 		}
 	}
 	// The kind, not what the payload happens to carry: a comment's payload
@@ -559,6 +633,12 @@ func Render(e *bridgev1.CloudEvent) string {
 	return b.String()
 }
 
+// quoted is text someone wrote, bounded and indented: no line of it can pass
+// for the envelope (a planted "[bridge event …]" or "actor: … trusted").
+func quoted(s string) string {
+	return "> " + strings.ReplaceAll(truncate(s, maxQuoted), "\n", "\n> ")
+}
+
 // truncate also makes s storable: Postgres text takes no NUL and only valid
 // UTF-8, and a comment can decode to either, or be cut inside a rune.
 func truncate(s string, n int) string {
@@ -572,15 +652,17 @@ func truncate(s string, n int) string {
 // OpenProposal opens an event proposal as the admin who clicked it
 // (docs/adr/0078 §5): the definition's thread, through the bridge client's
 // Open, waking, with the proposal's taint and causation. The key carries the
-// body's hash, so a retry after a failed attempt that folded more events in
-// is a new request rather than a refused one.
+// body's hash and the admin, both part of the request: a retry after more
+// events folded in, or another admin's click after a failed attempt, is a new
+// request rather than a refused one. The dashboard marks the proposal opened
+// only while its body is the one delivered (proposals.OpenIfBody).
 func OpenProposal(ctx context.Context, agents Agents, p *proposals.Proposal, adminSub string) (string, error) {
 	if p.Event == nil {
 		return "", errors.New("not an event proposal")
 	}
-	sum := sha256.Sum256([]byte(p.Body))
+	sum := sha256.Sum256([]byte(p.Body + "\x00" + adminSub))
 	res, err := agents.OpenAsAdmin(ctx, Client, adminSub, &agentfleetv1.OpenRequest{
-		Definition: p.Event.Definition, ThreadKey: p.Event.ThreadKey, Message: p.Body, Tainted: p.Event.Tainted,
+		Definition: p.Event.Definition, ThreadKey: p.Event.ThreadKey, Message: truncate(p.Body, maxMessage), Tainted: p.Event.Tainted,
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: "proposal:" + p.ID + ":" + hex.EncodeToString(sum[:8]), CausationId: p.Event.CausationID,
 	})

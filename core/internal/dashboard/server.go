@@ -421,7 +421,10 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 // for, as the clicking admin (docs/adr/0078 §5). The thread comes first and
 // the proposal is marked after: Open's idempotency key makes a second click
 // land on the same thread, and a failed Open leaves the proposal standing to
-// click again. The repo check is Open's own, against the definition's repo.
+// click again. It is marked only while its body is the one delivered: an
+// event folded in meanwhile would otherwise retire with it, so the current
+// body is delivered again (a new key, the same thread). The repo check is
+// Open's own, against the definition's repo.
 func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (*connect.Response[agentfleetv1.OpenFromProposalResponse], error) {
 	if p.SessionID != nil || p.DismissedAt != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
@@ -437,15 +440,32 @@ func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (
 	if sub == "" {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("no identity on the request: an event proposal is opened as its admin"))
 	}
-	threadID, err := s.openEvent(ctx, p, sub)
-	if err != nil {
-		slog.Error("dashboard OpenFromProposal: open event thread", "proposalId", p.ID, "error", err)
-		return nil, err
-	}
-	if err := s.proposals.Open(ctx, p.ID, threadID); err != nil {
-		if errors.Is(err, proposals.ErrNotOpen) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+	var threadID string
+	var err error
+	for attempt := 0; ; attempt++ {
+		threadID, err = s.openEvent(ctx, p, sub)
+		if err != nil {
+			slog.Error("dashboard OpenFromProposal: open event thread", "proposalId", p.ID, "error", err)
+			return nil, err
 		}
+		err = s.proposals.OpenIfBody(ctx, p.ID, threadID, p.Body)
+		if !errors.Is(err, proposals.ErrBodyChanged) || attempt == 2 {
+			break
+		}
+		if p, err = s.proposals.Get(ctx, p.ID); err != nil || p == nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reread proposal: %v", err))
+		}
+		if p.SessionID != nil || p.DismissedAt != nil {
+			err = proposals.ErrNotOpen
+			break
+		}
+	}
+	switch {
+	case errors.Is(err, proposals.ErrNotOpen):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+	case errors.Is(err, proposals.ErrBodyChanged):
+		return nil, connect.NewError(connect.CodeAborted, errors.New("events keep arriving on this thread; open it again"))
+	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	sess, err := s.sessions.Get(ctx, threadID)
