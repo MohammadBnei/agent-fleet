@@ -163,6 +163,16 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"subscribes bad glob", map[string]string{"subscribes": `{ subjects: ["github/[ab]"] }`}, "subscribes.subjects"},
 		{"subscribes type glob", map[string]string{"subscribes": `{ types: ["github.*"] }`}, "subscribes.types"},
 		{"subscribes duplicate", map[string]string{"subscribes": "{ types: [a, a] }"}, "subscribes.types"},
+		// human-facing events (infra-bootstrap ADR-0066 §4, docs/adr/0078 §4)
+		{"subscribes no types", map[string]string{"subscribes": `{ subjects: ["github/x/*"] }`}, "subscribes.types must not be empty"},
+		{"subscribes session type", map[string]string{"subscribes": `{ types: [dev.bnei.fleet.session.waiting] }`}, "human-facing types"},
+		{"subscribes game type", map[string]string{"subscribes": `{ types: [dev.bnei.game.] }`}, "human-facing types"},
+		{"subscribes too wide a type", map[string]string{"subscribes": `{ types: [dev.bnei.] }`}, "human-facing types"},
+		{"subscribes fleet subject", map[string]string{"subscribes": `{ types: [dev.bnei.github.], subjects: ["fleet/*"] }`}, "human-facing subjects"},
+		{"subscribes match-all subject", map[string]string{"subscribes": `{ types: [dev.bnei.github.], subjects: ["*"] }`}, "human-facing subjects"},
+		{"owns game type", map[string]string{"owns": `{ types: [dev.bnei.game.needs_you.] }`}, "owns.types"},
+		{"owns fleet subject", map[string]string{"owns": `{ subjects: ["fleet/client/game/*"] }`}, "owns.subjects"},
+		{"owns repos without types ok", map[string]string{"owns": `{ repos: [x] }`}, ""},
 		// resources / limits / misc
 		{"cpu over ceiling", map[string]string{"resources": `{ cpu: "8", memory: 1Gi }`}, "resources.cpu"},
 		{"memory over ceiling", map[string]string{"resources": "{ cpu: 500m, memory: 8Gi }"}, "resources.memory"},

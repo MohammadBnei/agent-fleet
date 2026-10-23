@@ -17,6 +17,8 @@ import (
 	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 )
 
 // KnownGroups is the audience groups a definition may name, and so the groups
@@ -613,11 +615,18 @@ func validate(name string, s *Spec) error {
 		shapeList(&errs, "owns.components", o.Components, "")
 		shapeList(&errs, "owns.subjects", o.Subjects, "")
 		shapeList(&errs, "owns.types", o.Types, "")
+		// owns may leave types empty (it routes by repo or component): core's
+		// own bridge subscription never carries the human-facing types.
+		humanFacing(&errs, "owns", o.Types, o.Subjects)
 	}
 	if sub := s.Subscribes; sub != nil {
 		// Subjects are the bridge's globs (* and ?), types are prefixes.
 		shapeList(&errs, "subscribes.subjects", sub.Subjects, "[]{}\\")
 		shapeList(&errs, "subscribes.types", sub.Types, "*?[]{}\\")
+		if len(sub.Types) == 0 {
+			bad("subscribes.types must not be empty: an empty list matches every type, the human-facing ones included")
+		}
+		humanFacing(&errs, "subscribes", sub.Types, sub.Subjects)
 	}
 	if r := s.Resources; r != nil {
 		if m := cpuRe.FindStringSubmatch(r.CPU); m == nil {
@@ -693,6 +702,22 @@ func validBashSpecifier(spec string) bool {
 
 // shapeList: non-empty strings, no duplicates, none of the forbidden runes or
 // whitespace.
+// humanFacing refuses a type prefix or subject glob that can reach the
+// human-facing events (infra-bootstrap ADR-0066 §4, docs/adr/0078 §4): an
+// agent woken by its own wait loops, and a game event's text becomes a prompt.
+func humanFacing(errs *[]error, field string, types, subjects []string) {
+	for _, t := range types {
+		if events.TypeReaches(t) {
+			*errs = append(*errs, fmt.Errorf("%s.types: %q reaches the human-facing types %v", field, t, events.ReservedTypes))
+		}
+	}
+	for _, g := range subjects {
+		if events.SubjectReaches(g) {
+			*errs = append(*errs, fmt.Errorf("%s.subjects: %q can match the human-facing subjects %v", field, g, events.ReservedSubjects))
+		}
+	}
+}
+
 func shapeList(errs *[]error, field string, list []string, forbidden string) {
 	seen := map[string]bool{}
 	for _, v := range list {
