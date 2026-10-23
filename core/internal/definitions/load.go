@@ -17,6 +17,8 @@ import (
 	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 )
 
 // KnownGroups is the audience groups a definition may name, and so the groups
@@ -378,6 +380,11 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 	if len(s.Actors.Allow) == 0 {
 		errs = append(errs, errors.New("actors.allow must not be empty"))
 	}
+	if s.AnnounceSessions {
+		// Refused until core publishes them (docs/adr/0078 rollout 2): a
+		// reviewed true that reaches nothing would look like it works.
+		errs = append(errs, errors.New("announceSessions: not built yet (docs/adr/0078 rollout step 2)"))
+	}
 	for _, a := range s.Actors.Allow {
 		if !loginRe.MatchString(a) {
 			errs = append(errs, fmt.Errorf("actors.allow: %q is not a GitHub login", a))
@@ -613,11 +620,18 @@ func validate(name string, s *Spec) error {
 		shapeList(&errs, "owns.components", o.Components, "")
 		shapeList(&errs, "owns.subjects", o.Subjects, "")
 		shapeList(&errs, "owns.types", o.Types, "")
+		// owns may leave types empty (it routes by repo or component): core's
+		// own bridge subscription never carries the human-facing types.
+		humanFacing(&errs, "owns", o.Types, o.Subjects)
 	}
 	if sub := s.Subscribes; sub != nil {
 		// Subjects are the bridge's globs (* and ?), types are prefixes.
 		shapeList(&errs, "subscribes.subjects", sub.Subjects, "[]{}\\")
 		shapeList(&errs, "subscribes.types", sub.Types, "*?[]{}\\")
+		if len(sub.Types) == 0 {
+			bad("subscribes.types must not be empty: an empty list matches every type, the human-facing ones included")
+		}
+		humanFacing(&errs, "subscribes", sub.Types, sub.Subjects)
 	}
 	if r := s.Resources; r != nil {
 		if m := cpuRe.FindStringSubmatch(r.CPU); m == nil {
@@ -689,6 +703,23 @@ func checkList(errs *[]error, field string, allow, ceiling []string) {
 func validBashSpecifier(spec string) bool {
 	cmd := strings.TrimSuffix(spec, ":*")
 	return cmd != "" && cmd == strings.TrimSpace(cmd) && !strings.Contains(cmd, "*")
+}
+
+// humanFacing refuses a type prefix that can reach the human-facing events,
+// and a subject glob aimed at their threads (infra-bootstrap ADR-0066 §4,
+// docs/adr/0078 §4): an agent woken by its own wait loops, and a game event's
+// text becomes a prompt. The types are the fence; a match-all subject is fine.
+func humanFacing(errs *[]error, field string, types, subjects []string) {
+	for _, t := range types {
+		if events.TypeReaches(t) {
+			*errs = append(*errs, fmt.Errorf("%s.types: %q reaches the human-facing types %v", field, t, events.ReservedTypes))
+		}
+	}
+	for _, g := range subjects {
+		if events.SubjectReaches(g) {
+			*errs = append(*errs, fmt.Errorf("%s.subjects: %q can match the human-facing subjects %v", field, g, events.ReservedSubjects))
+		}
+	}
 }
 
 // shapeList: non-empty strings, no duplicates, none of the forbidden runes or
