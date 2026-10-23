@@ -42,8 +42,10 @@ func newActivityTrackingStore(store transcript.Store, sessionStore *sessions.Sto
 }
 
 // decisionTypes are the entries that change a session's pending-decision
-// count: an ask and its reply. abort and interrupt write no reply rows, so the
-// count, and the announcement, follow the replies the worker writes after.
+// count: an ask and its reply. abort and interrupt write no reply rows, so they
+// change nothing here: a permission left pending by one stays pending (and
+// announced as waiting, as the console shows it blocked) until the next warm's
+// stale close answers it or the session is archived.
 var decisionTypes = map[string]bool{
 	"question": true, "permission_request": true, "answer": true, "permission_response": true,
 }

@@ -17,6 +17,7 @@ import (
 	"slices"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -84,12 +85,12 @@ func (a *Announcer) Run(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case id := <-a.nudge:
-			if a.now().Before(a.retryAt) {
+			if a.waitingOut() {
 				continue
 			}
 			a.settle(a.Check(ctx, id))
 		case <-t.C:
-			if a.now().Before(a.retryAt) {
+			if a.waitingOut() {
 				continue
 			}
 			a.settle(a.Tick(ctx))
@@ -97,11 +98,23 @@ func (a *Announcer) Run(ctx context.Context, every time.Duration) {
 	}
 }
 
+// waitingOut: still inside the backoff. A second of slack, so a retry due at
+// the next tick is not pushed one more interval by the tick's own jitter.
+func (a *Announcer) waitingOut() bool {
+	return a.now().Add(time.Second).Before(a.retryAt)
+}
+
+// errPublished is how Check and Tick report that the bridge accepted an
+// event: only that ends a backoff (a nudge that found no edge proves nothing).
+var errPublished = errors.New("published")
+
 // settle records how the last attempt went: a failure doubles the backoff and
 // logs one WARN per step; not being configured logs one Info per reason.
 func (a *Announcer) settle(err error) {
 	switch {
 	case err == nil:
+		// Nothing was published: the bridge's state is unknown, keep the backoff.
+	case errors.Is(err, errPublished):
 		a.backoff, a.retryAt = 0, time.Time{}
 		a.lastNote = ""
 	case errors.Is(err, context.Canceled):
@@ -125,7 +138,9 @@ func (a *Announcer) optedIn() []string {
 }
 
 // Tick checks every session whose current state differs from its stored edge,
-// found in one query, and stops at the first failure (the backoff follows).
+// found in one query. A failure that concerns every session (the bridge or
+// authentik unreachable, not configured, the database) stops it and the
+// backoff follows; an event the bridge refuses is skipped (Check records it).
 func (a *Announcer) Tick(ctx context.Context) error {
 	names := a.optedIn()
 	if len(names) == 0 {
@@ -148,12 +163,16 @@ func (a *Announcer) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var published error
 	for _, id := range ids {
-		if err := a.Check(ctx, id); err != nil {
+		switch err := a.check(ctx, id, names); {
+		case errors.Is(err, errPublished):
+			published = errPublished
+		case err != nil:
 			return err
 		}
 	}
-	return nil
+	return published
 }
 
 type pendingEntry struct {
@@ -217,8 +236,22 @@ func (a *Announcer) read(ctx context.Context, id string) (*state, error) {
 
 // Check publishes session id's edge if it differs from the last one the
 // bridge accepted. A session no opted-in client opened is never announced.
+// It returns errPublished when the bridge accepted an event.
 func (a *Announcer) Check(ctx context.Context, id string) error {
-	names := a.optedIn()
+	return a.check(ctx, id, a.optedIn())
+}
+
+// refused: the bridge will never take this event (its shape or its rights),
+// unlike an outage. Retrying it would stall every other session.
+func refused(err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeInvalidArgument, connect.CodePermissionDenied, connect.CodeFailedPrecondition:
+		return true
+	}
+	return false
+}
+
+func (a *Announcer) check(ctx context.Context, id string, names []string) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -250,14 +283,24 @@ func (a *Announcer) Check(ctx context.Context, id string) error {
 	}
 	pctx, cancel := context.WithTimeout(ctx, PublishTimeout)
 	defer cancel()
+	result := errPublished
 	if err := a.pub.Publish(pctx, e); err != nil {
-		return err // the stored edge is unchanged: the next nudge or tick publishes again
+		if !refused(err) {
+			return err // the stored edge is unchanged: the next nudge or tick publishes again
+		}
+		// Recorded as if sent, so it is not retried forever: the next real
+		// edge gets its own chance.
+		slog.Warn("announce: the bridge refused an announcement", "sessionId", id, "type", typ, "error", err)
+		result = nil
 	}
 	_, err = a.pool.Exec(ctx, `
 		INSERT INTO session_announcements (session_id, waiting, position) VALUES ($1, $2, $3)
 		ON CONFLICT (session_id) DO UPDATE SET waiting = excluded.waiting, position = excluded.position, published_at = now()
 		 WHERE session_announcements.position <= excluded.position`, id, waiting, st.position)
-	return err
+	if err != nil {
+		return err
+	}
+	return result
 }
 
 // reasons names what the pending entries wait for, without their text: a plan

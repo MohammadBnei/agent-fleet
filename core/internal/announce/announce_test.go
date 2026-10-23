@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
@@ -75,7 +77,7 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := a.Tick(ctx); err != nil {
+	if err := a.Tick(ctx); !errors.Is(err, errPublished) {
 		t.Fatal(err)
 	}
 	if len(pub.events) != 1 {
@@ -123,7 +125,7 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 		t.Fatal("a failed publish was not reported")
 	}
 	pub.fail = nil
-	if err := a.Check(ctx, game); err != nil {
+	if err := a.Check(ctx, game); !errors.Is(err, errPublished) {
 		t.Fatal(err)
 	}
 	if len(pub.events) != 2 || pub.events[1].Type != TypeResumed || pub.events[1].Id != game+":"+strconv.FormatInt(last, 10)+":resumed" {
@@ -152,13 +154,13 @@ func TestArchivedWhileWaitingResumes(t *testing.T) {
 	if _, err := tr.Append(ctx, id, "agent", "?", "question", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Tick(ctx); err != nil || len(pub.events) != 1 {
+	if err := a.Tick(ctx); !errors.Is(err, errPublished) || len(pub.events) != 1 {
 		t.Fatalf("waiting: %d %v", len(pub.events), err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET archived_at = now() WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Tick(ctx); err != nil || len(pub.events) != 2 {
+	if err := a.Tick(ctx); !errors.Is(err, errPublished) || len(pub.events) != 2 {
 		t.Fatalf("resumed on archive: %d %v", len(pub.events), err)
 	}
 	if pub.events[1].Type != TypeResumed || pub.events[1].Id == pub.events[0].Id {
@@ -185,7 +187,46 @@ func TestBackoff(t *testing.T) {
 		t.Fatalf("backoff %v, want capped at %v", a.backoff, BackoffMax)
 	}
 	a.settle(nil)
-	if a.backoff != 0 || !a.retryAt.IsZero() {
-		t.Fatal("a success did not reset the backoff")
+	if a.backoff != BackoffMax {
+		t.Fatal("a check that published nothing reset the backoff")
 	}
+	a.settle(errPublished)
+	if a.backoff != 0 || !a.retryAt.IsZero() {
+		t.Fatal("a publish did not reset the backoff")
+	}
+}
+
+// A refused event is skipped and recorded; the other sessions still go out.
+func TestRefusedEventDoesNotStall(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	ctx := context.Background()
+	tr := transcript.NewPostgresStore(pool)
+	pub := &refusingPub{refuse: map[string]bool{}}
+	a := New(pool, pub, func() []string { return []string{"game"} })
+	bad, good := thread(t, pool, "game"), thread(t, pool, "game")
+	pub.refuse["fleet/client/game/"+bad] = true
+	for _, id := range []string{bad, good} {
+		if _, err := tr.Append(ctx, id, "agent", "?", "question", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.Tick(ctx); !errors.Is(err, errPublished) || len(pub.sent) != 1 || pub.sent[0] != "fleet/client/game/"+good {
+		t.Fatalf("a refused session stalled the tick: %v %v", pub.sent, err)
+	}
+	if err := a.Tick(ctx); err != nil || len(pub.sent) != 1 {
+		t.Fatalf("the refused edge was retried: %v %v", pub.sent, err)
+	}
+}
+
+type refusingPub struct {
+	refuse map[string]bool
+	sent   []string
+}
+
+func (r *refusingPub) Publish(_ context.Context, e *bridgev1.CloudEvent) error {
+	if r.refuse[e.Subject] {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("no"))
+	}
+	r.sent = append(r.sent, e.Subject)
+	return nil
 }
