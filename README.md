@@ -25,8 +25,9 @@ across all repos. Each session has its own node-local volume holding a real
 clone, which borrows objects from a shared clone cache through git alternates.
 There is no queue, no status enum and no worktree; the agent creates its own
 branch. Idle pods are torn down and the session resumes in a fresh pod on the
-next message. Machine-initiated work (alerts, schedules) only files a
-proposal; a human opens it.
+next message. Events from the bridge (`docs/adr/0071`) wake a definition's
+session when a trusted human caused them; untrusted machine-initiated work
+(alerts, schedules, other events) only files a proposal, which a human opens.
 
 - `core/` — Go: the dashboard's ConnectRPC API + static SPA, behind
   authentik OIDC terminated in `core` itself
@@ -36,7 +37,7 @@ proposal; a human opens it.
   ([`docs/adr/0057`](./docs/adr/0057-coreservice-authenticates-with-the-session-lease.md));
   the Postgres `transcript` that coordinates sessions; a 60s reconcile loop
   that tracks pod state and tears down idle pods; alert and schedule intake
-  that files proposals; Loki/Prometheus queries; and outbound-only Discord
+  that files proposals; the event-bridge dispatcher and `PublishEvent`; Loki/Prometheus queries; and outbound-only Discord
   notifications that link to the dashboard. The fleet's sole holder of
   Postgres credentials; needs zero cluster RBAC.
 - `provisioner/` — Go, `client-go`: the only fleet component with
@@ -65,8 +66,8 @@ proposal; a human opens it.
   sidecar).
 - `db/migrations/` — sole source of truth (golang-migrate, see
   `docs/adr/0030`) for `sessions`, `proposals`, `transcript`, `repos`,
-  `schedules`, `knowledge_journal` and the definitions, packs and grants
-  tables, in the fleet-wide `agentfleetdb` Postgres database
+  `schedules`, `knowledge_journal`, the definitions, packs and grants
+  tables and the bridge's dispatch tables, in the fleet-wide `agentfleetdb` Postgres database
   (Pigsty).
 
 How this compares with another self-hosted fleet built for the same reason:

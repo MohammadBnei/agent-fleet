@@ -4,7 +4,8 @@
 - **Built:** both listeners (`:8080` members, `:9091` clients with a bearer per registration),
   the fail-closed authz table (`core/internal/agentsvc/authz.go`), definitions, threads,
   messages, transcript, decisions, `SetConfig` (mode), `Stop`, `GetStatus`, and `Open`/
-  `CloseThread` with `client_requests` claims. **Not yet built:** `Invoke`/`WaitForResult`
+  `CloseThread` with `client_requests` claims; the bridge dispatcher calls `Open` in-process as
+  the `bridge` client (#324). **Not yet built:** `Invoke`/`WaitForResult`
   (declared in the proto and the authz table, served `Unimplemented`; ADR-0070); §9's
   per-definition `CoreService` method set (core still uses the fixed `definitionMethods`) and
   sidecar tool filter; §11's SDK helpers (there is no `sdk/`).

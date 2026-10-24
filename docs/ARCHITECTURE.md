@@ -35,7 +35,8 @@ topology/features — the reading order is `DECISIONS.md` → this file →
 `adr/` → source.
 
 Sections 2–7 were brought forward on 2026-08-15, together with the dashboard
-catch-up in v3.0.2, and checked against the code again on 2026-10-22 (v6.23.1),
+catch-up in v3.0.2, and checked against the code again on 2026-10-22 (v6.23.1) and 2026-10-24
+(v6.24.0 plus the unreleased bridge consumer),
 when §4 and §6–§8 became pointers: code is the truth, and this file keeps
 what code cannot say. Where they describe a deleted mechanism they now do so in
 the past tense and say what replaced it — the queue, the lease/heartbeat/
@@ -424,9 +425,22 @@ is the reason.
   `adr/0048`): it says that a session needs a human, never what. No slash
   commands, threads or relayed replies — Discord has no authorization model,
   so a button there would let anyone in the channel approve a `Bash`.
-- **Proposals are the human gate for machine-initiated work**: alerts
-  (`core/internal/alertwebhook`) and schedules (`core/internal/schedules`)
-  file deduped proposals; a human opens one (`OpenFromProposal`).
+- **Proposals hold untrusted machine-initiated work**: alerts
+  (`core/internal/alertwebhook`), schedules (`core/internal/schedules`) and
+  bridge events from untrusted actors (`source='event'`) file deduped
+  proposals; a human opens one (`OpenFromProposal`).
+- **Core is on the event bridge** (infra-bootstrap ADR-0060; `adr/0071`,
+  `adr/0078`). One dispatcher (`core/internal/dispatch`) consumes
+  `dev.bnei.github.`/`alert.`/`agent.` events and routes each to the
+  definitions that own or subscribe to it, through in-process
+  `AgentService.Open` as the `bridge` client. A trusted human's event wakes
+  a thread; anything else becomes a proposal. Delivery and retry are the
+  bridge's: core acks or nacks, and holds no queue. A definition granted
+  `publish_event` hands work on through `CoreService.PublishEvent`
+  (`dispatch/publish.go`; depth, per-session budget and per-thread wake
+  caps). `core/internal/announce` publishes `session.waiting`/`resumed`
+  for clients with `announceSessions`. `definitions/clients/bridge.yaml`
+  lists no definition yet, so no event opens anything.
 - **Repos come from GitHub** ([`adr/0074`](adr/0074-fleet-repos-come-from-github.md),
   amended by `adr/0075` §4): core projects the GitHub App `ukubi-fleet`'s
   allowlisted installations into `repos` (`core/internal/repos/sync.go`, via
@@ -688,7 +702,8 @@ Two different questions, answered from two different places:
 The schema is `db/migrations/` (golang-migrate, `adr/0030`); read the newest
 files there. Tables: `sessions`, `transcript`, `proposals`, `repos`, `schedules`,
 `knowledge_journal`, `agent_definitions`, `packs`/`pack_versions`/`pack_attachments`,
-`reviewed_packs`, `client_requests`, `session_grants`, `definition_grants`.
+`reviewed_packs`, `client_requests`, `session_grants`, `definition_grants`,
+`session_announcements`, `dispatch_decisions`, `published_events`.
 Invariants the files only imply: `sessions` has no status, lease-renewal or
 retry columns (`adr/0048` §2) and `pod_phase` is its only liveness signal;
 `transcript` cascades from `sessions` and dedups on `(session_id,

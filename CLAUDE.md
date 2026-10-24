@@ -53,7 +53,7 @@ is stale → check code.**
 | `docs/DECISIONS.md` | Canonical settled decisions, forbidden patterns (the WHY, short) |
 | `docs/adr/` | One ADR per real decision |
 | `docs/verification-traps.md` | Full account of every silent-failure trap. One-liners below |
-| `core/` | Go, one binary. Discord notify, `CoreService` gRPC, transcript coordination, Loki/Prometheus queries, dashboard ConnectRPC API, `AgentService` (`internal/agentsvc`, `adr/0066`), static SPA + island bundles. **No cluster RBAC.** Sole Postgres-cred holder. No dispatch loop, no queue (`adr/0048`): message provisions. 60s reconcile (`internal/sessions/reconcile.go`) writes `pod_phase` from what k8s reports → stop-grace/startup-stall/idle/retention sweeps run off it |
+| `core/` | Go, one binary. Discord notify, `CoreService` gRPC, transcript coordination, Loki/Prometheus queries, dashboard ConnectRPC API, `AgentService` (`internal/agentsvc`, `adr/0066`), bridge consumer (`internal/dispatch`, `adr/0071`), `PublishEvent`, session announcements (`internal/announce` + `internal/bridgeclient`, `adr/0078`), static SPA + island bundles. **No cluster RBAC.** Sole Postgres-cred holder. No queue (`adr/0048`): the bridge holds delivery and retry; a message or a dispatched event provisions. 60s reconcile (`internal/sessions/reconcile.go`) writes `pod_phase` from what k8s reports → stop-grace/startup-stall/idle/retention sweeps run off it |
 | `provisioner/` | Go. **Only** component with cluster RBAC over fleet namespace. Owns pod creation + git lifecycle. **No worktrees** (`adr/0048` §5): PVC per session holding real clone; shared PVC keeps read-only repo cache + per-session `claude-home`. Zero DB creds — k8s is its source of truth |
 | `sidecar/` | Go. Second container in every worker pod. Local MCP server (agent-facing) + local HTTP/JSON API (wrapper-facing, incl. human-message SSE feed) + telemetry loop. All funneled through one outbound gRPC to `core` |
 | `dashboard/` | React + Vite + TS + Tailwind/DaisyUI SPA. ConnectRPC client, built into `core` binary — never deployed alone. Console rewrite (`adr/0042`): 5 full-width views (sessions, schedules — was audits —, files, observability, settings) + detail replacing list; observability = live topology + PromQL explorer (`adr/0047`); decisions answerable **from the list**; 5-tier feed + one 3-way DENSITY control; one pinned `DecisionDock` both form factors (`adr/0043` — desktop spine gone, `DENSITY → decisions` is zoom-out); 2 themes. PWA SW caches **no** fleet state (cached session list → someone answers a resolved decision). URL state `?view=`/`?session=`; pre-rename `?task=` still read. Shared both form factors: `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, `bucketSessions`, `sessionLabel` — put anything both need there. `MermaidDiagram` `React.lazy` deliberately: biggest thing shipped, almost nothing renders a diagram |
@@ -179,7 +179,9 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   Authorization is an explicit per-method table — a field-name rule is wrong on
   `PromptSession`, `SaveAgentSessionId` and `GetSession`, each time in the direction that
   grants authority. A method in no table fails closed. A **definition** lease additionally
-  passes only `definitionMethods` (`adr/0064`: no `Expose`, peers, journal, files, Loki), and
+  passes only `definitionMethods` (`adr/0064`: no `Expose`, peers, journal, files, Loki).
+  `PublishEvent` goes the other way: only a definition whose pinned spec grants
+  `publish_event` may call it, never with the provisioner token (`adr/0078` §8), and
   nobody can `PromptSession` into one. Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
@@ -275,8 +277,12 @@ deploy, CI, permission or pod-lifecycle paths.
 - Secrets never committed; fetched from Infisical at run time.
 - Conventional Commits — `docker.yml`'s `release` job runs `release-it` off them, bumping
   version/CHANGELOG on every push to `main`.
-- AI co-author trailer: `Co-Authored-By: ukubi-claude-macbook <noreply@bnei.dev>` for work
-  on this repo. `ukubi-agent` is only for fleet worker pods.
+- Commit trailers name the agent, with a little metadata — claims, never evidence
+  (`adr/0079`'s ledger is). `Co-Authored-By: <agent> <noreply@bnei.dev>`, agent =
+  `ukubi-claude-<host>` (laptop), `ukubi-claude-cloud` (claude.ai/code), `ukubi-agent`
+  (fleet repo pod, stamped by `worker/git-hooks`); a definition pod adds none (its author is
+  `git.identity`). Plus `Agent-Session: <opaque id>` where one exists. No model ids, no URLs,
+  no "Generated with" footer.
 - `worker/`: `bun:test` for coordination logic cheap to mock (SDK streaming-input `query()`,
   sidecar local HTTP client). Runs in CI ahead of Docker build. Also `bun run typecheck`.
 - `core/`, `provisioner/`, `sidecar/`: `go test`. Table-driven units, `client-go` fake

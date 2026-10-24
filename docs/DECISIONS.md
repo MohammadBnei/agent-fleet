@@ -301,7 +301,8 @@ Any doc, code, comment, or memory that contradicts this file or an
 - [`0070`](adr/0070-headless-invoke.md) — headless invoke: deny instead of ask, one
   structured result (Proposed).
 - [`0071`](adr/0071-events-reach-sessions-through-the-bridge.md) — events reach
-  sessions through the bridge (Accepted, not built).
+  sessions through the bridge (Accepted; the dispatcher and `PublishEvent` are built,
+  Alertmanager not yet repointed).
 - [`0072`](adr/0072-approval-gated-executor.md) — an approval button runs exactly
   the step it showed (Accepted, not built).
 - 0073 — number never used.
@@ -313,6 +314,11 @@ Any doc, code, comment, or memory that contradicts this file or an
   the fleet's `auto`; their allow list grows by remembered approvals (grants).
 - [`0077`](adr/0077-claude-code-picks-the-model.md) — Claude Code picks the default
   model; a repo session can pick model and effort.
+- [`0078`](adr/0078-core-on-the-bridge.md) — core signs in to the bridge; reserved
+  human-facing event types; announcements for opted-in clients (Proposed; the
+  announcer and the loader's reserved-type refusal are built).
+- [`0079`](adr/0079-provenance-ledger.md) — a provenance ledger: an echo carries its
+  writer's trust (Proposed).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
