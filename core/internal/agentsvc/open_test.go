@@ -4,6 +4,7 @@ package agentsvc
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -21,8 +22,9 @@ import (
 // run, and archiving skips the pod teardown.
 type noWarm struct {
 	*dashboard.Server
-	store *sessions.Store
-	warms []string
+	store   *sessions.Store
+	warms   []string
+	warmErr error // refuses every warm when set
 }
 
 func (n *noWarm) ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error) {
@@ -30,6 +32,9 @@ func (n *noWarm) ArchiveSession(ctx context.Context, req *connect.Request[agentf
 }
 
 func (n *noWarm) WarmIfIdle(_ context.Context, id string) (string, error) {
+	if n.warmErr != nil {
+		return "", n.warmErr
+	}
 	n.warms = append(n.warms, id)
 	return "pod", nil
 }
@@ -203,5 +208,123 @@ func TestOpen_DelistedClient(t *testing.T) {
 	}
 	if _, err := s.GetTranscript(bot, connect.NewRequest(&agentfleetv1.AgentServiceGetTranscriptRequest{ThreadId: id})); err != nil {
 		t.Errorf("de-listed client reads: %v", err)
+	}
+}
+
+// docs/adr/0078 §5: the paths the bridge's dispatcher relies on.
+func TestOpen_DispatcherPaths(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	transcr := transcript.NewPostgresStore(pool)
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	spec := &definitions.Spec{
+		Invokers:  []string{"bridge", "net"},
+		Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
+		Model:     &definitions.Model{Default: "claude-opus-5", Allow: []string{"claude-opus-5"}},
+		Mode:      &definitions.Mode{Default: "auto", Allow: []string{"auto"}},
+	}
+	testClients = []definitions.Client{
+		{Name: "bridge", Spec: definitions.ClientSpec{Actors: definitions.AllowList{Allow: []string{"MohammadBnei"}}, Definitions: []string{"d"}}},
+		{Name: "net", Spec: definitions.ClientSpec{TokenRef: "NET_TOKEN", Definitions: []string{"d"}}},
+	}
+	t.Cleanup(func() { testClients = nil })
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")}
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
+
+	if _, err := s.AsClient(ctx, "net"); err == nil {
+		t.Fatal("AsClient took a client reachable over :9091")
+	}
+	if _, err := s.AsClient(ctx, "ghost"); err == nil {
+		t.Fatal("AsClient took an unregistered client")
+	}
+	bridge, err := s.AsClient(ctx, "bridge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := func(key string, wake bool) *agentfleetv1.OpenRequest {
+		return &agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "github/o/notes/pr/1", Message: "event", Wake: wake,
+			Interaction: "ask", Lifecycle: "resident", Visibility: "shared", IdempotencyKey: key, Actor: "MohammadBnei"}
+	}
+
+	// No thread and not waking: the typed error the dispatcher proposes on.
+	if _, err := s.Open(bridge, connect.NewRequest(req("e0", false))); !errors.Is(err, ErrNeedsWake) {
+		t.Fatalf("no thread, not waking: %v, want ErrNeedsWake", err)
+	}
+	// Another FailedPrecondition is not it.
+	bad := req("e0b", true)
+	bad.Lifecycle = "ephemeral"
+	if _, err := s.Open(bridge, connect.NewRequest(bad)); connect.CodeOf(err) != connect.CodeFailedPrecondition || errors.Is(err, ErrNeedsWake) {
+		t.Fatalf("an unrelated FailedPrecondition: %v", err)
+	}
+
+	// The warm refused for capacity: the thread this call created is
+	// archived, so the key is free for the event's proposal.
+	dash.warmErr = connect.NewError(connect.CodeResourceExhausted, errors.New("at capacity"))
+	if _, err := s.Open(bridge, connect.NewRequest(req("e1", true))); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("over capacity: %v", err)
+	}
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/1"); open != nil {
+		t.Fatal("an over-capacity Open left an empty thread holding the key")
+	}
+
+	// The admin opens the proposal: waking, as the admin, past actors.allow.
+	dash.warmErr = nil
+	m := req("proposal:p1", false)
+	m.Actor = "someone-else"
+	res, err := s.OpenAsAdmin(ctx, "bridge", "admin-sub", m)
+	if err != nil {
+		t.Fatalf("OpenAsAdmin: %v", err)
+	}
+	entries, _, _ := transcr.ReadSince(ctx, res.GetThreadId(), 0, 10)
+	var actor string
+	if err := pool.QueryRow(ctx, `SELECT actor FROM transcript WHERE session_id = $1`, res.GetThreadId()).Scan(&actor); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ContextOnly || actor != "admin:admin-sub" || len(dash.warms) != 1 {
+		t.Fatalf("admin open: %+v actor=%q warms=%v", entries, actor, dash.warms)
+	}
+	// An existing thread over capacity is not archived by Open.
+	dash.warmErr = connect.NewError(connect.CodeResourceExhausted, errors.New("at capacity"))
+	if _, err := s.Open(bridge, connect.NewRequest(req("e2", true))); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("over capacity on an open thread: %v", err)
+	}
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/1"); open == nil || open.ID != res.GetThreadId() {
+		t.Fatal("an over-capacity follow-up archived the existing thread")
+	}
+	if _, err := s.OpenAsAdmin(ctx, "net", "admin-sub", req("proposal:p2", true)); err == nil {
+		t.Fatal("OpenAsAdmin through a network client")
+	}
+
+	// An admin opening a tainted proposal onto an existing thread wakes it,
+	// still marked untrusted: the click is the gate.
+	dash.warmErr = nil
+	warms := len(dash.warms)
+	tm := req("proposal:p3", false)
+	tm.Tainted = true
+	r3, err := s.OpenAsAdmin(ctx, "bridge", "admin-sub", tm)
+	if err != nil || r3.GetThreadId() != res.GetThreadId() || len(dash.warms) != warms+1 {
+		t.Fatalf("tainted admin open: %v warms=%v", err, dash.warms)
+	}
+	entries, _, _ = transcr.ReadSince(ctx, res.GetThreadId(), 0, 10)
+	if last := entries[len(entries)-1]; last.ContextOnly || !last.Untrusted {
+		t.Fatalf("tainted admin open landed %+v", last)
+	}
+
+	// A fresh thread whose warm fails for any reason is archived, so later
+	// events do not land in a session that never ran.
+	dash.warmErr = connect.NewError(connect.CodeUnavailable, errors.New("provisioner down"))
+	other := req("e3", true)
+	other.ThreadKey = "github/o/notes/pr/2"
+	if _, err := s.Open(bridge, connect.NewRequest(other)); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("warm failure: %v", err)
+	}
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/2"); open != nil {
+		t.Fatal("a fresh thread whose warm failed stayed open")
 	}
 }

@@ -3,6 +3,7 @@ package alertwebhook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,10 +11,11 @@ import (
 )
 
 type fakeTasks struct {
-	calls    []string // dedup keys seen
-	payloads []string // raw alert JSON handed to Create, in call order
-	bodies   []string
-	existing map[string]bool
+	calls     []string // dedup keys seen
+	payloads  []string // raw alert JSON handed to Create, in call order
+	bodies    []string
+	existing  map[string]bool
+	dismissed []string
 }
 
 func (f *fakeTasks) Create(_ context.Context, _, source, dedupKey, _, body, payloadJSON string) (string, bool, error) {
@@ -28,6 +30,13 @@ func (f *fakeTasks) Create(_ context.Context, _, source, dedupKey, _, body, payl
 	}
 	f.existing[dedupKey] = true
 	return "proposal-" + dedupKey, true, nil
+}
+
+func (f *fakeTasks) DismissUnopened(_ context.Context, _, dedupKey string) (bool, error) {
+	f.dismissed = append(f.dismissed, dedupKey)
+	was := f.existing[dedupKey]
+	delete(f.existing, dedupKey)
+	return was, nil
 }
 
 type fakeDiscord struct{ threads int }
@@ -234,5 +243,39 @@ func TestInactiveRepoFilesNothing(t *testing.T) {
 	}
 	if len(tasks.calls) != 0 {
 		t.Fatalf("filed %v on an inactive repo", tasks.calls)
+	}
+}
+
+// The bridge path: File files a firing alert once, whichever path came first,
+// and Resolve dismisses the unopened proposal.
+func TestFileAndResolve(t *testing.T) {
+	tasks := &fakeTasks{}
+	discord := &fakeDiscord{}
+	h := New(tasks, discord, Config{Token: "right", Repo: "infra-bootstrap"})
+	fire := json.RawMessage(`{"status":"firing","fingerprint":"fp1","labels":{"alertname":"Down"}}`)
+	if rec := post(t, h, "right", `{"alerts":[`+string(fire)+`]}`); rec.Code != http.StatusOK {
+		t.Fatalf("direct path: %d", rec.Code)
+	}
+	if ok, err := h.File(context.Background(), fire); err != nil || ok {
+		t.Fatalf("bridge path after the direct one: created=%v err=%v, want a no-op", ok, err)
+	}
+	if discord.threads != 1 {
+		t.Fatalf("pinged Discord %d times, want once", discord.threads)
+	}
+	if _, err := h.File(context.Background(), json.RawMessage(`{"status":"resolved","fingerprint":"fp1"}`)); !errors.Is(err, ErrSkipped) {
+		t.Fatalf("File took a resolved alert: %v", err)
+	}
+	if err := h.Resolve(context.Background(), json.RawMessage(`{"status":"resolved","fingerprint":"fp1"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks.dismissed) != 1 || tasks.dismissed[0] != "fp1" {
+		t.Fatalf("dismissed %v", tasks.dismissed)
+	}
+	if ok, err := h.File(context.Background(), fire); err != nil || !ok {
+		t.Fatalf("a new firing after the resolution: created=%v err=%v", ok, err)
+	}
+	h.SetInactive(func(context.Context, string) bool { return true })
+	if ok, err := h.File(context.Background(), json.RawMessage(`{"status":"firing","fingerprint":"fp2"}`)); err != nil || ok {
+		t.Fatalf("filed under an inactive repo: %v %v", ok, err)
 	}
 }

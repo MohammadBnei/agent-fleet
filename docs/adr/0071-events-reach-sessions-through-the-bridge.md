@@ -1,6 +1,6 @@
 # ADR-0071 — Events reach sessions through the bridge
 
-- **Status:** Accepted, not built
+- **Status:** Accepted; §2 (`PublishEvent`/`publish_event`) and §3–§7 (the dispatcher in `core/internal/dispatch`) built in #324/#325, not yet released; an amendment is proposed in [ADR-0078](0078-core-on-the-bridge.md) (sign-in, reserved types, the dispatcher's rules). Not yet: Alertmanager still posts to `/webhook/alertmanager`, and `definitions/clients/bridge.yaml` lists no definition, so nothing opens yet
 - **Date:** 2026-10-18
 - **Related:** infra-bootstrap ADR-0060 (`ukubi-bridge`, the bus itself),
   [ADR-0041](0041-inter-agent-prompting.md) (`prompt_agent`, which stays),

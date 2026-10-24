@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -41,6 +42,7 @@ type Notifier interface {
 // infra-bootstrap, whose sessions carry cluster access (docs/adr/0037).
 type ProposalCreator interface {
 	Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (string, bool, error)
+	DismissUnopened(ctx context.Context, repo, dedupKey string) (bool, error)
 }
 
 type Config struct {
@@ -131,50 +133,87 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	created, skipped := 0, 0
 	for _, raw := range p.Alerts {
-		var a alert
-		if err := json.Unmarshal(raw, &a); err != nil {
-			// One malformed alert must not discard the rest of the batch:
-			// Alertmanager groups alerts, so failing the whole request here
-			// would drop good alerts along with the bad one, and it retries
-			// the batch as a unit.
-			slog.Warn("alertwebhook: undecodable alert, skipping", "error", err)
-			continue
-		}
-		// Only firing. A resolved notification needs no investigation, and
-		// acting on one would double every alert's task count.
-		if a.Status != "firing" {
-			continue
-		}
-		key := a.Fingerprint
-		if key == "" {
-			// Without a fingerprint there is no dedup key, and an alert
-			// storm could spawn unbounded tasks. Skip loudly.
-			slog.Warn("alertwebhook: alert with no fingerprint, skipping", "labels", a.Labels)
-			continue
-		}
-
-		name := a.Labels["alertname"]
-		if name == "" {
-			name = "alert"
-		}
-		id, ok, err := h.proposals.Create(r.Context(), h.cfg.Repo, "alert", key, truncate(name, 120), describe(a), string(raw))
-		if err != nil {
-			slog.Error("alertwebhook: create proposal", "fingerprint", key, "error", err)
-			continue
-		}
-		if !ok {
-			// A proposal for this alert is already standing — the partial
-			// unique index doing its job, not a failure.
+		// One malformed or failed alert must not discard the rest of the
+		// batch: Alertmanager groups alerts, so failing the whole request
+		// would drop good alerts along with the bad one, and it retries the
+		// batch as a unit. File logs its own failures.
+		switch ok, err := h.file(r.Context(), raw); {
+		case err != nil:
+		case ok:
+			created++
+		default:
 			skipped++
-			continue
 		}
-		created++
-		slog.Info("alertwebhook: filed proposal", "proposalId", id, "alert", name)
-		h.notify(r.Context(), id, name, a)
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, "created=%d deduped=%d\n", created, skipped)
+}
+
+// ErrSkipped is File's answer for an alert it will never file: undecodable,
+// not firing, or without a fingerprint. Retrying it changes nothing.
+var ErrSkipped = errors.New("alert not filed")
+
+// File files one firing alert as a proposal, deduped on its fingerprint. It
+// is shared by this webhook and the bridge's dispatcher (docs/adr/0078 §6):
+// whichever path delivers an alert first files it, the other is a no-op, and
+// only the call that filed it pings Discord. created is false when a
+// proposal already stands or the repo is inactive.
+func (h *Handler) File(ctx context.Context, raw json.RawMessage) (created bool, err error) {
+	if h.inactive != nil && h.inactive(ctx, h.cfg.Repo) {
+		return false, nil
+	}
+	return h.file(ctx, raw)
+}
+
+func (h *Handler) file(ctx context.Context, raw json.RawMessage) (bool, error) {
+	var a alert
+	if err := json.Unmarshal(raw, &a); err != nil {
+		slog.Warn("alertwebhook: undecodable alert, skipping", "error", err)
+		return false, ErrSkipped
+	}
+	// Only firing. A resolved notification needs no investigation, and
+	// acting on one would double every alert's task count.
+	if a.Status != "firing" {
+		return false, ErrSkipped
+	}
+	key := a.Fingerprint
+	if key == "" {
+		// Without a fingerprint there is no dedup key, and an alert
+		// storm could spawn unbounded tasks. Skip loudly.
+		slog.Warn("alertwebhook: alert with no fingerprint, skipping", "labels", a.Labels)
+		return false, ErrSkipped
+	}
+
+	name := a.Labels["alertname"]
+	if name == "" {
+		name = "alert"
+	}
+	id, ok, err := h.proposals.Create(ctx, h.cfg.Repo, "alert", key, truncate(name, 120), describe(a), string(raw))
+	if err != nil {
+		slog.Error("alertwebhook: create proposal", "fingerprint", key, "error", err)
+		return false, err
+	}
+	if !ok {
+		// A proposal for this alert is already standing — the partial
+		// unique index doing its job, not a failure.
+		return false, nil
+	}
+	slog.Info("alertwebhook: filed proposal", "proposalId", id, "alert", name)
+	h.notify(ctx, id, name, a)
+	return true, nil
+}
+
+// Resolve dismisses the proposal a resolved alert filed, if nobody opened
+// it (docs/adr/0078 §5). Only the bridge path delivers resolutions; the
+// direct webhook keeps dropping them. An opened one stays with its session.
+func (h *Handler) Resolve(ctx context.Context, raw json.RawMessage) error {
+	var a alert
+	if err := json.Unmarshal(raw, &a); err != nil || a.Status != "resolved" || a.Fingerprint == "" {
+		return ErrSkipped
+	}
+	_, err := h.proposals.DismissUnopened(ctx, h.cfg.Repo, a.Fingerprint)
+	return err
 }
 
 // notify is best-effort: losing the Discord ping must not lose the proposal,

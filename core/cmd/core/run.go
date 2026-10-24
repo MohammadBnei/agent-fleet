@@ -24,12 +24,15 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
+	"github.com/MohammadBnei/agent-fleet/core/internal/announce"
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
+	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
+	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -81,7 +84,19 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// activity-tracking wrapper instead of `store` directly — see its own
 	// comment for why this is the one choke point for the idle-timeout
 	// backstop's activity signal.
-	activityStore := newActivityTrackingStore(store, sessionStore)
+	// Session announcements (docs/adr/0078 §2-3): published to the event
+	// bridge for the sessions of clients with announceSessions. Without a
+	// bridge (no BRIDGE_URL or no app password file) the announcer only
+	// waits; core starts either way.
+	var announceClients func() []string
+	bridge := bridgeclient.New(cfg.Bridge)
+	announcer := announce.New(pool, bridge, func() []string {
+		if announceClients == nil {
+			return nil
+		}
+		return announceClients()
+	})
+	activityStore := newActivityTrackingStore(store, sessionStore, announcer.Nudge)
 
 	if cfg.CoreProvisionerToken == "" {
 		slog.Warn("FLEET_CORE_PROVISIONER_TOKEN is unset: the provisioner will reject every call core makes (docs/adr/0069)")
@@ -178,6 +193,20 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	})
 	go sessionLoop.Run(ctx, 60*time.Second)
 
+	announceClients = func() []string {
+		var names []string
+		for _, c := range defs.Clients() {
+			if c.Spec.AnnounceSessions {
+				names = append(names, c.Name)
+			}
+		}
+		return names
+	}
+	if cfg.Bridge.URL == "" {
+		slog.Info("BRIDGE_URL is unset: no session announcements (docs/adr/0078)")
+	}
+	go announcer.Run(ctx, 30*time.Second)
+
 	// A schedule files a proposal, which a human opens — there is no separate
 	// service to reach, so the scheduler always runs.
 	scheduleLoop := schedules.NewLoop(scheduleStore, proposalStore)
@@ -217,6 +246,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
+	// docs/adr/0078 §8: a definition session hands work on through the
+	// bridge, with core setting actor, causation, hops and trust.
+	coreSvc.SetPublishFunc(func(ctx context.Context, sessionID, definition, typ, subject, text, key string) (string, bool, int32, error) {
+		r, err := dispatch.Publish(ctx, pool, bridge, sessionID, definition, typ, subject, text, key)
+		return r.ID, r.Trusted, r.Hops, err
+	})
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -390,6 +425,22 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub)
+	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
+	// definition threads through agentSvc as client bridge, and a firing
+	// alert reaches the same handler as /webhook/alertmanager.
+	if defs != nil {
+		var alerts dispatch.Alerts
+		if cfg.ThotRepo != "" {
+			alerts = alertHandler
+		}
+		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
+		dashboardSvc.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, sub string) (string, error) {
+			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
+		})
+		if cfg.Bridge.URL != "" {
+			go dispatcher.Run(ctx)
+		}
+	}
 	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
 

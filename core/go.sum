@@ -10,6 +10,8 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/MohammadBnei/agent-fleet/proto/gen/go v0.0.0-20260809100100-f01096ed10ac h1:YttETY0At7F/7f72g8w/25XsApIsKbfVQwLts3sDtj0=
 github.com/MohammadBnei/agent-fleet/proto/gen/go v0.0.0-20260809100100-f01096ed10ac/go.mod h1:T14aHnLCuO4g/KWreP4fOYfn9l7BzvfmxsaJfmFQIUk=
+github.com/MohammadBnei/ukubi-bridge v0.0.0-20261023203116-dbacf7c975ef h1:By5PIOE47bcvPHrlpfql7NcXGwJLgGk/W4mfY77zWKk=
+github.com/MohammadBnei/ukubi-bridge v0.0.0-20261023203116-dbacf7c975ef/go.mod h1:fgehjpkEuidDbMwrsIXTF4raTJUL21G1giL+RWPwrJw=
 github.com/aws/aws-sdk-go-v2 v1.47.3 h1:HRoT/MkNi3bjO5xF4dCzLzvVmkvRGHj3/cLINDnJejk=
 github.com/aws/aws-sdk-go-v2 v1.47.3/go.mod h1:xSl+OSI5ZUw6bSMupWc218zE5Pl+65MCCu3ySWFY99A=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 h1:oiEmPz/YMMeh/JvAE8xSxNCIsvWE6lpFe4ZPlyFykQI=

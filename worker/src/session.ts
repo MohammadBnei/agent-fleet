@@ -87,8 +87,9 @@ const FLEET_OWN_TOOL = /^mcp__(agent-fleet-sidecar|playwright)__/;
 
 // …with one carve-out, and only in `plan`. The rationale above is "reaching a
 // human must not need a human", which covers the sidecar's talking, journal and
-// file-reading tools. These five act outside this session — another session's
-// pod, a Service and an IngressRoute, a shared file that is gone — and `plan`
+// file-reading tools. These act outside this session — another session's
+// pod, a Service and an IngressRoute, a shared file that is gone, an event
+// that wakes another agent (docs/adr/0078 §8) — and `plan`
 // mode means "do not act yet". The SDK's own plan-mode MCP gate used to stop
 // them, and that gate is exactly what FLEET_OWN_TOOL overrides, so without this
 // the short-circuit would quietly widen what a planning session can do.
@@ -101,6 +102,7 @@ const PLAN_MODE_STILL_ASKS = new Set([
   "mcp__agent-fleet-sidecar__expose",
   "mcp__agent-fleet-sidecar__unexpose",
   "mcp__agent-fleet-sidecar__request_service",
+  "mcp__agent-fleet-sidecar__publish_event",
 ]);
 
 // What still stops a human in `auto` (docs/adr/0053). `auto` means auto:
@@ -1187,7 +1189,8 @@ export async function runSession(): Promise<SessionResult> {
       // A definition session lists only its own sidecarTools: tools.allow is
       // decided in canUseTool, never here, since this list skips canUseTool
       // (docs/adr/0062 §7).
-      allowedTools: spec ? spec.sidecarTools.map((t) => `mcp__agent-fleet-sidecar__${t}`) : [
+      // The plan-mode carve-out's tools stay out of it, so canUseTool sees them.
+      allowedTools: spec ? spec.sidecarTools.map((t) => `mcp__agent-fleet-sidecar__${t}`).filter((t) => !PLAN_MODE_STILL_ASKS.has(t)) : [
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
         // Claude Code's native cross-session channel (docs/adr/0060). Listed so
         // the agent uses it on its own, without a human prompt per message.
@@ -1230,12 +1233,17 @@ export async function runSession(): Promise<SessionResult> {
       canUseTool: async (toolName, toolInput) => {
         let noGrant = false;
         if (spec) {
-          // Only the sidecar tools this definition lists are the fleet's own.
-          if (definitionSidecarTools.has(toolName)) return { behavior: "allow", updatedInput: toolInput };
-          const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
-          if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
-          if (decision.behavior === "deny") return decision;
-          noGrant = decision.noGrant === true;
+          // Only the sidecar tools this definition lists are the fleet's own,
+          // with the same plan-mode carve-out as a repo session's: in plan, a
+          // granted tool that acts outside the session goes to the prompt.
+          if (definitionSidecarTools.has(toolName)) {
+            if (!(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) return { behavior: "allow", updatedInput: toolInput };
+          } else {
+            const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
+            if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
+            if (decision.behavior === "deny") return decision;
+            noGrant = decision.noGrant === true;
+          }
           // "ask": the ordinary prompt below. definitionDecision already
           // decided what the fleet's auto allows (docs/adr/0076 §2), so the
           // repo-session auto branch below is skipped.

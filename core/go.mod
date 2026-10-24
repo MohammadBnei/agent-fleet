@@ -5,6 +5,7 @@ go 1.27.1
 require (
 	connectrpc.com/connect v1.21.0
 	github.com/MohammadBnei/agent-fleet/proto/gen/go v0.0.0-20260809100100-f01096ed10ac
+	github.com/MohammadBnei/ukubi-bridge v0.0.0-20261023203116-dbacf7c975ef
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9

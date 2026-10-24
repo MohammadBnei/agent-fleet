@@ -160,6 +160,11 @@ type ClientSpec struct {
 	TokenRef    string    `yaml:"tokenRef,omitempty" json:"tokenRef,omitempty"`
 	Actors      AllowList `yaml:"actors"      json:"actors"`
 	Definitions []string  `yaml:"definitions" json:"definitions"`
+	// AnnounceSessions: core publishes dev.bnei.fleet.session.waiting and
+	// .resumed to the bridge for the sessions this client opened, under
+	// fleet/client/<name>/ (docs/adr/0078, core/internal/announce). Never for
+	// anyone else's sessions.
+	AnnounceSessions bool `yaml:"announceSessions,omitempty" json:"announceSessions,omitempty"`
 }
 
 // Client is a valid client registration after a sync.

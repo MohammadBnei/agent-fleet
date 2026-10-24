@@ -429,6 +429,18 @@ func (c *Client) UpdateSessionMeta(ctx context.Context, title, description *stri
 	return nil
 }
 
+// PublishEvent publishes an event to the bridge as this session
+// (docs/adr/0078 §8). Core sets the actor, causation, hops and trust.
+func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key string) (*agentfleetv1.PublishEventResponse, error) {
+	res, err := c.rpc.PublishEvent(ctx, &agentfleetv1.PublishEventRequest{
+		SessionId: c.taskID, Type: typ, Subject: subject, Text: text, IdempotencyKey: key,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("PublishEvent: %w", err)
+	}
+	return res, nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the
