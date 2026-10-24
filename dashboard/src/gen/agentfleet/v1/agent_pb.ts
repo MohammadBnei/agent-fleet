@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/agent.proto.
  */
 export const file_agentfleet_v1_agent: GenFile = /*@__PURE__*/
-  fileDesc("ChlhZ2VudGZsZWV0L3YxL2FnZW50LnByb3RvEg1hZ2VudGZsZWV0LnYxIoABChNBZ2VudERlZmluaXRpb25JbmZvEgwKBG5hbWUYASABKAkSEwoLbW9kZWxfYWxsb3cYAiADKAkSEgoKbW9kZV9hbGxvdxgDIAMoCRIZChFpbnRlcmFjdGlvbl9hbGxvdxgEIAMoCRIXCg9saWZlY3ljbGVfYWxsb3cYBSADKAkiJAoiQWdlbnRTZXJ2aWNlTGlzdERlZmluaXRpb25zUmVxdWVzdCJeCiNBZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXNwb25zZRI3CgtkZWZpbml0aW9ucxgBIAMoCzIiLmFnZW50ZmxlZXQudjEuQWdlbnREZWZpbml0aW9uSW5mbyKCAgoGVGhyZWFkEgoKAmlkGAEgASgJEhIKCmRlZmluaXRpb24YAiABKAkSDQoFdGl0bGUYAyABKAkSEgoKdmlzaWJpbGl0eRgEIAEoCRIMCgRtaW5lGAUgASgIEhMKC2ludGVyYWN0aW9uGAYgASgJEhEKCWxpZmVjeWNsZRgHIAEoCRINCgVtb2RlbBgIIAEoCRIMCgRtb2RlGAkgASgJEg8KB3RhaW50ZWQYCiABKAgSEgoKY3JlYXRlZF9hdBgLIAEoCRIWCg5sYXN0X2FjdGl2ZV9hdBgMIAEoCRIlCgZzdGF0dXMYDSABKAsyFS5hZ2VudGZsZWV0LnYxLlN0YXR1cyI2CgZTdGF0dXMSDQoFc3RhdGUYASABKAkSDAoEY29kZRgCIAEoCRIPCgdtZXNzYWdlGAMgASgJIuYBCgVFbnRyeRILCgNzZXEYASABKAMSMAoEdHlwZRgCIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSFQoIcmVwbHlfdG8YBSABKANIAIgBARISCgpjcmVhdGVkX2F0GAYgASgJEhMKC2F1dGhvcl9uYW1lGAcgASgJEhQKDGNvbnRleHRfb25seRgIIAEoCBIRCgl1bnRydXN0ZWQYCSABKAgSDAoEbWluZRgKIAEoCEILCglfcmVwbHlfdG8iKAoSTGlzdFRocmVhZHNSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkiPQoTTGlzdFRocmVhZHNSZXNwb25zZRImCgd0aHJlYWRzGAEgAygLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiTAoTQ3JlYXRlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnZpc2liaWxpdHkYAiABKAkSDQoFdGl0bGUYAyABKAkiPQoUQ3JlYXRlVGhyZWFkUmVzcG9uc2USJQoGdGhyZWFkGAEgASgLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiQQoeQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIi4KH0FnZW50U2VydmljZVBvc3RNZXNzYWdlUmVzcG9uc2USCwoDc2VxGAEgASgDIlcKIEFnZW50U2VydmljZUdldFRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMSDQoFbGltaXQYAyABKAUiXAohQWdlbnRTZXJ2aWNlR2V0VHJhbnNjcmlwdFJlc3BvbnNlEiUKB2VudHJpZXMYASADKAsyFC5hZ2VudGZsZWV0LnYxLkVudHJ5EhAKCG5leHRfc2VxGAIgASgDIksKI0FnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMiSwokQWdlbnRTZXJ2aWNlU3RyZWFtVHJhbnNjcmlwdFJlc3BvbnNlEiMKBWVudHJ5GAEgASgLMhQuYWdlbnRmbGVldC52MS5FbnRyeSJrCiZBZ2VudFNlcnZpY2VSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDEhAKCGJlaGF2aW9yGAMgASgJEg8KB21lc3NhZ2UYBCABKAkiNgonQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJZCiFBZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEQoJdGhyZWFkX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIUCgxhbnN3ZXJzX2pzb24YAyABKAkiMQoiQWdlbnRTZXJ2aWNlQW5zd2VyUXVlc3Rpb25SZXNwb25zZRILCgNzZXEYASABKAMiQgoSQXBwcm92ZVBsYW5SZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRILCgNzZXEYAiABKAMSDAoEbW9kZRgDIAEoCSIiChNBcHByb3ZlUGxhblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJCChBTZXRDb25maWdSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRINCgVtb2RlbBgCIAEoCRIMCgRtb2RlGAMgASgJIhMKEVNldENvbmZpZ1Jlc3BvbnNlIiAKC1N0b3BSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCSIOCgxTdG9wUmVzcG9uc2UiJQoQR2V0U3RhdHVzUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkiOgoRR2V0U3RhdHVzUmVzcG9uc2USJQoGc3RhdHVzGAEgASgLMhUuYWdlbnRmbGVldC52MS5TdGF0dXMi3wEKC09wZW5SZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSEgoKdGhyZWFkX2tleRgCIAEoCRIPCgdtZXNzYWdlGAMgASgJEgwKBHdha2UYBCABKAgSDwoHdGFpbnRlZBgFIAEoCBITCgtpbnRlcmFjdGlvbhgGIAEoCRIRCglsaWZlY3ljbGUYByABKAkSEgoKdmlzaWJpbGl0eRgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSDQoFYWN0b3IYCiABKAkSFAoMY2F1c2F0aW9uX2lkGAsgASgJIi4KDE9wZW5SZXNwb25zZRIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDIjwKEkNsb3NlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnRocmVhZF9rZXkYAiABKAkiFQoTQ2xvc2VUaHJlYWRSZXNwb25zZSJLCg1JbnZva2VSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSDQoFaW5wdXQYAiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIiMKDkludm9rZVJlc3BvbnNlEhEKCXRocmVhZF9pZBgBIAEoCSI/ChRXYWl0Rm9yUmVzdWx0UmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSFAoMd2FpdF9zZWNvbmRzGAIgASgFIo0BChVXYWl0Rm9yUmVzdWx0UmVzcG9uc2USDQoFc3RhdGUYASABKAkSGQoRc3RydWN0dXJlZF9vdXRwdXQYAiABKAkSEwoLcmVzdWx0X3RleHQYAyABKAkSDwoHc3VidHlwZRgEIAEoCRIkCgVlcnJvchgFIAEoCzIVLmFnZW50ZmxlZXQudjEuU3RhdHVzMocMCgxBZ2VudFNlcnZpY2USeAoPTGlzdERlZmluaXRpb25zEjEuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXF1ZXN0GjIuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXNwb25zZRJUCgtMaXN0VGhyZWFkcxIhLmFnZW50ZmxlZXQudjEuTGlzdFRocmVhZHNSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5MaXN0VGhyZWFkc1Jlc3BvbnNlElcKDENyZWF0ZVRocmVhZBIiLmFnZW50ZmxlZXQudjEuQ3JlYXRlVGhyZWFkUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuQ3JlYXRlVGhyZWFkUmVzcG9uc2USbAoLUG9zdE1lc3NhZ2USLS5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVBvc3RNZXNzYWdlUmVxdWVzdBouLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXNwb25zZRJyCg1HZXRUcmFuc2NyaXB0Ei8uYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VHZXRUcmFuc2NyaXB0UmVxdWVzdBowLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlR2V0VHJhbnNjcmlwdFJlc3BvbnNlEn0KEFN0cmVhbVRyYW5zY3JpcHQSMi5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0GjMuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VTdHJlYW1UcmFuc2NyaXB0UmVzcG9uc2UwARKEAQoTUmVzcG9uZFRvUGVybWlzc2lvbhI1LmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlcXVlc3QaNi5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVJlc3BvbmRUb1Blcm1pc3Npb25SZXNwb25zZRJ1Cg5BbnN3ZXJRdWVzdGlvbhIwLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlQW5zd2VyUXVlc3Rpb25SZXF1ZXN0GjEuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlc3BvbnNlElQKC0FwcHJvdmVQbGFuEiEuYWdlbnRmbGVldC52MS5BcHByb3ZlUGxhblJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkFwcHJvdmVQbGFuUmVzcG9uc2USTgoJU2V0Q29uZmlnEh8uYWdlbnRmbGVldC52MS5TZXRDb25maWdSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5TZXRDb25maWdSZXNwb25zZRI/CgRTdG9wEhouYWdlbnRmbGVldC52MS5TdG9wUmVxdWVzdBobLmFnZW50ZmxlZXQudjEuU3RvcFJlc3BvbnNlEk4KCUdldFN0YXR1cxIfLmFnZW50ZmxlZXQudjEuR2V0U3RhdHVzUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuR2V0U3RhdHVzUmVzcG9uc2USPwoET3BlbhIaLmFnZW50ZmxlZXQudjEuT3BlblJlcXVlc3QaGy5hZ2VudGZsZWV0LnYxLk9wZW5SZXNwb25zZRJUCgtDbG9zZVRocmVhZBIhLmFnZW50ZmxlZXQudjEuQ2xvc2VUaHJlYWRSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5DbG9zZVRocmVhZFJlc3BvbnNlEkUKBkludm9rZRIcLmFnZW50ZmxlZXQudjEuSW52b2tlUmVxdWVzdBodLmFnZW50ZmxlZXQudjEuSW52b2tlUmVzcG9uc2USWgoNV2FpdEZvclJlc3VsdBIjLmFnZW50ZmxlZXQudjEuV2FpdEZvclJlc3VsdFJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLldhaXRGb3JSZXN1bHRSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_transcript]);
+  fileDesc("ChlhZ2VudGZsZWV0L3YxL2FnZW50LnByb3RvEg1hZ2VudGZsZWV0LnYxIoABChNBZ2VudERlZmluaXRpb25JbmZvEgwKBG5hbWUYASABKAkSEwoLbW9kZWxfYWxsb3cYAiADKAkSEgoKbW9kZV9hbGxvdxgDIAMoCRIZChFpbnRlcmFjdGlvbl9hbGxvdxgEIAMoCRIXCg9saWZlY3ljbGVfYWxsb3cYBSADKAkiJAoiQWdlbnRTZXJ2aWNlTGlzdERlZmluaXRpb25zUmVxdWVzdCJeCiNBZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXNwb25zZRI3CgtkZWZpbml0aW9ucxgBIAMoCzIiLmFnZW50ZmxlZXQudjEuQWdlbnREZWZpbml0aW9uSW5mbyKVAgoGVGhyZWFkEgoKAmlkGAEgASgJEhIKCmRlZmluaXRpb24YAiABKAkSDQoFdGl0bGUYAyABKAkSEgoKdmlzaWJpbGl0eRgEIAEoCRIMCgRtaW5lGAUgASgIEhMKC2ludGVyYWN0aW9uGAYgASgJEhEKCWxpZmVjeWNsZRgHIAEoCRINCgVtb2RlbBgIIAEoCRIMCgRtb2RlGAkgASgJEg8KB3RhaW50ZWQYCiABKAgSEgoKY3JlYXRlZF9hdBgLIAEoCRIWCg5sYXN0X2FjdGl2ZV9hdBgMIAEoCRIlCgZzdGF0dXMYDSABKAsyFS5hZ2VudGZsZWV0LnYxLlN0YXR1cxIRCglsb2NrZWRfYnkYDiABKAkiNgoGU3RhdHVzEg0KBXN0YXRlGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCSLmAQoFRW50cnkSCwoDc2VxGAEgASgDEjAKBHR5cGUYAiABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSDAoEZnJvbRgDIAEoCRIMCgR0ZXh0GAQgASgJEhUKCHJlcGx5X3RvGAUgASgDSACIAQESEgoKY3JlYXRlZF9hdBgGIAEoCRITCgthdXRob3JfbmFtZRgHIAEoCRIUCgxjb250ZXh0X29ubHkYCCABKAgSEQoJdW50cnVzdGVkGAkgASgIEgwKBG1pbmUYCiABKAhCCwoJX3JlcGx5X3RvIigKEkxpc3RUaHJlYWRzUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJIk4KE0xpc3RUaHJlYWRzUmVzcG9uc2USJgoHdGhyZWFkcxgBIAMoCzIVLmFnZW50ZmxlZXQudjEuVGhyZWFkEg8KB3N0ZXdhcmQYAiABKAgiTAoTQ3JlYXRlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnZpc2liaWxpdHkYAiABKAkSDQoFdGl0bGUYAyABKAkiPQoUQ3JlYXRlVGhyZWFkUmVzcG9uc2USJQoGdGhyZWFkGAEgASgLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiQQoeQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIi4KH0FnZW50U2VydmljZVBvc3RNZXNzYWdlUmVzcG9uc2USCwoDc2VxGAEgASgDIlcKIEFnZW50U2VydmljZUdldFRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMSDQoFbGltaXQYAyABKAUiXAohQWdlbnRTZXJ2aWNlR2V0VHJhbnNjcmlwdFJlc3BvbnNlEiUKB2VudHJpZXMYASADKAsyFC5hZ2VudGZsZWV0LnYxLkVudHJ5EhAKCG5leHRfc2VxGAIgASgDIksKI0FnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMiSwokQWdlbnRTZXJ2aWNlU3RyZWFtVHJhbnNjcmlwdFJlc3BvbnNlEiMKBWVudHJ5GAEgASgLMhQuYWdlbnRmbGVldC52MS5FbnRyeSJrCiZBZ2VudFNlcnZpY2VSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDEhAKCGJlaGF2aW9yGAMgASgJEg8KB21lc3NhZ2UYBCABKAkiNgonQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJZCiFBZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEQoJdGhyZWFkX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIUCgxhbnN3ZXJzX2pzb24YAyABKAkiMQoiQWdlbnRTZXJ2aWNlQW5zd2VyUXVlc3Rpb25SZXNwb25zZRILCgNzZXEYASABKAMiQgoSQXBwcm92ZVBsYW5SZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRILCgNzZXEYAiABKAMSDAoEbW9kZRgDIAEoCSIiChNBcHByb3ZlUGxhblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJCChBTZXRDb25maWdSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRINCgVtb2RlbBgCIAEoCRIMCgRtb2RlGAMgASgJIhMKEVNldENvbmZpZ1Jlc3BvbnNlIiAKC1N0b3BSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCSIOCgxTdG9wUmVzcG9uc2UiMAoLTG9ja1JlcXVlc3QSEQoJdGhyZWFkX2lkGAEgASgJEg4KBmxvY2tlZBgCIAEoCCIOCgxMb2NrUmVzcG9uc2UiIAoLV2FrZVJlcXVlc3QSEQoJdGhyZWFkX2lkGAEgASgJIg4KDFdha2VSZXNwb25zZSIlChBHZXRTdGF0dXNSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCSI6ChFHZXRTdGF0dXNSZXNwb25zZRIlCgZzdGF0dXMYASABKAsyFS5hZ2VudGZsZWV0LnYxLlN0YXR1cyLfAQoLT3BlblJlcXVlc3QSEgoKZGVmaW5pdGlvbhgBIAEoCRISCgp0aHJlYWRfa2V5GAIgASgJEg8KB21lc3NhZ2UYAyABKAkSDAoEd2FrZRgEIAEoCBIPCgd0YWludGVkGAUgASgIEhMKC2ludGVyYWN0aW9uGAYgASgJEhEKCWxpZmVjeWNsZRgHIAEoCRISCgp2aXNpYmlsaXR5GAggASgJEhcKD2lkZW1wb3RlbmN5X2tleRgJIAEoCRINCgVhY3RvchgKIAEoCRIUCgxjYXVzYXRpb25faWQYCyABKAkiLgoMT3BlblJlc3BvbnNlEhEKCXRocmVhZF9pZBgBIAEoCRILCgNzZXEYAiABKAMiPAoSQ2xvc2VUaHJlYWRSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSEgoKdGhyZWFkX2tleRgCIAEoCSIVChNDbG9zZVRocmVhZFJlc3BvbnNlIksKDUludm9rZVJlcXVlc3QSEgoKZGVmaW5pdGlvbhgBIAEoCRINCgVpbnB1dBgCIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYAyABKAkiIwoOSW52b2tlUmVzcG9uc2USEQoJdGhyZWFkX2lkGAEgASgJIj8KFFdhaXRGb3JSZXN1bHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIUCgx3YWl0X3NlY29uZHMYAiABKAUijQEKFVdhaXRGb3JSZXN1bHRSZXNwb25zZRINCgVzdGF0ZRgBIAEoCRIZChFzdHJ1Y3R1cmVkX291dHB1dBgCIAEoCRITCgtyZXN1bHRfdGV4dBgDIAEoCRIPCgdzdWJ0eXBlGAQgASgJEiQKBWVycm9yGAUgASgLMhUuYWdlbnRmbGVldC52MS5TdGF0dXMyiQ0KDEFnZW50U2VydmljZRJ4Cg9MaXN0RGVmaW5pdGlvbnMSMS5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZUxpc3REZWZpbml0aW9uc1JlcXVlc3QaMi5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZUxpc3REZWZpbml0aW9uc1Jlc3BvbnNlElQKC0xpc3RUaHJlYWRzEiEuYWdlbnRmbGVldC52MS5MaXN0VGhyZWFkc1JlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkxpc3RUaHJlYWRzUmVzcG9uc2USVwoMQ3JlYXRlVGhyZWFkEiIuYWdlbnRmbGVldC52MS5DcmVhdGVUaHJlYWRSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5DcmVhdGVUaHJlYWRSZXNwb25zZRJsCgtQb3N0TWVzc2FnZRItLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXF1ZXN0Gi4uYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VQb3N0TWVzc2FnZVJlc3BvbnNlEnIKDUdldFRyYW5zY3JpcHQSLy5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZUdldFRyYW5zY3JpcHRSZXF1ZXN0GjAuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VHZXRUcmFuc2NyaXB0UmVzcG9uc2USfQoQU3RyZWFtVHJhbnNjcmlwdBIyLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QaMy5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXNwb25zZTABEoQBChNSZXNwb25kVG9QZXJtaXNzaW9uEjUuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBo2LmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEnUKDkFuc3dlclF1ZXN0aW9uEjAuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlcXVlc3QaMS5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZUFuc3dlclF1ZXN0aW9uUmVzcG9uc2USVAoLQXBwcm92ZVBsYW4SIS5hZ2VudGZsZWV0LnYxLkFwcHJvdmVQbGFuUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuQXBwcm92ZVBsYW5SZXNwb25zZRJOCglTZXRDb25maWcSHy5hZ2VudGZsZWV0LnYxLlNldENvbmZpZ1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLlNldENvbmZpZ1Jlc3BvbnNlEj8KBFN0b3ASGi5hZ2VudGZsZWV0LnYxLlN0b3BSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5TdG9wUmVzcG9uc2USTgoJR2V0U3RhdHVzEh8uYWdlbnRmbGVldC52MS5HZXRTdGF0dXNSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5HZXRTdGF0dXNSZXNwb25zZRI/CgRMb2NrEhouYWdlbnRmbGVldC52MS5Mb2NrUmVxdWVzdBobLmFnZW50ZmxlZXQudjEuTG9ja1Jlc3BvbnNlEj8KBFdha2USGi5hZ2VudGZsZWV0LnYxLldha2VSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5XYWtlUmVzcG9uc2USPwoET3BlbhIaLmFnZW50ZmxlZXQudjEuT3BlblJlcXVlc3QaGy5hZ2VudGZsZWV0LnYxLk9wZW5SZXNwb25zZRJUCgtDbG9zZVRocmVhZBIhLmFnZW50ZmxlZXQudjEuQ2xvc2VUaHJlYWRSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5DbG9zZVRocmVhZFJlc3BvbnNlEkUKBkludm9rZRIcLmFnZW50ZmxlZXQudjEuSW52b2tlUmVxdWVzdBodLmFnZW50ZmxlZXQudjEuSW52b2tlUmVzcG9uc2USWgoNV2FpdEZvclJlc3VsdBIjLmFnZW50ZmxlZXQudjEuV2FpdEZvclJlc3VsdFJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLldhaXRGb3JSZXN1bHRSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_transcript]);
 
 /**
  * @generated from message agentfleet.v1.AgentDefinitionInfo
@@ -160,6 +160,14 @@ export type Thread = Message<"agentfleet.v1.Thread"> & {
    * @generated from field: agentfleet.v1.Status status = 13;
    */
   status?: Status | undefined;
+
+  /**
+   * The email of the admin who locked it (docs/adr/0067 §6); empty =
+   * unlocked. While set, only stewards post or answer.
+   *
+   * @generated from field: string locked_by = 14;
+   */
+  lockedBy: string;
 };
 
 /**
@@ -299,6 +307,14 @@ export type ListThreadsResponse = Message<"agentfleet.v1.ListThreadsResponse"> &
    * @generated from field: repeated agentfleet.v1.Thread threads = 1;
    */
   threads: Thread[];
+
+  /**
+   * The caller is a steward (docs/adr/0067 §6): may start, lock and wake
+   * threads.
+   *
+   * @generated from field: bool steward = 2;
+   */
+  steward: boolean;
 };
 
 /**
@@ -695,6 +711,73 @@ export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_agent, 25);
 
 /**
+ * @generated from message agentfleet.v1.LockRequest
+ */
+export type LockRequest = Message<"agentfleet.v1.LockRequest"> & {
+  /**
+   * @generated from field: string thread_id = 1;
+   */
+  threadId: string;
+
+  /**
+   * True locks (and stops the turn in flight); false unlocks.
+   *
+   * @generated from field: bool locked = 2;
+   */
+  locked: boolean;
+};
+
+/**
+ * Describes the message agentfleet.v1.LockRequest.
+ * Use `create(LockRequestSchema)` to create a new message.
+ */
+export const LockRequestSchema: GenMessage<LockRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 26);
+
+/**
+ * @generated from message agentfleet.v1.LockResponse
+ */
+export type LockResponse = Message<"agentfleet.v1.LockResponse"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.LockResponse.
+ * Use `create(LockResponseSchema)` to create a new message.
+ */
+export const LockResponseSchema: GenMessage<LockResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 27);
+
+/**
+ * @generated from message agentfleet.v1.WakeRequest
+ */
+export type WakeRequest = Message<"agentfleet.v1.WakeRequest"> & {
+  /**
+   * @generated from field: string thread_id = 1;
+   */
+  threadId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.WakeRequest.
+ * Use `create(WakeRequestSchema)` to create a new message.
+ */
+export const WakeRequestSchema: GenMessage<WakeRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 28);
+
+/**
+ * @generated from message agentfleet.v1.WakeResponse
+ */
+export type WakeResponse = Message<"agentfleet.v1.WakeResponse"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.WakeResponse.
+ * Use `create(WakeResponseSchema)` to create a new message.
+ */
+export const WakeResponseSchema: GenMessage<WakeResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 29);
+
+/**
  * @generated from message agentfleet.v1.GetStatusRequest
  */
 export type GetStatusRequest = Message<"agentfleet.v1.GetStatusRequest"> & {
@@ -709,7 +792,7 @@ export type GetStatusRequest = Message<"agentfleet.v1.GetStatusRequest"> & {
  * Use `create(GetStatusRequestSchema)` to create a new message.
  */
 export const GetStatusRequestSchema: GenMessage<GetStatusRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 26);
+  messageDesc(file_agentfleet_v1_agent, 30);
 
 /**
  * @generated from message agentfleet.v1.GetStatusResponse
@@ -726,7 +809,7 @@ export type GetStatusResponse = Message<"agentfleet.v1.GetStatusResponse"> & {
  * Use `create(GetStatusResponseSchema)` to create a new message.
  */
 export const GetStatusResponseSchema: GenMessage<GetStatusResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 27);
+  messageDesc(file_agentfleet_v1_agent, 31);
 
 /**
  * @generated from message agentfleet.v1.OpenRequest
@@ -793,7 +876,7 @@ export type OpenRequest = Message<"agentfleet.v1.OpenRequest"> & {
  * Use `create(OpenRequestSchema)` to create a new message.
  */
 export const OpenRequestSchema: GenMessage<OpenRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 28);
+  messageDesc(file_agentfleet_v1_agent, 32);
 
 /**
  * @generated from message agentfleet.v1.OpenResponse
@@ -815,7 +898,7 @@ export type OpenResponse = Message<"agentfleet.v1.OpenResponse"> & {
  * Use `create(OpenResponseSchema)` to create a new message.
  */
 export const OpenResponseSchema: GenMessage<OpenResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 29);
+  messageDesc(file_agentfleet_v1_agent, 33);
 
 /**
  * @generated from message agentfleet.v1.CloseThreadRequest
@@ -837,7 +920,7 @@ export type CloseThreadRequest = Message<"agentfleet.v1.CloseThreadRequest"> & {
  * Use `create(CloseThreadRequestSchema)` to create a new message.
  */
 export const CloseThreadRequestSchema: GenMessage<CloseThreadRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 30);
+  messageDesc(file_agentfleet_v1_agent, 34);
 
 /**
  * @generated from message agentfleet.v1.CloseThreadResponse
@@ -850,7 +933,7 @@ export type CloseThreadResponse = Message<"agentfleet.v1.CloseThreadResponse"> &
  * Use `create(CloseThreadResponseSchema)` to create a new message.
  */
 export const CloseThreadResponseSchema: GenMessage<CloseThreadResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 31);
+  messageDesc(file_agentfleet_v1_agent, 35);
 
 /**
  * @generated from message agentfleet.v1.InvokeRequest
@@ -877,7 +960,7 @@ export type InvokeRequest = Message<"agentfleet.v1.InvokeRequest"> & {
  * Use `create(InvokeRequestSchema)` to create a new message.
  */
 export const InvokeRequestSchema: GenMessage<InvokeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 32);
+  messageDesc(file_agentfleet_v1_agent, 36);
 
 /**
  * @generated from message agentfleet.v1.InvokeResponse
@@ -894,7 +977,7 @@ export type InvokeResponse = Message<"agentfleet.v1.InvokeResponse"> & {
  * Use `create(InvokeResponseSchema)` to create a new message.
  */
 export const InvokeResponseSchema: GenMessage<InvokeResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 33);
+  messageDesc(file_agentfleet_v1_agent, 37);
 
 /**
  * @generated from message agentfleet.v1.WaitForResultRequest
@@ -916,7 +999,7 @@ export type WaitForResultRequest = Message<"agentfleet.v1.WaitForResultRequest">
  * Use `create(WaitForResultRequestSchema)` to create a new message.
  */
 export const WaitForResultRequestSchema: GenMessage<WaitForResultRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 34);
+  messageDesc(file_agentfleet_v1_agent, 38);
 
 /**
  * @generated from message agentfleet.v1.WaitForResultResponse
@@ -955,7 +1038,7 @@ export type WaitForResultResponse = Message<"agentfleet.v1.WaitForResultResponse
  * Use `create(WaitForResultResponseSchema)` to create a new message.
  */
 export const WaitForResultResponseSchema: GenMessage<WaitForResultResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_agent, 35);
+  messageDesc(file_agentfleet_v1_agent, 39);
 
 /**
  * AgentService (docs/adr/0066): the one API members and registered clients
@@ -1070,6 +1153,25 @@ export const AgentService: GenService<{
     methodKind: "unary";
     input: typeof GetStatusRequestSchema;
     output: typeof GetStatusResponseSchema;
+  },
+  /**
+   * A steward's (docs/adr/0067 §6): a member of platform-admins, from the
+   * console or an island.
+   *
+   * @generated from rpc agentfleet.v1.AgentService.Lock
+   */
+  lock: {
+    methodKind: "unary";
+    input: typeof LockRequestSchema;
+    output: typeof LockResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.AgentService.Wake
+   */
+  wake: {
+    methodKind: "unary";
+    input: typeof WakeRequestSchema;
+    output: typeof WakeResponseSchema;
   },
   /**
    * Clients only (docs/adr/0066 §6-7, 0070).

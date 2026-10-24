@@ -82,10 +82,13 @@ func canSee(p Principal, t *sessions.Session, h definitions.Head) bool {
 
 // canAnswer is who may post into or answer a thread they can see
 // (docs/adr/0067 §2): never another member's or a client's private thread,
-// and a tainted thread is admins' only.
+// a tainted thread is admins' only, and a locked one stewards' only (§6).
 func canAnswer(p Principal, t *sessions.Session) bool {
 	if p.Admin() {
 		return true
+	}
+	if lockedFor(p, t) {
+		return false
 	}
 	if t.Tainted {
 		return false
@@ -94,6 +97,51 @@ func canAnswer(p Principal, t *sessions.Session) bool {
 		return true
 	}
 	return p.Member != nil && t.Visibility != nil && *t.Visibility == "shared"
+}
+
+// lockedFor: a locked thread is stewards' only, for members (docs/adr/0067
+// §6). Clients keep their own rules (docs/adr/0066).
+func lockedFor(p Principal, t *sessions.Session) bool {
+	return t.LockedBy != nil && p.Member != nil && !p.steward()
+}
+
+var errLocked = connect.NewError(connect.CodePermissionDenied, errors.New("this thread is locked"))
+
+// stillUnlocked rereads the thread right before an append: a warm takes long
+// enough for a steward to lock it meanwhile. The residual window is a post
+// appended just before the lock lands; Lock's abort follows it.
+func (s *Server) stillUnlocked(ctx context.Context, p Principal, id string) error {
+	t, err := s.sessions.Get(ctx, id)
+	if errors.Is(err, sessions.ErrNotFound) {
+		return errNoThread
+	}
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if lockedFor(p, t) {
+		return errLocked
+	}
+	return nil
+}
+
+// wakeWindow is how long after a thread's last activity a member may still
+// wake its pod (docs/adr/0067 §6). Past it, a steward wakes it first.
+const wakeWindow = 24 * time.Hour
+
+var errWake = connect.NewError(connect.CodeFailedPrecondition, errors.New("this thread has been idle for over 24 hours; an admin must wake it"))
+
+// needsWake: a member who is not a steward would boot a pod for a thread idle
+// past wakeWindow. A live pod costs nothing more to post to; clients keep
+// their own rules (docs/adr/0066).
+func needsWake(p Principal, t *sessions.Session, now time.Time) bool {
+	if p.Member == nil || p.steward() || sessions.IsPodPhaseLive(t.PodPhase) {
+		return false
+	}
+	last := t.CreatedAt
+	if t.LastActiveAt != nil {
+		last = *t.LastActiveAt
+	}
+	return now.Sub(last) > wakeWindow
 }
 
 func deref(s *string, def string) string {
@@ -125,6 +173,7 @@ func threadToProto(p Principal, t *sessions.Session) *agentfleetv1.Thread {
 		CreatedAt:    transcript.RFC3339OrEmpty(t.CreatedAt),
 		LastActiveAt: timeOrEmpty(t.LastActiveAt),
 		Status:       status(t),
+		LockedBy:     deref(t.LockedBy, ""),
 	}
 }
 
@@ -145,7 +194,7 @@ func (s *Server) ListThreads(ctx context.Context, req *connect.Request[agentflee
 			}
 		}
 	}
-	out := &agentfleetv1.ListThreadsResponse{}
+	out := &agentfleetv1.ListThreadsResponse{Steward: p.steward()}
 	if len(names) == 0 {
 		return connect.NewResponse(out), nil
 	}
@@ -176,6 +225,10 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 	p, err := principal(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// docs/adr/0067 §6: members join threads an admin started; they start none.
+	if p.Member != nil && !p.steward() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin starts a thread"))
 	}
 	vis := req.Msg.GetVisibility()
 	if vis != "shared" && vis != "private" {
@@ -240,10 +293,16 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	if !canAnswer(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot post to this thread"))
 	}
+	if needsWake(p, t, time.Now()) {
+		return nil, errWake
+	}
 	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("DEFINITION_CHANGED: start a new thread"))
 	}
 	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+		return nil, err
+	}
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
 		return nil, err
 	}
 	seq, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), req.Msg.GetText(), "discussion", uuid.NewString(), nil)

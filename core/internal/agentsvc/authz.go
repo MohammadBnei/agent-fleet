@@ -33,6 +33,14 @@ func (p Principal) Admin() bool {
 	return p.Member != nil && p.Origin == "" && auth.AdminOnly(*p.Member)
 }
 
+// steward is a member of platform-admins from the console OR an island
+// (docs/adr/0067 §6): the one who starts, locks and wakes threads. Unlike
+// Admin it holds from an island, because each of these powers either takes
+// rights away from others or spends on a thread an admin started.
+func (p Principal) steward() bool {
+	return p.Member != nil && auth.AdminOnly(*p.Member)
+}
+
 type principalKey struct{}
 
 func withPrincipal(ctx context.Context, p Principal) context.Context {
@@ -67,6 +75,8 @@ var table = map[string]access{
 	agentfleetv1connect.AgentServiceSetConfigProcedure:           {member: true, client: true},
 	agentfleetv1connect.AgentServiceStopProcedure:                {member: true, client: true},
 	agentfleetv1connect.AgentServiceGetStatusProcedure:           {member: true, client: true},
+	agentfleetv1connect.AgentServiceLockProcedure:                {member: true},
+	agentfleetv1connect.AgentServiceWakeProcedure:                {member: true},
 	agentfleetv1connect.AgentServiceOpenProcedure:                {client: true},
 	agentfleetv1connect.AgentServiceCloseThreadProcedure:         {client: true},
 	agentfleetv1connect.AgentServiceInvokeProcedure:              {client: true},

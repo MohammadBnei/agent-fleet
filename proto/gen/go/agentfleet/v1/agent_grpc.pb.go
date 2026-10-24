@@ -31,6 +31,8 @@ const (
 	AgentService_SetConfig_FullMethodName           = "/agentfleet.v1.AgentService/SetConfig"
 	AgentService_Stop_FullMethodName                = "/agentfleet.v1.AgentService/Stop"
 	AgentService_GetStatus_FullMethodName           = "/agentfleet.v1.AgentService/GetStatus"
+	AgentService_Lock_FullMethodName                = "/agentfleet.v1.AgentService/Lock"
+	AgentService_Wake_FullMethodName                = "/agentfleet.v1.AgentService/Wake"
 	AgentService_Open_FullMethodName                = "/agentfleet.v1.AgentService/Open"
 	AgentService_CloseThread_FullMethodName         = "/agentfleet.v1.AgentService/CloseThread"
 	AgentService_Invoke_FullMethodName              = "/agentfleet.v1.AgentService/Invoke"
@@ -64,6 +66,10 @@ type AgentServiceClient interface {
 	SetConfig(ctx context.Context, in *SetConfigRequest, opts ...grpc.CallOption) (*SetConfigResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
+	// console or an island.
+	Lock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResponse, error)
+	Wake(ctx context.Context, in *WakeRequest, opts ...grpc.CallOption) (*WakeResponse, error)
 	// Clients only (docs/adr/0066 §6-7, 0070).
 	Open(ctx context.Context, in *OpenRequest, opts ...grpc.CallOption) (*OpenResponse, error)
 	CloseThread(ctx context.Context, in *CloseThreadRequest, opts ...grpc.CallOption) (*CloseThreadResponse, error)
@@ -208,6 +214,26 @@ func (c *agentServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest
 	return out, nil
 }
 
+func (c *agentServiceClient) Lock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResponse)
+	err := c.cc.Invoke(ctx, AgentService_Lock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) Wake(ctx context.Context, in *WakeRequest, opts ...grpc.CallOption) (*WakeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WakeResponse)
+	err := c.cc.Invoke(ctx, AgentService_Wake_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentServiceClient) Open(ctx context.Context, in *OpenRequest, opts ...grpc.CallOption) (*OpenResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(OpenResponse)
@@ -275,6 +301,10 @@ type AgentServiceServer interface {
 	SetConfig(context.Context, *SetConfigRequest) (*SetConfigResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
+	// console or an island.
+	Lock(context.Context, *LockRequest) (*LockResponse, error)
+	Wake(context.Context, *WakeRequest) (*WakeResponse, error)
 	// Clients only (docs/adr/0066 §6-7, 0070).
 	Open(context.Context, *OpenRequest) (*OpenResponse, error)
 	CloseThread(context.Context, *CloseThreadRequest) (*CloseThreadResponse, error)
@@ -325,6 +355,12 @@ func (UnimplementedAgentServiceServer) Stop(context.Context, *StopRequest) (*Sto
 }
 func (UnimplementedAgentServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedAgentServiceServer) Lock(context.Context, *LockRequest) (*LockResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Lock not implemented")
+}
+func (UnimplementedAgentServiceServer) Wake(context.Context, *WakeRequest) (*WakeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Wake not implemented")
 }
 func (UnimplementedAgentServiceServer) Open(context.Context, *OpenRequest) (*OpenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Open not implemented")
@@ -568,6 +604,42 @@ func _AgentService_GetStatus_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_Lock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Lock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Lock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Lock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_Wake_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WakeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Wake(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Wake_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Wake(ctx, req.(*WakeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AgentService_Open_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(OpenRequest)
 	if err := dec(in); err != nil {
@@ -690,6 +762,14 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _AgentService_GetStatus_Handler,
+		},
+		{
+			MethodName: "Lock",
+			Handler:    _AgentService_Lock_Handler,
+		},
+		{
+			MethodName: "Wake",
+			Handler:    _AgentService_Wake_Handler,
 		},
 		{
 			MethodName: "Open",

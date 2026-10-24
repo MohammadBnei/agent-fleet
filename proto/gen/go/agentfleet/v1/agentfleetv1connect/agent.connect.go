@@ -66,6 +66,10 @@ const (
 	AgentServiceStopProcedure = "/agentfleet.v1.AgentService/Stop"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/agentfleet.v1.AgentService/GetStatus"
+	// AgentServiceLockProcedure is the fully-qualified name of the AgentService's Lock RPC.
+	AgentServiceLockProcedure = "/agentfleet.v1.AgentService/Lock"
+	// AgentServiceWakeProcedure is the fully-qualified name of the AgentService's Wake RPC.
+	AgentServiceWakeProcedure = "/agentfleet.v1.AgentService/Wake"
 	// AgentServiceOpenProcedure is the fully-qualified name of the AgentService's Open RPC.
 	AgentServiceOpenProcedure = "/agentfleet.v1.AgentService/Open"
 	// AgentServiceCloseThreadProcedure is the fully-qualified name of the AgentService's CloseThread
@@ -95,6 +99,10 @@ type AgentServiceClient interface {
 	SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
+	// console or an island.
+	Lock(context.Context, *connect.Request[v1.LockRequest]) (*connect.Response[v1.LockResponse], error)
+	Wake(context.Context, *connect.Request[v1.WakeRequest]) (*connect.Response[v1.WakeResponse], error)
 	// Clients only (docs/adr/0066 §6-7, 0070).
 	Open(context.Context, *connect.Request[v1.OpenRequest]) (*connect.Response[v1.OpenResponse], error)
 	CloseThread(context.Context, *connect.Request[v1.CloseThreadRequest]) (*connect.Response[v1.CloseThreadResponse], error)
@@ -185,6 +193,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetStatus")),
 			connect.WithClientOptions(opts...),
 		),
+		lock: connect.NewClient[v1.LockRequest, v1.LockResponse](
+			httpClient,
+			baseURL+AgentServiceLockProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("Lock")),
+			connect.WithClientOptions(opts...),
+		),
+		wake: connect.NewClient[v1.WakeRequest, v1.WakeResponse](
+			httpClient,
+			baseURL+AgentServiceWakeProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("Wake")),
+			connect.WithClientOptions(opts...),
+		),
 		open: connect.NewClient[v1.OpenRequest, v1.OpenResponse](
 			httpClient,
 			baseURL+AgentServiceOpenProcedure,
@@ -226,6 +246,8 @@ type agentServiceClient struct {
 	setConfig           *connect.Client[v1.SetConfigRequest, v1.SetConfigResponse]
 	stop                *connect.Client[v1.StopRequest, v1.StopResponse]
 	getStatus           *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
+	lock                *connect.Client[v1.LockRequest, v1.LockResponse]
+	wake                *connect.Client[v1.WakeRequest, v1.WakeResponse]
 	open                *connect.Client[v1.OpenRequest, v1.OpenResponse]
 	closeThread         *connect.Client[v1.CloseThreadRequest, v1.CloseThreadResponse]
 	invoke              *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
@@ -292,6 +314,16 @@ func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request
 	return c.getStatus.CallUnary(ctx, req)
 }
 
+// Lock calls agentfleet.v1.AgentService.Lock.
+func (c *agentServiceClient) Lock(ctx context.Context, req *connect.Request[v1.LockRequest]) (*connect.Response[v1.LockResponse], error) {
+	return c.lock.CallUnary(ctx, req)
+}
+
+// Wake calls agentfleet.v1.AgentService.Wake.
+func (c *agentServiceClient) Wake(ctx context.Context, req *connect.Request[v1.WakeRequest]) (*connect.Response[v1.WakeResponse], error) {
+	return c.wake.CallUnary(ctx, req)
+}
+
 // Open calls agentfleet.v1.AgentService.Open.
 func (c *agentServiceClient) Open(ctx context.Context, req *connect.Request[v1.OpenRequest]) (*connect.Response[v1.OpenResponse], error) {
 	return c.open.CallUnary(ctx, req)
@@ -329,6 +361,10 @@ type AgentServiceHandler interface {
 	SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
+	// A steward's (docs/adr/0067 §6): a member of platform-admins, from the
+	// console or an island.
+	Lock(context.Context, *connect.Request[v1.LockRequest]) (*connect.Response[v1.LockResponse], error)
+	Wake(context.Context, *connect.Request[v1.WakeRequest]) (*connect.Response[v1.WakeResponse], error)
 	// Clients only (docs/adr/0066 §6-7, 0070).
 	Open(context.Context, *connect.Request[v1.OpenRequest]) (*connect.Response[v1.OpenResponse], error)
 	CloseThread(context.Context, *connect.Request[v1.CloseThreadRequest]) (*connect.Response[v1.CloseThreadResponse], error)
@@ -415,6 +451,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("GetStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceLockHandler := connect.NewUnaryHandler(
+		AgentServiceLockProcedure,
+		svc.Lock,
+		connect.WithSchema(agentServiceMethods.ByName("Lock")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceWakeHandler := connect.NewUnaryHandler(
+		AgentServiceWakeProcedure,
+		svc.Wake,
+		connect.WithSchema(agentServiceMethods.ByName("Wake")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceOpenHandler := connect.NewUnaryHandler(
 		AgentServiceOpenProcedure,
 		svc.Open,
@@ -465,6 +513,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceStopHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
+		case AgentServiceLockProcedure:
+			agentServiceLockHandler.ServeHTTP(w, r)
+		case AgentServiceWakeProcedure:
+			agentServiceWakeHandler.ServeHTTP(w, r)
 		case AgentServiceOpenProcedure:
 			agentServiceOpenHandler.ServeHTTP(w, r)
 		case AgentServiceCloseThreadProcedure:
@@ -528,6 +580,14 @@ func (UnimplementedAgentServiceHandler) Stop(context.Context, *connect.Request[v
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.GetStatus is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) Lock(context.Context, *connect.Request[v1.LockRequest]) (*connect.Response[v1.LockResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.Lock is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) Wake(context.Context, *connect.Request[v1.WakeRequest]) (*connect.Response[v1.WakeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.Wake is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) Open(context.Context, *connect.Request[v1.OpenRequest]) (*connect.Response[v1.OpenResponse], error) {

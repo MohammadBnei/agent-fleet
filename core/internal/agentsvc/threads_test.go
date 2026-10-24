@@ -55,18 +55,24 @@ func TestThreads_Visibility(t *testing.T) {
 		}
 		return r.Msg.GetThread().GetId(), nil
 	}
-	priv, err := create(alice, "private")
-	if err != nil {
-		t.Fatalf("alice private: %v", err)
+	// docs/adr/0067 §6: members start no threads, so alice's are made as an
+	// admin would leave them: owned by her.
+	if _, err := create(alice, "shared"); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("a member starts a thread: %v", err)
 	}
-	shared, err := create(alice, "shared")
-	if err != nil {
-		t.Fatalf("alice shared: %v", err)
+	if _, err := create(admin, "private"); err != nil {
+		t.Fatalf("admin starts a thread: %v", err)
 	}
-	if _, err := create(eve, "shared"); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatalf("eve outside the audience: %v", err)
+	own := func(vis string) string {
+		id, err := store.Create(ctx, sessions.CreateParams{Repo: "notes", DefinitionName: "d", DefinitionSHA: "sha1",
+			Owner: "alice", Visibility: vis, Interaction: "ask", Lifecycle: "resident"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
 	}
-	if _, err := create(alice, "public"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	priv, shared := own("private"), own("shared")
+	if _, err := create(admin, "public"); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("bad visibility: %v", err)
 	}
 	// A console session of the same definition: owner-less, admin-only.
@@ -95,8 +101,8 @@ func TestThreads_Visibility(t *testing.T) {
 	if l := list(eve); len(l) != 0 {
 		t.Errorf("eve lists %v", l)
 	}
-	if l := list(admin); len(l) != 3 {
-		t.Errorf("admin lists %v (want all three, the console one too)", l)
+	if l := list(admin); len(l) != 4 {
+		t.Errorf("admin lists %v (want all four: alice's two, its own, the console one)", l)
 	}
 
 	read := func(c context.Context, id string) error {
@@ -163,5 +169,119 @@ func TestThreads_Authorship(t *testing.T) {
 	e, _, err := transcr.ReadSince(ctx, id, 0, 10)
 	if err != nil || len(e) != 1 || e[0].AuthorName != "alice@bnei.dev" || e[0].From != "human" {
 		t.Fatalf("ReadSince = %+v, %v", e, err)
+	}
+}
+
+// docs/adr/0067 §6 over real Postgres: a steward locks from an island, a
+// member is then refused; past the wake window a member cannot boot the pod
+// and only a steward may. Warming itself needs a provisioner, so a steward's
+// Wake and post are checked only up to their refusals.
+func TestThreads_LockAndWake(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	transcr := transcript.NewPostgresStore(pool)
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	island := "https://notes.bnei.dev"
+	spec := &definitions.Spec{
+		Audience:  &definitions.Audience{Group: "shared-notes"},
+		Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
+		Embed:     &definitions.Embed{Origins: []string{island}},
+	}
+	dash := dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
+	as := func(sub string, groups ...string) context.Context {
+		id := auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}
+		return withPrincipal(ctx, Principal{Member: &id, Origin: island})
+	}
+	bob, steward := as("bob", "shared-notes"), as("root", "shared-notes", auth.RequiredGroup)
+	code := connect.CodeOf
+
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "notes", DefinitionName: "d", DefinitionSHA: "sha1",
+		Owner: "bob", Visibility: "shared", Interaction: "ask", Lifecycle: "resident"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := func(c context.Context, locked bool) error {
+		_, err := s.Lock(c, connect.NewRequest(&agentfleetv1.LockRequest{ThreadId: id, Locked: locked}))
+		return err
+	}
+	post := func(c context.Context) error {
+		_, err := s.PostMessage(c, connect.NewRequest(&agentfleetv1.AgentServicePostMessageRequest{ThreadId: id, Text: "hi"}))
+		return err
+	}
+	listed := func(c context.Context) (*agentfleetv1.ListThreadsResponse, *agentfleetv1.Thread) {
+		r, err := s.ListThreads(c, connect.NewRequest(&agentfleetv1.ListThreadsRequest{}))
+		if err != nil || len(r.Msg.GetThreads()) != 1 {
+			t.Fatalf("list: %v, %v", r, err)
+		}
+		return r.Msg, r.Msg.GetThreads()[0]
+	}
+
+	if err := lock(bob, true); code(err) != connect.CodePermissionDenied {
+		t.Errorf("the owner, not a steward, locks: %v", err)
+	}
+	if err := lock(steward, true); err != nil {
+		t.Fatalf("steward locks from an island: %v", err)
+	}
+	if r, th := listed(bob); r.GetSteward() || th.GetLockedBy() != "root@bnei.dev" {
+		t.Errorf("bob's list: steward=%v locked_by=%q", r.GetSteward(), th.GetLockedBy())
+	}
+	if r, _ := listed(steward); !r.GetSteward() {
+		t.Error("a steward's list does not say so")
+	}
+	if err := post(bob); code(err) != connect.CodePermissionDenied {
+		t.Errorf("bob posts to a locked thread: %v", err)
+	}
+	if _, err := s.SetConfig(bob, connect.NewRequest(&agentfleetv1.SetConfigRequest{ThreadId: id, Mode: "plan"})); code(err) != connect.CodePermissionDenied {
+		t.Errorf("bob, the owner, changes mode on a locked thread: %v", err)
+	}
+	// Idempotent: a second steward's lock keeps the first on record.
+	if err := lock(as("root2", "shared-notes", auth.RequiredGroup), true); err != nil {
+		t.Fatalf("second lock: %v", err)
+	}
+	if _, th := listed(bob); th.GetLockedBy() != "root@bnei.dev" {
+		t.Errorf("second lock replaced the locker: %q", th.GetLockedBy())
+	}
+	if err := lock(steward, false); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	if _, th := listed(bob); th.GetLockedBy() != "" {
+		t.Errorf("still locked by %q", th.GetLockedBy())
+	}
+
+	// A pod that died with a permission pending: answering it would move the
+	// clock, so it waits for a steward like a post.
+	permSeq, err := transcr.Append(ctx, id, "agent", `{"tool":"Bash","input":{"command":"ls"}}`, "permission_request", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET last_active_at = now() - interval '25 hours' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RespondToPermission(bob, connect.NewRequest(&agentfleetv1.AgentServiceRespondToPermissionRequest{ThreadId: id, Seq: permSeq, Behavior: "allow"})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("bob answers a stale permission on a thread idle 25h: %v", err)
+	}
+	if err := post(bob); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("bob wakes a thread idle 25h: %v", err)
+	}
+	if _, err := s.Wake(bob, connect.NewRequest(&agentfleetv1.WakeRequest{ThreadId: id})); code(err) != connect.CodePermissionDenied {
+		t.Errorf("bob calls Wake: %v", err)
+	}
+	if _, err := s.SetConfig(bob, connect.NewRequest(&agentfleetv1.SetConfigRequest{ThreadId: id, Mode: "plan"})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("bob wakes a thread idle 25h through a mode change: %v", err)
+	}
+	// A tainted thread is woken from the console only (docs/adr/0067 §3).
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
+		VALUES ($1, 100, 'human', 'event', 'discussion', 'e1', true, true)`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Wake(steward, connect.NewRequest(&agentfleetv1.WakeRequest{ThreadId: id})); code(err) != connect.CodePermissionDenied {
+		t.Errorf("an island steward wakes a tainted thread: %v", err)
 	}
 }

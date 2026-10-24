@@ -129,6 +129,9 @@ type Session struct {
 	// read: the console's list must not pay for it.
 	Tainted   bool      `json:"tainted"`
 	CreatedAt time.Time `json:"createdAt"`
+	// LockedBy is the email of the admin who locked this thread
+	// (docs/adr/0067 §6); nil = unlocked.
+	LockedBy *string `json:"lockedBy,omitempty"`
 }
 
 // Caps is the pair of ceilings ReserveSlot enforces. A struct, not two ints:
@@ -193,7 +196,7 @@ const selectCols = `
 	s.last_active_at, s.swept_at, s.archived_at,
 	s.worker_image, s.sidecar_image, s.fleet_version,
 	s.definition_name, s.definition_sha,
-	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
+	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at, s.locked_by,
 	(SELECT count(*) FROM transcript q
 	   WHERE q.session_id = s.id
 	     AND q.type IN ('question', 'permission_request')
@@ -213,7 +216,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
-		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
+		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt, &s.LockedBy,
 		&s.PendingDecisions,
 	)
 	if err != nil {
@@ -934,6 +937,28 @@ func (s *Store) TouchActive(ctx context.Context, id, from, entryType string) err
 	if err != nil {
 		slog.Error("sessions TouchActive", "sessionId", id, "error", err)
 		return fmt.Errorf("touch active: %w", err)
+	}
+	return nil
+}
+
+// Lock records by (an email) as the thread's locker (docs/adr/0067 §6) and
+// reports whether this call locked it: an already-locked thread keeps its
+// first locker and returns false. Stopping the pod is the caller's.
+func (s *Store) Lock(ctx context.Context, id, by string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET locked_by = $2, updated_at = now() WHERE id = $1 AND locked_by IS NULL`, id, by)
+	if err != nil {
+		slog.Error("sessions Lock", "sessionId", id, "error", err)
+		return false, fmt.Errorf("lock: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// Unlock clears the lock (docs/adr/0067 §6).
+func (s *Store) Unlock(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET locked_by = NULL, updated_at = now() WHERE id = $1`, id)
+	if err != nil {
+		slog.Error("sessions Unlock", "sessionId", id, "error", err)
+		return fmt.Errorf("unlock: %w", err)
 	}
 	return nil
 }

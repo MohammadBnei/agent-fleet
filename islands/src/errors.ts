@@ -16,7 +16,7 @@ export function errorText(err: unknown): string {
     case Code.NotFound:
       return "This thread is no longer available.";
     case Code.PermissionDenied:
-      return "You cannot do that in this thread. If it holds untrusted input, only an admin can answer it, from the console.";
+      return "You cannot do that in this thread. It may be locked, or hold untrusted input only an admin can answer.";
     default:
       return e.rawMessage || "Something went wrong.";
   }
