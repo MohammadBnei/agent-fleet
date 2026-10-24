@@ -238,7 +238,11 @@ func TestBusyIsNotNacked(t *testing.T) {
 	t.Cleanup(func() { BusyRetry = 2 * time.Second })
 	busy := connect.NewError(connect.CodeAborted, errors.New("busy"))
 	agents.err["owner"] = busy
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	// The deadline also bounds the stored-decision queries ahead of the
+	// retry loop, so it is a second, not 100ms: on a loaded CI runner those
+	// alone overran 100ms and Handle failed with pgx's timeout instead of
+	// errBusy. BusyRetry still fits ~100 retries in it.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	e := pr("b1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
 	if err := d.Handle(ctx, e); !errors.Is(err, errBusy) {
@@ -249,7 +253,7 @@ func TestBusyIsNotNacked(t *testing.T) {
 	}
 	fb := &fakeBridge{msgs: []*bridgev1.SubscribeResponse{{Event: e}}}
 	d.bridge = fb
-	HandleTimeout = 100 * time.Millisecond
+	HandleTimeout = time.Second
 	t.Cleanup(func() { HandleTimeout = 2 * time.Minute })
 	if err := d.stream(context.Background()); !errors.Is(err, errBusy) || len(fb.acks)+len(fb.nacks) != 0 {
 		t.Fatalf("settled a busy event: %v acks=%v nacks=%v", err, fb.acks, fb.nacks)
