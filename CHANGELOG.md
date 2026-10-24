@@ -1,5 +1,17 @@
 # Changelog
 
+# [6.25.0](https://github.com/MohammadBnei/agent-fleet/compare/6.24.0...6.25.0) (2026-10-24)
+
+### Bug Fixes
+
+* stabilization — read-only CI by default, CI guards, docs match the code ([#321](https://github.com/MohammadBnei/agent-fleet/issues/321)) ([32f31fe](https://github.com/MohammadBnei/agent-fleet/commit/32f31fed5289a857951d86f02d2f3676a5b8f32b))
+
+### Features
+
+* **announce:** core announces when an opted-in client's session waits on a person ([#323](https://github.com/MohammadBnei/agent-fleet/issues/323)) ([44a00c2](https://github.com/MohammadBnei/agent-fleet/commit/44a00c28551cb7489e2c18344c60de49a2fd51b6))
+* **core:** PublishEvent and the publish_event tool ([#325](https://github.com/MohammadBnei/agent-fleet/issues/325)) ([86854f1](https://github.com/MohammadBnei/agent-fleet/commit/86854f14ce5e6eadda62ebda8121300e662b2530))
+* **dispatch:** core consumes the event bridge and opens definition threads ([#324](https://github.com/MohammadBnei/agent-fleet/issues/324)) ([a296c3d](https://github.com/MohammadBnei/agent-fleet/commit/a296c3df4061b246e610e34f5c19f6e91db83202))
+
 # [6.24.0](https://github.com/MohammadBnei/agent-fleet/compare/6.23.1...6.24.0) (2026-10-23)
 
 ### Features
