@@ -14,8 +14,8 @@ on:
 
 # Read-only by default. Every job here runs code from the PR (tests, bun
 # install scripts, buf plugins), and a PR may be an agent's: a write token in
-# a PR job would be a way around the default-branch ruleset. A job that
-# genuinely needs more asks for it explicitly — none does today.
+# a PR job can push to any branch, main included. A job that genuinely needs
+# more asks for it explicitly — none does today.
 permissions:
   contents: read
 
