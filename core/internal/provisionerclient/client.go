@@ -254,7 +254,7 @@ type WorkerPod struct {
 
 // definition is nil for a repo session. For a definition session it switches
 // the pod to the definition profile (docs/adr/0064).
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile, genome []*agentfleetv1.GenomeFile) (WorkerPod, error) {
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile, genome []*agentfleetv1.GenomeFile) (WorkerPod, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -262,7 +262,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		Repo:            repo,
 		RepoUrl:         repoURL,
 		BaseBranch:      baseBranch,
-		Description:     description,
 		LeaseId:         leaseID,
 		ResumeSessionId: resumeAgentSessionID,
 		ResumeFromSeq:   resumeFromSeq,

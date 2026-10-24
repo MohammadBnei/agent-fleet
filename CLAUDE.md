@@ -33,17 +33,17 @@ is stale → check code.**
 | Layer | Tool |
 |---|---|
 | Runtime (`worker/` only) | Bun (`oven/bun:1-slim`), TS, no build step — Bun runs `.ts` direct. Only JS runtime left; only process hosting Agent SDK |
-| Worker agent runtime | `@anthropic-ai/claude-agent-sdk` `query()`, **streaming-input mode** (not `claude -p`, not plain-string). One session spans plan+impl. Starts `"auto"` mode (`adr/0021`/`0029`/`0061`). Model: Claude Code's default unless the session picks one or `CLAUDE_MODEL` overrides (`adr/0077`) |
+| Worker agent runtime | `@anthropic-ai/claude-agent-sdk` `query()`, **streaming-input mode** (not `claude -p`, not plain-string). One session spans plan+impl. Starts `"auto"` mode (`adr/0021`/`0029`/`0061`). Model: the session's pick, else `CLAUDE_MODEL`, else Claude Code's default (`adr/0077`). The operator override is set: `CLAUDE_MODEL=claude-opus-5-5` in `k8s/provisioner/deployment.yaml` (kept deliberately) |
 | Runtime (`core/`, `provisioner/`, `sidecar/`) | Go, `go.work`, `golangci-lint` |
-| Auth | **authentik OIDC terminated inside `core`** (`adr/0056`) — `go-oidc`/`oauth2`, state+nonce+PKCE, `__Host-` signed cookie, required `platform-admins` claim, fail-closed startup. NOT Traefik forwardAuth: that gates ingress, can't see pod-network caller → `#200`. `CoreService` (9090) authenticates separately via session's `lease_id` (`adr/0057`). e2e previews DO use forwardAuth — no fleet code in their path |
+| Auth | **authentik OIDC terminated inside `core`** (`adr/0056`) — `go-oidc`/`oauth2`, state+nonce+PKCE, `__Host-` signed cookie, `platform-admins` required for the console, audience groups admitted to `AgentService` only (`adr/0066` §2), fail-closed startup. NOT Traefik forwardAuth: that gates ingress, can't see pod-network caller → `#200`. `CoreService` (9090) authenticates separately via session's `lease_id` (`adr/0057`). e2e previews DO use forwardAuth — no fleet code in their path |
 | Discord | `discordgo` (Go, `core/`) — **outbound only**. Posts when session needs human, links dashboard. Slash commands/threads/replies gone (`adr/0048`): Discord has no authz model → anyone in channel could approve a Bash |
 | Coordination | Postgres `transcript` (was `planning_transcript`). Pull/cursor via `core` gRPC `CoreService`. Idempotency-keyed dedup, not pub/sub (`adr/0013`/`0020`) |
 | MCP | `mark3labs/mcp-go` HTTP (Go, `sidecar/`) — one per worker pod, agent dials `localhost`. Local only: sandbox merged into worker pod (`adr/0048` §6) → no MCP crosses pod boundary |
-| gRPC/proto | `buf`-managed `proto/`. Only inter-process protocol: `CoreService` (core serves; sidecar+provisioner call), `ProvisionerService` (provisioner serves; only core calls), dashboard ConnectRPC API (`core` ↔ `dashboard/`, `connect-go`/`connect-web`, `adr/0015`) |
+| gRPC/proto | `buf`-managed `proto/`. Only inter-process protocol: `CoreService` (core serves on 9090; sidecar+provisioner call), `ProvisionerService` (provisioner serves; only core calls), `DashboardService` ConnectRPC (`core` ↔ `dashboard/`, `connect-go`/`connect-web`, `adr/0015`), `AgentService` ConnectRPC (core serves: members on 8080, registered clients on 9091; `adr/0066`, `core/internal/agentsvc`), `ExecutorService` (thot-executor serves; only the `kubectl` shim in cluster-access pods calls, `adr/0037`) |
 | k8s client | `client-go` (`provisioner/` — only component with cluster RBAC) |
 | DB | `jackc/pgx/v5` (`core/` only — **sole** `AGENTFLEET_DB_*` holder, `adr/0020` pt1). worker/sidecar/provisioner hold zero DB creds |
 | Deploy | Docker per component. `core` = two-source ArgoCD app (chart from `infra-bootstrap`, values `k8s/core.yaml`). `provisioner` = standalone plain manifests (`k8s/provisioner/`, RBAC `common-app-chart` can't express) |
-| CI/CD | Actions: `docker.yml` (build/push/deploy), `go.yml` (vet/lint/test + buf lint/breaking/drift), `release.yml` (`release-it`). **Images build on ukubi-cluster `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub.** One job loops all six components — self-hosted runner does one job at a time (infra-bootstrap ADR-0034) |
+| CI/CD | Actions: `docker.yml` (on push to `main`: `release` job runs `release-it`, then build/push/deploy), `go.yml` (vet/lint/test + buf lint/breaking/drift). No `release.yml`: it was folded into `docker.yml`. **Images build on ukubi-cluster `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub.** One job loops all six components — self-hosted runner does one job at a time (infra-bootstrap ADR-0034) |
 
 ## Directory map
 
@@ -53,16 +53,18 @@ is stale → check code.**
 | `docs/DECISIONS.md` | Canonical settled decisions, forbidden patterns (the WHY, short) |
 | `docs/adr/` | One ADR per real decision |
 | `docs/verification-traps.md` | Full account of every silent-failure trap. One-liners below |
-| `core/` | Go, one binary. Discord notify, `CoreService` gRPC, transcript coordination, Loki/Prometheus queries, dashboard ConnectRPC API, static SPA. **No cluster RBAC.** Sole Postgres-cred holder. No dispatch loop, no queue (`adr/0048`): message provisions. 60s reconcile (`internal/sessions/reconcile.go`) writes `pod_phase` from what k8s reports → stop-grace/startup-stall/idle/retention sweeps run off it |
+| `core/` | Go, one binary. Discord notify, `CoreService` gRPC, transcript coordination, Loki/Prometheus queries, dashboard ConnectRPC API, `AgentService` (`internal/agentsvc`, `adr/0066`), bridge consumer (`internal/dispatch`, `adr/0071`), `PublishEvent`, session announcements (`internal/announce` + `internal/bridgeclient`, `adr/0078`), static SPA + island bundles. **No cluster RBAC.** Sole Postgres-cred holder. No queue (`adr/0048`): the bridge holds delivery and retry; a message or a dispatched event provisions. 60s reconcile (`internal/sessions/reconcile.go`) writes `pod_phase` from what k8s reports → stop-grace/startup-stall/idle/retention sweeps run off it |
 | `provisioner/` | Go. **Only** component with cluster RBAC over fleet namespace. Owns pod creation + git lifecycle. **No worktrees** (`adr/0048` §5): PVC per session holding real clone; shared PVC keeps read-only repo cache + per-session `claude-home`. Zero DB creds — k8s is its source of truth |
 | `sidecar/` | Go. Second container in every worker pod. Local MCP server (agent-facing) + local HTTP/JSON API (wrapper-facing, incl. human-message SSE feed) + telemetry loop. All funneled through one outbound gRPC to `core` |
-| `dashboard/` | React + Vite + TS + Tailwind/DaisyUI SPA. ConnectRPC client, built into `core` binary — never deployed alone. Console rewrite (`adr/0042`): 4 full-width views (sessions, audits, files, observability) + detail replacing list; observability = live topology + PromQL explorer (`adr/0047`); decisions answerable **from the list**; 5-tier feed + one 3-way DENSITY control; one pinned `DecisionDock` both form factors (`adr/0043` — desktop spine gone, `DENSITY → decisions` is zoom-out); 2 themes. PWA SW caches **no** fleet state (cached session list → someone answers a resolved decision). URL state `?view=`/`?session=`; pre-rename `?task=` still read. Shared both form factors: `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, `bucketSessions`, `sessionLabel` — put anything both need there. `MermaidDiagram` `React.lazy` deliberately: biggest thing shipped, almost nothing renders a diagram |
+| `dashboard/` | React + Vite + TS + Tailwind/DaisyUI SPA. ConnectRPC client, built into `core` binary — never deployed alone. Console rewrite (`adr/0042`): 5 full-width views (sessions, schedules — was audits —, files, observability, settings) + detail replacing list; observability = live topology + PromQL explorer (`adr/0047`); decisions answerable **from the list**; 5-tier feed + one 3-way DENSITY control; one pinned `DecisionDock` both form factors (`adr/0043` — desktop spine gone, `DENSITY → decisions` is zoom-out); 2 themes. PWA SW caches **no** fleet state (cached session list → someone answers a resolved decision). URL state `?view=`/`?session=`; pre-rename `?task=` still read. Shared both form factors: `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, `bucketSessions`, `sessionLabel` — put anything both need there. `MermaidDiagram` `React.lazy` deliberately: biggest thing shipped, almost nothing renders a diagram |
 | `worker/` | Claude Code worker (TS/Bun; `src/session.ts`, was `planning.ts`). **Single-shot**: one pod per warm, one streaming-input session spanning plan+impl (resumable via `RESUME_SESSION_ID`), then exits. Talks only to own pod's `localhost` sidecar |
+| `islands/` | Svelte 5 custom elements (`<fleet-agent>`) for other apps' pages (`adr/0068`). Built into `core` (`core/internal/islands`), served at `/islands/`; calls `AgentService` only, with the fleet cookie, from `embed.origins` hosts |
 | `executor/` | Go. thot-executor + `kubectl-shim`, installed into a cluster-access session as `kubectl`. Fleet's **only** process holding cluster RBAC for an agent (`adr/0037`) → a thot session stays an ordinary worker pod with zero k8s creds. Identity from a ServiceAccount in `infra-bootstrap` gitops, never named by the provisioner |
 | `definitions/` | Defined agents (`adr/0062`): `<name>.yaml` (`AgentDefinition`) + `clients/<name>.yaml` (`AgentClient`). Validated in CI by `core/internal/definitions/repo_test.go`; read by the provisioner **at its release tag** (`FLEET_DEFINITIONS_REF` overrides) and synced by core into `agent_definitions` |
-| `fleet-shared/` | Git-tracked source of every worker pod's shared Claude Code context: `settings.json`, `skills/`, `CLAUDE.md`. Provisioner clones; `SyncFleetShared` lays it into each session's `claude-home` (`adr/0032`). `"user"` half of `settingSources`; `"project"` half = target repo's own `CLAUDE.md`/`.claude/skills/`. What stops that repo's `permissions.allow` widening fleet authority is **not here** — it is `FLEET_ASK_RULES` in `worker/src/session.ts`, injected per-session via SDK `settings` (`adr/0052`, moving `adr/0049`'s `permissions.ask` out of this file). What an ask *means* is decided in `canUseTool`, not the rule: in `auto`, worker answers all but `rm`/`sudo` (`adr/0053`) |
-| `proto/` | buf-managed schema: `CoreService`, `ProvisionerService`, `DashboardService`. Go codegen for core/provisioner; TS for worker/dashboard |
-| `db/migrations/` | Sole source of truth for `sessions`/`proposals`/`transcript`/`repos`/`scheduled_audits`/`knowledge_journal` schema (`agentfleetdb`). golang-migrate (`adr/0030`) |
+| `packs/` | Reviewed context packs (`adr/0063`): `packs/fleet` (every pod) and `packs/repo` (repo sessions), `PACK.md` + `skills/`. Read by the provisioner at its release tag; core renders them, with live packs from Postgres, into each session's read-only `/genome` |
+| `fleet-shared/` | Git-tracked source of every repo pod's shared Claude Code context: `settings.json`, `skills/`, `CLAUDE.md` (the last two moving to `packs/`, `adr/0063` Decision 8, not yet removed). Provisioner clones; `SyncFleetShared` lays it into each session's `claude-home` (`adr/0032`). `"user"` half of `settingSources`; `"project"` half = target repo's own `CLAUDE.md`/`.claude/skills/`. What stops that repo's `permissions.allow` widening fleet authority is **not here** — it is `FLEET_ASK_RULES` in `worker/src/session.ts`, injected per-session via SDK `settings` (`adr/0052`, moving `adr/0049`'s `permissions.ask` out of this file). What an ask *means* is decided in `canUseTool`, not the rule: in `auto`, worker answers all but `rm`/`sudo` (`adr/0053`) |
+| `proto/` | buf-managed schema: `CoreService`, `ProvisionerService`, `DashboardService`, `AgentService`, `ExecutorService`. Go codegen (`proto/gen/go`) for core/provisioner/sidecar/executor; TS (`dashboard/src/gen`) for the dashboard and islands. The worker has none: it speaks HTTP/JSON to its sidecar |
+| `db/migrations/` | Sole source of truth for every table in `agentfleetdb` (`sessions`, `transcript`, `repos`, `proposals`, `knowledge_journal`, definitions, packs, grants, …). golang-migrate (`adr/0030`) |
 | `local/kind/` | Disposable kind cluster `/kind-local` stands up to exercise real pod dispatch off `ukubi-cluster` |
 | `migration/` | Image applying `db/migrations/` (`FROM migrate/migrate`). Runs as `k8s/core.yaml` `hooks.migrate` PreSync job, not part of `core` |
 | `k8s/` | `core.yaml` (Helm values, `common-app-chart`) + `provisioner/` (plain manifests: Deployment/Service/SA/Role/InfisicalSecret/PVC). `provisioner/networkpolicy.yaml` and a `core.yaml` `extraManifests` entry are the ingress fences for the provisioner and core (`adr/0069` §3); nothing else in `agent-fleet` is selected |
@@ -110,9 +112,12 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `request_e2e_env`, `kill_env` deleted. Three ADRs went into repairing a second pod whose
   whole purpose was letting **one tool** skip a prompt; the fix was deleting the pod.
 - **Defined agents: reviewed files, effective-spec ceiling, `(name, sha)` pin** (`adr/0062`).
-  A definition only narrows (no `auto`/`acceptEdits`/`bypassPermissions`); its session's
-  repo/model/mode come from the version at the synced commit (invalid HEAD = fail closed,
-  never an older row) and the mode is written explicitly, never the `'auto'` default.
+  A definition only narrows the fleet ceiling (`core/internal/definitions/load.go`): modes
+  `auto`/`default`/`plan` only, where `auto` is the fleet's (the worker runs the SDK in `default`
+  so every non-auto-safe call reaches `canUseTool`, `adr/0076`); `acceptEdits`/`bypassPermissions`/
+  `dontAsk` are rejected. Its session's repo/model/mode come from the version at the synced
+  commit (invalid HEAD = fail closed, never an older row); the mode is the definition's
+  `mode.default`, written explicitly.
   Pinned sha ≠ current → warm refused. Pool `MAX_DEFINITION_SESSIONS` sits **inside**
   `MAX_IN_FLIGHT_TASKS` (must be `<`, or core won't start), checked in `ReserveSlot` only
   (a create provisions nothing; the insert + reserve tx is P4's `Open`). Mode guard lives in
@@ -122,9 +127,11 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   No `LEASE_ID`/`GH_TOKEN` in its worker, its repo's subPath of the cache only, a clone that
   never contacts the remote (`EnsureRepoFetched` is load-bearing), identity from the file's
   `git.identity`, no fleet-shared sync, default image only, and `FLEET_DEFINITION` makes the
-  worker refuse Claude Code's own cross-session channel (`adr/0060` amended). P1 does **not**
-  bound the tool surface: `allowedTools` and the repo's project allow rules still skip
-  `canUseTool` (P4).
+  worker refuse Claude Code's own cross-session channel (`adr/0060` amended). The worker bounds
+  its tool surface (`adr/0067` §4, `worker/src/session.ts`): `settingSources: ["user"]`, so the
+  repo's project allow rules are never read; `allowedTools` holds only the definition's
+  `sidecarTools`; built-ins stop at a fixed ceiling; `tools.deny` sits in flag scope; every other
+  call goes through `canUseTool` (`definitionDecision`).
 - **A definition pod holds no real secret** (`adr/0065`). Credentials live in Agent Vault
   (infra-bootstrap ADR-0061); the **provisioner is its only client** (member agent token in
   Infisical project `agent-vault` `/agent-vault`, mounted, never in core) and reconciles each valid
@@ -172,7 +179,9 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   Authorization is an explicit per-method table — a field-name rule is wrong on
   `PromptSession`, `SaveAgentSessionId` and `GetSession`, each time in the direction that
   grants authority. A method in no table fails closed. A **definition** lease additionally
-  passes only `definitionMethods` (`adr/0064`: no `Expose`, peers, journal, files, Loki), and
+  passes only `definitionMethods` (`adr/0064`: no `Expose`, peers, journal, files, Loki).
+  `PublishEvent` goes the other way: only a definition whose pinned spec grants
+  `publish_event` may call it, never with the provisioner token (`adr/0078` §8), and
   nobody can `PromptSession` into one. Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
@@ -181,10 +190,11 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `git.branch`; one in pr mode holds no push credential (PRs through the tool surface in P4).
 - One PVC per session — never a shared writable checkout across concurrent sessions.
   Fleet creates no branches either: agent runs its own `git checkout -b` (`adr/0048` §5).
-- Git commit identity derived live from authenticated bot GitHub account (`gh api user`),
-  never hardcoded. Done independently by provisioner (clone/fetch) and worker (push/PR) —
-  separate pods, no shared `$HOME`. Exception (`adr/0064`): a definition pod's identity is
-  the reviewed definition file's `git.identity`, passed as `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
+- Git commit identity is config, not code (`adr/0075` §8): repo pods commit as
+  `FLEET_GIT_AUTHOR_NAME`/`FLEET_GIT_AUTHOR_EMAIL` (`ukubi <ukubi@bnei.dev>`, set on the
+  provisioner); a definition pod as its reviewed file's `git.identity` (`adr/0064`). Both
+  reach the worker as `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. No `gh api user`: `/user` refuses
+  installation tokens. The GitHub identity is the App `ukubi-fleet`.
 - Claude Code auths via subscription OAuth (`CLAUDE_CODE_OAUTH_TOKEN`), not a metered API
   key. No cost cap by design.
 - Secrets only via Infisical (project `agent-fleet-nygh`). Never committed.
@@ -246,7 +256,7 @@ deploy, CI, permission or pod-lifecycle paths.
 - Wide rename can swap two same-typed fields silently. Check call sites where old and new
   names now collide.
 - `process.exitCode = 1` ≠ exit. Single-shot process → exit explicitly.
-- Fleet wedges silently only after `MAX_LIVE_SESSIONS`. Test = run six, open a seventh.
+- Fleet wedges silently only after `MAX_IN_FLIGHT_TASKS` (default 5) live sessions. Test = run six, open a seventh.
 - Nullable column → nullable scan or `COALESCE`. One NULL fails the whole query, not the row.
 - Feature can be fully dead with every test green if nothing drives the UI. Run
   `/dashboard-e2e` after touching create, decision or warm paths.
@@ -265,10 +275,14 @@ deploy, CI, permission or pod-lifecycle paths.
 
 - All changes via feature branch + PR. No direct push to `main`.
 - Secrets never committed; fetched from Infisical at run time.
-- Conventional Commits — `release.yml` runs `release-it` off them, bumping
+- Conventional Commits — `docker.yml`'s `release` job runs `release-it` off them, bumping
   version/CHANGELOG on every push to `main`.
-- AI co-author trailer: `Co-Authored-By: ukubi-claude-macbook <noreply@bnei.dev>` for work
-  on this repo. `ukubi-agent` is only for fleet worker pods.
+- Commit trailers name the agent, with a little metadata — claims, never evidence
+  (`adr/0079`'s ledger is). `Co-Authored-By: <agent> <noreply@bnei.dev>`, agent =
+  `ukubi-claude-<host>` (laptop), `ukubi-claude-cloud` (claude.ai/code), `ukubi-agent`
+  (fleet repo pod, stamped by `worker/git-hooks`); a definition pod adds none (its author is
+  `git.identity`). Plus `Agent-Session: <opaque id>` where one exists. No model ids, no URLs,
+  no "Generated with" footer.
 - `worker/`: `bun:test` for coordination logic cheap to mock (SDK streaming-input `query()`,
   sidecar local HTTP client). Runs in CI ahead of Docker build. Also `bun run typecheck`.
 - `core/`, `provisioner/`, `sidecar/`: `go test`. Table-driven units, `client-go` fake
@@ -285,7 +299,8 @@ deploy, CI, permission or pod-lifecycle paths.
 
 - `/fleet-ops` — onboard a target repo, walk release/deploy, inspect what's live.
 - `/fleet-feature` — checklist for adding to `core/`/`provisioner/`/`sidecar/`/`worker/`
-  (new gRPC method, MCP tool, slash command, transcript entry type).
+  (new CoreService method or MCP tool, AgentService method, transcript entry type, defined
+  agent).
 - `/fleet-debug` — diagnose stuck/failed session (session+journal state, worker/sidecar/
   provisioner logs, `transcript` table, known failure modes).
 - `/dashboard-e2e` — minimal local stack (throwaway Postgres + stub provisioner + `core` +

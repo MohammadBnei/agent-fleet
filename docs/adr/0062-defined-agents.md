@@ -1,6 +1,6 @@
 # ADR-0062 — Defined agents
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md) (§7: `limits.timeout`), [ADR-0066](0066-agent-service.md) (§5), [ADR-0076](0076-definition-sessions-run-in-auto.md) (the mode ceiling: `auto` allowed) and [ADR-0077](0077-claude-code-picks-the-model.md) (`model` optional)
 - **Date:** 2026-10-18
 - **Related:** [ADR-0048](0048-one-session-one-pod-one-shared-home.md) §1
   (amended: the gate), [ADR-0061](0061-sessions-launch-in-auto.md) (definitions

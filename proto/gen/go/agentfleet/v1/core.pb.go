@@ -2407,8 +2407,9 @@ type SaveAgentSessionIdRequest struct {
 	// The caller pod's lease (docs/adr/0041). Without it this write is keyed
 	// by task alone, so a pod that was torn down but is still shutting down
 	// can overwrite the identity of the pod that replaced it — and
-	// sessions.agent_session_id is precisely what the next resume reads. Empty is
-	// accepted for compatibility with a worker image older than this field.
+	// sessions.agent_session_id is precisely what the next resume reads. The
+	// sidecar fills it from its own lease (docs/adr/0064); an empty one matches
+	// no session (sessions.leaseMatch), so the write is dropped.
 	LeaseId       string `protobuf:"bytes,4,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

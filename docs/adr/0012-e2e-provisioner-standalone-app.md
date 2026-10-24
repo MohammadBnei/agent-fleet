@@ -4,7 +4,8 @@
 [ADR-0038](0038-per-task-subdomain-e2e-preview.md). Previews are now one
 subdomain per task with the app at `/`; the "no wildcard DNS exists anywhere in
 this cluster" premise below stopped being true when `bnei.dev` moved to
-Cloudflare (`infra-bootstrap` ADR-0033). Everything else here stands.
+Cloudflare (`infra-bootstrap` ADR-0033). Its pod-provisioning half is superseded by
+[ADR-0048](0048-one-session-one-pod-one-shared-home.md) (there is no e2e pod). Everything else here stands.
 **Date:** 2026-08-01
 
 ## Context

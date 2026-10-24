@@ -1,6 +1,6 @@
 # ADR-0071 — Events reach sessions through the bridge
 
-- **Status:** Accepted, not built; an amendment is proposed in [ADR-0078](0078-core-on-the-bridge.md) (sign-in, reserved types, the dispatcher's rules)
+- **Status:** Accepted; §2 (`PublishEvent`/`publish_event`) and §3–§7 (the dispatcher in `core/internal/dispatch`) built in #324/#325, not yet released; an amendment is proposed in [ADR-0078](0078-core-on-the-bridge.md) (sign-in, reserved types, the dispatcher's rules). Not yet: Alertmanager still posts to `/webhook/alertmanager`, and `definitions/clients/bridge.yaml` lists no definition, so nothing opens yet
 - **Date:** 2026-10-18
 - **Related:** infra-bootstrap ADR-0060 (`ukubi-bridge`, the bus itself),
   [ADR-0041](0041-inter-agent-prompting.md) (`prompt_agent`, which stays),
@@ -10,7 +10,7 @@
 
 ## Context
 
-Defined agents (ADR-0062–0070 and 0073) are dedicated to one app or one platform
+Defined agents (ADR-0062–0070; 0073: number never used) are dedicated to one app or one platform
 component. To be useful they must hear about that thing without a human
 relaying it: a PR to review, an alert, a hand-off from another agent. And
 agents must be able to talk to each other asynchronously — one finishes a

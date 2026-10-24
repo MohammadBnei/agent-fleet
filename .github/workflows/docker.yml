@@ -75,6 +75,13 @@ on:
     tags-ignore:
       - '*'
 
+# Read-only by default; the test jobs run PR code. Only release and deploy,
+# which run on a push to main alone, raise their own GITHUB_TOKEN to
+# contents: write. Guarded by core/internal/buildguard
+# (TestWorkflowsWriteOnlyInReleaseJobs).
+permissions:
+  contents: read
+
 # Three lanes. PR runs get one group per ref and cancel their own older run:
 # only the newest push of a PR is worth building. Push runs share `release`
 # and are never cancelled, only queued. Dispatch gets its own lane: in
@@ -845,6 +852,13 @@ jobs:
             exit 0
           fi
           fail() { echo "::error::$*"; exit 1; }
+          # Both values are spliced into sed expressions below, in a job
+          # holding contents: write. IMAGES comes from build-push, which
+          # runs on the shared build box: accept exactly the shape it emits.
+          printf '%s\n' "$VERSION" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' \
+            || fail "unexpected VERSION '$VERSION'"
+          bad=$(printf '%s\n' $IMAGES | grep -Evx '[a-z]+=src-[0-9a-f]+' || true)
+          [ -z "$bad" ] || fail "unexpected entries in build-push's images output: $bad"
           tag_of() { printf '%s\n' $IMAGES | sed -n "s/^$1=//p"; }
 
           # What build-push compares against next time. All six, including

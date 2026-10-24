@@ -1,6 +1,12 @@
 # ADR-0076 — Definition sessions run in `auto`, and their allow list grows by remembered approvals
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22)
+- **Built:** §1 (the fleet's `auto` runs the SDK in `default`, `sdkMode` in
+  `worker/src/session.ts`), §2 (`definitionDecision`), §3's grants: `session_grants`/
+  `definition_grants` (migration 000015), core-rendered rules (`core/internal/grants`), scope and
+  rule form on the console's `RespondToPermission`, revoke in the console. **Not yet built:**
+  `scope`/`rule_form` on AgentService's `RespondToPermission`, so island and client answers
+  are `once` only.
 - **Date:** 2026-10-20
 - **Amends:** [ADR-0062](0062-defined-agents.md) (the mode ceiling: `auto`
   is no longer rejected for definitions),

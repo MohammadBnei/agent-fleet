@@ -1,6 +1,6 @@
 # ADR-0003: Persistent worker pod per target repo, not one Job per task
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0019](0019-shared-pvc-and-unified-provisioner.md)
 **Date:** 2026-07-30
 
 ## Context

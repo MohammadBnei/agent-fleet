@@ -6,7 +6,7 @@ verified findings, not settled decisions. Promote to `adr/` once a fix
 lands; until then, backlog.
 
 Status: `open` (found, undesigned) · `designing` (decision drafted) ·
-`fixed` (landed, PR linked).
+`fixed` (landed, PR linked) · `obsolete` (the mechanism it concerns was deleted).
 
 > **Read this first (2026-08-15).** This backlog predates
 > [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md), which
@@ -335,7 +335,10 @@ free text.
 
 ## 12. Session resume is dead code — a reclaimed task always starts a brand-new Claude session, and retry_count doesn't distinguish "crashed" from "idle"
 
-**Status:** open.
+**Status:** obsolete → [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md) §2 deleted
+reclaim, `retry_count` and `failed_permanently`; resume is wired (the provisioner
+passes `RESUME_SESSION_ID`, `worker/src/session.ts` resumes it,
+[`adr/0029`](adr/0029-sessions-not-tasks-permission-prompt-not-approval-gate.md)). Kept below as history.
 
 **Where:** `docs/adr/0016-task-crash-recovery-and-retry.md` (the original design) · `docs/adr/0021` lines ~162-166 (flags this as an unverified open risk after the continuous-session rewrite) · `core/internal/tasks/store.go`'s `SaveSessionID`/`planning_session_id` column and `ClaimNextTask`'s `retry_count` increment · `provisioner/internal/k8s/pod.go`'s `CreateWorkerPod` env-var list · `worker/src/types.ts`'s `Task` type · `worker/src/planning.ts`'s `query()` call · `sidecar/internal/mcpserver/server.go`'s `AskUserQuestion`/`wait_for_messages` long-poll.
 

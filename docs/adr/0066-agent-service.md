@@ -1,6 +1,14 @@
 # ADR-0066 — AgentService: one API for members and registered clients
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22) — §1 amended by [ADR-0068](0068-islands.md) (CORS for island origins); §4 amended by [ADR-0076](0076-definition-sessions-run-in-auto.md) (`scope`, `rule_form`)
+- **Built:** both listeners (`:8080` members, `:9091` clients with a bearer per registration),
+  the fail-closed authz table (`core/internal/agentsvc/authz.go`), definitions, threads,
+  messages, transcript, decisions, `SetConfig` (mode), `Stop`, `GetStatus`, and `Open`/
+  `CloseThread` with `client_requests` claims; the bridge dispatcher calls `Open` in-process as
+  the `bridge` client (#324). **Not yet built:** `Invoke`/`WaitForResult`
+  (declared in the proto and the authz table, served `Unimplemented`; ADR-0070); §9's
+  per-definition `CoreService` method set (core still uses the fixed `definitionMethods`) and
+  sidecar tool filter; §11's SDK helpers (there is no `sdk/`).
 - **Date:** 2026-10-20
 - **Related:** [ADR-0062](0062-defined-agents.md) (definitions, clients and
   the gate amendment; §5's create + reserve transaction is replaced here),

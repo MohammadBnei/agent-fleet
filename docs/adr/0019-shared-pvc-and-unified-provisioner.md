@@ -1,6 +1,7 @@
 # ADR-0019: Shared worktree PVC and a unified provisioner replace per-repo persistent workers
 
-**Status:** Accepted
+**Status:** Accepted — point 1's mount shape and point 2's worktree half superseded by
+[ADR-0048](0048-one-session-one-pod-one-shared-home.md) (PVC per session, no worktrees). The shared PVC and the single-writer provisioner stand.
 **Date:** 2026-08-04
 
 ## Context

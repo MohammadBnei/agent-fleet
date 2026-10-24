@@ -1,6 +1,6 @@
 # ADR-0032: PVC-resident, provisioner-synced fleet-shared skills/context
 
-**Status:** Accepted
+**Status:** Accepted — amended by [ADR-0048](0048-one-session-one-pod-one-shared-home.md) (`CLAUDE_CONFIG_DIR` is per session)
 **Date:** 2026-08-10
 
 ## Context

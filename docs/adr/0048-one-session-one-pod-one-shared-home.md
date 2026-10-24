@@ -1,6 +1,6 @@
 # ADR-0048 — One session, one pod, one shared home
 
-- **Status:** Accepted — §1 (the gate) amended by [ADR-0062](0062-defined-agents.md)
+- **Status:** Accepted — §1 (the gate) amended by [ADR-0062](0062-defined-agents.md); §4 (the repo-cache mount) amended by [ADR-0064](0064-definition-pod-profile.md)
 - **Date:** 2026-08-14
 - **Supersedes:**
   - [ADR-0016](0016-task-crash-recovery-and-retry.md) — entirely. The

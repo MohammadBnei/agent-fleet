@@ -1,6 +1,6 @@
 # ADR-0001: Durable Redis list over pub/sub for the planning transcript
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0013](0013-go-fleet-core-and-e2e-provisioner-rewrite.md)
 **Date:** 2026-07-30 (implementation; the choice was flagged as open in the original `mvp-spec.md` draft, which had defaulted to pub/sub)
 
 ## Context

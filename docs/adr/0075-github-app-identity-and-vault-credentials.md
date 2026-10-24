@@ -104,9 +104,11 @@ ids and a permission subset, and last one hour. Sessions last up to 12h.
      2026-10-20): GitHub Free has no push ruleset that restricts
      `.github/workflows/**`, and a workflow pushed to any same-repo branch
      runs at once with the repo's secrets and the self-hosted runner. The
-     App holds `workflows`; a token carries it only for a session an admin
-     opts in ("may edit workflows", migration 000014). Default branches are
-     protected by rulesets the App can't bypass.
+     App holds `workflows`, but no token carries it: every permission set in
+     `provisioner/internal/github/app.go` omits it. (The admin opt-in this line
+     once named, "may edit workflows" in a migration 000014, was not built;
+     000014 is unused.) Default branches are protected by rulesets the App
+     can't bypass.
    - **Egress stays open.** Repo pods get no CiliumNetworkPolicy. The vault
      only touches the hosts it matches.
    - **The model token comes from the vault too.**

@@ -1,6 +1,6 @@
 # ADR-0018: AskUserQuestion is real, answered via the dashboard, not Discord
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0025](0025-continuous-session-worker-redesign.md)
 **Date:** 2026-08-04
 
 ## Context

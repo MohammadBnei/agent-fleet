@@ -1,6 +1,6 @@
 # ADR-0005: Explicit human approval only gates write/edit unlock
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md)
 **Date:** 2026-07-30
 
 ## Context

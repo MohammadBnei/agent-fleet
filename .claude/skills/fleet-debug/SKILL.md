@@ -1,6 +1,6 @@
 ---
 name: fleet-debug
-description: Diagnose a stuck or failed agent-fleet task — task/journal state, worker/sidecar/provisioner pod logs, and known failure modes. Use when a Discord task thread has gone quiet, a task never opened a PR, or a worker looks stuck/crashed.
+description: Diagnose a stuck or failed agent-fleet session — session row and pod_phase, the transcript, worker/sidecar/provisioner logs, Agent Vault and GitHub App credentials, and known failure modes. Use when a session has gone quiet, never got a pod, never opened a PR, or a worker looks stuck/crashed.
 user-invocable: true
 allowed-tools:
   - Read
@@ -10,184 +10,166 @@ allowed-tools:
   - Bash(kubectl describe *)
 ---
 
-# /fleet-debug — diagnose a stuck or failed task
+# /fleet-debug — diagnose a stuck or failed session
 
-Work outward from the database, then the transcript, then live pod logs.
-Full flow reference: `docs/ARCHITECTURE.md` §2. As of `docs/adr/0019`–
-`0021` there's no per-repo Deployment and no Redis — a task's worker is a
-single-shot, two-container Pod (`worker-<shortTaskId>`, see
-`provisioner/internal/k8s/names.go`'s `WorkerResourceName`) spawned by the
-provisioner, and the planning transcript is a durable Postgres table, not
-a Redis list.
+Work outward: the session row, then its transcript, then live pod and
+provisioner logs. Topology: `docs/ARCHITECTURE.md` §2.
 
-## 1. Check task state first
+What exists (`docs/adr/0048`): a **session** is the durable unit (`sessions`
+row + `transcript`); a **pod** is ephemeral compute attached by a warm. There
+is no queue, no status enum, no lease heartbeat, no retry, no worktree, no
+sandbox pod. A session's worker is one single-shot Kubernetes `Job`,
+`worker-<shortId>` (`WorkerResourceName` in
+`provisioner/internal/k8s/names.go`: the UUID without dashes, first 20
+chars), with two containers, `worker` and `sidecar`.
 
-```sql
-SELECT id, repo, status, claimed_by, heartbeat_at, lease_id, pr_url, updated_at
-FROM tasks WHERE id = '<taskId>';
-```
+Connect with the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh`);
+only `core` holds them.
 
-- `pending` and never claimed → `core`'s dispatch loop
-  (`core/internal/dispatch/loop.go`) may be stalled, `MAX_IN_FLIGHT_TASKS`
-  headroom may be exhausted (`CountInFlight`), or the repo isn't in
-  `core/internal/tasks/store.go`'s `KnownRepos` map (dispatch logs
-  `claimed task for unknown repo, cannot dispatch` and gives up silently
-  from the task's perspective).
-- `claimed`/`planning`/`implementing` and `heartbeat_at` is stale (>10min,
-  no recent writes) → the worker pod likely crashed. `ClaimNextTask` will
-  reclaim it on `core`'s next dispatch tick and spawn a *fresh* pod for
-  the same task — check `knowledge_journal` for whether that already
-  happened (a second `task.claimed`-adjacent event) before assuming
-  nothing is happening.
-- `failed` → the error is in the Discord thread's last message and in
-  `knowledge_journal` (below).
-
-## 2. Read the journal — the real signal, not just status
+## 1. The session row
 
 ```sql
-SELECT event_type, payload, created_at
-FROM knowledge_journal
-WHERE payload->>'taskId' = '<taskId>'
-ORDER BY created_at;
+SELECT id, repo, definition_name, pod_phase, pod_message, last_error,
+       permission_mode, activity_seen, last_active_at, last_entry_type,
+       stop_requested_at, swept_at, archived_at, fleet_version
+FROM sessions WHERE id = '<sessionId>';
 ```
 
-This now also carries **provisioner pod-lifecycle events**
-(`event_type` `pod.created`/`pod.scheduled`/`pod.running`/`pod.crashed`/
-`pod.terminated`, pushed live over gRPC via `ReportPodEvents` — see
-`docs/adr/0020` point 3) — check these first if the task never seems to
-have gotten a pod at all: a `pod.crashed` event with `message` like
-`clone/fetch failed: ...` or `worktree add failed: ...` means the
-provisioner's own git step failed before a worker pod was ever created,
-which won't show up in the worker's own logs since it never ran.
+`pod_phase` is written from two directions: the provisioner pushes pod events
+(`ReportPodEvents`), and core's 60s `sessions.Loop`
+(`core/internal/sessions/reconcile.go`) re-reads what Kubernetes actually has
+and corrects a missed push. The same pass runs the sweeps, each of which tears
+the pod down (the session survives; the next message warms a new pod):
 
-Look also at `session.result`-style events' turn/cost figures. **A
-session that burned turns but posted nothing to the transcript** is the
-signature of a missing `allowedTools` entry — an MCP tool call not on the
-list is silently denied by the SDK, not errored loudly (`docs/adr/0008`).
-Since `docs/adr/0017`, planning is one continuous session (not a
-proposer/critic pair) that also runs implementation in the same session
-(`docs/adr/0021`) — a `Task`-tool permission denial specifically means
-`doubt-driven-development`'s fresh-context subagent spawn was silently
-blocked.
+- **stop grace** — a Stop the pod did not honour within `STOP_GRACE_MS`;
+- **startup stall** — a pod that came up and wrote nothing within
+  `STARTUP_STALL_MS` (`activity_seen` false; `docs/adr/0040`);
+- **idle timeout** — no transcript activity for `IDLE_TIMEOUT_MS` (a
+  definition's `limits.timeout` overrides it, `docs/adr/0065`);
+- **retention** — disk of sessions untouched for `SESSION_RETENTION`
+  (`swept_at` set).
 
-## 3. Check the worker pod's live logs — two containers, not one
+Defaults are in `core/internal/config/config.go`. Reading the row:
 
-```
-kubectl get pod -n agent-fleet -l agent-fleet.dev/task-id=<taskId>
-kubectl logs -n agent-fleet worker-<shortTaskId> -c worker -f
-kubectl logs -n agent-fleet worker-<shortTaskId> -c sidecar -f
-```
+- `pod_phase` NULL and the human sent a message → the warm failed. The
+  console showed the error to whoever sent it; core's logs have it. A warm
+  refused at capacity says `live sessions — stop one first`
+  (`MAX_IN_FLIGHT_TASKS`, counted by `livePhases` in
+  `core/internal/sessions/store.go`).
+- `pod_phase` live but nothing moves → §3 (pod logs), then §5.
+- `pod_message`/`last_error` hold what the provisioner or a sweep last said.
 
-(`<shortTaskId>` is the task UUID with dashes stripped, truncated to 20
-chars — see `WorkerResourceName`/`shortID` in `provisioner/internal/k8s/
-names.go`; easiest to just find it via the label selector above.)
+"Live" (`blocked`, `working`, …) is derived, not stored
+(`core/internal/sessions/liveness.go`): a live `pod_phase` plus an
+unanswered `permission_request` or `question` is **blocked** — waiting on a
+human click in the console, not stuck.
 
-Every SDK message is logged in the `worker` container, not just the final
-result (`logSdkMessage` in `worker/src/planning.ts`) — `tool_use` and
-`tool_result` entries (with `isError`) show up here in real time. The
-`sidecar` container's logs show every gRPC call it proxied to `core` (and
-its own independent telemetry push failures/successes) — check it
-separately if the `worker` container looks like it's making tool calls
-that never seem to have any effect (e.g. `send_message` calls that never
-reach Discord): the break could be sidecar→core connectivity, not the
-agent session itself.
-
-If the pod doesn't exist at all: check §2's `pod.*` journal events first
-— either the provisioner never got the `CreateWorkerPod` call (dispatch
-loop issue, see §1) or it got it and the pod create itself failed
-(`pod create failed: ...` in the journal payload).
-
-## 4. Inspect the planning transcript directly
+## 2. The transcript — what the agent actually did
 
 ```sql
-SELECT seq, "from", type, text, created_at
-FROM planning_transcript
-WHERE task_id = '<taskId>'
-ORDER BY seq;
+SELECT seq, "from", type, left(text, 200), reply_to_seq, created_at
+FROM transcript WHERE session_id = '<sessionId>' ORDER BY seq;
 ```
 
-Each row is one `send_message`/human-reply/checkpoint entry — `type` is
-`discussion`/`approve`/`abort`/`question`/`answer`/`tool_call` (the last
-one is the sidecar's own telemetry, never relayed to Discord — see
-`relay_dead_letter`/`relay_attempts` below). If Discord shows the thread
-went quiet but this table is still growing, `core`'s own relay loop
-(`core/internal/transcript/relay.go`'s `RelayLoop`/`relayPending`) is the
-broken link, not the planning logic itself — check `relayed_to_discord`/
-`relay_attempts`/`relay_dead_letter`/`relay_last_error` on the relevant
-rows, and `core`'s own logs for Discord API errors.
+Every SDK message the worker sees is written here (`logSdkMessage` in
+`worker/src/session.ts`), so this is the full record: `system` entries
+(the `init` line with model, tools, skills, MCP servers; `session_failed`;
+`context_loaded`), `assistant`/`user` turns, `tool_call` telemetry,
+`permission_request`/`permission_response` pairs (correlated by
+`reply_to_seq`), `question`/`answer`, `result`.
 
-## 5. The e2e sandbox (`run_command`, the preview)
+- A `permission_request` with no `permission_response` → blocked on a human.
+- A `system` entry with `"sdk":"session_failed"` → the worker threw outside
+  the SDK loop; its text is the error.
+- Turns burned with nothing useful → read the `init` entry: a missing MCP
+  server or skill shows there.
 
-Since `docs/adr/0039` the e2e pod is the agent's build/test sandbox, so
-"`run_command` is failing" is a task-blocking bug, not a preview cosmetics
-one. `docs/adr/0044` reshaped it — check in this order:
+`knowledge_journal` is agent knowledge (`journal_write`), not pod telemetry:
+pod events are not journaled (`docs/adr/0055`); their history is in Loki.
 
-```bash
-# Is there a pod at all, and what phase?
-kubectl -n agent-fleet get pods -l app.kubernetes.io/component=e2e-run
+## 3. Worker and sidecar logs
 
-# Why is it not Running? (ImagePullBackOff, OOMKilled, admission rejection)
-kubectl -n agent-fleet describe pod e2e-<first 20 chars of task id>
-
-# The app's own output — the first thing to read when the preview 502s.
-# Ends with an explicit exit-status marker if the command died.
-kubectl -n agent-fleet exec e2e-<id> -- tail -50 /tmp/e2e-app.log
+```
+kubectl -n agent-fleet get job,pod -l agent-fleet.dev/task-id=<sessionId>
+kubectl -n agent-fleet logs job/worker-<shortId> -c sidecar
+kubectl -n agent-fleet logs job/worker-<shortId> -c worker
+kubectl -n agent-fleet describe pod -l agent-fleet.dev/task-id=<sessionId>
 ```
 
-- **The pod stays up even when the app is dead — that is by design**
-  (`adr/0044`). A `Running` pod whose preview 502s is the *normal* shape of
-  a broken start command, not a second bug. `run_command` and code-server
-  both still work; use them.
-- **`app_ready: false` with an empty `start_cmd` is not a failure.** It's a
-  sandbox-only pod: the repo's profile has no app command, nothing binds the
-  app port, and the readiness probe correctly never passes. The dashboard
-  card says `sandbox · no app`.
-- **The app is never restarted automatically.** A dead app stays dead for the
-  rest of the session unless the agent restarts it via `run_command`.
-- **`run_command` "not reachable" on the first call of a session** is usually
-  just a cold pod — the sidecar retries with backoff for ~65s, and the final
-  error names the pod's actual phase. `requested` means still pulling/
-  installing; `failed` means call `kill_env` and let it rebuild.
-- **A sandbox that vanished mid-session** was probably swept: the reconcile
-  loop GCs terminal-phase pods and any pod older than `E2E_MAX_AGE_MS`
-  (default 24h). It reports a `SESSION_KIND_E2E` event, so it's in the
-  journal.
-- **Which profile the sandbox was built from** comes from the repo's
-  `e2e_profile` column, not a hardcoded `"e2e"`. A sandbox missing a
-  toolchain almost always means that column points at the wrong profile (or
-  the profile lacks the tool). `request_e2e_env`'s response echoes
-  `profileName`/`tools`/`services` — read it before assuming a bug.
+(The label is still called `task-id`; its value is the session id.)
+
+- The sidecar is a native sidecar (init container with `restartPolicy:
+  Always`); the worker starts only after its `/readyz` passes. A sidecar
+  that never goes Ready means a worker that never starts — check
+  `describe` for its probe and restart state.
+- The sidecar logs every gRPC call it proxies to core. A worker making tool
+  calls that change nothing usually means sidecar → core is broken
+  (`FLEET_PROVISIONER_TOKEN`/lease errors are `PERMISSION_DENIED`, never
+  retried).
+- No container logs, pod gone → the console's log drawer reads Loki; the
+  `Job` is deleted on teardown and takes its logs with it.
+- A container that just stops logging → likely a cgroup OOM kill: confirm
+  with the node's `dmesg` (`docs/verification-traps.md`).
+
+## 4. The provisioner
+
+```
+kubectl -n agent-fleet logs deploy/provisioner --since=30m
+```
+
+It creates the Job and the per-session PVC, keeps the read-only repo cache
+fresh, syncs `fleet-shared/` and the session's `/genome` (context packs,
+`docs/adr/0063`), mints vault tokens, and reports pod events. A warm that
+fails before any pod exists fails here: clone/fetch of the cache, PVC
+creation, a vault refusal (§5), or the Job create itself.
+
+## 5. Credentials: Agent Vault and the GitHub App
+
+No pod holds a real GitHub or Anthropic token (`docs/adr/0065`,
+`docs/adr/0075`). The worker has placeholders; the vault injects the real
+value on the wire.
+
+- **The GitHub App** (`provisioner/internal/github/app.go`): the provisioner
+  alone holds the key (files under `GITHUB_APP_DIR`), mints 1h installation
+  tokens and re-mints with <30m left. Only installations by accounts in
+  `FLEET_GITHUB_ACCOUNTS` count. Log lines start with `github app:` —
+  `re-mint failed, serving the last token`, `installation by a
+  non-allowlisted account, ignored`, `no token for an owner, its git falls
+  back to ambient auth`.
+- **Repo pods** use their owner's vault (`owner-<login>`), refreshed by the
+  provisioner on its own 5-minute tick (`grpcserver: owner vault refresh`
+  errors). In the pod, `HTTPS_PROXY` is the sidecar's egress router
+  (`127.0.0.1:9093`, `sidecar/internal/egress`): only `github.com`,
+  `api.github.com` and `api.anthropic.com` go to the vault; everything else
+  goes direct. `git push`/`gh` failing with auth errors while other HTTPS
+  works points here. Commits are authored `FLEET_GIT_AUTHOR_*` (`ukubi`).
+- **Definition pods** use their definition's vault, reconciled from
+  `definitions/` every sync (`ReconcileVaults`) and again at warm. A missing
+  credential key fails the warm closed, naming the key. Core also refuses a
+  definition warm when the provisioner did not apply the definition profile,
+  did not mint a vault token, or did not apply the context packs
+  (`core/internal/dashboard/server.go`, `WarmIfIdle`). Egress is locked by
+  `k8s/provisioner/definition-egress.yaml`: anything but the vault proxy,
+  core :9090 and DNS is dropped.
+- A token is per warm, capped at 12h with the pod (`activeDeadlineSeconds`),
+  and revoked on teardown (`vault revoke failed` lines are bounded by its
+  TTL).
 
 ## Known failure modes
 
-- **Missing `allowedTools` entry** → silent permission denial, burned
-  turns, zero transcript output. Fix: add the tool to
-  `worker/src/planning.ts`'s `allowedTools` list (see `/fleet-feature`).
-- **Worker pod crash mid-task** → single-shot pods don't retry themselves
-  (`docs/adr/0019`); the *provisioner*'s worktree cleanup only runs via
-  `core`'s `TearDownSession` call, which a crashed pod never triggered —
-  the worktree can be left behind on the shared PVC until
-  `ClaimNextTask`'s heartbeat reclaim eventually lets a fresh pod reuse
-  the same task ID's worktree path (worktree creation handles this: stale
-  leftovers are removed before re-adding, see `provisioner/internal/git/
-  git.go`'s `CreateWorktree`).
+- **Session blocked, nobody answered** → not a bug. The console lists it
+  under needs-you; answer it there.
+- **Message appended but the pod never reacts** → check the ordering
+  invariant: warm first, then append (`resumeFromSeq` = `LatestSeq` at
+  dispatch). A message appended before the pod existed sits below its cursor.
+- **Pod finished but `pod_phase` still live** → the 60s reconcile corrects
+  it; if it does not, core cannot list pods from the provisioner (core logs).
+  A stuck live phase holds a slot until then.
+- **Worker exited non-zero** → the `session_failed` transcript entry; the
+  Job phase is `Failed`.
 - **`total_cost_usd` looks wrong/zero** → expected under subscription auth
-  (`CLAUDE_CODE_OAUTH_TOKEN`, not a metered API key) — it's a notional
-  figure, not a real charge (`docs/adr/0004`). Not a bug by itself.
-- **`Task` tool permission denial during planning** → `doubt-driven-
-  development` never actually ran its fresh-context review despite the
-  planner saying it would; the model has no visible error to react to, it
-  just silently loses the review step. Check the `system`/`init` log
-  line's `skills`/`plugins` fields (confirms `worker/skills/
-  agent-fleet-planning` loaded) and `tool_use`/`tool_result` entries
-  naming `Task`.
-- **A `tool_use` entry naming `AskUserQuestion`** — this one is now
-  expected and correct, unlike before `docs/adr/0018`: `AskUserQuestion`
-  is a real MCP tool, proxied sidecar → `core`, answered via the
-  dashboard (not Discord). If it looks stuck, check the dashboard's
-  pending-questions view, not the Discord thread.
-- **A worker pod exists but the sidecar container never went Ready** →
-  the agent session will hang on its very first MCP tool call (no local
-  MCP server to connect to). Check `kubectl describe pod` for the
-  `sidecar` container's readiness/restart state before assuming the
-  planning logic itself is stuck.
+  (`CLAUDE_CODE_OAUTH_TOKEN`), a notional figure (`docs/adr/0004`).
+- **A definition session prompts or denies something a repo session would
+  not** → expected: its tools are its definition's `tools.allow` inside a
+  fixed ceiling, decided by `definitionDecision` in `worker/src/session.ts`
+  (`docs/adr/0076`); a grant can widen it per session or per definition.

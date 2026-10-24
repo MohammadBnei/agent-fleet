@@ -592,8 +592,8 @@ dashboards:
           {
             "id": 9,
             "type": "timeseries",
-            "title": "Task queue by status",
-            "description": "core's own view of the tasks table. Nothing else in the cluster can produce this — a pending task has no pod for kube-state-metrics to count, and no log line for Loki to match.",
+            "title": "Sessions by live state",
+            "description": "core's own view of the sessions table (agentfleet_tasks_current; its `status` label holds the live state). Nothing else in the cluster can produce this — a blocked session's pod looks healthy to kube-state-metrics, and Loki has no line for waiting on a human.",
             "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
             "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
             "targets": [
@@ -603,14 +603,13 @@ dashboards:
           {
             "id": 10,
             "type": "timeseries",
-            "title": "Dispatch headroom",
-            "description": "live == max with pending > 0 is a saturated fleet; pending > 0 with headroom to spare is a stalled dispatcher. Reading either alone can't tell them apart.",
+            "title": "Warm headroom",
+            "description": "live == cap means the next warm is refused — there is no queue to wait in (docs/adr/0048 §2).",
             "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
             "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
             "targets": [
               { "expr": "agentfleet_live_pods", "legendFormat": "live pods", "refId": "A" },
-              { "expr": "agentfleet_max_in_flight", "legendFormat": "cap", "refId": "B" },
-              { "expr": "sum(agentfleet_tasks_current{status=\"pending\"})", "legendFormat": "pending", "refId": "C" }
+              { "expr": "agentfleet_max_in_flight", "legendFormat": "cap", "refId": "B" }
             ]
           },
           {

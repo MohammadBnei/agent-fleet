@@ -47,23 +47,27 @@ var (
 	)
 
 	// TasksCurrent is the one thing neither Loki nor kube-state-metrics can
-	// answer: how many tasks sit in each status right now. It's what makes
-	// "N tasks stuck pending for 30m" an alertable expression.
+	// answer: how many sessions are in each live state right now
+	// (sessions.CountByRepoLiveState: working, blocked, stalled, idle…). It's
+	// what makes "N sessions blocked for 30m" an alertable expression.
 	//
-	// Labelled by repo, never by task_id — the repos table is small and
-	// human-managed, task IDs are unbounded.
+	// The name and the `status` label predate the tasks→sessions rename
+	// (docs/adr/0048) and are kept so existing queries keep working; the
+	// values are live states now, never the deleted status enum.
+	//
+	// Labelled by repo, never by session id — repos are few, sessions are
+	// unbounded.
 	TasksCurrent = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "agentfleet_tasks_current",
-			Help: "Tasks currently in each status, by repo",
+			Help: "Sessions currently in each live state (label `status`), by repo",
 		},
 		[]string{"repo", "status"},
 	)
 
-	// LivePods/MaxInFlight are the dispatch-headroom pair. A backlog that
-	// isn't draining is LivePods == MaxInFlight with TasksCurrent{status=
-	// "pending"} > 0; a stalled dispatcher is pending > 0 with headroom to
-	// spare. One gauge alone distinguishes neither.
+	// LivePods/MaxInFlight are the warm-headroom pair. There is no queue
+	// (docs/adr/0048 §2): at LivePods == MaxInFlight the next warm is
+	// refused, not queued, so the pair is what says "the fleet is full".
 	LivePods = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "agentfleet_live_pods",
