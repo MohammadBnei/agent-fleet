@@ -17,8 +17,9 @@ const CLAUDE_DEFAULT = "Claude's default";
 // The same "pass nothing" on model is not Claude's pick: the worker falls back
 // to the operator's CLAUDE_MODEL first (adr/0077 §1, set in
 // k8s/provisioner/deployment.yaml), and only without one does Claude Code
-// choose. Core never sees that env, so the label can't name the model; the
-// session shows the one it actually ran once it starts.
+// choose. Core stores its own CLAUDE_MODEL here (fallbackModel), which
+// k8s/core.yaml leaves unset, so the label can't name the provisioner's model;
+// the session shows the one it actually ran once it starts.
 const FLEET_MODEL_DEFAULT = "Fleet default";
 const FLEET_MODEL_DEFAULT_HINT =
   "The operator's CLAUDE_MODEL if set, else Claude Code's default. The session shows the model it ran once it starts.";

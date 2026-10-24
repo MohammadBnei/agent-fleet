@@ -116,8 +116,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          # The PR's merge commit (checkout's default), not its branch tip:
+          # breaking and drift are judged on what would land, and a fork's
+          # head_ref names no branch here. fetch-depth 0 for origin/main.
           fetch-depth: 0
-          ref: ${{ github.head_ref }}
 
       - name: Setup buf
         uses: bufbuild/buf-setup-action@v1

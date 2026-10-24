@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -98,7 +99,16 @@ func TestDocsADRIndexMatchesFiles(t *testing.T) {
 // are someone else's filesystem and are skipped.
 func TestDocsSkillPathsExist(t *testing.T) {
 	root := repoRoot(t)
-	skills, err := filepath.Glob(filepath.Join(root, ".claude", "skills", "*", "*.md"))
+	// Every .md under .claude/skills, references/ included. Not packs/ or
+	// fleet-shared/skills: those skills run in target repos, so their paths
+	// name another repo's files.
+	var skills []string
+	err := filepath.WalkDir(filepath.Join(root, ".claude", "skills"), func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
+			skills = append(skills, p)
+		}
+		return err
+	})
 	if err != nil || len(skills) == 0 {
 		t.Fatalf("no skills under .claude/skills (err %v)", err)
 	}
@@ -111,6 +121,7 @@ func TestDocsSkillPathsExist(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", skill, err)
 		}
+		bases := append(slices.Clone(components), filepath.Dir(skill))
 		for _, m := range pathLike.FindAllStringSubmatch(string(body), -1) {
 			p := m[1]
 			if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "~") ||
@@ -119,7 +130,7 @@ func TestDocsSkillPathsExist(t *testing.T) {
 			}
 			p = strings.TrimPrefix(p, "agent-fleet/")
 			found := false
-			for _, base := range append(components, filepath.Dir(skill)) {
+			for _, base := range bases {
 				// The skill's own directory is absolute; components are
 				// relative to the repo root ("" is the root itself).
 				candidate := filepath.Join(root, base, p)
