@@ -1,5 +1,12 @@
 # Changelog
 
+# [6.26.0](https://github.com/MohammadBnei/agent-fleet/compare/6.25.0...6.26.0) (2026-10-25)
+
+### Features
+
+* the offline local stack (ADR-0080) ([#329](https://github.com/MohammadBnei/agent-fleet/issues/329)) ([407619f](https://github.com/MohammadBnei/agent-fleet/commit/407619f34d8de6405e4e0c067a50d85ab71a4997))
+* **worker:** stamp Agent-Session/Agent-Definition trailers; pack: ask when blocked ([#327](https://github.com/MohammadBnei/agent-fleet/issues/327)) ([f4d8ae5](https://github.com/MohammadBnei/agent-fleet/commit/f4d8ae5721e6cc4ce7fd343b80c686a669a5c875))
+
 # [6.25.0](https://github.com/MohammadBnei/agent-fleet/compare/6.24.0...6.25.0) (2026-10-24)
 
 ### Bug Fixes
