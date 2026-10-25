@@ -96,8 +96,9 @@ test("Agent-Session on every pod, Agent-Definition on a definition pod, once eve
   expect(out).not.toMatch(/co-authored-by/i);
 });
 
-test("a body line that merely names a trailer is left alone", () => {
-  git(["commit", "-q", "-m", "docs: x\n\nAgent-Session: is stamped by the hook\n\nmore"], { SESSION_ID: "s-1" });
-  expect(lastMessage()).toContain("Agent-Session: is stamped by the hook");
-  expect(lastMessage()).toContain("Agent-Session: s-1");
+test("model-written Agent-* trailers are replaced, not kept beside the stamp", () => {
+  const forged = "fix: x\n\nAgent-Session: fake1\nagent-session: fake2\nAgent-Definition: bogus@1\n";
+  git(["commit", "-q", "-m", forged], { SESSION_ID: "s-1" });
+  expect(lastMessage()).not.toMatch(/fake|bogus/);
+  expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);
 });

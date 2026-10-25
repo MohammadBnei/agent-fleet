@@ -393,8 +393,7 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 		if session.Effort != nil {
 			response["effort"] = *session.Effort
 		}
-		// The agent-fleet commit the definition is pinned at (not agentSpecSha,
-		// a hash of the spec), for the commit hook's Agent-Definition trailer.
+		// For the commit hook's Agent-Definition trailer (worker/git-hooks).
 		if session.DefinitionSha != nil {
 			response["definitionSha"] = *session.DefinitionSha
 		}

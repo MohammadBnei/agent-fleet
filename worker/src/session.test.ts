@@ -60,7 +60,7 @@ mock.module("./sidecarClient.js", () => ({
     permissionMode: sessionPermissionMode,
     model: sessionModel,
     effort: sessionEffort,
-    ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha" } : {}),
+    ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha", definitionSha: "def-sha" } : {}),
   })),
   streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal, _startSeq?: number, agentSpecSha?: string) => {
     humanMessageHandler = onEntry;
@@ -1711,6 +1711,7 @@ test("definition session: query() options come from the spec, and the stream car
   expect(queryOptions?.allowedTools).toEqual(["mcp__agent-fleet-sidecar__AskUserQuestion", "mcp__agent-fleet-sidecar__send_message"]);
   expect(queryOptions?.additionalDirectories).toEqual(["/workspace"]);
   expect((queryOptions?.env as Record<string, string>).CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
+  expect((queryOptions?.env as Record<string, string>).FLEET_DEFINITION_SHA).toBe("def-sha");
   const perms = (queryOptions?.settings as { permissions: { ask: string[]; deny?: string[] } }).permissions;
   expect(perms.deny).toEqual(["Edit(.git/**)"]);
   expect(perms.ask).toContain("Bash(gh:*)");

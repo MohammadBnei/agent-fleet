@@ -4,14 +4,11 @@
 #
 # commit-msg: Claude Code adds its own "Co-Authored-By: Claude" trailer unless
 # told not to, and text alone did not stop it. Here the message is rewritten
-# whatever the model wrote: every co-author, "Generated with Claude" and
-# Claude-Session line goes, and a repo session's commit gets exactly
-# FLEET_TRAILER back. A definition pod (FLEET_DEFINITION set) gets none.
-#
-# Then Agent-Session (every pod) and Agent-Definition (definition pods): labels,
-# never evidence (docs/adr/0079's ledger is). "replace" keeps an amend from
-# stacking them; an amend in another session relabels the commit, and
-# cherry-pick and rebase run no commit-msg, so they keep the old labels.
+# whatever the model wrote: every co-author, "Generated with Claude",
+# Claude-Session and Agent-* line goes. A repo session's commit gets
+# FLEET_TRAILER back (a definition pod, FLEET_DEFINITION set, gets none), and
+# every commit gets Agent-Session, plus Agent-Definition in a definition pod:
+# labels, never evidence (docs/adr/0079's ledger is).
 #
 # Only the hooks a repo commonly uses are linked here: reference-transaction
 # and friends fire on every ref update and nobody sets them.
@@ -27,6 +24,7 @@ if [ "$name" = commit-msg ]; then
   awk '{ l = tolower($0) }
     l ~ /^[[:space:]]*co-authored-by:/ { next }
     l ~ /^[[:space:]]*claude-session:/ { next }
+    l ~ /^[[:space:]]*agent-(session|definition):/ { next }
     l ~ /generated with \[?claude/ { next }
     { print }' "$msg" >"$tmp"
   mv "$tmp" "$msg"
@@ -34,10 +32,10 @@ if [ "$name" = commit-msg ]; then
     git interpret-trailers --in-place --trailer "Co-Authored-By: ukubi-agent <noreply@bnei.dev>" "$msg"
   fi
   if [ -n "$SESSION_ID" ]; then
-    git interpret-trailers --in-place --if-exists replace --trailer "Agent-Session: $SESSION_ID" "$msg"
+    git interpret-trailers --in-place --trailer "Agent-Session: $SESSION_ID" "$msg"
   fi
   if [ -n "$FLEET_DEFINITION" ] && [ -n "$FLEET_DEFINITION_SHA" ]; then
-    git interpret-trailers --in-place --if-exists replace --trailer "Agent-Definition: $FLEET_DEFINITION@$FLEET_DEFINITION_SHA" "$msg"
+    git interpret-trailers --in-place --trailer "Agent-Definition: $FLEET_DEFINITION@$FLEET_DEFINITION_SHA" "$msg"
   fi
 fi
 

@@ -89,7 +89,7 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 		t.Fatalf("/task effort %q, want high", task.Effort)
 	}
 	if task.DefSha != "d3f" {
-		t.Fatalf("/task definitionSha %q, want the pinned commit, not the spec hash", task.DefSha)
+		t.Fatalf("/task definitionSha %q, want the pinned commit", task.DefSha)
 	}
 
 	resp, err = http.Get(srv.URL + "/human-messages?sinceSeq=0&agentSpecSha=abc")
