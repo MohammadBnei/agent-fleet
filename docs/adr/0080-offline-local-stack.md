@@ -18,8 +18,9 @@ ADR-0075: every warm needs Agent Vault, and the local stack has none.
 The owner now wants the fleet to run **offline**: on a laptop, with no
 GitHub and no cluster, against a local git forge that a game (mountain R11,
 `ukubi-game`) provides. The forge serves smart-HTTP at
-`http://<host>:7480/<owner>/<repo>.git`, takes anonymous pushes, and records
-every push in `pushes.jsonl`. The game orders work through **definition
+`http://<host>:7480/<owner>/<repo>.git`; fetches are anonymous, a push gets a
+401 challenge and any credentials pass, and every push is recorded in
+`pushes.jsonl`, with the push's user name as `who`. The game orders work through **definition
 sessions**.
 
 What the code needs, and what the local stack lacks:
@@ -42,8 +43,8 @@ What the code needs, and what the local stack lacks:
 ### 1. The real vault, nothing switched off
 
 `/kind-local` runs Agent Vault from its pinned image, on SQLite, with the
-provisioner as its only client, as production does. Definition pods take
-the full production path: a minted session token, the CA, the proxy,
+provisioner as its only client, as production does. Pods take the full
+production path: a minted session token, the CA, the proxy,
 revoke on teardown. No real secret enters a pod, so ADR-0065 and 0075 hold
 unchanged.
 
@@ -60,11 +61,13 @@ unchanged.
 - **The egress lock** is applied as the real object from
   `k8s/provisioner/definition-egress.yaml`, with Cilium's CRD so it can
   exist. kind enforces nothing; the skill says so.
-- **Scope: definition sessions only.** A repo pod's owner vault needs a
-  GitHub App installation token, which a laptop with no GitHub cannot mint.
-  The game uses definition sessions. Repo sessions offline would need the
-  owner vault to fall back to a file, as a definition vault already does;
-  that is the owner's call, not part of this ADR.
+- **Repo sessions: a local owner token** (the owner, 2026-10-25). A repo
+  pod's owner vault maps `github.com` to a GitHub App installation token,
+  which a laptop with no GitHub cannot mint. `FLEET_OWNER_TOKEN_FILE`, when
+  set and no App is mounted, gives the owner vaults that file's token
+  instead; the provisioner refuses it while an App is mounted. The token
+  stays in the vault, as the App's does; offline it is a placeholder the
+  forge accepts, and with network it can be a real token for GitHub.
 
 ### 2. GitHub URLs stay; git rewrites them
 
@@ -81,12 +84,11 @@ passes unchanged.
   `https://github.com/` to the forge (`GIT_CONFIG_*`, `insteadOf`), so its
   cache clones from the forge.
 - **The worker** needs the same rewrite for its own `git push`, which reads
-  the clone's origin. The provisioner appends `FLEET_GIT_URL_REWRITE` to a
-  **definition** pod's `GIT_CONFIG_*`, with the session id as the URL's user
-  name: the forge challenges a push (401), takes any credentials, and
+  the clone's origin. The provisioner appends `FLEET_GIT_URL_REWRITE` to
+  every pod's `GIT_CONFIG_*`, with the session id as the URL's user name: the forge challenges a push (401), takes any credentials, and
   records the user name as `who`, so each push names its session. The
   provisioner refuses to start with the variable set while its vault
-  address is the production default. This is the one change to fleet code.
+  address is the production default.
 - The forge is plain HTTP, so the vault proxy never sees a push, and the
   vault's per-repo path scoping, which confines a push-mode pod to its repo
   in production, does not apply: the forge takes any repo and branch.
@@ -135,15 +137,15 @@ The skill and `local/kind/` take this setup; there is no second local
 stack.
 
 - **The mirror's commit** is the branch under test with `definitions/`
-  replaced by the game files: its packs are exercised; production's
-  definitions are left out, since no vault here could serve them.
-  `FLEET_DEFINITIONS_REF` names it.
+  replaced by the game files: its packs and fleet-shared are exercised;
+  production's definitions are left out, since no vault here could serve
+  them. `FLEET_DEFINITIONS_REF` and `FLEET_SHARED_BRANCH` name it.
 - **What stays online:** `api.anthropic.com`, through the vault. Building
   images and pulling the kind and vault images need the network once.
   Definition sessions have no package registry anyway: their vault denies
   every host it does not map.
 - The "not yet updated for ADR-0075" notes go from the README and the
-  skill; both say the stack is definition-only.
+  skill.
 
 ## Alternatives considered
 
@@ -156,9 +158,6 @@ stack.
   production runs.
 - **Forge URLs in the `repos` table.** No rewrite needed, but every
   github.com check must then be relaxed for the local stack.
-- **Owner-vault file fallback, for repo sessions.** It would restore repo
-  sessions offline, but it is a change to a production path; left to the
-  owner (§1).
 - **Definitions read from the forge.** Every pod can push to the forge, so
   any session could rewrite the definitions that bound it.
 - **Game definitions in `definitions/` or in `ukubi-game`.** In
@@ -169,9 +168,10 @@ stack.
 
 - The game's definition sessions run offline, on the code paths production
   runs, with no real secret in a pod; `/kind-local` works again.
-- One provisioner env var, refused against the production vault, is the
-  only fleet code.
-- Repo sessions still need GitHub; the local stack is definition-only.
+- Two provisioner env vars are the only fleet code: `FLEET_GIT_URL_REWRITE`,
+  refused against the production vault, and `FLEET_OWNER_TOKEN_FILE`,
+  refused while an App is mounted.
+- Repo and definition sessions both run offline.
 - Offline, nothing confines a pod's push to its repo and branch; the forge
   records every push.
 - The forge's `pushes.jsonl` is the offline record of who pushed what; the

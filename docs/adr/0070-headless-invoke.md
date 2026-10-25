@@ -160,7 +160,8 @@ the run instead (§6).
 
 ### 6. A decision never holds a pod
 
-In a single-shot session no open decision keeps a pod. Each kind parks
+In a single-shot session no open decision keeps a pod. That one rule is the
+parking mechanism (the owner, 2026-10-25); each kind of decision parks
 through the mechanism already built for it:
 
 - **A question parks as it does today** (ADR-0050): the sidecar's
@@ -197,11 +198,10 @@ through the mechanism already built for it:
   it, core ends the session `expired` and runs §7; the check rides
   `sessions.Loop`. A parked session whose definition changed since its pin
   cannot warm, so core ends it `failed`. Nothing is answered for anyone.
-- **Open before build** (to the owner): the SDK ignores `defer` when the
-  model makes several tool calls in one turn. That ask then goes through
-  `canUseTool` live and holds the pod until answered or the lifetime cap.
-  Either accept that, or make single-shot sessions ask for one tool call
-  per turn.
+- **Several tool calls in one turn** (accepted by the owner, 2026-10-25):
+  the SDK ignores `defer` then, so that ask goes through `canUseTool` live
+  and holds the pod until answered or the lifetime cap, announced as
+  waiting like any other.
 - **Spike before build.** The docs describe `defer` for `claude -p`; the
   worker runs `query()` in streaming-input mode. First confirm there that a
   deferred turn ends with `tool_deferred`, that a resume with no prompt
