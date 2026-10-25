@@ -65,8 +65,9 @@ Only a client may call it (ADR-0066 §4); a member cannot.
 - **Warm.** Through `WarmIfIdle`, like every other path. The input is
   appended after the warm, with the key as its transcript key.
 - **A cap on parked runs.** A client file may set `maxParked` (default 20):
-  `Invoke` answers `CAPACITY` while that many of the client's single-shot
-  sessions wait on a decision. A parked run holds no pod (§6), but it keeps
+  `Invoke` answers `PARKED_LIMIT` (not `CAPACITY`: the SDK helpers do not
+  retry it) while that many of the client's single-shot sessions wait on a
+  decision. A parked run holds no pod (§6), but it keeps
   its PVC on a node's disk.
 
 ### 2. Every session can ask; `interaction` goes
@@ -75,14 +76,17 @@ Only a client may call it (ADR-0066 §4); a member cannot.
   `canUseTool`'s asks. The loader adds `AskUserQuestion` to every
   definition's effective `sidecarTools`, so no definition can be written
   without it.
-- **`interaction` is deleted** from the worker's `definitionDecision`,
-  `answerable`'s "this thread takes no answers" refusal and `Open`'s check.
+- **`interaction` is deleted** from every reader: the worker's
+  `definitionDecision`, `answerable`'s "this thread takes no answers"
+  refusal, `Open`'s checks and request hash, `CreateThread`, the
+  dispatcher's open, and the loader, which requires it today.
   Nothing reads it today that a person set: core never sends it to the
   worker, so the worker's deny branch is already dead.
-- **Rollout.** For one release the loader accepts and ignores
-  `interaction`, and the request hash uses a constant in its place, so
+- **Rollout.** For one release the loader makes `interaction` optional and
+  ignores it, and the request hash uses a constant in its place, so
   in-flight claims still match. The release after drops it from
-  `definitions/` and the loader. Proto fields stay, documented as ignored;
+  `definitions/` and the loader; that edit changes each definition's pin,
+  so it ships when no single-shot run is parked. Proto fields stay, documented as ignored;
   `sessions.interaction` is no longer written.
 
 ### 3. One structured result, stored before the worker exits
@@ -104,7 +108,9 @@ Only a client may call it (ADR-0066 §4); a member cannot.
 - **Which turn is final.** In a single-shot session:
   - a turn that ends deferred (§6) is not final, and any structured output
     it carries is discarded;
-  - a `success` turn is final, with `done`;
+  - a `success` turn is final, with `done`, only when no question or
+    permission is open; one that ends on an open question is not (core
+    checks, since only core sees every open decision);
   - any other subtype (`error_max_turns`, `error_during_execution`, …) is
     final, with `failed`.
 - **Core alone decides the terminal state**, in this order: `expired` (§6),
@@ -140,8 +146,8 @@ today). The dispatcher's wake gate is unchanged.
 ### 5. Who answers
 
 - **The client relays.** It answers its own untainted thread through
-  AgentService `AnswerQuestion`/`RespondToPermission`, as ADR-0066 §4
-  allows, and names the person it relays for: an `actor` from its
+  AgentService `AnswerQuestion`/`RespondToPermission`/`ApprovePlan`, as
+  ADR-0066 §4 allows, and names the person it relays for: an `actor` from its
   `actors.allow`, validated as `Open` validates one (ADR-0066 §6). This is
   the client's attestation, recorded with the answer; core cannot check it,
   as it cannot check any client's actor. A tainted thread is admin-only, as
@@ -152,43 +158,50 @@ today). The dispatcher's wake gate is unchanged.
 Nothing answers on a person's behalf when they are silent: `expired` ends
 the run instead (§6).
 
-### 6. One parking mechanism: the SDK's deferred tool call
+### 6. A decision never holds a pod
 
-In a single-shot session every decision, question or permission, parks
-through the SDK's own **defer** (Claude Code hooks, "Defer a tool call for
-later"): a `PreToolUse` hook returns `permissionDecision: "defer"`, the tool
-does not run, the turn ends with `stop_reason: "tool_deferred"` and
-`deferred_tool_use {id, name, input}`, and the call stays pending in the
-session. Resuming the session **with no prompt** fires `PreToolUse` again
-for that same call, and the hook's answer then applies.
+In a single-shot session no open decision keeps a pod. Each kind parks
+through the mechanism already built for it:
 
-- **Asking.** The worker's `PreToolUse` hook defers a call that would ask:
-  one `canUseTool` would ask about (it appends the `permission_request`, with
-  the tool-use id, first), and the sidecar's `AskUserQuestion` (the question
-  is posted first, without blocking). The turn ends; the worker exits; the
-  pod goes. A parked run holds no slot and no token.
-- **Answering.** An answer warms the session first and appends second, as
+- **A question parks as it does today** (ADR-0050): the sidecar's
+  `AskUserQuestion` returns "pending" after its blocking wait, the turn
+  ends, the idle sweep reaps the pod, and an answer warms the session and
+  reaches the next pod as a turn. It is not deferred: deferring it would
+  re-run the tool, and core reuses only unanswered questions.
+- **A permission parks through the SDK's own defer** (Claude Code hooks,
+  "Defer a tool call for later"). The worker's `PreToolUse` hook returns
+  `permissionDecision: "defer"` for a call `canUseTool` would ask about; the
+  tool does not run, and the turn ends with `stop_reason: "tool_deferred"`
+  and `deferred_tool_use {id, name, input}`. **Only then** does the worker
+  append the `permission_request`, carrying that tool-use id and marked
+  `deferred`, and exit. Resuming the session with no prompt fires
+  `PreToolUse` again for that same call.
+- **Answering a deferred permission.** `RespondToPermission` (both
+  services) and `ApprovePlan` warm first and append second, as
   `AnswerQuestion` does today; a warm that fails refuses the answer, and
-  the decision stays open. The new worker waits for the answer on its
-  stream, resumes the SDK session with no prompt, and the hook returns
-  `allow` or `deny` for the same call. For a question, `allow` lets the
-  sidecar tool return the stored answer.
-- **What this does not change.** The same call runs, so no retry has to
-  match it. No grant is stored, so the answerer's scope (ADR-0076 §3) is
-  never widened. `ReserveSlot`'s stale-close skips deferred requests (they
-  are bound to no pod) and still closes a live pod's interrupted ones.
-  Resident threads keep asking live through `canUseTool`, as now.
-- **Limits.** The SDK ignores `defer` when the model makes several tool
-  calls in one turn; that ask goes through `canUseTool` live, holds the pod
-  until it is answered or the pod's lifetime cap, and is announced like any
-  other. A resume that carries a prompt drops the deferred call, so nothing
-  is sent to a parked session but its answer.
+  the request stays open. The new worker does not push the answer as a
+  prompt (a prompt drops the deferred call): before resuming, it reads the
+  decision for its deferred tool-use id from the sidecar, resumes with no
+  prompt, and the hook returns `allow` or `deny` for the same call. The
+  answerer's scope applies as on any permission (ADR-0076 §3): `once`
+  stores nothing.
+- **A parked session takes only its answer.** `WarmIfIdle` and the message
+  paths (the console's Warm, `PostMessage`, a dispatcher wake) refuse a
+  session with an open deferred permission; only its answer warms it.
+- **`ReserveSlot`'s stale-close** skips requests marked `deferred` (bound
+  to no pod) and still closes a live pod's interrupted ones.
+- **Resident threads keep asking live** through `canUseTool`, as now.
 - **Expiry.** `limits.answerTimeout` (a duration; single-shot sessions only;
-  default 24h, at most `SESSION_RETENTION`) bounds how long a decision may
-  wait. Past it, core ends the session `expired` and runs §7; the check
-  rides `sessions.Loop`. A parked session whose definition changed since its
-  pin cannot warm, so core ends it `failed` instead of leaving it waiting.
-  Nothing is answered for anyone.
+  default 24h, strictly less than `SESSION_RETENTION`, and the retention
+  sweep skips parked sessions) bounds how long a decision may wait. Past
+  it, core ends the session `expired` and runs §7; the check rides
+  `sessions.Loop`. A parked session whose definition changed since its pin
+  cannot warm, so core ends it `failed`. Nothing is answered for anyone.
+- **Open before build** (to the owner): the SDK ignores `defer` when the
+  model makes several tool calls in one turn. That ask then goes through
+  `canUseTool` live and holds the pod until answered or the lifetime cap.
+  Either accept that, or make single-shot sessions ask for one tool call
+  per turn.
 - **Spike before build.** The docs describe `defer` for `claude -p`; the
   worker runs `query()` in streaming-input mode. First confirm there that a
   deferred turn ends with `tool_deferred`, that a resume with no prompt
@@ -229,8 +242,8 @@ run.
 
 - Any session can wait for days without costing a pod. A headless caller
   sees `waiting` and what it waits on.
-- An answer costs one warm, and the run continues with the very call it
-  parked on.
+- An answer costs one warm. A permission's run continues with the very
+  call it parked on; a question's answer arrives as a turn, as today.
 - A full fleet refuses an answer; the client retries it, and the request
   stays open meanwhile. Answers do not jump ahead of new invokes.
 - Repeating an `Invoke` with the same key is safe and returns the same
