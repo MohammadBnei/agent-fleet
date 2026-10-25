@@ -298,8 +298,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   `bnei.dev` apps, calling AgentService only.
 - [`0069`](adr/0069-component-auth-and-network-fences.md) — every gRPC surface needs
   a credential; ingress fences; console CSP; per-request admin check.
-- [`0070`](adr/0070-headless-invoke.md) — headless invoke: deny instead of ask, one
-  structured result (Proposed).
+- [`0070`](adr/0070-headless-invoke.md) — headless invoke: any session can ask, a
+  decision never holds a pod (permissions park through the SDK's defer), one
+  structured result (Accepted 2026-10-25, not built; a defer spike comes first).
 - [`0071`](adr/0071-events-reach-sessions-through-the-bridge.md) — events reach
   sessions through the bridge (Accepted; the dispatcher and `PublishEvent` are built,
   Alertmanager not yet repointed).
@@ -319,6 +320,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   announcer and the loader's reserved-type refusal are built).
 - [`0079`](adr/0079-provenance-ledger.md) — a provenance ledger: an echo carries its
   writer's trust (Proposed).
+- [`0080`](adr/0080-offline-local-stack.md) — the local stack runs offline: the real
+  vault, git `insteadOf` to a local forge, a local owner token (Accepted 2026-10-25,
+  not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
