@@ -81,3 +81,24 @@ test("gitHooksEnv appends after the provisioner's GIT_CONFIG_* instead of replac
   expect(gitHooksEnv({})).toMatchObject({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.hooksPath" });
   expect(gitHooksEnv({ GIT_CONFIG_COUNT: "1" })).toMatchObject({ GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_1: "core.hooksPath" });
 });
+
+test("Agent-Session on every pod, Agent-Definition on a definition pod, once even after an amend", () => {
+  git(["commit", "-q", "-m", msg], { SESSION_ID: "s-1" });
+  expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);
+  expect(lastMessage()).not.toMatch(/agent-definition/i);
+
+  const def = { SESSION_ID: "s-2", FLEET_DEFINITION: "dev-notes", FLEET_DEFINITION_SHA: "d3f" };
+  git(["commit", "-q", "--amend", "--no-edit"], def);
+  const out = lastMessage();
+  expect(out.match(/^Agent-Session: /gim)?.length).toBe(1);
+  expect(out).toContain("Agent-Session: s-2");
+  expect(out).toContain("Agent-Definition: dev-notes@d3f");
+  expect(out).not.toMatch(/co-authored-by/i);
+});
+
+test("model-written Agent-* trailers are replaced, not kept beside the stamp", () => {
+  const forged = "fix: x\n\nAgent-Session: fake1\nagent-session : fake2\nAgent-Definition: bogus@1\nCo-Authored-By : Claude <x>\n";
+  git(["commit", "-q", "-m", forged], { SESSION_ID: "s-1" });
+  expect(lastMessage()).not.toMatch(/fake|bogus|claude/i);
+  expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);
+});

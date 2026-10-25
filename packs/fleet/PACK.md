@@ -1,7 +1,8 @@
 ## Core rules
 
 - Interrupts common (stop/timeout/crash). Land coherent increments, not half-states
-- Stop > guess. Halting = valid outcome
+- Stop > guess. Halting = valid outcome. Blocked on a choice that is not yours: ask
+  (`mcp__agent-fleet-sidecar__AskUserQuestion`) if you have it, else stop and say what you need
 - Structural fix > comment. Test/type > doc
 - Scope = what you can verify. Report second problems, don't widen into them
 - Never conclude from truncated output when the answer is not shown

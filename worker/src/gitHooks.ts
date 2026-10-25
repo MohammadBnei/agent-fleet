@@ -1,10 +1,10 @@
-// The one commit trailer a repo session's commits carry; a definition pod's
+// The co-author trailer a repo session's commits carry; a definition pod's
 // carry none (its git identity already names the agent).
 export const FLEET_TRAILER = "Co-Authored-By: ukubi-agent <noreply@bnei.dev>";
 
-// worker/git-hooks, as worker/Dockerfile copies it. Its commit-msg rewrites
-// whatever trailer the model wrote into FLEET_TRAILER (or nothing, in a
-// definition pod), then runs the repo's own hook of the same name.
+// worker/git-hooks, as worker/Dockerfile copies it. Its commit-msg replaces
+// whatever trailers the model wrote with the fleet's own (FLEET_TRAILER,
+// Agent-Session, Agent-Definition), then runs the repo's own hook of the same name.
 const FLEET_GIT_HOOKS = process.env.FLEET_GIT_HOOKS ?? "/app/worker/git-hooks";
 
 // core.hooksPath for every git the agent runs, appended to whatever

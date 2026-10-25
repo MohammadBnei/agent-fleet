@@ -280,8 +280,9 @@ deploy, CI, permission or pod-lifecycle paths.
 - Commit trailers name the agent, with a little metadata — claims, never evidence
   (`adr/0079`'s ledger is). `Co-Authored-By: <agent> <noreply@bnei.dev>`, agent =
   `ukubi-claude-<host>` (laptop), `ukubi-claude-cloud` (claude.ai/code), `ukubi-agent`
-  (fleet repo pod, stamped by `worker/git-hooks`); a definition pod adds none (its author is
-  `git.identity`). Plus `Agent-Session: <opaque id>` where one exists. No model ids, no URLs,
+  (fleet repo pod); a definition pod adds none (its author is `git.identity`). Plus
+  `Agent-Session: <opaque id>` where one exists, and `Agent-Definition: <name>@<sha>` on a
+  definition pod. In fleet pods `worker/git-hooks` stamps all of them. No model ids, no URLs,
   no "Generated with" footer.
 - `worker/`: `bun:test` for coordination logic cheap to mock (SDK streaming-input `query()`,
   sidecar local HTTP client). Runs in CI ahead of Docker build. Also `bun run typecheck`.
