@@ -1,6 +1,6 @@
 ---
 name: kind-local
-description: Spin up a disposable kind cluster running the real fleet (core + provisioner + real worker/sidecar Jobs) to test the Kubernetes dispatch path end-to-end, then tear it all down. Use when the user wants to test a provisioner/core/worker/sidecar change against real pod dispatch without deploying to the real cluster, or verify a worker Job actually runs and opens a PR.
+description: Spin up a disposable kind cluster running the real fleet (core + provisioner + the real Agent Vault + real worker/sidecar Jobs), offline against a local git forge, to test the Kubernetes dispatch path end-to-end, then tear it all down. Use when the user wants to test a provisioner/core/worker/sidecar change against real pod dispatch without deploying to the real cluster, run the game's agents offline, or verify a worker Job actually runs and pushes.
 user-invocable: true
 allowed-tools:
   - Read
@@ -9,8 +9,11 @@ allowed-tools:
   - Bash(docker *)
   - Bash(kind *)
   - Bash(kubectl *)
-  - Bash(infisical *)
-  - Bash(gh *)
+  - Bash(git *)
+  - Bash(openssl *)
+  - Bash(sed *)
+  - Bash(local/kind/mirror.sh)
+  - Bash(local/kind/vault-bootstrap.sh *)
   - Bash(curl *)
   - Bash(mkdir *)
   - Bash(rm *)
@@ -19,26 +22,12 @@ allowed-tools:
 
 # /kind-local — local kind testing ground for the real fleet
 
-> **⚠ Not yet updated for `docs/adr/0075` (GitHub App + Agent Vault). The
-> `GH_TOKEN` path below no longer works.** The provisioner reads no
-> `GH_TOKEN`: its own git uses GitHub App installation tokens, and every
-> worker pod — repo or definition — gets a token minted from Agent Vault at
-> warm, so `CreateWorkerPod` fails before any Job exists unless the vault is
-> reachable. A working kind run needs, on top of what this file sets up:
->
-> - `GITHUB_APP_DIR` (default `/var/run/github-app`) holding the files
->   `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`, plus
->   `FLEET_GITHUB_ACCOUNTS` (comma-separated account ids whose installations
->   count);
-> - an Agent Vault the provisioner can reach: `AGENT_VAULT_API_ADDR`,
->   `AGENT_VAULT_PROXY_ADDR`, and `AGENT_VAULT_SECRETS_DIR` (default
->   `/var/run/agent-vault`) holding the agent token and credential values
->   (`provisioner/internal/vault`);
-> - optionally `FLEET_GIT_AUTHOR_NAME`/`FLEET_GIT_AUTHOR_EMAIL` (default
->   `ukubi`/`ukubi@bnei.dev`).
->
-> The full list, with defaults, is `provisioner/internal/config/config.go`.
-> None of this is in `local/kind/*.yaml` yet.
+The stack runs **offline** (docs/adr/0080): the real Agent Vault runs in the
+cluster, `https://github.com/` is rewritten to a local git forge (ukubi-game's
+sim, or any smart-HTTP git server that challenges a push and takes any
+credentials), and definitions, packs and fleet-shared come from a read-only
+mirror of the committed branch under test. Only the model API stays online,
+through the vault. No GitHub App, no Infisical.
 
 Unlike `/dashboard-e2e` (which runs `core` bare-metal with zero Kubernetes
 involvement), this spins up a real [kind](https://kind.sigs.k8s.io/)
@@ -102,49 +91,70 @@ warming a new session — see `local/kind/README.md`'s image-staleness caveat:
 worker/sidecar Jobs default to `imagePullPolicy: IfNotPresent`, so a
 forgotten reload silently reuses the old image.
 
-## 3. Namespace, Traefik CRDs, workspace volume, RBAC
+## 3. Namespace, CRD stubs, workspace volume, RBAC, egress lock
 
-`05-traefik-crds.yaml` supplies the `IngressRoute` CRD. kind has no Traefik,
-and `expose()` creates one route per published session — without the CRD that
-call fails with `the server could not find the requested resource`, so a
-session can never publish a URL locally. Everything else still works; this is
-not a startup dependency.
-
-It used to be one: the provisioner created a shared `cluster-ip-whitelist`
-Middleware at startup and `os.Exit(1)`d if it couldn't, so a missing CRD meant
-the provisioner CrashLoopBackOffed and nothing downstream could be tested at
-all. Both the Middleware and that fatal are gone (docs/adr/0048 §6).
+`05-traefik-crds.yaml` supplies the `IngressRoute` CRD: kind has no Traefik,
+and `expose()` creates one route per published session. `06-cilium-crd.yaml`
+lets the definition egress lock exist: the provisioner refuses a definition
+warm without the `CiliumNetworkPolicy` `definition-egress-lock`. kind has no
+Cilium, so **nothing enforces it**: pods here have open egress.
 
 ```bash
 kubectl apply -f local/kind/00-namespace.yaml
-kubectl apply -f local/kind/05-traefik-crds.yaml
+kubectl apply -f local/kind/05-traefik-crds.yaml -f local/kind/06-cilium-crd.yaml
 kubectl apply -f local/kind/10-workspace-hostpath.yaml
 kubectl apply -n agent-fleet \
   -f k8s/provisioner/serviceaccount.yaml \
   -f k8s/provisioner/role.yaml \
-  -f k8s/provisioner/service.yaml
+  -f k8s/provisioner/service.yaml \
+  -f k8s/provisioner/definition-egress.yaml
 ```
 
-## 4. The Secret
+## 4. Secrets, the vault, the forge
 
-**Read `local/kind/README.md`'s Secret section before touching this step.**
-`AGENTFLEET_DB_*` are always the hardcoded literals below — never sourced
-from Infisical. Only `GH_TOKEN`/`CLAUDE_CODE_OAUTH_TOKEN` come from the
-`infisical run` wrapper. (Stale: the provisioner ignores `GH_TOKEN` since
-`docs/adr/0075`, and worker pods take both tokens from the vault — see the
-note at the top.)
+**Read `local/kind/README.md`'s Secret section first.** The database values
+are local literals. The only real secret is the model token, read from a
+local file (`$MODEL_TOKEN_FILE`, a separate revocable token for local runs);
+it goes into the vault, never into a pod.
 
 ```bash
-infisical run --domain=https://infisical.bnei.dev/api \
-  --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a --env=dev -- \
-  bash -c 'kubectl create secret generic agent-fleet-local-secrets -n agent-fleet \
-    --from-literal=AGENTFLEET_DB_HOST=postgres \
-    --from-literal=AGENTFLEET_DB_PORT=5432 \
-    --from-literal=AGENTFLEET_DB_NAME=agentfleetdb \
-    --from-literal=AGENTFLEET_DB_USER=agentfleet \
-    --from-literal=AGENTFLEET_DB_PASSWORD=agentfleet \
-    --from-literal=GH_TOKEN="$GH_TOKEN" \
-    --from-literal=CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"'
+kubectl create secret generic agent-fleet-local-secrets -n agent-fleet \
+  --from-literal=AGENTFLEET_DB_HOST=postgres \
+  --from-literal=AGENTFLEET_DB_PORT=5432 \
+  --from-literal=AGENTFLEET_DB_NAME=agentfleetdb \
+  --from-literal=AGENTFLEET_DB_USER=agentfleet \
+  --from-literal=AGENTFLEET_DB_PASSWORD=agentfleet
+# The game client's bearer (clients/game.yaml's tokenRef), core only. Give the
+# game the same value.
+kubectl create secret generic core-local-clients -n agent-fleet \
+  --from-literal=FLEET_CLIENT_TOKEN_GAME="$(openssl rand -hex 24)"
+# The local vault's master and owner passwords, generated once.
+kubectl create secret generic agent-vault-local -n agent-fleet \
+  --from-literal=AGENT_VAULT_MASTER_PASSWORD="$(openssl rand -hex 24)" \
+  --from-literal=OWNER_PASSWORD="$(openssl rand -hex 24)"
+```
+
+The vault image is infra-bootstrap's pin, one source
+(`gitops/platform/values/agent-vault/values.yaml`); the node pulls it once.
+Then mint the provisioner's token and write its files
+(`provisioner-agent-vault`):
+
+```bash
+V=../infra-bootstrap/gitops/platform/values/agent-vault/values.yaml   # adjust to your checkout
+IMG="$(sed -n 's/^  repository: *//p' "$V" | head -1):$(sed -n 's/^  tag: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$V" | head -1)"
+sed "s|__AGENT_VAULT_IMAGE__|$IMG|" local/kind/15-agent-vault.yaml | kubectl apply -f -
+kubectl wait --for=condition=available deploy/agent-vault-local -n agent-fleet --timeout=180s
+local/kind/vault-bootstrap.sh "$MODEL_TOKEN_FILE"
+```
+
+The forge runs on the host. Pods reach it as `host.docker.internal` under
+Docker Desktop (macOS); on Linux use the kind network's gateway
+(`docker network inspect kind -f '{{(index .IPAM.Config 0).Gateway}}'`) and
+bind the forge there.
+
+```bash
+kubectl create configmap local-forge -n agent-fleet \
+  --from-literal=FLEET_GIT_URL_REWRITE=http://host.docker.internal:7480/
 ```
 
 ## 5. Postgres, then migration, then core
@@ -173,17 +183,18 @@ kubectl apply -f local/kind/30-core.yaml
 kubectl wait --for=condition=available deploy/core -n agent-fleet --timeout=60s
 ```
 
-## 6. Provisioner
+## 6. The mirror, then the provisioner
+
+The provisioner reads definitions, packs and fleet-shared from a read-only
+bare mirror on the workspace volume (`FLEET_SHARED_REPO_URL`), at its `game`
+branch: the **committed** branch under test with `definitions/` replaced by
+`local/kind/definitions/`. Re-run `mirror.sh` after each commit; core's
+60s sync picks the change up.
 
 ```bash
+local/kind/mirror.sh
 kubectl apply -f local/kind/40-provisioner.yaml
-# docs/adr/0062: a kind build has no release tag, so definitions/ is read at
-# FLEET_DEFINITIONS_REF. Follow the branch under test (it must be pushed).
-kubectl set env deploy/provisioner -n agent-fleet FLEET_DEFINITIONS_REF="$(git rev-parse --abbrev-ref HEAD)"
 kubectl wait --for=condition=available deploy/provisioner -n agent-fleet --timeout=60s
-
-# Check startup: `github app not mounted yet` means no GITHUB_APP_DIR files
-# (see the note at the top). There is no ConfigureAuth step any more.
 kubectl logs -n agent-fleet deploy/provisioner --tail=50
 ```
 
@@ -195,13 +206,20 @@ CORE_PF_PID=$!
 until curl -sf http://localhost:8080/healthz >/dev/null 2>&1; do sleep 0.5; done
 ```
 
-**Real side effect**: a session against a real repo with working vault
-credentials can open an actual PR on GitHub — the agent runs `git push`/`gh
-pr create` itself, whenever it decides to. Target repos live in the `repos`
-table. `30-core.yaml` sets no `FLEET_REPO_OVERRIDES`, so core's GitHub sync
-is off and the table keeps the rows migration 000001 seeded (the console only
-toggles `active`); for routine iteration insert a disposable scratch repo row
-rather than using the real ones.
+Target repos live in the `repos` table, with their **github.com** URLs: every
+check reads that form, and git sends the traffic to the forge. `30-core.yaml`
+sets no `FLEET_REPO_OVERRIDES`, so core's GitHub sync is off. Add the game's
+repo (the forge must hold `MohammadBnei/ukubi-game.git`):
+
+```bash
+kubectl exec -n agent-fleet deploy/postgres -- psql -U agentfleet agentfleetdb -c \
+  "INSERT INTO repos (name, url, base_branch, cluster_access) VALUES
+   ('ukubi-game', 'https://github.com/MohammadBnei/ukubi-game.git', 'main', false)
+   ON CONFLICT (name) DO UPDATE SET url = EXCLUDED.url;"
+```
+
+Pushes land on the forge, with the session id as the push user. Offline the
+forge records them; nothing confines a push to its repo and branch.
 
 **Two calls, not one** (docs/adr/0048). `CreateSession` makes a row and
 nothing else — no pod, no directory. The FIRST MESSAGE is what provisions,
@@ -213,7 +231,7 @@ loop to wait on any more.
 ```bash
 SID=$(curl -s http://localhost:8080/agentfleet.v1.DashboardService/CreateSession \
   -H 'Content-Type: application/json' -H 'X-Fleet-Dashboard: 1' \
-  -d '{"repo": "<known-repo>", "description": "<label>", "title": "<label>"}' \
+  -d '{"definition": "game-ukubi-game", "description": "<label>", "title": "<label>"}' \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['session']['id'])")
 
 # This is what boots the pod.
@@ -242,11 +260,8 @@ kubectl logs -n agent-fleet job/worker-<shortId> -c sidecar -f
 kubectl logs -n agent-fleet job/worker-<shortId> -c worker -f
 ```
 
-Confirm the Job reaches `Completed`, then check the real PR:
-
-```bash
-gh pr list --repo <target-repo-url>
-```
+Then check what reached the forge: its push log, or the branch itself
+(`git ls-remote http://<forge>:7480/MohammadBnei/ukubi-game.git`).
 
 ## 8. Teardown — run this every time, no exceptions
 
@@ -260,7 +275,7 @@ kubectl delete namespace agent-fleet           # Level 1: iterate again soon, ke
 # --- or ---
 kind delete cluster --name agent-fleet-local   # Level 2: full reset, keeps Mac-side workspace data
 # --- or, additionally ---
-rm -rf local/kind/workspace-data               # Level 3: also wipes the shared volume on the Mac side
+rm -rf local/kind/workspace-data               # Level 3: also wipes the shared volume, the mirror and the vault's state
 ```
 
 Verify nothing's left before ending the session:

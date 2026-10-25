@@ -322,7 +322,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   writer's trust (Proposed).
 - [`0080`](adr/0080-offline-local-stack.md) — the local stack runs offline: the real
   vault, git `insteadOf` to a local forge, a local owner token (Accepted 2026-10-25,
-  not built).
+  built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

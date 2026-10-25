@@ -1,7 +1,11 @@
 # ADR-0080 — The local stack runs offline: the real vault, a local forge
 
 - **Status:** Accepted (2026-10-25)
-- **Built:** nothing yet.
+- **Built:** all of it (§1-§5): `FLEET_GIT_URL_REWRITE` and
+  `FLEET_OWNER_TOKEN_FILE` in the provisioner, `local/kind/` (vault, CRD stub,
+  bootstrap, mirror, game definitions) and `/kind-local`. Not yet run on kind
+  end to end; the vault bootstrap, the forge rewrite and the mirror read were
+  each checked on their own.
 - **Date:** 2026-10-25
 - **Related:** [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md)
   (the vault and the egress lock, unchanged here),
@@ -118,11 +122,13 @@ They are sim-only. Production reads every file in `definitions/` and builds
 a vault for each valid one, so they stay out of it.
 
 - An abstract `game-base` holds what children can share: `audience`,
-  `invokers: [game]`, `sidecarTools: [AskUserQuestion]`, `tools` with
+  `thinking`, `mode`, `sidecarTools: [AskUserQuestion]`, `tools` with
   `TodoWrite` in `allow`, `limits`. Each `game-<repo>` carries its own
-  `credentials` (the vault is named after the definition) and its whole
-  `git` block (`mode: push`, `branch: game/<repo>`, `identity`), since
-  inheritance replaces top-level keys.
+  `invokers: [game]` (a client can list only launchable definitions, so the
+  abstract base cannot carry it), its `credentials` (the vault is named after
+  the definition) and its whole `git` block (`mode: push`,
+  `branch: game/<repo>`, `identity`), since inheritance replaces top-level
+  keys.
 - `clients/game.yaml`: `tokenRef: FLEET_CLIENT_TOKEN_GAME`,
   `actors.allow: [MohammadBnei]`, `announceSessions: true`, and the
   two-sided `definitions:` list.
