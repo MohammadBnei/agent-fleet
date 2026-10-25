@@ -81,3 +81,23 @@ test("gitHooksEnv appends after the provisioner's GIT_CONFIG_* instead of replac
   expect(gitHooksEnv({})).toMatchObject({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.hooksPath" });
   expect(gitHooksEnv({ GIT_CONFIG_COUNT: "1" })).toMatchObject({ GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_1: "core.hooksPath" });
 });
+
+test("Agent-Session on every pod, Agent-Definition on a definition pod, once even after an amend", () => {
+  git(["commit", "-q", "-m", msg], { SESSION_ID: "s-1" });
+  expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);
+  expect(lastMessage()).not.toMatch(/agent-definition/i);
+
+  const def = { SESSION_ID: "s-2", FLEET_DEFINITION: "dev-notes", FLEET_DEFINITION_SHA: "d3f" };
+  git(["commit", "-q", "--amend", "--no-edit"], def);
+  const out = lastMessage();
+  expect(out.match(/^Agent-Session: /gim)?.length).toBe(1);
+  expect(out).toContain("Agent-Session: s-2");
+  expect(out).toContain("Agent-Definition: dev-notes@d3f");
+  expect(out).not.toMatch(/co-authored-by/i);
+});
+
+test("a body line that merely names a trailer is left alone", () => {
+  git(["commit", "-q", "-m", "docs: x\n\nAgent-Session: is stamped by the hook\n\nmore"], { SESSION_ID: "s-1" });
+  expect(lastMessage()).toContain("Agent-Session: is stamped by the hook");
+  expect(lastMessage()).toContain("Agent-Session: s-1");
+});

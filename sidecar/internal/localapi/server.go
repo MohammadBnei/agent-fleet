@@ -393,6 +393,11 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 		if session.Effort != nil {
 			response["effort"] = *session.Effort
 		}
+		// The agent-fleet commit the definition is pinned at (not agentSpecSha,
+		// a hash of the spec), for the commit hook's Agent-Definition trailer.
+		if session.DefinitionSha != nil {
+			response["definitionSha"] = *session.DefinitionSha
+		}
 		// A definition session's spec (docs/adr/0067 §4), as protojson so the
 		// worker reads the proto's own camelCase names, every field present.
 		if spec := resp.GetAgentSpec(); spec != nil {

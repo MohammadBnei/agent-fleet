@@ -77,6 +77,9 @@ export async function getSession(): Promise<{
   effort?: string;
   agentSpec?: AgentSpec;
   agentSpecSha?: string;
+  // The agent-fleet commit the definition is pinned at: the hook's
+  // Agent-Definition trailer (worker/git-hooks). Not agentSpecSha.
+  definitionSha?: string;
   grants?: string[];
 }> {
   const res = await fetch(`${base()}/task`);

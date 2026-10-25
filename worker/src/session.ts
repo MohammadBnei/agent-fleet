@@ -1164,7 +1164,12 @@ export async function runSession(): Promise<SessionResult> {
       // so its worktree is added here instead: its CLAUDE.md still loads as
       // memory, its settings.json never does (docs/adr/0067 §4).
       additionalDirectories: [...(existsSync(genomeDir()) ? [genomeDir()] : []), ...(spec ? [WORKTREE_PATH] : [])],
-      env: { ...process.env, ...gitHooksEnv(process.env), CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" },
+      env: {
+        ...process.env,
+        ...gitHooksEnv(process.env),
+        ...(session.definitionSha ? { FLEET_DEFINITION_SHA: session.definitionSha } : {}),
+        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1",
+      },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for

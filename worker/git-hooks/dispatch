@@ -8,6 +8,11 @@
 # Claude-Session line goes, and a repo session's commit gets exactly
 # FLEET_TRAILER back. A definition pod (FLEET_DEFINITION set) gets none.
 #
+# Then Agent-Session (every pod) and Agent-Definition (definition pods): labels,
+# never evidence (docs/adr/0079's ledger is). "replace" keeps an amend from
+# stacking them; an amend in another session relabels the commit, and
+# cherry-pick and rebase run no commit-msg, so they keep the old labels.
+#
 # Only the hooks a repo commonly uses are linked here: reference-transaction
 # and friends fire on every ref update and nobody sets them.
 #
@@ -27,6 +32,12 @@ if [ "$name" = commit-msg ]; then
   mv "$tmp" "$msg"
   if [ -z "$FLEET_DEFINITION" ]; then
     git interpret-trailers --in-place --trailer "Co-Authored-By: ukubi-agent <noreply@bnei.dev>" "$msg"
+  fi
+  if [ -n "$SESSION_ID" ]; then
+    git interpret-trailers --in-place --if-exists replace --trailer "Agent-Session: $SESSION_ID" "$msg"
+  fi
+  if [ -n "$FLEET_DEFINITION" ] && [ -n "$FLEET_DEFINITION_SHA" ]; then
+    git interpret-trailers --in-place --if-exists replace --trailer "Agent-Definition: $FLEET_DEFINITION@$FLEET_DEFINITION_SHA" "$msg"
   fi
 fi
 

@@ -1,5 +1,6 @@
-// The one commit trailer a repo session's commits carry; a definition pod's
-// carry none (its git identity already names the agent).
+// The co-author trailer a repo session's commits carry; a definition pod's
+// carry none (its git identity already names the agent). Both kinds also get
+// Agent-Session, and a definition pod Agent-Definition (worker/git-hooks).
 export const FLEET_TRAILER = "Co-Authored-By: ukubi-agent <noreply@bnei.dev>";
 
 // worker/git-hooks, as worker/Dockerfile copies it. Its commit-msg rewrites
