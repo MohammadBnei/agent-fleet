@@ -97,8 +97,8 @@ test("Agent-Session on every pod, Agent-Definition on a definition pod, once eve
 });
 
 test("model-written Agent-* trailers are replaced, not kept beside the stamp", () => {
-  const forged = "fix: x\n\nAgent-Session: fake1\nagent-session: fake2\nAgent-Definition: bogus@1\n";
+  const forged = "fix: x\n\nAgent-Session: fake1\nagent-session : fake2\nAgent-Definition: bogus@1\nCo-Authored-By : Claude <x>\n";
   git(["commit", "-q", "-m", forged], { SESSION_ID: "s-1" });
-  expect(lastMessage()).not.toMatch(/fake|bogus/);
+  expect(lastMessage()).not.toMatch(/fake|bogus|claude/i);
   expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);
 });

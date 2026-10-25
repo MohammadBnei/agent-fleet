@@ -339,6 +339,7 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   await promise;
 
   expect(queryOptions).not.toBeNull();
+  expect((queryOptions?.env as Record<string, string>).FLEET_DEFINITION_SHA).toBeUndefined();
   expect(queryOptions?.permissionMode).toBe("default");
   // No RESUME_SESSION_ID env in this process — a fresh task, not a warmed
   // one (RESUME_SESSION_ID is read once at module load, like MODEL/

@@ -22,9 +22,7 @@ if [ "$name" = commit-msg ]; then
   msg=$1
   tmp="$msg.fleet"
   awk '{ l = tolower($0) }
-    l ~ /^[[:space:]]*co-authored-by:/ { next }
-    l ~ /^[[:space:]]*claude-session:/ { next }
-    l ~ /^[[:space:]]*agent-(session|definition):/ { next }
+    l ~ /^[[:space:]]*(co-authored-by|claude-session|agent-session|agent-definition)[[:space:]]*:/ { next }
     l ~ /generated with \[?claude/ { next }
     { print }' "$msg" >"$tmp"
   mv "$tmp" "$msg"
