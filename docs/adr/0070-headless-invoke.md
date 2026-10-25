@@ -1,9 +1,10 @@
 # ADR-0070 — Headless invoke: any session can ask, one structured result
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-25)
 - **Date:** 2026-10-20, amended 2026-10-25 (the owner's rule: "absolutely
   any session, headless or not, must be able to ask a question")
 - **Built:** the proto (`Invoke`, `WaitForResult`) and their authz rows only.
+  **Not yet built:** everything else; §6's spike comes first.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
   exits with a deferred decision is parked, not crashed).

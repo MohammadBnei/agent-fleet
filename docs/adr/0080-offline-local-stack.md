@@ -1,6 +1,7 @@
 # ADR-0080 — The local stack runs offline: the real vault, a local forge
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-25)
+- **Built:** nothing yet.
 - **Date:** 2026-10-25
 - **Related:** [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md)
   (the vault and the egress lock, unchanged here),
