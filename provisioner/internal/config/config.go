@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -111,12 +110,10 @@ type Config struct {
 	// (docs/adr/0075 §8); definitions keep their git.identity.
 	GitAuthorName  string
 	GitAuthorEmail string
-	// GitURLRewrite and OwnerTokenFile are the offline local stack's
-	// (docs/adr/0080 §1-2), unset in production. GitURLRewrite is the forge
-	// every worker's `https://github.com/` rewrites to; OwnerTokenFile is the
-	// owner vaults' GitHub token when no App is mounted.
-	GitURLRewrite  string
-	OwnerTokenFile string
+	// GitURLRewrite is the forge every worker's `https://github.com/`
+	// rewrites to, on the offline local stack (docs/adr/0080 §2). Unset in
+	// production.
+	GitURLRewrite string
 }
 
 func Load() Config {
@@ -160,16 +157,15 @@ func Load() Config {
 		GitAuthorName:               env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
 		GitAuthorEmail:              env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
 		GitURLRewrite:               env("FLEET_GIT_URL_REWRITE", ""),
-		OwnerTokenFile:              env("FLEET_OWNER_TOKEN_FILE", ""),
 	}
 }
 
-// Validate refuses the local stack's settings where they could do harm
-// (docs/adr/0080). The rewrite sends every worker's GitHub traffic elsewhere,
-// so it is refused against the production vault, matched by host name: the
-// production deployment sets no AGENT_VAULT_* and takes its Infisical project
-// whole, so a stray key must not be enough. The owner token file must be one of
-// the vault's own secret files, never any file the provisioner can read.
+// Validate refuses the local stack's rewrite where it could do harm
+// (docs/adr/0080): it sends every worker's GitHub traffic elsewhere, so it is
+// refused against the production vault, matched by host name. The production
+// deployment sets no AGENT_VAULT_* and takes its Infisical project whole, so a
+// stray key must not be enough. Defence in depth: the vault injects GitHub
+// credentials for github.com only, never for the rewritten host.
 func (c Config) Validate() error {
 	var errs []error
 	if c.GitURLRewrite != "" {
@@ -179,11 +175,6 @@ func (c Config) Validate() error {
 			errs = append(errs, fmt.Errorf("FLEET_GIT_URL_REWRITE %q must be an http(s) URL with a host, no user info and a trailing /", c.GitURLRewrite))
 		case productionVault(c.AgentVaultAPI) || productionVault(c.AgentVaultProxy):
 			errs = append(errs, errors.New("FLEET_GIT_URL_REWRITE is set while the Agent Vault address is production's: it is for the local stack only (docs/adr/0080)"))
-		}
-	}
-	if c.OwnerTokenFile != "" {
-		if rel, err := filepath.Rel(c.AgentVaultSecretsDir, filepath.Clean(c.OwnerTokenFile)); err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.Contains(rel, "/") {
-			errs = append(errs, fmt.Errorf("FLEET_OWNER_TOKEN_FILE %q must be a file in AGENT_VAULT_SECRETS_DIR %q", c.OwnerTokenFile, c.AgentVaultSecretsDir))
 		}
 	}
 	return errors.Join(errs...)

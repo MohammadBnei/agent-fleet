@@ -339,8 +339,16 @@ func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (wid
 	if !vaultNameRe.MatchString(name) {
 		return false, fmt.Errorf("owner %q does not make a vault name", owner)
 	}
+	gh := GitHubKey(name)
+	// No App token (none mounted, or the mint failed): the mounted file, as a
+	// definition vault does. The offline local stack provides one
+	// (docs/adr/0080 §1); production has none, so the warm fails closed.
 	if ghToken == "" {
-		return false, fmt.Errorf("vault %s: no GitHub token", name)
+		file, ferr := c.readSecret(gh)
+		if ferr != nil || file == "" || referenceRe.MatchString(file) {
+			return false, fmt.Errorf("vault %s: no GitHub token", name)
+		}
+		ghToken = file
 	}
 	oauth, err := c.readSecret(oauthKey)
 	if err != nil {
@@ -349,7 +357,6 @@ func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (wid
 	if oauth == "" || referenceRe.MatchString(oauth) {
 		return false, missingErr(name, []string{oauthKey})
 	}
-	gh := GitHubKey(name)
 	// One service per OwnerHosts entry, in its order.
 	desired := []service{
 		{Name: "anthropic", Host: OwnerHosts[0] + ":443", Auth: auth{Type: "bearer", Token: oauthKey}},

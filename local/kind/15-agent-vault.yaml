@@ -4,9 +4,10 @@
 # git rewrite against the production address. The image is infra-bootstrap's
 # pin (gitops/platform/values/agent-vault/values.yaml), substituted for
 # __AGENT_VAULT_IMAGE__ by /kind-local, so there is one pin. Its state (SQLite,
-# MITM CA) lives on the workspace hostPath, outside every pod's mounts, so a
-# vault restart keeps the provisioner's token. local/kind/vault-bootstrap.sh
-# registers the owner and mints that token.
+# MITM CA private key) lives on the kind node's own disk, outside the
+# workspace volume the provisioner mounts: a vault restart keeps the
+# provisioner's token; deleting the cluster drops it.
+# local/kind/vault-bootstrap.sh registers the owner and mints that token.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,7 +53,7 @@ spec:
             periodSeconds: 2
       volumes:
         - name: data
-          hostPath: { path: /data/agent-fleet-workspace/agent-vault-local, type: DirectoryOrCreate }
+          hostPath: { path: /var/lib/agent-vault-local, type: DirectoryOrCreate }
 ---
 apiVersion: v1
 kind: Service

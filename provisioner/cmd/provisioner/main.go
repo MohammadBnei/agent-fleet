@@ -164,7 +164,6 @@ func main() {
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
 	provSvc.SetGitHub(app)
 	provSvc.SetGitIdentity(cfg.GitAuthorName, cfg.GitAuthorEmail)
-	provSvc.SetOwnerTokenFile(cfg.OwnerTokenFile)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)

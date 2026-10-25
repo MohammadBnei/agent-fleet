@@ -42,13 +42,19 @@ SH
 } | kubectl -n "$NS" exec -i deploy/agent-vault-local -- sh -s)
 case "$TOKEN" in av_agt_*) ;; *) echo "vault-bootstrap: the vault printed no agent token" >&2; exit 1 ;; esac
 
-# GH_<VAULT> per game definition, and the owner vaults' GitHub token
-# (FLEET_OWNER_TOKEN_FILE): placeholders the forge accepts. Non-empty, or the
-# provisioner's reconcile refuses them.
+# GH_<VAULT> per game definition and GH_OWNER_<OWNER> for repo sessions'
+# owner vaults: the files a vault falls back to with no App mounted.
+# Placeholders the forge accepts; non-empty, or the reconcile refuses them.
 kubectl -n "$NS" create secret generic provisioner-agent-vault \
   --from-literal=AGENT_VAULT_TOKEN="$TOKEN" \
   --from-file=CLAUDE_CODE_OAUTH_TOKEN="$MODEL_TOKEN_FILE" \
   --from-literal=GH_GAME_UKUBI_GAME=local-placeholder \
-  --from-literal=OWNER_GITHUB_TOKEN=local-placeholder \
+  --from-literal=GH_OWNER_MOHAMMADBNEI=local-placeholder \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 echo "vault-bootstrap: provisioner-agent-vault written"
+# The rotation revoked the old token at once; a running provisioner reads the
+# mounted file, which the kubelet refreshes only after its sync period.
+if kubectl -n "$NS" get deploy/provisioner >/dev/null 2>&1; then
+  kubectl -n "$NS" rollout restart deploy/provisioner >/dev/null
+  echo "vault-bootstrap: provisioner restarted onto the new token"
+fi

@@ -321,14 +321,14 @@ func withGitURLRewrite(env []corev1.EnvVar, rewrite, sessionID string) []corev1.
 		return env // config.Validate refused it at start
 	}
 	u.User = url.UserPassword(sessionID, "x")
-	n := 0
+	n, found := 0, false
 	for i := range env {
 		if env[i].Name == "GIT_CONFIG_COUNT" {
 			n, _ = strconv.Atoi(env[i].Value)
-			env[i].Value = strconv.Itoa(n + 1)
+			env[i].Value, found = strconv.Itoa(n+1), true
 		}
 	}
-	if n == 0 {
+	if !found {
 		env = append(env, corev1.EnvVar{Name: "GIT_CONFIG_COUNT", Value: "1"})
 	}
 	return append(env,

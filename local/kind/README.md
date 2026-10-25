@@ -29,10 +29,10 @@ stays online.
 - **GitHub URLs stay; git rewrites them.** `repos` rows keep
   `https://github.com/...`; the provisioner's own git and every worker's
   rewrite it to the forge (`FLEET_GIT_URL_REWRITE`, ConfigMap `local-forge`),
-  the worker with its session id as the push user. Owner vaults take a
-  placeholder GitHub token from `FLEET_OWNER_TOKEN_FILE`.
+  the worker with its session id as the push user. With no App, owner vaults
+  take a placeholder GitHub token from the mounted `GH_OWNER_<OWNER>` file.
 - **Definitions come from a read-only mirror**: `mirror.sh` writes a bare repo
-  on the workspace volume, outside every pod's mounts, whose `game` branch is
+  on the workspace volume, outside every worker pod's mounts, whose `game` branch is
   the committed branch under test with `definitions/` replaced by
   `definitions/` here (the game's agents, sim-only).
 
