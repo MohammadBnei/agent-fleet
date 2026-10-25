@@ -4,15 +4,15 @@
 - **Date:** 2026-10-20, amended 2026-10-25 (the owner's rule: "absolutely
   any session, headless or not, must be able to ask a question")
 - **Built:** the proto (`Invoke`, `WaitForResult`) and their authz rows only.
-- **Amends:** [ADR-0050](0050-a-question-outlives-its-pod.md) (a permission
-  outlives its pod too), [ADR-0066](0066-agent-service.md) §8 (its
-  permission reaping keeps the answer), [ADR-0067](0067-shared-and-private-sessions.md)
-  (`interaction` goes).
+- **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
+  (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
+  exits with a deferred decision is parked, not crashed).
 - **Related:** [ADR-0066](0066-agent-service.md) (the client principal,
   `Invoke`/`WaitForResult` in the authz table, request claims, who may
   answer), [ADR-0062](0062-defined-agents.md) §7 (`output` was left out of
   the P1 spec), [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md)
-  (`git.mode: push`), [ADR-0076](0076-definition-sessions-run-in-auto.md)
+  (`git.mode: push`), [ADR-0050](0050-a-question-outlives-its-pod.md)
+  (a question outlives its pod), [ADR-0076](0076-definition-sessions-run-in-auto.md)
   (grants stay the answerer's choice), [ADR-0078](0078-core-on-the-bridge.md)
   (announcements).
 
@@ -98,18 +98,20 @@ Only a client may call it (ADR-0066 §4); a member cannot.
   `structured_output`, the final text and a `subtype`.
 - **The final `result` entry gains `result_text` and `structured_output`.**
   The worker writes it through `SendMessage` with a fixed idempotency key
-  (`result:<session>`), retries until core acknowledges it, and only then
+  (`result:<session>`, which the sidecar's `/push` must pass through; it
+  sends none today), retries until core acknowledges it, and only then
   exits.
 - **Which turn is final.** In a single-shot session:
-  - a `success` turn with no unanswered question or permission is final,
-    with `done`;
+  - a turn that ends deferred (§6) is not final, and any structured output
+    it carries is discarded;
+  - a `success` turn is final, with `done`;
   - any other subtype (`error_max_turns`, `error_during_execution`, …) is
-    final, with `failed`;
-  - a `success` turn that ends on an open decision is not final. The worker
-    stays resident, and the idle sweep may reap the pod (§6).
-- **Core finishes the session only on a stored final result.** When it
-  lands, core marks the session finished, archives it, and runs §7. A worker
-  that exits with no stored result is `AGENT_CRASHED` (ADR-0066 §10).
+    final, with `failed`.
+- **Core alone decides the terminal state**, in this order: `expired` (§6),
+  then the final result's `done`/`failed`, then a pod that exited with an
+  open deferred decision is **parked** (not an end), then a pod that exited
+  with neither is `AGENT_CRASHED` (ADR-0066 §10). On a final result core
+  marks the session finished, archives it, and runs §7.
 
 ### 4. `WaitForResult` is a long poll
 
@@ -122,13 +124,14 @@ structured_output, result_text, subtype, error, pending}`, where `state` is:
   `pending` lists each one's `seq`, kind and text, so the client can show it
   and answer it (§5);
 - `expired`: a decision stayed unanswered past `limits.answerTimeout` (§6);
-- `running`: anything else, including the wait running out. A `CAPACITY`
-  refusal is not an end: the claim stays pending and the call answers
-  `running` until the client's retry warms it.
+- `running`: anything else, including the wait running out.
 
-The proto gains `pending` and the two states (additive). The SDK helpers
-(`invokeAndWait`, `InvokeAndWait`) loop until `done`, `failed`, `expired` or
-the caller's deadline, and hand `waiting` to the caller.
+`Invoke` answers a full fleet with a typed `CAPACITY` **and** the
+`thread_id`, and the claim stays pending; the SDK helpers (`invokeAndWait`,
+`InvokeAndWait`) retry `Invoke` on `CAPACITY`, loop on `WaitForResult`
+otherwise until `done`, `failed`, `expired` or the caller's deadline, and
+hand `waiting` to the caller. The proto gains `pending`, the two states and
+`thread_id` on the `CAPACITY` path (additive).
 
 AgentService's thread `Status` reads `waiting` whenever a decision is
 unanswered, with or without a pod (`status.go` reads `idle` without one
@@ -136,44 +139,62 @@ today). The dispatcher's wake gate is unchanged.
 
 ### 5. Who answers
 
-- **The client relays a person's answer.** It answers its own untainted
-  thread through AgentService `AnswerQuestion`/`RespondToPermission`, as
-  ADR-0066 §4 allows, and **names the person**: an `actor` from the client's
-  `actors.allow`, validated as `Open` validates one (ADR-0066 §6). An answer
-  without one is refused, so "a person answered" stays checkable. A tainted
-  thread is admin-only, as today.
+- **The client relays.** It answers its own untainted thread through
+  AgentService `AnswerQuestion`/`RespondToPermission`, as ADR-0066 §4
+  allows, and names the person it relays for: an `actor` from its
+  `actors.allow`, validated as `Open` validates one (ADR-0066 §6). This is
+  the client's attestation, recorded with the answer; core cannot check it,
+  as it cannot check any client's actor. A tainted thread is admin-only, as
+  today.
 - **The console.** A platform-admin answers any session, as for every other
   blocked session; Discord's "needs a human" post already links it.
 
 Nothing answers on a person's behalf when they are silent: `expired` ends
 the run instead (§6).
 
-### 6. One parking mechanism: a decision never holds a pod
+### 6. One parking mechanism: the SDK's deferred tool call
 
-For every session, a permission parks the way a question already does, and
-its answer reaches the agent the same way:
+In a single-shot session every decision, question or permission, parks
+through the SDK's own **defer** (Claude Code hooks, "Defer a tool call for
+later"): a `PreToolUse` hook returns `permissionDecision: "defer"`, the tool
+does not run, the turn ends with `stop_reason: "tool_deferred"` and
+`deferred_tool_use {id, name, input}`, and the call stays pending in the
+session. Resuming the session **with no prompt** fires `PreToolUse` again
+for that same call, and the hook's answer then applies.
 
-- **The idle sweep reaps a pod waiting on a permission**, after
-  `limits.timeout`, as it does for a question. The sweep's permission skip
-  is deleted.
-- **The stale-close is deleted.** `ReserveSlot` no longer writes a system
-  deny for unanswered permissions: the request stays open and answerable,
-  and the session keeps reading `waiting` until someone answers it.
-- **An answer warms first, then appends**, as `AnswerQuestion` does today.
-  A warm that fails (capacity) refuses the answer, so a decision is never
-  recorded where no pod will read it. A live pod is a no-op warm, and its
-  `canUseTool` promise resolves as today.
-- **The worker replays an answer it has no promise for.** A
-  `permission_response` whose request the current pod never raised is
-  delivered as a turn ("your request to run … was allowed / denied by …"),
-  and an allow becomes a **one-time** allow for that exact call in this pod:
-  the next identical call runs once without asking. Nothing is stored as a
-  grant, so the answerer's choice of scope (ADR-0076 §3) is not widened.
-  This covers every kind of ask, including `rm`/`sudo`, `ExitPlanMode` and
-  script writes.
+- **Asking.** The worker's `PreToolUse` hook defers a call that would ask:
+  one `canUseTool` would ask about (it appends the `permission_request`, with
+  the tool-use id, first), and the sidecar's `AskUserQuestion` (the question
+  is posted first, without blocking). The turn ends; the worker exits; the
+  pod goes. A parked run holds no slot and no token.
+- **Answering.** An answer warms the session first and appends second, as
+  `AnswerQuestion` does today; a warm that fails refuses the answer, and
+  the decision stays open. The new worker waits for the answer on its
+  stream, resumes the SDK session with no prompt, and the hook returns
+  `allow` or `deny` for the same call. For a question, `allow` lets the
+  sidecar tool return the stored answer.
+- **What this does not change.** The same call runs, so no retry has to
+  match it. No grant is stored, so the answerer's scope (ADR-0076 §3) is
+  never widened. `ReserveSlot`'s stale-close skips deferred requests (they
+  are bound to no pod) and still closes a live pod's interrupted ones.
+  Resident threads keep asking live through `canUseTool`, as now.
+- **Limits.** The SDK ignores `defer` when the model makes several tool
+  calls in one turn; that ask goes through `canUseTool` live, holds the pod
+  until it is answered or the pod's lifetime cap, and is announced like any
+  other. A resume that carries a prompt drops the deferred call, so nothing
+  is sent to a parked session but its answer.
 - **Expiry.** `limits.answerTimeout` (a duration; single-shot sessions only;
-  default 24h) bounds how long a decision may wait. Past it, core ends the
-  session `expired` and runs §7. Nothing is answered for anyone.
+  default 24h, at most `SESSION_RETENTION`) bounds how long a decision may
+  wait. Past it, core ends the session `expired` and runs §7; the check
+  rides `sessions.Loop`. A parked session whose definition changed since its
+  pin cannot warm, so core ends it `failed` instead of leaving it waiting.
+  Nothing is answered for anyone.
+- **Spike before build.** The docs describe `defer` for `claude -p`; the
+  worker runs `query()` in streaming-input mode. First confirm there that a
+  deferred turn ends with `tool_deferred`, that a resume with no prompt
+  fires `PreToolUse` for the same call, and that `outputFormat` does not
+  demand structured output from a deferred turn. If one fails, this section
+  goes back to the owner before any code.
 
 ### 7. Headless sessions are cleaned up on every terminal path
 
@@ -189,12 +210,12 @@ run.
 - **Deny, never ask** (this ADR's first draft). Rejected by the owner: a
   headless run that needs a person fails instead of asking.
 - **Keep the pod while parked.** A pod waiting on a person spends a fleet
-  slot (five in all) doing nothing. The question path already proved that a
-  decision can outlive its pod.
-- **Store a late allow as a session grant, then have the agent retry.** It
-  widens a "once" into a standing rule nobody chose, cannot cover asks that
-  are never granted (`rm`/`sudo`, plan exits, script writes), and loops on
-  them.
+  slot (five in all) doing nothing.
+- **Reap the pod and replay the answer to the next one** (a grant or a
+  one-time allow, then a retry). The agent must re-issue a matching call, a
+  grant widens a "once", some asks are never granted (`rm`/`sudo`, plan
+  exits, script writes), and a live pod's permission would need the
+  stale-close deleted. The SDK's own defer re-runs the same call.
 - **Auto-answer on timeout.** Nothing decides for a silent person; `expired`
   ends the run and says so.
 - **A separate job runner.** A second execution path would need its own pod
@@ -208,10 +229,10 @@ run.
 
 - Any session can wait for days without costing a pod. A headless caller
   sees `waiting` and what it waits on.
-- A permission answered after its pod went costs one warm and one turn; the
-  agent decides whether to repeat the call, and if it does, it runs once.
-- An open permission now survives a warm. A session can therefore show an
-  old request next to a newer one; both stay answerable.
+- An answer costs one warm, and the run continues with the very call it
+  parked on.
+- A full fleet refuses an answer; the client retries it, and the request
+  stays open meanwhile. Answers do not jump ahead of new invokes.
 - Repeating an `Invoke` with the same key is safe and returns the same
   answer, parked or not.
 - A single-shot session's working tree is gone after the run. Anything worth
@@ -220,8 +241,8 @@ run.
 - QA:
   - `curl` an `Invoke` and get schema-valid JSON.
   - Park more invokes than `MAX_EXTERNAL_SESSIONS` at once on questions and
-    permissions. Check that their pods are reaped at `limits.timeout`, that
-    each reads `waiting`, and that answering all of them finishes each one
+    permissions. Check that each pod exits once its turn defers, that each
+    run reads `waiting`, and that answering all of them finishes each one
     `done`.
   - Leave one past `answerTimeout`: it reads `expired`, with its PVC gone.
   - Answer a permission while the fleet is full: the answer is refused,
