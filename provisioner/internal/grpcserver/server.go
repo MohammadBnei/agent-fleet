@@ -486,14 +486,22 @@ func (s *Server) reconcileVaultLocked(ctx context.Context, v *agentfleetv1.Vault
 // token (docs/adr/0075 §7). A mint failure writes nothing. The caller holds
 // the vault's lock.
 func (s *Server) reconcileOwnerLocked(ctx context.Context, owner string) error {
+	// No App token falls back to the vault's mounted GH_OWNER_<OWNER> file
+	// (ReconcileOwner); with neither, the App's error is the one that says why.
+	var tok string
+	var mintErr error
 	if s.gh == nil {
-		return errors.New("no GitHub App: repo pods have no credentials")
-	}
-	tok, err := s.gh.OwnerToken(ctx, owner)
-	if err != nil {
-		return err
+		mintErr = errors.New("no GitHub App: repo pods have no credentials")
+	} else if tok, mintErr = s.gh.OwnerToken(ctx, owner); mintErr != nil {
+		tok = ""
 	}
 	widened, err := s.vault.ReconcileOwner(ctx, owner, tok)
+	if err != nil && mintErr != nil {
+		return fmt.Errorf("%w (%v)", mintErr, err)
+	}
+	if mintErr != nil {
+		slog.Warn("grpcserver: owner token mint failed, using the mounted file", "owner", owner, "error", mintErr)
+	}
 	return s.endWidened(ctx, vault.OwnerVault(owner), widened, err)
 }
 

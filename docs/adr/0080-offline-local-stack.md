@@ -1,7 +1,11 @@
 # ADR-0080 — The local stack runs offline: the real vault, a local forge
 
 - **Status:** Accepted (2026-10-25)
-- **Built:** nothing yet.
+- **Built:** all of it (§1-§5): `FLEET_GIT_URL_REWRITE` and the owner
+  vault's file fallback in the provisioner, `local/kind/` (vault, CRD stub,
+  bootstrap, mirror, game definitions) and `/kind-local`. Not yet run on kind
+  end to end; the vault bootstrap, the forge rewrite and the mirror read were
+  each checked on their own.
 - **Date:** 2026-10-25
 - **Related:** [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md)
   (the vault and the egress lock, unchanged here),
@@ -64,11 +68,14 @@ unchanged.
   exist. kind enforces nothing; the skill says so.
 - **Repo sessions: a local owner token** (the owner, 2026-10-25). A repo
   pod's owner vault maps `github.com` to a GitHub App installation token,
-  which a laptop with no GitHub cannot mint. `FLEET_OWNER_TOKEN_FILE`, when
-  set and no App is mounted, gives the owner vaults that file's token
-  instead; the provisioner refuses it while an App is mounted. The token
-  stays in the vault, as the App's does; offline it is a placeholder the
-  forge accepts, and with network it can be a real token for GitHub.
+  which a laptop with no GitHub cannot mint. When the App gives no token, an
+  owner vault falls back to the vault's mounted `GH_OWNER_<OWNER>` file, as a
+  definition vault already falls back to `GH_<VAULT>` (built in place of the
+  `FLEET_OWNER_TOKEN_FILE` this section first named: the same local option,
+  with no new setting). Production mounts no such file, so a failed mint
+  still refuses the warm. The token stays in the vault, as the App's does;
+  offline it is a placeholder the forge accepts, and with network it can be
+  a real token for GitHub.
 
 ### 2. GitHub URLs stay; git rewrites them
 
@@ -76,8 +83,9 @@ The `repos` rows keep their production shape,
 `https://github.com/<owner>/<repo>.git`, so every check that reads them
 passes unchanged.
 
-- **Definitions and packs** come from a **read-only bare mirror** on the
-  workspace volume, outside every pod's mounts: `FLEET_SHARED_REPO_URL` is
+- **Definitions and packs** come from a **bare mirror** on the workspace
+  volume, outside every worker pod's mounts (the provisioner, which mounts
+  the whole volume, reads it): `FLEET_SHARED_REPO_URL` is
   its path, and `safe.directory` names it in the provisioner's
   `GIT_CONFIG_*` (the host writes it, so git's ownership guard would refuse
   it). No pod can push to the source of its own authority.
@@ -118,11 +126,13 @@ They are sim-only. Production reads every file in `definitions/` and builds
 a vault for each valid one, so they stay out of it.
 
 - An abstract `game-base` holds what children can share: `audience`,
-  `invokers: [game]`, `sidecarTools: [AskUserQuestion]`, `tools` with
+  `thinking`, `mode`, `sidecarTools: [AskUserQuestion]`, `tools` with
   `TodoWrite` in `allow`, `limits`. Each `game-<repo>` carries its own
-  `credentials` (the vault is named after the definition) and its whole
-  `git` block (`mode: push`, `branch: game/<repo>`, `identity`), since
-  inheritance replaces top-level keys.
+  `invokers: [game]` (a client can list only launchable definitions, so the
+  abstract base cannot carry it), its `credentials` (the vault is named after
+  the definition) and its whole `git` block (`mode: push`,
+  `branch: game/<repo>`, `identity`), since inheritance replaces top-level
+  keys.
 - `clients/game.yaml`: `tokenRef: FLEET_CLIENT_TOKEN_GAME`,
   `actors.allow: [MohammadBnei]`, `announceSessions: true`, and the
   two-sided `definitions:` list.
@@ -169,9 +179,8 @@ stack.
 
 - The game's definition sessions run offline, on the code paths production
   runs, with no real secret in a pod; `/kind-local` works again.
-- Two provisioner env vars are the only fleet code: `FLEET_GIT_URL_REWRITE`,
-  refused against the production vault, and `FLEET_OWNER_TOKEN_FILE`,
-  refused while an App is mounted.
+- The fleet code is one provisioner env var, `FLEET_GIT_URL_REWRITE`,
+  refused against the production vault, and the owner vault's file fallback.
 - Repo and definition sessions both run offline.
 - Offline, nothing confines a pod's push to its repo and branch; the forge
   records every push.

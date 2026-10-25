@@ -33,3 +33,37 @@ func TestNodeSelectorMap(t *testing.T) {
 		})
 	}
 }
+
+// docs/adr/0080: the local stack's rewrite is refused where it could do harm.
+// The production vault is matched by host, whatever form the address takes.
+func TestValidate(t *testing.T) {
+	local := Config{AgentVaultAPI: "http://agent-vault-local.agent-fleet.svc.cluster.local:14321", AgentVaultProxy: "agent-vault-local.agent-fleet.svc.cluster.local:14322", AgentVaultSecretsDir: "/var/run/agent-vault"}
+	prod := Config{AgentVaultAPI: DefaultAgentVaultAPI, AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault"}
+	with := func(c Config, f func(*Config)) Config { f(&c); return c }
+	for _, tc := range []struct {
+		name string
+		c    Config
+		ok   bool
+	}{
+		{"production, nothing set", prod, true},
+		{"local stack", with(local, func(c *Config) { c.GitURLRewrite = "http://host.docker.internal:7480/" }), true},
+		{"rewrite against the production vault", with(prod, func(c *Config) { c.GitURLRewrite = "http://forge:7480/" }), false},
+		{"rewrite against a production vault spelled with a slash", with(local, func(c *Config) {
+			c.GitURLRewrite = "http://forge:7480/"
+			c.AgentVaultAPI = "http://agent-vault.agent-vault.svc:14321/"
+		}), false},
+		{"rewrite against the production proxy", with(local, func(c *Config) {
+			c.GitURLRewrite = "http://forge:7480/"
+			c.AgentVaultProxy = "agent-vault.agent-vault:14322"
+		}), false},
+		{"rewrite with user info", with(local, func(c *Config) { c.GitURLRewrite = "http://u:p@forge:7480/" }), false},
+		{"rewrite without a trailing slash", with(local, func(c *Config) { c.GitURLRewrite = "http://forge:7480" }), false},
+		{"rewrite that is not http", with(local, func(c *Config) { c.GitURLRewrite = "file:///tmp/" }), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.c.Validate(); (err == nil) != tc.ok {
+				t.Fatalf("Validate() = %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}

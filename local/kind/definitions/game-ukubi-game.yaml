@@ -1,0 +1,18 @@
+# The game's agent on ukubi-game itself (the owner, 2026-10-25). Its work lands
+# on game/ukubi-game; the game counts a step done when main holds it. Offline
+# the forge records the push but does not confine it (docs/adr/0080 §2). The
+# github.com credential is a placeholder file the local vault holds: git's
+# insteadOf sends the push to the forge.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: game-ukubi-game }
+spec:
+  extends: game-base
+  invokers: [game]
+  credentials:
+    vault: game-ukubi-game
+    services:
+      - { host: github.com, paths: ["/MohammadBnei/ukubi-game/*", "/MohammadBnei/ukubi-game.git/*"], secret: GH_GAME_UKUBI_GAME }
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: ukubi-game }
+  git: { mode: push, branch: game/ukubi-game, identity: { name: game-ukubi-game, email: game-ukubi-game@bnei.dev } }

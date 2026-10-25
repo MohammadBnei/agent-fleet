@@ -58,6 +58,11 @@ func main() {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
 	}
+	// docs/adr/0080: the local stack's settings, refused where they could do harm.
+	if err := cfg.Validate(); err != nil {
+		slog.Error("refusing to start", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -88,6 +93,7 @@ func main() {
 		PostgresImage:         cfg.PostgresImage,
 		RedisImage:            cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
+		GitURLRewrite:         cfg.GitURLRewrite,
 	})
 	if err != nil {
 		slog.Error("k8s client init failed", "error", err)

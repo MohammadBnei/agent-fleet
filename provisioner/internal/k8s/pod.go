@@ -309,6 +309,34 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 	return vaultWorkerEnv(env, d.ProxyURL, noProxy, vaultCADir+"/ca.pem", d.Name, d.GitAuthorName, d.GitAuthorEmail)
 }
 
+// withGitURLRewrite appends `url.<rewrite>.insteadOf = https://github.com/` to
+// the worker's GIT_CONFIG_* (docs/adr/0080 §2): the agent's own push reads the
+// clone's github.com origin. The session id is the URL's user name, so the
+// local forge, which challenges a push and takes any credentials, records
+// which session pushed; GIT_TERMINAL_PROMPT=0 means git needs the password in
+// the URL too.
+func withGitURLRewrite(env []corev1.EnvVar, rewrite, sessionID string) []corev1.EnvVar {
+	u, err := url.Parse(rewrite)
+	if err != nil {
+		return env // config.Validate refused it at start
+	}
+	u.User = url.UserPassword(sessionID, "x")
+	n, found := 0, false
+	for i := range env {
+		if env[i].Name == "GIT_CONFIG_COUNT" {
+			n, _ = strconv.Atoi(env[i].Value)
+			env[i].Value, found = strconv.Itoa(n+1), true
+		}
+	}
+	if !found {
+		env = append(env, corev1.EnvVar{Name: "GIT_CONFIG_COUNT", Value: "1"})
+	}
+	return append(env,
+		corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_KEY_%d", n), Value: "url." + u.String() + ".insteadOf"},
+		corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), Value: "https://github.com/"},
+	)
+}
+
 // repoNoProxy is what a repo pod reaches directly (docs/adr/0075 §7, spike
 // PR4a): the cluster, the LAN and the split-horizon names. The vault refuses
 // private ranges, so these would fail through it. The apex bnei.dev too:
@@ -487,6 +515,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		workerEnv = definitionWorkerEnv(workerEnv, *spec.Definition, coreHost)
 	case spec.RepoVault != nil:
 		workerEnv = repoWorkerEnv(workerEnv, *spec.RepoVault, coreHost)
+	}
+	if c.GitURLRewrite != "" {
+		workerEnv = withGitURLRewrite(workerEnv, c.GitURLRewrite, taskID)
 	}
 	workerEnv = append(workerEnv, cacheEnv()...)
 	workerEnv = append(workerEnv, contextBudgetEnv()...)

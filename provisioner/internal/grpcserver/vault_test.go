@@ -517,8 +517,8 @@ func TestCreateWorkerPod_RepoSessionUsesItsOwnerVault(t *testing.T) {
 	}
 }
 
-// No fallback (docs/adr/0075 §10): an owner token that cannot be minted
-// refuses the warm before any vault write or Job.
+// No fallback without a mounted file (docs/adr/0075 §10): an owner token that
+// cannot be minted refuses the warm before any vault write or Job.
 func TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	f := withRepoVault(t, s)
@@ -532,6 +532,23 @@ func TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm(t *testing.T) {
 	}
 	if n := jobCount(t, k8sc); n != 0 {
 		t.Errorf("%d Jobs", n)
+	}
+}
+
+// docs/adr/0080 §1: an owner token the App cannot mint falls back to the
+// vault's mounted GH_OWNER_<OWNER> file, as a definition vault does. The
+// offline local stack provides one; without it the warm is refused
+// (TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm).
+func TestCreateWorkerPod_OwnerTokenFromTheMountedFile(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "GH_OWNER_MOHAMMADBNEI": "local-owner-token"})
+	s.SetGitHub(&fakeApp{err: errors.New("github app not mounted")})
+	s.SetGitIdentity("ukubi", "ukubi@bnei.dev")
+	if _, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1")); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := f.Get("owner-mohammadbnei"); !ok || v.Creds["GH_OWNER_MOHAMMADBNEI"] != "local-owner-token" {
+		t.Fatalf("owner vault %+v", v)
 	}
 }
 

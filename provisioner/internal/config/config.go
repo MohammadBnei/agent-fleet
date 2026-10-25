@@ -1,6 +1,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -10,6 +14,7 @@ import (
 const (
 	DefaultCoreGRPCAddr    = "agent-fleet-core.agent-fleet.svc.cluster.local:9090"
 	DefaultAgentVaultProxy = "agent-vault.agent-vault.svc.cluster.local:14322"
+	DefaultAgentVaultAPI   = "http://agent-vault.agent-vault.svc.cluster.local:14321"
 )
 
 type Config struct {
@@ -105,6 +110,10 @@ type Config struct {
 	// (docs/adr/0075 §8); definitions keep their git.identity.
 	GitAuthorName  string
 	GitAuthorEmail string
+	// GitURLRewrite is the forge every worker's `https://github.com/`
+	// rewrites to, on the offline local stack (docs/adr/0080 §2). Unset in
+	// production.
+	GitURLRewrite string
 }
 
 func Load() Config {
@@ -140,14 +149,54 @@ func Load() Config {
 		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
 		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
-		AgentVaultAPI:               env("AGENT_VAULT_API_ADDR", "http://agent-vault.agent-vault.svc.cluster.local:14321"),
+		AgentVaultAPI:               env("AGENT_VAULT_API_ADDR", DefaultAgentVaultAPI),
 		AgentVaultProxy:             env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
 		AgentVaultSecretsDir:        env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
 		GitHubAppDir:                env("GITHUB_APP_DIR", "/var/run/github-app"),
 		GitHubAccounts:              env("FLEET_GITHUB_ACCOUNTS", ""),
 		GitAuthorName:               env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
 		GitAuthorEmail:              env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
+		GitURLRewrite:               env("FLEET_GIT_URL_REWRITE", ""),
 	}
+}
+
+// Validate refuses the local stack's rewrite where it could do harm
+// (docs/adr/0080): it sends every worker's GitHub traffic elsewhere, so it is
+// refused against the production vault, matched by host name. The production
+// deployment sets no AGENT_VAULT_* and takes its Infisical project whole, so a
+// stray key must not be enough. Defence in depth: the vault injects GitHub
+// credentials for github.com only, never for the rewritten host.
+func (c Config) Validate() error {
+	var errs []error
+	if c.GitURLRewrite != "" {
+		u, err := url.Parse(c.GitURLRewrite)
+		switch {
+		case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || !strings.HasSuffix(u.Path, "/"):
+			errs = append(errs, fmt.Errorf("FLEET_GIT_URL_REWRITE %q must be an http(s) URL with a host, no user info and a trailing /", c.GitURLRewrite))
+		case productionVault(c.AgentVaultAPI) || productionVault(c.AgentVaultProxy):
+			errs = append(errs, errors.New("FLEET_GIT_URL_REWRITE is set while the Agent Vault address is production's: it is for the local stack only (docs/adr/0080)"))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// productionVault reports whether addr (a URL or host:port) names the
+// production vault Service, in any of its cluster DNS forms.
+func productionVault(addr string) bool {
+	host := addr
+	if u, err := url.Parse(addr); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	for _, h := range []string{"agent-vault.agent-vault", "agent-vault.agent-vault.svc", "agent-vault.agent-vault.svc.cluster.local"} {
+		if host == h {
+			return true
+		}
+	}
+	return false
 }
 
 // NodeSelectorMap parses SessionNodeSelector into the shape a PodSpec wants.

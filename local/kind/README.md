@@ -12,26 +12,29 @@ before you run it.
 **This directory is local-only tooling. It never touches `k8s/`, which
 stays ArgoCD/Infisical/`common-app-chart`-owned prod config.**
 
-> **⚠ Not yet updated for `docs/adr/0075` (GitHub App + Agent Vault). The
-> `GH_TOKEN` path below no longer works.** The provisioner reads no
-> `GH_TOKEN`: its own git uses GitHub App installation tokens, and every
-> worker pod — repo or definition — gets a token minted from Agent Vault at
-> warm, so `CreateWorkerPod` fails before any Job exists unless the vault is
-> reachable. A working kind run needs, on top of what this file sets up:
->
-> - `GITHUB_APP_DIR` (default `/var/run/github-app`) holding the files
->   `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`, plus
->   `FLEET_GITHUB_ACCOUNTS` (comma-separated account ids whose installations
->   count);
-> - an Agent Vault the provisioner can reach: `AGENT_VAULT_API_ADDR`,
->   `AGENT_VAULT_PROXY_ADDR`, and `AGENT_VAULT_SECRETS_DIR` (default
->   `/var/run/agent-vault`) holding the agent token and credential values
->   (`provisioner/internal/vault`);
-> - optionally `FLEET_GIT_AUTHOR_NAME`/`FLEET_GIT_AUTHOR_EMAIL` (default
->   `ukubi`/`ukubi@bnei.dev`).
->
-> The full list, with defaults, is `provisioner/internal/config/config.go`.
-> None of this is in `local/kind/*.yaml` yet.
+## Offline: the real vault, a local forge (docs/adr/0080)
+
+The stack needs no GitHub, no cluster and no Infisical; only the model API
+stays online.
+
+- **The real Agent Vault** runs as `agent-vault-local` (`15-agent-vault.yaml`,
+  infra-bootstrap's image pin), never under the production Service name: the
+  provisioner refuses the git rewrite against production's address.
+  `vault-bootstrap.sh` registers its owner and writes the provisioner's files
+  (`provisioner-agent-vault`). Pods take production's vault path, with no real
+  secret in a pod.
+- **The egress lock exists but is not enforced**: `06-cilium-crd.yaml` is a
+  stub CRD so `k8s/provisioner/definition-egress.yaml` can apply; kind has no
+  Cilium.
+- **GitHub URLs stay; git rewrites them.** `repos` rows keep
+  `https://github.com/...`; the provisioner's own git and every worker's
+  rewrite it to the forge (`FLEET_GIT_URL_REWRITE`, ConfigMap `local-forge`),
+  the worker with its session id as the push user. With no App, owner vaults
+  take a placeholder GitHub token from the mounted `GH_OWNER_<OWNER>` file.
+- **Definitions come from a read-only mirror**: `mirror.sh` writes a bare repo
+  on the workspace volume, outside every worker pod's mounts, whose `game` branch is
+  the committed branch under test with `definitions/` replaced by
+  `definitions/` here (the game's agents, sim-only).
 
 ## Why hostPath instead of the prod RWX PVC
 
@@ -63,39 +66,34 @@ mid-session.
 
 ## The Secret — read this before running the skill
 
-`agent-fleet-local-secrets` is built imperatively by the skill, never
-committed, via `infisical run` wrapping `kubectl create secret` directly
-(no temp file). It carries two different kinds of values and **they must
-never mix**:
+The skill builds every Secret imperatively; none is committed, and none comes
+from Infisical:
 
-- `AGENTFLEET_DB_*` — **always hardcoded literals** pointing at this
-  namespace's throwaway `postgres` Service (`agentfleet`/`agentfleet`/
-  `agentfleetdb`). Never sourced from Infisical.
-- `GH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` — the only two values sourced live
-  from Infisical (`agent-fleet-nygh`/`dev`). Stale since `docs/adr/0075`:
-  the provisioner reads no `GH_TOKEN`, and worker pods get both tokens from
-  the vault (see the note at the top).
+- `agent-fleet-local-secrets`: `AGENTFLEET_DB_*`, **always hardcoded
+  literals** pointing at this namespace's throwaway `postgres` Service
+  (`agentfleet`/`agentfleet`/`agentfleetdb`).
+- `core-local-clients`: the game client's bearer, core only.
+- `agent-vault-local`: the local vault's generated passwords.
+- `provisioner-agent-vault`: written by `vault-bootstrap.sh`: the agent token,
+  the model token (from a local file; use a separate revocable token for local
+  runs) and placeholders.
 
-**Why this matters:** the `agent-fleet-nygh/dev` Infisical project holds the
-*real* `AGENTFLEET_DB_PASSWORD` for prod's `postgres.bnei.lan`. If that ever
-got exported into this local Secret, a local `core` would start claiming
-and mutating **real production sessions** through a provisioner that has no
-relationship to the real fleet. If you're editing the skill's secret step,
-keep `AGENTFLEET_DB_*` as literals — never widen the `infisical run` scope
-to include them.
+**Why the literals matter:** the `agent-fleet-nygh/dev` Infisical project
+holds the *real* `AGENTFLEET_DB_PASSWORD` for prod's `postgres.bnei.lan`. If
+that ever got into a local Secret, a local `core` would start claiming and
+mutating **real production sessions** through a provisioner that has no
+relationship to the real fleet. Keep `AGENTFLEET_DB_*` as literals.
 
 `DISCORD_BOT_TOKEN` is deliberately omitted — `core/cmd/core/run.go` falls
 back to a `noopNotifier` without it, same as `.claude/skills/dashboard-e2e/SKILL.md`.
 
-## Real side effects
+## Side effects
 
-With working credentials against a real repo, a session **can open an
-actual PR on GitHub.** Repos are rows in the `repos` table: with no
-`FLEET_REPO_OVERRIDES` (as in `30-core.yaml`) core's GitHub sync is off and
-the table keeps what migration 000001 seeded (`dream-analyst`,
-`vos-monolith`, `agent-fleet`, `infra-bootstrap`). For routine local
-iteration, insert a disposable scratch repo row rather than repeatedly
-testing against the real targets.
+Pushes go to the forge, not GitHub: every `https://github.com/` is rewritten.
+The forge records each push with the session id as its user; offline nothing
+confines a push to its repo and branch. Repos are rows in the `repos` table:
+with no `FLEET_REPO_OVERRIDES` (as in `30-core.yaml`) core's GitHub sync is
+off, and the skill adds the game's repo by hand.
 
 ## Image staleness caveat
 
@@ -112,13 +110,19 @@ reload fails loudly (`ErrImageNeverPull`) rather than silently.
 | File | What |
 |---|---|
 | `00-namespace.yaml` | `agent-fleet` namespace |
+| `05-traefik-crds.yaml` | the `IngressRoute` CRD, so `expose()` works |
+| `06-cilium-crd.yaml` | a stub `CiliumNetworkPolicy` CRD, so the egress lock can exist (unenforced) |
 | `10-workspace-hostpath.yaml` | hostPath PV + PVC named `agent-fleet-workspace` |
+| `15-agent-vault.yaml` | the real Agent Vault as `agent-vault-local` (image substituted by the skill) |
 | `20-postgres.yaml` | throwaway Postgres (emptyDir, same creds as `dashboard-e2e`) |
 | `30-core.yaml` | raw Deployment+Service for `core` (no ingress) |
-| `40-provisioner.yaml` | local variant of `k8s/provisioner/deployment.yaml` (local images, no InfisicalSecret) |
+| `40-provisioner.yaml` | local variant of `k8s/provisioner/deployment.yaml` (local images, local vault, mirror, forge rewrite) |
+| `vault-bootstrap.sh` | the local vault's bootstrap: owner, invite-only, the provisioner's token and files |
+| `mirror.sh` | the read-only definitions mirror (`game` branch) |
+| `definitions/` | the game's sim-only agents, checked by `core/internal/definitions/repo_test.go` |
 
-`serviceaccount.yaml`/`role.yaml`/`service.yaml` for the provisioner are
-applied straight from `k8s/provisioner/` — RBAC/Service shape is identical
+`serviceaccount.yaml`/`role.yaml`/`service.yaml`/`definition-egress.yaml` for
+the provisioner are applied straight from `k8s/provisioner/` — RBAC/Service shape is identical
 for local and prod, so nothing here duplicates them. `kind-config.yaml` is
 not a committed file — the skill generates it at cluster-create time (see
 above).
