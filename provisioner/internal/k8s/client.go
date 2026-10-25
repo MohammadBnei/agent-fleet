@@ -60,6 +60,9 @@ type Client struct {
 	PostgresImage         string
 	RedisImage            string
 	SharedInstancePVCSize string
+	// GitURLRewrite is where every worker's https://github.com/ goes, for the
+	// offline local stack (docs/adr/0080 §2). Empty in production.
+	GitURLRewrite string
 }
 
 // New builds an in-cluster client. client-go's rest.InClusterConfig()
@@ -91,6 +94,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		ExecutorAddr:  cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
+		GitURLRewrite:         cfg.GitURLRewrite,
 	}, nil
 }
 
@@ -112,4 +116,5 @@ type Images struct {
 	PostgresImage         string
 	RedisImage            string
 	SharedInstancePVCSize string
+	GitURLRewrite         string
 }

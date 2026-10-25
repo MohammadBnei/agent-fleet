@@ -535,6 +535,42 @@ func TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm(t *testing.T) {
 	}
 }
 
+// docs/adr/0080 §1: on the local stack, with no App mounted, the owner vault
+// takes FLEET_OWNER_TOKEN_FILE's token; with an App mounted the file is refused
+// rather than used, and nothing is written.
+func TestCreateWorkerPod_OwnerTokenFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "OWNER_GITHUB_TOKEN")
+	if err := os.WriteFile(file, []byte("local-owner-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("no App: the file's token", func(t *testing.T) {
+		s, _, _ := newTestServer(t)
+		f := withRepoVault(t, s)
+		s.SetGitHub(&fakeApp{unmounted: true, err: errors.New("not mounted")})
+		s.SetOwnerTokenFile(file)
+		if _, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1")); err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := f.Get("owner-mohammadbnei"); !ok || v.Creds["GH_OWNER_MOHAMMADBNEI"] != "local-owner-token" {
+			t.Fatalf("owner vault %+v", v)
+		}
+	})
+	t.Run("App mounted: refused", func(t *testing.T) {
+		s, k8sc, _ := newTestServer(t)
+		f := withRepoVault(t, s)
+		s.SetOwnerTokenFile(file)
+		if _, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1")); status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("err %v", err)
+		}
+		if w := f.Writes(); len(w) != 0 {
+			t.Errorf("vault writes %v", w)
+		}
+		if n := jobCount(t, k8sc); n != 0 {
+			t.Errorf("%d Jobs", n)
+		}
+	})
+}
+
 // RefreshVaults pushes a re-minted owner token with no core call at all.
 func TestRefreshVaults_PushesOwnerTokens(t *testing.T) {
 	s, _, _ := newTestServer(t)

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -64,6 +65,9 @@ type Server struct {
 	gh GitHub
 	// gitName/gitEmail author a repo session's commits (docs/adr/0075 §8).
 	gitName, gitEmail string
+	// ownerTokenFile is FLEET_OWNER_TOKEN_FILE (docs/adr/0080 §1): the owner
+	// vaults' GitHub token on the local stack, where no App can mint one.
+	ownerTokenFile string
 	// specs is core's last full vault set, kept so RefreshVaults can push
 	// re-minted tokens while core is down (docs/adr/0075 §5).
 	specsMu sync.Mutex
@@ -77,11 +81,17 @@ type GitHub interface {
 	OwnerToken(ctx context.Context, owner string) (string, error)
 	// Owners are the allowlisted installations' logins.
 	Owners(ctx context.Context) ([]string, error)
+	// Configured reports whether the App's credentials are mounted, re-read
+	// per call (a Secret synced after boot counts).
+	Configured() bool
 }
 
 // SetGitHub wires the App (docs/adr/0074, 0075). Unset, ListGitHubRepos and
 // every repo warm fail closed.
 func (s *Server) SetGitHub(gh GitHub) { s.gh = gh }
+
+// SetOwnerTokenFile sets FLEET_OWNER_TOKEN_FILE (docs/adr/0080 §1).
+func (s *Server) SetOwnerTokenFile(path string) { s.ownerTokenFile = path }
 
 // SetGitIdentity sets the author of repo sessions' commits (docs/adr/0075 §8).
 func (s *Server) SetGitIdentity(name, email string) { s.gitName, s.gitEmail = name, email }
@@ -486,15 +496,36 @@ func (s *Server) reconcileVaultLocked(ctx context.Context, v *agentfleetv1.Vault
 // token (docs/adr/0075 §7). A mint failure writes nothing. The caller holds
 // the vault's lock.
 func (s *Server) reconcileOwnerLocked(ctx context.Context, owner string) error {
-	if s.gh == nil {
-		return errors.New("no GitHub App: repo pods have no credentials")
-	}
-	tok, err := s.gh.OwnerToken(ctx, owner)
+	tok, err := s.ownerToken(ctx, owner)
 	if err != nil {
 		return err
 	}
 	widened, err := s.vault.ReconcileOwner(ctx, owner, tok)
 	return s.endWidened(ctx, vault.OwnerVault(owner), widened, err)
+}
+
+// ownerToken is the App's installation token for owner, or on the local stack
+// (docs/adr/0080 §1) the token file's, never both: a mounted App with the file
+// set is refused rather than silently given a placeholder.
+func (s *Server) ownerToken(ctx context.Context, owner string) (string, error) {
+	if s.ownerTokenFile != "" {
+		if s.gh != nil && s.gh.Configured() {
+			return "", errors.New("FLEET_OWNER_TOKEN_FILE is set while a GitHub App is mounted: it is for the local stack only (docs/adr/0080)")
+		}
+		b, err := os.ReadFile(s.ownerTokenFile)
+		if err != nil {
+			return "", fmt.Errorf("owner token file: %w", err)
+		}
+		tok := strings.TrimSpace(string(b))
+		if tok == "" {
+			return "", fmt.Errorf("owner token file %s is empty", s.ownerTokenFile)
+		}
+		return tok, nil
+	}
+	if s.gh == nil {
+		return "", errors.New("no GitHub App: repo pods have no credentials")
+	}
+	return s.gh.OwnerToken(ctx, owner)
 }
 
 // endWidened deletes the live Jobs on vault name after a widening revoked
