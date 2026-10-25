@@ -1,0 +1,67 @@
+# The real Agent Vault, run locally (docs/adr/0080 §1; infra-bootstrap
+# ADR-0061). Named agent-vault-local in agent-fleet, never the production
+# Service (agent-vault.agent-vault): the provisioner refuses the local stack's
+# git rewrite against the production address. The image is infra-bootstrap's
+# pin (gitops/platform/values/agent-vault/values.yaml), substituted for
+# __AGENT_VAULT_IMAGE__ by /kind-local, so there is one pin. Its state (SQLite,
+# MITM CA) lives on the workspace hostPath, outside every pod's mounts, so a
+# vault restart keeps the provisioner's token. local/kind/vault-bootstrap.sh
+# registers the owner and mints that token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-vault-local
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # one SQLite file, one writer
+  selector:
+    matchLabels:
+      app: agent-vault-local
+  template:
+    metadata:
+      labels:
+        app: agent-vault-local
+    spec:
+      # Root, unlike production's 65532: a hostPath is created root-owned and
+      # fsGroup does not apply to it. Local only.
+      securityContext: { runAsUser: 0 }
+      containers:
+        - name: agent-vault
+          image: __AGENT_VAULT_IMAGE__
+          ports:
+            - { containerPort: 14321, name: http }
+            - { containerPort: 14322, name: mitm }
+          env:
+            - name: AGENT_VAULT_ADDR
+              value: http://agent-vault-local.agent-fleet.svc.cluster.local:14321
+            - name: AGENT_VAULT_TELEMETRY
+              value: "false"
+            - name: AGENT_VAULT_ALLOW_PRIVATE_RANGES
+              value: "false"
+            - name: AGENT_VAULT_RATELIMIT_PROFILE
+              value: loose
+            - name: AGENT_VAULT_MASTER_PASSWORD
+              valueFrom: { secretKeyRef: { name: agent-vault-local, key: AGENT_VAULT_MASTER_PASSWORD } }
+          volumeMounts:
+            - { name: data, mountPath: /data } # HOME=/data in the image
+          readinessProbe:
+            httpGet: { path: /health, port: 14321 }
+            periodSeconds: 2
+      volumes:
+        - name: data
+          hostPath: { path: /data/agent-fleet-workspace/agent-vault-local, type: DirectoryOrCreate }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-vault-local
+  namespace: agent-fleet
+spec:
+  selector:
+    app: agent-vault-local
+  ports:
+    - { name: http, port: 14321, targetPort: 14321 }
+    - { name: mitm, port: 14322, targetPort: 14322 }

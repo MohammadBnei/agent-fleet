@@ -48,12 +48,42 @@ spec:
               value: agent-fleet-workspace
             - name: WORKSPACE_ROOT
               value: /workspace
-            # docs/adr/0062: a kind build is version "dev", which has no release
-            # tag to read definitions/ at. The kind-local skill overrides this
-            # with the branch under test right after apply (it must be pushed:
-            # the provisioner clones FLEET_SHARED_REPO_URL).
+            # docs/adr/0080 §2, §5: definitions, packs and fleet-shared come from
+            # a read-only bare mirror on the workspace volume, outside every
+            # pod's mounts, that /kind-local writes: the branch under test with
+            # definitions/ replaced by local/kind/definitions/, on its `game`
+            # branch. No pod can push to the source of its own authority.
+            - name: FLEET_SHARED_REPO_URL
+              value: /workspace/local-mirror/agent-fleet.git
             - name: FLEET_DEFINITIONS_REF
-              value: main
+              value: game
+            - name: FLEET_SHARED_BRANCH
+              value: game
+            # docs/adr/0080 §1: the local Agent Vault (15-agent-vault.yaml),
+            # never production's address, and the files vault-bootstrap.sh
+            # writes. The owner vaults' GitHub token is one of those files.
+            - name: AGENT_VAULT_API_ADDR
+              value: http://agent-vault-local.agent-fleet.svc.cluster.local:14321
+            - name: AGENT_VAULT_PROXY_ADDR
+              value: agent-vault-local.agent-fleet.svc.cluster.local:14322
+            - name: FLEET_OWNER_TOKEN_FILE
+              value: /var/run/agent-vault/OWNER_GITHUB_TOKEN
+            # docs/adr/0080 §2: the forge every https://github.com/ goes to
+            # (ConfigMap local-forge, written by /kind-local for this host).
+            # Workers get it with their session as the push user; the
+            # provisioner's own git (the repo cache) gets it below.
+            - name: FLEET_GIT_URL_REWRITE
+              valueFrom: { configMapKeyRef: { name: local-forge, key: FLEET_GIT_URL_REWRITE } }
+            - name: GIT_CONFIG_COUNT
+              value: "2"
+            - name: GIT_CONFIG_KEY_0
+              value: safe.directory # the mirror is host-written; git's ownership guard would refuse it
+            - name: GIT_CONFIG_VALUE_0
+              value: /workspace/local-mirror/agent-fleet.git
+            - name: GIT_CONFIG_KEY_1
+              value: url.$(FLEET_GIT_URL_REWRITE).insteadOf
+            - name: GIT_CONFIG_VALUE_1
+              value: https://github.com/
             # core's code default is "agent-fleet-core.agent-fleet.svc.
             # cluster.local:9090" — correct for prod, where core goes
             # through common-app-chart and gets release-name-prefixed, but
@@ -78,6 +108,9 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            - name: agent-vault
+              mountPath: /var/run/agent-vault
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -89,3 +122,6 @@ spec:
         - name: workspace
           persistentVolumeClaim:
             claimName: agent-fleet-workspace
+        - name: agent-vault
+          secret:
+            secretName: provisioner-agent-vault

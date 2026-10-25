@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -16,31 +17,7 @@ import (
 // definition can never reach a release tag, which is what the provisioner
 // reads.
 func TestRepoDefinitions(t *testing.T) {
-	root := os.DirFS("../../..")
-	files := map[string][]byte{}
-	total := 0
-	err := fs.WalkDir(root, "definitions", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		// The provisioner's ReadDefinitions fails the WHOLE listing on a
-		// non-regular file or an oversize one, so CI must refuse them too
-		// (provisioner/internal/git/git.go maxDefinitionFile/Total).
-		if !d.Type().IsRegular() {
-			t.Errorf("%s is not a regular file: the provisioner refuses the whole listing", p)
-			return nil
-		}
-		b, err := fs.ReadFile(root, p)
-		if total += len(b); len(b) > 64<<10 || total > 1<<20 {
-			t.Errorf("%s: over the provisioner's 64 KiB per-file or 1 MiB total limit", p)
-		}
-		files[path.Clean(p)] = b
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	results, fileErrs := Load(files)
+	results, fileErrs := Load(definitionTree(t, "definitions"))
 	for _, e := range fileErrs {
 		t.Errorf("file error: %v", e)
 	}
@@ -96,4 +73,57 @@ func TestResourceCeilingIsTheLimitRange(t *testing.T) {
 	if milli != maxMilliCPU || mi != maxMemoryMi {
 		t.Errorf("definition ceiling %dm/%dMi, limitRange.max %s/%s: move them together", maxMilliCPU, maxMemoryMi, max.CPU, max.Memory)
 	}
+}
+
+// docs/adr/0080 §4: the local stack's game definitions, checked by the same
+// loader, as /kind-local lays them out: in place of definitions/. Loaded on
+// their own, since that is the whole set the local mirror holds.
+func TestLocalKindDefinitions(t *testing.T) {
+	results, fileErrs := Load(definitionTree(t, "local/kind/definitions"))
+	for _, e := range fileErrs {
+		t.Errorf("file error: %v", e)
+	}
+	launchable := false
+	for _, r := range results {
+		if r.Err != nil {
+			t.Errorf("definition %q is invalid: %v", r.Name, r.Err)
+		}
+		if r.Name == "game-ukubi-game" && !r.Abstract && r.Err == nil {
+			launchable = r.Effective.Mode != nil && r.Effective.Mode.Default == "auto"
+		}
+	}
+	if !launchable {
+		t.Error("game-ukubi-game must be a valid, launchable definition in auto")
+	}
+}
+
+// definitionTree reads dir under the repo root as the provisioner would list
+// definitions/, keyed by its definitions/ path.
+func definitionTree(t *testing.T, dir string) map[string][]byte {
+	t.Helper()
+	root := os.DirFS("../../..")
+	files := map[string][]byte{}
+	total := 0
+	err := fs.WalkDir(root, dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		// The provisioner's ReadDefinitions fails the WHOLE listing on a
+		// non-regular file or an oversize one, so CI must refuse them too
+		// (provisioner/internal/git/git.go maxDefinitionFile/Total).
+		if !d.Type().IsRegular() {
+			t.Errorf("%s is not a regular file: the provisioner refuses the whole listing", p)
+			return nil
+		}
+		b, err := fs.ReadFile(root, p)
+		if total += len(b); len(b) > 64<<10 || total > 1<<20 {
+			t.Errorf("%s: over the provisioner's 64 KiB per-file or 1 MiB total limit", p)
+		}
+		files[path.Join("definitions", strings.TrimPrefix(path.Clean(p), dir))] = b
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }

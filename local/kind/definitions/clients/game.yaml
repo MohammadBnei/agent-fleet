@@ -1,0 +1,12 @@
+# The game (ukubi-game) as a client on the local core's :9091 (docs/adr/0066
+# §3, 0080 §3). Its bearer is FLEET_CLIENT_TOKEN_GAME, at least 32 bytes, set
+# only on the local stack. No bridge runs offline, so announceSessions is inert
+# there; the game reads waiting from WaitForResult/Status.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentClient
+metadata: { name: game }
+spec:
+  tokenRef: FLEET_CLIENT_TOKEN_GAME
+  actors: { allow: [MohammadBnei] }
+  definitions: [game-ukubi-game]
+  announceSessions: true

@@ -1,0 +1,27 @@
+# Abstract base for the game's agents on the offline local stack
+# (docs/adr/0080 §4). Sim-only: these files never go in definitions/, which
+# production reads whole and builds a vault for. /kind-local copies them into
+# definitions/ of the local mirror's `game` commit. A child's top-level key
+# REPLACES the value here, so credentials, git, workspace and invokers live in
+# each child.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: game-base }
+spec:
+  abstract: true
+  audience: { group: platform-admins }
+  thinking: { default: medium }
+  mode: { default: auto, allow: [auto, default, plan] }
+  tools:
+    # TodoWrite: the game reads a step's progress from it (R11).
+    allow: [Read, Edit, Write, Glob, Grep, TodoWrite,
+            "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)",
+            "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git merge:*)", "Bash(git push:*)",
+            "Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)"]
+    deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
+  # AskUserQuestion: any session can ask (docs/adr/0070).
+  sidecarTools: [AskUserQuestion]
+  interaction: { allow: [ask] }
+  lifecycle: { allow: [resident, single-shot] }
+  resources: { cpu: "1", memory: 2Gi }
+  limits: { maxTurns: 60, timeout: 30m, concurrency: 1, startupBudget: 3m }
