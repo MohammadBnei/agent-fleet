@@ -13,7 +13,7 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   the worker, which outranks every permission mode. In `auto` the worker
   answers them for you — only `rm` and `sudo` still reach a human
   (`docs/adr/0053`)
-- Skills: `doubt-driven-development`, `architecture-interview` for non-trivial decisions
+- Skills: `change-loop` before any non-trivial change (plan, doubt cycle, proof first, review); `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Never edit ARCHITECTURE.md/DECISIONS.md/docs/adr/ to match your work — propose changes explicitly
 
