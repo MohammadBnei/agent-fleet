@@ -1,8 +1,11 @@
 package config
 
 import (
+	"math"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // An unparseable selector must mean "schedule anywhere", never "match nothing".
@@ -92,9 +95,9 @@ func TestLoad(t *testing.T) {
 	want := Config{
 		Namespace: "ns", WorkerImage: "w:1", SidecarImage: "s:1", WorkspacePVC: "pvc", SessionStorageClass: "fast",
 		SessionNodeSelector: "a/b=c", WorkspaceRoot: "/ws", E2eHost: "e2e.test", Port: "1", GRPCPort: "2", CoreGRPCAddr: "core:3",
-		CoreToken: "to-core", CoreProvisionerToken: "from-core", ThotAuthToken: "thot", ExecutorAddr: "exec:4", ReconcileInterval: "5",
+		CoreToken: "to-core", CoreProvisionerToken: "from-core", ThotAuthToken: "thot", ExecutorAddr: "exec:4", ReconcileInterval: 5 * time.Millisecond,
 		LogLevel: "debug", FleetSharedRepoURL: "https://x/y.git", FleetSharedBranch: "dev", FleetDefinitionsRef: "ref",
-		PostgresImage: "pg:1", RedisImage: "rd:1", SharedInstancePVCSize: "9Gi", SharedInstanceIdleTimeoutMs: "6",
+		PostgresImage: "pg:1", RedisImage: "rd:1", SharedInstancePVCSize: "9Gi", SharedInstanceIdleTimeout: 6 * time.Millisecond,
 		AgentVaultAPI: "http://vault-local:1", AgentVaultProxy: "vault-local:2", AgentVaultSecretsDir: "/v", GitHubAppDir: "/app",
 		GitHubAccounts: "1,2", GitAuthorName: "me", GitAuthorEmail: "me@x", GitURLRewrite: "http://forge.local/",
 		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9",
@@ -107,9 +110,9 @@ func TestLoad(t *testing.T) {
 		Namespace: "agent-fleet", WorkerImage: "registry.bnei.lan:5000/agent-fleet-worker:latest",
 		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest", WorkspacePVC: "agent-fleet-workspace", WorkspaceRoot: "/workspace",
 		E2eHost: "bnei.dev", Port: "8080", GRPCPort: "9090", CoreGRPCAddr: DefaultCoreGRPCAddr,
-		ExecutorAddr: "thot-executor.thot.svc.cluster.local:9090", ReconcileInterval: "10000", LogLevel: "info",
+		ExecutorAddr: "thot-executor.thot.svc.cluster.local:9090", ReconcileInterval: 10 * time.Second, LogLevel: "info",
 		FleetSharedRepoURL: "https://github.com/MohammadBnei/agent-fleet.git", FleetSharedBranch: "main", PostgresImage: "postgres:16-alpine",
-		RedisImage: "redis:7-alpine", SharedInstancePVCSize: "2Gi", SharedInstanceIdleTimeoutMs: "43200000", AgentVaultAPI: DefaultAgentVaultAPI,
+		RedisImage: "redis:7-alpine", SharedInstancePVCSize: "2Gi", SharedInstanceIdleTimeout: 12 * time.Hour, AgentVaultAPI: DefaultAgentVaultAPI,
 		AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault", GitHubAppDir: "/var/run/github-app",
 		GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
 	}
@@ -127,6 +130,79 @@ func TestLoad(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLEET_GIT_URL_REWRITE") || c.GitURLRewrite != "ftp://x" {
 		t.Errorf("a bad rewrite: %+v, %v", c, err)
+	}
+}
+
+// The two duration variables are positive integers of milliseconds, or refused with a message naming the variable and
+// the rule. Unset (or empty: getenv cannot tell) keeps the default. A refused value leaves its duration zero, and the
+// error joins with the other problems Load finds.
+func TestLoad_Durations(t *testing.T) {
+	maxMs := strconv.FormatInt(math.MaxInt64/int64(time.Millisecond), 10)
+	overMs := strconv.FormatInt(math.MaxInt64/int64(time.Millisecond)+1, 10)
+	for _, v := range []struct {
+		key      string
+		fallback time.Duration
+		field    func(Config) time.Duration
+	}{
+		{"RECONCILE_INTERVAL_MS", 10 * time.Second, func(c Config) time.Duration { return c.ReconcileInterval }},
+		{"SHARED_INSTANCE_IDLE_TIMEOUT_MS", 12 * time.Hour, func(c Config) time.Duration { return c.SharedInstanceIdleTimeout }},
+	} {
+		for _, tc := range []struct {
+			in      string
+			want    time.Duration
+			problem string // substring of the error; "" = none
+		}{
+			{"", v.fallback, ""},
+			{"1", time.Millisecond, ""},
+			{"2500", 2500 * time.Millisecond, ""},
+			{"+7", 7 * time.Millisecond, ""},
+			{maxMs, time.Duration(math.MaxInt64/int64(time.Millisecond)) * time.Millisecond, ""},
+			{"0", 0, v.key + " must be a positive integer (milliseconds), got \"0\""},
+			{"-5", 0, v.key + " must be a positive integer (milliseconds), got \"-5\""},
+			{"abc", 0, v.key + " must be a positive integer (milliseconds), got \"abc\""},
+			{"1.5", 0, v.key + " must be a positive integer (milliseconds), got \"1.5\""},
+			{"10s", 0, v.key + " must be a positive integer (milliseconds), got \"10s\""},
+			{"  ", 0, v.key + " must be a positive integer (milliseconds), got \"  \""}, // whitespace is not unset
+			{" 5", 0, v.key + " must be a positive integer (milliseconds), got \" 5\""},
+			{overMs, 0, v.key + " must be a positive integer (milliseconds) no larger than " + maxMs},
+			{"99999999999999999999", 0, v.key + " must be a positive integer (milliseconds) no larger than " + maxMs},
+			{"-99999999999999999999", 0, v.key + " must be a positive integer (milliseconds), got"},
+		} {
+			c, err := Load(func(k string) string {
+				if k == v.key {
+					return tc.in
+				}
+				return ""
+			})
+			if got := v.field(c); got != tc.want {
+				t.Errorf("%s=%q: duration %v, want %v", v.key, tc.in, got, tc.want)
+			}
+			switch {
+			case tc.problem == "" && err != nil:
+				t.Errorf("%s=%q: refused: %v", v.key, tc.in, err)
+			case tc.problem != "" && (err == nil || !strings.Contains(err.Error(), tc.problem)):
+				t.Errorf("%s=%q: error %v, want it to contain %q", v.key, tc.in, err, tc.problem)
+			}
+		}
+	}
+
+	// Both bad, and a third problem: one error holds them all, each on its own line, and the other variable's value is
+	// not lost to the refusal.
+	_, err := Load(func(k string) string {
+		return map[string]string{"RECONCILE_INTERVAL_MS": "abc", "SHARED_INSTANCE_IDLE_TIMEOUT_MS": "-1", "FLEET_GIT_URL_REWRITE": "ftp://x"}[k]
+	})
+	if err == nil {
+		t.Fatal("three bad variables, no error")
+	}
+	lines := strings.Split(err.Error(), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "RECONCILE_INTERVAL_MS must be") ||
+		!strings.HasPrefix(lines[1], "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be") || !strings.HasPrefix(lines[2], "FLEET_GIT_URL_REWRITE") {
+		t.Errorf("joined error:\n%v", err)
+	}
+	if c, _ := Load(func(k string) string {
+		return map[string]string{"RECONCILE_INTERVAL_MS": "abc", "SHARED_INSTANCE_IDLE_TIMEOUT_MS": "9"}[k]
+	}); c.SharedInstanceIdleTimeout != 9*time.Millisecond {
+		t.Errorf("a refused interval cost the other variable its value: %v", c.SharedInstanceIdleTimeout)
 	}
 }
 

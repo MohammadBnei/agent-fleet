@@ -75,3 +75,53 @@ func TestMain_Refusals(t *testing.T) {
 		t.Errorf("a long enough token was refused:\n%s", out)
 	}
 }
+
+// RECONCILE_INTERVAL_MS and SHARED_INSTANCE_IDLE_TIMEOUT_MS that are no positive integer of milliseconds are refused
+// at start, before main goes near the cluster: a zero interval panics the reconcile loop's ticker once main is
+// running, and a zero idle timeout deletes every annotated shared instance on every tick. The core token's refusal
+// still comes first, and a good value is not refused.
+func TestMain_RefusesBadDurations(t *testing.T) {
+	token := "FLEET_CORE_PROVISIONER_TOKEN=" + strings.Repeat("t", 40)
+	for _, c := range []struct {
+		name string
+		env  []string
+		want []string // substrings, in this order
+	}{
+		{"zero interval", []string{token, "RECONCILE_INTERVAL_MS=0"}, []string{`"provisioner starting"`, `RECONCILE_INTERVAL_MS must be a positive integer (milliseconds), got \"0\"`}},
+		{"interval that is no integer", []string{token, "RECONCILE_INTERVAL_MS=abc"}, []string{`"provisioner starting"`, `RECONCILE_INTERVAL_MS must be a positive integer (milliseconds), got \"abc\"`}},
+		{"negative idle timeout", []string{token, "SHARED_INSTANCE_IDLE_TIMEOUT_MS=-5"}, []string{`"provisioner starting"`, `SHARED_INSTANCE_IDLE_TIMEOUT_MS must be a positive integer (milliseconds), got \"-5\"`}},
+		{"idle timeout that is no integer", []string{token, "SHARED_INSTANCE_IDLE_TIMEOUT_MS=1.5"}, []string{`SHARED_INSTANCE_IDLE_TIMEOUT_MS must be a positive integer (milliseconds), got \"1.5\"`}},
+		{"both, and the rewrite, joined", []string{token, "RECONCILE_INTERVAL_MS=0", "SHARED_INSTANCE_IDLE_TIMEOUT_MS=0", "FLEET_GIT_URL_REWRITE=ftp://x"},
+			[]string{"RECONCILE_INTERVAL_MS must be", "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be", "FLEET_GIT_URL_REWRITE"}},
+		{"the token is refused before the interval", []string{"RECONCILE_INTERVAL_MS=0"}, []string{"FLEET_CORE_PROVISIONER_TOKEN is unset"}},
+	} {
+		code, out := runMain(t, c.env...)
+		if code != 1 {
+			t.Errorf("%s: exit %d, want 1\n%s", c.name, code, out)
+		}
+		if !strings.Contains(out, "refusing to start") {
+			t.Errorf("%s: not the refusal path:\n%s", c.name, out)
+		}
+		if strings.Contains(out, "k8s client init failed") {
+			t.Errorf("%s: went on to the cluster:\n%s", c.name, out)
+		}
+		rest := out
+		for _, w := range c.want {
+			i := strings.Index(rest, w)
+			if i < 0 {
+				t.Errorf("%s: %q not in order in\n%s", c.name, w, out)
+				break
+			}
+			rest = rest[i+len(w):]
+		}
+	}
+	if _, out := runMain(t, "RECONCILE_INTERVAL_MS=0"); strings.Contains(out, "RECONCILE_INTERVAL_MS must be") {
+		t.Errorf("the interval was reported ahead of the token:\n%s", out)
+	}
+
+	// Positive control: good values pass the configuration, so main goes on (to the cluster, which a test has none of).
+	code, out := runMain(t, token, "RECONCILE_INTERVAL_MS=5000", "SHARED_INSTANCE_IDLE_TIMEOUT_MS=60000")
+	if code != 1 || strings.Contains(out, "must be a positive integer") || !strings.Contains(out, "k8s client init failed") {
+		t.Errorf("good durations: exit %d, want the cluster's refusal and not the configuration's:\n%s", code, out)
+	}
+}
