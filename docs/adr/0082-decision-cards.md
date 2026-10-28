@@ -55,7 +55,9 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 3. **Taint by rule.**
    - A session is tainted by an untrusted entry, or by an outside read at the moment it runs: `gh` against issues,
      PRs, comments or CI; `curl`/`wget`; `git fetch`/`pull` of a non-default ref. `canUseTool` marks it.
-   - `WebFetch` and `WebSearch` stay out of definitions (`DEFINITION_BUILTIN_TOOLS` already omits them).
+   - `WebFetch` and `WebSearch` stay out of definitions (`DEFINITION_BUILTIN_TOOLS` already omits them) and leave
+     repo sessions too (owner, 2026-10-29). `git fetch` and `git pull` join `FLEET_ASK_RULES`, so every outside read
+     reaches `canUseTool`, which taints, whatever the SDK's own `auto` classifier or the target repo's allow rules say.
    - "Context-only" (it did not wake) and "untrusted" become separate: ADR-0071 §7 now reads "a session is tainted
      when it holds an untrusted entry", not a context-only one.
 4. **T2 reads and drafts a card, nothing else.** Enforced twice.
@@ -113,7 +115,11 @@ write. It was heavy, automatic by default, and still rested on matching bot even
     them; any other fleet close becomes a "Close threads" card. Capacity is unchanged: a writer and a reviewer need
     two sessions at once, and `MAX_EXTERNAL_SESSIONS=1` (ADR-0078 §7) makes the second a card until a deploy raises it.
 11. **Dropped from ADR-0079:** the provenance ledger, `ForgeWrite` as a trust mechanism, echo matching and the intent
-    wait. `ForgeWrite` may return later only to scope GitHub tokens per repo.
+    wait.
+    - **Kept, narrowed (owner, 2026-10-29):** a GitHub write path through the provisioner, which holds the App key,
+      for exactly two callers: running a chosen card's bound effect and posting the `agent-review` commit status.
+      The provisioner mints a token per repository with only the permission that write needs. Core still holds no
+      GitHub credential, and the path records nothing about trust.
 12. **Bridge side** (a dependency on `ukubi-bridge`; not changed here; amends bridge ADR-0060 §6):
     - deliver `pull_request.labeled`, `issues.opened` and `issues.labeled`;
     - send `actor_trusted` (the addresser is T0) separately from `thread_owned` (an owned, same-repo subject), in place
@@ -145,7 +151,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 
 None of it is built. Slices, in order:
 
-1. Taint enforcement in the worker and in core, first, because the hole is live.
+1. Taint enforcement in the worker and in core, first, because the hole is live. It includes taking `WebFetch` and
+   `WebSearch` out of repo sessions and adding `git fetch`/`pull` to `FLEET_ASK_RULES`.
 2. The context-only versus untrusted split.
 3. The card store, the `AnswerCard` API and the console UI.
 4. The address-only gate, and dropping the bot's events.
