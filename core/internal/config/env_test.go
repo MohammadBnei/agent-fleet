@@ -148,6 +148,7 @@ func TestEnvUses(t *testing.T) {
 		{`import . "os"; var _ = Getenv("X")`, []string{"import . os"}},
 		{`import "os"; var _, _ = os.UserHomeDir()`, []string{"os.UserHomeDir"}},
 		{`import "syscall"; var _, _ = syscall.Getenv("X")`, []string{"syscall.Getenv"}},
+		{`import "golang.org/x/sys/unix"; var _ = unix.Getenv`, []string{"golang.org/x/sys/unix.Getenv"}},
 		{`import "os"; var _ = os.TempDir()`, []string{"os.TempDir"}},
 		{`import "os"; var _, _ = os.MkdirTemp("", "x")`, []string{"os.MkdirTemp"}},
 		{`import "os"; var _, _ = os.CreateTemp("", "x")`, []string{"os.CreateTemp"}},
