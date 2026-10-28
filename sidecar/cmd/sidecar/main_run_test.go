@@ -35,7 +35,7 @@ func runMain(t *testing.T, env ...string) (code int, out string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0])
-	cmd.Env = append([]string{"FLEET_TEST_RUN_MAIN=1", "PATH=" + os.Getenv("PATH")}, env...)
+	cmd.Env = append([]string{"FLEET_TEST_RUN_MAIN=1", "PATH=" + os.Getenv("PATH"), "GOCOVERDIR=" + t.TempDir()}, env...)
 	var b bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &b, &b
 	err := cmd.Run()
@@ -164,7 +164,7 @@ func TestMain_Wiring(t *testing.T) {
 
 	ports := map[string]string{"MCP_PORT": freePort(t), "LOCAL_API_PORT": freePort(t), "HEALTH_PORT": freePort(t), "EGRESS_PORT": freePort(t)}
 	env := []string{
-		"FLEET_TEST_RUN_MAIN=1", "PATH=" + os.Getenv("PATH"),
+		"FLEET_TEST_RUN_MAIN=1", "PATH=" + os.Getenv("PATH"), "GOCOVERDIR=" + t.TempDir(),
 		"SESSION_ID=s-wired", "LEASE_ID=l-wired",
 		"CORE_GRPC_ADDR=" + lis.Addr().String(),
 		"WORKTREE_PATH=" + tree,
