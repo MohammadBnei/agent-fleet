@@ -345,8 +345,12 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT actor FROM transcript WHERE session_id = $1`, res.GetThreadId()).Scan(&actor); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].ContextOnly || actor != "admin:admin-sub" || len(dash.warms) != 1 {
+	if len(entries) != 1 || entries[0].ContextOnly || entries[0].Untrusted || actor != "admin:admin-sub" || len(dash.warms) != 1 {
 		t.Fatalf("admin open: %+v actor=%q warms=%v", entries, actor, dash.warms)
+	}
+	// admin:<sub> is in no actors.allow, yet the admin's open is claimed.
+	if list := []sessions.Session{{ID: res.GetThreadId()}}; store.Tainted(ctx, list) != nil || list[0].Tainted {
+		t.Fatal("an untainted admin open tainted the thread")
 	}
 	// An existing thread over capacity is not archived by Open.
 	dash.warmErr = connect.NewError(connect.CodeResourceExhausted, errors.New("at capacity"))
