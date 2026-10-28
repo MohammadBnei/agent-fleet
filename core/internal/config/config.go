@@ -187,10 +187,31 @@ type Config struct {
 	GarageFilesBucket    string
 	GarageFilesAccessKey string
 	GarageFilesSecret    string
+
+	// Version is the release this binary runs as (FLEET_VERSION, set by deploy on the Deployment); "" = dev.
+	Version string
+	// ClaudeModel is the operator's model override for a repo session whose creator named none (CLAUDE_MODEL,
+	// docs/adr/0077); "" stores NULL and Claude Code picks.
+	ClaudeModel string
+	// TokenEnv reads the variable a registered client's tokenRef names (docs/adr/0066 §3): the names come from
+	// the synced definitions, so they are read by name at match time, through the same getenv.
+	TokenEnv func(string) string
 }
 
-func Load() Config {
+// FromProcess is core's configuration from its environment: the one call that reads it.
+func FromProcess() Config { return Load(os.Getenv) }
+
+// Load is core's configuration from getenv (mountain plan/15 §5: one Config per binary, the environment read only
+// here; FromProcess passes os.Getenv, a test a map). A value that does not parse falls back to its default, as
+// before: see envDurationOr.
+func Load(getenv func(string) string) Config {
+	env := func(key, fallback string) string { return envOr(getenv, key, fallback) }
+	envInt := func(key string, fallback int) int { return envIntOr(getenv, key, fallback) }
+	envDuration := func(key string, fallback time.Duration) time.Duration { return envDurationOr(getenv, key, fallback) }
 	return Config{
+		Version:               getenv("FLEET_VERSION"),
+		ClaudeModel:           getenv("CLAUDE_MODEL"),
+		TokenEnv:              getenv,
 		Port:                  env("CORE_PORT", "8080"),
 		GRPCPort:              env("CORE_GRPC_PORT", "9090"),
 		MetricsPort:           env("CORE_METRICS_PORT", "9093"),
@@ -200,43 +221,43 @@ func Load() Config {
 		DBPort:                envInt("AGENTFLEET_DB_PORT", 5432),
 		DBName:                env("AGENTFLEET_DB_NAME", "agentfleetdb"),
 		DBUser:                env("AGENTFLEET_DB_USER", "dbuser_agentfleet"),
-		DBPassword:            os.Getenv("AGENTFLEET_DB_PASSWORD"),
-		DiscordBotToken:       os.Getenv("DISCORD_BOT_TOKEN"),
-		DiscordTriggerChannel: os.Getenv("DISCORD_TRIGGER_CHANNEL_ID"),
-		AlertWebhookToken:     os.Getenv("ALERT_WEBHOOK_TOKEN"),
-		ProvisionerToken:      os.Getenv("FLEET_PROVISIONER_TOKEN"),
-		CoreProvisionerToken:  os.Getenv("FLEET_CORE_PROVISIONER_TOKEN"),
-		ThotDiscordChannel:    os.Getenv("THOT_DISCORD_CHANNEL_ID"),
+		DBPassword:            getenv("AGENTFLEET_DB_PASSWORD"),
+		DiscordBotToken:       getenv("DISCORD_BOT_TOKEN"),
+		DiscordTriggerChannel: getenv("DISCORD_TRIGGER_CHANNEL_ID"),
+		AlertWebhookToken:     getenv("ALERT_WEBHOOK_TOKEN"),
+		ProvisionerToken:      getenv("FLEET_PROVISIONER_TOKEN"),
+		CoreProvisionerToken:  getenv("FLEET_CORE_PROVISIONER_TOKEN"),
+		ThotDiscordChannel:    getenv("THOT_DISCORD_CHANNEL_ID"),
 		ThotRepo:              env("THOT_REPO", "infra-bootstrap"),
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
 		PrometheusURL:         env("PROMETHEUS_URL", "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		STTAddr:               env("STT_ADDR", "ukubi-stt.ukubi-stt.svc.cluster.local:9090"),
-		STTToken:              os.Getenv("STT_TOKEN_FLEET"),
+		STTToken:              getenv("STT_TOKEN_FLEET"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxDefinitionSessions: envInt("MAX_DEFINITION_SESSIONS", 0),
 		MaxExternalSessions:   envInt("MAX_EXTERNAL_SESSIONS", 0),
 		MaxSessionsPerMember:  envInt("MAX_SESSIONS_PER_MEMBER", 1),
-		RepoOverridesPath:     os.Getenv("FLEET_REPO_OVERRIDES"),
+		RepoOverridesPath:     getenv("FLEET_REPO_OVERRIDES"),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,
 		TurnStall:             time.Duration(envInt("TURN_STALL_MS", 90*1000)) * time.Millisecond,
 		SessionRetention:      envDuration("SESSION_RETENTION", 10*24*time.Hour),
-		DashboardPublicURL:    os.Getenv("DASHBOARD_PUBLIC_URL"),
-		OIDCIssuerURL:         os.Getenv("OIDC_ISSUER_URL"),
-		OIDCClientID:          os.Getenv("OIDC_CLIENT_ID"),
-		OIDCClientSecret:      os.Getenv("OIDC_CLIENT_SECRET"),
-		SessionKeys:           os.Getenv("FLEET_SESSION_KEYS"),
-		AuthDisabled:          os.Getenv("FLEET_AUTH_DISABLED") == "1",
+		DashboardPublicURL:    getenv("DASHBOARD_PUBLIC_URL"),
+		OIDCIssuerURL:         getenv("OIDC_ISSUER_URL"),
+		OIDCClientID:          getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret:      getenv("OIDC_CLIENT_SECRET"),
+		SessionKeys:           getenv("FLEET_SESSION_KEYS"),
+		AuthDisabled:          getenv("FLEET_AUTH_DISABLED") == "1",
 		GarageS3Endpoint:      env("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
 		GarageFilesBucket:     env("GARAGE_FILES_BUCKET", "agent-fleet-files"),
-		GarageFilesAccessKey:  os.Getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
-		GarageFilesSecret:     os.Getenv("AGENTFLEET_FILES_S3_SECRET"),
+		GarageFilesAccessKey:  getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
+		GarageFilesSecret:     getenv("AGENTFLEET_FILES_S3_SECRET"),
 		Bridge: bridgeclient.Config{
-			URL:          os.Getenv("BRIDGE_URL"),
-			TokenURL:     os.Getenv("BRIDGE_TOKEN_URL"),
-			AuthHost:     os.Getenv("BRIDGE_AUTH_HOST"),
+			URL:          getenv("BRIDGE_URL"),
+			TokenURL:     getenv("BRIDGE_TOKEN_URL"),
+			AuthHost:     getenv("BRIDGE_AUTH_HOST"),
 			ClientID:     env("BRIDGE_CLIENT_ID", "ukubi-bridge-api"),
 			Username:     env("BRIDGE_USERNAME", "bridge-core"),
 			PasswordFile: env("BRIDGE_PASSWORD_FILE", "/etc/bridge-core/app_password"),
@@ -244,15 +265,15 @@ func Load() Config {
 	}
 }
 
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
+func envOr(getenv func(string) string, key, fallback string) string {
+	if v := getenv(key); v != "" {
 		return v
 	}
 	return fallback
 }
 
-func envInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
+func envIntOr(getenv func(string) string, key string, fallback int) int {
+	if v := getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
@@ -260,7 +281,7 @@ func envInt(key string, fallback int) int {
 	return fallback
 }
 
-// envDuration reads a Go duration string, extended with the `d` (day) unit
+// envDurationOr reads a Go duration string, extended with the `d` (day) unit
 // that time.ParseDuration lacks: "6d" is 144h. Retention is argued in days by
 // everyone who touches it, so it is configured in days — a window nobody can
 // read off the value is a window nobody reviews.
@@ -280,8 +301,8 @@ func envInt(key string, fallback int) int {
 // strconv.Atoi is perfectly happy to read, would reclaim the whole fleet's
 // disk on the next 60s tick instead of nothing. Falling back to the compiled
 // default is the only safe reading of a duration nobody meant.
-func envDuration(key string, fallback time.Duration) time.Duration {
-	v := os.Getenv(key)
+func envDurationOr(getenv func(string) string, key string, fallback time.Duration) time.Duration {
+	v := getenv(key)
 	if v == "" {
 		return fallback
 	}

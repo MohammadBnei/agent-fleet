@@ -22,10 +22,10 @@ import (
 var version = "dev"
 
 func main() {
-	if v := os.Getenv("FLEET_VERSION"); v != "" {
-		version = v
+	cfg := config.FromProcess()
+	if cfg.Version != "" {
+		version = cfg.Version
 	}
-	cfg := config.Load()
 
 	// JSON, not slog's default TextHandler — Loki/LogQL queries against
 	// this fleet expect structured logs (same convention the TS services'

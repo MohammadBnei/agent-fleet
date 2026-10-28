@@ -51,7 +51,7 @@ func TestGrants_RememberedAllow(t *testing.T) {
 		return seq
 	}
 	g := grants.NewStore(pool)
-	s := NewServer(store, nil, transcr, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	s := NewServer(store, nil, transcr, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")
 	s.SetGrants(g)
 	respond := func(id string, seq int64, decision, scope, form string) error {
 		_, err := s.RespondToPermission(ctx, connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{

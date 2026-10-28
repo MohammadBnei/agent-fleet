@@ -39,7 +39,7 @@ func TestDecisions(t *testing.T) {
 		Model:     &definitions.Model{Default: "claude-opus-5", Allow: []string{"claude-opus-5"}},
 		Mode:      &definitions.Mode{Default: "auto", Allow: []string{"auto", "plan"}},
 	}
-	dash := dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
+	dash := dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")
 	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
 	as := func(sub string, groups ...string) context.Context {
 		id := auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}

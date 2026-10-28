@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 
@@ -24,8 +23,8 @@ const minTokenBytes = 32
 // holding one or two comma-separated tokens of at least 32 bytes. The bearer
 // is compared in constant time against every enabled token, with no early
 // exit. No cookie is read here.
-func ClientInterceptor(clients func() []definitions.Client) connect.Interceptor {
-	return &clientAuth{clients: clients, getenv: os.Getenv}
+func ClientInterceptor(clients func() []definitions.Client, getenv func(string) string) connect.Interceptor {
+	return &clientAuth{clients: clients, getenv: getenv}
 }
 
 type clientAuth struct {

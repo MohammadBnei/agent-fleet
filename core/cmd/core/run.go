@@ -298,7 +298,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions, MaxExternal: cfg.MaxExternalSessions, MaxPerMember: cfg.MaxSessionsPerMember}, loki, prom, scheduleStore, version)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions, MaxExternal: cfg.MaxExternalSessions, MaxPerMember: cfg.MaxSessionsPerMember}, loki, prom, scheduleStore, version, cfg.ClaudeModel)
 	dashboardSvc.SetDefinitions(defs)
 	packStore := packs.NewStore(pool)
 	defs.SetOnFiles(packStore.OnDefinitionFiles)
@@ -455,7 +455,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	}
 	clientMux := http.NewServeMux()
 	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), connect.WithInterceptors(
-		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList)))
+		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
 	clientMux.Handle(agentPath, clientHandler)
 	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {

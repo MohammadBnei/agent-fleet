@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 	"slices"
 	"time"
@@ -64,6 +63,9 @@ type Server struct {
 	// version is core's own build, stamped in via -ldflags (cmd/core/main.go).
 	// It covers the dashboard SPA too — that is compiled into this binary.
 	version string
+	// model is the operator's override for a repo session whose creator named none (config.ClaudeModel,
+	// CLAUDE_MODEL): "" stores NULL, so Claude Code picks (docs/adr/0077).
+	model string
 
 	// fileDiffs is where GetFileDiff parks a request for the sidecar's next
 	// telemetry tick to pick up. nil disables the RPC (it answers NO_POD),
@@ -98,8 +100,8 @@ func (s *Server) SetEventOpener(f func(ctx context.Context, p *proposals.Proposa
 	s.openEvent = f
 }
 
-func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
-	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, files: files, hub: hub, caps: caps, loki: loki, prom: prom, schedules: scheduleStore, version: version}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version, model string) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, files: files, hub: hub, caps: caps, loki: loki, prom: prom, schedules: scheduleStore, version: version, model: model}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -211,7 +213,7 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 	// model comes from the definition, and that one leaves it to Claude Code.
 	switch {
 	case model == "" && head == nil:
-		model = fallbackModel()
+		model = s.fallbackModel()
 	case model != "" && !isValidModel(model):
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
 	}
@@ -363,7 +365,7 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// No permission mode: a proposal-opened session takes the column default,
 	// "auto" (docs/adr/0061) — so this body runs unattended except `rm`/`sudo`.
 	// That was a deliberate call, ADR records the prompt-injection trade-off.
-	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: fallbackModel()})
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: s.fallbackModel()})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -527,8 +529,8 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 // CLAUDE_MODEL, the operator's override, or "" — stored as NULL, so the worker
 // passes no model and Claude Code picks (docs/adr/0077). The fleet used to pin
 // claude-opus-5-5 here. Shared by CreateSession and OpenFromProposal.
-func fallbackModel() string {
-	return os.Getenv("CLAUDE_MODEL")
+func (s *Server) fallbackModel() string {
+	return s.model
 }
 
 // defaultModelOf is a definition's model.default, "" when it sets no model

@@ -179,8 +179,8 @@ func createDef(s *Server, name string, mut func(*agentfleetv1.CreateSessionReque
 }
 
 func TestCreateSession_Definition(t *testing.T) {
-	t.Setenv("CLAUDE_MODEL", "claude-sonnet-5")
 	s, _, _, _ := newDefinitionsServer(t)
+	s.model = "claude-sonnet-5" // CLAUDE_MODEL, the operator's override
 
 	for _, tc := range []struct {
 		name string

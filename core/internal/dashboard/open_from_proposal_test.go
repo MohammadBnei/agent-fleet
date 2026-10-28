@@ -24,7 +24,6 @@ import (
 // proposal-opened session stores no model, the worker passes none, and Claude
 // Code picks — the same as a dashboard-created one. Asserts the row, not the call.
 func TestOpenFromProposal_StoresNoModelAndAutoMode(t *testing.T) {
-	t.Setenv("CLAUDE_MODEL", "")
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 
