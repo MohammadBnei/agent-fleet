@@ -33,11 +33,17 @@ const (
 // starts. Only a required key, one the app cannot run without, refuses the
 // start. The provisioner has one: FLEET_CORE_PROVISIONER_TOKEN, which
 // cmd/provisioner hands to grpcserver.NewGRPCServer rather than Load checking it.
+// A security setting fails closed whatever its optionality: a malformed
+// FLEET_GIT_URL_REWRITE refuses the start too (see GitURLRewrite).
+//
+// A value that is printed in a warning or a refusal is printed by shown: one
+// containing "@" may hold credentials and is not echoed.
 type Config struct {
 	// Warnings is one line per optional variable that was set but invalid and
-	// was replaced by its default (or, for FLEET_GIT_URL_REWRITE, dropped), each
-	// naming the variable and the rule. Load fills it; cmd/provisioner logs each
-	// once the log handler exists. Not read from the environment.
+	// was replaced by its default (or, for FLEET_GIT_URL_REWRITE against the
+	// production vault, dropped), each naming the variable and the rule. Load
+	// fills it; cmd/provisioner logs each, whatever LOG_LEVEL is. Not read from
+	// the environment.
 	Warnings []string
 
 	// Namespace is the namespace session pods and shared instances live in
@@ -167,9 +173,11 @@ type Config struct {
 	GitAuthorEmail string
 	// GitURLRewrite is the forge every worker's `https://github.com/`
 	// rewrites to, on the offline local stack (docs/adr/0080 §2,
-	// FLEET_GIT_URL_REWRITE). Unset in production. A malformed value, or one
-	// set while the Agent Vault address is production's, warns and is dropped
-	// (left ""): no rewrite, which is the safe side.
+	// FLEET_GIT_URL_REWRITE). Unset in production. It contains the local
+	// stack (without it a worker pushes to the real github.com through the
+	// vault), so a MALFORMED value refuses the start: Load returns the error.
+	// One set while the Agent Vault address is production's warns and is
+	// dropped (left ""), which is exactly production's behaviour.
 	GitURLRewrite string
 	// Version is the release this binary runs as (FLEET_VERSION, set by
 	// deploy on the Deployment, read raw). "" means a build deploy did not
@@ -190,12 +198,12 @@ func FromProcess() (Config, error) { return Load(os.Getenv) }
 // Load is the provisioner's configuration from getenv (FromProcess passes
 // os.Getenv, a test a map). An optional variable that is set but invalid does
 // not fail the load: a line naming the variable and the rule goes to
-// Config.Warnings and the variable takes its default (a malformed or
-// misplaced FLEET_GIT_URL_REWRITE is dropped), in field order, then the
-// rewrite's. The error is for a required variable that is missing or unusable;
-// the provisioner has none that Load checks today (FLEET_CORE_PROVISIONER_TOKEN
-// is refused by cmd/provisioner), so it is nil, and the signature stays so that
-// the next required key has somewhere to go.
+// Config.Warnings and the variable takes its default (a FLEET_GIT_URL_REWRITE
+// set against the production vault is dropped), in field order, then the
+// rewrite's. The error is for what must stop the start: a malformed
+// FLEET_GIT_URL_REWRITE, a setting that contains the local stack and so fails
+// closed. FLEET_CORE_PROVISIONER_TOKEN, the one required key, is refused by
+// cmd/provisioner, not here.
 func Load(getenv func(string) string) (Config, error) {
 	env := func(key, fallback string) string { return envOr(getenv, key, fallback) }
 	var warnings []string
@@ -209,7 +217,7 @@ func Load(getenv func(string) string) (Config, error) {
 	pvcSize := func() string {
 		v := env("SHARED_INSTANCE_PVC_SIZE", defaultSharedInstancePVCSize)
 		if err := checkQuantity(v); err != nil {
-			warnings = append(warnings, fmt.Sprintf("SHARED_INSTANCE_PVC_SIZE must be a positive Kubernetes quantity (e.g. 2Gi), got %q: %v; using the default %s", v, err, defaultSharedInstancePVCSize))
+			warnings = append(warnings, fmt.Sprintf("SHARED_INSTANCE_PVC_SIZE must be a positive Kubernetes quantity (e.g. 2Gi), got %q: %v; using the default %s", shown(v), err, defaultSharedInstancePVCSize))
 			return defaultSharedInstancePVCSize
 		}
 		return v
@@ -258,12 +266,15 @@ func Load(getenv func(string) string) (Config, error) {
 		ClaudeModel:               getenv("CLAUDE_MODEL"),
 		MaxTurns:                  getenv("MAX_TURNS"),
 	}
-	if err := c.rewriteProblem(); err != nil {
+	var errs []error
+	if err := c.rewriteMalformed(); err != nil {
+		errs = append(errs, err)
+	} else if err := c.rewriteOnProductionVault(); err != nil {
 		warnings = append(warnings, err.Error()+"; ignored")
 		c.GitURLRewrite = ""
 	}
 	c.Warnings = warnings
-	return c, nil
+	return c, errors.Join(errs...)
 }
 
 // durationText is d as an operator writes it: 12h, not 12h0m0s.
@@ -298,36 +309,41 @@ func checkQuantity(s string) error {
 	return nil
 }
 
-// rewriteProblem says why the local stack's rewrite cannot be used
-// (docs/adr/0080), or is nil: it sends every worker's GitHub traffic
-// elsewhere, so it is not used against the production vault, matched by host
-// name. The production deployment sets no AGENT_VAULT_* and takes its
-// Infisical project whole, so a stray key must not be enough. Load drops the
-// rewrite on a problem. Defence in depth: the vault injects GitHub credentials
-// for github.com only, never for the rewritten host.
-func (c Config) rewriteProblem() error {
+// rewriteMalformed is the refusal of a FLEET_GIT_URL_REWRITE that is no
+// http(s) URL with a host, no user info and a trailing /, or nil (docs/adr/0080).
+// The rewrite contains the local stack: dropped, a worker would push to the
+// real github.com through the vault while the provisioner's own insteadOf
+// (local/kind/40-provisioner.yaml) still reads the raw value. So it fails closed.
+func (c Config) rewriteMalformed() error {
 	if c.GitURLRewrite == "" {
 		return nil
 	}
 	u, err := url.Parse(c.GitURLRewrite)
-	switch {
-	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || !strings.HasSuffix(u.Path, "/"):
-		return fmt.Errorf("FLEET_GIT_URL_REWRITE %q must be an http(s) URL with a host, no user info and a trailing /", redactedURL(c.GitURLRewrite, u, err))
-	case productionVault(c.AgentVaultAPI) || productionVault(c.AgentVaultProxy):
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || !strings.HasSuffix(u.Path, "/") {
+		return fmt.Errorf("FLEET_GIT_URL_REWRITE %q must be an http(s) URL with a host, no user info and a trailing /", shown(c.GitURLRewrite))
+	}
+	return nil
+}
+
+// rewriteOnProductionVault says why a well-formed rewrite cannot be used: it
+// sends every worker's GitHub traffic elsewhere, so it is not used against the
+// production vault, matched by host name. The production deployment sets no
+// AGENT_VAULT_* and takes its Infisical project whole, so a stray key must not
+// be enough. Load drops the rewrite (production's behaviour), with a warning.
+// Defence in depth: the vault injects GitHub credentials for github.com only,
+// never for the rewritten host.
+func (c Config) rewriteOnProductionVault() error {
+	if c.GitURLRewrite != "" && (productionVault(c.AgentVaultAPI) || productionVault(c.AgentVaultProxy)) {
 		return errors.New("FLEET_GIT_URL_REWRITE is set while the Agent Vault address is production's: it is for the local stack only (docs/adr/0080)")
 	}
 	return nil
 }
 
-// redactedURL is raw as a warning may print it: a URL that parses and carries
-// user info goes through url.Redacted (the password is hidden); one that does
-// not parse and contains "@" might hold credentials and is not echoed at all.
-func redactedURL(raw string, u *url.URL, parseErr error) string {
-	switch {
-	case parseErr != nil && strings.Contains(raw, "@"):
+// shown is raw as a warning or a refusal may print it: a value containing "@"
+// might hold credentials (user info, whatever its form) and is not echoed.
+func shown(raw string) string {
+	if strings.Contains(raw, "@") {
 		return "<redacted: contains @>"
-	case parseErr == nil && u.User != nil:
-		return u.Redacted()
 	}
 	return raw
 }
@@ -381,11 +397,11 @@ func envMillis(getenv func(string) string, key string, fallback time.Duration) (
 	ms, err := strconv.ParseInt(raw, 10, 64)
 	switch {
 	case err != nil && errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(raw, "-"):
-		return fallback, fmt.Errorf("%s must be a positive integer (milliseconds) no larger than %d, got %q", key, maxMillis, raw)
+		return fallback, fmt.Errorf("%s must be a positive integer (milliseconds) no larger than %d, got %q", key, maxMillis, shown(raw))
 	case err != nil || ms <= 0:
-		return fallback, fmt.Errorf("%s must be a positive integer (milliseconds), got %q", key, raw)
+		return fallback, fmt.Errorf("%s must be a positive integer (milliseconds), got %q", key, shown(raw))
 	case ms > maxMillis:
-		return fallback, fmt.Errorf("%s must be a positive integer (milliseconds) no larger than %d, got %q", key, maxMillis, raw)
+		return fallback, fmt.Errorf("%s must be a positive integer (milliseconds) no larger than %d, got %q", key, maxMillis, shown(raw))
 	}
 	return time.Duration(ms) * time.Millisecond, nil
 }

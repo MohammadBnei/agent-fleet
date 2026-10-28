@@ -836,9 +836,12 @@ required (below); it is the only key whose absence stops the start. Every
 other variable is optional: one that is set but invalid
 (`RECONCILE_INTERVAL_MS` and `SHARED_INSTANCE_IDLE_TIMEOUT_MS` not a positive
 integer of milliseconds, `SHARED_INSTANCE_PVC_SIZE` not a positive Kubernetes
-quantity, `FLEET_GIT_URL_REWRITE` malformed or set against the production
-vault) logs a WARN naming the variable and the rule, takes its default (the
-rewrite is dropped: no rewrite) and the process starts.
+quantity) logs a WARN naming the variable and the rule, takes its default and
+the process starts; the WARN shows at any `LOG_LEVEL`, and a value containing
+`@` is never echoed. One exception, because it is containment rather than
+tuning: a *malformed* `FLEET_GIT_URL_REWRITE` refuses the start (dropped, a
+kind worker would push to the real github.com through the vault); set against
+the production vault it warns and is dropped, which is production's behaviour.
 
 #### SSH access
 

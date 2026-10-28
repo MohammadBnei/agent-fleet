@@ -318,7 +318,7 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 func withGitURLRewrite(env []corev1.EnvVar, rewrite, sessionID string) []corev1.EnvVar {
 	u, err := url.Parse(rewrite)
 	if err != nil {
-		return env // config.Load drops a malformed rewrite, so this is not reached from a Config
+		return env // config.Load refuses a malformed rewrite, so this is not reached from a Config
 	}
 	u.User = url.UserPassword(sessionID, "x")
 	n, found := 0, false

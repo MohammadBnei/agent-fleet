@@ -41,57 +41,86 @@ func TestNodeSelectorMap(t *testing.T) {
 	}
 }
 
-// docs/adr/0080: the local stack's rewrite is not used where it could do harm: a malformed one, or one set while the
-// Agent Vault address is production's, warns (naming the variable and the rule, ending "; ignored") and is dropped, so
-// no worker's GitHub traffic is rewritten. The production vault is matched by host, whatever form the address takes.
-// A good one loads with no warning and is kept.
+// docs/adr/0080: FLEET_GIT_URL_REWRITE contains the local stack, so it fails closed. A MALFORMED value refuses the start
+// (Load's error names the variable and the rule; a dropped rewrite would send kind workers to the real github.com). One
+// set while the Agent Vault address is production's warns ("...; ignored") and is dropped, which is production's own
+// behaviour. The production vault is matched by host, whatever form the address takes. A good one loads clean and is
+// kept. No message echoes a value containing "@".
 func TestLoad_GitURLRewrite(t *testing.T) {
 	const localAPI, localProxy = "http://agent-vault-local.agent-fleet.svc.cluster.local:14321", "agent-vault-local.agent-fleet.svc.cluster.local:14322"
+	local := func(rewrite string) map[string]string {
+		return map[string]string{"FLEET_GIT_URL_REWRITE": rewrite, "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy}
+	}
 	for _, tc := range []struct {
-		name    string
-		env     map[string]string
-		problem string // substring of the one warning; "" = loads clean and keeps the rewrite
+		name   string
+		env    map[string]string
+		refuse string // substring of the error; "" = no error
+		warn   string // substring of the one warning; "" = no warning
 	}{
-		{"production, nothing set", map[string]string{}, ""},
-		{"local stack", map[string]string{"FLEET_GIT_URL_REWRITE": "http://host.docker.internal:7480/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy}, ""},
-		{"rewrite against the production vault", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/"},
+		{"production, nothing set", map[string]string{}, "", ""},
+		{"local stack", local("http://host.docker.internal:7480/"), "", ""},
+		{"rewrite against the production vault", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/"}, "",
 			"FLEET_GIT_URL_REWRITE is set while the Agent Vault address is production's: it is for the local stack only (docs/adr/0080); ignored"},
 		{"rewrite against a production vault spelled with a slash", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/", "AGENT_VAULT_API_ADDR": "http://agent-vault.agent-vault.svc:14321/", "AGENT_VAULT_PROXY_ADDR": localProxy},
-			"it is for the local stack only"},
+			"", "it is for the local stack only"},
 		{"rewrite against the production proxy", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": "agent-vault.agent-vault:14322"},
-			"it is for the local stack only"},
-		{"rewrite with user info", map[string]string{"FLEET_GIT_URL_REWRITE": "http://u:p@forge:7480/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
-			`must be an http(s) URL with a host, no user info and a trailing /; ignored`},
-		{"rewrite with a password in its user info", map[string]string{"FLEET_GIT_URL_REWRITE": "http://u:hunter2@forge/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
-			`FLEET_GIT_URL_REWRITE "http://u:xxxxx@forge/" must be an http(s) URL`},
-		{"rewrite that does not parse and holds an @", map[string]string{"FLEET_GIT_URL_REWRITE": "http://u:hunter2@forge:bad/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
-			`FLEET_GIT_URL_REWRITE "<redacted: contains @>" must be an http(s) URL`},
-		{"rewrite without a trailing slash", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
-			`FLEET_GIT_URL_REWRITE "http://forge:7480" must be an http(s) URL`},
-		{"rewrite that is not http", map[string]string{"FLEET_GIT_URL_REWRITE": "file:///tmp/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
-			`FLEET_GIT_URL_REWRITE "file:///tmp/" must be an http(s) URL`},
+			"", "it is for the local stack only"},
+		{"rewrite with user info", local("http://u:p@forge:7480/"), `FLEET_GIT_URL_REWRITE "<redacted: contains @>" must be an http(s) URL with a host, no user info and a trailing /`, ""},
+		{"rewrite with a password in its user info", local("http://u:hunter2@forge/"), `FLEET_GIT_URL_REWRITE "<redacted: contains @>" must be an http(s) URL`, ""},
+		{"rewrite with no scheme and a password", local("u:hunter2@c:4318"), `FLEET_GIT_URL_REWRITE "<redacted: contains @>" must be an http(s) URL`, ""},
+		{"rewrite that does not parse and holds an @", local("http://u:hunter2@forge:bad/"), `FLEET_GIT_URL_REWRITE "<redacted: contains @>" must be an http(s) URL`, ""},
+		{"rewrite without a trailing slash", local("http://forge.local"), `FLEET_GIT_URL_REWRITE "http://forge.local" must be an http(s) URL`, ""},
+		{"rewrite that is not http", local("file:///tmp/"), `FLEET_GIT_URL_REWRITE "file:///tmp/" must be an http(s) URL`, ""},
+		{"malformed, and against the production vault, is the refusal", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge"}, `FLEET_GIT_URL_REWRITE "http://forge" must be an http(s) URL`, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := Load(func(k string) string { return tc.env[k] })
+			all := strings.Join(c.Warnings, "\n")
 			if err != nil {
-				t.Fatalf("an optional key refused the start: %v", err)
+				all += "\n" + err.Error()
 			}
-			if tc.problem == "" {
-				if len(c.Warnings) != 0 || c.GitURLRewrite != tc.env["FLEET_GIT_URL_REWRITE"] {
-					t.Errorf("good value: warnings %q, rewrite %q, want none and %q", c.Warnings, c.GitURLRewrite, tc.env["FLEET_GIT_URL_REWRITE"])
+			if strings.Contains(all, "hunter2") {
+				t.Errorf("a message echoes the password: %q", all)
+			}
+			switch {
+			case tc.refuse != "":
+				if err == nil || !strings.Contains(err.Error(), tc.refuse) {
+					t.Errorf("error %v, want it to contain %q", err, tc.refuse)
 				}
-				return
-			}
-			if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], tc.problem) || !strings.HasSuffix(c.Warnings[0], "; ignored") {
-				t.Errorf("warnings %q, want one containing %q and ending \"; ignored\"", c.Warnings, tc.problem)
-			}
-			if c.GitURLRewrite != "" {
-				t.Errorf("the rewrite was kept: %q", c.GitURLRewrite)
-			}
-			if strings.Contains(strings.Join(c.Warnings, "\n"), "hunter2") {
-				t.Errorf("a warning echoes the password: %q", c.Warnings)
+				if len(c.Warnings) != 0 {
+					t.Errorf("a refusal also warned: %q", c.Warnings)
+				}
+			case tc.warn != "":
+				if err != nil {
+					t.Errorf("refused: %v", err)
+				}
+				if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], tc.warn) || !strings.HasSuffix(c.Warnings[0], "; ignored") {
+					t.Errorf("warnings %q, want one containing %q and ending \"; ignored\"", c.Warnings, tc.warn)
+				}
+				if c.GitURLRewrite != "" {
+					t.Errorf("the rewrite was kept: %q", c.GitURLRewrite)
+				}
+			default:
+				if err != nil || len(c.Warnings) != 0 || c.GitURLRewrite != tc.env["FLEET_GIT_URL_REWRITE"] {
+					t.Errorf("good value: err %v, warnings %q, rewrite %q, want none and %q", err, c.Warnings, c.GitURLRewrite, tc.env["FLEET_GIT_URL_REWRITE"])
+				}
 			}
 		})
+	}
+}
+
+// A value containing "@" is not echoed by the other warnings either.
+func TestLoad_WarningsNeverEchoAnAt(t *testing.T) {
+	for _, key := range []string{"RECONCILE_INTERVAL_MS", "SHARED_INSTANCE_IDLE_TIMEOUT_MS", "SHARED_INSTANCE_PVC_SIZE"} {
+		c, err := Load(func(k string) string {
+			if k == key {
+				return "u:hunter2@c"
+			}
+			return ""
+		})
+		if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], key) || !strings.Contains(c.Warnings[0], "<redacted: contains @>") || strings.Contains(c.Warnings[0], "hunter2") {
+			t.Errorf("%s: %v, %q", key, err, c.Warnings)
+		}
 	}
 }
 
@@ -142,14 +171,24 @@ func TestLoad(t *testing.T) {
 		t.Errorf("unset: %+v, %v; want the defaults %+v", c, err, defaults)
 	}
 
-	// An optional key that is invalid is not a refusal: the Config comes back with a warning, and no error.
+	// An optional key that is invalid is not a refusal: the Config comes back with a warning, and no error. A malformed
+	// rewrite is: the error, and the Config with it.
+	c, err = Load(func(k string) string {
+		if k == "SHARED_INSTANCE_PVC_SIZE" {
+			return "garbage"
+		}
+		return ""
+	})
+	if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "SHARED_INSTANCE_PVC_SIZE") || c.SharedInstancePVCSize != "2Gi" {
+		t.Errorf("a bad size: %+v, %v", c, err)
+	}
 	c, err = Load(func(k string) string {
 		if k == "FLEET_GIT_URL_REWRITE" {
 			return "ftp://x"
 		}
 		return ""
 	})
-	if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "FLEET_GIT_URL_REWRITE") || c.GitURLRewrite != "" {
+	if err == nil || !strings.Contains(err.Error(), "FLEET_GIT_URL_REWRITE") || len(c.Warnings) != 0 {
 		t.Errorf("a bad rewrite: %+v, %v", c, err)
 	}
 }
@@ -216,15 +255,14 @@ func TestLoad_Durations(t *testing.T) {
 		}
 	}
 
-	// Both bad, and a third problem: one warning each, in field order, and the other variable's value is not lost.
+	// Both bad, and a malformed rewrite: a warning each for the durations, in field order, and the rewrite's refusal.
 	c, err := Load(func(k string) string {
 		return map[string]string{"RECONCILE_INTERVAL_MS": "abc", "SHARED_INSTANCE_IDLE_TIMEOUT_MS": "-1", "FLEET_GIT_URL_REWRITE": "ftp://x"}[k]
 	})
-	if err != nil {
-		t.Fatalf("three bad optional variables refused the start: %v", err)
+	if err == nil || !strings.HasPrefix(err.Error(), "FLEET_GIT_URL_REWRITE") {
+		t.Fatalf("a malformed rewrite did not refuse: %v", err)
 	}
-	if len(c.Warnings) != 3 || !strings.HasPrefix(c.Warnings[0], "RECONCILE_INTERVAL_MS must be") ||
-		!strings.HasPrefix(c.Warnings[1], "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be") || !strings.HasPrefix(c.Warnings[2], "FLEET_GIT_URL_REWRITE") {
+	if len(c.Warnings) != 2 || !strings.HasPrefix(c.Warnings[0], "RECONCILE_INTERVAL_MS must be") || !strings.HasPrefix(c.Warnings[1], "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be") {
 		t.Errorf("warnings:\n%q", c.Warnings)
 	}
 	if c, _ := Load(func(k string) string {

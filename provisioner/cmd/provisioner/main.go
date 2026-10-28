@@ -35,9 +35,9 @@ var version = "dev"
 
 func main() {
 	// The environment is read here and nowhere else (internal/config). Its
-	// refusals, of a required key, are held until after the token refusal
-	// below; its warnings, for an optional key that was set but invalid and
-	// took its default, are logged as soon as the log handler exists.
+	// refusals (a malformed FLEET_GIT_URL_REWRITE) are held until after the
+	// token refusal below; its warnings, for an optional key that was set but
+	// invalid and took its default, are logged as soon as the handler exists.
 	cfg, cfgErr := config.FromProcess()
 	if cfg.Version != "" {
 		version = cfg.Version
@@ -52,8 +52,11 @@ func main() {
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
+	// Whatever LOG_LEVEL is: LOG_LEVEL=error must not hide that a value was
+	// ignored. Same stdout, same JSON, a handler of its own at warn.
+	warnLog := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	for _, w := range cfg.Warnings {
-		slog.Warn(w)
+		warnLog.Warn(w)
 	}
 	slog.Info("provisioner starting", "version", version)
 
@@ -65,8 +68,9 @@ func main() {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
 	}
-	// A required key that is missing or unusable. Load has none today (the
-	// core token above is refused by grpcserver), so this does not fire yet.
+	// What Load refuses: a malformed FLEET_GIT_URL_REWRITE (docs/adr/0080), a
+	// setting that contains the local stack and so fails closed. (The one
+	// required key, the core token, is refused above.)
 	if cfgErr != nil {
 		slog.Error("refusing to start", "error", cfgErr)
 		os.Exit(1)

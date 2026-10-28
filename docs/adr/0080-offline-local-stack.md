@@ -96,9 +96,13 @@ passes unchanged.
   the clone's origin. The provisioner appends `FLEET_GIT_URL_REWRITE` to
   every pod's `GIT_CONFIG_*`, with the session id as the URL's user name: the forge challenges a push (401), takes any credentials, and
   records the user name as `who`, so each push names its session. The
-  provisioner ignores the variable (a WARN, and no rewrite) while its vault
-  address is the production default. It refused to start until the owner's
-  rule of 2026-10-28: an invalid optional value warns and takes its default.
+  provisioner ignores the variable (a WARN, and no rewrite, which is
+  production's behaviour) while its vault address is the production default.
+  A *malformed* value still refuses the start: it contains the local stack,
+  and dropped it would send workers to the real github.com through the vault
+  while the provisioner's own `insteadOf` reads the raw value. The owner's
+  rule of 2026-10-28 (an invalid optional value warns and takes its default)
+  does not reach a security setting. No message echoes a value containing `@`.
 - The forge is plain HTTP, so the vault proxy never sees a push, and the
   vault's per-repo path scoping, which confines a push-mode pod to its repo
   in production, does not apply: the forge takes any repo and branch.
@@ -181,7 +185,8 @@ stack.
 - The game's definition sessions run offline, on the code paths production
   runs, with no real secret in a pod; `/kind-local` works again.
 - The fleet code is one provisioner env var, `FLEET_GIT_URL_REWRITE`,
-  ignored against the production vault, and the owner vault's file fallback.
+  refused when malformed, ignored against the production vault, and the owner
+  vault's file fallback.
 - Repo and definition sessions both run offline.
 - Offline, nothing confines a pod's push to its repo and branch; the forge
   records every push.

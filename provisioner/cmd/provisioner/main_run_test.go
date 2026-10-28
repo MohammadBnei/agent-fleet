@@ -54,8 +54,9 @@ func TestMain_Refusals(t *testing.T) {
 		{"no token", []string{"FLEET_VERSION=v9.1"}, []string{`"provisioner starting","version":"v9.1"`, "FLEET_CORE_PROVISIONER_TOKEN is unset or shorter than 32 bytes"}},
 		{"no release is dev", nil, []string{`"version":"dev"`, "FLEET_CORE_PROVISIONER_TOKEN"}},
 		{"bad level warns, then refuses", []string{"LOG_LEVEL=bogus"}, []string{`"invalid LOG_LEVEL, defaulting to info","value":"bogus"`, `"provisioner starting"`, "refusing to start"}},
-		{"a bad optional value is warned about and does not hide the token's refusal", []string{"FLEET_GIT_URL_REWRITE=ftp://x"},
-			[]string{`"level":"WARN"`, `FLEET_GIT_URL_REWRITE \"ftp://x\" must be an http(s) URL`, `"provisioner starting"`, "FLEET_CORE_PROVISIONER_TOKEN is unset"}},
+		{"a bad optional value is warned about and does not hide the token's refusal", []string{"RECONCILE_INTERVAL_MS=0"},
+			[]string{`"level":"WARN"`, `RECONCILE_INTERVAL_MS must be`, `"provisioner starting"`, "FLEET_CORE_PROVISIONER_TOKEN is unset"}},
+		{"the token is refused before the rewrite", []string{"FLEET_GIT_URL_REWRITE=ftp://x"}, []string{`"provisioner starting"`, "FLEET_CORE_PROVISIONER_TOKEN is unset"}},
 	} {
 		code, out := runMain(t, c.env...)
 		if code != 1 {
@@ -106,9 +107,8 @@ func TestMain_WarnsAndStartsOnBadOptionalValues(t *testing.T) {
 		{"negative idle timeout", []string{token, "SHARED_INSTANCE_IDLE_TIMEOUT_MS=-5"}, []string{`SHARED_INSTANCE_IDLE_TIMEOUT_MS must be a positive integer (milliseconds), got "-5"; using the default 12h`}},
 		{"idle timeout that is no integer", []string{token, "SHARED_INSTANCE_IDLE_TIMEOUT_MS=1.5"}, []string{`SHARED_INSTANCE_IDLE_TIMEOUT_MS must be a positive integer (milliseconds), got "1.5"; using the default 12h`}},
 		{"pvc size that is no quantity", []string{token, "SHARED_INSTANCE_PVC_SIZE=garbage"}, []string{`SHARED_INSTANCE_PVC_SIZE must be a positive Kubernetes quantity (e.g. 2Gi), got "garbage"`}},
-		{"rewrite that is no URL", []string{token, "FLEET_GIT_URL_REWRITE=ftp://x"}, []string{`FLEET_GIT_URL_REWRITE "ftp://x" must be an http(s) URL with a host, no user info and a trailing /; ignored`}},
 		{"rewrite against the production vault", []string{token, "FLEET_GIT_URL_REWRITE=http://forge.local/"}, []string{"it is for the local stack only (docs/adr/0080); ignored"}},
-		{"all of them, one warning each, in field order", []string{token, "RECONCILE_INTERVAL_MS=0", "SHARED_INSTANCE_PVC_SIZE=garbage", "SHARED_INSTANCE_IDLE_TIMEOUT_MS=0", "FLEET_GIT_URL_REWRITE=ftp://x"},
+		{"all of them, one warning each, in field order", []string{token, "RECONCILE_INTERVAL_MS=0", "SHARED_INSTANCE_PVC_SIZE=garbage", "SHARED_INSTANCE_IDLE_TIMEOUT_MS=0", "FLEET_GIT_URL_REWRITE=http://forge.local/"},
 			[]string{"RECONCILE_INTERVAL_MS must be", "SHARED_INSTANCE_PVC_SIZE must be", "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be", "FLEET_GIT_URL_REWRITE"}},
 	} {
 		code, out := runMain(t, c.env...)
@@ -143,5 +143,48 @@ func TestMain_WarnsAndStartsOnBadOptionalValues(t *testing.T) {
 	code, out := runMain(t, token, "RECONCILE_INTERVAL_MS=5000", "SHARED_INSTANCE_IDLE_TIMEOUT_MS=60000", "SHARED_INSTANCE_PVC_SIZE=5Gi")
 	if w := warnings(t, out); code != 1 || len(w) != 0 || !strings.Contains(out, "k8s client init failed") {
 		t.Errorf("good values: exit %d, WARN lines %q, want none and the cluster's refusal:\n%s", code, w, out)
+	}
+}
+
+// LOG_LEVEL=error does not hide that a value was ignored: the warnings are JSON lines on stdout whatever the level, and
+// the level still holds for everything else (no "provisioner starting").
+func TestMain_WarningsShowAtAnyLogLevel(t *testing.T) {
+	token := "FLEET_CORE_PROVISIONER_TOKEN=" + strings.Repeat("t", 40)
+	code, out := runMain(t, token, "LOG_LEVEL=error", "RECONCILE_INTERVAL_MS=0")
+	w := warnings(t, out)
+	if len(w) != 1 || !strings.Contains(w[0], "RECONCILE_INTERVAL_MS must be a positive integer (milliseconds), got \"0\"; using the default 10s") {
+		t.Errorf("LOG_LEVEL=error: WARN lines %q\n%s", w, out)
+	}
+	if code != 1 || strings.Contains(out, `"provisioner starting"`) || !strings.Contains(out, "k8s client init failed") {
+		t.Errorf("LOG_LEVEL=error: exit %d; the level should still hide INFO and startup go on to the cluster:\n%s", code, out)
+	}
+	// Positive control: no bad value, no warning, at the same level.
+	if _, out := runMain(t, token, "LOG_LEVEL=error"); len(warnings(t, out)) != 0 {
+		t.Errorf("a warning with nothing to warn about:\n%s", out)
+	}
+}
+
+// A malformed FLEET_GIT_URL_REWRITE contains the local stack and fails closed: the start is refused (after the token's
+// refusal, before the cluster), and what is printed never holds a value containing "@". A well-formed one goes on.
+func TestMain_RefusesAMalformedRewrite(t *testing.T) {
+	token := "FLEET_CORE_PROVISIONER_TOKEN=" + strings.Repeat("t", 40)
+	for _, c := range []struct{ name, value, shown string }{
+		{"no scheme", "ftp://x", `FLEET_GIT_URL_REWRITE \"ftp://x\" must be an http(s) URL`},
+		{"no trailing slash", "http://forge.local", `FLEET_GIT_URL_REWRITE \"http://forge.local\" must be an http(s) URL`},
+		{"a password, no scheme", "u:hunter2@c:4318", `FLEET_GIT_URL_REWRITE \"<redacted: contains @>\" must be an http(s) URL`},
+		{"a password", "http://u:hunter2@forge/", `FLEET_GIT_URL_REWRITE \"<redacted: contains @>\" must be an http(s) URL`},
+	} {
+		code, out := runMain(t, token, "FLEET_GIT_URL_REWRITE="+c.value)
+		if code != 1 || !strings.Contains(out, "refusing to start") || !strings.Contains(out, c.shown) || strings.Contains(out, "k8s client init failed") {
+			t.Errorf("%s: exit %d, want the refusal naming the variable and not the cluster's:\n%s", c.name, code, out)
+		}
+		if strings.Contains(out, "hunter2") {
+			t.Errorf("%s: the password is in the output:\n%s", c.name, out)
+		}
+	}
+	// Positive control: a well-formed rewrite against a local vault passes the configuration.
+	code, out := runMain(t, token, "FLEET_GIT_URL_REWRITE=http://forge.local:7480/", "AGENT_VAULT_API_ADDR=http://vault-local:1", "AGENT_VAULT_PROXY_ADDR=vault-local:2")
+	if code != 1 || strings.Contains(out, "refusing to start") || !strings.Contains(out, "k8s client init failed") {
+		t.Errorf("a good rewrite: exit %d, want the cluster's refusal and not the configuration's:\n%s", code, out)
 	}
 }
