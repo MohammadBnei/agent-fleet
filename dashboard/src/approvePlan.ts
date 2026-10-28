@@ -47,10 +47,22 @@ export const PERMISSION_MODES = [
 // One reply per prompt (migration 000015): when the worker's own "allowed by a
 // permission-mode change" record lands first, this answer gets AlreadyExists.
 // The plan is approved either way, so that is success.
-export async function approvePlan(sessionId: string, seq: bigint, mode?: "auto"): Promise<void> {
-  if (mode) await client.setPermissionMode({ sessionId, mode });
+//
+// `api` is a parameter for the same reason as subscribeTranscript's
+// openStream: the test's fake used to arrive through `mock.module`, which is
+// process-wide in bun and leaked into connectClient.test.ts whenever the two
+// files shared a run. Production callers pass three args.
+type PlanApi = Pick<typeof client, "setPermissionMode" | "respondToPermission">;
+
+export async function approvePlan(
+  sessionId: string,
+  seq: bigint,
+  mode?: "auto",
+  api: PlanApi = client,
+): Promise<void> {
+  if (mode) await api.setPermissionMode({ sessionId, mode });
   try {
-    await client.respondToPermission({
+    await api.respondToPermission({
       sessionId,
       seq,
       decisionJson: JSON.stringify({ behavior: "allow" }),

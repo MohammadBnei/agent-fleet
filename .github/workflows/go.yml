@@ -186,6 +186,8 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
 
       # An "Install ts-proto (worker's local TS plugin)" step used to sit here.
       # Deleted with worker/src/gen in docs/adr/0048 — the worker never

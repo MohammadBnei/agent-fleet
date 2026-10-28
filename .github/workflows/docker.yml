@@ -226,6 +226,8 @@ jobs:
       - name: Set up Bun
         if: steps.check.outputs.mode == 'release'
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
 
       # release-it 21 and conventional-changelog 12 require Node
       # ^22.22.2 || ^24.15.0 || >=26. `bun run release` still executes
@@ -370,6 +372,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - name: Install dependencies
         working-directory: worker
         run: bun install --frozen-lockfile
@@ -392,6 +396,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - name: Install dependencies
         working-directory: dashboard
         run: bun install --frozen-lockfile
@@ -415,6 +421,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - name: Install dependencies
         working-directory: islands
         run: bun install --frozen-lockfile
