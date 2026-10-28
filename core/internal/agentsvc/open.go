@@ -108,8 +108,10 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this definition does not take that interaction or lifecycle"))
 	}
 	// A waking message needs an actor the client may claim (§6): exact,
-	// fail closed, an empty actor never wakes.
-	if m.GetWake() && !adminActor && !s.mayClaim(p.Client, m.GetActor()) {
+	// fail closed, an empty actor never wakes. Read once, so the wake gate
+	// and the entry's trust agree even if actors.allow changes meanwhile.
+	claimable := adminActor || s.mayClaim(p.Client, m.GetActor())
+	if m.GetWake() && !claimable {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("actor is not in this client's actors.allow"))
 	}
 
@@ -194,9 +196,8 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	// still marked untrusted.
 	contextOnly := !m.GetWake() || (m.GetTainted() && !fresh && !adminActor)
 	// Untrusted is the entry's own trust, never whether it woke (docs/adr/0082
-	// §3): a tainted cause, or an actor this client may not claim. A waking
-	// message has passed mayClaim already; a non-waking one has not.
-	untrusted := m.GetTainted() || (!adminActor && !s.mayClaim(p.Client, m.GetActor()))
+	// §3): a tainted cause, or an actor this client may not claim.
+	untrusted := m.GetTainted() || !claimable
 	text := m.GetMessage()
 	if predecessor != "" {
 		text = fmt.Sprintf("[continues thread %s, which can no longer run]\n%s", predecessor, text)
