@@ -63,7 +63,7 @@ func TestOpen(t *testing.T) {
 		{Name: "other", Spec: definitions.ClientSpec{Actors: definitions.AllowList{Allow: []string{"MohammadBnei"}}}},
 	}
 	t.Cleanup(func() { testClients = nil })
-	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")}
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")}
 	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
 	bot := withPrincipal(ctx, Principal{Client: "bot"})
 	other := withPrincipal(ctx, Principal{Client: "other"})
@@ -189,7 +189,7 @@ func TestOpen_DelistedClient(t *testing.T) {
 	}
 	testClients = []definitions.Client{{Name: "bot", Spec: definitions.ClientSpec{Actors: definitions.AllowList{Allow: []string{"MohammadBnei"}}, Definitions: []string{"d"}}}}
 	t.Cleanup(func() { testClients = nil })
-	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")}
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")}
 	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
 	bot := withPrincipal(ctx, Principal{Client: "bot"})
 	r, err := s.Open(bot, connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "t", Message: "x", Wake: true,
@@ -234,7 +234,7 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 		{Name: "net", Spec: definitions.ClientSpec{TokenRef: "NET_TOKEN", Definitions: []string{"d"}}},
 	}
 	t.Cleanup(func() { testClients = nil })
-	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")}
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")}
 	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
 
 	if _, err := s.AsClient(ctx, "net"); err == nil {

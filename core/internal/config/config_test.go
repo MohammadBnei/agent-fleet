@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -58,7 +59,7 @@ func TestEnvDuration(t *testing.T) {
 			if tc.set {
 				t.Setenv(key, tc.val)
 			}
-			if got := envDuration(key, fallback); got != tc.want {
+			if got := envDurationOr(os.Getenv, key, fallback); got != tc.want {
 				t.Errorf("envDuration(%q) = %v, want %v", tc.val, got, tc.want)
 			}
 		})
@@ -72,15 +73,28 @@ func TestEnvDuration(t *testing.T) {
 // leave behind with every other test still green.
 func TestLoadSessionRetention(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		if got := Load().SessionRetention; got != 10*24*time.Hour {
+		if got := Load(os.Getenv).SessionRetention; got != 10*24*time.Hour {
 			t.Errorf("SessionRetention default = %v, want 240h", got)
 		}
 	})
 
 	t.Run("from env", func(t *testing.T) {
 		t.Setenv("SESSION_RETENTION", "6d")
-		if got := Load().SessionRetention; got != 144*time.Hour {
+		if got := Load(os.Getenv).SessionRetention; got != 144*time.Hour {
 			t.Errorf("SessionRetention = %v, want 144h", got)
 		}
 	})
+}
+
+// TestLoadMoved: the reads that lived outside config (main's FLEET_VERSION, the dashboard's CLAUDE_MODEL,
+// clientauth's tokenRef lookup) land on their fields; the lookup reads through Load's getenv, by name.
+func TestLoadMoved(t *testing.T) {
+	env := map[string]string{"FLEET_VERSION": "v3.4.5", "CLAUDE_MODEL": "claude-sonnet-5", "FLEET_CLIENT_GAME_TOKEN": "tok"}
+	c := Load(func(k string) string { return env[k] })
+	if c.Version != "v3.4.5" || c.ClaudeModel != "claude-sonnet-5" || c.TokenEnv == nil || c.TokenEnv("FLEET_CLIENT_GAME_TOKEN") != "tok" {
+		t.Errorf("version %q model %q", c.Version, c.ClaudeModel)
+	}
+	if c := Load(func(string) string { return "" }); c.Version != "" || c.ClaudeModel != "" {
+		t.Errorf("unset: version %q model %q", c.Version, c.ClaudeModel) // the positive control
+	}
 }

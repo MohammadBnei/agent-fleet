@@ -18,7 +18,6 @@ import (
 // docs/adr/0077: a repo session's model and effort are checked against the
 // allowlists, and an empty one stores NULL so Claude Code decides.
 func TestCreateSession_ModelAndEffort(t *testing.T) {
-	t.Setenv("CLAUDE_MODEL", "")
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
