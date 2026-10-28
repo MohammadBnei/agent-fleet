@@ -5,8 +5,12 @@
 // Every error a Connect or gRPC handler returns carries a key: one built here carries its own, and the interceptors
 // key whatever arrives without one as KeyInternal, keeping its code and words (a copy: the handler's error is never
 // changed). Errors Connect or gRPC raise before a handler runs (an unreadable body, an unknown procedure) carry none,
-// and neither do core's own HTTP gate's plain 401 and 403 (internal/auth), which answer before Connect does. The specific keys arrive package by package;
-// until then a site's key is KeyInternal, and its code still says what it was.
+// and neither do core's own HTTP gate's plain 401 and 403 (internal/auth), which answer before Connect does.
+//
+// A specific key is not coming to every site (docs/adr/0081 §2). A site gets one only when a client must act on the
+// error or show text for it and the code alone does not say what happened; every other site stays KeyInternal with
+// its specific code, and where it came from is answered by its trace id, not its key. The keys move into each
+// service's proto (ADR-0081 §1), and this package gives way to ukubi-go's errs/connectkeys (§5).
 package errkeys
 
 import (
