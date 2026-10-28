@@ -23,10 +23,11 @@ import (
 var envReaders = map[string][]string{
 	"os": {"Getenv", "LookupEnv", "Environ", "ExpandEnv", "Setenv", "Unsetenv", "Clearenv", "UserHomeDir", "UserCacheDir",
 		"UserConfigDir", "TempDir", "MkdirTemp", "CreateTemp", "Getwd"},
-	"syscall":  {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"},
-	"net/http": {"ProxyFromEnvironment"},
-	"os/exec":  nil,
-	"os/user":  nil,
+	"syscall":               {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"},
+	"golang.org/x/sys/unix": {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"}, // in core's dependency graph
+	"net/http":              {"ProxyFromEnvironment"},
+	"os/exec":               nil,
+	"os/user":               nil,
 }
 
 // envReadsAllowed is what reads the environment (mountain plan/15 §5: one Config per binary): config.go, and dbtest's

@@ -60,13 +60,13 @@ func TestEnvDuration(t *testing.T) {
 				t.Setenv(key, tc.val)
 			}
 			if got := envDurationOr(os.Getenv, key, fallback); got != tc.want {
-				t.Errorf("envDuration(%q) = %v, want %v", tc.val, got, tc.want)
+				t.Errorf("envDurationOr(%q) = %v, want %v", tc.val, got, tc.want)
 			}
 		})
 	}
 }
 
-// The parser being right is worth nothing if Load() reads a different key, or
+// The parser being right is worth nothing if Load reads a different key, or
 // assigns the result to a different field. That is this repo's own recurring
 // trap — a config value existing at every layer and reaching nothing — and it
 // is exactly what a rename like SESSION_RETENTION_MS -> SESSION_RETENTION can
@@ -89,12 +89,12 @@ func TestLoadSessionRetention(t *testing.T) {
 // TestLoadMoved: the reads that lived outside config (main's FLEET_VERSION, the dashboard's CLAUDE_MODEL,
 // clientauth's tokenRef lookup) land on their fields; the lookup reads through Load's getenv, by name.
 func TestLoadMoved(t *testing.T) {
-	env := map[string]string{"FLEET_VERSION": "v3.4.5", "CLAUDE_MODEL": "claude-sonnet-5", "FLEET_CLIENT_GAME_TOKEN": "tok"}
+	env := map[string]string{"FLEET_VERSION": "v3.4.5", "CLAUDE_MODEL": "claude-sonnet-5", "FLEET_CLIENT_TOKEN_GAME": "tok"}
 	c := Load(func(k string) string { return env[k] })
-	if c.Version != "v3.4.5" || c.ClaudeModel != "claude-sonnet-5" || c.TokenEnv == nil || c.TokenEnv("FLEET_CLIENT_GAME_TOKEN") != "tok" {
-		t.Errorf("version %q model %q", c.Version, c.ClaudeModel)
+	if c.Version != "v3.4.5" || c.ClaudeModel != "claude-sonnet-5" || c.TokenEnv == nil || c.TokenEnv("FLEET_CLIENT_TOKEN_GAME") != "tok" {
+		t.Errorf("version %q model %q token %v", c.Version, c.ClaudeModel, c.TokenEnv != nil && c.TokenEnv("FLEET_CLIENT_TOKEN_GAME") == "tok")
 	}
 	if c := Load(func(string) string { return "" }); c.Version != "" || c.ClaudeModel != "" {
-		t.Errorf("unset: version %q model %q", c.Version, c.ClaudeModel) // the positive control
+		t.Errorf("unset: version %q model %q", c.Version, c.ClaudeModel)
 	}
 }

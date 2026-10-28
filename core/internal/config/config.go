@@ -202,8 +202,8 @@ type Config struct {
 func FromProcess() Config { return Load(os.Getenv) }
 
 // Load is core's configuration from getenv (mountain plan/15 §5: one Config per binary, the environment read only
-// here; main passes os.Getenv, a test a map). A value that does not parse falls back to its default, as before:
-// see envDuration.
+// here; FromProcess passes os.Getenv, a test a map). A value that does not parse falls back to its default, as
+// before: see envDurationOr.
 func Load(getenv func(string) string) Config {
 	env := func(key, fallback string) string { return envOr(getenv, key, fallback) }
 	envInt := func(key string, fallback int) int { return envIntOr(getenv, key, fallback) }
@@ -281,7 +281,7 @@ func envIntOr(getenv func(string) string, key string, fallback int) int {
 	return fallback
 }
 
-// envDuration reads a Go duration string, extended with the `d` (day) unit
+// envDurationOr reads a Go duration string, extended with the `d` (day) unit
 // that time.ParseDuration lacks: "6d" is 144h. Retention is argued in days by
 // everyone who touches it, so it is configured in days — a window nobody can
 // read off the value is a window nobody reviews.
