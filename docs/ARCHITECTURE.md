@@ -725,8 +725,99 @@ cannot say.
 
 `core/internal/config/config.go`. `AGENTFLEET_DB_*` exist only here. Caps:
 `MAX_IN_FLIGHT_TASKS` (live pods) ⊃ `MAX_DEFINITION_SESSIONS` ⊃
-`MAX_EXTERNAL_SESSIONS` (members and clients); core refuses to start unless
-each pool is smaller than the one around it (0 turns an inner pool off).
+`MAX_EXTERNAL_SESSIONS` (members and clients); each pool must be smaller than
+the one around it (0 turns an inner pool off). A set of counts that breaks that
+logs a warning and falls back to all four defaults (5, 0, 0, 1), which turns the
+inner pools off; core still starts.
+
+**Validated once, at start.** `config.Load` reads every variable below and
+checks each one that is *set* against its rule. Unset, or empty (the two cannot
+be told apart), is the default; a secret key rendered empty is "unset", never a
+problem. A bad value is handled by the key's class:
+
+- **Optional (warns, uses the default):** every key with a default or that may
+  be unset. The problem is recorded in `Config.Warnings` as
+  `KEY=value: rule; using the default`, the field takes the default, and core
+  starts. `main` logs one `WARN` line per problem (`invalid configuration value,
+  using the default`, the problem in `problem`) as JSON at the default level, so
+  `LOG_LEVEL=error` does not hide it (a refusal logs the warnings found with it
+  first). This includes a zero or negative `*_MS` or `SESSION_RETENTION` (they
+  fall back to the default and never reach a sweep), and `FLEET_AUTH_DISABLED`
+  other than `1` or `0` (read as gate on). The `BRIDGE_*` URL, token URL and auth
+  host are one setting: if any is set and invalid, each problem ends `; the
+  bridge is off` and `BRIDGE_URL` is blanked, the bridge's not-configured mode.
+- **Required (`(refuses)` in the table), only while the console gate is on**
+  (`FLEET_AUTH_DISABLED` is not `1`; with it, nothing reads them and a bad value
+  only warns): the keys without which nobody can sign in. A malformed
+  `OIDC_ISSUER_URL` or `DASHBOARD_PUBLIC_URL` stops the start in `Load`: one error
+  names every such variable and its rule, and `main` logs `invalid configuration`
+  and exits 1, before the database is opened. A *missing* `OIDC_ISSUER_URL`,
+  `DASHBOARD_PUBLIC_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` or
+  `FLEET_SESSION_KEYS` stops it in `run()` (`requireOIDC` and `auth.New`, see
+  Auth below), after the database is opened and naming the variable. `Load` of an
+  empty environment succeeds: a missing value is not a problem in `Load`.
+- **The pools' relation** is a warning too: on the values in use (an unparsed
+  count is its default), a relation that fails logs `checkCapacity`'s message and
+  falls back to all four defaults, which turns the inner pools off.
+
+A value with `@` in it (URL userinfo) is never echoed, in a warning or a
+refusal. `TestConfigDocumented` fails on a variable core reads that is not a row
+here, and on a row nothing reads. The libraries' own variables (`AWS_*`, `PG*`,
+the proxy variables) are theirs and not listed.
+
+| Variable | Default | Rule when set | What it is |
+|---|---|---|---|
+| `CORE_PORT` | `8080` | port, 1-65535 | the console, `ConnectRPC`, `/auth/*`, the alert webhook (internet-routed, behind the OIDC gate) |
+| `CORE_GRPC_PORT` | `9090` | port | `CoreService`, for the sidecar and the provisioner |
+| `CORE_METRICS_PORT` | `9093` | port | `/metrics` on its own listener, no ingress (`adr/0059`) |
+| `CORE_CLIENT_PORT` | `9091` | port | `AgentService` for registered clients (`adr/0066` §3) |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`, any case, no offset | log level |
+| `AGENTFLEET_DB_HOST` | `postgres.bnei.lan` | any | Postgres host; `AGENTFLEET_DB_*` are read here only |
+| `AGENTFLEET_DB_PORT` | `5432` | port | Postgres port |
+| `AGENTFLEET_DB_NAME` | `agentfleetdb` | any | database |
+| `AGENTFLEET_DB_USER` | `dbuser_agentfleet` | any | role |
+| `AGENTFLEET_DB_PASSWORD` | none | any | secret |
+| `MAX_IN_FLIGHT_TASKS` | `5` | whole number; the pools' rule below | live pods, fleet-wide |
+| `MAX_DEFINITION_SESSIONS` | `0` | whole number, `0` to below `MAX_IN_FLIGHT_TASKS` | defined-agent pool inside the cap (`adr/0062`) |
+| `MAX_EXTERNAL_SESSIONS` | `0` | whole number, `0` to below `MAX_DEFINITION_SESSIONS` | member and client pool inside that (`adr/0066` §8) |
+| `MAX_SESSIONS_PER_MEMBER` | `1` | whole number, at least 1 when `MAX_EXTERNAL_SESSIONS` is above 0 | one member's share of it |
+| `STOP_GRACE_MS` | `30000` | whole milliseconds, above 0 | how long a Stop waits before a forced teardown |
+| `IDLE_TIMEOUT_MS` | `1800000` | whole milliseconds, above 0 | no transcript activity for this long tears the pod down |
+| `STARTUP_STALL_MS` | `180000` | whole milliseconds, above 0 | pod scheduled to first sign of life (`adr/0040`) |
+| `TURN_STALL_MS` | `90000` | whole milliseconds, above 0 | owing a response this long reads as `stalled` (informational) |
+| `SESSION_RETENTION` | `10d` | Go duration or whole days (`6d`), above 0 | untouched session's disk is reclaimed after this (`adr/0048`); `k8s/core.yaml` sets `6d` |
+| `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL (refuses: malformed, or missing, with the gate on) | console base: the Discord link, the OIDC redirect URI, the accepted origin |
+| `OIDC_ISSUER_URL` | none | absolute http(s) URL (refuses: malformed, or missing, with the gate on) | authentik issuer, per application, passed to discovery verbatim |
+| `OIDC_CLIENT_ID` | none | any (refuses: missing, with the gate on) | OIDC client |
+| `OIDC_CLIENT_SECRET` | none | any (refuses: missing, with the gate on) | secret |
+| `FLEET_SESSION_KEYS` | none | any, at least one non-blank key (refuses: missing, with the gate on) | secret, comma-separated cookie keys |
+| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on |
+| `FLEET_VERSION` | none | any | the release reported (`dev` without it) |
+| `CLAUDE_MODEL` | none | any | the operator's model override (`adr/0077`) |
+| `FLEET_PROVISIONER_TOKEN` | none | any | secret: the provisioner's bearer to `CoreService` |
+| `FLEET_CORE_PROVISIONER_TOKEN` | none | any | secret: core's bearer to `ProvisionerService` (`adr/0069`) |
+| `FLEET_CLIENT_TOKEN_<NAME>` | none | any | secret: a registered client's bearer; the name is its definition's `tokenRef`, read at match time (`adr/0066` §3) |
+| `FLEET_REPO_OVERRIDES` | none | any path | infra-bootstrap's overrides file; empty turns the repos sync off (`adr/0074`) |
+| `PROVISIONER_GRPC_ADDR` | `provisioner.agent-fleet.svc.cluster.local:9090` | `host:port` | where core commands the provisioner |
+| `STT_ADDR` | `ukubi-stt.ukubi-stt.svc.cluster.local:9090` | `host:port`; read only with `STT_TOKEN_FLEET` set | speech-to-text |
+| `STT_TOKEN_FLEET` | none | any | secret; unset disables dictation |
+| `LOKI_URL` | in-cluster Loki | absolute http(s) URL | log queries |
+| `PROMETHEUS_URL` | in-cluster Prometheus | absolute http(s) URL | the Observability page |
+| `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | absolute http(s) URL | files, signed into the presigned URLs: must be browser-reachable |
+| `GARAGE_FILES_BUCKET` | `agent-fleet-files` | any | bucket |
+| `AGENTFLEET_FILES_S3_ACCESS_KEY` | none | any | secret |
+| `AGENTFLEET_FILES_S3_SECRET` | none | any | secret |
+| `DISCORD_BOT_TOKEN` | none | any | secret; unset runs without Discord |
+| `DISCORD_TRIGGER_CHANNEL_ID` | none | any | channel for "needs a human" posts |
+| `ALERT_WEBHOOK_TOKEN` | none | any | secret; unset makes the alert webhook refuse (`adr/0037`) |
+| `THOT_DISCORD_CHANNEL_ID` | none | any | passed to the alert webhook, which keeps it for config compatibility |
+| `THOT_REPO` | `infra-bootstrap` | any | the repo an alert's proposal is filed against (and its session runs on) |
+| `BRIDGE_URL` | none | absolute http(s) URL | the event bridge; unset runs without it (`adr/0078`) |
+| `BRIDGE_TOKEN_URL` | none | absolute http(s) URL | authentik's token endpoint, by its in-cluster Service |
+| `BRIDGE_AUTH_HOST` | none | host or `host:port` (port 1-65535) | the public Host the token request carries |
+| `BRIDGE_CLIENT_ID` | `ukubi-bridge-api` | any | authentik client id |
+| `BRIDGE_USERNAME` | `bridge-core` | any | the service account |
+| `BRIDGE_PASSWORD_FILE` | `/etc/bridge-core/app_password` | any path | its app password, re-read before each call; absent runs without the bridge |
 
 #### Auth (`core/`, `adr/0056`)
 
@@ -741,7 +832,16 @@ unless `FLEET_AUTH_DISABLED=1`.
 `GITHUB_APP_DIR` + `FLEET_GITHUB_ACCOUNTS` (the App), `AGENT_VAULT_*` (the
 vault), `FLEET_GIT_AUTHOR_*` (repo pods' commit identity). It reads no
 `GH_TOKEN` and holds no `AGENTFLEET_DB_*`. `FLEET_CORE_PROVISIONER_TOKEN` is
-required (below).
+required (below); it is the only key whose absence stops the start. Every
+other variable is optional: one that is set but invalid
+(`RECONCILE_INTERVAL_MS` and `SHARED_INSTANCE_IDLE_TIMEOUT_MS` not a positive
+integer of milliseconds, `SHARED_INSTANCE_PVC_SIZE` not a positive Kubernetes
+quantity) logs a WARN naming the variable and the rule, takes its default and
+the process starts; the WARN shows at any `LOG_LEVEL`, and a value containing
+`@` is never echoed. One exception, because it is containment rather than
+tuning: a *malformed* `FLEET_GIT_URL_REWRITE` refuses the start (dropped, a
+kind worker would push to the real github.com through the vault); set against
+the production vault it warns and is dropped, which is production's behaviour.
 
 #### SSH access
 

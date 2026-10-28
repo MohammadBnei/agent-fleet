@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/config"
 )
 
 // These tests exercise the idempotent Kubernetes-object-creation building
@@ -46,6 +47,73 @@ func TestEnsureAdminSecret_IdempotentAndStable(t *testing.T) {
 	}
 	if string(secret.Data["password"]) != password1 {
 		t.Errorf("secret data = %q, want %q", secret.Data["password"], password1)
+	}
+}
+
+// SharedInstancePVCSize reaches the shared instance's PVC as the request it was configured as, and a size no
+// quantity parses from is an error, not the panic resource.MustParse made of it at the first Postgres shared instance.
+func TestEnsureSharedPVC_Size(t *testing.T) {
+	ctx := context.Background()
+	labels := SharedInstanceLabels("dream-analyst", "postgres")
+
+	c := newTestClient()
+	c.SharedInstancePVCSize = "9Gi"
+	if err := c.ensureSharedPVC(ctx, "pg", labels); err != nil {
+		t.Fatalf("ensureSharedPVC: %v", err)
+	}
+	pvc, err := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Get(ctx, "pg", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "9Gi" {
+		t.Errorf("requested storage %s, want 9Gi", got.String())
+	}
+
+	for _, bad := range []string{"garbage", "", "2 Gi"} {
+		c := newTestClient()
+		c.SharedInstancePVCSize = bad
+		err := c.ensureSharedPVC(ctx, "pg", labels) // a panic fails the test binary
+		if err == nil || !strings.Contains(err.Error(), "shared instance pvc size") {
+			t.Errorf("size %q: err %v, want an error naming the size", bad, err)
+		}
+		if _, err := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Get(ctx, "pg", metav1.GetOptions{}); err == nil {
+			t.Errorf("size %q: a PVC was created", bad)
+		}
+		// Through the deployment that wants it: the error is the caller's, and no Deployment is left behind.
+		name := SharedInstanceName("dream-analyst", "postgres")
+		if err := c.ensureSharedDeployment(ctx, name, labels, catalog.Services["postgres"], c.PostgresImage, "postgres", "s3cr3t"); err == nil || !strings.Contains(err.Error(), "ensure pvc") {
+			t.Errorf("size %q: ensureSharedDeployment err %v, want the pvc's", bad, err)
+		}
+		if _, err := c.Core.AppsV1().Deployments(c.Namespace).Get(ctx, name, metav1.GetOptions{}); err == nil {
+			t.Errorf("size %q: a Deployment was created without its PVC", bad)
+		}
+	}
+}
+
+// The path from the environment: SHARED_INSTANCE_PVC_SIZE=garbage is replaced by the default in config.Load, and the
+// shared instance that the client then builds asks for the default (main's images() hands this field over as is).
+func TestEnsureSharedPVC_BadEnvSizeBecomesTheDefault(t *testing.T) {
+	cfg, err := config.Load(func(k string) string {
+		if k == "SHARED_INSTANCE_PVC_SIZE" {
+			return "garbage"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newTestClient()
+	c.SharedInstancePVCSize = cfg.SharedInstancePVCSize
+	name := SharedInstanceName("dream-analyst", "postgres")
+	if err := c.ensureSharedDeployment(context.Background(), name, SharedInstanceLabels("dream-analyst", "postgres"), catalog.Services["postgres"], c.PostgresImage, "postgres", "s3cr3t"); err != nil {
+		t.Fatalf("ensureSharedDeployment: %v", err)
+	}
+	pvc, err := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "2Gi" {
+		t.Errorf("requested storage %s, want 2Gi", got.String())
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -259,16 +260,23 @@ func (c *Client) ensureSharedPVC(ctx context.Context, name string, labels map[st
 	} else if !apierrors.IsNotFound(err) {
 		return err
 	}
+	// config.Load only hands over a size ParseQuantity accepts; an error here is
+	// a Client built some other way, and must not take the process down (it
+	// was resource.MustParse, a panic at the first Postgres shared instance).
+	size, err := resource.ParseQuantity(c.SharedInstancePVCSize)
+	if err != nil {
+		return fmt.Errorf("shared instance pvc size %q: %w", c.SharedInstancePVCSize, err)
+	}
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{corev1.ResourceStorage: *resourcePtr(c.SharedInstancePVCSize)},
+				Requests: corev1.ResourceList{corev1.ResourceStorage: size},
 			},
 		},
 	}
-	_, err := pvcs.Create(ctx, pvc, metav1.CreateOptions{})
+	_, err = pvcs.Create(ctx, pvc, metav1.CreateOptions{})
 	if err != nil && apierrors.IsAlreadyExists(err) {
 		return nil
 	}

@@ -312,3 +312,13 @@ jobs:
       - name: go test (docs + workflow guards)
         working-directory: core
         run: go test ./internal/buildguard -run 'TestDocs|TestWorkflows' -count=1
+
+      # core's config vs. what is written about it and what the manifests set.
+      # Also unfiltered: k8s/core.yaml and docs/ARCHITECTURE.md are outside the
+      # `core` filter (k8s/** goes to the provisioner's), and a bad literal merged
+      # as a gitops edit would otherwise reach core on its sync: a refusal for the
+      # required keys, a silent fall-back to the default plus a WARN for the rest.
+      # TestManifestsLoad fails on either, so a manifest-only PR cannot merge it.
+      - name: go test (config doc + manifests)
+        working-directory: core
+        run: go test ./internal/config -run 'TestConfigDocumented|TestManifestsLoad' -count=1
