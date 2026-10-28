@@ -107,14 +107,14 @@ func TestWire(t *testing.T) {
 	lis := bufconn.Listen(1 << 20)
 	gs := grpc.NewServer(grpc.ChainUnaryInterceptor(UnaryServerInterceptor()), grpc.ChainStreamInterceptor(StreamServerInterceptor()))
 	agentfleetv1.RegisterCoreServiceServer(gs, agentfleetv1.UnimplementedCoreServiceServer{})
-	go gs.Serve(lis)
+	go func() { _ = gs.Serve(lis) }()
 	defer gs.Stop()
 	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_, err = agentfleetv1.NewCoreServiceClient(conn).GetSession(context.Background(), &agentfleetv1.GetSessionRequest{})
 	if status.Code(err) != codes.Unimplemented || Of(err) != KeyInternal {
 		t.Errorf("grpc: %v key %q", err, Of(err))
