@@ -60,8 +60,8 @@ func decodeEnv(t *testing.T, v any) []envEntry {
 	return es
 }
 
-// TestManifestsLoad: what the repo's manifests set for core is accepted by Load. A literal that would now refuse is
-// a deploy that crash-loops, so it fails here instead (go.yml's unfiltered docs-check job runs this test, so a
+// TestManifestsLoad: what the repo's manifests set for core is accepted by Load, with no warning. A literal that would
+// refuse is a deploy that crash-loops, so it fails here instead (go.yml's unfiltered docs-check job runs this test, so a
 // manifest-only or docs-only PR meets it too).
 func TestManifestsLoad(t *testing.T) {
 	core := manifestEnv(t, "../../../k8s/core.yaml", func(doc map[string]any) []envEntry {
@@ -89,18 +89,29 @@ func TestManifestsLoad(t *testing.T) {
 			t.Fatalf("%s: read only %d literal values: %v", name, len(m), m)
 		}
 		// The provisioner and core tokens are secrets in production; a local literal is not what is checked here.
-		if _, err := Load(env(m)); err != nil {
+		c, err := Load(env(m))
+		if err != nil {
 			t.Errorf("%s: Load refuses what the manifest sets: %v", name, err)
+		} else if c.Warnings != nil {
+			t.Errorf("%s: Load warns about what the manifest sets: %q", name, c.Warnings)
 		}
 	}
-	// The positive control: the reader sees a value, and Load refuses a bad one in the same map.
+	// The positive control: the reader sees a value, and Load refuses a bad required one in the same map.
 	bad := map[string]string{}
 	for k, v := range core {
 		bad[k] = v
 	}
-	bad["SESSION_RETENTION"] = "6 days"
-	if _, err := Load(env(bad)); err == nil || !strings.Contains(err.Error(), "SESSION_RETENTION=") {
+	bad["OIDC_ISSUER_URL"] = "authentik"
+	if _, err := Load(env(bad)); err == nil || !strings.Contains(err.Error(), "OIDC_ISSUER_URL=") {
 		t.Errorf("a bad value in the manifest's map: %v", err)
+	}
+	// An optional key is a warning, not a refusal: the same map with one bad (LOG_LEVEL, which no manifest sets).
+	warned := map[string]string{"LOG_LEVEL": "loud"}
+	for k, v := range core {
+		warned[k] = v
+	}
+	if c, err := Load(env(warned)); err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "LOG_LEVEL=") {
+		t.Errorf("a bad optional value: %q, %v; want one warning", c.Warnings, err)
 	}
 	// The reader found the keys, whatever their values are tuned to (k8s/core.yaml is edited as gitops, not a release).
 	if core["SESSION_RETENTION"] == "" || kind["MAX_IN_FLIGHT_TASKS"] == "" {

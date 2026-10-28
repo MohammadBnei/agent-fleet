@@ -35,9 +35,10 @@ func TestResolveLogLevel(t *testing.T) {
 	}
 }
 
-// TestMainRefusesInvalidConfig runs the real main() in a child process (this test binary, re-entered): a set value
-// that does not satisfy its rule exits 1 with one "invalid configuration" line naming every variable, before
-// anything is opened; the same child with valid values goes on to the next step (the database, here refused fast).
+// TestMainRefusesInvalidConfig runs the real main() in a child process (this test binary, re-entered): a set value of a
+// required key that does not satisfy its rule (OIDC_ISSUER_URL or DASHBOARD_PUBLIC_URL, with the console gate on)
+// exits 1 with one "invalid configuration" line, before anything is opened; a bad value of an optional key is logged
+// as one WARN line each and core goes on to the next step (the database, here refused fast), as it does with valid values.
 func TestMainRefusesInvalidConfig(t *testing.T) {
 	if os.Getenv("CORE_TEST_RUN_MAIN") == "1" {
 		main()
@@ -63,7 +64,8 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 		return buf.String(), exit
 	}
 
-	out, exit := child("CORE_PORT=abc", "IDLE_TIMEOUT_MS=0", "LOG_LEVEL=loud", "FLEET_AUTH_DISABLED=true")
+	// CORE_PORT=abc is optional: it is not in the refusal, and the refusal comes before any warning.
+	out, exit := child("OIDC_ISSUER_URL=authentik", "DASHBOARD_PUBLIC_URL=fleet.bnei.dev", "CORE_PORT=abc")
 	if exit != 1 {
 		t.Fatalf("exit %d, want 1:\n%s", exit, out)
 	}
@@ -71,16 +73,51 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.SplitN(out, "\n", 2)[0]), &line); err != nil || line.Msg != "invalid configuration" {
 		t.Fatalf("first line is not the refusal as JSON: %v\n%s", err, out)
 	}
-	for _, k := range []string{"CORE_PORT=", "IDLE_TIMEOUT_MS=", "LOG_LEVEL=", "FLEET_AUTH_DISABLED="} {
-		if !strings.Contains(line.Error, k) {
-			t.Errorf("the refusal does not name %s: %s", k, line.Error)
-		}
+	if !strings.Contains(line.Error, "OIDC_ISSUER_URL=") || !strings.Contains(line.Error, "DASHBOARD_PUBLIC_URL=") || strings.Contains(line.Error, "CORE_PORT=") {
+		t.Errorf("the refusal names the required keys and only them: %s", line.Error)
 	}
 	if strings.Contains(out, "core starting") {
 		t.Errorf("core started before refusing:\n%s", out)
 	}
 
-	// Positive control: valid values get past Load (and fail at the closed database port instead).
+	// Optional keys: not a refusal. Core gets as far as the database, and logs one WARN line per problem, as JSON, with
+	// the problem naming the variable.
+	bad := []string{"IDLE_TIMEOUT_MS=0", "LOG_LEVEL=loud", "FLEET_AUTH_DISABLED=true", "CORE_PORT=abc", "SESSION_RETENTION=0", "PROMETHEUS_URL=ftp://user:hunter2@prom"}
+	out, exit = child(bad...)
+	if exit != 1 || strings.Contains(out, "invalid configuration\"") || !strings.Contains(out, "db connect failed") {
+		t.Fatalf("optional bad values: exit %d, want 1 at the database:\n%s", exit, out)
+	}
+	problems := map[string]bool{}
+	for _, l := range strings.Split(out, "\n") {
+		var rec struct{ Level, Msg, Problem string }
+		if json.Unmarshal([]byte(l), &rec) != nil || rec.Msg != "invalid configuration value, using the default" {
+			continue
+		}
+		if rec.Level != "WARN" {
+			t.Errorf("a warning logged at %q: %s", rec.Level, l)
+		}
+		problems[rec.Problem] = true
+	}
+	if len(problems) != len(bad) {
+		t.Errorf("%d warning lines, want one per problem (%d):\n%s", len(problems), len(bad), out)
+	}
+	for _, b := range bad {
+		k, _, _ := strings.Cut(b, "=")
+		n := 0
+		for p := range problems {
+			if strings.HasPrefix(p, k+"=") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%d warnings name %s, want 1:\n%s", n, k, out)
+		}
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("a warning echoed a credential:\n%s", out)
+	}
+
+	// Positive control: valid values get past Load with no warning (and fail at the closed database port instead).
 	out, exit = child("CORE_PORT=8080", "IDLE_TIMEOUT_MS=60000", "LOG_LEVEL=info", "FLEET_AUTH_DISABLED=0")
 	if exit != 1 || strings.Contains(out, "invalid configuration") || !strings.Contains(out, "db connect failed") {
 		t.Errorf("valid config: exit %d, want 1 at the database:\n%s", exit, out)

@@ -43,7 +43,7 @@ spec:
             - name: MAX_IN_FLIGHT_TASKS
               value: "5"
             # docs/adr/0062: the definition pool inside the cap above. Must be
-            # < MAX_IN_FLIGHT_TASKS or core refuses to start.
+            # < MAX_IN_FLIGHT_TASKS, or core warns and turns the inner pools off.
             - name: MAX_DEFINITION_SESSIONS
               value: "3"
             # docs/adr/0066 §8: member and client sessions, inside the pool

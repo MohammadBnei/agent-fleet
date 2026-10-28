@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,8 +42,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-// refusals: per variable, values that must be refused and values that must load. Every key Load validates is here
-// (TestRefusalsCoverEveryRule).
+// refusals: per variable, values that are bad and values that must load. A bad value of a required key refuses the start
+// (required: OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL, while the console gate is on); a bad value of any other key warns and takes the
+// default. Every key Load validates is here (TestRefusalsCoverEveryRule).
 var refusals = []struct {
 	key  string
 	bad  []string
@@ -72,57 +74,111 @@ var refusals = []struct {
 	{"STT_ADDR", []string{"stt", "stt:x", ":1", "a b:9090"}, []string{"ukubi-stt:9090"}},
 }
 
+// defaultsFor is the Config Load builds from base alone: what a warned value must be replaced by (Warnings and
+// TokenEnv are cleared, the latter being a func, so the two can be compared).
+func defaultsFor(t *testing.T, base map[string]string) Config {
+	t.Helper()
+	c := mustLoad(t, base)
+	c.Warnings, c.TokenEnv = nil, nil
+	return c
+}
+
+// TestLoadRefusals: a bad value of a required key refuses the start; a bad value of any other key loads with one
+// warning naming it and the Config of the same environment without it. Every good value loads with no warning (the
+// positive control: a warning is the bad value's doing).
+// required is the keys Load refuses on (the rest of refusals warns).
+var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true}
+
 func TestLoadRefusals(t *testing.T) {
+	base := map[string]string{"STT_TOKEN_FLEET": "t"} // STT_ADDR is read only with a token
+	defaults := defaultsFor(t, base)
 	for _, r := range refusals {
 		for _, v := range r.bad {
-			c, err := Load(env(map[string]string{r.key: v, "STT_TOKEN_FLEET": "t"})) // STT_ADDR is read only with a token
-			if err == nil {
-				t.Errorf("%s=%q loaded; want a refusal", r.key, v)
+			m := map[string]string{r.key: v, "STT_TOKEN_FLEET": "t"}
+			c, err := Load(env(m))
+			if required[r.key] {
+				if err == nil {
+					t.Errorf("%s=%q loaded; want a refusal (it is required)", r.key, v)
+					continue
+				}
+				if !strings.Contains(err.Error(), r.key+"=") || !strings.Contains(err.Error(), "must be") {
+					t.Errorf("%s=%q: error %q does not name the variable and the rule", r.key, v, err)
+				}
+				if !reflect.DeepEqual(c, Config{}) {
+					t.Errorf("%s=%q: a refusal returned a Config that could be run", r.key, v)
+				}
 				continue
 			}
-			if !strings.Contains(err.Error(), r.key+"=") || !strings.Contains(err.Error(), "must be") {
-				t.Errorf("%s=%q: error %q does not name the variable and the rule", r.key, v, err)
+			if err != nil {
+				t.Errorf("%s=%q refused: %v; want a warning and the default (it is optional)", r.key, v, err)
+				continue
 			}
-			if !reflect.DeepEqual(c, Config{}) {
-				t.Errorf("%s=%q: a refusal returned a Config that could be run", r.key, v)
+			if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], r.key+"=") || !strings.Contains(c.Warnings[0], "must be") ||
+				!strings.HasSuffix(c.Warnings[0], "; using the default") {
+				t.Errorf("%s=%q: warnings %q; want one naming the variable, the rule and the default", r.key, v, c.Warnings)
+			}
+			c.Warnings, c.TokenEnv = nil, nil
+			if !reflect.DeepEqual(c, defaults) {
+				t.Errorf("%s=%q: the Config is not the default one:\n got %+v\nwant %+v", r.key, v, c, defaults)
 			}
 		}
 		for _, v := range r.good {
-			if _, err := Load(env(map[string]string{r.key: v, "STT_TOKEN_FLEET": "t"})); err != nil {
+			c, err := Load(env(map[string]string{r.key: v, "STT_TOKEN_FLEET": "t"}))
+			if err != nil {
 				t.Errorf("%s=%q refused: %v", r.key, v, err)
+			} else if c.Warnings != nil {
+				t.Errorf("%s=%q warned: %q", r.key, v, c.Warnings)
 			}
 		}
 	}
 }
 
-// The ints the pools are made of: a parse failure is a refusal here, the relation between them is checkCapacity's.
-func TestLoadPoolsRefuse(t *testing.T) {
+// The pools: an int that does not parse warns and is its default; a relation that fails on the values in use warns and
+// turns all four back to the defaults (5, 0, 0, 1), which switches the inner pools off.
+func TestLoadPoolsWarn(t *testing.T) {
+	defaults := defaultsFor(t, nil)
 	for _, k := range []string{"MAX_IN_FLIGHT_TASKS", "MAX_DEFINITION_SESSIONS", "MAX_EXTERNAL_SESSIONS", "MAX_SESSIONS_PER_MEMBER"} {
 		for _, v := range []string{"abc", "1.5", "2x", " 2"} {
-			if _, err := Load(env(map[string]string{k: v})); err == nil || !strings.Contains(err.Error(), k+"=") {
-				t.Errorf("%s=%q: %v; want a refusal naming it", k, v, err)
+			c, err := Load(env(map[string]string{k: v}))
+			if err != nil || len(c.Warnings) != 1 || !strings.HasPrefix(c.Warnings[0], k+"=") {
+				t.Errorf("%s=%q: %+v, %v; want one warning naming it", k, v, c, err)
+				continue
+			}
+			c.Warnings, c.TokenEnv = nil, nil
+			if !reflect.DeepEqual(c, defaults) {
+				t.Errorf("%s=%q: the Config is not the default one: %+v", k, v, c)
 			}
 		}
 	}
-	// The relation, through Load (the same cases as the standalone rule below, with the keys).
 	ok := map[string]string{"MAX_IN_FLIGHT_TASKS": "5", "MAX_DEFINITION_SESSIONS": "2", "MAX_EXTERNAL_SESSIONS": "1"}
-	if c := mustLoad(t, ok); c.MaxInFlight != 5 || c.MaxDefinitionSessions != 2 || c.MaxExternalSessions != 1 || c.MaxSessionsPerMember != 1 {
-		t.Errorf("pools: %+v", c)
+	if c := mustLoad(t, ok); c.MaxInFlight != 5 || c.MaxDefinitionSessions != 2 || c.MaxExternalSessions != 1 || c.MaxSessionsPerMember != 1 || c.Warnings != nil {
+		t.Errorf("pools: %+v", c) // the positive control: a valid relation is kept, with no warning
 	}
+	// The relation, through Load (the same cases as the standalone rule below, with the keys): each is one warning
+	// carrying checkCapacity's own message, and all four pools are the defaults whatever was set.
 	for _, m := range []map[string]string{
-		{"MAX_IN_FLIGHT_TASKS": "5", "MAX_DEFINITION_SESSIONS": "5"},
+		{"MAX_IN_FLIGHT_TASKS": "7", "MAX_DEFINITION_SESSIONS": "7"},
 		{"MAX_IN_FLIGHT_TASKS": "0"},
-		{"MAX_IN_FLIGHT_TASKS": "5", "MAX_DEFINITION_SESSIONS": "2", "MAX_EXTERNAL_SESSIONS": "2"},
-		{"MAX_IN_FLIGHT_TASKS": "5", "MAX_DEFINITION_SESSIONS": "2", "MAX_EXTERNAL_SESSIONS": "1", "MAX_SESSIONS_PER_MEMBER": "0"},
+		{"MAX_IN_FLIGHT_TASKS": "7", "MAX_DEFINITION_SESSIONS": "2", "MAX_EXTERNAL_SESSIONS": "2"},
+		{"MAX_IN_FLIGHT_TASKS": "7", "MAX_DEFINITION_SESSIONS": "2", "MAX_EXTERNAL_SESSIONS": "1", "MAX_SESSIONS_PER_MEMBER": "0"},
+		{"MAX_IN_FLIGHT_TASKS": "7", "MAX_DEFINITION_SESSIONS": "-1"},
 	} {
-		if _, err := Load(env(m)); err == nil {
-			t.Errorf("%v loaded; want the capacity refusal", m)
+		c, err := Load(env(m))
+		if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "must be >= ") || !strings.HasSuffix(c.Warnings[0], "the definition, member and client pools are off") {
+			t.Errorf("%v: %q, %v; want the capacity warning", m, c.Warnings, err)
+		}
+		if c.MaxInFlight != 5 || c.MaxDefinitionSessions != 0 || c.MaxExternalSessions != 0 || c.MaxSessionsPerMember != 1 {
+			t.Errorf("%v: pools %d/%d/%d/%d, want the defaults 5/0/0/1", m, c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember)
 		}
 	}
-	// One unparsed pool value: reported once, as itself, with no capacity rule computed from a default it did not read.
-	_, err := Load(env(map[string]string{"MAX_IN_FLIGHT_TASKS": "abc", "MAX_DEFINITION_SESSIONS": "9"}))
-	if err == nil || strings.Contains(err.Error(), "must be >= 0 and <") || !strings.Contains(err.Error(), "MAX_IN_FLIGHT_TASKS=") {
-		t.Errorf("unparsed cap: %v", err)
+	// An unparsed count is its default, and the relation is checked on that: here MAX_IN_FLIGHT_TASKS is 5 and the
+	// definition pool 9 is outside it, so two warnings (the count, then the relation), and the defaults.
+	c, err := Load(env(map[string]string{"MAX_IN_FLIGHT_TASKS": "abc", "MAX_DEFINITION_SESSIONS": "9"}))
+	if err != nil || len(c.Warnings) != 2 || !strings.HasPrefix(c.Warnings[0], "MAX_IN_FLIGHT_TASKS=") || !strings.Contains(c.Warnings[1], "must be >= 0 and <") {
+		t.Errorf("unparsed cap: %q, %v", c.Warnings, err)
+	}
+	if c.MaxDefinitionSessions != 0 {
+		t.Errorf("the relation fell back to the defaults: definition pool %d, want 0", c.MaxDefinitionSessions)
 	}
 }
 
@@ -146,85 +202,199 @@ func TestCheckCapacity(t *testing.T) {
 	}
 }
 
-// Every problem in one error, each naming its variable, in a stable order; nothing is fixed first.
+// A required key refuses, in one error that names it; the optional keys' problems are not in it (a refusal returns
+// no Config, so no warnings either). With the required key valid, every other problem is one warning of the one
+// Config, each naming its variable, in a stable order; nothing is fixed first.
 func TestLoadReportsEveryProblem(t *testing.T) {
 	m := map[string]string{}
-	var keys []string
+	var requiredKeys, otherKeys []string
 	for _, r := range refusals {
 		m[r.key] = r.bad[0]
-		keys = append(keys, r.key)
+		if required[r.key] {
+			requiredKeys = append(requiredKeys, r.key)
+		} else {
+			otherKeys = append(otherKeys, r.key)
+		}
 	}
 	m["STT_TOKEN_FLEET"] = "t" // STT_ADDR is checked only with a token
 	m["MAX_DEFINITION_SESSIONS"] = "x"
-	keys = append(keys, "MAX_DEFINITION_SESSIONS")
+	m["MAX_SESSIONS_PER_MEMBER"] = "x"
+	otherKeys = append(otherKeys, "MAX_DEFINITION_SESSIONS", "MAX_SESSIONS_PER_MEMBER") // pools: no rows of their own
 	_, err := Load(env(m))
 	if err == nil {
 		t.Fatal("loaded")
 	}
 	msg := err.Error()
-	for _, k := range keys {
+	for _, k := range requiredKeys {
 		if !strings.Contains(msg, k+"=") {
 			t.Errorf("the error does not name %s:\n%s", k, msg)
 		}
 	}
-	if want := "invalid configuration, " + strconv.Itoa(len(keys)) + " problem(s):"; msg[:strings.Index(msg, "\n")] != want {
+	for _, k := range otherKeys {
+		if strings.Contains(msg, k+"=") {
+			t.Errorf("the error names %s, which is optional:\n%s", k, msg)
+		}
+	}
+	if want := "invalid configuration, " + strconv.Itoa(len(requiredKeys)) + " problem(s):"; msg[:strings.Index(msg, "\n")] != want {
 		t.Errorf("count line: %q, want %q", msg[:strings.Index(msg, "\n")], want)
 	}
 	_, again := Load(env(m))
 	if again.Error() != msg {
 		t.Error("the report's order changes between runs")
 	}
-	if lines := strings.Split(msg, "\n"); len(lines) != len(keys)+1 {
+	if lines := strings.Split(msg, "\n"); len(lines) != len(requiredKeys)+1 {
 		t.Errorf("%d lines, want one per problem plus the count line", len(lines))
 	}
+
+	// The other half, with the required key valid.
+	for _, k := range requiredKeys {
+		delete(m, k)
+	}
+	c := mustLoad(t, m)
+	for _, k := range otherKeys {
+		n := 0
+		for _, w := range c.Warnings {
+			if strings.HasPrefix(w, k+"=") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%d warnings name %s, want 1:\n%q", n, k, c.Warnings)
+		}
+	}
+	// One per variable and no more: the pools' relation holds on the defaults the two unparsed counts fell back to.
+	if len(c.Warnings) != len(otherKeys) {
+		t.Errorf("%d warnings, want one per optional variable (%d): %q", len(c.Warnings), len(otherKeys), c.Warnings)
+	}
+	if again := mustLoad(t, m); !reflect.DeepEqual(again.Warnings, c.Warnings) {
+		t.Error("the warnings' order changes between runs")
+	}
 }
 
-// A URL's userinfo is never echoed into a refusal, which is logged.
+// OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL are only required while the console gate is on: with FLEET_AUTH_DISABLED=1
+// nothing reads them, so a malformed one is a warning. The positive control is the same value with the gate on
+// (TestLoadRefusals), and an unparsed FLEET_AUTH_DISABLED reads as gate on, so it refuses. A missing one is no problem
+// in Load (run() checks the issuer and the session keys are present).
+func TestGateKeysRequiredOnlyWithTheGateOn(t *testing.T) {
+	for _, k := range []string{"OIDC_ISSUER_URL", "DASHBOARD_PUBLIC_URL"} {
+		c, err := Load(env(map[string]string{k: "not a url", "FLEET_AUTH_DISABLED": "1"}))
+		if err != nil || len(c.Warnings) != 1 || !strings.HasPrefix(c.Warnings[0], k+"=") || c.OIDCIssuerURL != "" || c.DashboardPublicURL != "" {
+			t.Errorf("%s, gate off: %q, %q, %v; want one warning and the value unset", k, c.Warnings, c.DashboardPublicURL, err)
+		}
+		for _, off := range []string{"0", "true", ""} {
+			_, err := Load(env(map[string]string{k: "not a url", "FLEET_AUTH_DISABLED": off}))
+			if err == nil || !strings.Contains(err.Error(), k+"=") {
+				t.Errorf("%s, FLEET_AUTH_DISABLED=%q: %v; want a refusal (the gate is on)", k, off, err)
+			}
+		}
+		if c, err := Load(env(nil)); err != nil || c.Warnings != nil {
+			t.Errorf("%s unset: %q, %v; a missing value is no problem in Load", k, c.Warnings, err)
+		}
+	}
+	// Both malformed: one error, both named.
+	_, err := Load(env(map[string]string{"OIDC_ISSUER_URL": "x", "DASHBOARD_PUBLIC_URL": "y"}))
+	if err == nil || !strings.Contains(err.Error(), "OIDC_ISSUER_URL=") || !strings.Contains(err.Error(), "DASHBOARD_PUBLIC_URL=") ||
+		!strings.HasPrefix(err.Error(), "invalid configuration, 2 problem(s):") {
+		t.Errorf("both malformed: %v", err)
+	}
+}
+
+// A URL's userinfo is never echoed into a refusal or a warning, which are logged.
 func TestLoadRefusalDoesNotEchoCredentials(t *testing.T) {
-	_, err := Load(env(map[string]string{"LOKI_URL": "ftp://user:hunter2@loki"}))
-	if err == nil || strings.Contains(err.Error(), "hunter2") || !strings.Contains(err.Error(), "LOKI_URL=") {
+	_, err := Load(env(map[string]string{"OIDC_ISSUER_URL": "ftp://user:hunter2@authentik"}))
+	if err == nil || strings.Contains(err.Error(), "hunter2") || !strings.Contains(err.Error(), "OIDC_ISSUER_URL=") {
 		t.Errorf("refusal: %v", err)
 	}
-	_, err = Load(env(map[string]string{"LOKI_URL": "ftp://loki"}))
-	if err == nil || !strings.Contains(err.Error(), `"ftp://loki"`) {
+	_, err = Load(env(map[string]string{"OIDC_ISSUER_URL": "ftp://authentik"}))
+	if err == nil || !strings.Contains(err.Error(), `"ftp://authentik"`) {
 		t.Errorf("a value without userinfo is echoed so it can be found: %v", err)
+	}
+	// PROMETHEUS_URL is optional: a warning, with the same redaction.
+	c, err := Load(env(map[string]string{"PROMETHEUS_URL": "ftp://user:hunter2@prom"}))
+	if err != nil || len(c.Warnings) != 1 || strings.Contains(c.Warnings[0], "hunter2") || !strings.Contains(c.Warnings[0], "PROMETHEUS_URL=") {
+		t.Errorf("warning: %q, %v", c.Warnings, err)
+	}
+	c, err = Load(env(map[string]string{"PROMETHEUS_URL": "ftp://prom"}))
+	if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], `"ftp://prom"`) {
+		t.Errorf("a value without userinfo is echoed in a warning too: %q, %v", c.Warnings, err)
 	}
 }
 
-// TestRefusalsCoverEveryRule: the keys Load validates are the keys refusals (and the pools' test) cover, both ways, so a
-// new rule without a test fails here, and a row for a rule that is gone does. They are found by asking Load with
-// every variable set to something no rule accepts (a NUL byte).
-func TestRefusalsCoverEveryRule(t *testing.T) {
+// validatedKeys asks Load which variables it validates, with every one set to something no rule accepts (a NUL
+// byte): the ones that refuse the start are the error's lines, and with those left unset the rest load and are the
+// Config's warnings. STT_TOKEN_FLEET is set, so STT_ADDR is read.
+func validatedKeys(t *testing.T) (refused, warned map[string]bool) {
+	t.Helper()
+	name := regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	_, err := Load(func(string) string { return "\x00bad" })
 	if err == nil {
 		t.Fatal("a NUL-laden environment loaded")
 	}
-	refused := map[string]bool{}
+	refused, warned = map[string]bool{}, map[string]bool{}
 	for _, line := range strings.Split(err.Error(), "\n")[1:] {
-		if k, _, ok := strings.Cut(line, "="); ok {
+		if k, _, ok := strings.Cut(line, "="); ok && name.MatchString(k) {
 			refused[k] = true
 		}
+	}
+	c, err := Load(func(k string) string {
+		if refused[k] {
+			return ""
+		}
+		return "\x00bad"
+	})
+	if err != nil {
+		t.Fatalf("the NUL-laden environment without the refusing keys still refuses: %v", err)
+	}
+	for _, w := range c.Warnings {
+		if k, _, ok := strings.Cut(w, "="); ok && name.MatchString(k) {
+			warned[k] = true
+		}
+	}
+	return refused, warned
+}
+
+// TestRefusalsCoverEveryRule: the keys Load validates (refusing or warning) are the keys refusals (and the pools' test)
+// cover, both ways, so a new rule without a test fails here, and a row for a rule that is gone does. The refusing keys
+// are the required ones, exactly. They are found by asking Load with every variable set to something no rule accepts
+// (validatedKeys).
+func TestRefusalsCoverEveryRule(t *testing.T) {
+	refused, warned := validatedKeys(t)
+	validated := map[string]bool{}
+	for k := range refused {
+		validated[k] = true
+	}
+	for k := range warned {
+		if refused[k] {
+			t.Errorf("%s both refuses and warns", k)
+		}
+		validated[k] = true
+	}
+	if !reflect.DeepEqual(refused, required) {
+		t.Errorf("refusing keys and required keys differ:\n refusing %v\n required %v", refused, required)
 	}
 	covered := map[string]bool{}
 	for _, r := range refusals {
 		covered[r.key] = true
 	}
 	for _, k := range []string{"MAX_IN_FLIGHT_TASKS", "MAX_DEFINITION_SESSIONS", "MAX_EXTERNAL_SESSIONS", "MAX_SESSIONS_PER_MEMBER"} {
-		covered[k] = true // TestLoadPoolsRefuse
+		covered[k] = true // TestLoadPoolsWarn
 	}
-	if !reflect.DeepEqual(refused, covered) {
-		t.Errorf("validated keys and tested keys differ:\n validated %v\n tested    %v", refused, covered)
+	if !reflect.DeepEqual(validated, covered) {
+		t.Errorf("validated keys and tested keys differ:\n validated %v\n tested    %v", validated, covered)
 	}
 }
 
 // STT_ADDR is validated only while dictation is on: with no STT_TOKEN_FLEET run() never dials it, so a stale malformed
-// value is carried, not refused. The positive control is the same value with a token (TestLoadRefusals).
+// value is carried, not reported. With a token it is a warning and the default address. The positive control is a valid
+// value with a token (TestLoadRefusals).
 func TestSTTAddrOnlyWithToken(t *testing.T) {
 	c, err := Load(env(map[string]string{"STT_ADDR": "a b:x"}))
-	if err != nil || c.STTAddr != "a b:x" {
-		t.Errorf("a malformed STT_ADDR with no token: %q, %v; want it carried and no refusal", c.STTAddr, err)
+	if err != nil || c.STTAddr != "a b:x" || c.Warnings != nil {
+		t.Errorf("a malformed STT_ADDR with no token: %q, %q, %v; want it carried, no warning and no refusal", c.STTAddr, c.Warnings, err)
 	}
-	if _, err := Load(env(map[string]string{"STT_ADDR": "a b:x", "STT_TOKEN_FLEET": "t"})); err == nil || !strings.Contains(err.Error(), "STT_ADDR=") {
-		t.Errorf("the same value with a token: %v; want a refusal naming STT_ADDR", err)
+	c, err = Load(env(map[string]string{"STT_ADDR": "a b:x", "STT_TOKEN_FLEET": "t"}))
+	if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "STT_ADDR=") ||
+		c.STTAddr != "ukubi-stt.ukubi-stt.svc.cluster.local:9090" {
+		t.Errorf("the same value with a token: %q, %q, %v; want one warning naming STT_ADDR and the default address", c.STTAddr, c.Warnings, err)
 	}
 }

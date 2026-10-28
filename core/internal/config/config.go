@@ -79,7 +79,7 @@ type Config struct {
 	MaxInFlight int
 	// MaxDefinitionSessions is the defined-agents pool INSIDE MaxInFlight
 	// (docs/adr/0062). 0 (the default) means no definition session can warm;
-	// Load refuses to start unless it is >= 0 and < MaxInFlight.
+	// Load warns and turns the pools off (the defaults) unless it is >= 0 and < MaxInFlight.
 	MaxDefinitionSessions int
 	// MaxExternalSessions is the member and client pool INSIDE
 	// MaxDefinitionSessions, MaxSessionsPerMember one member's share of it
@@ -129,7 +129,8 @@ type Config struct {
 	// DashboardPublicURL is the externally-reachable dashboard base, used to
 	// build the deep link in a Discord notification. Empty posts the
 	// notification without a link rather than a broken one.
-	// Env: DASHBOARD_PUBLIC_URL.
+	// Env: DASHBOARD_PUBLIC_URL. Also the OIDC redirect URI base and the accepted
+	// origin: a malformed value refuses the start while the console gate is on.
 	DashboardPublicURL string
 	// OIDC federates the console's login to authentik (infra-bootstrap
 	// ADR-0041). The redirect URI is derived from DashboardPublicURL above and
@@ -176,9 +177,10 @@ type Config struct {
 	// which is visible in `df` and recoverable by lowering this value. Too
 	// short deletes a working tree that has no backup of any kind. So the
 	// value that applies when nobody has said otherwise — a fresh local
-	// stack — errs toward keeping the disk (a value that is set and does not
-	// parse is not this case: Load refuses it), and the tighter production number is stated explicitly in
-	// k8s/core.yaml where somebody chose it against real capacity.
+	// stack — errs toward keeping the disk (so does a value that is set and does
+	// not parse: Load warns and uses this), and the tighter production number is
+	// stated explicitly in k8s/core.yaml where somebody chose it against real
+	// capacity.
 	//
 	// None of this is a claim about how long work takes: git is the durable
 	// copy, and the row and its transcript survive the sweep either way.
@@ -200,6 +202,10 @@ type Config struct {
 	// TokenEnv reads the variable a registered client's tokenRef names (docs/adr/0066 §3): the names come from
 	// the synced definitions, so they are read by name at match time, through the same getenv.
 	TokenEnv func(string) string
+	// Warnings are the problems with optional values (a set value that does not satisfy its rule), each replaced by
+	// its default: "KEY=value: rule; using the default". cmd/core/main.go logs each at WARN once its logger exists. Nil
+	// when there are none.
+	Warnings []string
 }
 
 // FromProcess is core's configuration from its environment: the one call that reads it. An error is a refusal to
@@ -207,10 +213,18 @@ type Config struct {
 func FromProcess() (Config, error) { return Load(os.Getenv) }
 
 // Load is core's configuration from getenv (mountain plan/15 §5: one Config per binary, the environment read only
-// here; FromProcess passes os.Getenv, a test a map), validated once: a variable that is SET and does not satisfy its
-// rule refuses the start, and every such problem is reported in the one error, each naming its variable and the
-// rule. Unset (or empty: getenv cannot tell the two apart) is the default, as before. The Config returned with an
-// error is the zero value, so nothing can run on a half-read one.
+// here; FromProcess passes os.Getenv, a test a map), validated once. Unset (or empty: getenv cannot tell the two
+// apart) is the default. A value that is SET and does not satisfy its rule is one of two kinds of problem:
+//
+//   - an optional key (anything with a default, or that may be unset) WARNS: the field takes its default, the problem
+//     is one line of Config.Warnings naming the variable and the rule, and core starts;
+//   - a required key (core cannot run without it) REFUSES: every such problem is one line of the one error. The only
+//     required keys Load checks are OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL (the OIDC discovery target and the
+//     redirect URI base and accepted origin), while the console gate is on (FLEET_AUTH_DISABLED is not 1); that
+//     the issuer and FLEET_SESSION_KEYS are present is run()'s check, where it always was (a Load of an empty
+//     environment must succeed, and a missing value is not a problem here).
+//
+// The Config returned with an error is the zero value, so nothing can run on a half-read one.
 func Load(getenv func(string) string) (Config, error) {
 	l := &loader{getenv: getenv}
 	c := Config{
@@ -245,8 +259,6 @@ func Load(getenv func(string) string) (Config, error) {
 		StartupStall:          l.millis("STARTUP_STALL_MS", 3*60*1000),
 		TurnStall:             l.millis("TURN_STALL_MS", 90*1000),
 		SessionRetention:      l.retention("SESSION_RETENTION", 10*24*time.Hour),
-		DashboardPublicURL:    l.url("DASHBOARD_PUBLIC_URL", ""),
-		OIDCIssuerURL:         l.url("OIDC_ISSUER_URL", ""),
 		OIDCClientID:          getenv("OIDC_CLIENT_ID"),
 		OIDCClientSecret:      getenv("OIDC_CLIENT_SECRET"),
 		SessionKeys:           getenv("FLEET_SESSION_KEYS"),
@@ -264,21 +276,26 @@ func Load(getenv func(string) string) (Config, error) {
 			PasswordFile: l.str("BRIDGE_PASSWORD_FILE", "/etc/bridge-core/app_password"),
 		},
 	}
-	// The three pools are one rule, checked once all three read (a value that did not parse has no relation to check).
-	var capOK bool
-	c.MaxInFlight, capOK = l.count("MAX_IN_FLIGHT_TASKS", 5)
-	var ok2, ok3, ok4 bool
-	c.MaxDefinitionSessions, ok2 = l.count("MAX_DEFINITION_SESSIONS", 0)
-	c.MaxExternalSessions, ok3 = l.count("MAX_EXTERNAL_SESSIONS", 0)
-	c.MaxSessionsPerMember, ok4 = l.count("MAX_SESSIONS_PER_MEMBER", 1)
-	if capOK && ok2 && ok3 && ok4 {
-		if err := checkCapacity(c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember); err != nil {
-			l.errs = append(l.errs, err)
-		}
+	// The issuer and the dashboard's public URL are required while the gate is on (run() builds the OIDC relying
+	// party from them: discovery target, redirect URI base); a malformed one makes the console unusable for every
+	// human. With the gate explicitly off nothing reads them, so a malformed one is only a warning.
+	c.OIDCIssuerURL = l.urlWith("OIDC_ISSUER_URL", "", l.requiredIf(!c.AuthDisabled))
+	c.DashboardPublicURL = l.urlWith("DASHBOARD_PUBLIC_URL", "", l.requiredIf(!c.AuthDisabled))
+	// The three pools are one rule, checked on the values in use (a count that did not parse is its default).
+	c.MaxInFlight = l.count("MAX_IN_FLIGHT_TASKS", 5)
+	c.MaxDefinitionSessions = l.count("MAX_DEFINITION_SESSIONS", 0)
+	c.MaxExternalSessions = l.count("MAX_EXTERNAL_SESSIONS", 0)
+	c.MaxSessionsPerMember = l.count("MAX_SESSIONS_PER_MEMBER", 1)
+	if err := checkCapacity(c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember); err != nil {
+		// The relation is the pools' own rule, not one value's: a broken one turns the inner pools off (the defaults)
+		// rather than keep a cap the numbers contradict, and says why.
+		l.warns = append(l.warns, err.Error()+"; using the defaults (5, 0, 0, 1): the definition, member and client pools are off")
+		c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember = 5, 0, 0, 1
 	}
 	if len(l.errs) > 0 {
 		return Config{}, fmt.Errorf("invalid configuration, %d problem(s):\n%w", len(l.errs), errors.Join(l.errs...))
 	}
+	c.Warnings = l.warns
 	return c, nil
 }
 
@@ -300,19 +317,37 @@ func checkCapacity(maxInFlight, maxDef, maxExternal, perMember int) error {
 }
 
 // loader reads typed values and collects what is wrong with them. Every reader returns its default when the
-// variable is unset or empty, and on a bad value records the problem and returns the default too (the Config built
-// from it is discarded).
+// variable is unset or empty, and on a bad value records the problem and returns the default too: as a warning (the
+// default is what the Config keeps) unless the key is required, where it is an error and the Config is discarded.
 type loader struct {
 	getenv func(string) string
 	errs   []error
+	warns  []string
 }
 
-func (l *loader) bad(key, v, rule string) {
+// report records a set value that does not satisfy its rule.
+type report func(key, v, rule string)
+
+// warn is an optional key's problem: the default is used instead.
+func (l *loader) warn(key, v, rule string) {
+	l.warns = append(l.warns, fmt.Sprintf("%s=%s: %s; using the default", key, shown(v), rule))
+}
+
+// refuse is a required key's problem: core does not start.
+func (l *loader) refuse(key, v, rule string) {
 	l.errs = append(l.errs, fmt.Errorf("%s=%s: %s", key, shown(v), rule))
 }
 
+// requiredIf is refuse when required, else warn.
+func (l *loader) requiredIf(required bool) report {
+	if required {
+		return l.refuse
+	}
+	return l.warn
+}
+
 // shown quotes a value for the message, except one with userinfo in it (a URL's user:password@), which is never
-// echoed: a refusal is logged.
+// echoed: a refusal and a warning are both logged.
 func shown(v string) string {
 	if strings.Contains(v, "@") {
 		return "<redacted: contains @>"
@@ -327,18 +362,18 @@ func (l *loader) str(key, fallback string) string {
 	return fallback
 }
 
-// count is an integer with no range of its own (the pools' rule is checkCapacity's); ok is false for a refusal.
-func (l *loader) count(key string, fallback int) (n int, ok bool) {
+// count is an integer with no range of its own (the pools' rule is checkCapacity's, on the values in use).
+func (l *loader) count(key string, fallback int) int {
 	v := l.getenv(key)
 	if v == "" {
-		return fallback, true
+		return fallback
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
-		l.bad(key, v, "must be a whole number")
-		return fallback, false
+		l.warn(key, v, "must be a whole number")
+		return fallback
 	}
-	return n, true
+	return n
 }
 
 func (l *loader) dbPort(key string, fallback int) int {
@@ -349,7 +384,7 @@ func (l *loader) dbPort(key string, fallback int) int {
 	if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 65535 {
 		return n
 	}
-	l.bad(key, v, "must be a port number, a whole number from 1 to 65535")
+	l.warn(key, v, "must be a port number, a whole number from 1 to 65535")
 	return fallback
 }
 
@@ -360,7 +395,7 @@ func (l *loader) port(key, fallback string) string {
 		return fallback
 	}
 	if n, err := strconv.ParseUint(v, 10, 16); err != nil || n == 0 {
-		l.bad(key, v, "must be a port number, digits only, from 1 to 65535")
+		l.warn(key, v, "must be a port number, digits only, from 1 to 65535")
 		return fallback
 	}
 	return v
@@ -372,17 +407,16 @@ func (l *loader) level(key, fallback string) string {
 		return fallback
 	}
 	var lv slog.Level
-	// slog also reads "info+2" and "WARN-4"; the rule here is the four names, so an offset is refused.
+	// slog also reads "info+2" and "WARN-4"; the rule here is the four names, so an offset is a bad value.
 	if err := lv.UnmarshalText([]byte(v)); err != nil || strings.ContainsAny(v, "+-") {
-		l.bad(key, v, "must be debug, info, warn or error (case-insensitive, no offset)")
+		l.warn(key, v, "must be debug, info, warn or error (case-insensitive, no offset)")
 		return fallback
 	}
 	return v
 }
 
 // authDisabled is the explicit local-stack opt-out: only "1" turns the gate off. Anything else that is set and is
-// not "0" is refused rather than read as "on", so a "true" that someone believes disables it (or a typo they believe
-// leaves it enabled) cannot pass for a decision.
+// not "0" is a bad value, never read as "on": it warns and the gate stays on, and a "true" that someone believes disables it (or a typo they believe leaves it enabled) cannot pass for a decision.
 func (l *loader) authDisabled(key string) bool {
 	switch v := l.getenv(key); v {
 	case "", "0":
@@ -390,19 +424,22 @@ func (l *loader) authDisabled(key string) bool {
 	case "1":
 		return true
 	default:
-		l.bad(key, v, "must be 1 (the console is unauthenticated: local stacks only), or 0 or unset")
+		l.warn(key, v, "must be 1 (the console is unauthenticated: local stacks only), or 0 or unset")
 		return false
 	}
 }
 
 // url is an absolute http(s) URL with a host. Nothing else is parsed out of it here: each consumer takes the string.
-func (l *loader) url(key, fallback string) string {
+func (l *loader) url(key, fallback string) string { return l.urlWith(key, fallback, l.warn) }
+
+// urlWith is url with the problem going to bad: a required URL passes refuse.
+func (l *loader) urlWith(key, fallback string, bad report) string {
 	v := l.getenv(key)
 	if v == "" {
 		return fallback
 	}
 	if u, err := url.Parse(v); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Hostname() == "" {
-		l.bad(key, v, "must be an absolute http or https URL with a host")
+		bad(key, v, "must be an absolute http or https URL with a host")
 		return fallback
 	}
 	return v
@@ -416,14 +453,15 @@ func (l *loader) hostPort(key, fallback string) string {
 	}
 	h, p, err := net.SplitHostPort(v)
 	if n, perr := strconv.ParseUint(p, 10, 16); err != nil || h == "" || strings.ContainsAny(h, " \t/") || perr != nil || n == 0 {
-		l.bad(key, v, "must be host:port, a host and a port from 1 to 65535")
+		l.warn(key, v, "must be host:port, a host and a port from 1 to 65535")
 		return fallback
 	}
 	return v
 }
 
 // sttAddr is hostPort, but only while dictation is on. With no STT_TOKEN_FLEET run() never dials the address
-// (a supported state: dictation off), so a stale malformed value there is carried as given and not refused.
+// (a supported state: dictation off), so a stale malformed value there is carried as given and not reported. With a
+// token a malformed value is a warning and the default address (STT_ADDR is optional).
 func (l *loader) sttAddr(key, tokenKey, fallback string) string {
 	if l.getenv(tokenKey) == "" {
 		if v := l.getenv(key); v != "" {
@@ -442,7 +480,7 @@ func (l *loader) host(key string) string {
 	}
 	u, err := url.Parse("//" + v)
 	if err != nil || u.Host != v || u.Hostname() == "" || u.Path != "" || !validPort(u.Port()) {
-		l.bad(key, v, "must be a host or host:port (a port from 1 to 65535), with no scheme and no path")
+		l.warn(key, v, "must be a host or host:port (a port from 1 to 65535), with no scheme and no path")
 		return ""
 	}
 	return v
@@ -457,9 +495,9 @@ func validPort(p string) bool {
 	return err == nil && n != 0
 }
 
-// millis is a whole number of milliseconds, positive. Zero and negative are refused for the reason retention's are
-// (see retention): these feed the same Postgres interval arithmetic and the stop and stall timers, where "now" or a
-// cutoff in the future matches every session.
+// millis is a whole number of milliseconds, positive. Zero and negative are a bad value for the reason retention's are
+// (see retention), and the default is used instead: these feed the same Postgres interval arithmetic and the stop
+// and stall timers, where "now" or a cutoff in the future matches every session.
 func (l *loader) millis(key string, fallbackMS int) time.Duration {
 	v := l.getenv(key)
 	if v == "" {
@@ -467,7 +505,7 @@ func (l *loader) millis(key string, fallbackMS int) time.Duration {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 || int64(n) > math.MaxInt64/int64(time.Millisecond) {
-		l.bad(key, v, "must be a positive whole number of milliseconds")
+		l.warn(key, v, "must be a positive whole number of milliseconds")
 		return time.Duration(fallbackMS) * time.Millisecond
 	}
 	return time.Duration(n) * time.Millisecond
@@ -479,18 +517,18 @@ func (l *loader) millis(key string, fallbackMS int) time.Duration {
 // read off the value is a window nobody reviews.
 //
 // Only a bare "<int>d" is special-cased. Everything else goes to
-// time.ParseDuration, so "144h" and "90s" work and "6d12h" is refused.
-// A value that does not parse stops core from starting (it used to warn and use the
-// default): a retention nobody meant is a retention nobody chose, and the refusal
-// is in the first log line instead of a warn to grep for.
+// time.ParseDuration, so "144h" and "90s" work and "6d12h" is a bad value.
+// A value that does not parse warns and uses the default, the long end of the
+// range (see Config.SessionRetention for why that end).
 //
-// Zero and negative are REJECTED, not merely odd. These durations become a
+// Zero and negative are a bad value, not merely odd. These durations become a
 // Postgres interval in the retention and idle sweeps (sessions/store.go), and
 // `now() - interval '0s'` is now, while a negative interval is a cutoff in the
 // FUTURE — either one matches every session that exists. Verified against a
 // real Postgres: a row one minute old is swept by both. So "-6d", which
 // strconv.Atoi is perfectly happy to read, would reclaim the whole fleet's
-// disk on the next 60s tick instead of nothing.
+// disk on the next 60s tick instead of nothing. (A bad value never reaches a
+// sweep: it is replaced by the default.)
 func (l *loader) retention(key string, fallback time.Duration) time.Duration {
 	v := l.getenv(key)
 	if v == "" {
@@ -504,7 +542,7 @@ func (l *loader) retention(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	if err != nil || d <= 0 {
-		l.bad(key, v, `must be a positive duration: a Go duration ("144h", "90s") or whole days ("6d"; "6d12h" is not accepted)`)
+		l.warn(key, v, `must be a positive duration: a Go duration ("144h", "90s") or whole days ("6d"; "6d12h" is not accepted)`)
 		return fallback
 	}
 	return d

@@ -155,8 +155,9 @@ env:
   - name: MAX_IN_FLIGHT_TASKS
     value: "5"
   # docs/adr/0062: defined-agent sessions draw from a pool INSIDE the cap
-  # above, so a full pool still leaves admins 3 slots. Must be < the cap or
-  # core refuses to start. Unset = 0 = no definition session can warm.
+  # above, so a full pool still leaves admins 3 slots. Must be < the cap, or
+  # core warns and falls back to the defaults (inner pools off). Unset = 0 = no
+  # definition session can warm.
   - name: MAX_DEFINITION_SESSIONS
     value: "2"
   # docs/adr/0066 §8: sessions members and clients own draw from a pool

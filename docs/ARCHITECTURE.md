@@ -725,18 +725,41 @@ cannot say.
 
 `core/internal/config/config.go`. `AGENTFLEET_DB_*` exist only here. Caps:
 `MAX_IN_FLIGHT_TASKS` (live pods) ⊃ `MAX_DEFINITION_SESSIONS` ⊃
-`MAX_EXTERNAL_SESSIONS` (members and clients); core refuses to start unless
-each pool is smaller than the one around it (0 turns an inner pool off).
+`MAX_EXTERNAL_SESSIONS` (members and clients); each pool must be smaller than
+the one around it (0 turns an inner pool off). A set of counts that breaks that
+logs a warning and falls back to all four defaults (5, 0, 0, 1), which turns the
+inner pools off; core still starts.
 
 **Validated once, at start.** `config.Load` reads every variable below and
-refuses to start when one is *set* and does not satisfy its rule, with one
-error naming every such variable and its rule (`main` logs `invalid
-configuration` and exits 1, before the database is opened). Unset, or empty (the
-two cannot be told apart), is the default; a secret key rendered empty is
-"unset", never a refusal. Before this, a value that did not parse fell back to
-the default with, at most, a warning. `TestConfigDocumented` fails on a variable
-core reads that is not a row here, and on a row nothing reads. The libraries'
-own variables (`AWS_*`, `PG*`, the proxy variables) are theirs and not listed.
+checks each one that is *set* against its rule. Unset, or empty (the two cannot
+be told apart), is the default; a secret key rendered empty is "unset", never a
+problem. A bad value is handled by the key's class:
+
+- **Optional (warns, uses the default):** every key with a default or that may
+  be unset. The problem is recorded in `Config.Warnings` as
+  `KEY=value: rule; using the default`, the field takes the default, and core
+  starts. `main` logs one `WARN` line per problem (`invalid configuration value,
+  using the default`, the problem in `problem`) once the JSON logger exists. This
+  includes a zero or negative `*_MS` or `SESSION_RETENTION` (they fall back to
+  the default and never reach a sweep), a malformed `BRIDGE_*` value (read as
+  unset), and `FLEET_AUTH_DISABLED` other than `1` or `0` (read as gate on).
+- **Required (`(refuses)` in the table):** a key core cannot run without. A bad
+  value stops the start: one error names every such variable and its rule, and
+  `main` logs `invalid configuration` and exits 1, before the database is
+  opened. Today that is `OIDC_ISSUER_URL` and `DASHBOARD_PUBLIC_URL` while the
+  console gate is on (a malformed one makes the console unusable for every
+  human; with `FLEET_AUTH_DISABLED=1` nothing reads them, so they only warn).
+  That the issuer and `FLEET_SESSION_KEYS` are present at all is checked where it
+  always was, in `run()` (see Auth below); `Load` of an empty environment
+  succeeds and a missing value is not a problem in `Load`.
+- **The pools' relation** is a warning too: on the values in use (an unparsed
+  count is its default), a relation that fails logs `checkCapacity`'s message and
+  falls back to all four defaults, which turns the inner pools off.
+
+A value with `@` in it (URL userinfo) is never echoed, in a warning or a
+refusal. `TestConfigDocumented` fails on a variable core reads that is not a row
+here, and on a row nothing reads. The libraries' own variables (`AWS_*`, `PG*`,
+the proxy variables) are theirs and not listed.
 
 | Variable | Default | Rule when set | What it is |
 |---|---|---|---|
@@ -759,12 +782,12 @@ own variables (`AWS_*`, `PG*`, the proxy variables) are theirs and not listed.
 | `STARTUP_STALL_MS` | `180000` | whole milliseconds, above 0 | pod scheduled to first sign of life (`adr/0040`) |
 | `TURN_STALL_MS` | `90000` | whole milliseconds, above 0 | owing a response this long reads as `stalled` (informational) |
 | `SESSION_RETENTION` | `10d` | Go duration or whole days (`6d`), above 0 | untouched session's disk is reclaimed after this (`adr/0048`); `k8s/core.yaml` sets `6d` |
-| `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL | console base: the Discord link, the OIDC redirect URI, the accepted origin |
-| `OIDC_ISSUER_URL` | none | absolute http(s) URL | authentik issuer, per application, passed to discovery verbatim |
+| `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL (refuses) | console base: the Discord link, the OIDC redirect URI, the accepted origin |
+| `OIDC_ISSUER_URL` | none | absolute http(s) URL (refuses) | authentik issuer, per application, passed to discovery verbatim |
 | `OIDC_CLIENT_ID` | none | any | OIDC client |
 | `OIDC_CLIENT_SECRET` | none | any | secret |
 | `FLEET_SESSION_KEYS` | none | any | secret, comma-separated cookie keys |
-| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value refuses |
+| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on |
 | `FLEET_VERSION` | none | any | the release reported (`dev` without it) |
 | `CLAUDE_MODEL` | none | any | the operator's model override (`adr/0077`) |
 | `FLEET_PROVISIONER_TOKEN` | none | any | secret: the provisioner's bearer to `CoreService` |

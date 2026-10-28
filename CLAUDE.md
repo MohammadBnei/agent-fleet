@@ -119,7 +119,7 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   commit (invalid HEAD = fail closed, never an older row); the mode is the definition's
   `mode.default`, written explicitly.
   Pinned sha ≠ current → warm refused. Pool `MAX_DEFINITION_SESSIONS` sits **inside**
-  `MAX_IN_FLIGHT_TASKS` (must be `<`, or core won't start), checked in `ReserveSlot` only
+  `MAX_IN_FLIGHT_TASKS` (must be `<`; a broken relation warns and falls back to the defaults, inner pools off), checked in `ReserveSlot` only
   (a create provisions nothing; the insert + reserve tx is P4's `Open`). Mode guard lives in
   `sessions.Store.SetPermissionMode` (both callers). Sync rides `sessions.Loop`, no second
   scheduler.

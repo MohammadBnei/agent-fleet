@@ -43,6 +43,11 @@ func main() {
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
+	// Optional values that were set and invalid, already replaced by their defaults (config.Config.Warnings); a value
+	// with userinfo in it was redacted when the problem was written.
+	for _, w := range cfg.Warnings {
+		slog.Warn("invalid configuration value, using the default", "problem", w)
+	}
 	slog.Info("core starting", "version", version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -65,8 +70,8 @@ func main() {
 // (DEBUG/INFO/WARN/ERROR, case-insensitive) and falls back to Info on
 // anything invalid or empty. warning is non-empty when the fallback fired,
 // so the caller can log it once the level-appropriate handler exists.
-// From main the fallback never fires: config.Load refuses an invalid LOG_LEVEL
-// and defaults an empty one to "info" (the branches stay for other callers).
+// From main the fallback never fires: config.Load replaces an invalid LOG_LEVEL
+// (with a warning) and an empty one by "info" (the branches stay for other callers).
 func resolveLogLevel(raw string) (level slog.Level, warning string) {
 	if raw == "" {
 		return slog.LevelInfo, ""

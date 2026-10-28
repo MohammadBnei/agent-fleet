@@ -29,7 +29,7 @@ func mustLoad(t *testing.T, m map[string]string) Config {
 //     both match a row created a minute ago, so either one sweeps every
 //     session on the fleet at the next 60s tick.
 //
-// What does not satisfy the rule is no longer replaced by the default: Load refuses it.
+// What does not satisfy the rule warns and is replaced by the default (10 days, the long end: it keeps the disk).
 func TestRetention(t *testing.T) {
 	const key = "SESSION_RETENTION"
 	fallback := 10 * 24 * time.Hour
@@ -37,7 +37,7 @@ func TestRetention(t *testing.T) {
 	cases := []struct {
 		name string
 		val  string
-		want time.Duration // 0: refused
+		want time.Duration // 0: a bad value, so the default and a warning
 	}{
 		{name: "unset", val: "", want: fallback},
 
@@ -70,12 +70,12 @@ func TestRetention(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := Load(env(map[string]string{key: tc.val}))
 			if tc.want == 0 {
-				if err == nil || !strings.Contains(err.Error(), key+"=") || c.SessionRetention != 0 {
-					t.Errorf("%q: err %v, retention %v; want a refusal naming %s", tc.val, err, c.SessionRetention, key)
+				if err != nil || len(c.Warnings) != 1 || !strings.HasPrefix(c.Warnings[0], key+"=") || c.SessionRetention != fallback {
+					t.Errorf("%q: err %v, retention %v, warnings %q; want the default %v and one warning naming %s", tc.val, err, c.SessionRetention, c.Warnings, fallback, key)
 				}
 				return
 			}
-			if err != nil || c.SessionRetention != tc.want {
+			if err != nil || c.SessionRetention != tc.want || c.Warnings != nil {
 				t.Errorf("%q: %v, %v; want %v", tc.val, c.SessionRetention, err, tc.want)
 			}
 		})

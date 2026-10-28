@@ -180,7 +180,9 @@ Consequences (`sessions_definition_no_lease`).
 ### 5. Capacity: a pool inside the global cap
 
 `MAX_DEFINITION_SESSIONS` (default 0) must be `>= 0` and `<
-MAX_IN_FLIGHT_TASKS`, or core refuses to start. Inside `ReserveSlot`'s
+MAX_IN_FLIGHT_TASKS`, or core refuses to start. *Amended 2026-10-28 (owner): a
+pool relation that does not hold is a WARN line and all four pools take their
+defaults (5, 0, 0, 1), so the inner pools are off; core starts.* Inside `ReserveSlot`'s
 existing advisory-locked transaction, a definition session is also checked
 against the pool and against its own `limits.concurrency`, and a session
 pinned to a row that is no longer valid is refused. Every check runs before
