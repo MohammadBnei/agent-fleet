@@ -22,7 +22,14 @@ import (
 var version = "dev"
 
 func main() {
-	cfg := config.FromProcess()
+	cfg, err := config.FromProcess()
+	if err != nil {
+		// A refusal to start (mountain plan/15 §5): every problem in the one error, before anything is opened. The
+		// logger is the JSON one at its default level, because LOG_LEVEL is one of the values that may be the problem.
+		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 	if cfg.Version != "" {
 		version = cfg.Version
 	}
@@ -58,6 +65,8 @@ func main() {
 // (DEBUG/INFO/WARN/ERROR, case-insensitive) and falls back to Info on
 // anything invalid or empty. warning is non-empty when the fallback fired,
 // so the caller can log it once the level-appropriate handler exists.
+// From main the fallback never fires: config.Load refuses an invalid LOG_LEVEL
+// and defaults an empty one to "info" (the branches stay for other callers).
 func resolveLogLevel(raw string) (level slog.Level, warning string) {
 	if raw == "" {
 		return slog.LevelInfo, ""

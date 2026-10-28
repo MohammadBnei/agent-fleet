@@ -728,6 +728,70 @@ cannot say.
 `MAX_EXTERNAL_SESSIONS` (members and clients); core refuses to start unless
 each pool is smaller than the one around it (0 turns an inner pool off).
 
+**Validated once, at start.** `config.Load` reads every variable below and
+refuses to start when one is *set* and does not satisfy its rule, with one
+error naming every such variable and its rule (`main` logs `invalid
+configuration` and exits 1, before the database is opened). Unset, or empty (the
+two cannot be told apart), is the default; a secret key rendered empty is
+"unset", never a refusal. Before this, a value that did not parse fell back to
+the default with, at most, a warning. `TestConfigDocumented` fails on a variable
+core reads that is not a row here, and on a row nothing reads. The libraries'
+own variables (`AWS_*`, `PG*`, the proxy variables) are theirs and not listed.
+
+| Variable | Default | Rule when set | What it is |
+|---|---|---|---|
+| `CORE_PORT` | `8080` | port, 1-65535 | the console, `ConnectRPC`, `/auth/*`, the alert webhook (internet-routed, behind the OIDC gate) |
+| `CORE_GRPC_PORT` | `9090` | port | `CoreService`, for the sidecar and the provisioner |
+| `CORE_METRICS_PORT` | `9093` | port | `/metrics` on its own listener, no ingress (`adr/0059`) |
+| `CORE_CLIENT_PORT` | `9091` | port | `AgentService` for registered clients (`adr/0066` §3) |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`, any case, no offset | log level |
+| `AGENTFLEET_DB_HOST` | `postgres.bnei.lan` | any | Postgres host; `AGENTFLEET_DB_*` are read here only |
+| `AGENTFLEET_DB_PORT` | `5432` | port | Postgres port |
+| `AGENTFLEET_DB_NAME` | `agentfleetdb` | any | database |
+| `AGENTFLEET_DB_USER` | `dbuser_agentfleet` | any | role |
+| `AGENTFLEET_DB_PASSWORD` | none | any | secret |
+| `MAX_IN_FLIGHT_TASKS` | `5` | whole number; the pools' rule below | live pods, fleet-wide |
+| `MAX_DEFINITION_SESSIONS` | `0` | whole number, `0` to below `MAX_IN_FLIGHT_TASKS` | defined-agent pool inside the cap (`adr/0062`) |
+| `MAX_EXTERNAL_SESSIONS` | `0` | whole number, `0` to below `MAX_DEFINITION_SESSIONS` | member and client pool inside that (`adr/0066` §8) |
+| `MAX_SESSIONS_PER_MEMBER` | `1` | whole number, at least 1 when `MAX_EXTERNAL_SESSIONS` is above 0 | one member's share of it |
+| `STOP_GRACE_MS` | `30000` | whole milliseconds, above 0 | how long a Stop waits before a forced teardown |
+| `IDLE_TIMEOUT_MS` | `1800000` | whole milliseconds, above 0 | no transcript activity for this long tears the pod down |
+| `STARTUP_STALL_MS` | `180000` | whole milliseconds, above 0 | pod scheduled to first sign of life (`adr/0040`) |
+| `TURN_STALL_MS` | `90000` | whole milliseconds, above 0 | owing a response this long reads as `stalled` (informational) |
+| `SESSION_RETENTION` | `10d` | Go duration or whole days (`6d`), above 0 | untouched session's disk is reclaimed after this (`adr/0048`); `k8s/core.yaml` sets `6d` |
+| `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL | console base: the Discord link, the OIDC redirect URI, the accepted origin |
+| `OIDC_ISSUER_URL` | none | absolute http(s) URL | authentik issuer, per application, passed to discovery verbatim |
+| `OIDC_CLIENT_ID` | none | any | OIDC client |
+| `OIDC_CLIENT_SECRET` | none | any | secret |
+| `FLEET_SESSION_KEYS` | none | any | secret, comma-separated cookie keys |
+| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value refuses |
+| `FLEET_VERSION` | none | any | the release reported (`dev` without it) |
+| `CLAUDE_MODEL` | none | any | the operator's model override (`adr/0077`) |
+| `FLEET_PROVISIONER_TOKEN` | none | any | secret: the provisioner's bearer to `CoreService` |
+| `FLEET_CORE_PROVISIONER_TOKEN` | none | any | secret: core's bearer to `ProvisionerService` (`adr/0069`) |
+| `FLEET_CLIENT_TOKEN_<NAME>` | none | any | secret: a registered client's bearer; the name is its definition's `tokenRef`, read at match time (`adr/0066` §3) |
+| `FLEET_REPO_OVERRIDES` | none | any path | infra-bootstrap's overrides file; empty turns the repos sync off (`adr/0074`) |
+| `PROVISIONER_GRPC_ADDR` | `provisioner.agent-fleet.svc.cluster.local:9090` | `host:port` | where core commands the provisioner |
+| `STT_ADDR` | `ukubi-stt.ukubi-stt.svc.cluster.local:9090` | `host:port`; read only with `STT_TOKEN_FLEET` set | speech-to-text |
+| `STT_TOKEN_FLEET` | none | any | secret; unset disables dictation |
+| `LOKI_URL` | in-cluster Loki | absolute http(s) URL | log queries |
+| `PROMETHEUS_URL` | in-cluster Prometheus | absolute http(s) URL | the Observability page |
+| `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | absolute http(s) URL | files, signed into the presigned URLs: must be browser-reachable |
+| `GARAGE_FILES_BUCKET` | `agent-fleet-files` | any | bucket |
+| `AGENTFLEET_FILES_S3_ACCESS_KEY` | none | any | secret |
+| `AGENTFLEET_FILES_S3_SECRET` | none | any | secret |
+| `DISCORD_BOT_TOKEN` | none | any | secret; unset runs without Discord |
+| `DISCORD_TRIGGER_CHANNEL_ID` | none | any | channel for "needs a human" posts |
+| `ALERT_WEBHOOK_TOKEN` | none | any | secret; unset makes the alert webhook refuse (`adr/0037`) |
+| `THOT_DISCORD_CHANNEL_ID` | none | any | passed to the alert webhook, which keeps it for config compatibility |
+| `THOT_REPO` | `infra-bootstrap` | any | the repo an alert's proposal is filed against (and its session runs on) |
+| `BRIDGE_URL` | none | absolute http(s) URL | the event bridge; unset runs without it (`adr/0078`) |
+| `BRIDGE_TOKEN_URL` | none | absolute http(s) URL | authentik's token endpoint, by its in-cluster Service |
+| `BRIDGE_AUTH_HOST` | none | host or `host:port` (port 1-65535) | the public Host the token request carries |
+| `BRIDGE_CLIENT_ID` | `ukubi-bridge-api` | any | authentik client id |
+| `BRIDGE_USERNAME` | `bridge-core` | any | the service account |
+| `BRIDGE_PASSWORD_FILE` | `/etc/bridge-core/app_password` | any path | its app password, re-read before each call; absent runs without the bridge |
+
 #### Auth (`core/`, `adr/0056`)
 
 `OIDC_ISSUER_URL` is passed to discovery verbatim (normalising it is a
