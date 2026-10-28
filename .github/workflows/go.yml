@@ -74,6 +74,10 @@ jobs:
               - '*/Dockerfile'
               - '.github/image-inputs.txt'
               - '.github/workflows/docker.yml'
+              # core/internal/buildguard (TestLogGuardCopiesAreIdentical) reads
+              # the logging guard's copy in every module, so an edit to one
+              # copy must run it even when core itself did not change.
+              - '*/internal/logguard/**'
             # k8s/**: provisioner/internal/k8s tests read k8s/core.yaml and
             # k8s/provisioner/*.yaml (LimitRange, readiness probe, NetworkPolicy
             # labels), so a

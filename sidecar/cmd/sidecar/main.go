@@ -103,7 +103,7 @@ func main() {
 			os.Exit(1)
 		}
 		// No access log: one line per tunnel would be most of the log.
-		srv := &http.Server{Handler: router, ReadHeaderTimeout: 10 * time.Second}
+		srv := &http.Server{Handler: router, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError), ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			slog.Info("sidecar egress listening", "addr", lis.Addr().String())
 			if err := srv.Serve(lis); err != nil {
@@ -162,9 +162,9 @@ func main() {
 // health is the one exception, and the reason /readyz lives on its own mux:
 // kubelet dials the StartupProbe at the pod IP. See k8s.SidecarHealthPort.
 func servers(core *coreclient.Client, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
-	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))},
-		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))},
-		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core))}
+	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
+		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
+		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 }
 
 // withAccessLog logs one line per request (method, path, status, duration)

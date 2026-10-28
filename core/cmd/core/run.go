@@ -287,7 +287,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	errCh := make(chan error, 1)
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
-	metricsServer := &http.Server{Addr: ":" + cfg.MetricsPort, Handler: metricsMux}
+	metricsServer := &http.Server{Addr: ":" + cfg.MetricsPort, Handler: metricsMux, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 	go func() {
 		slog.Info("core metrics listening", "port", cfg.MetricsPort)
 		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -460,7 +460,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), errkeys.WithInterceptors(
 		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
 	clientMux.Handle(agentPath, clientHandler)
-	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
+	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {
 		slog.Info("core client API listening", "port", cfg.ClientPort)
 		if err := clientServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -480,7 +480,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
 	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), embedOrigins(defs))
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate, cors)}
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate, cors), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 
 	go func() {
 		slog.Info("core listening", "port", cfg.Port)
