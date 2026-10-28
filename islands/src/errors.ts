@@ -5,11 +5,44 @@ import { Code, ConnectError } from "@connectrpc/connect";
 
 export const isUnauthenticated = (err: unknown) => ConnectError.from(err).code === Code.Unauthenticated;
 
+// The fleet's error key (proto/agentfleet/v1/errors.proto, mountain plan/15 §4), or "": the ErrorKey detail's
+// field 1, read by hand, since the islands do not import the generated code (see above). Both of its fields are
+// strings, so each is a varint tag, a varint length and the bytes. A malformed detail reads as "" (the words remain).
+export function errorKey(err: unknown): string {
+  for (const d of ConnectError.from(err).details) {
+    if (!("type" in d) || d.type !== "agentfleet.v1.ErrorKey") continue;
+    const b = d.value;
+    let i = 0;
+    // varint reads one at b[i], at most 5 bytes (2^35 > any length), or -1: by multiplication, never a 32-bit shift
+    const varint = () => {
+      let v = 0;
+      for (let n = 0, scale = 1; n < 5 && i < b.length; n++, scale *= 128) {
+        const c = b[i++];
+        v += (c & 0x7f) * scale;
+        if (c < 0x80) return v;
+      }
+      return -1;
+    };
+    while (i < b.length) {
+      const tag = varint();
+      const len = varint();
+      if (tag < 0 || len < 0 || tag % 8 !== 2 || i + len > b.length) break; // not this message's shape
+      if (Math.floor(tag / 8) === 1) return new TextDecoder().decode(b.subarray(i, i + len));
+      i += len;
+    }
+  }
+  return "";
+}
+
+// stale: the thread's agent changed since it opened. The key says so; the words' prefix is read one release longer,
+// for a core from before the key.
+const stale = (e: ConnectError) => errorKey(e) === "agent.definition_changed" || e.rawMessage.includes("DEFINITION_CHANGED");
+
 // AgentService's refusals (docs/adr/0066, 0067), said plainly. The server's
 // own message stays the fallback.
 export function errorText(err: unknown): string {
   const e = ConnectError.from(err);
-  if (e.rawMessage.includes("DEFINITION_CHANGED")) return "This agent was updated. Start a new thread to continue.";
+  if (stale(e)) return "This agent was updated. Start a new thread to continue.";
   switch (e.code) {
     case Code.ResourceExhausted:
       return "The agent is busy with another session. Try again in a minute.";
@@ -22,7 +55,7 @@ export function errorText(err: unknown): string {
   }
 }
 
-export const isStale = (err: unknown) => ConnectError.from(err).rawMessage.includes("DEFINITION_CHANGED");
+export const isStale = (err: unknown) => stale(ConnectError.from(err));
 
 // Someone else answered first: the stream shows their answer.
 export const isAlreadyAnswered = (err: unknown) => ConnectError.from(err).code === Code.AlreadyExists;

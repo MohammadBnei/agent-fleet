@@ -33,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -242,8 +243,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// either PR. Renaming the variable is the fix; do not rename the import.
 	grpcAuth := coreserver.NewAuthenticator(sessionStore, cfg.ProvisionerToken)
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
+		// errkeys first: every error a CoreService handler or interceptor returns leaves keyed (mountain plan/15 §4).
+		grpc.ChainUnaryInterceptor(errkeys.UnaryServerInterceptor(), coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(errkeys.StreamServerInterceptor(), grpcAuth.StreamInterceptor),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
 	// docs/adr/0078 §8: a definition session hands work on through the
@@ -395,11 +397,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// is what stops one of those forging a call; the session check is what
 	// stops an unauthenticated one. Only AgentService answers CORS, and only
 	// for the embed origins (auth.CORS, docs/adr/0068).
+	// errkeys.WithInterceptors on every Connect handler: what a handler or an inner interceptor returns leaves keyed.
 	interceptors := []connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
 	interceptors = append(interceptors, authInterceptors...)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		connect.WithInterceptors(interceptors...),
+		errkeys.WithInterceptors(interceptors...),
 	)
 	// docs/adr/0037: an alert becomes a thot session — but only after a human
 	// opens the proposal it files (docs/adr/0048). Registered even when the
@@ -441,7 +444,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			go dispatcher.Run(ctx)
 		}
 	}
-	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(memberInterceptors...))
+	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, errkeys.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
 
 	// :9091, clients (docs/adr/0066 §3): the same handlers, a bearer for the
@@ -454,7 +457,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		clientList = func() []definitions.Client { return nil }
 	}
 	clientMux := http.NewServeMux()
-	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), connect.WithInterceptors(
+	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), errkeys.WithInterceptors(
 		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
 	clientMux.Handle(agentPath, clientHandler)
 	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
