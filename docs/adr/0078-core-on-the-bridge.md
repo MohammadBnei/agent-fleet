@@ -192,6 +192,8 @@ in several ways:
      each delivered event's hops with its decision (migration 000021), so `hops` is that event's plus one.
    - **Trust:** the causing event's (its stored taint), false once the session has any context-only or untrusted entry,
      and false when no event caused the session, since nothing vouches for it.
+     *Amended by ADR-0082 §3 (built in `000023`):* only an untrusted entry makes it false, not a context-only one,
+     and a stored taint is also set for a trusted actor the bridge may not claim (a bot, the fleet's GitHub login).
    - **Bounds:** refused past `maxPromptDepth` (3 hops), which bounds a chain's length; a session publishes at most 10
      events an hour (`published_events`), which bounds its width. The dispatcher caps the wakes `PublishEvent` causes
      at 3 per thread and definition per 24 hours, since hops do not survive a GitHub round-trip; past that, a hand-off

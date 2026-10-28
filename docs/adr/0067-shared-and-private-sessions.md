@@ -134,6 +134,11 @@ untrusted input can approve a turn that input drove.
   longer untrusted by being context-only. An `Open` message is untrusted when
   it is `tainted: true` or its actor is not one the client may claim
   (`actors.allow`; an admin's open counts as claimed), whether it woke or not.
+  The dispatcher stores the same rule as its decision's taint, so the
+  proposal, the admin's open of it and `PublishEvent` agree. The actor check
+  covers the comment's or review's author only, not the issue or PR title the
+  rendered event also quotes: that title can be a T2 author's, an open gap
+  against ADR-0082 §2 left for a later step.
 - **`tainted` is derived:** a session is tainted when its transcript has any
   untrusted entry. It is not stored. The widget, the console and ADR-0072's
   approval buttons show it, and §2 restricts who answers.
