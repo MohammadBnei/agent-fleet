@@ -154,10 +154,7 @@ func main() {
 	provSvc.SetGitIdentity(cfg.GitAuthorName, cfg.GitAuthorEmail)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
-	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
-	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)
-	loop := reconcile.New(k8sc, core, vc, time.Duration(sharedInstanceIdleTimeout)*time.Millisecond)
-	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
+	startReconcile(ctx, cfg, k8sc, core, vc)
 
 	// docs/adr/0075 §5: push re-minted tokens on the provisioner's own clock,
 	// not core's. Tokens are re-minted with <30m left, so 5m leaves margin.
@@ -206,6 +203,14 @@ func main() {
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
 	grpcSrv.GracefulStop()
+}
+
+// startReconcile runs the reconcile loop on the configured tick, with the
+// configured idle timeout for shared instances. Both durations are positive:
+// config.Load refused anything else before main got here.
+func startReconcile(ctx context.Context, cfg config.Config, k8sc reconcile.JobLister, core reconcile.EventReporter, vc reconcile.Revoker) {
+	loop := reconcile.New(k8sc, core, vc, cfg.SharedInstanceIdleTimeout)
+	go loop.Run(ctx, cfg.ReconcileInterval)
 }
 
 // images is what the k8s client is built from: every part of the configuration

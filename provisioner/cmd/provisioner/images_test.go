@@ -8,14 +8,16 @@ import (
 )
 
 // images is the one place the Config becomes the k8s client's: a field added to k8s.Images and not set there
-// compiles and reaches no pod, and two fields swapped there compile and reach the wrong one. Every field of a
-// fully set Config holds its own name, so each Images field must hold the name of the Config field it comes
-// from, spelled out in the table below.
+// compiles and reaches no pod, and two fields swapped there compile and reach the wrong one. Every string
+// field of a fully set Config holds its own name (the durations reach no pod), so each Images field must hold
+// the name of the Config field it comes from, spelled out in the table below.
 func TestImages(t *testing.T) {
 	var cfg config.Config
 	cv := reflect.ValueOf(&cfg).Elem()
 	for i := 0; i < cv.NumField(); i++ {
-		cv.Field(i).SetString("v-" + cv.Type().Field(i).Name)
+		if cv.Field(i).Kind() == reflect.String { // the durations (ReconcileInterval, ...) reach no pod
+			cv.Field(i).SetString("v-" + cv.Type().Field(i).Name)
+		}
 	}
 	cfg.SessionNodeSelector = "k=v"
 	img := images(cfg, "v-release")
