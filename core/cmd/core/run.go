@@ -397,12 +397,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// is what stops one of those forging a call; the session check is what
 	// stops an unauthenticated one. Only AgentService answers CORS, and only
 	// for the embed origins (auth.CORS, docs/adr/0068).
-	// errkeys outermost on every Connect handler: what a handler or an inner interceptor returns leaves keyed.
-	interceptors := []connect.Interceptor{errkeys.ConnectInterceptor(), dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
+	// errkeys.WithInterceptors on every Connect handler: what a handler or an inner interceptor returns leaves keyed.
+	interceptors := []connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
 	interceptors = append(interceptors, authInterceptors...)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		connect.WithInterceptors(interceptors...),
+		errkeys.WithInterceptors(interceptors...),
 	)
 	// docs/adr/0037: an alert becomes a thot session — but only after a human
 	// opens the proposal it files (docs/adr/0048). Registered even when the
@@ -425,7 +425,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 no identity is set, so every AgentService
 	// call is Unauthenticated: the service has no unauthenticated mode.
-	memberInterceptors = append([]connect.Interceptor{errkeys.ConnectInterceptor(), dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
+	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub)
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
@@ -444,7 +444,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			go dispatcher.Run(ctx)
 		}
 	}
-	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithInterceptors(memberInterceptors...))
+	_, agentHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, errkeys.WithInterceptors(memberInterceptors...))
 	mux.Handle(agentPath, agentHandler)
 
 	// :9091, clients (docs/adr/0066 §3): the same handlers, a bearer for the
@@ -457,8 +457,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		clientList = func() []definitions.Client { return nil }
 	}
 	clientMux := http.NewServeMux()
-	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), connect.WithInterceptors(
-		errkeys.ConnectInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
+	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), errkeys.WithInterceptors(
+		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
 	clientMux.Handle(agentPath, clientHandler)
 	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {

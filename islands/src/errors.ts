@@ -7,22 +7,27 @@ export const isUnauthenticated = (err: unknown) => ConnectError.from(err).code =
 
 // The fleet's error key (proto/agentfleet/v1/errors.proto, mountain plan/15 §4), or "": the ErrorKey detail's
 // field 1, read by hand, since the islands do not import the generated code (see above). Both of its fields are
-// strings, so each is a tag, a varint length and the bytes.
+// strings, so each is a varint tag, a varint length and the bytes. A malformed detail reads as "" (the words remain).
 export function errorKey(err: unknown): string {
   for (const d of ConnectError.from(err).details) {
     if (!("type" in d) || d.type !== "agentfleet.v1.ErrorKey") continue;
     const b = d.value;
     let i = 0;
-    while (i < b.length) {
-      const tag = b[i++];
-      let len = 0;
-      for (let shift = 0; i < b.length; shift += 7) {
+    // varint reads one at b[i], at most 5 bytes (2^35 > any length), or -1: by multiplication, never a 32-bit shift
+    const varint = () => {
+      let v = 0;
+      for (let n = 0, scale = 1; n < 5 && i < b.length; n++, scale *= 128) {
         const c = b[i++];
-        len |= (c & 0x7f) << shift;
-        if (c < 0x80) break;
+        v += (c & 0x7f) * scale;
+        if (c < 0x80) return v;
       }
-      if ((tag & 7) !== 2) break; // not a string: not this message's shape
-      if (tag >> 3 === 1) return new TextDecoder().decode(b.subarray(i, i + len));
+      return -1;
+    };
+    while (i < b.length) {
+      const tag = varint();
+      const len = varint();
+      if (tag < 0 || len < 0 || tag % 8 !== 2 || i + len > b.length) break; // not this message's shape
+      if (Math.floor(tag / 8) === 1) return new TextDecoder().decode(b.subarray(i, i + len));
       i += len;
     }
   }

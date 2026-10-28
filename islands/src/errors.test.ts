@@ -36,3 +36,25 @@ test("the error key", () => {
   // another precondition is not stale (the positive control)
   expect(isStale(keyed("gone", Code.FailedPrecondition, "server.internal"))).toBe(false);
 });
+
+// raw is a ConnectError whose ErrorKey detail is the given bytes.
+function raw(bytes: number[]): ConnectError {
+  const e = new ConnectError("x", Code.Internal);
+  e.details.push({ type: "agentfleet.v1.ErrorKey", value: new Uint8Array(bytes) });
+  return e;
+}
+
+// The decoder's edges: a field order Go never writes, a length over 127, and malformed bytes, which read as "" and
+// never loop (a length whose 32-bit shift went negative once moved the cursor backwards forever).
+test("the error key's bytes", () => {
+  const enc = new TextEncoder();
+  const k = [...enc.encode("agent.definition_changed")];
+  expect(errorKey(raw([0x12, 5, ...enc.encode("store"), 0x0a, k.length, ...k]))).toBe("agent.definition_changed");
+  const long = "a".repeat(200);
+  expect(errorKey(raw([0x0a, 0xc8, 0x01, ...enc.encode(long)]))).toBe(long);
+  expect(errorKey(raw([0x12, 0xfa, 0xff, 0xff, 0xff, 0x0f]))).toBe(""); // a length past the buffer
+  expect(errorKey(raw([0x12, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]))).toBe(""); // a varint past 5 bytes
+  expect(errorKey(raw([0x0a, 10, 0x61]))).toBe(""); // truncated
+  expect(errorKey(raw([0x0a]))).toBe(""); // no length
+  expect(errorKey(raw([0x08, 0x01]))).toBe(""); // a varint field: not this shape
+});
