@@ -47,7 +47,7 @@ const (
 	// ServiceKeyLabel/LastUsedAtAnnotation are the shared-instance idle-GC
 	// substrate (docs/adr/0034) — the provisioner has no Postgres column to
 	// put a last-active timestamp in, so reconcile.Loop compares this
-	// annotation against SharedInstanceIdleTimeoutMs instead.
+	// annotation against SharedInstanceIdleTimeout (config.Config) instead.
 	ServiceKeyLabel      = "agent-fleet.dev/service-key"
 	LastUsedAtAnnotation = "agent-fleet.dev/last-used-at"
 )

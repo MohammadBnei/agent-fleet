@@ -3,10 +3,13 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Defaults the egress lock (k8s/provisioner/definition-egress.yaml) pins:
@@ -87,11 +90,11 @@ type Config struct {
 	// ExecutorAddr is where the cluster-access ingredient's kubectl shim
 	// sends argv (docs/adr/0037, EXECUTOR_ADDR).
 	ExecutorAddr string
-	// ReconcileInterval is the reconcile loop's tick in milliseconds
-	// (RECONCILE_INTERVAL_MS). Kept as the raw string: cmd/provisioner parses
-	// it, and what a value that is no integer does there is not this
-	// package's to change.
-	ReconcileInterval string
+	// ReconcileInterval is the reconcile loop's tick (RECONCILE_INTERVAL_MS,
+	// a positive integer of milliseconds; 10s unset). Load refuses any other
+	// value, so a Config it returns without an error holds a positive
+	// duration: time.NewTicker panics on anything else.
+	ReconcileInterval time.Duration
 	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
 	// via slog.Level.UnmarshalText in cmd/provisioner/main.go (LOG_LEVEL).
 	LogLevel string
@@ -116,13 +119,15 @@ type Config struct {
 	// size — redis needs none (NeedsPVC is false, pure cache)
 	// (SHARED_INSTANCE_PVC_SIZE).
 	SharedInstancePVCSize string
-	// SharedInstanceIdleTimeoutMs mirrors core's own warm-pod idle-timeout
+	// SharedInstanceIdleTimeout mirrors core's own warm-pod idle-timeout
 	// config shape (docs/adr/0029), translated to Kubernetes since the
 	// provisioner has no Postgres column to put a last-active timestamp in
 	// — reconcile.Loop compares this against a last-used-at annotation
-	// instead (docs/adr/0034). SHARED_INSTANCE_IDLE_TIMEOUT_MS, kept as the
-	// raw string for the same reason as ReconcileInterval.
-	SharedInstanceIdleTimeoutMs string
+	// instead (docs/adr/0034). SHARED_INSTANCE_IDLE_TIMEOUT_MS, a positive
+	// integer of milliseconds; 12h unset. Load refuses any other value: a
+	// timeout of zero or less would make every annotated shared instance
+	// (a Postgres with its PVC included) idle on every reconcile tick.
+	SharedInstanceIdleTimeout time.Duration
 	// AgentVaultAPI, AgentVaultProxy and AgentVaultSecretsDir locate
 	// infra-bootstrap's Agent Vault (docs/adr/0065): its API (provisioner
 	// only), its MITM proxy (definition pods), and the mounted Secret holding
@@ -167,10 +172,20 @@ func FromProcess() (Config, error) { return Load(os.Getenv) }
 
 // Load is the provisioner's configuration from getenv (FromProcess passes
 // os.Getenv, a test a map), validated: the error carries every problem
-// Validate finds, joined, and the Config is returned with it so a caller can
-// log what it was given.
+// found, joined (a duration variable that is no positive integer of
+// milliseconds first, in field order, then what Validate finds), and the
+// Config is returned with it so a caller can log what it was given. A
+// duration that was refused is left zero.
 func Load(getenv func(string) string) (Config, error) {
 	env := func(key, fallback string) string { return envOr(getenv, key, fallback) }
+	var errs []error
+	millis := func(key string, fallback time.Duration) time.Duration {
+		d, err := envMillis(getenv, key, fallback)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return d
+	}
 	c := Config{
 		Namespace: env("NAMESPACE", "agent-fleet"),
 		// registry.bnei.lan:5000 is ukubi-cluster's in-cluster Zot registry
@@ -180,42 +195,42 @@ func Load(getenv func(string) string) (Config, error) {
 		// imagePullSecrets. k8s/provisioner/deployment.yaml overrides both
 		// with the release-pinned tags; these :latest defaults only apply to
 		// a local/kind run.
-		WorkerImage:                 env("WORKER_IMAGE", "registry.bnei.lan:5000/agent-fleet-worker:latest"),
-		SidecarImage:                env("SIDECAR_IMAGE", "registry.bnei.lan:5000/agent-fleet-sidecar:latest"),
-		WorkspacePVC:                env("WORKSPACE_PVC", "agent-fleet-workspace"),
-		SessionStorageClass:         env("SESSION_STORAGE_CLASS", ""),
-		SessionNodeSelector:         env("SESSION_NODE_SELECTOR", ""),
-		WorkspaceRoot:               env("WORKSPACE_ROOT", "/workspace"),
-		E2eHost:                     env("E2E_HOST", "bnei.dev"),
-		Port:                        env("PORT", "8080"),
-		GRPCPort:                    env("GRPC_PORT", "9090"),
-		CoreGRPCAddr:                env("CORE_GRPC_ADDR", DefaultCoreGRPCAddr),
-		CoreToken:                   getenv("FLEET_PROVISIONER_TOKEN"),
-		CoreProvisionerToken:        getenv("FLEET_CORE_PROVISIONER_TOKEN"),
-		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
-		ExecutorAddr:                env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
-		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),
-		LogLevel:                    env("LOG_LEVEL", "info"),
-		FleetSharedRepoURL:          env("FLEET_SHARED_REPO_URL", "https://github.com/MohammadBnei/agent-fleet.git"),
-		FleetSharedBranch:           env("FLEET_SHARED_BRANCH", "main"),
-		FleetDefinitionsRef:         env("FLEET_DEFINITIONS_REF", ""),
-		PostgresImage:               env("POSTGRES_IMAGE", "postgres:16-alpine"),
-		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
-		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
-		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
-		AgentVaultAPI:               env("AGENT_VAULT_API_ADDR", DefaultAgentVaultAPI),
-		AgentVaultProxy:             env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
-		AgentVaultSecretsDir:        env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
-		GitHubAppDir:                env("GITHUB_APP_DIR", "/var/run/github-app"),
-		GitHubAccounts:              env("FLEET_GITHUB_ACCOUNTS", ""),
-		GitAuthorName:               env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
-		GitAuthorEmail:              env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
-		GitURLRewrite:               env("FLEET_GIT_URL_REWRITE", ""),
-		Version:                     getenv("FLEET_VERSION"),
-		ClaudeModel:                 getenv("CLAUDE_MODEL"),
-		MaxTurns:                    getenv("MAX_TURNS"),
+		WorkerImage:               env("WORKER_IMAGE", "registry.bnei.lan:5000/agent-fleet-worker:latest"),
+		SidecarImage:              env("SIDECAR_IMAGE", "registry.bnei.lan:5000/agent-fleet-sidecar:latest"),
+		WorkspacePVC:              env("WORKSPACE_PVC", "agent-fleet-workspace"),
+		SessionStorageClass:       env("SESSION_STORAGE_CLASS", ""),
+		SessionNodeSelector:       env("SESSION_NODE_SELECTOR", ""),
+		WorkspaceRoot:             env("WORKSPACE_ROOT", "/workspace"),
+		E2eHost:                   env("E2E_HOST", "bnei.dev"),
+		Port:                      env("PORT", "8080"),
+		GRPCPort:                  env("GRPC_PORT", "9090"),
+		CoreGRPCAddr:              env("CORE_GRPC_ADDR", DefaultCoreGRPCAddr),
+		CoreToken:                 getenv("FLEET_PROVISIONER_TOKEN"),
+		CoreProvisionerToken:      getenv("FLEET_CORE_PROVISIONER_TOKEN"),
+		ThotAuthToken:             env("THOT_AUTH_TOKEN", ""),
+		ExecutorAddr:              env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
+		ReconcileInterval:         millis("RECONCILE_INTERVAL_MS", 10*time.Second),
+		LogLevel:                  env("LOG_LEVEL", "info"),
+		FleetSharedRepoURL:        env("FLEET_SHARED_REPO_URL", "https://github.com/MohammadBnei/agent-fleet.git"),
+		FleetSharedBranch:         env("FLEET_SHARED_BRANCH", "main"),
+		FleetDefinitionsRef:       env("FLEET_DEFINITIONS_REF", ""),
+		PostgresImage:             env("POSTGRES_IMAGE", "postgres:16-alpine"),
+		RedisImage:                env("REDIS_IMAGE", "redis:7-alpine"),
+		SharedInstancePVCSize:     env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
+		SharedInstanceIdleTimeout: millis("SHARED_INSTANCE_IDLE_TIMEOUT_MS", 12*time.Hour),
+		AgentVaultAPI:             env("AGENT_VAULT_API_ADDR", DefaultAgentVaultAPI),
+		AgentVaultProxy:           env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
+		AgentVaultSecretsDir:      env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
+		GitHubAppDir:              env("GITHUB_APP_DIR", "/var/run/github-app"),
+		GitHubAccounts:            env("FLEET_GITHUB_ACCOUNTS", ""),
+		GitAuthorName:             env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
+		GitAuthorEmail:            env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
+		GitURLRewrite:             env("FLEET_GIT_URL_REWRITE", ""),
+		Version:                   getenv("FLEET_VERSION"),
+		ClaudeModel:               getenv("CLAUDE_MODEL"),
+		MaxTurns:                  getenv("MAX_TURNS"),
 	}
-	return c, c.Validate()
+	return c, errors.Join(append(errs, c.Validate())...)
 }
 
 // Validate refuses the local stack's rewrite where it could do harm
@@ -271,6 +286,32 @@ func (c Config) NodeSelectorMap() map[string]string {
 	}
 	return map[string]string{key: value}
 }
+
+// envMillis is the duration in variable key, a positive integer of
+// milliseconds, or fallback when it is unset or empty (getenv cannot tell the
+// two apart; a whitespace-only value is refused). Anything else is refused,
+// naming the variable and the rule, and the duration is zero: no partial parse
+// (1.5, 12s), nothing zero or negative, nothing that overflows a time.Duration.
+// A leading "+" is allowed, as strconv.Atoi allowed it before this check.
+func envMillis(getenv func(string) string, key string, fallback time.Duration) (time.Duration, error) {
+	raw := getenv(key)
+	if raw == "" {
+		return fallback, nil
+	}
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	switch {
+	case err != nil && errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(raw, "-"):
+		return 0, fmt.Errorf("%s must be a positive integer (milliseconds) no larger than %d, got %q", key, maxMillis, raw)
+	case err != nil || ms <= 0:
+		return 0, fmt.Errorf("%s must be a positive integer (milliseconds), got %q", key, raw)
+	case ms > maxMillis:
+		return 0, fmt.Errorf("%s must be a positive integer (milliseconds) no larger than %d, got %q", key, maxMillis, raw)
+	}
+	return time.Duration(ms) * time.Millisecond, nil
+}
+
+// maxMillis is the most milliseconds a time.Duration (nanoseconds, int64) holds.
+const maxMillis = math.MaxInt64 / int64(time.Millisecond)
 
 // envOr is getenv(key), or fallback when it is empty.
 func envOr(getenv func(string) string, key, fallback string) string {
