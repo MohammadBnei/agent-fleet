@@ -49,7 +49,9 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestMainRefusesInvalidConfig$")
 		// A clean environment: nothing the runner sets reaches the child's Load. The database is a closed port, so a
 		// config that loads fails at the connection and not later.
-		cmd.Env = append([]string{"CORE_TEST_RUN_MAIN=1", "AGENTFLEET_DB_HOST=127.0.0.1", "AGENTFLEET_DB_PORT=1", "PATH=" + os.Getenv("PATH")}, env...)
+		// GOCOVERDIR: a coverage-instrumented test binary writes its profile there when it exits, and would warn about it
+		// into the output this test reads.
+		cmd.Env = append([]string{"CORE_TEST_RUN_MAIN=1", "AGENTFLEET_DB_HOST=127.0.0.1", "AGENTFLEET_DB_PORT=1", "PATH=" + os.Getenv("PATH"), "GOCOVERDIR=" + t.TempDir()}, env...)
 		var buf bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &buf, &buf
 		err := cmd.Run()
@@ -64,17 +66,28 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 		return buf.String(), exit
 	}
 
-	// CORE_PORT=abc is optional: it is not in the refusal, and the refusal comes before any warning.
+	// The refusal line, and the optional problem found alongside it (CORE_PORT=abc), which is logged before it.
 	out, exit := child("OIDC_ISSUER_URL=authentik", "DASHBOARD_PUBLIC_URL=fleet.bnei.dev", "CORE_PORT=abc")
 	if exit != 1 {
 		t.Fatalf("exit %d, want 1:\n%s", exit, out)
 	}
-	var line struct{ Msg, Error string }
-	if err := json.Unmarshal([]byte(strings.SplitN(out, "\n", 2)[0]), &line); err != nil || line.Msg != "invalid configuration" {
-		t.Fatalf("first line is not the refusal as JSON: %v\n%s", err, out)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var line struct{ Level, Msg, Error string }
+	refusalAt := -1
+	for i, l := range lines {
+		var rec struct{ Level, Msg, Error string }
+		if json.Unmarshal([]byte(l), &rec) == nil && rec.Msg == "invalid configuration" {
+			line, refusalAt = rec, i
+		}
+	}
+	if refusalAt != len(lines)-1 || line.Level != "ERROR" {
+		t.Fatalf("the refusal is not the last line, as JSON at ERROR:\n%s", out)
 	}
 	if !strings.Contains(line.Error, "OIDC_ISSUER_URL=") || !strings.Contains(line.Error, "DASHBOARD_PUBLIC_URL=") || strings.Contains(line.Error, "CORE_PORT=") {
 		t.Errorf("the refusal names the required keys and only them: %s", line.Error)
+	}
+	if p := warnedProblems(t, strings.Join(lines[:refusalAt], "\n")); len(p) != 1 || !strings.HasPrefix(p[0], "CORE_PORT=") {
+		t.Errorf("the optional problem is logged before the refusal, once: %q\n%s", p, out)
 	}
 	if strings.Contains(out, "core starting") {
 		t.Errorf("core started before refusing:\n%s", out)
@@ -87,7 +100,29 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 	if exit != 1 || strings.Contains(out, "invalid configuration\"") || !strings.Contains(out, "db connect failed") {
 		t.Fatalf("optional bad values: exit %d, want 1 at the database:\n%s", exit, out)
 	}
-	problems := map[string]bool{}
+	assertOneWarningEach(t, out, bad)
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("a warning echoed a credential:\n%s", out)
+	}
+
+	// LOG_LEVEL=error does not hide them: the warnings do not go through the configured level (the control is that the
+	// level is in force: "core starting" is INFO and is not printed).
+	out, exit = child("LOG_LEVEL=error", "CORE_PORT=abc", "IDLE_TIMEOUT_MS=0")
+	if exit != 1 || !strings.Contains(out, "db connect failed") || strings.Contains(out, "core starting") {
+		t.Fatalf("LOG_LEVEL=error: exit %d, want 1 at the database with INFO hidden:\n%s", exit, out)
+	}
+	assertOneWarningEach(t, out, []string{"CORE_PORT=abc", "IDLE_TIMEOUT_MS=0"})
+
+	// Positive control: valid values get past Load with no warning (and fail at the closed database port instead).
+	out, exit = child("CORE_PORT=8080", "IDLE_TIMEOUT_MS=60000", "LOG_LEVEL=info", "FLEET_AUTH_DISABLED=0")
+	if exit != 1 || strings.Contains(out, "invalid configuration") || !strings.Contains(out, "db connect failed") {
+		t.Errorf("valid config: exit %d, want 1 at the database:\n%s", exit, out)
+	}
+}
+
+// warnedProblems is the "problem" of every config warning line in out, which must each be JSON at WARN.
+func warnedProblems(t *testing.T, out string) (problems []string) {
+	t.Helper()
 	for _, l := range strings.Split(out, "\n") {
 		var rec struct{ Level, Msg, Problem string }
 		if json.Unmarshal([]byte(l), &rec) != nil || rec.Msg != "invalid configuration value, using the default" {
@@ -96,15 +131,22 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 		if rec.Level != "WARN" {
 			t.Errorf("a warning logged at %q: %s", rec.Level, l)
 		}
-		problems[rec.Problem] = true
+		problems = append(problems, rec.Problem)
 	}
+	return problems
+}
+
+// assertOneWarningEach: out has exactly one config warning per KEY=value in bad, each naming its variable.
+func assertOneWarningEach(t *testing.T, out string, bad []string) {
+	t.Helper()
+	problems := warnedProblems(t, out)
 	if len(problems) != len(bad) {
 		t.Errorf("%d warning lines, want one per problem (%d):\n%s", len(problems), len(bad), out)
 	}
 	for _, b := range bad {
 		k, _, _ := strings.Cut(b, "=")
 		n := 0
-		for p := range problems {
+		for _, p := range problems {
 			if strings.HasPrefix(p, k+"=") {
 				n++
 			}
@@ -112,14 +154,5 @@ func TestMainRefusesInvalidConfig(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%d warnings name %s, want 1:\n%s", n, k, out)
 		}
-	}
-	if strings.Contains(out, "hunter2") {
-		t.Errorf("a warning echoed a credential:\n%s", out)
-	}
-
-	// Positive control: valid values get past Load with no warning (and fail at the closed database port instead).
-	out, exit = child("CORE_PORT=8080", "IDLE_TIMEOUT_MS=60000", "LOG_LEVEL=info", "FLEET_AUTH_DISABLED=0")
-	if exit != 1 || strings.Contains(out, "invalid configuration") || !strings.Contains(out, "db connect failed") {
-		t.Errorf("valid config: exit %d, want 1 at the database:\n%s", exit, out)
 	}
 }

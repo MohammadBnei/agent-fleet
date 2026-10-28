@@ -203,10 +203,21 @@ type Config struct {
 	// the synced definitions, so they are read by name at match time, through the same getenv.
 	TokenEnv func(string) string
 	// Warnings are the problems with optional values (a set value that does not satisfy its rule), each replaced by
-	// its default: "KEY=value: rule; using the default". cmd/core/main.go logs each at WARN once its logger exists. Nil
-	// when there are none.
+	// its default: "KEY=value: rule; using the default". cmd/core/main.go logs each at WARN, whatever LOG_LEVEL is. Nil when
+	// there are none.
 	Warnings []string
 }
+
+// RefusalError is the error Load returns for a refusal. Its text is the one error naming every refused variable;
+// Warnings are the optional problems found alongside (the refusal returns no Config, so they would otherwise be lost),
+// for the caller to log before it exits.
+type RefusalError struct {
+	err      error
+	Warnings []string
+}
+
+func (e *RefusalError) Error() string { return e.err.Error() }
+func (e *RefusalError) Unwrap() error { return e.err }
 
 // FromProcess is core's configuration from its environment: the one call that reads it. An error is a refusal to
 // start (cmd/core/main.go logs it and exits 1): see Load.
@@ -221,8 +232,13 @@ func FromProcess() (Config, error) { return Load(os.Getenv) }
 //   - a required key (core cannot run without it) REFUSES: every such problem is one line of the one error. The only
 //     required keys Load checks are OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL (the OIDC discovery target and the
 //     redirect URI base and accepted origin), while the console gate is on (FLEET_AUTH_DISABLED is not 1); that
-//     the issuer and FLEET_SESSION_KEYS are present is run()'s check, where it always was (a Load of an empty
-//     environment must succeed, and a missing value is not a problem here).
+//     the issuer, DASHBOARD_PUBLIC_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and FLEET_SESSION_KEYS are present is
+//     run()'s check (cmd/core requireOIDC and auth.New), the same gate-on condition (a Load of an empty environment
+//     must succeed, and a missing value is not a problem here).
+//
+// A refusal's error is a *RefusalError, which also carries the warnings found. The BRIDGE_* variables are one
+// setting: if any of BRIDGE_URL, BRIDGE_TOKEN_URL and BRIDGE_AUTH_HOST is set and invalid, each problem is a warning
+// and the bridge is off (Bridge.URL is blank).
 //
 // The Config returned with an error is the zero value, so nothing can run on a half-read one.
 func Load(getenv func(string) string) (Config, error) {
@@ -267,14 +283,24 @@ func Load(getenv func(string) string) (Config, error) {
 		GarageFilesBucket:     l.str("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
 		GarageFilesSecret:     getenv("AGENTFLEET_FILES_S3_SECRET"),
-		Bridge: bridgeclient.Config{
-			URL:          l.url("BRIDGE_URL", ""),
-			TokenURL:     l.url("BRIDGE_TOKEN_URL", ""),
-			AuthHost:     l.host("BRIDGE_AUTH_HOST"),
-			ClientID:     l.str("BRIDGE_CLIENT_ID", "ukubi-bridge-api"),
-			Username:     l.str("BRIDGE_USERNAME", "bridge-core"),
-			PasswordFile: l.str("BRIDGE_PASSWORD_FILE", "/etc/bridge-core/app_password"),
-		},
+	}
+	// The bridge is one setting: URL, TokenURL and AuthHost go together, and a client with the URL and without a token
+	// endpoint or auth host fails every call. So any of the three set and invalid warns and blanks URL, which is the
+	// bridge's own not-configured path (client.go: an empty URL runs core without it).
+	nb := len(l.warns)
+	c.Bridge = bridgeclient.Config{
+		URL:          l.url("BRIDGE_URL", ""),
+		TokenURL:     l.url("BRIDGE_TOKEN_URL", ""),
+		AuthHost:     l.host("BRIDGE_AUTH_HOST"),
+		ClientID:     l.str("BRIDGE_CLIENT_ID", "ukubi-bridge-api"),
+		Username:     l.str("BRIDGE_USERNAME", "bridge-core"),
+		PasswordFile: l.str("BRIDGE_PASSWORD_FILE", "/etc/bridge-core/app_password"),
+	}
+	if len(l.warns) > nb {
+		c.Bridge.URL = ""
+		for i := nb; i < len(l.warns); i++ {
+			l.warns[i] += "; the bridge is off"
+		}
 	}
 	// The issuer and the dashboard's public URL are required while the gate is on (run() builds the OIDC relying
 	// party from them: discovery target, redirect URI base); a malformed one makes the console unusable for every
@@ -293,7 +319,10 @@ func Load(getenv func(string) string) (Config, error) {
 		c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember = 5, 0, 0, 1
 	}
 	if len(l.errs) > 0 {
-		return Config{}, fmt.Errorf("invalid configuration, %d problem(s):\n%w", len(l.errs), errors.Join(l.errs...))
+		return Config{}, &RefusalError{
+			err:      fmt.Errorf("invalid configuration, %d problem(s):\n%w", len(l.errs), errors.Join(l.errs...)),
+			Warnings: l.warns,
+		}
 	}
 	c.Warnings = l.warns
 	return c, nil

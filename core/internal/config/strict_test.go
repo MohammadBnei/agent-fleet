@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -83,12 +84,12 @@ func defaultsFor(t *testing.T, base map[string]string) Config {
 	return c
 }
 
-// TestLoadRefusals: a bad value of a required key refuses the start; a bad value of any other key loads with one
-// warning naming it and the Config of the same environment without it. Every good value loads with no warning (the
-// positive control: a warning is the bad value's doing).
 // required is the keys Load refuses on (the rest of refusals warns).
 var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true}
 
+// TestLoadRefusals: a bad value of a required key refuses the start; a bad value of any other key loads with one
+// warning naming it and the Config of the same environment without it. Every good value loads with no warning (the
+// positive control: a warning is the bad value's doing).
 func TestLoadRefusals(t *testing.T) {
 	base := map[string]string{"STT_TOKEN_FLEET": "t"} // STT_ADDR is read only with a token
 	defaults := defaultsFor(t, base)
@@ -114,7 +115,7 @@ func TestLoadRefusals(t *testing.T) {
 				continue
 			}
 			if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], r.key+"=") || !strings.Contains(c.Warnings[0], "must be") ||
-				!strings.HasSuffix(c.Warnings[0], "; using the default") {
+				!strings.Contains(c.Warnings[0], "; using the default") {
 				t.Errorf("%s=%q: warnings %q; want one naming the variable, the rule and the default", r.key, v, c.Warnings)
 			}
 			c.Warnings, c.TokenEnv = nil, nil
@@ -396,5 +397,65 @@ func TestSTTAddrOnlyWithToken(t *testing.T) {
 	if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "STT_ADDR=") ||
 		c.STTAddr != "ukubi-stt.ukubi-stt.svc.cluster.local:9090" {
 		t.Errorf("the same value with a token: %q, %q, %v; want one warning naming STT_ADDR and the default address", c.STTAddr, c.Warnings, err)
+	}
+}
+
+// The BRIDGE_* variables are one setting: any of BRIDGE_URL, BRIDGE_TOKEN_URL and BRIDGE_AUTH_HOST set and invalid
+// warns (each problem says the bridge is off) and blanks Bridge.URL, the bridge's not-configured path, rather than keep
+// a URL whose token request cannot work. The positive control is the same three valid: the URL is kept.
+func TestBridgeOffOnABadSetting(t *testing.T) {
+	good := map[string]string{
+		"BRIDGE_URL":       "http://ukubi-bridge.ukubi-bridge.svc.cluster.local:8080",
+		"BRIDGE_TOKEN_URL": "http://platform-authentik-server.authentik.svc.cluster.local/application/o/token/",
+		"BRIDGE_AUTH_HOST": "authentik.bnei.dev",
+		"BRIDGE_USERNAME":  "bridge-core",
+		"BRIDGE_CLIENT_ID": "ukubi-bridge-api",
+	}
+	if c := mustLoad(t, good); c.Bridge.URL != good["BRIDGE_URL"] || c.Bridge.TokenURL == "" || c.Bridge.AuthHost == "" || c.Warnings != nil {
+		t.Fatalf("a valid bridge setting: %+v, %q", c.Bridge, c.Warnings)
+	}
+	for _, k := range []string{"BRIDGE_URL", "BRIDGE_TOKEN_URL", "BRIDGE_AUTH_HOST"} {
+		m := map[string]string{}
+		for key, v := range good {
+			m[key] = v
+		}
+		m[k] = "a b"
+		c := mustLoad(t, m)
+		if c.Bridge.URL != "" {
+			t.Errorf("%s invalid: Bridge.URL %q, want the bridge off", k, c.Bridge.URL)
+		}
+		if len(c.Warnings) != 1 || !strings.HasPrefix(c.Warnings[0], k+"=") || !strings.HasSuffix(c.Warnings[0], "; the bridge is off") {
+			t.Errorf("%s invalid: warnings %q; want one naming it that says the bridge is off", k, c.Warnings)
+		}
+	}
+	// Two bad settings: each says it; and a warning of another variable does not.
+	m := map[string]string{"BRIDGE_URL": "x", "BRIDGE_AUTH_HOST": "a b", "LOG_LEVEL": "loud"}
+	c := mustLoad(t, m)
+	off := 0
+	for _, w := range c.Warnings {
+		if strings.HasSuffix(w, "; the bridge is off") {
+			off++
+		} else if !strings.HasPrefix(w, "LOG_LEVEL=") {
+			t.Errorf("a warning that does not say the bridge is off: %q", w)
+		}
+	}
+	if off != 2 || len(c.Warnings) != 3 {
+		t.Errorf("warnings %q; want 2 bridge ones and LOG_LEVEL's", c.Warnings)
+	}
+}
+
+// A refusal's error carries the optional warnings found alongside it (the zero Config cannot), and its text is the same
+// error without them.
+func TestRefusalCarriesTheWarnings(t *testing.T) {
+	_, err := Load(env(map[string]string{"OIDC_ISSUER_URL": "x", "CORE_PORT": "abc"}))
+	var r *RefusalError
+	if !errors.As(err, &r) || len(r.Warnings) != 1 || !strings.HasPrefix(r.Warnings[0], "CORE_PORT=") {
+		t.Fatalf("refusal: %#v; want a *RefusalError with the CORE_PORT warning", err)
+	}
+	if strings.Contains(err.Error(), "CORE_PORT") || !strings.HasPrefix(err.Error(), "invalid configuration, 1 problem(s):") {
+		t.Errorf("the error's text carries the warnings: %v", err)
+	}
+	if _, err := Load(env(map[string]string{"CORE_PORT": "abc"})); err != nil {
+		t.Errorf("a warning alone refused: %v", err)
 	}
 }

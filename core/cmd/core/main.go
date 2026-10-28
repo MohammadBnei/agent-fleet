@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -27,6 +28,11 @@ func main() {
 		// A refusal to start (mountain plan/15 §5): every problem in the one error, before anything is opened. The
 		// logger is the JSON one at its default level, because LOG_LEVEL is one of the values that may be the problem.
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+		// The optional problems found alongside are logged first: a refusal returns no Config to carry them.
+		var refusal *config.RefusalError
+		if errors.As(err, &refusal) {
+			logConfigWarnings(refusal.Warnings)
+		}
 		slog.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
@@ -43,11 +49,8 @@ func main() {
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
-	// Optional values that were set and invalid, already replaced by their defaults (config.Config.Warnings); a value
-	// with userinfo in it was redacted when the problem was written.
-	for _, w := range cfg.Warnings {
-		slog.Warn("invalid configuration value, using the default", "problem", w)
-	}
+	// Optional values that were set and invalid, already replaced by their defaults (config.Config.Warnings).
+	logConfigWarnings(cfg.Warnings)
 	slog.Info("core starting", "version", version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -63,6 +66,16 @@ func main() {
 	if err := run(ctx, cfg, pool, version); err != nil {
 		slog.Error("core exited with error", "error", err)
 		os.Exit(1)
+	}
+}
+
+// logConfigWarnings logs each config problem at WARN as JSON on stdout, through a handler at the default level and not
+// the LOG_LEVEL one: LOG_LEVEL=error must not hide that a value was replaced by its default (LOG_LEVEL may itself be
+// one of them). A value with userinfo in it was redacted when the problem was written.
+func logConfigWarnings(problems []string) {
+	l := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	for _, p := range problems {
+		l.Warn("invalid configuration value, using the default", "problem", p)
 	}
 }
 

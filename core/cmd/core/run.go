@@ -341,6 +341,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	if cfg.AuthDisabled {
 		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
 	} else {
+		if err := requireOIDC(cfg); err != nil {
+			return fmt.Errorf("oidc setup (set FLEET_AUTH_DISABLED=1 for a local stack): %w", err)
+		}
 		oidcAuth, err := auth.New(ctx, auth.Config{
 			IssuerURL:    cfg.OIDCIssuerURL,
 			ClientID:     cfg.OIDCClientID,

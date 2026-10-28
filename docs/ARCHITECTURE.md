@@ -739,19 +739,23 @@ problem. A bad value is handled by the key's class:
   be unset. The problem is recorded in `Config.Warnings` as
   `KEY=value: rule; using the default`, the field takes the default, and core
   starts. `main` logs one `WARN` line per problem (`invalid configuration value,
-  using the default`, the problem in `problem`) once the JSON logger exists. This
-  includes a zero or negative `*_MS` or `SESSION_RETENTION` (they fall back to
-  the default and never reach a sweep), a malformed `BRIDGE_*` value (read as
-  unset), and `FLEET_AUTH_DISABLED` other than `1` or `0` (read as gate on).
-- **Required (`(refuses)` in the table):** a key core cannot run without. A bad
-  value stops the start: one error names every such variable and its rule, and
-  `main` logs `invalid configuration` and exits 1, before the database is
-  opened. Today that is `OIDC_ISSUER_URL` and `DASHBOARD_PUBLIC_URL` while the
-  console gate is on (a malformed one makes the console unusable for every
-  human; with `FLEET_AUTH_DISABLED=1` nothing reads them, so they only warn).
-  That the issuer and `FLEET_SESSION_KEYS` are present at all is checked where it
-  always was, in `run()` (see Auth below); `Load` of an empty environment
-  succeeds and a missing value is not a problem in `Load`.
+  using the default`, the problem in `problem`) as JSON at the default level, so
+  `LOG_LEVEL=error` does not hide it (a refusal logs the warnings found with it
+  first). This includes a zero or negative `*_MS` or `SESSION_RETENTION` (they
+  fall back to the default and never reach a sweep), and `FLEET_AUTH_DISABLED`
+  other than `1` or `0` (read as gate on). The `BRIDGE_*` URL, token URL and auth
+  host are one setting: if any is set and invalid, each problem ends `; the
+  bridge is off` and `BRIDGE_URL` is blanked, the bridge's not-configured mode.
+- **Required (`(refuses)` in the table), only while the console gate is on**
+  (`FLEET_AUTH_DISABLED` is not `1`; with it, nothing reads them and a bad value
+  only warns): the keys without which nobody can sign in. A malformed
+  `OIDC_ISSUER_URL` or `DASHBOARD_PUBLIC_URL` stops the start in `Load`: one error
+  names every such variable and its rule, and `main` logs `invalid configuration`
+  and exits 1, before the database is opened. A *missing* `OIDC_ISSUER_URL`,
+  `DASHBOARD_PUBLIC_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` or
+  `FLEET_SESSION_KEYS` stops it in `run()` (`requireOIDC` and `auth.New`, see
+  Auth below), after the database is opened and naming the variable. `Load` of an
+  empty environment succeeds: a missing value is not a problem in `Load`.
 - **The pools' relation** is a warning too: on the values in use (an unparsed
   count is its default), a relation that fails logs `checkCapacity`'s message and
   falls back to all four defaults, which turns the inner pools off.
@@ -782,11 +786,11 @@ the proxy variables) are theirs and not listed.
 | `STARTUP_STALL_MS` | `180000` | whole milliseconds, above 0 | pod scheduled to first sign of life (`adr/0040`) |
 | `TURN_STALL_MS` | `90000` | whole milliseconds, above 0 | owing a response this long reads as `stalled` (informational) |
 | `SESSION_RETENTION` | `10d` | Go duration or whole days (`6d`), above 0 | untouched session's disk is reclaimed after this (`adr/0048`); `k8s/core.yaml` sets `6d` |
-| `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL (refuses) | console base: the Discord link, the OIDC redirect URI, the accepted origin |
-| `OIDC_ISSUER_URL` | none | absolute http(s) URL (refuses) | authentik issuer, per application, passed to discovery verbatim |
-| `OIDC_CLIENT_ID` | none | any | OIDC client |
-| `OIDC_CLIENT_SECRET` | none | any | secret |
-| `FLEET_SESSION_KEYS` | none | any | secret, comma-separated cookie keys |
+| `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL (refuses: malformed, or missing, with the gate on) | console base: the Discord link, the OIDC redirect URI, the accepted origin |
+| `OIDC_ISSUER_URL` | none | absolute http(s) URL (refuses: malformed, or missing, with the gate on) | authentik issuer, per application, passed to discovery verbatim |
+| `OIDC_CLIENT_ID` | none | any (refuses: missing, with the gate on) | OIDC client |
+| `OIDC_CLIENT_SECRET` | none | any (refuses: missing, with the gate on) | secret |
+| `FLEET_SESSION_KEYS` | none | any, at least one non-blank key (refuses: missing, with the gate on) | secret, comma-separated cookie keys |
 | `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on |
 | `FLEET_VERSION` | none | any | the release reported (`dev` without it) |
 | `CLAUDE_MODEL` | none | any | the operator's model override (`adr/0077`) |
