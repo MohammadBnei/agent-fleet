@@ -17,107 +17,161 @@ const (
 	DefaultAgentVaultAPI   = "http://agent-vault.agent-vault.svc.cluster.local:14321"
 )
 
+// Config is the provisioner's whole configuration: one struct, read from the
+// environment once (FromProcess) or from a test's map (Load), and nothing else
+// in this module reads the environment (TestEnvBan; mountain plan/15 §5). Each
+// field names the variable it comes from. A blank variable is an unset one,
+// except where a field says it is read raw.
 type Config struct {
-	Namespace    string
+	// Namespace is the namespace session pods and shared instances live in
+	// (NAMESPACE).
+	Namespace string
+	// WorkerImage and SidecarImage are the two containers of every session
+	// pod (WORKER_IMAGE, SIDECAR_IMAGE).
 	WorkerImage  string
 	SidecarImage string
-	// WorkspacePVC is the one shared PVC name (docs/adr/0019) — replaces
-	// the old per-repo WorkspacePvcFor(repo) naming, since there's only
-	// one workspace PVC in the fleet now, not one per repo.
+	// WorkspacePVC is the one shared PVC name (docs/adr/0019, WORKSPACE_PVC) —
+	// replaces the old per-repo WorkspacePvcFor(repo) naming, since there's
+	// only one workspace PVC in the fleet now, not one per repo.
 	WorkspacePVC string
-	// SessionStorageClass is the StorageClass for per-session working volumes.
+	// SessionStorageClass is the StorageClass for per-session working volumes
+	// (SESSION_STORAGE_CLASS).
 	SessionStorageClass string
 	// SessionNodeSelector constrains where session pods may be scheduled,
-	// as a single "key=value" label. Empty means no constraint.
+	// as a single "key=value" label. Empty means no constraint
+	// (SESSION_NODE_SELECTOR).
 	//
 	// Sessions belong on nodes big enough to build on: the control-plane
 	// nodes are 2 vCPU / 4 GB with ~33 GiB allocatable, and filling one is a
 	// cluster incident rather than a session failure. Empty is what
 	// /kind-local relies on — its single node carries no label.
 	SessionNodeSelector string
-	// WorkspaceRoot is where the shared PVC is mounted inside THIS pod. The
-	// provisioner needs its own read-write mount to maintain the clone cache
-	// and to seed each session's claude-home before its pod exists.
+	// WorkspaceRoot is where the shared PVC is mounted inside THIS pod
+	// (WORKSPACE_ROOT). The provisioner needs its own read-write mount to
+	// maintain the clone cache and to seed each session's claude-home before
+	// its pod exists.
 	//
 	// It does NOT hold session working trees any more (docs/adr/0048 §4):
 	// those are per-session volumes this process never mounts, cloned into by
 	// an init container in the session's own pod.
 	WorkspaceRoot string
-	E2eHost       string
-	Port          string
-	GRPCPort      string
+	// E2eHost is the base domain preview hostnames are built under (E2E_HOST).
+	E2eHost string
+	// Port is the HTTP port of /healthz and /metrics (PORT) and GRPCPort the
+	// one ProvisionerService listens on (GRPC_PORT). Strings, as the
+	// listeners want them: a value that is no port fails at Listen.
+	Port     string
+	GRPCPort string
 	// CoreGRPCAddr is where ReportPodEvents streams to (docs/adr/0020
-	// point 3) — the provisioner is a gRPC client of core for this one
-	// call, on top of being core's gRPC server for everything else.
+	// point 3, CORE_GRPC_ADDR) — the provisioner is a gRPC client of core for
+	// this one call, on top of being core's gRPC server for everything else.
 	CoreGRPCAddr string
 	// CoreToken authenticates this provisioner to CoreService, which rejects
-	// unauthenticated callers. Arrives from the same whole-scope Infisical sync
-	// the other secrets here use (k8s/provisioner/infisicalsecret.yaml declares
-	// no key list and the Deployment consumes it with envFrom), so adding the
-	// key needs no manifest change.
+	// unauthenticated callers (FLEET_PROVISIONER_TOKEN, read raw). Arrives
+	// from the same whole-scope Infisical sync the other secrets here use
+	// (k8s/provisioner/infisicalsecret.yaml declares no key list and the
+	// Deployment consumes it with envFrom), so adding the key needs no
+	// manifest change.
 	CoreToken string
 	// CoreProvisionerToken is what core must present to THIS process's
 	// ProvisionerService (docs/adr/0069), the reverse of CoreToken and a
-	// separate key. Empty refuses to start: see grpcserver.NewServer.
+	// separate key (FLEET_CORE_PROVISIONER_TOKEN, read raw). Empty, blank or
+	// shorter than grpcserver.MinTokenLen refuses to start: see
+	// grpcserver.NewGRPCServer.
 	CoreProvisionerToken string
-	// Passed through to each worker pod's sidecar so ask_thot registers
-	// (docs/adr/0035). Empty leaves the tool unregistered — which is how
-	// the feature silently did nothing in production until this was wired.
-	ThotAuthToken     string
-	ExecutorAddr      string
+	// ThotAuthToken is passed through to each worker pod's sidecar so
+	// ask_thot registers (docs/adr/0035, THOT_AUTH_TOKEN). Empty leaves the
+	// tool unregistered — which is how the feature silently did nothing in
+	// production until this was wired.
+	ThotAuthToken string
+	// ExecutorAddr is where the cluster-access ingredient's kubectl shim
+	// sends argv (docs/adr/0037, EXECUTOR_ADDR).
+	ExecutorAddr string
+	// ReconcileInterval is the reconcile loop's tick in milliseconds
+	// (RECONCILE_INTERVAL_MS). Kept as the raw string: cmd/provisioner parses
+	// it, and what a value that is no integer does there is not this
+	// package's to change.
 	ReconcileInterval string
 	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
-	// via slog.Level.UnmarshalText in cmd/provisioner/main.go.
+	// via slog.Level.UnmarshalText in cmd/provisioner/main.go (LOG_LEVEL).
 	LogLevel string
 	// FleetSharedRepoURL/FleetSharedBranch are the git.Manager.SyncFleetShared
 	// source (docs/adr/0032) — the git-tracked fleet-shared/ dir mirrored
-	// into every worker pod's CLAUDE_CONFIG_DIR.
+	// into every worker pod's CLAUDE_CONFIG_DIR (FLEET_SHARED_REPO_URL,
+	// FLEET_SHARED_BRANCH).
 	FleetSharedRepoURL string
 	FleetSharedBranch  string
 	// FleetDefinitionsRef is the ref definitions/ is read at from
-	// FleetSharedRepoURL (docs/adr/0062). Empty = this build's release tag;
-	// kind and dev set a branch.
+	// FleetSharedRepoURL (docs/adr/0062, FLEET_DEFINITIONS_REF). Empty = this
+	// build's release tag; kind and dev set a branch.
 	FleetDefinitionsRef string
 	// PostgresImage/RedisImage back the "postgres"/"redis" service
-	// ingredients' shared instances (docs/adr/0034) — operationally
-	// configurable (version/security-patch bumps) unlike a tool
-	// ingredient's CopyImage, which is a code-level fact tied to specific
-	// in-image binary paths (see catalog.Tools).
+	// ingredients' shared instances (docs/adr/0034; POSTGRES_IMAGE,
+	// REDIS_IMAGE) — operationally configurable (version/security-patch
+	// bumps) unlike a tool ingredient's CopyImage, which is a code-level fact
+	// tied to specific in-image binary paths (see catalog.Tools).
 	PostgresImage string
 	RedisImage    string
 	// SharedInstancePVCSize is the postgres shared instance's data-volume
-	// size — redis needs none (NeedsPVC is false, pure cache).
+	// size — redis needs none (NeedsPVC is false, pure cache)
+	// (SHARED_INSTANCE_PVC_SIZE).
 	SharedInstancePVCSize string
 	// SharedInstanceIdleTimeoutMs mirrors core's own warm-pod idle-timeout
 	// config shape (docs/adr/0029), translated to Kubernetes since the
 	// provisioner has no Postgres column to put a last-active timestamp in
 	// — reconcile.Loop compares this against a last-used-at annotation
-	// instead (docs/adr/0034).
+	// instead (docs/adr/0034). SHARED_INSTANCE_IDLE_TIMEOUT_MS, kept as the
+	// raw string for the same reason as ReconcileInterval.
 	SharedInstanceIdleTimeoutMs string
-	// AgentVault* locate infra-bootstrap's Agent Vault (docs/adr/0065): its API
-	// (provisioner only), its MITM proxy (definition pods), and the mounted
-	// Secret holding the agent token and the credential values.
+	// AgentVaultAPI, AgentVaultProxy and AgentVaultSecretsDir locate
+	// infra-bootstrap's Agent Vault (docs/adr/0065): its API (provisioner
+	// only), its MITM proxy (definition pods), and the mounted Secret holding
+	// the agent token and the credential values (AGENT_VAULT_API_ADDR,
+	// AGENT_VAULT_PROXY_ADDR, AGENT_VAULT_SECRETS_DIR).
 	AgentVaultAPI        string
 	AgentVaultProxy      string
 	AgentVaultSecretsDir string
 	// GitHubAppDir holds the App ukubi-fleet's GITHUB_APP_ID and
-	// GITHUB_APP_PRIVATE_KEY as files (docs/adr/0075). GitHubAccounts is
-	// FLEET_GITHUB_ACCOUNTS, comma-separated account ids whose installations
-	// count: the App is public.
+	// GITHUB_APP_PRIVATE_KEY as files (docs/adr/0075, GITHUB_APP_DIR).
+	// GitHubAccounts is FLEET_GITHUB_ACCOUNTS, comma-separated account ids
+	// whose installations count: the App is public. Kept as the raw string:
+	// cmd/provisioner parses it, so a malformed id is logged where it always
+	// was.
 	GitHubAppDir   string
 	GitHubAccounts string
 	// GitAuthorName/GitAuthorEmail author repo sessions' commits
-	// (docs/adr/0075 §8); definitions keep their git.identity.
+	// (docs/adr/0075 §8; FLEET_GIT_AUTHOR_NAME, FLEET_GIT_AUTHOR_EMAIL);
+	// definitions keep their git.identity.
 	GitAuthorName  string
 	GitAuthorEmail string
 	// GitURLRewrite is the forge every worker's `https://github.com/`
-	// rewrites to, on the offline local stack (docs/adr/0080 §2). Unset in
-	// production.
+	// rewrites to, on the offline local stack (docs/adr/0080 §2,
+	// FLEET_GIT_URL_REWRITE). Unset in production; Validate refuses it
+	// against the production vault.
 	GitURLRewrite string
+	// Version is the release this binary runs as (FLEET_VERSION, set by
+	// deploy on the Deployment, read raw). "" means a build deploy did not
+	// stamp: cmd/provisioner then reports "dev".
+	Version string
+	// ClaudeModel and MaxTurns are the operator's model override and turn cap
+	// for every worker pod (CLAUDE_MODEL, MAX_TURNS, read raw), forwarded as
+	// the worker container's env of the same names. "" leaves Claude Code's
+	// own default.
+	ClaudeModel string
+	MaxTurns    string
 }
 
-func Load() Config {
-	return Config{
+// FromProcess is the provisioner's configuration from its environment: the
+// one call that reads it, and the only one in this module that does.
+func FromProcess() (Config, error) { return Load(os.Getenv) }
+
+// Load is the provisioner's configuration from getenv (FromProcess passes
+// os.Getenv, a test a map), validated: the error carries every problem
+// Validate finds, joined, and the Config is returned with it so a caller can
+// log what it was given.
+func Load(getenv func(string) string) (Config, error) {
+	env := func(key, fallback string) string { return envOr(getenv, key, fallback) }
+	c := Config{
 		Namespace: env("NAMESPACE", "agent-fleet"),
 		// registry.bnei.lan:5000 is ukubi-cluster's in-cluster Zot registry
 		// (infra-bootstrap ADR-0034), which containerd is configured to trust
@@ -136,8 +190,8 @@ func Load() Config {
 		Port:                        env("PORT", "8080"),
 		GRPCPort:                    env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:                env("CORE_GRPC_ADDR", DefaultCoreGRPCAddr),
-		CoreToken:                   os.Getenv("FLEET_PROVISIONER_TOKEN"),
-		CoreProvisionerToken:        os.Getenv("FLEET_CORE_PROVISIONER_TOKEN"),
+		CoreToken:                   getenv("FLEET_PROVISIONER_TOKEN"),
+		CoreProvisionerToken:        getenv("FLEET_CORE_PROVISIONER_TOKEN"),
 		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
 		ExecutorAddr:                env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
 		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),
@@ -157,7 +211,11 @@ func Load() Config {
 		GitAuthorName:               env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
 		GitAuthorEmail:              env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
 		GitURLRewrite:               env("FLEET_GIT_URL_REWRITE", ""),
+		Version:                     getenv("FLEET_VERSION"),
+		ClaudeModel:                 getenv("CLAUDE_MODEL"),
+		MaxTurns:                    getenv("MAX_TURNS"),
 	}
+	return c, c.Validate()
 }
 
 // Validate refuses the local stack's rewrite where it could do harm
@@ -214,8 +272,9 @@ func (c Config) NodeSelectorMap() map[string]string {
 	return map[string]string{key: value}
 }
 
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
+// envOr is getenv(key), or fallback when it is empty.
+func envOr(getenv func(string) string, key, fallback string) string {
+	if v := getenv(key); v != "" {
 		return v
 	}
 	return fallback

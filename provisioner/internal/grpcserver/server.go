@@ -50,7 +50,7 @@ type Server struct {
 	fleetSharedRepoURL string
 	fleetSharedBranch  string
 	// version is the release this provisioner runs as, FLEET_VERSION (see
-	// cmd/provisioner/main.go). Reported by GetVersion, and the default ref
+	// config.Config.Version). Reported by GetVersion, and the default ref
 	// ListDefinitionFiles reads definitions at.
 	version string
 	// definitionsRef is FLEET_DEFINITIONS_REF: overrides version as the ref

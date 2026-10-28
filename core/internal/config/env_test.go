@@ -17,13 +17,15 @@ import (
 
 // envReaders are what reads or changes the process's environment (as atlas's TestEnvBan, mountain env_test.go): os's
 // and syscall's own, and the ones that read a variable on the caller's behalf. A package listed with no names is
-// refused whole: os/exec reads PATH and hands the environment on, os/user reads HOME and USER. The check is
+// refused whole: os/exec reads PATH and hands the environment on, os/user reads HOME and USER. os.StartProcess and
+// syscall's ForkExec, Exec and StartProcess hand the environment on too (a nil Env inherits it), so they are listed by
+// name. The check is
 // syntactic: every use of a listed name is a selector on its import's name, or a dot import, which is refused; cgo
 // and go:linkname are refused too.
 var envReaders = map[string][]string{
 	"os": {"Getenv", "LookupEnv", "Environ", "ExpandEnv", "Setenv", "Unsetenv", "Clearenv", "UserHomeDir", "UserCacheDir",
-		"UserConfigDir", "TempDir", "MkdirTemp", "CreateTemp", "Getwd"},
-	"syscall":               {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"},
+		"UserConfigDir", "TempDir", "MkdirTemp", "CreateTemp", "Getwd", "StartProcess"},
+	"syscall":               {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv", "ForkExec", "Exec", "StartProcess"},
 	"golang.org/x/sys/unix": {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"}, // in core's dependency graph
 	"net/http":              {"ProxyFromEnvironment"},
 	"os/exec":               nil,
@@ -150,6 +152,10 @@ func TestEnvUses(t *testing.T) {
 		{`import "syscall"; var _, _ = syscall.Getenv("X")`, []string{"syscall.Getenv"}},
 		{`import "golang.org/x/sys/unix"; var _ = unix.Getenv`, []string{"golang.org/x/sys/unix.Getenv"}},
 		{`import "os"; var _ = os.TempDir()`, []string{"os.TempDir"}},
+		{`import "os"; var _, _ = os.StartProcess("/usr/bin/env", nil, &os.ProcAttr{})`, []string{"os.StartProcess"}},
+		{`import "syscall"; var _, _ = syscall.ForkExec("/usr/bin/env", nil, nil)`, []string{"syscall.ForkExec"}},
+		{`import sc "syscall"; var _ = sc.Exec("/usr/bin/env", nil, nil)`, []string{"syscall.Exec"}},
+		{`import "syscall"; var _, _, _ = syscall.StartProcess("/usr/bin/env", nil, nil)`, []string{"syscall.StartProcess"}},
 		{`import "os"; var _, _ = os.MkdirTemp("", "x")`, []string{"os.MkdirTemp"}},
 		{`import "os"; var _, _ = os.CreateTemp("", "x")`, []string{"os.CreateTemp"}},
 		{`import "os"; var _, _ = os.Getwd()`, []string{"os.Getwd"}},

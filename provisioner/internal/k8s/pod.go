@@ -486,8 +486,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("127.0.0.1:%d", SidecarAPIPort)},
 		// No GH_TOKEN or CLAUDE_CODE_OAUTH_TOKEN here: every pod gets
 		// placeholders the vault overwrites on the wire (docs/adr/0075).
-		{Name: "CLAUDE_MODEL", Value: os.Getenv("CLAUDE_MODEL")},
-		{Name: "MAX_TURNS", Value: os.Getenv("MAX_TURNS")},
+		{Name: "CLAUDE_MODEL", Value: c.ClaudeModel},
+		{Name: "MAX_TURNS", Value: c.MaxTurns},
 		{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 		{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
 		// Without this Playwright looks under $HOME/.cache/ms-playwright and

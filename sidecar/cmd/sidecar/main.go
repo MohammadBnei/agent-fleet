@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/config"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/egress"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
@@ -19,16 +20,20 @@ import (
 )
 
 func main() {
-	rawLogLevel := env("LOG_LEVEL", "info")
-	level, warning := resolveLogLevel(rawLogLevel)
+	// The environment is read here and nowhere else (internal/config). Its
+	// refusals are held until their old places below: the log level comes
+	// first, so the first refusal is already logged as configured, and
+	// SESSION_ID is checked before LEASE_ID.
+	cfg, cfgErr := config.FromProcess()
+	level, warning := resolveLogLevel(cfg.LogLevel)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 	if warning != "" {
-		slog.Warn(warning, "value", rawLogLevel)
+		slog.Warn(warning, "value", cfg.LogLevel)
 	}
 
-	taskID := os.Getenv("SESSION_ID")
-	if taskID == "" {
-		slog.Error("SESSION_ID is required")
+	taskID := cfg.SessionID
+	if errors.Is(cfgErr, config.ErrNoSessionID) {
+		slog.Error(config.ErrNoSessionID.Error())
 		os.Exit(1)
 	}
 	// Stamp taskId onto every line from here on. Without it the sidecar's
@@ -38,11 +43,11 @@ func main() {
 	// One attribute here removes that whole coupling: every fleet component
 	// is then filterable with the same `| json | taskId="..."`.
 	slog.SetDefault(slog.Default().With("sessionId", taskID))
-	coreAddr := env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090")
-	worktreePath := env("WORKTREE_PATH", "/workspace")
-	mcpPort := env("MCP_PORT", "9090")
-	localAPIPort := env("LOCAL_API_PORT", "9091")
-	healthPort := env("HEALTH_PORT", "9092")
+	coreAddr := cfg.CoreGRPCAddr
+	worktreePath := cfg.WorktreePath
+	mcpPort := cfg.MCPPort
+	localAPIPort := cfg.LocalAPIPort
+	healthPort := cfg.HealthPort
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -50,9 +55,15 @@ func main() {
 	// The session's lease authenticates every call to core. It is minted per
 	// warm by sessions.ReserveSlot and cleared at teardown, so it identifies
 	// this pod rather than just this session — CoreService rejects a stale one.
-	leaseID := os.Getenv("LEASE_ID")
-	if leaseID == "" {
-		slog.Error("LEASE_ID is required: without it every CoreService call is rejected")
+	leaseID := cfg.LeaseID
+	if errors.Is(cfgErr, config.ErrNoLeaseID) {
+		slog.Error(config.ErrNoLeaseID.Error())
+		os.Exit(1)
+	}
+	// Any other problem Load may one day report is a refusal too: the two
+	// above only keep their old places and words. Unreachable today.
+	if cfgErr != nil {
+		slog.Error("refusing to start", "error", cfgErr)
 		os.Exit(1)
 	}
 
@@ -78,15 +89,15 @@ func main() {
 
 	// docs/adr/0075 §7: a repo pod's HTTPS_PROXY. Set by the provisioner on
 	// repo pods only; a definition pod talks to its vault directly.
-	if vp := os.Getenv("FLEET_VAULT_PROXY"); vp != "" {
-		router, err := egress.New(vp, os.Getenv("FLEET_VAULT_HOSTS"))
+	if vp := cfg.VaultProxy; vp != "" {
+		router, err := egress.New(vp, cfg.VaultHosts)
 		if err != nil {
 			slog.Error("egress router", "error", err)
 			os.Exit(1)
 		}
 		// Bound before /readyz can pass: the worker starts only after it, and
 		// every HTTPS call it makes comes here. A failed bind fails the pod.
-		lis, err := net.Listen("tcp", "127.0.0.1:"+env("EGRESS_PORT", "9093"))
+		lis, err := net.Listen("tcp", "127.0.0.1:"+cfg.EgressPort)
 		if err != nil {
 			slog.Error("egress router listen", "error", err)
 			os.Exit(1)
@@ -188,13 +199,6 @@ func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // resolveLogLevel parses raw (LOG_LEVEL) via slog.Level.UnmarshalText
