@@ -318,7 +318,7 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 func withGitURLRewrite(env []corev1.EnvVar, rewrite, sessionID string) []corev1.EnvVar {
 	u, err := url.Parse(rewrite)
 	if err != nil {
-		return env // config.Validate refused it at start
+		return env // config.Load drops a malformed rewrite, so this is not reached from a Config
 	}
 	u.User = url.UserPassword(sessionID, "x")
 	n, found := 0, false
@@ -922,11 +922,6 @@ func (c *Client) GetWorkerJob(ctx context.Context, taskID string) (job LiveWorke
 		return LiveWorkerJob{}, false, err
 	}
 	return liveJob(j), true, nil
-}
-
-func resourcePtr(qty string) *resource.Quantity {
-	q := resource.MustParse(qty)
-	return &q
 }
 
 func ignoreNotFound(err error) error {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,42 +41,62 @@ func TestNodeSelectorMap(t *testing.T) {
 	}
 }
 
-// docs/adr/0080: the local stack's rewrite is refused where it could do harm.
-// The production vault is matched by host, whatever form the address takes.
-func TestValidate(t *testing.T) {
-	local := Config{AgentVaultAPI: "http://agent-vault-local.agent-fleet.svc.cluster.local:14321", AgentVaultProxy: "agent-vault-local.agent-fleet.svc.cluster.local:14322", AgentVaultSecretsDir: "/var/run/agent-vault"}
-	prod := Config{AgentVaultAPI: DefaultAgentVaultAPI, AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault"}
-	with := func(c Config, f func(*Config)) Config { f(&c); return c }
+// docs/adr/0080: the local stack's rewrite is not used where it could do harm: a malformed one, or one set while the
+// Agent Vault address is production's, warns (naming the variable and the rule, ending "; ignored") and is dropped, so
+// no worker's GitHub traffic is rewritten. The production vault is matched by host, whatever form the address takes.
+// A good one loads with no warning and is kept.
+func TestLoad_GitURLRewrite(t *testing.T) {
+	const localAPI, localProxy = "http://agent-vault-local.agent-fleet.svc.cluster.local:14321", "agent-vault-local.agent-fleet.svc.cluster.local:14322"
 	for _, tc := range []struct {
-		name string
-		c    Config
-		ok   bool
+		name    string
+		env     map[string]string
+		problem string // substring of the one warning; "" = loads clean and keeps the rewrite
 	}{
-		{"production, nothing set", prod, true},
-		{"local stack", with(local, func(c *Config) { c.GitURLRewrite = "http://host.docker.internal:7480/" }), true},
-		{"rewrite against the production vault", with(prod, func(c *Config) { c.GitURLRewrite = "http://forge:7480/" }), false},
-		{"rewrite against a production vault spelled with a slash", with(local, func(c *Config) {
-			c.GitURLRewrite = "http://forge:7480/"
-			c.AgentVaultAPI = "http://agent-vault.agent-vault.svc:14321/"
-		}), false},
-		{"rewrite against the production proxy", with(local, func(c *Config) {
-			c.GitURLRewrite = "http://forge:7480/"
-			c.AgentVaultProxy = "agent-vault.agent-vault:14322"
-		}), false},
-		{"rewrite with user info", with(local, func(c *Config) { c.GitURLRewrite = "http://u:p@forge:7480/" }), false},
-		{"rewrite without a trailing slash", with(local, func(c *Config) { c.GitURLRewrite = "http://forge:7480" }), false},
-		{"rewrite that is not http", with(local, func(c *Config) { c.GitURLRewrite = "file:///tmp/" }), false},
+		{"production, nothing set", map[string]string{}, ""},
+		{"local stack", map[string]string{"FLEET_GIT_URL_REWRITE": "http://host.docker.internal:7480/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy}, ""},
+		{"rewrite against the production vault", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/"},
+			"FLEET_GIT_URL_REWRITE is set while the Agent Vault address is production's: it is for the local stack only (docs/adr/0080); ignored"},
+		{"rewrite against a production vault spelled with a slash", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/", "AGENT_VAULT_API_ADDR": "http://agent-vault.agent-vault.svc:14321/", "AGENT_VAULT_PROXY_ADDR": localProxy},
+			"it is for the local stack only"},
+		{"rewrite against the production proxy", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": "agent-vault.agent-vault:14322"},
+			"it is for the local stack only"},
+		{"rewrite with user info", map[string]string{"FLEET_GIT_URL_REWRITE": "http://u:p@forge:7480/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
+			`must be an http(s) URL with a host, no user info and a trailing /; ignored`},
+		{"rewrite with a password in its user info", map[string]string{"FLEET_GIT_URL_REWRITE": "http://u:hunter2@forge/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
+			`FLEET_GIT_URL_REWRITE "http://u:xxxxx@forge/" must be an http(s) URL`},
+		{"rewrite that does not parse and holds an @", map[string]string{"FLEET_GIT_URL_REWRITE": "http://u:hunter2@forge:bad/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
+			`FLEET_GIT_URL_REWRITE "<redacted: contains @>" must be an http(s) URL`},
+		{"rewrite without a trailing slash", map[string]string{"FLEET_GIT_URL_REWRITE": "http://forge:7480", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
+			`FLEET_GIT_URL_REWRITE "http://forge:7480" must be an http(s) URL`},
+		{"rewrite that is not http", map[string]string{"FLEET_GIT_URL_REWRITE": "file:///tmp/", "AGENT_VAULT_API_ADDR": localAPI, "AGENT_VAULT_PROXY_ADDR": localProxy},
+			`FLEET_GIT_URL_REWRITE "file:///tmp/" must be an http(s) URL`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := tc.c.Validate(); (err == nil) != tc.ok {
-				t.Fatalf("Validate() = %v, want ok=%v", err, tc.ok)
+			c, err := Load(func(k string) string { return tc.env[k] })
+			if err != nil {
+				t.Fatalf("an optional key refused the start: %v", err)
+			}
+			if tc.problem == "" {
+				if len(c.Warnings) != 0 || c.GitURLRewrite != tc.env["FLEET_GIT_URL_REWRITE"] {
+					t.Errorf("good value: warnings %q, rewrite %q, want none and %q", c.Warnings, c.GitURLRewrite, tc.env["FLEET_GIT_URL_REWRITE"])
+				}
+				return
+			}
+			if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], tc.problem) || !strings.HasSuffix(c.Warnings[0], "; ignored") {
+				t.Errorf("warnings %q, want one containing %q and ending \"; ignored\"", c.Warnings, tc.problem)
+			}
+			if c.GitURLRewrite != "" {
+				t.Errorf("the rewrite was kept: %q", c.GitURLRewrite)
+			}
+			if strings.Contains(strings.Join(c.Warnings, "\n"), "hunter2") {
+				t.Errorf("a warning echoes the password: %q", c.Warnings)
 			}
 		})
 	}
 }
 
 // TestLoad: every field comes from its own variable, the default applies when the variable is unset (or blank: getenv cannot tell), and
-// the problems Validate finds come back with the Config.
+// an optional variable that is invalid warns instead of refusing.
 func TestLoad(t *testing.T) {
 	env := map[string]string{
 		"NAMESPACE": "ns", "WORKER_IMAGE": "w:1", "SIDECAR_IMAGE": "s:1", "WORKSPACE_PVC": "pvc", "SESSION_STORAGE_CLASS": "fast",
@@ -102,7 +123,7 @@ func TestLoad(t *testing.T) {
 		GitHubAccounts: "1,2", GitAuthorName: "me", GitAuthorEmail: "me@x", GitURLRewrite: "http://forge.local/",
 		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9",
 	}
-	if c != want {
+	if !reflect.DeepEqual(c, want) { // Warnings is nil too: every value here is good
 		t.Errorf("set:\n got %+v\nwant %+v", c, want)
 	}
 
@@ -117,42 +138,44 @@ func TestLoad(t *testing.T) {
 		GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
 	}
 	// Through getenv a blank variable and an unset one are the same "", so there is one case.
-	if c, err := Load(func(string) string { return "" }); err != nil || c != defaults {
+	if c, err := Load(func(string) string { return "" }); err != nil || !reflect.DeepEqual(c, defaults) {
 		t.Errorf("unset: %+v, %v; want the defaults %+v", c, err, defaults)
 	}
 
-	// A problem comes back with the Config that has it.
+	// An optional key that is invalid is not a refusal: the Config comes back with a warning, and no error.
 	c, err = Load(func(k string) string {
 		if k == "FLEET_GIT_URL_REWRITE" {
 			return "ftp://x"
 		}
 		return ""
 	})
-	if err == nil || !strings.Contains(err.Error(), "FLEET_GIT_URL_REWRITE") || c.GitURLRewrite != "ftp://x" {
+	if err != nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "FLEET_GIT_URL_REWRITE") || c.GitURLRewrite != "" {
 		t.Errorf("a bad rewrite: %+v, %v", c, err)
 	}
 }
 
-// The two duration variables are positive integers of milliseconds, or refused with a message naming the variable and
-// the rule. Unset (or empty: getenv cannot tell) keeps the default. A refused value leaves its duration zero, and the
-// error joins with the other problems Load finds.
+// The two duration variables are positive integers of milliseconds. Anything else loads with a warning naming the
+// variable and the rule and ending "; using the default <d>", and the field at its default: Load returns no error, so
+// the process starts. Unset (or empty: getenv cannot tell) keeps the default with no warning. The warnings come in
+// field order, and the other variable's value is not lost to a bad one.
 func TestLoad_Durations(t *testing.T) {
 	maxMs := strconv.FormatInt(math.MaxInt64/int64(time.Millisecond), 10)
 	overMs := strconv.FormatInt(math.MaxInt64/int64(time.Millisecond)+1, 10)
 	for _, v := range []struct {
 		key      string
 		fallback time.Duration
+		text     string // the default as the warning spells it
 		field    func(Config) time.Duration
 	}{
-		{"RECONCILE_INTERVAL_MS", 10 * time.Second, func(c Config) time.Duration { return c.ReconcileInterval }},
-		{"SHARED_INSTANCE_IDLE_TIMEOUT_MS", 12 * time.Hour, func(c Config) time.Duration { return c.SharedInstanceIdleTimeout }},
+		{"RECONCILE_INTERVAL_MS", 10 * time.Second, "10s", func(c Config) time.Duration { return c.ReconcileInterval }},
+		{"SHARED_INSTANCE_IDLE_TIMEOUT_MS", 12 * time.Hour, "12h", func(c Config) time.Duration { return c.SharedInstanceIdleTimeout }},
 	} {
 		for _, tc := range []struct {
 			in      string
-			want    time.Duration
-			problem string // substring of the error; "" = none
+			want    time.Duration // 0 = the default
+			problem string        // substring of the warning; "" = none
 		}{
-			{"", v.fallback, ""},
+			{"", 0, ""},
 			{"1", time.Millisecond, ""},
 			{"2500", 2500 * time.Millisecond, ""},
 			{"+7", 7 * time.Millisecond, ""},
@@ -174,35 +197,89 @@ func TestLoad_Durations(t *testing.T) {
 				}
 				return ""
 			})
-			if got := v.field(c); got != tc.want {
-				t.Errorf("%s=%q: duration %v, want %v", v.key, tc.in, got, tc.want)
+			if err != nil {
+				t.Errorf("%s=%q: an optional key refused the start: %v", v.key, tc.in, err)
+			}
+			want := tc.want
+			if want == 0 {
+				want = v.fallback
+			}
+			if got := v.field(c); got != want {
+				t.Errorf("%s=%q: duration %v, want %v", v.key, tc.in, got, want)
 			}
 			switch {
-			case tc.problem == "" && err != nil:
-				t.Errorf("%s=%q: refused: %v", v.key, tc.in, err)
-			case tc.problem != "" && (err == nil || !strings.Contains(err.Error(), tc.problem)):
-				t.Errorf("%s=%q: error %v, want it to contain %q", v.key, tc.in, err, tc.problem)
+			case tc.problem == "" && len(c.Warnings) != 0:
+				t.Errorf("%s=%q: warned: %q", v.key, tc.in, c.Warnings)
+			case tc.problem != "" && (len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], tc.problem) || !strings.HasSuffix(c.Warnings[0], "; using the default "+v.text)):
+				t.Errorf("%s=%q: warnings %q, want one containing %q ending %q", v.key, tc.in, c.Warnings, tc.problem, "; using the default "+v.text)
 			}
 		}
 	}
 
-	// Both bad, and a third problem: one error holds them all, each on its own line, and the other variable's value is
-	// not lost to the refusal.
-	_, err := Load(func(k string) string {
+	// Both bad, and a third problem: one warning each, in field order, and the other variable's value is not lost.
+	c, err := Load(func(k string) string {
 		return map[string]string{"RECONCILE_INTERVAL_MS": "abc", "SHARED_INSTANCE_IDLE_TIMEOUT_MS": "-1", "FLEET_GIT_URL_REWRITE": "ftp://x"}[k]
 	})
-	if err == nil {
-		t.Fatal("three bad variables, no error")
+	if err != nil {
+		t.Fatalf("three bad optional variables refused the start: %v", err)
 	}
-	lines := strings.Split(err.Error(), "\n")
-	if len(lines) != 3 || !strings.HasPrefix(lines[0], "RECONCILE_INTERVAL_MS must be") ||
-		!strings.HasPrefix(lines[1], "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be") || !strings.HasPrefix(lines[2], "FLEET_GIT_URL_REWRITE") {
-		t.Errorf("joined error:\n%v", err)
+	if len(c.Warnings) != 3 || !strings.HasPrefix(c.Warnings[0], "RECONCILE_INTERVAL_MS must be") ||
+		!strings.HasPrefix(c.Warnings[1], "SHARED_INSTANCE_IDLE_TIMEOUT_MS must be") || !strings.HasPrefix(c.Warnings[2], "FLEET_GIT_URL_REWRITE") {
+		t.Errorf("warnings:\n%q", c.Warnings)
 	}
 	if c, _ := Load(func(k string) string {
 		return map[string]string{"RECONCILE_INTERVAL_MS": "abc", "SHARED_INSTANCE_IDLE_TIMEOUT_MS": "9"}[k]
-	}); c.SharedInstanceIdleTimeout != 9*time.Millisecond {
-		t.Errorf("a refused interval cost the other variable its value: %v", c.SharedInstanceIdleTimeout)
+	}); c.SharedInstanceIdleTimeout != 9*time.Millisecond || c.ReconcileInterval != 10*time.Second {
+		t.Errorf("a bad interval cost the other variable its value or its own default: idle %v, interval %v", c.SharedInstanceIdleTimeout, c.ReconcileInterval)
+	}
+}
+
+// SHARED_INSTANCE_PVC_SIZE is a positive Kubernetes quantity. Anything resource.ParseQuantity refuses, or that is not
+// above zero, loads with a warning naming the variable and the rule and ending "; using the default 2Gi", and the
+// field is "2Gi": it used to reach resource.MustParse unchecked, which panics at the first Postgres shared instance.
+// A good value loads with no warning, as written.
+func TestLoad_PVCSize(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		good bool
+	}{
+		{"", true}, // unset: the default, silently
+		{"2Gi", true},
+		{"9Gi", true},
+		{"500Mi", true},
+		{"10G", true},
+		{"1.5Gi", true},
+		{"1e3", true},
+		{"garbage", false},
+		{"2 Gi", false},
+		{" 2Gi", false},
+		{"2GB", false},
+		{"Gi", false},
+		{"-1Gi", false},
+		{"0", false},
+		{"0Gi", false},
+		{"1e", false},
+	} {
+		c, err := Load(func(k string) string {
+			if k == "SHARED_INSTANCE_PVC_SIZE" {
+				return tc.in
+			}
+			return ""
+		})
+		if err != nil {
+			t.Errorf("%q: an optional key refused the start: %v", tc.in, err)
+		}
+		wantSize := tc.in
+		if tc.in == "" {
+			wantSize = "2Gi"
+		}
+		switch {
+		case tc.good && (len(c.Warnings) != 0 || c.SharedInstancePVCSize != wantSize):
+			t.Errorf("%q: warnings %q, size %q; want none and %q", tc.in, c.Warnings, c.SharedInstancePVCSize, wantSize)
+		case !tc.good && (len(c.Warnings) != 1 || !strings.HasPrefix(c.Warnings[0], "SHARED_INSTANCE_PVC_SIZE must be a positive Kubernetes quantity (e.g. 2Gi), got "+strconv.Quote(tc.in)) ||
+			!strings.HasSuffix(c.Warnings[0], "; using the default 2Gi") || c.SharedInstancePVCSize != "2Gi"):
+			t.Errorf("%q: warnings %q, size %q; want one naming the rule, and 2Gi", tc.in, c.Warnings, c.SharedInstancePVCSize)
+		}
 	}
 }
 
@@ -226,5 +303,14 @@ func TestFromProcess(t *testing.T) {
 	c, err := FromProcess()
 	if err != nil || c.Namespace != "from-process" || c.Version != "v7" {
 		t.Errorf("%+v, %v", c, err)
+	}
+}
+
+// durationText drops the zero units a Duration prints, and nothing else.
+func TestDurationText(t *testing.T) {
+	for in, want := range map[time.Duration]string{10 * time.Second: "10s", 12 * time.Hour: "12h", time.Minute: "1m", 90 * time.Minute: "1h30m", 100 * time.Hour: "100h", 20 * time.Minute: "20m"} {
+		if got := durationText(in); got != want {
+			t.Errorf("durationText(%v) = %q, want %q", in, got, want)
+		}
 	}
 }

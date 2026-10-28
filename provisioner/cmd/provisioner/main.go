@@ -35,8 +35,9 @@ var version = "dev"
 
 func main() {
 	// The environment is read here and nowhere else (internal/config). Its
-	// problems are held until after the token refusal below, where
-	// Validate's refusal always came.
+	// refusals, of a required key, are held until after the token refusal
+	// below; its warnings, for an optional key that was set but invalid and
+	// took its default, are logged as soon as the log handler exists.
 	cfg, cfgErr := config.FromProcess()
 	if cfg.Version != "" {
 		version = cfg.Version
@@ -51,6 +52,9 @@ func main() {
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
+	for _, w := range cfg.Warnings {
+		slog.Warn(w)
+	}
 	slog.Info("provisioner starting", "version", version)
 
 	// First, before any side effect: an unauthenticated ProvisionerService
@@ -61,7 +65,8 @@ func main() {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
 	}
-	// docs/adr/0080: the local stack's settings, refused where they could do harm.
+	// A required key that is missing or unusable. Load has none today (the
+	// core token above is refused by grpcserver), so this does not fire yet.
 	if cfgErr != nil {
 		slog.Error("refusing to start", "error", cfgErr)
 		os.Exit(1)
@@ -207,7 +212,7 @@ func main() {
 
 // startReconcile runs the reconcile loop on the configured tick, with the
 // configured idle timeout for shared instances. Both durations are positive:
-// config.Load refused anything else before main got here.
+// config.Load replaced anything else with its default before main got here.
 func startReconcile(ctx context.Context, cfg config.Config, k8sc reconcile.JobLister, core reconcile.EventReporter, vc reconcile.Revoker) {
 	loop := reconcile.New(k8sc, core, vc, cfg.SharedInstanceIdleTimeout)
 	go loop.Run(ctx, cfg.ReconcileInterval)
