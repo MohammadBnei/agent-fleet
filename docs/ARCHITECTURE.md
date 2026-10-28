@@ -713,8 +713,12 @@ FK'd to `sessions`.
 ## 7. Environment variables
 
 Each Go binary reads its environment once, in its `internal/config` package
-(`FromProcess`), and an AST test (`TestEnvBan`) fails on any other read. That
-file is the list, with defaults and comments. Below, only what a config file
+(`FromProcess`; the executor's are `ExecutorFromProcess` and `ShimFromProcess`),
+and an AST test (`TestEnvBan`) fails on any other read, apart from the
+child-process pass-throughs and library reads each test names (git and kubectl
+run with the process's environment; the provisioner's genome staging directory
+is made under a path, never `$TMPDIR`). That file is the list, with defaults and
+comments. Below, only what a config file
 cannot say.
 
 ### `core/`
@@ -755,8 +759,8 @@ start.
 
 `executor/internal/config/config.go`: `Executor` for thot-executor, `Shim` for
 the `kubectl` shim in a cluster-access pod. `THOT_AUTH_TOKEN` is the bearer both
-share; the executor refuses to start on one shorter than 32 bytes
-(`newGRPCServer`), the shim exits 2 without `EXECUTOR_ADDR`.
+share; the executor refuses to start on one that is empty, blank or shorter than 32
+bytes (`newGRPCServer`), the shim exits 2 without `EXECUTOR_ADDR`.
 
 ### `worker/` (per worker pod, injected by the provisioner at pod creation)
 

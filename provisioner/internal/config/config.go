@@ -75,8 +75,9 @@ type Config struct {
 	CoreToken string
 	// CoreProvisionerToken is what core must present to THIS process's
 	// ProvisionerService (docs/adr/0069), the reverse of CoreToken and a
-	// separate key (FLEET_CORE_PROVISIONER_TOKEN, read raw). Empty refuses to
-	// start: see grpcserver.NewServer.
+	// separate key (FLEET_CORE_PROVISIONER_TOKEN, read raw). Empty, blank or
+	// shorter than grpcserver.MinTokenLen refuses to start: see
+	// grpcserver.NewGRPCServer.
 	CoreProvisionerToken string
 	// ThotAuthToken is passed through to each worker pod's sidecar so
 	// ask_thot registers (docs/adr/0035, THOT_AUTH_TOKEN). Empty leaves the

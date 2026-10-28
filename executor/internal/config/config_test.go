@@ -9,15 +9,14 @@ func getenv(env map[string]string) func(string) string {
 	return func(k string) string { return env[k] }
 }
 
-// TestLoadExecutor: each field comes from its own variable; the ports default when unset or blank, the token is read raw.
+// TestLoadExecutor: each field comes from its own variable; the ports default when unset (or blank: getenv cannot tell), the token is read raw.
 func TestLoadExecutor(t *testing.T) {
 	if c := LoadExecutor(getenv(map[string]string{"GRPC_PORT": "1", "HTTP_PORT": "2", "THOT_AUTH_TOKEN": " tok "})); c != (Executor{GRPCPort: "1", HTTPPort: "2", AuthToken: " tok "}) {
 		t.Errorf("set: %+v", c)
 	}
-	for name, env := range map[string]map[string]string{"unset": nil, "blank": {"GRPC_PORT": "", "HTTP_PORT": "", "THOT_AUTH_TOKEN": ""}} {
-		if c := LoadExecutor(getenv(env)); c != (Executor{GRPCPort: "9090", HTTPPort: "8080"}) {
-			t.Errorf("%s: %+v", name, c)
-		}
+	// Through getenv a blank variable and an unset one are the same "", so there is one case.
+	if c := LoadExecutor(getenv(nil)); c != (Executor{GRPCPort: "9090", HTTPPort: "8080"}) {
+		t.Errorf("unset: %+v", c)
 	}
 }
 
@@ -30,10 +29,8 @@ func TestLoadShim(t *testing.T) {
 	if s, err := LoadShim(getenv(map[string]string{"EXECUTOR_ADDR": "exec:1"})); err != nil || s.AuthToken != "" {
 		t.Errorf("no token: %+v, %v", s, err)
 	}
-	for name, env := range map[string]map[string]string{"unset": nil, "blank": {"EXECUTOR_ADDR": ""}} {
-		if _, err := LoadShim(getenv(env)); !errors.Is(err, ErrNoExecutorAddr) {
-			t.Errorf("%s: %v", name, err)
-		}
+	if _, err := LoadShim(getenv(nil)); !errors.Is(err, ErrNoExecutorAddr) {
+		t.Errorf("unset: %v", err)
 	}
 	if ErrNoExecutorAddr.Error() != "kubectl: EXECUTOR_ADDR unset — this pod has no cluster access configured" {
 		t.Errorf("the printed words moved: %q", ErrNoExecutorAddr)

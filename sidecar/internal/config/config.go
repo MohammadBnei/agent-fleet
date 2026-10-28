@@ -51,7 +51,7 @@ type Config struct {
 	// VaultHosts is the comma-separated host list the router sends to the vault
 	// (FLEET_VAULT_HOSTS), parsed by egress.New.
 	VaultHosts string
-	// EgressPort is the loopback port of the router (EGRESS_PORT), read only
+	// EgressPort is the loopback port of the router (EGRESS_PORT), used only
 	// when VaultProxy is set.
 	EgressPort string
 }
@@ -63,6 +63,8 @@ func FromProcess() (Config, error) { return Load(os.Getenv) }
 // Load is the sidecar's configuration from getenv (FromProcess passes
 // os.Getenv, a test a map). The error joins every refusal that applies, in the
 // order the sidecar has always checked them: ErrNoSessionID, then ErrNoLeaseID.
+// A problem added to Load later must also be acted on in cmd/sidecar: main
+// refuses on any error, after those two keep their old places and words.
 // The Config is returned with it, so a caller can log with what was read.
 func Load(getenv func(string) string) (Config, error) {
 	env := func(key, fallback string) string {

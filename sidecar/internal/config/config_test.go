@@ -9,7 +9,7 @@ func getenv(env map[string]string) func(string) string {
 	return func(k string) string { return env[k] }
 }
 
-// TestLoad: every field comes from its own variable, and the default applies when the variable is unset or blank.
+// TestLoad: every field comes from its own variable, and the default applies when the variable is unset (or blank: getenv cannot tell).
 func TestLoad(t *testing.T) {
 	c, err := Load(getenv(map[string]string{
 		"LOG_LEVEL": "debug", "SESSION_ID": "s1", "LEASE_ID": "l1", "CORE_GRPC_ADDR": "core:1", "WORKTREE_PATH": "/wt",
@@ -24,14 +24,9 @@ func TestLoad(t *testing.T) {
 
 	defaults := Config{LogLevel: "info", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "agent-fleet-core.agent-fleet.svc.cluster.local:9090",
 		WorktreePath: "/workspace", MCPPort: "9090", LocalAPIPort: "9091", HealthPort: "9092", EgressPort: "9093"}
-	for name, env := range map[string]map[string]string{
-		"unset": {"SESSION_ID": "s1", "LEASE_ID": "l1"},
-		"blank": {"SESSION_ID": "s1", "LEASE_ID": "l1", "LOG_LEVEL": "", "CORE_GRPC_ADDR": "", "WORKTREE_PATH": "", "MCP_PORT": "", "LOCAL_API_PORT": "",
-			"HEALTH_PORT": "", "FLEET_VAULT_PROXY": "", "FLEET_VAULT_HOSTS": "", "EGRESS_PORT": ""},
-	} {
-		if c, err := Load(getenv(env)); err != nil || c != defaults {
-			t.Errorf("%s: %+v, %v\nwant %+v", name, c, err, defaults)
-		}
+	// Through getenv a blank variable and an unset one are the same "", so there is one case.
+	if c, err := Load(getenv(map[string]string{"SESSION_ID": "s1", "LEASE_ID": "l1"})); err != nil || c != defaults {
+		t.Errorf("unset: %+v, %v\nwant %+v", c, err, defaults)
 	}
 }
 

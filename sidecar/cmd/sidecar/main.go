@@ -60,6 +60,12 @@ func main() {
 		slog.Error(config.ErrNoLeaseID.Error())
 		os.Exit(1)
 	}
+	// Any other problem Load may one day report is a refusal too: the two
+	// above only keep their old places and words. Unreachable today.
+	if cfgErr != nil {
+		slog.Error("refusing to start", "error", cfgErr)
+		os.Exit(1)
+	}
 
 	core, err := coreclient.New(coreAddr, taskID, leaseID)
 	if err != nil {

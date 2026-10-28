@@ -19,18 +19,23 @@ import (
 // internal/config/env_test.go, atlas's TestEnvBan): os's and syscall's own, and
 // the ones that read a variable on the caller's behalf. A package listed with no
 // names is refused whole: os/exec reads PATH and hands the environment on,
-// os/user reads HOME and USER. The check is syntactic: every use of a listed
+// os/user reads HOME and USER. os.StartProcess and syscall's ForkExec, Exec and
+// StartProcess hand the environment on too (a nil Env inherits it), so they are
+// listed by name. The check is syntactic: every use of a listed
 // name is a selector on its import's name, or a dot import, which is refused;
 // cgo and go:linkname are refused too.
 //
-// ponytail: this file is twinned in core/internal/config,
-// provisioner/internal/config, sidecar/internal/config and
-// executor/internal/config: they are separate go.work modules with no shared
-// package, so a fix to the checker is made in all of them.
+// ponytail: this file is twinned in provisioner/internal/config,
+// sidecar/internal/config and executor/internal/config: they are separate
+// go.work modules with no shared package, so a fix to the checker is made in all
+// three. core/internal/config/env_test.go is the older ancestor and differs: a
+// map[string]bool allowlist, no exact-use pinning, and no MkdirTemp/CreateTemp
+// directory handling (it reports os.MkdirTemp("", ...) as plain "os.MkdirTemp").
+// Its list of names is the same. Porting the rest to core is a change of its own.
 var envReaders = map[string][]string{
 	"os": {"Getenv", "LookupEnv", "Environ", "ExpandEnv", "Setenv", "Unsetenv", "Clearenv", "UserHomeDir", "UserCacheDir",
-		"UserConfigDir", "TempDir", "MkdirTemp", "CreateTemp", "Getwd"},
-	"syscall":               {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"},
+		"UserConfigDir", "TempDir", "MkdirTemp", "CreateTemp", "Getwd", "StartProcess"},
+	"syscall":               {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv", "ForkExec", "Exec", "StartProcess"},
 	"golang.org/x/sys/unix": {"Getenv", "Environ", "Setenv", "Unsetenv", "Clearenv"}, // in this module's dependency graph
 	"net/http":              {"ProxyFromEnvironment"},
 	"os/exec":               nil,
@@ -39,12 +44,13 @@ var envReaders = map[string][]string{
 
 // envReadsAllowed is what may read the environment, by file, and what each may
 // use (mountain plan/15 §5: one Config per binary). A file listed here must use
-// exactly these and nothing else: a use that is gone fails too, which is the
-// positive control. The libraries' own reads are theirs: grpc's and net/http's
+// exactly these, one entry per use, and nothing else: a use that is gone or
+// added fails too (a second os.Environ is a second entry), which is the positive
+// control. The libraries' own reads are theirs: grpc's and net/http's
 // proxy variables.
 var envReadsAllowed = map[string][]string{
 	// The one reader of each binary: Executor's and Shim's FromProcess hand os.Getenv to Load.
-	"internal/config/config.go": {"os.Getenv"},
+	"internal/config/config.go": {"os.Getenv", "os.Getenv"},
 	// kubectl is run with the process's whole environment, on purpose: PATH to
 	// find it, and the pod's own variables it reads (KUBECONFIG, the in-cluster
 	// service account). A child process, not config.
@@ -141,8 +147,9 @@ func emptyDir(args []ast.Expr) bool {
 	return err != nil || v == ""
 }
 
-// set is uses without repeats, sorted.
-func set(uses []string) []string { return slices.Compact(slices.Sorted(slices.Values(uses))) }
+// sorted is uses in a fixed order, repeats kept: a second use of the same name
+// is a second use.
+func sorted(uses []string) []string { return slices.Sorted(slices.Values(uses)) }
 
 // TestEnvBan: no non-test file of this module reads the environment but the ones
 // envReadsAllowed names, and each of those only in the way it names (tests are
@@ -179,7 +186,7 @@ func TestEnvBan(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		got, want := set(uses), set(envReadsAllowed[rel])
+		got, want := sorted(uses), sorted(envReadsAllowed[rel])
 		switch {
 		case len(want) > 0 && len(got) == 0:
 			t.Errorf("%s reads no environment: the check no longer sees it", rel) // the positive control
@@ -227,6 +234,11 @@ func TestEnvUses(t *testing.T) {
 		{`import "golang.org/x/sys/unix"; var _ = unix.Getenv`, []string{"golang.org/x/sys/unix.Getenv"}},
 		{`import u "golang.org/x/sys/unix"; var _, _ = u.Getenv("X")`, []string{"golang.org/x/sys/unix.Getenv"}},
 		{`import "os"; var _ = os.TempDir()`, []string{"os.TempDir"}},
+		{`import "os"; var _, _ = os.StartProcess("/usr/bin/env", nil, &os.ProcAttr{})`, []string{"os.StartProcess"}},
+		{`import "syscall"; var _, _ = syscall.ForkExec("/usr/bin/env", nil, nil)`, []string{"syscall.ForkExec"}},
+		{`import sc "syscall"; var _ = sc.Exec("/usr/bin/env", nil, nil)`, []string{"syscall.Exec"}},
+		{`import "syscall"; var _, _, _ = syscall.StartProcess("/usr/bin/env", nil, nil)`, []string{"syscall.StartProcess"}},
+		{`import "os"; func f() { _ = os.Environ(); _ = os.Environ() }`, []string{"os.Environ", "os.Environ"}},
 		{`import "os"; var _, _ = os.MkdirTemp("", "x")`, []string{"os.MkdirTemp(unchecked)"}},
 		{`import "os"; var _, _ = os.CreateTemp("", "x")`, []string{"os.CreateTemp(unchecked)"}},
 		{"import \"os\"; var _, _ = os.MkdirTemp(``, \"x\")", []string{"os.MkdirTemp(unchecked)"}},

@@ -71,7 +71,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-// TestLoad: every field comes from its own variable, the default applies when the variable is unset or blank, and
+// TestLoad: every field comes from its own variable, the default applies when the variable is unset (or blank: getenv cannot tell), and
 // the problems Validate finds come back with the Config.
 func TestLoad(t *testing.T) {
 	env := map[string]string{
@@ -113,10 +113,9 @@ func TestLoad(t *testing.T) {
 		AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault", GitHubAppDir: "/var/run/github-app",
 		GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
 	}
-	for name, get := range map[string]func(string) string{"unset": func(string) string { return "" }, "blank": func(k string) string { return "" }} {
-		if c, err := Load(get); err != nil || c != defaults {
-			t.Errorf("%s: %+v, %v; want the defaults %+v", name, c, err, defaults)
-		}
+	// Through getenv a blank variable and an unset one are the same "", so there is one case.
+	if c, err := Load(func(string) string { return "" }); err != nil || c != defaults {
+		t.Errorf("unset: %+v, %v; want the defaults %+v", c, err, defaults)
 	}
 
 	// A problem comes back with the Config that has it.
