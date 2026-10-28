@@ -323,6 +323,9 @@ Any doc, code, comment, or memory that contradicts this file or an
 - [`0080`](adr/0080-offline-local-stack.md) — the local stack runs offline: the real
   vault, git `insteadOf` to a local forge, a local owner token (Accepted 2026-10-25,
   built).
+- [`0081`](adr/0081-error-keys-in-proto-errors-traced.md) — error keys are declared in
+  each service's proto, only where the code alone is ambiguous to a client; an error is
+  traced by its trace id (Accepted 2026-10-28, not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
