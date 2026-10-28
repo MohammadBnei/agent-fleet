@@ -72,13 +72,21 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    | Field | Filled by |
    |---|---|
    | `id`, `state` (`open` \| `answered` \| `expired` \| `stale`), `expires_at` | core |
-   | `writer {definition, session, tier}`, `subject {repo, kind, number, url}` | core |
+   | `writer {definition, session, tier}`, `subject {repo (full `owner/name`), kind (`pr` \| `issue` \| `alert` \| `repo`), number (none for `repo`), url}` | core |
    | `ask`: at most 280 chars | agent claim |
    | `pinned {head_sha, sources [{object_id, sha256}], open/closed}` | core |
    | `outside_inputs [{author, tier, object_id, url, text}]`, verbatim | core |
    | `verified [{fact, value, checked_at}]`: CI status, diff stats, PR author, head repo | core |
    | `options` [2..3] `{id, label (≤ 80 chars, agent claim), effect {verb, repo, number, head_sha, path?}, reversible yes\|partial\|no, recommended}` | agent, effect checked by core |
    | `write_own: bool` | agent |
+   | `answered_at`, `answered_by`, `answer {option_id \| own_text}`; kept after the card closes | core |
+
+   Lengths are bounded in the proto, so every surface can rely on them: `ask` 280, `label` 80, `outside_inputs.text`
+   2,000 (longer is cut, and the card says so, with the source's url).
+
+   **API** (`AgentService`): `ListCards` filters by state (any set of the four), `subject.repo`, newest first, paged;
+   answered, expired and stale cards stay listable as history. `GetCard`; `AnswerCard {card_id, option_id |
+   own_text}`; `WatchCards`, a stream that sends each changed card id and a list version, so surfaces never poll.
 
    Rendering: plain text, every href shown, bidi and zero-width characters stripped, lengths bounded, agent text
    labelled "agent claim" and set apart from what core filled, the recommendation marked but never pre-selected. On a
@@ -97,6 +105,13 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - Island and embedded surfaces: core's `frame-ancestors` lists only our app origins; a confirm step re-shows the
      effect as core renders it and needs a second deliberate action; an irreversible effect needs a fresh sign-in once
      the session is older than 10 minutes.
+   - A surface with its own UI (the game) calls the card methods cross-origin with credentials. Core's CORS lists
+     only configured origins (`https://game.bnei.dev`; `http://127.0.0.1:7410` only in a local `--dev` core). Sign-in
+     is a top-level redirect to core with a return URL limited to those origins. `card.fresh_auth_required` carries
+     that sign-in URL.
+   - Since that surface draws its own confirm step, a script injected into it could answer for the owner. So an
+     irreversible effect answered from such a surface always passes core's own top-level confirmation page, whatever
+     the session's age. A reversible one may be answered in place.
    - Creating a card sends a notification. An expired card closes as "no action": ignoring never approves.
 8. **Load.**
    - At most one open card per subject; later inputs fold into it (`FoldEvent`).
