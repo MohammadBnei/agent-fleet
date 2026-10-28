@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -818,5 +819,39 @@ func TestCreateWorkerPod_DoesNotSetEnvVarsThePinnedSdkNoLongerReads(t *testing.T
 	}
 	if !sawLiveKnob {
 		t.Error("worker container has no MAX_MCP_OUTPUT_TOKENS — either contextBudgetEnv stopped being applied, or it is now dead too and this test needs revisiting")
+	}
+}
+
+// New copies Images onto the Client in newClient: a field added to Images and
+// forgotten there compiles, and reaches no pod. Every field is set to a value of
+// its own and must arrive under the same name.
+func TestNewClientCopiesImages(t *testing.T) {
+	var img Images
+	iv := reflect.ValueOf(&img).Elem()
+	for i := 0; i < iv.NumField(); i++ {
+		switch f := iv.Field(i); f.Kind() {
+		case reflect.String:
+			f.SetString("v-" + iv.Type().Field(i).Name)
+		case reflect.Map:
+			f.Set(reflect.ValueOf(map[string]string{"k" + iv.Type().Field(i).Name: "v"}))
+		default:
+			t.Fatalf("Images.%s is a %s: teach this test its shape", iv.Type().Field(i).Name, f.Kind())
+		}
+	}
+	c := newClient(nil, nil, "ns-1", img)
+	cv := reflect.ValueOf(c).Elem()
+	for i := 0; i < iv.NumField(); i++ {
+		name := iv.Type().Field(i).Name
+		got := cv.FieldByName(name)
+		if !got.IsValid() {
+			t.Errorf("Client has no field %s", name)
+			continue
+		}
+		if !reflect.DeepEqual(got.Interface(), iv.Field(i).Interface()) {
+			t.Errorf("Client.%s = %v, want %v", name, got.Interface(), iv.Field(i).Interface())
+		}
+	}
+	if c.Namespace != "ns-1" {
+		t.Errorf("namespace %q", c.Namespace)
 	}
 }

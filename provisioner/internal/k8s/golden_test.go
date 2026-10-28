@@ -17,15 +17,17 @@ var update = flag.Bool("update", false, "rewrite testdata golden files")
 // as a diff, not as a review miss. Regenerate with -update only for a change
 // that means to alter repo-session pods (last: the agent-fleet.dev/version
 // label). GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN are set to prove neither
-// reaches the pod.
+// reaches the pod, and so are CLAUDE_MODEL and MAX_TURNS, to different values
+// than the Client's: the pod takes them from its fields, never the environment.
 func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 	for k, v := range map[string]string{
-		"GH_TOKEN": "gh-token", "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token", "CLAUDE_MODEL": "model", "MAX_TURNS": "7",
+		"GH_TOKEN": "gh-token", "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token", "CLAUDE_MODEL": "env-model", "MAX_TURNS": "env-turns",
 	} {
 		t.Setenv(k, v)
 	}
 	c := newTestClient()
 	c.Version = "6.22.1"
+	c.ClaudeModel, c.MaxTurns = "model", "7"
 	ctx := context.Background()
 	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
 		SessionID: "task-1", Repo: "dream-analyst", RepoURL: "https://github.com/o/dream-analyst.git", BaseBranch: "dev",

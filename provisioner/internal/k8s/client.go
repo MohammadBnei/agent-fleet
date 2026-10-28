@@ -63,6 +63,11 @@ type Client struct {
 	// GitURLRewrite is where every worker's https://github.com/ goes, for the
 	// offline local stack (docs/adr/0080 §2). Empty in production.
 	GitURLRewrite string
+	// ClaudeModel and MaxTurns are the operator's model override and turn cap
+	// (CLAUDE_MODEL, MAX_TURNS), forwarded as the worker container's env of
+	// the same names. Empty leaves Claude Code's own default.
+	ClaudeModel string
+	MaxTurns    string
 }
 
 // New builds an in-cluster client. client-go's rest.InClusterConfig()
@@ -82,6 +87,12 @@ func New(namespace string, cfg Images) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dynamic client: %w", err)
 	}
+	return newClient(core, dyn, namespace, cfg), nil
+}
+
+// newClient is New without the cluster: the one place Images is copied onto a
+// Client, so a test can check that every field arrives (TestNewClientCopiesImages).
+func newClient(core kubernetes.Interface, dyn dynamic.Interface, namespace string, cfg Images) *Client {
 	return &Client{
 		Core: core, Dynamic: dyn, Namespace: namespace,
 		WorkerImage:  cfg.WorkerImage,
@@ -95,7 +106,9 @@ func New(namespace string, cfg Images) (*Client, error) {
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 		GitURLRewrite:         cfg.GitURLRewrite,
-	}, nil
+		ClaudeModel:           cfg.ClaudeModel,
+		MaxTurns:              cfg.MaxTurns,
+	}
 }
 
 // Images bundles the image/PVC/log-level config New needs — named struct
@@ -117,4 +130,6 @@ type Images struct {
 	RedisImage            string
 	SharedInstancePVCSize string
 	GitURLRewrite         string
+	ClaudeModel           string
+	MaxTurns              string
 }
