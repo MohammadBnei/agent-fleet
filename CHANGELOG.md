@@ -1,5 +1,7 @@
 # Changelog
 
+## [6.26.1](https://github.com/MohammadBnei/agent-fleet/compare/6.26.0...6.26.1) (2026-10-28)
+
 # [6.26.0](https://github.com/MohammadBnei/agent-fleet/compare/6.25.0...6.26.0) (2026-10-25)
 
 ### Features
