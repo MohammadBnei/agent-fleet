@@ -92,8 +92,14 @@ func TestPublish(t *testing.T) {
 		t.Fatalf("a reused key with another event: %v", err)
 	}
 
-	// A context-only entry taints the session: untrusted from then on.
-	entry(3, "client:bridge", "", true, true)
+	// A trusted entry that did not wake (the owner's comment while the
+	// agent waited on him) leaves the session clean (docs/adr/0082 §3).
+	entry(3, "client:bridge", "", true, false)
+	if r, err := publish("dev.bnei.agent.x", "agent/s", "t", ""); err != nil || !r.Trusted || r.Hops != 2 {
+		t.Fatalf("a trusted context-only entry tainted the session: %+v %v", r, err)
+	}
+	// An untrusted entry taints it: untrusted from then on.
+	entry(4, "client:bridge", "", true, true)
 	if r, _ := publish("dev.bnei.agent.x", "agent/s", "t", ""); r.Trusted {
 		t.Fatal("a tainted session published a trusted event")
 	}
@@ -103,7 +109,7 @@ func TestPublish(t *testing.T) {
 		VALUES ('client/bridge-core', 'deep', 'd', true, false, 3)`); err != nil {
 		t.Fatal(err)
 	}
-	entry(4, "client:bridge", "client/bridge-core:deep", false, false)
+	entry(5, "client:bridge", "client/bridge-core:deep", false, false)
 	if _, err := publish("dev.bnei.agent.x", "agent/s", "t", ""); !errors.Is(err, ErrPublishRefused) {
 		t.Fatalf("hop 4: %v", err)
 	}

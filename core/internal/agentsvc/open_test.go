@@ -211,6 +211,65 @@ func TestOpen_DelistedClient(t *testing.T) {
 	}
 }
 
+// docs/adr/0082 §3: an entry's trust is its own, not whether it woke. The
+// owner's comment that did not wake leaves the thread clean; a stranger's,
+// or one whose actor the client may not claim, taints it.
+func TestOpen_TrustIsNotWake(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	transcr := transcript.NewPostgresStore(pool)
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	spec := &definitions.Spec{
+		Invokers: []string{"bridge"}, Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
+		Model: &definitions.Model{Default: "claude-opus-5", Allow: []string{"claude-opus-5"}},
+		Mode:  &definitions.Mode{Default: "auto", Allow: []string{"auto"}},
+	}
+	testClients = []definitions.Client{{Name: "bridge", Spec: definitions.ClientSpec{Actors: definitions.AllowList{Allow: []string{"MohammadBnei"}}, Definitions: []string{"d"}}}}
+	t.Cleanup(func() { testClients = nil })
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")}
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
+	bridge, err := s.AsClient(ctx, "bridge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// open delivers one event as the dispatcher does, and returns the entry
+	// it wrote and whether its thread is now tainted.
+	open := func(thread, key string, wake, tainted bool, actor string) (transcript.Entry, bool) {
+		t.Helper()
+		r, err := s.Open(bridge, connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: thread, Message: key, Wake: wake, Tainted: tainted,
+			Interaction: "ask", Lifecycle: "resident", Visibility: "shared", IdempotencyKey: key, Actor: actor}))
+		if err != nil {
+			t.Fatalf("%s: %v", key, err)
+		}
+		entries, _, _ := transcr.ReadSince(ctx, r.Msg.GetThreadId(), 0, 100)
+		list := []sessions.Session{{ID: r.Msg.GetThreadId()}}
+		if err := store.Tainted(ctx, list); err != nil {
+			t.Fatal(err)
+		}
+		return entries[len(entries)-1], list[0].Tainted
+	}
+
+	if e, tainted := open("pr/1", "wake", true, false, "MohammadBnei"); e.ContextOnly || e.Untrusted || tainted {
+		t.Fatalf("the owner's waking open: %+v tainted=%v", e, tainted)
+	}
+	if e, tainted := open("pr/1", "owner", false, false, "MohammadBnei"); !e.ContextOnly || e.Untrusted || tainted {
+		t.Fatalf("the owner's comment that did not wake: %+v tainted=%v", e, tainted)
+	}
+	if e, tainted := open("pr/1", "stranger", false, true, "stranger"); !e.ContextOnly || !e.Untrusted || !tainted {
+		t.Fatalf("a stranger's comment: %+v tainted=%v", e, tainted)
+	}
+	open("pr/2", "wake2", true, false, "MohammadBnei")
+	if e, tainted := open("pr/2", "unclaimed", false, false, "someone"); !e.ContextOnly || !e.Untrusted || !tainted {
+		t.Fatalf("an actor the client may not claim: %+v tainted=%v", e, tainted)
+	}
+}
+
 // docs/adr/0078 §5: the paths the bridge's dispatcher relies on.
 func TestOpen_DispatcherPaths(t *testing.T) {
 	ctx := context.Background()

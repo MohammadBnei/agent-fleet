@@ -1,0 +1,12 @@
+-- docs/adr/0082 §3: "context-only" (the entry did not wake) and "untrusted"
+-- (its trust) are separate facts, so a context-only entry no longer has to
+-- be untrusted: the owner's comment that did not wake is context, and it is
+-- trusted. 000015 tied them with this CHECK.
+--
+-- No backfill. Every row this lifts was written untrusted by the old rule,
+-- and clearing it would clear taint, the unsafe direction, from inputs no
+-- table keeps: the Open's tainted flag and whether its actor was claimable
+-- are not stored, and dispatch_decisions is pruned. Those sessions stay
+-- tainted (admins only) until they are archived. And there are next to none:
+-- only Open writes context_only, and the bridge's client lists no definition.
+ALTER TABLE transcript DROP CONSTRAINT transcript_context_only_untrusted;

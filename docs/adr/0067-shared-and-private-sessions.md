@@ -130,6 +130,10 @@ untrusted input can approve a turn that input drove.
   causation chain includes an untrusted event (ADR-0071 §7). On an existing
   thread such a message is also forced `context_only`; only a thread's
   opening message can be tainted and wake (ADR-0066 §6).
+  *Amended by ADR-0082 §3 (built in `000023`):* a `context_only` entry is no
+  longer untrusted by being context-only. An `Open` message is untrusted when
+  it is `tainted: true` or its actor is not one the client may claim
+  (`actors.allow`; an admin's open counts as claimed), whether it woke or not.
 - **`tainted` is derived:** a session is tainted when its transcript has any
   untrusted entry. It is not stored. The widget, the console and ADR-0072's
   approval buttons show it, and §2 restricts who answers.

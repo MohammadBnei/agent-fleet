@@ -69,7 +69,8 @@ type PublishResult struct {
 // agent cannot: the actor, the causation (the bridge event behind the
 // session's latest waking entry written by the dispatcher), hops (one more
 // than that event's) and trust (that event's, and false once the session is
-// tainted, or when no bridge event caused it).
+// tainted, it holds an untrusted entry, or when no bridge event caused it).
+// A context-only entry that is trusted does not taint (docs/adr/0082 §3).
 func Publish(ctx context.Context, pool *pgxpool.Pool, pub Publisher, sessionID, definition, typ, subject, text, key string) (PublishResult, error) {
 	switch {
 	case len(typ) > 200 || !typeRe.MatchString(typ):
@@ -117,7 +118,7 @@ func Publish(ctx context.Context, pool *pgxpool.Pool, pub Publisher, sessionID, 
 	}
 	if trusted {
 		var tainted bool
-		if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM transcript WHERE session_id = $1 AND (context_only OR untrusted))`,
+		if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM transcript WHERE session_id = $1 AND untrusted)`,
 			sessionID).Scan(&tainted); err != nil {
 			return PublishResult{}, err
 		}

@@ -193,6 +193,10 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	// is the human gate itself (docs/adr/0078 §5), so it wakes either way,
 	// still marked untrusted.
 	contextOnly := !m.GetWake() || (m.GetTainted() && !fresh && !adminActor)
+	// Untrusted is the entry's own trust, never whether it woke (docs/adr/0082
+	// §3): a tainted cause, or an actor this client may not claim. A waking
+	// message has passed mayClaim already; a non-waking one has not.
+	untrusted := m.GetTainted() || (!adminActor && !s.mayClaim(p.Client, m.GetActor()))
 	text := m.GetMessage()
 	if predecessor != "" {
 		text = fmt.Sprintf("[continues thread %s, which can no longer run]\n%s", predecessor, text)
@@ -215,7 +219,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	seq, err := s.sessions.AppendClaimed(ctx, owner, key, sessions.ClaimedEntry{
 		SessionID: t.ID, Text: text, AuthorSub: owner, AuthorName: owner,
 		Actor: m.GetActor(), CausationID: m.GetCausationId(),
-		ContextOnly: contextOnly, Untrusted: contextOnly || m.GetTainted(),
+		ContextOnly: contextOnly, Untrusted: untrusted,
 	})
 	if errors.Is(err, sessions.ErrArchived) {
 		// Closed under us: the claim stays pending, and the retry resolves

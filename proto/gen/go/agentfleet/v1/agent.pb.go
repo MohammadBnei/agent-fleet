@@ -192,8 +192,9 @@ type Thread struct {
 	Lifecycle string `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
 	Model     string `protobuf:"bytes,8,opt,name=model,proto3" json:"model,omitempty"`
 	Mode      string `protobuf:"bytes,9,opt,name=mode,proto3" json:"mode,omitempty"`
-	// A context-only or untrusted entry is in its transcript (docs/adr/0067
-	// §3): only admins answer it.
+	// An untrusted entry is in its transcript (docs/adr/0067 §3, amended by
+	// docs/adr/0082 §3: a context-only entry taints only when untrusted): only
+	// admins answer it.
 	Tainted       bool    `protobuf:"varint,10,opt,name=tainted,proto3" json:"tainted,omitempty"`
 	CreatedAt     string  `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	LastActiveAt  string  `protobuf:"bytes,12,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`

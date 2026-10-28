@@ -66,8 +66,9 @@ message Thread {
   string lifecycle = 7;
   string model = 8;
   string mode = 9;
-  // A context-only or untrusted entry is in its transcript (docs/adr/0067
-  // §3): only admins answer it.
+  // An untrusted entry is in its transcript (docs/adr/0067 §3, amended by
+  // docs/adr/0082 §3: a context-only entry taints only when untrusted): only
+  // admins answer it.
   bool tainted = 10;
   string created_at = 11;
   string last_active_at = 12;

@@ -139,8 +139,9 @@ export type Thread = Message<"agentfleet.v1.Thread"> & {
   mode: string;
 
   /**
-   * A context-only or untrusted entry is in its transcript (docs/adr/0067
-   * §3): only admins answer it.
+   * An untrusted entry is in its transcript (docs/adr/0067 §3, amended by
+   * docs/adr/0082 §3: a context-only entry taints only when untrusted): only
+   * admins answer it.
    *
    * @generated from field: bool tainted = 10;
    */
