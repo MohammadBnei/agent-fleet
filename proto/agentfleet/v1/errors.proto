@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package agentfleet.v1;
+
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+// ErrorKey rides as a detail on the fleet's errors (mountain plan/15 §4): a
+// stable key from core's closed registry (core/internal/errkeys), which a
+// client branches on beside the code, and the source whose words the message
+// holds ("" for the fleet's own). Messages are for people and may change; keys
+// do not. Over Connect it is a connect.ErrorDetail; over gRPC a status detail.
+message ErrorKey {
+  string key = 1;
+  string source = 2;
+}

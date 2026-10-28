@@ -33,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -242,8 +243,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// either PR. Renaming the variable is the fix; do not rename the import.
 	grpcAuth := coreserver.NewAuthenticator(sessionStore, cfg.ProvisionerToken)
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
+		// errkeys first: every error a CoreService handler or interceptor returns leaves keyed (mountain plan/15 §4).
+		grpc.ChainUnaryInterceptor(errkeys.UnaryServerInterceptor(), coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(errkeys.StreamServerInterceptor(), grpcAuth.StreamInterceptor),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
 	// docs/adr/0078 §8: a definition session hands work on through the
@@ -395,7 +397,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// is what stops one of those forging a call; the session check is what
 	// stops an unauthenticated one. Only AgentService answers CORS, and only
 	// for the embed origins (auth.CORS, docs/adr/0068).
-	interceptors := []connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
+	// errkeys outermost on every Connect handler: what a handler or an inner interceptor returns leaves keyed.
+	interceptors := []connect.Interceptor{errkeys.ConnectInterceptor(), dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
 	interceptors = append(interceptors, authInterceptors...)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
@@ -422,7 +425,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 no identity is set, so every AgentService
 	// call is Unauthenticated: the service has no unauthenticated mode.
-	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
+	memberInterceptors = append([]connect.Interceptor{errkeys.ConnectInterceptor(), dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub)
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
@@ -455,7 +458,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	}
 	clientMux := http.NewServeMux()
 	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), connect.WithInterceptors(
-		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
+		errkeys.ConnectInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
 	clientMux.Handle(agentPath, clientHandler)
 	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {

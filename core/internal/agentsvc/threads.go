@@ -12,6 +12,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -241,7 +242,8 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot post to this thread"))
 	}
 	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("DEFINITION_CHANGED: start a new thread"))
+		// The words' prefix stays one release for islands that still read it (mountain plan/15 §4: the key is the API).
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDefinitionChanged, errors.New("DEFINITION_CHANGED: start a new thread"))
 	}
 	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
 		return nil, err
