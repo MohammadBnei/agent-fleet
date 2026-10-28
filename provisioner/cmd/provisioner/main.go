@@ -34,10 +34,13 @@ import (
 var version = "dev"
 
 func main() {
-	if v := os.Getenv("FLEET_VERSION"); v != "" {
-		version = v
+	// The environment is read here and nowhere else (internal/config). Its
+	// problems are held until after the token refusal below, where
+	// Validate's refusal always came.
+	cfg, cfgErr := config.FromProcess()
+	if cfg.Version != "" {
+		version = cfg.Version
 	}
-	cfg := config.Load()
 
 	// JSON, not slog's default TextHandler — Loki/LogQL queries against
 	// this fleet expect structured logs (same convention the TS services'
@@ -59,8 +62,8 @@ func main() {
 		os.Exit(1)
 	}
 	// docs/adr/0080: the local stack's settings, refused where they could do harm.
-	if err := cfg.Validate(); err != nil {
-		slog.Error("refusing to start", "error", err)
+	if cfgErr != nil {
+		slog.Error("refusing to start", "error", cfgErr)
 		os.Exit(1)
 	}
 
@@ -79,22 +82,7 @@ func main() {
 	// No Postgres connection anywhere in this process — the provisioner
 	// holds no DB credentials at all (docs/adr/0020 point 1). Kubernetes
 	// itself is the durable source of truth for pod/session state.
-	k8sc, err := k8s.New(cfg.Namespace, k8s.Images{
-		WorkerImage:           cfg.WorkerImage,
-		SidecarImage:          cfg.SidecarImage,
-		Version:               version,
-		ThotAuthToken:         cfg.ThotAuthToken,
-		ExecutorAddr:          cfg.ExecutorAddr,
-		WorkspacePVC:          cfg.WorkspacePVC,
-		SessionStorageClass:   cfg.SessionStorageClass,
-		SessionNodeSelector:   cfg.NodeSelectorMap(),
-		LogLevel:              cfg.LogLevel,
-		CoreGRPCAddr:          cfg.CoreGRPCAddr,
-		PostgresImage:         cfg.PostgresImage,
-		RedisImage:            cfg.RedisImage,
-		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
-		GitURLRewrite:         cfg.GitURLRewrite,
-	})
+	k8sc, err := k8s.New(cfg.Namespace, images(cfg, version))
 	if err != nil {
 		slog.Error("k8s client init failed", "error", err)
 		os.Exit(1)
@@ -218,6 +206,31 @@ func main() {
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
 	grpcSrv.GracefulStop()
+}
+
+// images is what the k8s client is built from: every part of the configuration
+// that reaches a worker pod. A field added to k8s.Images and not set here
+// compiles and reaches no pod, so TestImages fills the Config and checks that
+// every field of the result is set.
+func images(cfg config.Config, version string) k8s.Images {
+	return k8s.Images{
+		WorkerImage:           cfg.WorkerImage,
+		SidecarImage:          cfg.SidecarImage,
+		Version:               version,
+		ThotAuthToken:         cfg.ThotAuthToken,
+		ExecutorAddr:          cfg.ExecutorAddr,
+		WorkspacePVC:          cfg.WorkspacePVC,
+		SessionStorageClass:   cfg.SessionStorageClass,
+		SessionNodeSelector:   cfg.NodeSelectorMap(),
+		LogLevel:              cfg.LogLevel,
+		CoreGRPCAddr:          cfg.CoreGRPCAddr,
+		PostgresImage:         cfg.PostgresImage,
+		RedisImage:            cfg.RedisImage,
+		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
+		GitURLRewrite:         cfg.GitURLRewrite,
+		ClaudeModel:           cfg.ClaudeModel,
+		MaxTurns:              cfg.MaxTurns,
+	}
 }
 
 // resolveLogLevel parses raw (LOG_LEVEL) via slog.Level.UnmarshalText

@@ -22,16 +22,19 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
+	"github.com/MohammadBnei/agent-fleet/executor/internal/config"
 )
 
 func main() {
-	addr := os.Getenv("EXECUTOR_ADDR")
-	if addr == "" {
-		fmt.Fprintln(os.Stderr, "kubectl: EXECUTOR_ADDR unset — this pod has no cluster access configured")
+	// The environment is read here and nowhere else (internal/config).
+	cfg, err := config.ShimFromProcess()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cfg.ExecutorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kubectl: cannot reach executor: %v\n", err)
 		os.Exit(2)
@@ -40,7 +43,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	if tok := os.Getenv("THOT_AUTH_TOKEN"); tok != "" {
+	if tok := cfg.AuthToken; tok != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+tok)
 	}
 

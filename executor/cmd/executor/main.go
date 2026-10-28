@@ -29,6 +29,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/executor/internal/config"
 	"github.com/MohammadBnei/agent-fleet/executor/internal/kubectl"
 )
 
@@ -113,9 +114,11 @@ func newGRPCServer(token string) (*grpc.Server, error) {
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	grpcPort := env("GRPC_PORT", "9090")
-	httpPort := env("HTTP_PORT", "8080")
-	grpcServer, err := newGRPCServer(os.Getenv("THOT_AUTH_TOKEN"))
+	// The environment is read here and nowhere else (internal/config).
+	cfg := config.ExecutorFromProcess()
+	grpcPort := cfg.GRPCPort
+	httpPort := cfg.HTTPPort
+	grpcServer, err := newGRPCServer(cfg.AuthToken)
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
@@ -154,11 +157,4 @@ func main() {
 
 	<-ctx.Done()
 	_ = httpServer.Close()
-}
-
-func env(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
 }
