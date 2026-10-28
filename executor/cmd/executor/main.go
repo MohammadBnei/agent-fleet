@@ -147,7 +147,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	httpServer := &http.Server{Addr: ":" + httpPort, Handler: mux}
+	httpServer := &http.Server{Addr: ":" + httpPort, Handler: mux, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 	go func() {
 		slog.Info("executor health listening", "port", httpPort)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
