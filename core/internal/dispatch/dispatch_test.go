@@ -175,8 +175,10 @@ func TestRouteAndGate(t *testing.T) {
 		if len(agents.opens) != 1 || agents.opens[0].GetWake() {
 			t.Fatalf("%s/%s woke: %+v", e.GetActor(), e.GetActorLogin(), agents.opens)
 		}
-		if agents.opens[0].GetTainted() != !e.GetTrusted() {
-			t.Fatalf("%s: tainted=%v", e.GetId(), agents.opens[0].GetTainted())
+		// Tainted unless trusted and claimable: only the replay of the
+		// owner's own event stays clean (docs/adr/0082 §3).
+		if want := e.GetId() != "r"; agents.opens[0].GetTainted() != want {
+			t.Fatalf("%s: tainted=%v, want %v", e.GetId(), agents.opens[0].GetTainted(), want)
 		}
 	}
 	// A trusted hand-off through PublishEvent wakes.
@@ -375,6 +377,47 @@ func TestProposals(t *testing.T) {
 	}
 	if open, _ = props.ListOpen(ctx); len(open) != 1 {
 		t.Fatalf("a closed PR's proposal stayed: %d", len(open))
+	}
+}
+
+// A trusted actor the bridge may not claim (a bot, the fleet's GitHub
+// login) taints its decision: the proposal, the session an admin opens from
+// it, and what that session publishes (docs/adr/0082 §3).
+func TestUnclaimableActorTaints(t *testing.T) {
+	d, agents, _, props := setup(t)
+	ctx := context.Background()
+	agents.err["owner"] = connect.NewError(connect.CodeFailedPrecondition, agentsvc.ErrNeedsWake)
+	e := pr("bot1", "dev.bnei.github.pull_request.opened", "bot", "renovate[bot]", true)
+	e.Hops = 1 // so hops 2 shows Publish found the decision
+	if err := d.Handle(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	open, err := props.ListOpen(ctx)
+	if err != nil || len(open) != 1 {
+		t.Fatalf("proposals %v %v", open, err)
+	}
+	p := open[0]
+	if !p.Event.Tainted || !strings.HasSuffix(p.Title, proposals.UntrustedSuffix) {
+		t.Fatalf("a trusted bot's proposal looks clean: %q %+v", p.Title, p.Event)
+	}
+	if _, err := OpenProposal(ctx, agents, &p, "sub-1"); err != nil || !agents.opens[len(agents.opens)-1].GetTainted() {
+		t.Fatalf("admin open of a bot's proposal: %v %+v", err, agents.opens[len(agents.opens)-1])
+	}
+	// A session caused by that event, even with no untrusted entry of its
+	// own, publishes untrusted: the stored decision says so.
+	if _, err := d.pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('owner', 'sha', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	var sid string
+	if err := d.pool.QueryRow(ctx, `INSERT INTO sessions (repo, definition_name, definition_sha) VALUES ('notes', 'owner', 'sha') RETURNING id`).Scan(&sid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, author_sub, causation_id)
+		VALUES ($1, 1, 'human', 'x', 'discussion', 'k', 'client:bridge', $2)`, sid, Causation(e)); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := Publish(ctx, d.pool, &recPub{}, sid, "owner", "dev.bnei.agent.x", "agent/s", "t", ""); err != nil || r.Trusted || r.Hops != 2 {
+		t.Fatalf("a bot-caused session published %+v %v", r, err)
 	}
 }
 

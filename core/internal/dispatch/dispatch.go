@@ -396,11 +396,16 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 	if err != nil {
 		return dec, err
 	}
+	// Tainted is the entry's trust, set once here for every reader (Open,
+	// the proposal, PublishEvent's cause): untrusted, or an actor the bridge
+	// may not claim, such as a bot or the fleet's GitHub login
+	// (docs/adr/0082 §3). A waking event has passed mayClaim already.
+	tainted := !e.GetTrusted() || !d.mayClaim(e.GetActorLogin())
 	err = d.pool.QueryRow(ctx, `
 		INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, thread, hops, by_agent)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (source, event_id, definition) DO UPDATE SET source = dispatch_decisions.source
-		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, !e.GetTrusted(),
+		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, tainted,
 		e.GetSubject(), e.GetHops(), e.GetActor() == "agent").Scan(&dec.wake, &dec.tainted, &dec.outcome)
 	return dec, err
 }
