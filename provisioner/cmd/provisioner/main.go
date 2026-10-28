@@ -131,7 +131,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/metrics", promhttp.Handler())
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 
 	// docs/adr/0065: the fleet's only Agent Vault client. Nothing is checked at
 	// boot: before infra-bootstrap's agent-vault-bootstrap.sh has run, every

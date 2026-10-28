@@ -697,6 +697,11 @@ logAlerts:
       # fields to group-by labels, which the reduce step then carries into the
       # alert instance. slog's JSON handler puts a constant string in `msg`
       # and the variable parts in attrs, so this stays low-cardinality.
+      # The exception is net/http's own lines (ErrorLog, logged at ERROR since
+      # the logguard change): they carry the remote address, a whole panic
+      # stack or an Accept retry delay in `msg`, so each is a series of its own.
+      # They show in the dashboard's error panel but never reach the threshold
+      # of 5 below; a line filter on `^http: ` is the fix when they should page.
       #
       # Threshold semantics shift with it: 5 occurrences of the SAME message
       # from ONE pod, not 5 errors namespace-wide. Stricter, and a systemic
