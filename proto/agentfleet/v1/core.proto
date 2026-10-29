@@ -382,6 +382,20 @@ message AgentSpec {
 // and the sidecar (a worker pod persisting its own initial/current mode on
 // startup, no transcript append — CoreService's handler is a plain column
 // write, see coreserver's implementation).
+// The caller's own session (bound to its lease), the tool, and the call's input as JSON. Core compares the input
+// canonically (decisions.Canon): key order and spacing do not matter, every value does.
+message ConsumeGrantRequest {
+  string session_id = 1;
+  string tool = 2;
+  string input_json = 3;
+}
+
+message ConsumeGrantResponse {
+  bool granted = 1;
+  // The answered decision the grant came from, when granted.
+  string decision_id = 2;
+}
+
 message SetPermissionModeRequest {
   string session_id = 1;
   string mode = 2;
@@ -679,5 +693,9 @@ service CoreService {
   // Publishes an event to the bridge as the calling definition session
   // (docs/adr/0078 §8). Only for a definition granting publish_event.
   rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+
+  // Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
+  // for this tool and this exact input. Each grant lets one call through, once.
+  rpc ConsumeGrant(ConsumeGrantRequest) returns (ConsumeGrantResponse);
 }
 

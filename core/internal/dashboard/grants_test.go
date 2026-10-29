@@ -54,6 +54,7 @@ func TestGrants_RememberedAllow(t *testing.T) {
 	g := grants.NewStore(pool)
 	s := NewServer(store, nil, transcr, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")
 	s.SetGrants(g)
+	s.SetDecisions(decisions.NewStore(pool))
 	respond := func(id string, seq int64, decision, scope, form string) error {
 		_, err := s.RespondToPermission(ctx, connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
 			SessionId: id, Seq: seq, DecisionJson: decision, Scope: scope, RuleForm: form,
@@ -63,6 +64,11 @@ func TestGrants_RememberedAllow(t *testing.T) {
 	code := func(err error) connect.Code { return connect.CodeOf(err) }
 
 	edit := request(one, `{"tool":"Edit","input":{"file_path":"/workspace/notes/a.md"}}`)
+	// Grantable, so the allow is also a one-time grant: its decisionId
+	// rides along with the standing rule.
+	if _, err := pool.Exec(ctx, `UPDATE decisions SET grantable = true WHERE session_id = $1 AND request_seq = $2`, one, edit); err != nil {
+		t.Fatal(err)
+	}
 	prev, err := s.PreviewGrant(ctx, connect.NewRequest(&agentfleetv1.PreviewGrantRequest{SessionId: one, Seq: edit}))
 	if err != nil || prev.Msg.GetExact() != "Edit(notes/a.md)" || prev.Msg.GetPrefix() != "Edit(notes/**)" {
 		t.Fatalf("PreviewGrant = %v, %v", prev, err)
@@ -79,7 +85,7 @@ func TestGrants_RememberedAllow(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Core's rule rides along; the answerer's updatedInput does not.
-	if d["grant"] != "Edit(notes/**)" || d["behavior"] != "allow" || d["updatedInput"] != nil {
+	if d["grant"] != "Edit(notes/**)" || d["behavior"] != "allow" || d["updatedInput"] != nil || d["decisionId"] == nil {
 		t.Fatalf("decision = %v", d)
 	}
 
@@ -118,6 +124,14 @@ func TestGrants_RememberedAllow(t *testing.T) {
 	}
 	if err := respond(two, todo+5, `{"behavior":"allow"}`, grants.ScopeSession, ""); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("not a request: %v", err)
+	}
+	// A question is answered through AnswerQuestion, never here.
+	q, err := transcr.Append(ctx, two, "agent", `{"questions":[]}`, "question", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := respond(two, q, `{"behavior":"allow"}`, "", ""); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("a question through RespondToPermission: %v", err)
 	}
 	repoReq := request(repo, `{"tool":"Bash","input":{"command":"ls"}}`)
 	if err := respond(repo, repoReq, `{"behavior":"allow"}`, grants.ScopeSession, ""); code(err) != connect.CodeInvalidArgument {

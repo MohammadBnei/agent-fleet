@@ -7,8 +7,14 @@
   accepted but never arrives, and an unowned subject is read from today's single `trusted` bit. Slice 2's first PR:
   the `decisions` store (`core/internal/decisions`, migration 000023), written from each transcript append's own
   transaction, and the read API (`ListDecisions`, `GetDecision`, `WatchDecisions`; an admin sees every open
-  session's decisions). Answering through it, one-time grants, `draft_card`, `DECISION_WAIT` and the console UI are
-  not built yet
+  session's decisions). Slice 2's second PR: `decisions.Answer`, one path per kind, behind `AnswerDecision` and the
+  existing answer RPCs (AgentService's and DashboardService's), and one-time grants: an allow of a grantable
+  permission request names its decision as `decisionId` (never `grant`), and `CoreService.ConsumeGrant` spends it
+  once, matched on the session, tool and canonical input; archiving withdraws open decisions and unused grants. A plan
+  approval switches only to a mode the answer names. No worker marks a request grantable or calls `ConsumeGrant` yet
+  (the sidecar route lands with the worker), so no grant is minted; a permission or plan answer does not warm while
+  `ReserveSlot`'s stale-close remains. `draft_card`, `DECISION_WAIT` and the console UI
+  are not built yet
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),

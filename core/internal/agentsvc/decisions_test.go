@@ -41,7 +41,7 @@ func TestDecisions(t *testing.T) {
 		Mode:      &definitions.Mode{Default: "auto", Allow: []string{"auto", "plan"}},
 	}
 	dash := dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")
-	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub(), decisions: decisions.NewStore(pool)}
 	as := func(sub string, groups ...string) context.Context {
 		id := auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}
 		return withPrincipal(ctx, Principal{Member: &id})

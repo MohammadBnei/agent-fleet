@@ -25,6 +25,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
@@ -89,6 +90,9 @@ type Server struct {
 	// grants stores remembered approvals (docs/adr/0076 §3). nil refuses any
 	// scope but "once".
 	grants *grants.Store
+	// decisions is what AnswerQuestion and RespondToPermission answer
+	// through (SetDecisions).
+	decisions *decisions.Store
 	// openEvent opens an event proposal as the clicking admin (docs/adr/0078
 	// §5, dispatch.OpenProposal), injected since AgentService sits above
 	// this package. nil refuses event proposals.
@@ -894,26 +898,18 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 //     FailedPrecondition on a swept session. That is honest — the answer had
 //     nowhere to go in those cases either, it just failed silently before.
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
-	sessionID := req.Msg.GetSessionId()
-	if _, err := s.WarmIfIdle(ctx, sessionID); err != nil {
-		return nil, err
-	}
-	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq())
+	seq, err := s.answer(ctx, req.Msg.GetSessionId(), req.Msg.GetSeq(), "question", decisions.Reply{Answers: req.Msg.GetAnswersJson()})
 	if err != nil {
-		if errors.Is(err, transcript.ErrAlreadyAnswered) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
-		}
-		slog.Error("dashboard AnswerQuestion", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.AppendResponse{Seq: seq}), nil
 }
 
 // RespondToPermission answers a pending PERMISSION_REQUEST entry — the
 // generalized canUseTool prompt-and-wait gate's counterpart to
-// AnswerQuestion, same AppendReply-by-seq shape, kept as a sibling RPC
+// AnswerQuestion, same answer-by-seq shape, kept as a sibling RPC
 // rather than overloaded onto AnswerQuestion since the payload differs
-// (allow/deny/updatedInput JSON vs. free-form answers JSON).
+// ({behavior, message} JSON vs. free-form answers JSON).
 //
 // Deliberately does NOT warm, where AnswerQuestion above does. ReserveSlot
 // stale-closes unanswered permission_request rows on every warm, so warming
@@ -925,31 +921,67 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // If the pod is gone the allow/deny reaches nothing and this row is a
 // bookkeeping write — which is why the idle sweep now refuses to reap a
 // permission-pending pod in the first place (see ListIdleSessionIDs).
+//
+// decision_json is read for its behavior and message only: decisions.Answer
+// writes the rest, so only core writes "grant" (docs/adr/0076 §3), and a plan
+// answered here is the console's approvePlan, which switched the mode first.
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
-	sessionID := req.Msg.GetSessionId()
-	// Only core writes "grant" (docs/adr/0076 §3): an answer naming its own
-	// is stripped of it, whatever its scope.
-	decision := withoutGrant(req.Msg.GetDecisionJson())
-	undo := func() {}
-	if scope := req.Msg.GetScope(); scope != "" && scope != grants.ScopeOnce {
-		d, u, err := s.rememberGrant(ctx, sessionID, req.Msg.GetSeq(), decision, scope, req.Msg.GetRuleForm())
-		if err != nil {
-			return nil, grantErr("RespondToPermission", err)
-		}
-		decision, undo = d, u
+	var d struct {
+		Behavior string `json:"behavior"`
+		Message  string `json:"message"`
 	}
-	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", decision, "permission_response", uuid.NewString(), req.Msg.GetSeq())
+	if err := json.Unmarshal([]byte(req.Msg.GetDecisionJson()), &d); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("decision_json must be a JSON object"))
+	}
+	seq, err := s.answer(ctx, req.Msg.GetSessionId(), req.Msg.GetSeq(), "permission_request", decisions.Reply{
+		Behavior: d.Behavior, Message: d.Message, Scope: req.Msg.GetScope(), RuleForm: req.Msg.GetRuleForm(),
+	})
 	if err != nil {
-		// The answer did not land (another one won, or the append failed), so
-		// neither does the grant it would have carried.
-		undo()
-		if errors.Is(err, transcript.ErrAlreadyAnswered) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
-		}
-		slog.Error("dashboard RespondToPermission", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.AppendResponse{Seq: seq}), nil
+}
+
+// SetDecisions wires the store the answer RPCs answer through
+// (docs/adr/0082 §5). Unset, they answer Unavailable.
+func (s *Server) SetDecisions(d *decisions.Store) { s.decisions = d }
+
+// SetMode is SetPermissionMode for decisions.Answer's plan approval.
+func (s *Server) SetMode(ctx context.Context, sessionID, mode string) error {
+	_, err := s.SetPermissionMode(ctx, connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sessionID, Mode: mode}))
+	return err
+}
+
+// answer is decisions.Answer for the request at seq, which must be a
+// question (wantType "question") or a permission or plan request.
+func (s *Server) answer(ctx context.Context, sessionID string, seq int64, wantType string, a decisions.Reply) (int64, error) {
+	if s.decisions == nil {
+		return 0, connect.NewError(connect.CodeUnavailable, errors.New("decisions are not configured"))
+	}
+	r, err := s.decisions.Request(ctx, sessionID, seq)
+	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind == decisions.Question) != (wantType == "question")) {
+		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not a %s", seq, wantType))
+	}
+	if err != nil {
+		return 0, connect.NewError(connect.CodeInternal, err)
+	}
+	n, err := s.decisions.Answer(ctx, s, s.transcr, r, a)
+	if err != nil {
+		return 0, AnswerErr("answer", err)
+	}
+	return n, nil
+}
+
+// AnswerErr is decisions.Answer's error for the wire. A connect error (a
+// warm's, a mode switch's) passes through.
+func AnswerErr(op string, err error) error {
+	switch {
+	case errors.Is(err, transcript.ErrAlreadyAnswered):
+		return connect.NewError(connect.CodeAlreadyExists, err)
+	case errors.Is(err, decisions.ErrInvalid):
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return grantErr(op, err)
 }
 
 // Discuss appends a human-authored free-text message from the dashboard —

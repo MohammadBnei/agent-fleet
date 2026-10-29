@@ -289,6 +289,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	dashboardSvc.SetPacks(packStore)
 	grantStore := grants.NewStore(pool)
 	dashboardSvc.SetGrants(grantStore)
+	decisionStore := decisions.NewStore(pool)
+	dashboardSvc.SetDecisions(decisionStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that
@@ -319,6 +321,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	dashboardSvc.SetFileDiffStore(fileDiffs)
 	coreSvc.SetFileDiffStore(fileDiffs)
 	coreSvc.SetGrants(grantStore)
+	coreSvc.SetDecisions(decisionStore)
 	// The fleet's only outbound "a session needs you" signal. Without this
 	// wire, a session blocked on a permission decision notifies nobody and
 	// is findable only by someone already watching the dashboard.
@@ -412,7 +415,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// call is Unauthenticated: the service has no unauthenticated mode.
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
-	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisions.NewStore(pool))
+	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
 	// definition threads through agentSvc as client bridge, and a firing
 	// alert reaches the same handler as /webhook/alertmanager.

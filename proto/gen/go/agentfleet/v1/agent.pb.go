@@ -2653,6 +2653,149 @@ func (x *GetDecisionResponse) GetDecision() *Decision {
 	return nil
 }
 
+type AnswerDecisionRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	DecisionId string                 `protobuf:"bytes,1,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
+	// A permission or a plan: "allow" or "deny".
+	Behavior string `protobuf:"bytes,2,opt,name=behavior,proto3" json:"behavior,omitempty"`
+	// A question: its answers, a JSON object.
+	AnswersJson string `protobuf:"bytes,3,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"`
+	// A permission's or plan's message to the agent, at most 10,000 characters.
+	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	// A plan approved: the mode to switch to first, within mode.allow. Empty switches nothing.
+	Mode string `protobuf:"bytes,5,opt,name=mode,proto3" json:"mode,omitempty"`
+	// A permission allowed (docs/adr/0076 §3): "once" (the default), "session", or "definition" (admins only), and
+	// the rule's form, "exact" or "prefix".
+	Scope         string `protobuf:"bytes,6,opt,name=scope,proto3" json:"scope,omitempty"`
+	RuleForm      string `protobuf:"bytes,7,opt,name=rule_form,json=ruleForm,proto3" json:"rule_form,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnswerDecisionRequest) Reset() {
+	*x = AnswerDecisionRequest{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnswerDecisionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnswerDecisionRequest) ProtoMessage() {}
+
+func (x *AnswerDecisionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnswerDecisionRequest.ProtoReflect.Descriptor instead.
+func (*AnswerDecisionRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *AnswerDecisionRequest) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetBehavior() string {
+	if x != nil {
+		return x.Behavior
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetAnswersJson() string {
+	if x != nil {
+		return x.AnswersJson
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetRuleForm() string {
+	if x != nil {
+		return x.RuleForm
+	}
+	return ""
+}
+
+type AnswerDecisionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The answer's seq in the thread's transcript.
+	Seq           int64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnswerDecisionResponse) Reset() {
+	*x = AnswerDecisionResponse{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnswerDecisionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnswerDecisionResponse) ProtoMessage() {}
+
+func (x *AnswerDecisionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnswerDecisionResponse.ProtoReflect.Descriptor instead.
+func (*AnswerDecisionResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *AnswerDecisionResponse) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
 type WatchDecisionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 0 starts at the current version.
@@ -2663,7 +2806,7 @@ type WatchDecisionsRequest struct {
 
 func (x *WatchDecisionsRequest) Reset() {
 	*x = WatchDecisionsRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2675,7 +2818,7 @@ func (x *WatchDecisionsRequest) String() string {
 func (*WatchDecisionsRequest) ProtoMessage() {}
 
 func (x *WatchDecisionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2688,7 +2831,7 @@ func (x *WatchDecisionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDecisionsRequest.ProtoReflect.Descriptor instead.
 func (*WatchDecisionsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{41}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *WatchDecisionsRequest) GetSinceVersion() int64 {
@@ -2708,7 +2851,7 @@ type WatchDecisionsResponse struct {
 
 func (x *WatchDecisionsResponse) Reset() {
 	*x = WatchDecisionsResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2720,7 +2863,7 @@ func (x *WatchDecisionsResponse) String() string {
 func (*WatchDecisionsResponse) ProtoMessage() {}
 
 func (x *WatchDecisionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2733,7 +2876,7 @@ func (x *WatchDecisionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDecisionsResponse.ProtoReflect.Descriptor instead.
 func (*WatchDecisionsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{42}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *WatchDecisionsResponse) GetVersion() int64 {
@@ -2950,7 +3093,18 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x12GetDecisionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
 	"\x13GetDecisionResponse\x123\n" +
-	"\bdecision\x18\x01 \x01(\v2\x17.agentfleet.v1.DecisionR\bdecision\"<\n" +
+	"\bdecision\x18\x01 \x01(\v2\x17.agentfleet.v1.DecisionR\bdecision\"\xd8\x01\n" +
+	"\x15AnswerDecisionRequest\x12\x1f\n" +
+	"\vdecision_id\x18\x01 \x01(\tR\n" +
+	"decisionId\x12\x1a\n" +
+	"\bbehavior\x18\x02 \x01(\tR\bbehavior\x12!\n" +
+	"\fanswers_json\x18\x03 \x01(\tR\vanswersJson\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12\x12\n" +
+	"\x04mode\x18\x05 \x01(\tR\x04mode\x12\x14\n" +
+	"\x05scope\x18\x06 \x01(\tR\x05scope\x12\x1b\n" +
+	"\trule_form\x18\a \x01(\tR\bruleForm\"*\n" +
+	"\x16AnswerDecisionResponse\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\"<\n" +
 	"\x15WatchDecisionsRequest\x12#\n" +
 	"\rsince_version\x18\x01 \x01(\x03R\fsinceVersion\"S\n" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
@@ -2973,7 +3127,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\xa6\x0f\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\x85\x10\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
@@ -2985,7 +3139,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\x12T\n" +
 	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\x12Z\n" +
 	"\rListDecisions\x12#.agentfleet.v1.ListDecisionsRequest\x1a$.agentfleet.v1.ListDecisionsResponse\x12T\n" +
-	"\vGetDecision\x12!.agentfleet.v1.GetDecisionRequest\x1a\".agentfleet.v1.GetDecisionResponse\x12_\n" +
+	"\vGetDecision\x12!.agentfleet.v1.GetDecisionRequest\x1a\".agentfleet.v1.GetDecisionResponse\x12]\n" +
+	"\x0eAnswerDecision\x12$.agentfleet.v1.AnswerDecisionRequest\x1a%.agentfleet.v1.AnswerDecisionResponse\x12_\n" +
 	"\x0eWatchDecisions\x12$.agentfleet.v1.WatchDecisionsRequest\x1a%.agentfleet.v1.WatchDecisionsResponse0\x01\x12N\n" +
 	"\tSetConfig\x12\x1f.agentfleet.v1.SetConfigRequest\x1a .agentfleet.v1.SetConfigResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +
@@ -3008,7 +3163,7 @@ func file_agentfleet_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_agentfleet_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_agentfleet_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_agentfleet_v1_agent_proto_goTypes = []any{
 	(AgentErrorKey)(0),                              // 0: agentfleet.v1.AgentErrorKey
 	(DecisionKind)(0),                               // 1: agentfleet.v1.DecisionKind
@@ -3054,14 +3209,16 @@ var file_agentfleet_v1_agent_proto_goTypes = []any{
 	(*ListDecisionsResponse)(nil),                   // 41: agentfleet.v1.ListDecisionsResponse
 	(*GetDecisionRequest)(nil),                      // 42: agentfleet.v1.GetDecisionRequest
 	(*GetDecisionResponse)(nil),                     // 43: agentfleet.v1.GetDecisionResponse
-	(*WatchDecisionsRequest)(nil),                   // 44: agentfleet.v1.WatchDecisionsRequest
-	(*WatchDecisionsResponse)(nil),                  // 45: agentfleet.v1.WatchDecisionsResponse
-	(TranscriptEntryType)(0),                        // 46: agentfleet.v1.TranscriptEntryType
+	(*AnswerDecisionRequest)(nil),                   // 44: agentfleet.v1.AnswerDecisionRequest
+	(*AnswerDecisionResponse)(nil),                  // 45: agentfleet.v1.AnswerDecisionResponse
+	(*WatchDecisionsRequest)(nil),                   // 46: agentfleet.v1.WatchDecisionsRequest
+	(*WatchDecisionsResponse)(nil),                  // 47: agentfleet.v1.WatchDecisionsResponse
+	(TranscriptEntryType)(0),                        // 48: agentfleet.v1.TranscriptEntryType
 }
 var file_agentfleet_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: agentfleet.v1.AgentServiceListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinitionInfo
 	7,  // 1: agentfleet.v1.Thread.status:type_name -> agentfleet.v1.Status
-	46, // 2: agentfleet.v1.Entry.type:type_name -> agentfleet.v1.TranscriptEntryType
+	48, // 2: agentfleet.v1.Entry.type:type_name -> agentfleet.v1.TranscriptEntryType
 	6,  // 3: agentfleet.v1.ListThreadsResponse.threads:type_name -> agentfleet.v1.Thread
 	6,  // 4: agentfleet.v1.CreateThreadResponse.thread:type_name -> agentfleet.v1.Thread
 	8,  // 5: agentfleet.v1.AgentServiceGetTranscriptResponse.entries:type_name -> agentfleet.v1.Entry
@@ -3085,35 +3242,37 @@ var file_agentfleet_v1_agent_proto_depIdxs = []int32{
 	23, // 23: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
 	40, // 24: agentfleet.v1.AgentService.ListDecisions:input_type -> agentfleet.v1.ListDecisionsRequest
 	42, // 25: agentfleet.v1.AgentService.GetDecision:input_type -> agentfleet.v1.GetDecisionRequest
-	44, // 26: agentfleet.v1.AgentService.WatchDecisions:input_type -> agentfleet.v1.WatchDecisionsRequest
-	25, // 27: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
-	27, // 28: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
-	29, // 29: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
-	31, // 30: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
-	33, // 31: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
-	35, // 32: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
-	37, // 33: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
-	5,  // 34: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
-	10, // 35: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
-	12, // 36: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
-	14, // 37: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
-	16, // 38: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
-	18, // 39: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
-	20, // 40: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
-	22, // 41: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
-	24, // 42: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
-	41, // 43: agentfleet.v1.AgentService.ListDecisions:output_type -> agentfleet.v1.ListDecisionsResponse
-	43, // 44: agentfleet.v1.AgentService.GetDecision:output_type -> agentfleet.v1.GetDecisionResponse
-	45, // 45: agentfleet.v1.AgentService.WatchDecisions:output_type -> agentfleet.v1.WatchDecisionsResponse
-	26, // 46: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
-	28, // 47: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
-	30, // 48: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
-	32, // 49: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
-	34, // 50: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
-	36, // 51: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
-	38, // 52: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
-	34, // [34:53] is the sub-list for method output_type
-	15, // [15:34] is the sub-list for method input_type
+	44, // 26: agentfleet.v1.AgentService.AnswerDecision:input_type -> agentfleet.v1.AnswerDecisionRequest
+	46, // 27: agentfleet.v1.AgentService.WatchDecisions:input_type -> agentfleet.v1.WatchDecisionsRequest
+	25, // 28: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
+	27, // 29: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
+	29, // 30: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
+	31, // 31: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
+	33, // 32: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
+	35, // 33: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
+	37, // 34: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
+	5,  // 35: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
+	10, // 36: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
+	12, // 37: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
+	14, // 38: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
+	16, // 39: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
+	18, // 40: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
+	20, // 41: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
+	22, // 42: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
+	24, // 43: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
+	41, // 44: agentfleet.v1.AgentService.ListDecisions:output_type -> agentfleet.v1.ListDecisionsResponse
+	43, // 45: agentfleet.v1.AgentService.GetDecision:output_type -> agentfleet.v1.GetDecisionResponse
+	45, // 46: agentfleet.v1.AgentService.AnswerDecision:output_type -> agentfleet.v1.AnswerDecisionResponse
+	47, // 47: agentfleet.v1.AgentService.WatchDecisions:output_type -> agentfleet.v1.WatchDecisionsResponse
+	26, // 48: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
+	28, // 49: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
+	30, // 50: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
+	32, // 51: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
+	34, // 52: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
+	36, // 53: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
+	38, // 54: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
+	35, // [35:55] is the sub-list for method output_type
+	15, // [15:35] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -3132,7 +3291,7 @@ func file_agentfleet_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_agent_proto_rawDesc), len(file_agentfleet_v1_agent_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   43,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

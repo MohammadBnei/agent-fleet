@@ -27,6 +27,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -90,6 +91,9 @@ type Server struct {
 	publish PublishFunc
 	// grants is delivered on GetSession (docs/adr/0076 §3). nil sends none.
 	grants *grants.Store
+	// decisions spends one-time grants (ConsumeGrant). nil answers
+	// Unavailable.
+	decisions *decisions.Store
 }
 
 func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *journal.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {

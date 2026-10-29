@@ -9,28 +9,26 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
-	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
 // answerable loads a thread the caller may answer, with the request at seq:
 // an entry of wantType in this thread's own transcript, which ExitPlanMode
 // decides is a plan or a permission. A seq that is anything else is
-// InvalidArgument; one already answered is AlreadyExists at the append
-// (migration 000015's one-reply index).
+// InvalidArgument; one already answered is AlreadyExists, from
+// decisions.Answer before anything with a side effect (a warm, a mode
+// switch).
 func (s *Server) answerable(ctx context.Context, p Principal, threadID string, seq int64, wantType string, plan bool) (*sessions.Session, error) {
 	t, _, err := s.thread(ctx, p, threadID)
 	if err != nil {
 		return nil, err
 	}
-	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
-	}
-	// docs/adr/0070: a headless thread has nobody to answer, and its worker
-	// asks nothing.
-	if deref(t.Interaction, "ask") == "deny" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this thread takes no answers"))
+	if err := s.mayAnswer(p, t); err != nil {
+		return nil, err
 	}
 	entries, _, err := s.transcr.ReadSince(ctx, t.ID, seq, 1)
 	if err != nil {
@@ -51,29 +49,62 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is a plan: use ApprovePlan", seq))
 		}
 	}
-	// Checked before anything with a side effect (a warm, a mode switch):
-	// the one-reply index still decides a race at the append.
-	answered, err := s.sessions.Answered(ctx, t.ID, seq)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if answered {
-		return nil, connect.NewError(connect.CodeAlreadyExists, transcript.ErrAlreadyAnswered)
-	}
 	return t, nil
 }
 
-func replyErr(err error) error {
-	if errors.Is(err, transcript.ErrAlreadyAnswered) {
-		return connect.NewError(connect.CodeAlreadyExists, err)
+// mayAnswer is canAnswer for a thread the caller can see, while its client
+// is still registered, on a thread that takes answers.
+func (s *Server) mayAnswer(p Principal, t *sessions.Session) error {
+	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
 	}
-	return connect.NewError(connect.CodeInternal, err)
+	// docs/adr/0070: a headless thread has nobody to answer, and its worker
+	// asks nothing.
+	if deref(t.Interaction, "ask") == "deny" {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("this thread takes no answers"))
+	}
+	return nil
 }
 
-// RespondToPermission appends {behavior, message} and nothing else
-// (docs/adr/0066 §4): no updatedInput, no standing rule. Remembered grants
-// stay a console action (docs/adr/0076 §3) until the member rule for them
-// lands. No warm, as in the console: a permission belongs to a live pod.
+// answerAt is decisions.Answer for the decision t's request at seq opened.
+func (s *Server) answerAt(ctx context.Context, p Principal, t *sessions.Session, seq int64, a decisions.Reply) (int64, error) {
+	r, err := s.decisions.Request(ctx, t.ID, seq)
+	if errors.Is(err, decisions.ErrNotFound) {
+		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not an open request", seq))
+	}
+	if err != nil {
+		return 0, connect.NewError(connect.CodeInternal, err)
+	}
+	return s.answer(ctx, p, r, a)
+}
+
+func (s *Server) answer(ctx context.Context, p Principal, r decisions.Record, a decisions.Reply) (int64, error) {
+	a.By = p.author()
+	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, a)
+	if err != nil {
+		return 0, dashboard.AnswerErr("agentsvc answer", err)
+	}
+	return n, nil
+}
+
+func validMessage(m string) error {
+	if len(m) > maxTitle*10 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("message is too long"))
+	}
+	return nil
+}
+
+func validAnswers(answersJSON string) error {
+	var answers map[string]any
+	if len(answersJSON) > maxText || json.Unmarshal([]byte(answersJSON), &answers) != nil || answers == nil {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("answers_json must be a JSON object"))
+	}
+	return nil
+}
+
+// RespondToPermission is AnswerDecision for a permission request: {behavior,
+// message} and nothing else (docs/adr/0066 §4), no updatedInput, no standing
+// rule. No warm, as in the console: a permission belongs to a live pod.
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.AgentServiceRespondToPermissionRequest]) (*connect.Response[agentfleetv1.AgentServiceRespondToPermissionResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -83,56 +114,47 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 	if b != "allow" && b != "deny" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(`behavior must be "allow" or "deny"`))
 	}
-	if len(req.Msg.GetMessage()) > maxTitle*10 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("message is too long"))
+	if err := validMessage(req.Msg.GetMessage()); err != nil {
+		return nil, err
 	}
 	t, err := s.answerable(ctx, p, req.Msg.GetThreadId(), req.Msg.GetSeq(), "permission_request", false)
 	if err != nil {
 		return nil, err
 	}
-	decision, _ := json.Marshal(struct {
-		Behavior string `json:"behavior"`
-		Message  string `json:"message,omitempty"`
-	}{b, req.Msg.GetMessage()})
-	seq := req.Msg.GetSeq()
-	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), string(decision), "permission_response", uuid.NewString(), &seq)
+	n, err := s.answerAt(ctx, p, t, req.Msg.GetSeq(), decisions.Reply{Behavior: b, Message: req.Msg.GetMessage()})
 	if err != nil {
-		return nil, replyErr(err)
+		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.AgentServiceRespondToPermissionResponse{Seq: n}), nil
 }
 
-// AnswerQuestion warms first, as the console does: a question outlives its
-// pod, and its answer is delivered to the next one.
+// AnswerQuestion is AnswerDecision for a question: it warms first, as the
+// console does, since a question outlives its pod and its answer is
+// delivered to the next one.
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AgentServiceAnswerQuestionRequest]) (*connect.Response[agentfleetv1.AgentServiceAnswerQuestionResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var answers map[string]any
-	if len(req.Msg.GetAnswersJson()) > maxText || json.Unmarshal([]byte(req.Msg.GetAnswersJson()), &answers) != nil || answers == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("answers_json must be a JSON object"))
+	if err := validAnswers(req.Msg.GetAnswersJson()); err != nil {
+		return nil, err
 	}
 	t, err := s.answerable(ctx, p, req.Msg.GetThreadId(), req.Msg.GetSeq(), "question", false)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
-		return nil, err
-	}
-	seq := req.Msg.GetSeq()
-	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), req.Msg.GetAnswersJson(), "answer", uuid.NewString(), &seq)
+	n, err := s.answerAt(ctx, p, t, req.Msg.GetSeq(), decisions.Reply{Answers: req.Msg.GetAnswersJson()})
 	if err != nil {
-		return nil, replyErr(err)
+		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.AgentServiceAnswerQuestionResponse{Seq: n}), nil
 }
 
-// ApprovePlan is the console's approvePlan (dashboard/src/approvePlan.ts):
-// switch the mode first, within mode.allow, then answer the plan. Unlike a
-// repo session, a definition session's worker resolves nothing on a mode
-// switch (worker/src/session.ts), so an existing answer is someone else's
-// and AlreadyExists, never success.
+// ApprovePlan is AnswerDecision allowing a plan: the mode first, within
+// mode.allow, then the answer (the console's dashboard/src/approvePlan.ts).
+// Unlike a repo session, a definition session's worker resolves nothing on a
+// mode switch (worker/src/session.ts), so an existing answer is someone
+// else's and AlreadyExists, never success.
 func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentfleetv1.ApprovePlanRequest]) (*connect.Response[agentfleetv1.ApprovePlanResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -142,22 +164,77 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 	if err != nil {
 		return nil, err
 	}
-	mode := req.Msg.GetMode()
-	if mode != "" {
-		// Switching mode is SetConfig's power: the owner's or an admin's.
-		if !ownsOrAdmin(p, t) {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its mode"))
-		}
-		if err := s.setMode(ctx, t, mode); err != nil {
+	if err := choosesMode(p, t, req.Msg.GetMode()); err != nil {
+		return nil, err
+	}
+	n, err := s.answerAt(ctx, p, t, req.Msg.GetSeq(), decisions.Reply{Behavior: "allow", Mode: req.Msg.GetMode()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.ApprovePlanResponse{Seq: n}), nil
+}
+
+// choosesMode: naming the mode a plan approval switches to is SetConfig's
+// power, the owner's or an admin's. Approving without one switches nothing.
+func choosesMode(p Principal, t *sessions.Session, mode string) error {
+	if mode != "" && !ownsOrAdmin(p, t) {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its mode"))
+	}
+	return nil
+}
+
+// AnswerDecision answers any kind of decision by id (docs/adr/0082 §5). An
+// admin in the console answers every decision it can see, console and repo
+// sessions included; anyone else, on the threads canAnswer allows. A
+// "definition" scope widens a definition for every member: admins only
+// (docs/adr/0076 §3).
+func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentfleetv1.AnswerDecisionRequest]) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := req.Msg
+	if uuid.Validate(m.GetDecisionId()) != nil {
+		return nil, errNoDecision
+	}
+	r, err := s.decisions.Get(ctx, m.GetDecisionId())
+	if errors.Is(err, decisions.ErrNotFound) || (err == nil && !s.visible(p, r)) {
+		return nil, errNoDecision
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := validMessage(m.GetMessage()); err != nil {
+		return nil, err
+	}
+	if r.Kind == decisions.Question {
+		if err := validAnswers(m.GetAnswersJson()); err != nil {
 			return nil, err
 		}
 	}
-	seq := req.Msg.GetSeq()
-	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), `{"behavior":"allow"}`, "permission_response", uuid.NewString(), &seq)
-	if err != nil {
-		return nil, replyErr(err)
+	if !p.Admin() {
+		t, _, err := s.thread(ctx, p, r.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.mayAnswer(p, t); err != nil {
+			return nil, err
+		}
+		if err := choosesMode(p, t, m.GetMode()); err != nil {
+			return nil, err
+		}
+		if m.GetScope() == grants.ScopeDefinition {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin remembers an approval for the whole definition"))
+		}
 	}
-	return connect.NewResponse(&agentfleetv1.ApprovePlanResponse{Seq: n}), nil
+	n, err := s.answer(ctx, p, r, decisions.Reply{
+		Behavior: m.GetBehavior(), Message: m.GetMessage(), Answers: m.GetAnswersJson(), Mode: m.GetMode(),
+		Scope: m.GetScope(), RuleForm: m.GetRuleForm(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n}), nil
 }
 
 // ownsOrAdmin is who configures a thread. A tainted thread is admins' only

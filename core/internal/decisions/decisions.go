@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -108,7 +110,17 @@ func read(msgType, text string) Decision {
 // (UseNumber, so a large integer is not rounded through float64), no
 // insignificant space. A one-time grant matches a retried call's input against
 // the stored one this way, so both sides must use this function.
+//
+// Input that is not valid UTF-8, or that escapes a lone surrogate, has no
+// canon: the decoder would turn either into U+FFFD, so two different inputs
+// would share one. Such a request is never grantable.
 func Canon(raw []byte) (string, error) {
+	if !utf8.Valid(raw) {
+		return "", errors.New("canon: not valid UTF-8")
+	}
+	if loneSurrogate(raw) {
+		return "", errors.New("canon: a lone surrogate escape")
+	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
 	var v any
@@ -122,11 +134,50 @@ func Canon(raw []byte) (string, error) {
 	return string(b), err
 }
 
+// loneSurrogate reports a \uD800-\uDFFF escape that is not a high surrogate
+// followed by a low one. A backslash outside a string is not valid JSON, which
+// the decoder refuses, so raw can be scanned without tracking strings.
+func loneSurrogate(raw []byte) bool {
+	hex4 := func(i int) rune {
+		if i+4 > len(raw) {
+			return -1
+		}
+		n, err := strconv.ParseUint(string(raw[i:i+4]), 16, 16)
+		if err != nil {
+			return -1
+		}
+		return rune(n)
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		i++ // the escaped byte: a second backslash is skipped here
+		if i >= len(raw) || raw[i] != 'u' {
+			continue
+		}
+		r := hex4(i + 1)
+		i += 4
+		if r < 0xD800 || r > 0xDFFF {
+			continue
+		}
+		if r >= 0xDC00 || i+2 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
+			return true
+		}
+		if lo := hex4(i + 3); lo < 0xDC00 || lo > 0xDFFF {
+			return true
+		}
+		i += 6
+	}
+	return false
+}
+
 // asJSON is text for a JSONB column: itself when it is JSON Postgres takes,
 // else a JSON string of it. The transcript column already refuses NUL bytes,
-// but JSONB also refuses an escaped \u0000, so such text is stored as a string.
+// but JSONB also refuses an escaped \u0000 and a lone surrogate escape, so
+// such text is stored as a string.
 func asJSON(text string) string {
-	if json.Valid([]byte(text)) && !strings.Contains(text, `\u0000`) {
+	if json.Valid([]byte(text)) && !strings.Contains(text, `\u0000`) && !loneSurrogate([]byte(text)) {
 		return text
 	}
 	b, _ := json.Marshal(text)
@@ -153,8 +204,16 @@ func clip(s string, n int) string {
 // A reply of any type closes it, as pending_decisions always counted. The
 // agent's own reply withdraws rather than answers: that is core's supersede
 // of a re-asked question (coreserver reuseOrAppendQuestion).
+//
+// Only a human's allow keeps a request grantable: a session authors only as
+// agent or worker (coreserver auth.go), so it cannot answer itself into a
+// one-time grant (ConsumeGrant), and a deny is never one.
 func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry) error {
 	if e.ReplyTo != nil {
+		var reply struct {
+			Behavior string `json:"behavior"`
+		}
+		_ = json.Unmarshal([]byte(e.Text), &reply)
 		state, by := Answered, e.AuthorName
 		if e.From == "agent" {
 			state = Withdrawn
@@ -167,9 +226,10 @@ func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Ent
 			       answer      = CASE WHEN $3 = 'answered' THEN $4::jsonb END,
 			       answered_by = CASE WHEN $3 = 'answered' THEN $5 END,
 			       answered_at = CASE WHEN $3 = 'answered' THEN now() END,
+			       grantable   = grantable AND $6,
 			       version     = nextval('decisions_version_seq')
 			 WHERE session_id = $1 AND request_seq = $2 AND state = 'open'`,
-			sessionID, *e.ReplyTo, state, asJSON(e.Text), by); err != nil {
+			sessionID, *e.ReplyTo, state, asJSON(e.Text), by, e.From == "human" && reply.Behavior == "allow"); err != nil {
 			return err
 		}
 	}

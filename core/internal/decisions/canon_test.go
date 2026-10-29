@@ -22,6 +22,19 @@ func TestCanon(t *testing.T) {
 	if a != b {
 		t.Errorf("%q != %q", a, b)
 	}
+	// A lone surrogate, or bytes that are not UTF-8, decode to U+FFFD: no
+	// canon, so two inputs never share one. A pair, or an escaped
+	// backslash before "u", is fine.
+	for _, ok := range []string{`"\ud83d\ude00"`, `"\\ud800"`, `"\u00e9\ud83d\ude00x"`} {
+		if _, err := Canon([]byte(ok)); err != nil {
+			t.Errorf("Canon(%s): %v", ok, err)
+		}
+	}
+	for _, bad := range []string{`"\ud800"`, `"\udc00"`, `"\ud800x"`, `"\ud800\u0041"`, `"\ud83d\ud83d"`, `{"a":"\ud800"}`, "\"\xff\""} {
+		if got, err := Canon([]byte(bad)); err == nil {
+			t.Errorf("Canon(%q) = %q, want an error", bad, got)
+		}
+	}
 	for _, bad := range []string{``, `{`, `{"a":1} {"b":2}`, `nope`} {
 		if got, err := Canon([]byte(bad)); err == nil {
 			t.Errorf("Canon(%q) = %q, want an error", bad, got)

@@ -1126,20 +1126,46 @@ func (s *Store) MarkSwept(ctx context.Context, id string) error {
 
 // Archive marks a session finished by a human — the only terminal state in
 // the fleet, because it is the only one a machine cannot compute.
+//
+// In the same transaction its open decisions are withdrawn and its unused
+// one-time grants cleared (docs/adr/0082 §5): a grant lives until its
+// session ends, and nothing waits on a finished session's owner.
 func (s *Store) Archive(ctx context.Context, id string) error {
-	tag, err := s.pool.Exec(ctx, `
+	if err := s.archive(ctx, id); err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			slog.Error("sessions Archive", "sessionId", id, "error", err)
+		}
+		return err
+	}
+	slog.Info("sessions Archive", "sessionId", id)
+	return nil
+}
+
+func (s *Store) archive(ctx context.Context, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("archive session: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `
 		UPDATE sessions SET archived_at = COALESCE(archived_at, now()), updated_at = now()
 		WHERE id = $1
 	`, id)
 	if err != nil {
-		slog.Error("sessions Archive", "sessionId", id, "error", err)
 		return fmt.Errorf("archive session: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	slog.Info("sessions Archive", "sessionId", id)
-	return nil
+	if _, err := tx.Exec(ctx, `
+		UPDATE decisions
+		   SET state     = CASE WHEN state = 'open' THEN 'withdrawn' ELSE state END,
+		       grantable = false,
+		       version   = nextval('decisions_version_seq')
+		 WHERE session_id = $1 AND (state = 'open' OR (grantable AND grant_used_at IS NULL))`, id); err != nil {
+		return fmt.Errorf("archive session: withdraw decisions: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 // Delete removes the row and its transcript for real.

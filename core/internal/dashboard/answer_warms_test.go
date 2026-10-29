@@ -85,9 +85,9 @@ func TestAnswerQuestion_WarmsFirstSoTheAnswerIsAboveTheResumeCursor(t *testing.T
 	repoStore := repos.NewStore(pool)
 	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 
-	// Only the four collaborators this path touches; the rest of Server is
+	// Only the collaborators this path touches; the rest of Server is
 	// unreachable from AnswerQuestion.
-	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, e2e: provClient, caps: sessions.Caps{MaxLive: 5}}
+	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, e2e: provClient, caps: sessions.Caps{MaxLive: 5}, decisions: decisions.NewStore(pool)}
 
 	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('editable-blog', 'https://example.invalid/x.git')`); err != nil {
 		t.Fatalf("repo: %v", err)
