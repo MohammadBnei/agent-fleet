@@ -46,12 +46,14 @@ func TestDecisions(t *testing.T) {
 		return withPrincipal(ctx, Principal{Member: &id})
 	}
 	alice, bob := as("alice", "shared-notes"), as("bob", "shared-notes")
+	// Members start no threads (docs/adr/0067 §6): alice's come from the store.
 	thread := func(vis string) string {
-		r, err := s.CreateThread(alice, connect.NewRequest(&agentfleetv1.CreateThreadRequest{Definition: "d", Visibility: vis}))
+		id, err := store.Create(ctx, sessions.CreateParams{Repo: "notes", DefinitionName: "d", DefinitionSHA: "sha1",
+			Owner: "alice", Visibility: vis, Interaction: "ask", Lifecycle: "resident"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return r.Msg.GetThread().GetId()
+		return id
 	}
 	shared, priv := thread("shared"), thread("private")
 	entry := func(id, text, typ string) int64 {

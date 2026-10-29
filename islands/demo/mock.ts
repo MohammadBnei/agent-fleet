@@ -56,7 +56,14 @@ const say = (msg: string) => ((document.getElementById("log") as HTMLElement).te
 setTransport(
   createRouterTransport(({ service }) => {
     service(AgentService, {
-      listThreads: () => ({ threads }),
+      // ?member shows the island as a member sees it (docs/adr/0067 §6).
+      listThreads: () => ({ threads, steward: !new URLSearchParams(location.search).has("member") }),
+      lock: (req) => {
+        const t = threads.find((x) => x.id === req.threadId);
+        if (t) t.lockedBy = req.locked ? "demo@bnei.dev" : "";
+        return {};
+      },
+      wake: () => ({}),
       createThread: (req) => {
         const t = thread(Math.random().toString(16).slice(2, 8), req.title, req.visibility);
         threads.unshift(t);

@@ -30,6 +30,9 @@
   let phase = $state<"loading" | "signed-out" | "ready" | "error">("loading");
   let error = $state("");
   let threads = $state<Thread[]>([]);
+  // A member of platform-admins (docs/adr/0067 §6): starts, locks and wakes
+  // threads. Everyone else joins threads shared with them.
+  let steward = $state(false);
   let current = $state<Thread | undefined>();
   let entries = $state<Entry[]>([]);
   let draft = $state("");
@@ -54,6 +57,10 @@
   const items = $derived(conversation(entries));
   const open = $derived(decisions(entries));
   const live = $derived(open.length ? "waiting" : (current?.status?.state ?? "idle"));
+  // Locked by a steward: read-only for everyone else.
+  const locked = $derived(!!current?.lockedBy && !steward);
+  // Nothing to write into: a non-steward has no thread to start.
+  const readOnly = $derived(!!current?.tainted || locked || (!current && !steward));
 
   // One event per change, for the host (§2).
   let lastState = "";
@@ -146,6 +153,7 @@
       const res = await api.listThreads({ definition });
       if (my !== gen) return;
       threads = res.threads;
+      steward = res.steward;
       phase = "ready";
       const pick = threads.find((t) => t.id === thread) ?? threads[0];
       if (pick) await select(pick);
@@ -271,6 +279,7 @@
       const res = await api.listThreads({ definition });
       if (my !== gen) return;
       threads = res.threads;
+      steward = res.steward;
       current = threads.find((t) => t.id === current?.id) ?? current;
     } catch {
       // Best effort: the error already shown stands.
@@ -381,6 +390,15 @@
   }
   const permit = (seq: bigint, behavior: "allow" | "deny") => act((threadId) => api.respondToPermission({ threadId, seq, behavior }));
   const approve = (seq: bigint) => act((threadId) => api.approvePlan({ threadId, seq }));
+  // A steward's controls (docs/adr/0067 §6). Locking stops the turn in flight.
+  async function lock(on: boolean) {
+    // Refreshed either way: a lock that landed before its stop failed shows.
+    await act((threadId) => api.lock({ threadId, locked: on }));
+    await refreshCurrent();
+  }
+  async function wake() {
+    if (await act((threadId) => api.wake({ threadId }))) await refreshCurrent();
+  }
 
   // Login runs top-level on the fleet (authentik refuses to be framed). No
   // reliance on window.opener: the island retries when its window regains focus.
@@ -461,7 +479,11 @@
           else { const t = threads.find((x) => x.id === v); if (t) select(t); }
         }}
       >
-        <option value="" selected={!current}>+ New thread</option>
+        {#if steward}
+          <option value="" selected={!current}>+ New thread</option>
+        {:else}
+          <option value="" disabled selected={!current}>Pick a thread</option>
+        {/if}
         {#each threads as t (t.id)}
           <option value={t.id} selected={t.id === current?.id}>{label(t)}</option>
         {/each}
@@ -471,7 +493,17 @@
           {#if live === "waiting"}<span class="led" aria-hidden="true"></span>{:else}<span class="dot" aria-hidden="true"></span>{/if}
           <span class="status-word">{reconnecting ? "Reconnecting" : (statusWord[live] ?? live)}</span>
         </span>
-      {:else}
+        {#if steward}
+          {#if live === "idle" || live === "error"}
+            <button class="secondary" disabled={busy} onclick={wake} title="Start the agent so members can write again">Wake</button>
+          {/if}
+          {#if current.lockedBy}
+            <button class="secondary" disabled={busy} onclick={() => lock(false)} title="Members can write again">Unlock</button>
+          {:else}
+            <button class="secondary danger-text" disabled={busy} onclick={() => lock(true)} title="Stop the agent; members can only read">Stop &amp; lock</button>
+          {/if}
+        {/if}
+      {:else if steward}
         <div class="seg" role="group" aria-label="Who sees the new thread">
           <button class:on={newVisibility === "shared"} onclick={() => (newVisibility = "shared")}>Shared</button>
           <button class:on={newVisibility === "private"} onclick={() => (newVisibility = "private")}>Private</button>
@@ -486,7 +518,7 @@
     {#if stale}
       <div class="row">
         <p class="danger grow">This agent was updated. Continue in a new thread.</p>
-        <button class="primary chamfer" onclick={startNew}>New thread</button>
+        {#if steward}<button class="primary chamfer" onclick={startNew}>New thread</button>{/if}
       </div>
     {/if}
 
@@ -508,14 +540,16 @@
           <li class="msg human mine pending" aria-busy="true"><span class="sr-only">Sending:</span><p class="text">{p.text}</p></li>
         {/each}
       </ol>
-    {:else}
+    {:else if steward}
       <p class="muted">Write below to start a {newVisibility} thread{context ? ` about ${context}` : ""}.</p>
+    {:else}
+      <p class="muted">Pick a thread shared with you; only an admin starts threads.</p>
     {/if}
 
     {#if current?.tainted && open.length}
       <p class="muted">This thread holds untrusted input, so only an admin can answer it, from the console.</p>
     {/if}
-    {#each current && !current.tainted ? open : [] as d (d.seq)}
+    {#each current && !current.tainted && !locked ? open : [] as d (d.seq)}
       <div class="decision chamfer-md" role="group" aria-label="Needs you">
         {#if d.kind === "question"}
           {#each d.questions as q (q.question)}
@@ -551,9 +585,9 @@
     <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
       <textarea
         aria-label="Message"
-        placeholder={current?.tainted ? "Only an admin can write in this thread" : open.some((d) => d.kind === "question") ? "Pick an answer, or type your own" : "Reply to the agent"}
+        placeholder={current?.tainted ? "Only an admin can write in this thread" : locked ? `Locked by ${current?.lockedBy}. Read-only.` : !current && !steward ? "Pick a thread first" : open.some((d) => d.kind === "question") ? "Pick an answer, or type your own" : "Reply to the agent"}
         rows="1"
-        disabled={current?.tainted || stale}
+        disabled={readOnly || stale}
         bind:this={composer}
         bind:value={draft}
         onkeydown={(e) => {
@@ -561,7 +595,7 @@
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
         }}
       ></textarea>
-      <button class="send" type="submit" aria-label="Send" title="Send (Enter)" disabled={current?.tainted || stale || !draft.trim()}>
+      <button class="send" type="submit" aria-label="Send" title="Send (Enter)" disabled={readOnly || stale || !draft.trim()}>
         <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter" /></svg>
       </button>
     </form>

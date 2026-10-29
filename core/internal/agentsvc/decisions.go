@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -26,6 +27,11 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	}
 	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
+	}
+	// Every answer, not only those that warm: a pod can die with a request
+	// still pending, and the append would move the clock (docs/adr/0067 §6).
+	if needsWake(p, t, time.Now()) {
+		return nil, errWake
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker
 	// asks nothing.
@@ -94,6 +100,9 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 		Behavior string `json:"behavior"`
 		Message  string `json:"message,omitempty"`
 	}{b, req.Msg.GetMessage()})
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+		return nil, err
+	}
 	seq := req.Msg.GetSeq()
 	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), string(decision), "permission_response", uuid.NewString(), &seq)
 	if err != nil {
@@ -118,6 +127,9 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 		return nil, err
 	}
 	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+		return nil, err
+	}
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
 		return nil, err
 	}
 	seq := req.Msg.GetSeq()
@@ -148,9 +160,15 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 		if !ownsOrAdmin(p, t) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its mode"))
 		}
+		if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+			return nil, err
+		}
 		if err := s.setMode(ctx, t, mode); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+		return nil, err
 	}
 	seq := req.Msg.GetSeq()
 	n, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), `{"behavior":"allow"}`, "permission_response", uuid.NewString(), &seq)
@@ -202,6 +220,16 @@ func (s *Server) SetConfig(ctx context.Context, req *connect.Request[agentfleetv
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("changing a thread's model is not supported yet"))
 	}
 	if m := req.Msg.GetMode(); m != "" {
+		// A mode change reaches the pod like a post (docs/adr/0067 §6).
+		if !canAnswer(p, t) {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot change this thread's config"))
+		}
+		if needsWake(p, t, time.Now()) {
+			return nil, errWake
+		}
+		if err := s.stillUnlocked(ctx, p, t.ID); err != nil {
+			return nil, err
+		}
 		if err := s.setMode(ctx, t, m); err != nil {
 			return nil, err
 		}
@@ -228,6 +256,79 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.StopResponse{}), nil
+}
+
+// Lock is a steward's (docs/adr/0067 §6): locking stops the turn in flight
+// and leaves the thread to stewards; everyone who could read it still can.
+// Unlocking hands it back.
+func (s *Server) Lock(ctx context.Context, req *connect.Request[agentfleetv1.LockRequest]) (*connect.Response[agentfleetv1.LockResponse], error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, _, err := s.thread(ctx, p, req.Msg.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	if !p.steward() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin locks a thread"))
+	}
+	if !req.Msg.GetLocked() {
+		if err := s.sessions.Unlock(ctx, t.ID); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
+	}
+	// Lock first, stop second: a failed stop leaves the thread locked, never
+	// the other way round. Locking a locked thread keeps the first locker on
+	// record but still stops a live pod, so a retry after a failed stop works;
+	// the live check bounds duplicate aborts.
+	by := p.author().Name
+	if _, err := s.sessions.Lock(ctx, t.ID, by); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// Reread: a post may have warmed the pod since the snapshot above. Only a
+	// live pod is stopped: an abort entry on an idle thread would be replayed
+	// into the next warm and stop that one instead.
+	now, err := s.sessions.Get(ctx, t.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if sessions.IsPodPhaseLive(now.PodPhase) {
+		reason := "stopped and locked by " + by
+		if _, err := s.dash.StopSession(ctx, connect.NewRequest(&agentfleetv1.StopSessionRequest{SessionId: t.ID, Reason: &reason})); err != nil {
+			return nil, err
+		}
+	}
+	return connect.NewResponse(&agentfleetv1.LockResponse{}), nil
+}
+
+// Wake is a steward's (docs/adr/0067 §6): boot the pod of a thread members
+// may no longer wake, through the same caps as any warm. A live pod lets
+// members post again; their posts move the activity clock.
+func (s *Server) Wake(ctx context.Context, req *connect.Request[agentfleetv1.WakeRequest]) (*connect.Response[agentfleetv1.WakeResponse], error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, h, err := s.thread(ctx, p, req.Msg.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	if !p.steward() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin wakes a thread"))
+	}
+	// As canAnswer: a tainted thread is the console's (docs/adr/0067 §3).
+	if t.Tainted && !p.Admin() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin wakes this thread, from the console"))
+	}
+	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("DEFINITION_CHANGED: start a new thread"))
+	}
+	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.WakeResponse{}), nil
 }
 
 func (s *Server) GetStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetStatusRequest]) (*connect.Response[agentfleetv1.GetStatusResponse], error) {
