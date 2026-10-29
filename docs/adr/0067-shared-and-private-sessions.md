@@ -1,6 +1,6 @@
 # ADR-0067 — Shared and private sessions, authorship, and the definition's tool surface in the worker
 
-- **Status:** Accepted (2026-10-22) — §4 amended by [ADR-0076](0076-definition-sessions-run-in-auto.md) (modes; a call outside `tools.allow` asks, not denied)
+- **Status:** Accepted (2026-10-22) — §4 amended by [ADR-0076](0076-definition-sessions-run-in-auto.md) (modes; a call outside `tools.allow` asks, not denied); §3's taint removed by [ADR-0082](0082-decision-cards.md) §3 (Accepted, not built): a shared session with a stranger's entry stays open to its members
 - **Built:** §1–§4: owner, visibility, interaction, lifecycle and thread key (migration
   000015); authorship, trust and taint recorded by core; the worker applying the `AgentSpec`
   (`settingSources: ["user"]`, the tool ceiling, `tools.deny` in flag scope, prompt, turns,

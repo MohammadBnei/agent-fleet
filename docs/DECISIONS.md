@@ -319,13 +319,16 @@ Any doc, code, comment, or memory that contradicts this file or an
   human-facing event types; announcements for opted-in clients (Proposed; the
   announcer and the loader's reserved-type refusal are built).
 - [`0079`](adr/0079-provenance-ledger.md) — a provenance ledger: an echo carries its
-  writer's trust (Proposed).
+  writer's trust (Superseded by 0082, never built).
 - [`0080`](adr/0080-offline-local-stack.md) — the local stack runs offline: the real
   vault, git `insteadOf` to a local forge, a local owner token (Accepted 2026-10-25,
   built).
 - [`0081`](adr/0081-error-keys-in-proto-errors-traced.md) — error keys are declared in
   each service's proto, only where the code alone is ambiguous to a client; an error is
   traced by its trace id (Accepted 2026-10-28, not built).
+- [`0082`](adr/0082-decision-cards.md) — decision cards: only an explicit address wakes an
+  agent; taint is removed; agents draft cards, which the owner answers by
+  choosing an option bound to one effect (Accepted 2026-10-28, not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

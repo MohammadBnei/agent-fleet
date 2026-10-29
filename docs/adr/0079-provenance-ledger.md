@@ -1,6 +1,7 @@
 # ADR-0079 — A provenance ledger: what the fleet did outside, and who did it
 
-- **Status:** Proposed
+- **Status:** Superseded by [ADR-0082](0082-decision-cards.md) (2026-10-28), never built. Its closing rules and
+  capacity note carry over; the ledger, `ForgeWrite` as trust, echo matching and the intent wait are dropped
 - **Date:** 2026-10-23
 - **Amends:** [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §6 (the fleet's GitHub events are
   never trusted) and [ADR-0078](0078-core-on-the-bridge.md) §5 (closing) and §8 (its open question)

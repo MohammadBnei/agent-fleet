@@ -1,6 +1,8 @@
 # ADR-0078 — Core on the bridge: its sign-in, session announcements, the dispatcher's rules, and what agents cannot touch
 
-- **Status:** Proposed; §5's closing and §8's echo are amended by [ADR-0079](0079-provenance-ledger.md) (proposed)
+- **Status:** Proposed; §5's gate and closing and §8's echo are amended by [ADR-0082](0082-decision-cards.md) (Accepted,
+  not built; it supersedes ADR-0079): only an explicit address wakes, the bot's own events are acked and dropped, taint is
+  removed (a fleet hand-off wakes), and a fleet close that is not a merge into the default branch becomes a "Close threads" card
 - **Date:** 2026-10-23
 - **Amends:** [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §2–4 and §6 (how core signs in, which types
   it reads, how the dispatcher calls `Open`, what a proposal carries); infra-bootstrap ADR-0066 §3–4 on three points
@@ -198,8 +200,8 @@ in several ways:
      arrives as context.
    - **The fleet's own echo taints.** A definition that comments or pushes on its PR as the fleet's GitHub identity
      gets that event back as `actor=agent`, untrusted, appended `context_only` to its own thread, which taints the
-     session: its later hand-offs are untrusted and never wake. [ADR-0079](0079-provenance-ledger.md) proposes the
-     answer: writes through core are recorded, and their echoes carry the writer's trust.
+     session: its later hand-offs are untrusted and never wake. [ADR-0079](0079-provenance-ledger.md) proposed a
+     ledger; [ADR-0082](0082-decision-cards.md) replaces it: the bot's own events are acked and dropped, never delivered.
 
 ## Alternatives considered
 

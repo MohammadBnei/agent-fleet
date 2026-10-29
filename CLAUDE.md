@@ -277,8 +277,8 @@ deploy, CI, permission or pod-lifecycle paths.
 - Secrets never committed; fetched from Infisical at run time.
 - Conventional Commits — `docker.yml`'s `release` job runs `release-it` off them, bumping
   version/CHANGELOG on every push to `main`.
-- Commit trailers name the agent, with a little metadata — claims, never evidence
-  (`adr/0079`'s ledger is). `Co-Authored-By: <agent> <noreply@bnei.dev>`, agent =
+- Commit trailers name the agent, with a little metadata — claims, never evidence.
+  `Co-Authored-By: <agent> <noreply@bnei.dev>`, agent =
   `ukubi-claude-<host>` (laptop), `ukubi-claude-cloud` (claude.ai/code), `ukubi-agent`
   (fleet repo pod); a definition pod adds none (its author is `git.identity`). Plus
   `Agent-Session: <opaque id>` where one exists, and `Agent-Definition: <name>@<sha>` on a
