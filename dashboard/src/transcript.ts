@@ -80,25 +80,34 @@ export type PendingPermission<E extends EntryLike = TranscriptEntry> = {
   entry: E;
   tool: string;
   input: unknown;
+  // The request carries the worker's "nb":1 stamp (docs/adr/0082 §5): the
+  // worker no longer blocks on it, so an answer warms the session and lands
+  // as a message whether or not a pod is up.
+  stamped: boolean;
+  // An INTERRUPT or ABORT came after it: the turn that asked has ended. A
+  // stamped request stays open (core's Decision.interrupted, the same rule)
+  // until it is answered or closed with AnswerDecision "withdraw".
+  interrupted: boolean;
 };
 
+function endedAfter<E extends EntryLike>(entries: E[], seq: bigint): boolean {
+  return entries.some(
+    (later) =>
+      (later.type === TranscriptEntryType.INTERRUPT ||
+        later.type === TranscriptEntryType.ABORT) &&
+      later.seq > seq,
+  );
+}
+
 // A PERMISSION_REQUEST entry is pending until a PERMISSION_RESPONSE entry
-// replies to its own seq (real correlation, not the old "any later
-// human-originated entry" heuristic ExitPlanMode used to rely on before
-// `reply_to` existed on the wire — see docs/adr supersession of 0021/0025),
-// OR until a later INTERRUPT/ABORT entry — worker/src/session.ts's
-// resolveAllPendingDeny denies every currently-pending permission when
-// either arrives, and for those two it posts no PERMISSION_RESPONSE row,
-// since there's no single request it's replying to. (Its *other* caller —
-// a plain human reply, which resolves the same way — does post one now, so
-// that case needs no positional rule; see recordResolution. Before it did,
-// requesting changes on a plan left the request pending forever here.)
-// This is deliberately
-// position-based (later.seq > e.seq), unlike reply_to correlation — sound
-// specifically because interrupt/abort really do deny *everything* pending
-// at that moment, confirmed live against a real worker (kind-local).
-// Multiple can be pending at once now that canUseTool is a generic
-// per-tool-call gate rather than an ExitPlanMode-only special case, so this
+// replies to its own seq (real correlation via `reply_to`, docs/adr
+// supersession of 0021/0025). An UNSTAMPED request (an old worker) is also
+// resolved by a later INTERRUPT/ABORT: that worker's resolveAllPendingDeny
+// denies everything pending at that moment and posts no PERMISSION_RESPONSE,
+// so the rule is positional (later.seq > e.seq). A stamped request is not:
+// nothing blocks on it, so an interrupt leaves it open and only marks it
+// `interrupted` (docs/adr/0082 §5).
+// Several can be pending at once (canUseTool gates every tool call), so this
 // returns every unresolved one, not just the latest.
 export function findPendingPermissions<E extends EntryLike>(
   entries: E[],
@@ -106,25 +115,39 @@ export function findPendingPermissions<E extends EntryLike>(
   const out: PendingPermission<E>[] = [];
   for (const e of entries) {
     if (e.type !== TranscriptEntryType.PERMISSION_REQUEST) continue;
-    let parsed: { tool?: unknown; input?: unknown };
+    let parsed: { tool?: unknown; input?: unknown; nb?: unknown };
     try {
       parsed = JSON.parse(e.text);
     } catch {
       continue;
     }
     if (typeof parsed.tool !== "string") continue;
-    const resolved = entries.some(
+    const answered = entries.some(
       (later) =>
-        (later.type === TranscriptEntryType.PERMISSION_RESPONSE &&
-          later.replyTo === e.seq) ||
-        ((later.type === TranscriptEntryType.INTERRUPT ||
-          later.type === TranscriptEntryType.ABORT) &&
-          later.seq > e.seq),
+        later.type === TranscriptEntryType.PERMISSION_RESPONSE &&
+        later.replyTo === e.seq,
     );
-    if (!resolved)
-      out.push({ entry: e, tool: parsed.tool, input: parsed.input });
+    if (answered) continue;
+    const stamped = parsed.nb === 1;
+    const interrupted = endedAfter(entries, e.seq);
+    if (interrupted && !stamped) continue;
+    out.push({
+      entry: e,
+      tool: parsed.tool,
+      input: parsed.input,
+      stamped,
+      interrupted,
+    });
   }
   return out;
+}
+
+function isStamped(e: EntryLike): boolean {
+  try {
+    return (JSON.parse(e.text) as { nb?: unknown }).nb === 1;
+  } catch {
+    return false;
+  }
 }
 
 // Maps a resolved PERMISSION_REQUEST's own seq to what actually happened to
@@ -132,16 +155,21 @@ export function findPendingPermissions<E extends EntryLike>(
 // instead of hardcoding "allowed":
 // - "allow"/"deny": RespondToPermission's decisionJson ({behavior:...}),
 //   mirrored verbatim into the response entry's text.
-// - "interrupted": no PERMISSION_RESPONSE exists at all — resolved only via
-//   a later INTERRUPT/ABORT, per findPendingPermissions' own reasoning
-//   above.
+// - "withdrawn": closed unanswered in the decisions store (a "withdraw"
+//   reply, which only the dashboard synthesizes: core appends nothing; see
+//   decisions.ts).
+// - "interrupted": an unstamped request with no PERMISSION_RESPONSE at all,
+//   resolved only via a later INTERRUPT/ABORT, per findPendingPermissions'
+//   own reasoning above. A stamped one is still open, not interrupted-closed.
 // One pass over entries for the explicit responses, a second bounded by
 // only the still-unmapped requests for the implicit case — not a per-card
 // rescan either way.
+export type PermissionOutcome = "allow" | "deny" | "interrupted" | "withdrawn";
+
 export function resolvedPermissionDecisions(
   entries: TranscriptEntry[],
-): Map<bigint, "allow" | "deny" | "interrupted"> {
-  const out = new Map<bigint, "allow" | "deny" | "interrupted">();
+): Map<bigint, PermissionOutcome> {
+  const out = new Map<bigint, PermissionOutcome>();
   for (const e of entries) {
     if (
       e.type !== TranscriptEntryType.PERMISSION_RESPONSE ||
@@ -152,20 +180,20 @@ export function resolvedPermissionDecisions(
       const decision = JSON.parse(e.text) as { behavior?: unknown };
       if (decision.behavior === "allow" || decision.behavior === "deny")
         out.set(e.replyTo, decision.behavior);
+      else if (decision.behavior === "withdraw")
+        out.set(e.replyTo, "withdrawn");
     } catch {
       // malformed payload — leave unresolved rather than guess
     }
   }
   for (const e of entries) {
-    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST || out.has(e.seq))
+    if (
+      e.type !== TranscriptEntryType.PERMISSION_REQUEST ||
+      out.has(e.seq) ||
+      isStamped(e)
+    )
       continue;
-    const interruptedLater = entries.some(
-      (later) =>
-        (later.type === TranscriptEntryType.INTERRUPT ||
-          later.type === TranscriptEntryType.ABORT) &&
-        later.seq > e.seq,
-    );
-    if (interruptedLater) out.set(e.seq, "interrupted");
+    if (endedAfter(entries, e.seq)) out.set(e.seq, "interrupted");
   }
   return out;
 }
@@ -198,10 +226,12 @@ export function withOptimistic(
         // the same reply_to this one was built with.
         (e.type === o.type && e.replyTo === answers) ||
         // ...or the agent stopped waiting for the decision altogether, which
-        // resolves it just as firmly as an answer does.
+        // resolves it just as firmly as an answer does. Not for a stamped
+        // request: it stays answerable after an interrupt, so its echo stays.
         ((e.type === TranscriptEntryType.INTERRUPT ||
           e.type === TranscriptEntryType.ABORT) &&
-          e.seq > answers),
+          e.seq > answers &&
+          !real.some((r) => r.seq === answers && isStamped(r))),
     );
   });
   return kept.length === 0 ? real : [...real, ...kept];
@@ -1156,21 +1186,22 @@ export function hasPendingDecision(entries: TranscriptEntry[]): boolean {
 
 // Whether a pending decision can still be acted on, given the session's pod.
 //
-// docs/adr/0050, stated once for the UI: a QUESTION is durable and
-// pod-independent — its answer is a transcript row keyed by the question's own
-// seq, and AnswerQuestion warms a pod to deliver it — so it is answerable
-// whether or not a pod exists. A PERMISSION is bound to one live pod's
-// canUseTool promise; with the pod gone, allow/deny reaches nothing and the
-// buttons would be a lie.
+// A QUESTION (docs/adr/0050) and a STAMPED permission or plan (docs/adr/0082
+// §5) are durable and pod-independent: the answer is a transcript row keyed by
+// the request's own seq, and core warms a pod to deliver it as a message — so
+// they are answerable whether or not a pod exists. An UNSTAMPED permission is
+// an old worker's, bound to one live pod's canUseTool promise; core does not
+// warm for it, so with the pod gone allow/deny reaches nothing and the buttons
+// would be a lie.
 //
-// A swept session is the exception on both counts: the retention GC took its
+// A swept session is the exception for all of them: the retention GC took its
 // working directory, WarmIfIdle refuses it, so nothing can be delivered.
 export function decisionAnswerable(
   kind: "question" | "permission",
-  opts: { podLive: boolean; swept: boolean },
+  opts: { podLive: boolean; swept: boolean; stamped?: boolean },
 ): boolean {
   if (opts.swept) return false;
-  return kind === "question" || opts.podLive;
+  return kind === "question" || opts.stamped === true || opts.podLive;
 }
 
 export type Density = "everything" | "narrative" | "decisions";

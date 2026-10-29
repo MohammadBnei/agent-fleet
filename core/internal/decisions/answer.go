@@ -59,10 +59,12 @@ func response(behavior, message, decisionID string) (string, error) {
 // one path per kind (docs/adr/0082 §5). The append's one-reply index still
 // decides a race: the loser gets transcript.ErrAlreadyAnswered.
 //
-// Only a question warms. A permission or a plan is bound to its pod's
-// canUseTool promise, and a warm runs ReserveSlot, which withdraws exactly
-// those requests: warming would close the decision being answered. They warm
-// once that stale-close goes.
+// A question warms, then appends, and so does a permission or plan a worker
+// that never blocks asked (NonBlocking): its answer is a message to the
+// session, whenever it comes, and ReserveSlot leaves such a request open. An
+// older worker's permission or plan does not warm: it is bound to its pod's
+// canUseTool promise, and the warm's ReserveSlot withdraws exactly those
+// requests, so warming would close the decision being answered.
 func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r Record, a Reply) (int64, error) {
 	if r.State != Open {
 		return 0, transcript.ErrAlreadyAnswered
@@ -71,10 +73,14 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 	reply := func(text, typ string) (int64, error) {
 		return tr.AppendAuthored(ctx, r.SessionID, a.By, text, typ, uuid.NewString(), &seq)
 	}
+	// Warm, then append: the next pod streams from above the answer.
+	warm := func() error {
+		_, err := fx.WarmIfIdle(ctx, r.SessionID)
+		return err
+	}
 	switch r.Kind {
 	case Question:
-		// Warm, then append: the next pod streams from above the answer.
-		if _, err := fx.WarmIfIdle(ctx, r.SessionID); err != nil {
+		if err := warm(); err != nil {
 			return 0, err
 		}
 		return reply(a.Answers, "answer")
@@ -82,6 +88,11 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		text, err := response(a.Behavior, a.Message, "")
 		if err != nil {
 			return 0, err
+		}
+		if r.NonBlocking {
+			if err := warm(); err != nil {
+				return 0, err
+			}
 		}
 		// A chosen mode first: the turn the approval releases runs in it.
 		// No mode switches nothing, as the console's and the islands' plain
@@ -103,6 +114,11 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		if err != nil {
 			return 0, err
 		}
+		if r.NonBlocking {
+			if err := warm(); err != nil {
+				return 0, err
+			}
+		}
 		undo := func() {}
 		if a.Scope != "" && a.Scope != "once" {
 			if text, undo, err = fx.RememberGrant(ctx, r.SessionID, seq, text, a.Scope, a.RuleForm); err != nil {
@@ -117,6 +133,60 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		return n, err
 	}
 	return 0, fmt.Errorf("%w: a %s decision is not answered here", ErrInvalid, r.Kind)
+}
+
+// Withdraw closes an open decision unanswered (AnswerDecision's "withdraw"):
+// nothing is appended and nothing warms, so nothing reaches the session.
+// One that is no longer open is transcript.ErrAlreadyAnswered.
+func (s *Store) Withdraw(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE decisions SET state = 'withdrawn', grantable = false, version = nextval('decisions_version_seq')
+		 WHERE id::text = $1 AND state = 'open'`, id)
+	if err != nil {
+		return fmt.Errorf("withdraw decision: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return transcript.ErrAlreadyAnswered
+	}
+	return nil
+}
+
+// OpenRequest is the seq of this session's open non-blocking request for
+// this tool and canonical input, if there is one: the same call asked again
+// (coreserver SendMessage returns it rather than asking twice).
+func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, canon string) (int64, bool, error) {
+	session, err := uuid.Parse(sessionID)
+	if err != nil {
+		return 0, false, nil
+	}
+	var seq int64
+	err = s.pool.QueryRow(ctx, `
+		SELECT request_seq FROM decisions
+		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
+		   AND tool = $2 AND input_canon = $3 AND payload ->> 'nb' = '1'
+		 ORDER BY request_seq DESC LIMIT 1`, session, tool, canon).Scan(&seq)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("open request: %w", err)
+	}
+	return seq, true, nil
+}
+
+// OpenPlans is the request seqs of this session's open plan approvals.
+func (s *Store) OpenPlans(ctx context.Context, sessionID string) ([]int64, error) {
+	session, err := uuid.Parse(sessionID)
+	if err != nil {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT request_seq FROM decisions
+		 WHERE session_id = $1 AND state = 'open' AND kind = 'plan' ORDER BY request_seq`, session)
+	if err != nil {
+		return nil, fmt.Errorf("open plans: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int64])
 }
 
 // Request is the decision a session's request at seq opened.

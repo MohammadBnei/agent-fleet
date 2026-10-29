@@ -78,6 +78,7 @@ export function MobileSessionDetail({
     previewGrant,
     approvePlanDecision,
     answerQuestion,
+    withdraw,
     clearActionError,
   } = useSessionDetail(
     sessionId,
@@ -291,6 +292,7 @@ export function MobileSessionDetail({
         onApprovePlan={approvePlanDecision}
         onAnswer={answerQuestion}
         onPlanFeedback={(text) => sendDiscuss(text)}
+        onWithdraw={withdraw}
       />
 
       <div className="flex-none border-t border-line">

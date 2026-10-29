@@ -11,10 +11,18 @@
   existing answer RPCs (AgentService's and DashboardService's), and one-time grants: an allow of a grantable
   permission request names its decision as `decisionId` (never `grant`), and `CoreService.ConsumeGrant` spends it
   once, matched on the session, tool and canonical input; archiving withdraws open decisions and unused grants. A plan
-  approval switches only to a mode the answer names. No worker marks a request grantable or calls `ConsumeGrant` yet
-  (the sidecar route lands with the worker), so no grant is minted; a permission or plan answer does not warm while
-  `ReserveSlot`'s stale-close remains. `draft_card`, `DECISION_WAIT` and the console UI
-  are not built yet
+  approval switches only to a mode the answer names. Slice 2's third PR, "nothing blocks": a new worker stamps its
+  `permission_request` `"nb": 1`, and only stamped requests change. A stamped permission with a canonical input is
+  grantable from its insert; the sidecar's `POST /grant/consume` spends a grant; core asks each stamped call once
+  (the same tool and canonical input while open returns its seq) and a new stamped plan supersedes the open one.
+  `ReserveSlot`'s stale-close, the idle sweep's guard and the no-warm answer apply to unstamped requests only; a
+  stamped permission or plan answer warms, then appends. `DECISION_WAIT_MS` (default 45 s, at most 10 min) reaches the
+  worker as `GetSession.decision_wait_ms`; `AskUserQuestion` holds the shorter of it and the sidecar's 45 s, whose MCP
+  deadline is unchanged until a live test, and its pending reply names the decision. Blocked never overrides a working
+  liveness, and `prompt_agent` reaches a session with an open decision. The retention sweep withdraws a swept
+  session's decisions and unused grants; an interrupt or abort withdraws nothing, but marks an open decision
+  `interrupted` (read time), and `AnswerDecision`'s `withdraw` (owner or admin) closes one, appending nothing.
+  `draft_card` and cards are not built yet
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),

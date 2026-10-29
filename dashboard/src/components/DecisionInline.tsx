@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { approvePlan } from "../approvePlan";
 import { client } from "../connectClient";
+import { withdrawDecision } from "../decisions";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { isPodPhaseLive } from "../sessionState";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../transcript";
 import { ActionButton } from "./ActionButton";
 import { AutoModeConfirm } from "./AutoModeConfirm";
+import { InterruptedBar } from "./DecisionDock";
 import { DiffLines } from "./DiffLines";
 import { InlineError } from "./InlineError";
 import { Markdown } from "./Markdown";
@@ -163,14 +165,15 @@ export function DecisionInline({
   }
 
   if (permission) {
-    // A permission belongs to the pod that raised it. If that pod is gone,
-    // show what was asked and say so — allow/deny would append a row the dead
-    // canUseTool promise will never read. Questions are unaffected: answering
-    // one warms a pod to receive it.
+    // An old worker's permission belongs to the pod that raised it. If that
+    // pod is gone, show what was asked and say so — allow/deny would append a
+    // row the dead canUseTool promise will never read. A stamped one and a
+    // question are unaffected: answering warms a pod to receive it.
     if (
       !decisionAnswerable("permission", {
         podLive: isPodPhaseLive(session.podPhase),
         swept: session.sweptAt !== undefined,
+        stamped: permission.stamped,
       })
     ) {
       return (
@@ -185,6 +188,18 @@ export function DecisionInline({
       );
     }
     const isPlan = permission.tool === "ExitPlanMode";
+    const interrupted = permission.interrupted && (
+      <InterruptedBar
+        busy={pending === "withdraw"}
+        onClose={() =>
+          send(
+            "withdraw",
+            () => withdrawDecision(session.id, permission.entry.seq),
+            permission.entry.seq,
+          )
+        }
+      />
+    );
     const respond = (behavior: "allow" | "deny", message?: string) =>
       send(
         behavior,
@@ -213,6 +228,7 @@ export function DecisionInline({
         (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
         <div className={`${pad} flex flex-col gap-3`}>
+          {interrupted}
           <div className="flex items-center gap-2">
             <span className="text-xs text-dim tracking-[0.05em]">
               PLAN · waiting for approval
@@ -423,6 +439,7 @@ export function DecisionInline({
 
     return (
       <div className={`${pad} flex flex-col gap-3`}>
+        {interrupted}
         <PermissionBody tool={permission.tool} input={permission.input} />
         {actions}
       </div>

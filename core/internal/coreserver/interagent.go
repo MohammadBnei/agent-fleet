@@ -94,7 +94,7 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 		return nil, fmt.Errorf("prompt relay depth %d reached the limit of %d — refusing to relay further", req.GetDepth(), maxPromptDepth)
 	}
 
-	t, state, err := s.liveStateOf(ctx, target)
+	t, _, err := s.liveStateOf(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -103,14 +103,9 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	if t.DefinitionName != nil {
 		return nil, status.Error(codes.PermissionDenied, "definition sessions are not promptable; use the event bridge")
 	}
-	// A blocked session is waiting on a *human* — a permission prompt or a
-	// question. Delivering an agent's message here would push a turn into a
-	// session whose human decision is still outstanding, and (worse) invite
-	// the caller to believe it had answered it. Permission decisions are
-	// human-only by docs/adr/0029 and this must not become a side door.
-	if state == sessions.LiveStateBlocked {
-		return nil, fmt.Errorf("session %s is blocked waiting on a human decision — it cannot be prompted by an agent", target)
-	}
+	// A session with an open decision is promptable (docs/adr/0082 §5):
+	// nothing blocks, its decision waits on the owner whatever else arrives,
+	// and the entry below can never answer it (see the next comment).
 	// The "unapproved proposal" guard that used to sit here is gone with the
 	// status: a proposal is now a row in a different table with no pod path,
 	// so a session reachable by this call has already been opened by a human

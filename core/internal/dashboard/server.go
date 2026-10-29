@@ -889,9 +889,9 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 // entry.type === "answer" case); nothing ever reached it.
 //
 // Two consequences worth knowing, both accepted:
-//   - Warming runs ReserveSlot, which stale-closes any pending
-//     permission_request on this session. Answering a question therefore
-//     auto-denies a permission left over from the dead pod. That permission
+//   - Warming runs ReserveSlot, which stale-closes any pending older
+//     worker's permission_request on this session. Answering a question
+//     therefore auto-denies such a permission left over from the dead pod. That permission
 //     was already unanswerable, but it is an auto-decision triggered by
 //     answering something else.
 //   - This RPC can now fail: ResourceExhausted at the live-pod cap,
@@ -911,16 +911,17 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // rather than overloaded onto AnswerQuestion since the payload differs
 // ({behavior, message} JSON vs. free-form answers JSON).
 //
-// Deliberately does NOT warm, where AnswerQuestion above does. ReserveSlot
-// stale-closes unanswered permission_request rows on every warm, so warming
-// here would auto-deny the very request being answered, a millisecond before
-// recording the human's actual decision.
+// An older worker's request does NOT warm, where AnswerQuestion above does.
+// ReserveSlot stale-closes its unanswered permission_request rows on every
+// warm, so warming here would auto-deny the very request being answered, a
+// millisecond before recording the human's actual decision. That asymmetry is
+// docs/adr/0050: such a permission is bound to one live pod's canUseTool
+// promise, which is why the idle sweep refuses to reap a pod holding one (see
+// ListIdleSessionIDs).
 //
-// That asymmetry is the whole of docs/adr/0050: a question is durable and
-// pod-independent, a permission is bound to one live pod's canUseTool promise.
-// If the pod is gone the allow/deny reaches nothing and this row is a
-// bookkeeping write — which is why the idle sweep now refuses to reap a
-// permission-pending pod in the first place (see ListIdleSessionIDs).
+// A non-blocking worker's request (stamped "nb": 1, docs/adr/0082 §5) warms,
+// then appends, as a question does: ReserveSlot leaves it open, and its answer
+// reaches the next pod as a message (decisions.Answer).
 //
 // decision_json is read for its behavior and message only: decisions.Answer
 // writes the rest, so only core writes "grant" (docs/adr/0076 §3), and a plan

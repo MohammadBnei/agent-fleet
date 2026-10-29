@@ -31,6 +31,18 @@ let nextSeq = 1;
 let sessionAgentSpec: Record<string, unknown> | null = null;
 // The agentSpecSha the worker passed when it opened the human-message feed.
 let streamedSpecSha: string | undefined;
+// GET /task's decisionWaitMs (docs/adr/0082 §5); undefined = an older sidecar.
+let sessionDecisionWaitMs: number | undefined;
+// POST /grant/consume: what each call answers, and every call it got. A
+// promise lets a test hold the answer back (the claim-first race).
+let consumeGrantAnswer: () => Promise<{
+  granted: boolean;
+  decisionId: string;
+}> = async () => ({ granted: false, decisionId: "" });
+const consumeGrantCalls: { tool: string; input: unknown }[] = [];
+// Non-null: the seq core hands back for the next permission_request, as it does
+// for an identical open decision (docs/adr/0082 §5).
+let forcedRequestSeq: number | null = null;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
 // drive this directly instead of a real HTTP connection. onEntry is
@@ -59,7 +71,10 @@ let humanMessageHandler:
 mock.module("./sidecarClient.js", () => ({
   pushMessage: mock(
     async (from: string, text: string, type?: string, replyTo?: number) => {
-      const seq = nextSeq++;
+      const seq =
+        type === "permission_request" && forcedRequestSeq !== null
+          ? forcedRequestSeq
+          : nextSeq++;
       pushedMessages.push({ seq, from, text, type, replyTo });
       return seq;
     },
@@ -71,7 +86,12 @@ mock.module("./sidecarClient.js", () => ({
   savePermissionMode: mock(async (mode: string) => {
     savedPermissionModes.push(mode);
   }),
+  consumeGrant: mock(async (tool: string, input: unknown) => {
+    consumeGrantCalls.push({ tool, input });
+    return consumeGrantAnswer();
+  }),
   getSession: mock(async () => ({
+    decisionWaitMs: sessionDecisionWaitMs,
     description: "test session",
     permissionMode: sessionPermissionMode,
     model: sessionModel,
@@ -165,6 +185,7 @@ let capturedCanUseTool:
   | ((
       toolName: string,
       input: unknown,
+      options?: { signal: AbortSignal },
     ) => Promise<{
       behavior: string;
       message?: string;
@@ -375,6 +396,8 @@ const {
   denyReason,
   ANSWER_NO_REASK,
   SIDECAR_MCP_TIMEOUT_MS,
+  DEFAULT_DECISION_WAIT_MS,
+  decisionWaitMs,
   matchesToolRule,
   definitionDecision,
   gitArgsAreInert,
@@ -407,6 +430,10 @@ beforeEach(() => {
   preInitMessages = [];
   sessionAgentSpec = null;
   streamedSpecSha = undefined;
+  sessionDecisionWaitMs = undefined;
+  consumeGrantAnswer = async () => ({ granted: false, decisionId: "" });
+  consumeGrantCalls.length = 0;
+  forcedRequestSeq = null;
 });
 
 // makeTask is gone: runSession takes no argument now. A session's identity
@@ -552,9 +579,11 @@ test("canUseTool posts a permission_request and blocks until a matching permissi
 
   const req = findPermissionRequest("Write");
   expect(req).toBeDefined();
+  // nb: the stamp core gives the non-blocking behaviour (docs/adr/0082 §5).
   expect(JSON.parse(req!.text)).toEqual({
     tool: "Write",
     input: { file_path: "x" },
+    nb: 1,
   });
 
   respondToPermission(req!.seq, { behavior: "allow" });
@@ -582,26 +611,6 @@ test("the command a human is shown is the command that executes", async () => {
   expect(JSON.parse(req!.text).input.command).toBe(command);
 
   respondToPermission(req!.seq, { behavior: "allow" });
-  const result = await call;
-  expect(result.behavior).toBe("allow");
-  expect((result.updatedInput as { command: string }).command).toBe(command);
-
-  pushHuman("", "abort");
-  await promise;
-}, 10000);
-
-// The other resolve path: a mode switch to `auto` allows the oldest parked
-// call (resolveOnePendingAllow, docs/adr/0052) without a human reading it
-// again — so it must hand back the same input too.
-test("a permission-mode switch allows the command as written, not a rewritten one", async () => {
-  const promise = runSession();
-  await Bun.sleep(20);
-
-  const command = "golangci-lint run";
-  const call = capturedCanUseTool!("Bash", { command });
-  await Bun.sleep(20);
-
-  pushHuman("auto", "permission_mode");
   const result = await call;
   expect(result.behavior).toBe("allow");
   expect((result.updatedInput as { command: string }).command).toBe(command);
@@ -766,23 +775,11 @@ test("a plain reply while a permission request is pending denies it with the rep
     ),
   ).toBe(true);
 
-  // ...and the resolution must exist outside this process's memory. Every
-  // dashboard surface decides "is this still waiting on a human" from a
-  // PERMISSION_RESPONSE replying to the request's seq; without one, a plan
-  // answered by requesting changes stayed pending forever and its card
-  // could only be dismissed by approving it.
-  const request = pushedMessages.find((m) => m.type === "permission_request")!;
-  const recorded = pushedMessages.find((m) => m.type === "permission_response");
-  expect(recorded).toBeDefined();
-  expect(recorded!.replyTo).toBe(request.seq);
-  expect(JSON.parse(recorded!.text).behavior).toBe("deny");
-  expect(JSON.parse(recorded!.text).message).toContain(
-    "split this into its own PR",
-  );
-  // from "agent": core streams from=="human" entries back into this session
-  // as new input, so recording it as human would feed the wrapper its own
-  // bookkeeping.
-  expect(recorded!.from).toBe("agent");
+  // ...and nothing is recorded (docs/adr/0082 §5): the decision stays open,
+  // and a human can still answer it later.
+  expect(
+    pushedMessages.find((m) => m.type === "permission_response"),
+  ).toBeUndefined();
 
   pushHuman("", "abort");
   await promise;
@@ -893,35 +890,36 @@ test("a peer session cannot resolve a human's pending permission request", async
   await promise;
 }, 10000);
 
-test("a permission_mode entry sets the SDK mode and resolves any pending permission requests", async () => {
+// docs/adr/0082 §5: resolveOnePendingAllow is gone. A mode switch answers
+// nothing that is parked — not a plan, not the oldest call — and records
+// nothing: a plan's approval is its own permission_response.
+test("a permission_mode switch answers nothing that is parked", async () => {
+  sessionPermissionMode = "plan";
   const promise = runSession();
   await Bun.sleep(20);
 
-  let resolved: { behavior: string } | null = null;
-  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
-    resolved = r as { behavior: string };
-  });
-  await Bun.sleep(20);
-  expect(resolved).toBeNull();
-
-  pushHuman("acceptEdits", "permission_mode");
-  await call;
-
-  expect(resolved!.behavior).toBe("allow");
-  expect(setPermissionModeCalls).toContain("acceptEdits");
-  // Same reasoning as the plain-reply case: a mode switch answers the
-  // pending call, so the transcript has to say so or the card stays up.
-  const modeRecorded = pushedMessages.find(
-    (m) => m.type === "permission_response",
+  let plan: unknown = null;
+  let write: unknown = null;
+  const planCall = capturedCanUseTool!("ExitPlanMode", {
+    plan: "do the thing",
+  }).then((r) => (plan = r));
+  const writeCall = capturedCanUseTool!("Write", { file_path: "x" }).then(
+    (r) => (write = r),
   );
-  expect(modeRecorded).toBeDefined();
-  expect(JSON.parse(modeRecorded!.text).behavior).toBe("allow");
-  // This used to also assert setStatus was never called with "implementing".
-  // There is no setStatus and no status column any more (docs/adr/0048), so
-  // the assertion could only ever pass — which is worse than deleting it.
+  await Bun.sleep(20);
+
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toContain("auto");
+  expect(plan).toBeNull();
+  expect(write).toBeNull();
+  expect(
+    pushedMessages.find((m) => m.type === "permission_response"),
+  ).toBeUndefined();
 
   pushHuman("", "abort");
   await promise;
+  await Promise.all([planCall, writeCall]);
 }, 10000);
 
 // docs/adr/0052. The old code swallowed a rejected switch into a log line and
@@ -1037,39 +1035,6 @@ test("a later init does not override the launch mode", async () => {
   await call;
 }, 10000);
 
-// A mode switch answers the ONE call it was aimed at. Several tool calls in
-// the same assistant turn park side by side, and a blanket sweep meant
-// approving a plan also approved whatever else was parked — a Bash nobody read.
-test("a permission_mode switch answers the plan, not every other parked call", async () => {
-  const promise = runSession();
-  await Bun.sleep(20);
-
-  let bash: { behavior: string } | null = null;
-  const bashCall = capturedCanUseTool!("Bash", {
-    command: "rm -rf /tmp/x",
-  }).then((r) => {
-    bash = r as { behavior: string };
-  });
-  const planCall = capturedCanUseTool!("ExitPlanMode", {
-    plan: "do the thing",
-  });
-  await Bun.sleep(20);
-
-  pushHuman("auto", "permission_mode");
-  const planResult = await planCall;
-
-  expect(planResult.behavior).toBe("allow");
-  expect(bash).toBeNull(); // still parked — a human has to answer it
-  const responses = pushedMessages.filter(
-    (m) => m.type === "permission_response",
-  );
-  expect(responses.length).toBe(1);
-
-  pushHuman("", "abort");
-  await promise;
-  await bashCall;
-}, 10000);
-
 // docs/adr/0053. The fleet's own MCP tools are how the agent reaches a human at
 // all, so prompting for them means needing permission before you can ask for
 // permission — which is what shipped, live, for AskUserQuestion and
@@ -1173,13 +1138,23 @@ test.each([
   10000,
 );
 
-// A plan is the one thing whose whole value is a human reading it, and
-// AUTO_MODE_WARNING promises "and so does the next plan".
-test("auto mode still asks for ExitPlanMode", async () => {
+// A plan is the one thing whose whole value is a human reading it, so it asks
+// in plan mode. Outside it ExitPlanMode is allowed (docs/adr/0082 §5): a late
+// plan approval moves the mode, and the agent's retry must not ask again.
+test("ExitPlanMode asks only in plan mode", async () => {
   sessionPermissionMode = "auto";
   const promise = runSession();
   await Bun.sleep(20);
 
+  expect(
+    (await capturedCanUseTool!("ExitPlanMode", { plan: "p" })).behavior,
+  ).toBe("allow");
+  expect(findPermissionRequest("ExitPlanMode")).toBeUndefined();
+  // Allowing it moves no mode.
+  expect(setPermissionModeCalls).toEqual([]);
+
+  pushHuman("plan", "permission_mode");
+  await Bun.sleep(20);
   let resolved: unknown = null;
   const call = capturedCanUseTool!("ExitPlanMode", {
     plan: "do the thing",
@@ -1261,11 +1236,9 @@ test("switching to auto mid-session is a live control request, not a relaunch", 
   const promise = runSession();
   await Bun.sleep(20);
 
-  const call = capturedCanUseTool!("Write", { file_path: "x" });
   pushHuman("auto", "permission_mode");
-  const result = await call;
+  await Bun.sleep(20);
 
-  expect(result.behavior).toBe("allow");
   expect(setPermissionModeCalls).toContain("auto");
   expect(
     pushedMessages.find(
@@ -1283,6 +1256,7 @@ test("switching to auto mid-session is a live control request, not a relaunch", 
 }, 10000);
 
 test("ExitPlanMode is gated the same as any other tool call — blocks until a permission_response arrives", async () => {
+  sessionPermissionMode = "plan";
   const promise = runSession();
   await Bun.sleep(20);
 
@@ -1308,25 +1282,8 @@ test("ExitPlanMode is gated the same as any other tool call — blocks until a p
   await promise;
 }, 10000);
 
-test("ExitPlanMode blocks until a permission_mode selection arrives, then allows", async () => {
-  const promise = runSession();
-  await Bun.sleep(20);
-
-  const planCall = capturedCanUseTool!("ExitPlanMode", {
-    plan: "do the thing",
-  });
-  await Bun.sleep(20);
-
-  pushHuman("acceptEdits", "permission_mode");
-  const result = await planCall;
-  expect(result.behavior).toBe("allow");
-  expect(setPermissionModeCalls).toContain("acceptEdits");
-
-  pushHuman("", "abort");
-  await promise;
-}, 10000);
-
 test("abort resolves every pending permission request instead of leaving them hanging", async () => {
+  sessionPermissionMode = "plan";
   const promise = runSession();
   await Bun.sleep(20);
 
@@ -2946,4 +2903,340 @@ test("the browser runs with no proxy env", () => {
   ]) {
     expect(env[k as keyof typeof env]).toBe("");
   }
+});
+
+// --- docs/adr/0082 §5: one decision, never blocking ---
+
+describe("non-blocking decisions", () => {
+  const PENDING = (seq: number) =>
+    `Pending (request seq ${seq}). Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`;
+  const turns = () => consumedInputs.map((m) => m.message.content);
+  const requestSeq = (tool: string) => findPermissionRequest(tool)!.seq;
+
+  test("decisionWaitMs: 0 or absent is 45 s, anything positive is kept", () => {
+    expect(DEFAULT_DECISION_WAIT_MS).toBe(45_000);
+    expect(decisionWaitMs(undefined)).toBe(45_000);
+    expect(decisionWaitMs(0)).toBe(45_000);
+    expect(decisionWaitMs(-5)).toBe(45_000);
+    expect(decisionWaitMs(120_000)).toBe(120_000);
+  });
+
+  test("a call nobody answers in time is denied as pending, records nothing, never quotes the input", async () => {
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const result = await capturedCanUseTool!("Bash", {
+      command: "go build ./secret-path",
+    });
+    const seq = requestSeq("Bash");
+    expect(result).toEqual({ behavior: "deny", message: PENDING(seq) });
+    expect(result.message).not.toContain("secret-path");
+    expect(
+      pushedMessages.find((m) => m.type === "permission_response"),
+    ).toBeUndefined();
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("core's seq for a call already parked or timed out here is denied at once", async () => {
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    // Timed out here: the retry gets the same seq back from core.
+    await capturedCanUseTool!("Bash", { command: "make" });
+    const seq = requestSeq("Bash");
+    forcedRequestSeq = seq;
+    const started = Date.now();
+    const retry = await capturedCanUseTool!("Bash", { command: "make" });
+    expect(Date.now() - started).toBeLessThan(25);
+    expect(retry.behavior).toBe("deny");
+    expect(retry.message).toContain(`Duplicate of pending request seq ${seq}`);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a twin of a call still parked is denied at once, the first stays parked", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    let first: unknown = null;
+    const firstCall = capturedCanUseTool!("Write", { file_path: "x" }).then(
+      (r) => (first = r),
+    );
+    await Bun.sleep(10);
+    forcedRequestSeq = requestSeq("Write");
+    const twin = await capturedCanUseTool!("Write", { file_path: "x" });
+    expect(twin.message).toContain(
+      `Duplicate of pending request seq ${forcedRequestSeq}`,
+    );
+    expect(first).toBeNull();
+
+    respondToPermission(forcedRequestSeq, { behavior: "allow" });
+    expect((await firstCall).behavior).toBe("allow");
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a parked allow carrying a decision id spends the grant before the call runs", async () => {
+    // The ask path's own check comes first and finds nothing; the answer's
+    // spend finds the grant the human just made.
+    let asked = 0;
+    consumeGrantAnswer = async () =>
+      asked++ === 0
+        ? { granted: false, decisionId: "" }
+        : { granted: true, decisionId: "d-1" };
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const call = capturedCanUseTool!("Bash", { command: "gh pr list" });
+    await Bun.sleep(10);
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-1" }),
+      "permission_response",
+      requestSeq("Bash"),
+    );
+    expect(await call).toEqual({
+      behavior: "allow",
+      updatedInput: { command: "gh pr list" },
+    });
+    expect(consumeGrantCalls).toEqual([
+      { tool: "Bash", input: { command: "gh pr list" } },
+      { tool: "Bash", input: { command: "gh pr list" } },
+    ]);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a parked allow whose grant cannot be spent is denied with a retry-once text", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const call = capturedCanUseTool!("Bash", { command: "gh pr list" });
+    await Bun.sleep(10);
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-1" }),
+      "permission_response",
+      requestSeq("Bash"),
+    );
+    const result = await call;
+    expect(result.behavior).toBe("deny");
+    expect(result.message).toContain("retry it once");
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("claim first: the timer firing during the grant's spend does not resolve the call twice", async () => {
+    sessionDecisionWaitMs = 40;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const results: unknown[] = [];
+    const call = capturedCanUseTool!("Bash", { command: "gh pr list" }).then(
+      (r) => {
+        results.push(r);
+        return r;
+      },
+    );
+    await Bun.sleep(10);
+    // The spend outlasts the wait: without the claim, the timer denies first.
+    consumeGrantAnswer = async () => {
+      await Bun.sleep(80);
+      return { granted: true, decisionId: "d-1" };
+    };
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-1" }),
+      "permission_response",
+      requestSeq("Bash"),
+    );
+    expect((await call).behavior).toBe("allow");
+    await Bun.sleep(60);
+    expect(results).toHaveLength(1);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("the ask path runs a call a human already approved once, without asking", async () => {
+    consumeGrantAnswer = async () => ({ granted: true, decisionId: "d-9" });
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    expect(
+      (await capturedCanUseTool!("Bash", { command: "gh pr list" })).behavior,
+    ).toBe("allow");
+    expect(findPermissionRequest("Bash")).toBeUndefined();
+
+    // That decision's late answer is not delivered again as a turn.
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-9" }),
+      "permission_response",
+      41,
+    );
+    await Bun.sleep(20);
+    expect(turns().some((t) => t.includes("seq 41"))).toBe(false);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("an allow for a call no longer parked pushes one retry turn; a deny pushes its reason", async () => {
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    await capturedCanUseTool!("Bash", { command: "gh pr list" });
+    const seq = requestSeq("Bash");
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-2" }),
+      "permission_response",
+      seq,
+    );
+    await Bun.sleep(20);
+    expect(
+      turns().filter((t) => t === `Approved: retry request seq ${seq} once.`),
+    ).toHaveLength(1);
+
+    await capturedCanUseTool!("Bash", { command: "gh issue list" });
+    const denied = pushedMessages.filter(
+      (m) => m.type === "permission_request",
+    )[1].seq;
+    respondToPermission(denied, { behavior: "deny", message: "not today" });
+    await Bun.sleep(20);
+    const turn = turns().find((t) => t.includes(`seq ${denied}`));
+    expect(turn).toContain("denied");
+    expect(turn).toContain("not today");
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a plan approved after its call let go moves the session out of plan mode itself", async () => {
+    sessionPermissionMode = "plan";
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+    // The launch's init first, as a live session has had it.
+    pushHuman("start");
+    await Bun.sleep(20);
+
+    const timedOut = await capturedCanUseTool!("ExitPlanMode", { plan: "p" });
+    expect(timedOut.behavior).toBe("deny");
+    const seq = requestSeq("ExitPlanMode");
+    // A plan is never a one-time grant.
+    expect(consumeGrantCalls).toEqual([]);
+
+    respondToPermission(seq, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(setPermissionModeCalls).toEqual(["default"]);
+    expect(savedPermissionModes).toContain("default");
+    expect(
+      turns().filter((t) => t.startsWith(`Plan approved (request seq ${seq})`)),
+    ).toEqual([
+      `Plan approved (request seq ${seq}); now in default mode. Go ahead with the plan.`,
+    ]);
+    // The agent's retry is out of plan mode now, so it runs.
+    expect(
+      (await capturedCanUseTool!("ExitPlanMode", { plan: "p" })).behavior,
+    ).toBe("allow");
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a late plan approval in a definition goes to its first allowed mode, as the SDK's mode", async () => {
+    sessionAgentSpec = { ...DEF_SPEC, modeAllow: ["plan", "auto"] };
+    sessionPermissionMode = "plan";
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    await capturedCanUseTool!("ExitPlanMode", { plan: "p" });
+    respondToPermission(requestSeq("ExitPlanMode"), { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(setPermissionModeCalls).toEqual(["default"]);
+    expect(savedPermissionModes).toContain("auto");
+    expect(turns().some((t) => t.includes("now in auto mode"))).toBe(true);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("an abort signal unparks the call; its later answer still arrives as a turn", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const ac = new AbortController();
+    const call = capturedCanUseTool!(
+      "Bash",
+      { command: "gh pr list" },
+      { signal: ac.signal },
+    );
+    await Bun.sleep(10);
+    ac.abort();
+    expect((await call).behavior).toBe("deny");
+
+    const seq = requestSeq("Bash");
+    respondToPermission(seq, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
+
+    // Already aborted: denied without ever parking.
+    const gone = new AbortController();
+    gone.abort();
+    expect(
+      (
+        await capturedCanUseTool!(
+          "Bash",
+          { command: "gh issue list" },
+          { signal: gone.signal },
+        )
+      ).behavior,
+    ).toBe("deny");
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a chat message denies a parked call without recording a reply; the answer still lands later", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const call = capturedCanUseTool!("Write", { file_path: "x" });
+    await Bun.sleep(10);
+    pushHuman("hold on", "discussion");
+    expect((await call).behavior).toBe("deny");
+    expect(
+      pushedMessages.find((m) => m.type === "permission_response"),
+    ).toBeUndefined();
+
+    const seq = requestSeq("Write");
+    respondToPermission(seq, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a malformed permission_response never throws out of the feed", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+    for (const text of ["null", "3", '"x"', "{"])
+      await humanMessageHandler?.({
+        seq: 0,
+        from: "human",
+        text,
+        type: "permission_response",
+        replyTo: 7,
+      });
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
 });

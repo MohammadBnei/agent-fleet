@@ -376,6 +376,20 @@ permission tiers instead of a second, fleet-specific gate on top of them
   before the first is answered can't have its reply misattributed. The same
   correlation covers permission requests. Answered in the console or through
   `AgentService`; Discord only says that a session is waiting.
+- **Nothing blocks** ([`adr/0082`](adr/0082-decision-cards.md) §5). A worker
+  that stamps its `permission_request` `"nb": 1` waits `DECISION_WAIT_MS`
+  (`GetSession`'s `decision_wait_ms`), then denies the call as pending and
+  carries on; the answer arrives later as a message (warm then append), an
+  approval as a one-time grant it spends on retry (`ConsumeGrant`, the
+  sidecar's `POST /grant/consume`). Core asks each stamped call once (the same
+  tool and canonical input while open is the same decision), a new plan
+  supersedes the open one, and `ReserveSlot`'s stale-close and the idle sweep's
+  guard apply only to an older worker's unstamped requests, which keep the
+  blocking behaviour. Blocked is a liveness only where the session would
+  otherwise read finished or stuck; `prompt_agent` reaches it. A swept or
+  archived session's decisions are withdrawn; an interrupt does not withdraw
+  (the decision reads `interrupted`), and `AnswerDecision`'s `withdraw` closes
+  one with nothing sent.
 - **Definition sessions decide differently** ([`adr/0076`](adr/0076-definition-sessions-run-in-auto.md),
   [`adr/0067`](adr/0067-shared-and-private-sessions.md) §4). Their `auto` is the
   fleet's: the worker runs the SDK in `default`, so every call that is not
@@ -790,6 +804,7 @@ the proxy variables) are theirs and not listed.
 | `IDLE_TIMEOUT_MS` | `1800000` | whole milliseconds, above 0 | no transcript activity for this long tears the pod down |
 | `STARTUP_STALL_MS` | `180000` | whole milliseconds, above 0 | pod scheduled to first sign of life (`adr/0040`) |
 | `TURN_STALL_MS` | `90000` | whole milliseconds, above 0 | owing a response this long reads as `stalled` (informational) |
+| `DECISION_WAIT_MS` | `45000` | whole milliseconds, above 0; above `600000` warns and is `600000` | how long the asking side waits on a decision before "pending" (`adr/0082` §5): sent to the worker's gate on `GetSession`, and `AskUserQuestion` holds at most this |
 | `SESSION_RETENTION` | `10d` | Go duration or whole days (`6d`), above 0 | untouched session's disk is reclaimed after this (`adr/0048`); `k8s/core.yaml` sets `6d` |
 | `DASHBOARD_PUBLIC_URL` | none | absolute http(s) URL (refuses: malformed, or missing, with the gate on) | console base: the Discord link, the OIDC redirect URI, the accepted origin |
 | `OIDC_ISSUER_URL` | none | absolute http(s) URL (refuses: malformed, or missing, with the gate on) | authentik issuer, per application, passed to discovery verbatim |

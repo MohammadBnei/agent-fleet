@@ -33,7 +33,7 @@ const server = Bun.serve({
 });
 process.env.SIDECAR_API_ADDR = `127.0.0.1:${server.port}`;
 
-const { streamHumanMessages, saveSessionId } = await import(
+const { streamHumanMessages, saveSessionId, consumeGrant } = await import(
   "./sidecarClient.js"
 );
 
@@ -208,4 +208,31 @@ test("saveSessionId sends no lease", async () => {
   await saveSessionId("sdk-1", "claude-opus-5");
   delete process.env.LEASE_ID;
   expect(bodies).toEqual([{ sessionId: "sdk-1", model: "claude-opus-5" }]);
+});
+
+// docs/adr/0082 §5: the worker's half of a one-time grant. The body is the
+// call as the agent made it; the answer is the sidecar's, unchanged.
+test("consumeGrant posts the call to /grant/consume and returns its answer", async () => {
+  const seen: { path: string; body: unknown }[] = [];
+  handler = async (req) => {
+    seen.push({ path: new URL(req.url).pathname, body: await req.json() });
+    return Response.json({ granted: true, decisionId: "d-1" });
+  };
+  expect(await consumeGrant("Bash", { command: "gh pr list" })).toEqual({
+    granted: true,
+    decisionId: "d-1",
+  });
+  expect(seen).toEqual([
+    {
+      path: "/grant/consume",
+      body: { tool: "Bash", input: { command: "gh pr list" } },
+    },
+  ]);
+});
+
+// An error (no canon is InvalidArgument) throws; session.ts reads it as not
+// granted.
+test("consumeGrant throws on a sidecar error", async () => {
+  handler = () => new Response("no canon", { status: 400 });
+  await expect(consumeGrant("Bash", {})).rejects.toThrow("400");
 });

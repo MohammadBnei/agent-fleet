@@ -14,12 +14,13 @@ type stubAsker struct {
 	gotTimeoutMs int32
 	answered     bool
 	answersJSON  string
+	decisionID   string
 	err          error
 }
 
-func (s *stubAsker) AskUserQuestion(_ context.Context, _ string, timeoutMs int32) (bool, string, int64, error) {
+func (s *stubAsker) AskUserQuestion(_ context.Context, _ string, timeoutMs int32) (bool, string, string, error) {
 	s.gotTimeoutMs = timeoutMs
-	return s.answered, s.answersJSON, 7, s.err
+	return s.answered, s.answersJSON, s.decisionID, s.err
 }
 
 func ask(t *testing.T, a *stubAsker) (*mcp.CallToolResult, error) {
@@ -96,5 +97,20 @@ func TestAskUserQuestion_WaitIsFixedAndUnderTheTransportDeadline(t *testing.T) {
 	// races that deadline; exceeding it is the bug this replaced.
 	if blockingWaitMs >= 60_000 {
 		t.Errorf("wait %dms is not comfortably under the MCP client's 60000ms ceiling", blockingWaitMs)
+	}
+}
+
+// The pending reply names the question's decision (docs/adr/0082 §5).
+func TestAskUserQuestion_PendingNamesTheDecision(t *testing.T) {
+	res, err := ask(t, &stubAsker{decisionID: "d-7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]string
+	if err := json.Unmarshal([]byte(res.Content[0].(mcp.TextContent).Text), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "pending" || body["decision"] != "d-7" {
+		t.Errorf("pending body %v, want status pending and decision d-7", body)
 	}
 }

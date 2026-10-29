@@ -87,11 +87,25 @@ export async function getSession(): Promise<{
   // Agent-Definition trailer. Not agentSpecSha, which hashes the spec.
   definitionSha?: string;
   grants?: string[];
+  // docs/adr/0082 §5: how long the gate waits on a decision before answering
+  // "pending". 0 or absent (an older sidecar) is the worker's own 45 s.
+  decisionWaitMs?: number;
 }> {
   const res = await fetch(`${base()}/task`);
   if (!res.ok)
     throw new Error(`sidecar /task failed: ${res.status} ${await res.text()}`);
   return res.json();
+}
+
+// Spends one of this session's one-time grants (docs/adr/0082 §5) for this
+// exact call, if a human approved one: core compares the input canonically and
+// hands each grant out once. decisionId is the decision it answered. Throws on
+// any failure, which the caller reads as not granted.
+export async function consumeGrant(
+  tool: string,
+  input: Record<string, unknown>,
+): Promise<{ granted: boolean; decisionId: string }> {
+  return postJSON("/grant/consume", { tool, input });
 }
 
 export async function savePermissionMode(mode: string): Promise<void> {

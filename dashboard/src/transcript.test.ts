@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { withdrawnReply } from "./decisions";
 import {
   type TranscriptEntry,
   TranscriptEntryType,
@@ -485,6 +486,75 @@ test("withOptimistic returns the original array when it has nothing to add", () 
   expect(
     withOptimistic(entries, [optimisticResponse(request.seq, "allow")]),
   ).toBe(entries);
+});
+
+// --- never blocking (docs/adr/0082 §5) ---------------------------------------
+
+// A new worker stamps its request "nb":1. Only those get the new behaviour; an
+// old worker's request keeps today's, exactly.
+const stampedPerm = (tool: string, input: unknown = {}) =>
+  full(
+    TranscriptEntryType.PERMISSION_REQUEST,
+    JSON.stringify({ tool, input, nb: 1 }),
+  );
+
+test("an interrupt leaves a stamped request open and marks it interrupted", () => {
+  const stamped = stampedPerm("Bash", { command: "ls" });
+  const legacy = perm("Bash", { command: "pwd" });
+  const entries = [stamped, legacy, full(TranscriptEntryType.INTERRUPT, "")];
+
+  const pending = findPendingPermissions(entries);
+  expect(pending.map((p) => p.entry.seq)).toEqual([stamped.seq]);
+  expect(pending[0].stamped).toBe(true);
+  expect(pending[0].interrupted).toBe(true);
+  // The old worker denied it on the interrupt and posted nothing: resolved.
+  const decisions = resolvedPermissionDecisions(entries);
+  expect(decisions.get(legacy.seq)).toBe("interrupted");
+  expect(decisions.has(stamped.seq)).toBe(false);
+});
+
+test("a stamped request with no interrupt after it is not interrupted", () => {
+  const interrupt = full(TranscriptEntryType.ABORT, "");
+  const stamped = stampedPerm("Edit");
+  const [p] = findPendingPermissions([interrupt, stamped]);
+  expect(p.interrupted).toBe(false);
+});
+
+test("a withdrawn request is no longer pending and reads as withdrawn", () => {
+  const stamped = stampedPerm("ExitPlanMode", { plan: "x" });
+  const entries = [
+    withdrawnReply("t", stamped.seq),
+    stamped,
+    full(TranscriptEntryType.INTERRUPT, ""),
+  ];
+  expect(findPendingPermissions(entries)).toEqual([]);
+  expect(hasPendingDecision(entries)).toBe(false);
+  expect(resolvedPermissionDecisions(entries).get(stamped.seq)).toBe(
+    "withdrawn",
+  );
+});
+
+test("an optimistic answer to a stamped request survives an interrupt", () => {
+  // It is still answerable: core warms and appends, the real reply follows.
+  const request = stampedPerm("Bash");
+  const merged = withOptimistic(
+    [request, full(TranscriptEntryType.INTERRUPT, "stopped")],
+    [optimisticResponse(request.seq, "allow")],
+  );
+  expect(findPendingPermissions(merged)).toEqual([]);
+  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("allow");
+});
+
+test("decisionAnswerable: a stamped permission outlives its pod, not its sweep", () => {
+  const dead = { podLive: false, swept: false, stamped: true };
+  expect(decisionAnswerable("permission", dead)).toBe(true);
+  expect(decisionAnswerable("permission", { ...dead, swept: true })).toBe(
+    false,
+  );
+  // An old worker's is still bound to the pod that asked.
+  expect(decisionAnswerable("permission", { ...dead, stamped: false })).toBe(
+    false,
+  );
 });
 
 // --- subagents ----------------------------------------------------------------

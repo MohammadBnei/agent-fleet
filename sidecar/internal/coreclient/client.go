@@ -183,14 +183,14 @@ func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs 
 	return resp.GetEntries(), resp.GetNextSeq(), nil
 }
 
-func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (answered bool, answersJSON string, questionSeq int64, err error) {
+func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (answered bool, answersJSON string, decisionID string, err error) {
 	resp, err := c.rpc.AskUserQuestion(ctx, &agentfleetv1.AskUserQuestionRequest{
 		SessionId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs, AgentSpecSha: c.agentSpecSHA(),
 	})
 	if err != nil {
-		return false, "", 0, fmt.Errorf("AskUserQuestion: %w", err)
+		return false, "", "", fmt.Errorf("AskUserQuestion: %w", err)
 	}
-	return resp.GetAnswered(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
+	return resp.GetAnswered(), resp.GetAnswersJson(), resp.GetDecisionId(), nil
 }
 
 // RequestE2eEnv and KillE2eEnv are gone with the sandbox (docs/adr/0048 §6).
@@ -412,6 +412,17 @@ func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 		return fmt.Errorf("SetPermissionMode: %w", err)
 	}
 	return nil
+}
+
+// ConsumeGrant spends one of this pod's own session's one-time grants for
+// tool and its input JSON (docs/adr/0082 §5): granted, and the decision it
+// came from. taskID is this pod's identity, injected here, not an argument.
+func (c *Client) ConsumeGrant(ctx context.Context, tool, inputJSON string) (*agentfleetv1.ConsumeGrantResponse, error) {
+	res, err := c.rpc.ConsumeGrant(ctx, &agentfleetv1.ConsumeGrantRequest{SessionId: c.taskID, Tool: tool, InputJson: inputJSON})
+	if err != nil {
+		return nil, fmt.Errorf("ConsumeGrant: %w", err)
+	}
+	return res, nil
 }
 
 // UpdateSessionMeta relabels this pod's OWN session's title/description. A nil

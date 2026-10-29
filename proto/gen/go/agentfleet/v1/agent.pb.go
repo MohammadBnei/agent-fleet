@@ -2292,7 +2292,10 @@ type Decision struct {
 	// The decisions version of this decision's last change.
 	Version int64 `protobuf:"varint,13,opt,name=version,proto3" json:"version,omitempty"`
 	// owner/name, when the thread is about a GitHub subject.
-	SubjectRepo   string `protobuf:"bytes,14,opt,name=subject_repo,json=subjectRepo,proto3" json:"subject_repo,omitempty"`
+	SubjectRepo string `protobuf:"bytes,14,opt,name=subject_repo,json=subjectRepo,proto3" json:"subject_repo,omitempty"`
+	// An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
+	// the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.
+	Interrupted   bool `protobuf:"varint,15,opt,name=interrupted,proto3" json:"interrupted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2423,6 +2426,13 @@ func (x *Decision) GetSubjectRepo() string {
 		return x.SubjectRepo
 	}
 	return ""
+}
+
+func (x *Decision) GetInterrupted() bool {
+	if x != nil {
+		return x.Interrupted
+	}
+	return false
 }
 
 type ListDecisionsRequest struct {
@@ -2656,7 +2666,8 @@ func (x *GetDecisionResponse) GetDecision() *Decision {
 type AnswerDecisionRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	DecisionId string                 `protobuf:"bytes,1,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
-	// A permission or a plan: "allow" or "deny".
+	// A permission or a plan: "allow" or "deny". Any kind: "withdraw" closes it unanswered, appending nothing and
+	// warming nothing (admin or the session's owner only).
 	Behavior string `protobuf:"bytes,2,opt,name=behavior,proto3" json:"behavior,omitempty"`
 	// A question: its answers, a JSON object.
 	AnswersJson string `protobuf:"bytes,3,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"`
@@ -3057,7 +3068,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\vresult_text\x18\x03 \x01(\tR\n" +
 	"resultText\x12\x18\n" +
 	"\asubtype\x18\x04 \x01(\tR\asubtype\x12+\n" +
-	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error\"\xc5\x03\n" +
+	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error\"\xe7\x03\n" +
 	"\bDecision\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1b.agentfleet.v1.DecisionKindR\x04kind\x122\n" +
@@ -3078,7 +3089,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\f \x01(\tR\tcreatedAt\x12\x18\n" +
 	"\aversion\x18\r \x01(\x03R\aversion\x12!\n" +
-	"\fsubject_repo\x18\x0e \x01(\tR\vsubjectRepo\"\xfb\x01\n" +
+	"\fsubject_repo\x18\x0e \x01(\tR\vsubjectRepo\x12 \n" +
+	"\vinterrupted\x18\x0f \x01(\bR\vinterrupted\"\xfb\x01\n" +
 	"\x14ListDecisionsRequest\x124\n" +
 	"\x06states\x18\x01 \x03(\x0e2\x1c.agentfleet.v1.DecisionStateR\x06states\x121\n" +
 	"\x05kinds\x18\x02 \x03(\x0e2\x1b.agentfleet.v1.DecisionKindR\x05kinds\x12!\n" +

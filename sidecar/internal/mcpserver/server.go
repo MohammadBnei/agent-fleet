@@ -102,7 +102,7 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 	), waitForMessagesHandler(core))
 
 	s.AddTool(mcp.NewTool("AskUserQuestion",
-		mcp.WithDescription(fmt.Sprintf("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard. Waits up to %ds for an answer. If it returns {\"status\":\"pending\"}, the question is still live and durable: DO NOT re-invoke in a loop — end your turn. The answer is delivered to you automatically as a new message when the human replies, even days later across a pod restart. See docs/adr/0018.", blockingWaitMs/1000)),
+		mcp.WithDescription("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard. Waits a while for an answer. If it returns {\"status\":\"pending\"}, the question is still live and durable: DO NOT re-invoke in a loop — do what does not need the answer, or end your turn. The answer is delivered to you automatically as a new message when the human replies, even days later across a pod restart. See docs/adr/0018."),
 		mcp.WithInputSchema[AskUserQuestionArgs](),
 	), askUserQuestionHandler(core))
 
@@ -188,11 +188,11 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 	// the same reason run_command is: a resumed session must have them from
 	// turn one, not only after some other call happens to register them.
 	s.AddTool(mcp.NewTool("list_sessions",
-		mcp.WithDescription("List the fleet's other sessions — task id, repo, description, status, and liveState. liveState is what tells you whether a session can be talked to: 'working' (busy), 'blocked' (waiting on a HUMAN decision — you cannot prompt it and must not try to answer for it), 'idle'/'done' (finished), 'stalled' (owes a reply and hasn't produced one), 'unknown' (pod starting), or '' (no live pod — prompting one warms it). Your own session is never listed."),
+		mcp.WithDescription("List the fleet's other sessions — task id, repo, description, status, and liveState. liveState is what tells you whether a session can be talked to: 'working' (busy), 'blocked' (waiting on a HUMAN decision — you must not try to answer for it), 'idle'/'done' (finished), 'stalled' (owes a reply and hasn't produced one), 'unknown' (pod starting), or '' (no live pod — prompting one warms it). Your own session is never listed."),
 	), listSessionsHandler(core))
 
 	s.AddTool(mcp.NewTool("prompt_agent",
-		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat. The target reads it fenced and marked as coming from another agent, and it cannot answer you by writing ordinary output — only by calling prompt_agent back — so be concrete and say what you need from it. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. To get a reply, end your turn: the target's prompt_agent back to you arrives as a new message and warms you if you are idle. Do not loop on wait_for_agent."),
+		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat. The target reads it fenced and marked as coming from another agent, and it cannot answer you by writing ordinary output — only by calling prompt_agent back — so be concrete and say what you need from it. A 'blocked' target is waiting on a human decision that is not yours to resolve: your message reaches it, but cannot answer that decision for it. REFUSED for your own session, and beyond a small relay depth so chains cannot loop. To get a reply, end your turn: the target's prompt_agent back to you arrives as a new message and warms you if you are idle. Do not loop on wait_for_agent."),
 		mcp.WithString("sessionId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
@@ -471,7 +471,7 @@ func journalSearchHandler(core JournalSearcher) server.ToolHandlerFunc {
 // cancelled-wait branch below is testable — same shape as JournalSearcher and
 // LogViewer above.
 type QuestionAsker interface {
-	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (bool, string, int64, error)
+	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (bool, string, string, error)
 }
 
 func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -484,7 +484,7 @@ func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mc
 			return nil, fmt.Errorf("AskUserQuestion: marshal questions: %w", err)
 		}
 		slog.Info("mcp AskUserQuestion", "questions", len(args.Questions))
-		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), blockingWaitMs)
+		answered, answersJSON, decisionID, err := core.AskUserQuestion(ctx, string(payload), blockingWaitMs)
 		if err != nil {
 			// A cancelled or expired wait is the PENDING case, not a failure.
 			// The question row was appended before the poll began and is
@@ -494,7 +494,7 @@ func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mc
 			// unreachable must still surface as a real tool error.
 			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
 				slog.Info("mcp AskUserQuestion: wait ended, question still live", "code", code)
-				return mcp.NewToolResultText(pendingQuestionBody()), nil
+				return mcp.NewToolResultText(pendingQuestionBody("")), nil
 			}
 			slog.Error("mcp AskUserQuestion", "error", err)
 			return nil, fmt.Errorf("AskUserQuestion: %w", err)
@@ -509,16 +509,22 @@ func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mc
 		// idle-teardown and warm. So the agent must END ITS TURN here, not
 		// re-invoke: re-invoking burns tokens polling for something that
 		// arrives on its own.
-		return mcp.NewToolResultText(pendingQuestionBody()), nil
+		return mcp.NewToolResultText(pendingQuestionBody(decisionID)), nil
 	})
 }
 
-func pendingQuestionBody() string {
-	body, _ := json.Marshal(map[string]string{
+// pendingQuestionBody is the pending reply, naming the question's decision
+// when core said which (docs/adr/0082 §5: "pending, decision <id>").
+func pendingQuestionBody(decisionID string) string {
+	body := map[string]string{
 		"status": "pending",
-		"note":   "Question is live and durable. Do NOT call again — end your turn. The answer arrives as a message when the human replies, even after a restart.",
-	})
-	return string(body)
+		"note":   "Question is live and durable. Do NOT call again — do what does not need the answer, or end your turn. The answer arrives as a message when the human replies, even after a restart.",
+	}
+	if decisionID != "" {
+		body["decision"] = decisionID
+	}
+	b, _ := json.Marshal(body)
+	return string(b)
 }
 
 // exposeHandler publishes a port from this pod at a public HTTPS URL.

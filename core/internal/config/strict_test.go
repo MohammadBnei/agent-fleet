@@ -25,6 +25,7 @@ func TestLoadDefaults(t *testing.T) {
 		STTAddr:             "ukubi-stt.ukubi-stt.svc.cluster.local:9090",
 		MaxInFlight:         5, MaxDefinitionSessions: 0, MaxExternalSessions: 0, MaxSessionsPerMember: 1,
 		StopGrace: 30 * time.Second, IdleTimeout: 30 * time.Minute, StartupStall: 3 * time.Minute, TurnStall: 90 * time.Second,
+		DecisionWait:     45 * time.Second,
 		SessionRetention: 240 * time.Hour,
 		GarageS3Endpoint: "https://s3.bnei.dev", GarageFilesBucket: "agent-fleet-files",
 		Bridge: bridgeclient.Config{ClientID: "ukubi-bridge-api", Username: "bridge-core", PasswordFile: "/etc/bridge-core/app_password"},
@@ -61,6 +62,7 @@ var refusals = []struct {
 	{"IDLE_TIMEOUT_MS", []string{"abc", "0", "-1", "30m"}, []string{"1800000"}},
 	{"STARTUP_STALL_MS", []string{"abc", "0", "-1", "3m"}, []string{"180000"}},
 	{"TURN_STALL_MS", []string{"abc", "0", "-1", "90s"}, []string{"90000"}},
+	{"DECISION_WAIT_MS", []string{"abc", "0", "-1", "45s"}, []string{"45000", "600000"}},
 	{"SESSION_RETENTION", []string{"abc", "0", "0d", "-6d", "6d12h", "10", "-213503d", "-106752d", "106752d", "9223372036854775807d"}, []string{"6d", "144h"}},
 	{"FLEET_AUTH_DISABLED", []string{"true", "false", "yes", "2", " 1", "on"}, []string{"1", "0"}},
 	{"LOKI_URL", []string{"loki:3100", "ftp://loki", "http://", "//loki", "not a url", "http://[::1"}, []string{"http://loki:3100", "https://loki.example/"}},
@@ -131,6 +133,14 @@ func TestLoadRefusals(t *testing.T) {
 				t.Errorf("%s=%q warned: %q", r.key, v, c.Warnings)
 			}
 		}
+	}
+}
+
+// DECISION_WAIT_MS above its ceiling warns and is the ceiling (docs/adr/0082 §5: up to 10 min).
+func TestLoadDecisionWaitClamps(t *testing.T) {
+	c := mustLoad(t, map[string]string{"DECISION_WAIT_MS": "600001"})
+	if c.DecisionWait != MaxDecisionWait || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "DECISION_WAIT_MS=600001") {
+		t.Errorf("DecisionWait %v, warnings %q; want %v and one warning", c.DecisionWait, c.Warnings, MaxDecisionWait)
 	}
 }
 

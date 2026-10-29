@@ -31,6 +31,17 @@ type Record struct {
 	CreatedAt  time.Time
 	// Grantable: an allow of this request is a one-time grant (ConsumeGrant).
 	Grantable bool
+	// NonBlocking: a permission or plan a worker that never blocks asked
+	// (its request stamped "nb": 1, docs/adr/0082 §5), read from the stored
+	// payload as ReserveSlot and the idle sweep read it.
+	//
+	// ponytail: a request JSONB refuses (a lone surrogate escape) is stored
+	// as a string and reads as unstamped, so it keeps the older behaviour;
+	// a stamp column if that ever matters.
+	NonBlocking bool
+	// Interrupted: open, and an interrupt or abort entry came after the
+	// request (derived at read time). The turn that asked has ended.
+	Interrupted bool
 	// owner/name, from a thread keyed github/<owner>/<name>/...; "" otherwise.
 	SubjectRepo string
 
@@ -47,6 +58,10 @@ const cols = `
 	d.id::text, d.kind, d.session_id::text, d.request_seq, d.state, d.ask,
 	COALESCE(d.payload::text, ''), COALESCE(d.tool, ''), COALESCE(d.answer::text, ''),
 	COALESCE(d.answered_by, ''), d.answered_at, d.version, d.created_at, d.grantable,
+	COALESCE(d.payload ->> 'nb' = '1', false),
+	d.state = 'open' AND EXISTS (SELECT 1 FROM transcript t
+	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
+	                                AND t.type IN ('interrupt', 'abort')),
 	COALESCE(substring(s.thread_key from '^github/([^/]+/[^/]+)'), ''),
 	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL
 	FROM decisions d JOIN sessions s ON s.id = d.session_id`
@@ -56,7 +71,7 @@ func scan(row pgx.Row) (Record, error) {
 	var kind string
 	err := row.Scan(&r.ID, &kind, &r.SessionID, &r.RequestSeq, &r.State, &r.Ask,
 		&r.Payload, &r.Tool, &r.Answer, &r.AnsweredBy, &r.AnsweredAt, &r.Version, &r.CreatedAt, &r.Grantable,
-		&r.SubjectRepo, &r.Owner, &r.Visibility, &r.Definition, &r.Archived)
+		&r.NonBlocking, &r.Interrupted, &r.SubjectRepo, &r.Owner, &r.Visibility, &r.Definition, &r.Archived)
 	r.Kind = Kind(kind)
 	return r, err
 }

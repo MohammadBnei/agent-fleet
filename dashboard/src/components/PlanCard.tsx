@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { PermissionOutcome } from "../transcript";
 import { ActionButton } from "./ActionButton";
 import { AutoModeConfirm } from "./AutoModeConfirm";
 import { Markdown } from "./Markdown";
@@ -64,7 +65,8 @@ export function PlanCard({
   // later Kill/Interrupt sweeping it up unanswered. Undefined is a
   // pre-fix legacy row with no matching response, where "approved" stays
   // the fallback.
-  decision?: "allow" | "deny" | "interrupted";
+  // "withdrawn" is one closed unanswered from the decision dock.
+  decision?: PermissionOutcome;
   // Approving is a mode transition plus an answer, mirroring the CLI's own
   // ExitPlanMode menu ("Yes, and use auto mode" / "Yes, manually approve
   // edits") — see approvePlan.ts for why the order matters. Undefined mode
@@ -100,16 +102,20 @@ export function PlanCard({
             consent. */}
         <span
           className={`flex-none border px-1 ${
-            decision === "interrupted" || decision === "deny"
+            decision === "interrupted" ||
+            decision === "withdrawn" ||
+            decision === "deny"
               ? "border-pink-line text-error"
               : "border-green-line text-green-soft"
           }`}
         >
           {decision === "interrupted"
             ? "plan interrupted"
-            : decision === "deny"
-              ? "changes requested"
-              : "plan approved"}
+            : decision === "withdrawn"
+              ? "plan closed"
+              : decision === "deny"
+                ? "changes requested"
+                : "plan approved"}
         </span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">

@@ -173,4 +173,37 @@ func TestAnswerDecision(t *testing.T) {
 	if !slices.Equal(dash.warms, []string{shared}) {
 		t.Errorf("warms = %v: only the question warms", dash.warms)
 	}
+
+	// docs/adr/0082 §5: an interrupted decision says so, and "withdraw" closes
+	// it, the owner's or an admin's, with nothing appended and nothing warmed.
+	w := ask(shared, "permission_request", `{"tool":"Bash","input":{"command":"w"},"nb":1}`)
+	if _, err := transcr.Append(ctx, shared, "human", "stop", "interrupt", ""); err != nil {
+		t.Fatal(err)
+	}
+	if g, err := c.GetDecision(ctx, as("alice", &agentfleetv1.GetDecisionRequest{Id: w})); err != nil || !g.Msg.GetDecision().GetInterrupted() {
+		t.Errorf("interrupted decision: %v, %v", g, err)
+	}
+	latest, _ := transcr.LatestSeq(ctx, shared)
+	withdraw := func(sub, id string) error {
+		_, err := c.AnswerDecision(ctx, as(sub, &agentfleetv1.AnswerDecisionRequest{DecisionId: id, Behavior: "withdraw"}))
+		return err
+	}
+	if err := withdraw("bob", w); code(err) != connect.CodePermissionDenied {
+		t.Errorf("bob withdrawing alice's decision: %v", err)
+	}
+	if err := withdraw("alice", w); err != nil {
+		t.Errorf("alice withdrawing: %v", err)
+	}
+	if d, _ := decs.Get(ctx, w); d.State != decisions.Withdrawn {
+		t.Errorf("after withdraw: %s", d.State)
+	}
+	if after, _ := transcr.LatestSeq(ctx, shared); after != latest || !slices.Equal(dash.warms, []string{shared}) {
+		t.Errorf("withdraw appended (%d -> %d) or warmed (%v)", latest, after, dash.warms)
+	}
+	if err := withdraw("alice", w); code(err) != connect.CodeAlreadyExists {
+		t.Errorf("withdrawn twice: %v", err)
+	}
+	if err := withdraw("root", ask(shared, "question", `{"questions":[{"question":"why?"}]}`)); err != nil {
+		t.Errorf("an admin withdrawing: %v", err)
+	}
 }

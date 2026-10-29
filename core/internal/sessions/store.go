@@ -590,6 +590,12 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	// the same reason stop_requested_at and activity_seen are reset above:
 	// they all describe a pod that no longer exists.
 	//
+	// Only an older worker's requests. One stamped "nb": 1 (docs/adr/0082 §5)
+	// came from a worker that never blocks on it: its decision is the owner's
+	// until answered or withdrawn, and its answer reaches whichever pod comes
+	// next as a message, as a question's does. An older worker's request has
+	// no decisions row stamped so, or none at all if it predates the table.
+	//
 	// Nothing else does this. The worker denies its pending permissions on
 	// Stop, but with interrupt:true, which deliberately records no resolution;
 	// a crashed or idle-swept pod does not even get that far. The requests
@@ -626,6 +632,10 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		         SELECT 1 FROM transcript r
 		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
 		       )
+		   AND NOT EXISTS (
+		         SELECT 1 FROM decisions d
+		          WHERE d.session_id = q.session_id AND d.request_seq = q.seq AND d.payload ->> 'nb' = '1'
+		       )
 		ON CONFLICT DO NOTHING
 	`, id); err != nil {
 		return "", fmt.Errorf("reserve slot: resolve stale decisions: %w", err)
@@ -636,6 +646,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	if _, err := tx.Exec(ctx, `
 		UPDATE decisions SET state = 'withdrawn', version = nextval('decisions_version_seq')
 		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
+		   AND COALESCE(payload ->> 'nb', '') <> '1'
 	`, id); err != nil {
 		return "", fmt.Errorf("reserve slot: withdraw stale decisions: %w", err)
 	}
@@ -1027,6 +1038,11 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 	// So: permissions only. Excluding every pending decision would let one
 	// forgotten subsidiary question hold 20% of a five-pod fleet forever.
 	//
+	// And an older worker's only. A request stamped "nb": 1 (docs/adr/0082
+	// §5) holds no canUseTool promise past DECISION_WAIT_MS: its answer is a
+	// message the next pod receives, so its pod is as free to die as a
+	// question's.
+	//
 	// Written out rather than sharing selectCols' pending_decisions fragment:
 	// that one is a count over every kind, this is a filter over two, and
 	// gluing SQL strings together to save a duplicate NOT EXISTS is how a
@@ -1047,6 +1063,7 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 		  AND NOT EXISTS (
 		    SELECT 1 FROM decisions d
 		     WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
+		       AND COALESCE(d.payload ->> 'nb', '') <> '1'
 		  )
 	`, livePhases)
 	if err != nil {
@@ -1114,14 +1131,43 @@ func (s *Store) listIDs(ctx context.Context, query string, d time.Duration, phas
 // telling anyone, so a session could lose its disk with nobody recording
 // it. That loop is deleted in docs/adr/0048; core now owns every sweep
 // decision and writes this in the same pass.
+//
+// A swept session cannot be resumed, so nothing it asked can be acted on: in
+// the same transaction its open decisions are withdrawn and its unused
+// one-time grants cleared, as Archive does (docs/adr/0082 §5).
 func (s *Store) MarkSwept(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE sessions SET swept_at = now(), updated_at = now() WHERE id = $1`, id)
-	if err != nil {
+	if err := s.markSwept(ctx, id); err != nil {
 		slog.Error("sessions MarkSwept", "sessionId", id, "error", err)
 		return fmt.Errorf("mark swept: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) markSwept(ctx context.Context, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.Exec(ctx, `UPDATE sessions SET swept_at = now(), updated_at = now() WHERE id = $1`, id); err != nil {
+		return err
+	}
+	if err := withdrawDecisions(ctx, tx, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// withdrawDecisions closes a finished session's open decisions and clears
+// its unused one-time grants; a spent grant keeps its record.
+func withdrawDecisions(ctx context.Context, tx pgx.Tx, id string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE decisions
+		   SET state     = CASE WHEN state = 'open' THEN 'withdrawn' ELSE state END,
+		       grantable = false,
+		       version   = nextval('decisions_version_seq')
+		 WHERE session_id = $1 AND (state = 'open' OR (grantable AND grant_used_at IS NULL))`, id)
+	return err
 }
 
 // Archive marks a session finished by a human — the only terminal state in
@@ -1157,12 +1203,7 @@ func (s *Store) archive(ctx context.Context, id string) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE decisions
-		   SET state     = CASE WHEN state = 'open' THEN 'withdrawn' ELSE state END,
-		       grantable = false,
-		       version   = nextval('decisions_version_seq')
-		 WHERE session_id = $1 AND (state = 'open' OR (grantable AND grant_used_at IS NULL))`, id); err != nil {
+	if err := withdrawDecisions(ctx, tx, id); err != nil {
 		return fmt.Errorf("archive session: withdraw decisions: %w", err)
 	}
 	return tx.Commit(ctx)

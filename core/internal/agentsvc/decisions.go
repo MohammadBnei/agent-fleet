@@ -104,7 +104,8 @@ func validAnswers(answersJSON string) error {
 
 // RespondToPermission is AnswerDecision for a permission request: {behavior,
 // message} and nothing else (docs/adr/0066 §4), no updatedInput, no standing
-// rule. No warm, as in the console: a permission belongs to a live pod.
+// rule. It warms as the console does: only a non-blocking worker's request
+// (decisions.Answer).
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.AgentServiceRespondToPermissionRequest]) (*connect.Response[agentfleetv1.AgentServiceRespondToPermissionResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -204,6 +205,9 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	if m.GetBehavior() == "withdraw" {
+		return s.withdraw(ctx, p, r)
+	}
 	if err := validMessage(m.GetMessage()); err != nil {
 		return nil, err
 	}
@@ -235,6 +239,20 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n}), nil
+}
+
+// withdraw is AnswerDecision's "withdraw", the quick close of a decision
+// whose turn has ended (docs/adr/0082 §5): state withdrawn, nothing appended,
+// nothing warmed, so the session hears nothing. The owner's or an admin's,
+// as Stop is: closing takes power away.
+func (s *Server) withdraw(ctx context.Context, p Principal, r decisions.Record) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
+	if !p.Admin() && (r.Owner == nil || *r.Owner != p.owner()) {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner withdraws its decisions"))
+	}
+	if err := s.decisions.Withdraw(ctx, r.ID); err != nil {
+		return nil, dashboard.AnswerErr("agentsvc withdraw", err)
+	}
+	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{}), nil
 }
 
 // ownsOrAdmin is who configures a thread. A tainted thread is admins' only

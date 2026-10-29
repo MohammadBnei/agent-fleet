@@ -5,7 +5,7 @@ import {
   type TranscriptEntry,
   TranscriptEntryType,
 } from "../gen/agentfleet/v1/transcript_pb";
-import { DecisionDock } from "./DecisionDock";
+import { DecisionDock, InterruptedBar } from "./DecisionDock";
 import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 
@@ -28,7 +28,10 @@ const permission = (tool: string, input: unknown = {}) =>
     JSON.stringify({ tool, input }),
   );
 
-function render(entries: TranscriptEntry[]) {
+function render(
+  entries: TranscriptEntry[],
+  extra: Partial<Parameters<typeof DecisionDock>[0]> = {},
+) {
   const tree = DecisionDock({
     entries,
     busyKey: null,
@@ -36,6 +39,7 @@ function render(entries: TranscriptEntry[]) {
     onRespond: () => {},
     onAnswer: () => {},
     onPlanFeedback: () => {},
+    ...extra,
   });
 
   const found: { type: unknown; props: Record<string, unknown> }[] = [];
@@ -88,4 +92,51 @@ test("an empty dock renders nothing at all", () => {
       onPlanFeedback: () => {},
     }),
   ).toBeNull();
+});
+
+const stamped = (tool: string, input: unknown = {}) =>
+  entry(
+    TranscriptEntryType.PERMISSION_REQUEST,
+    JSON.stringify({ tool, input, nb: 1 }),
+  );
+
+// docs/adr/0082 §5: nothing blocks on a stamped request, and core warms the
+// session to deliver its answer, so a dead pod no longer greys it out.
+test("a stamped permission is answerable with no pod", () => {
+  const cards = render([stamped("Bash", { command: "ls" })], {
+    podLive: false,
+  });
+  const card = cards.find((el) => el.type === PermissionCard);
+  expect(card?.props.pending).toBe(true);
+});
+
+// An old worker's request keeps today's rule: dead pod, dead buttons.
+test("an unstamped permission on a dead pod still cannot be answered", () => {
+  const cards = render([permission("Bash", { command: "ls" })], {
+    podLive: false,
+  });
+  const card = cards.find((el) => el.type === PermissionCard);
+  expect(card?.props.pending).toBe(false);
+});
+
+test("an interrupted stamped request shows interrupted, and close withdraws it", () => {
+  const request = stamped("Bash", { command: "ls" });
+  const withdrawn: bigint[] = [];
+  const cards = render(
+    [request, entry(TranscriptEntryType.INTERRUPT, "stopped")],
+    { onWithdraw: (seq) => withdrawn.push(seq) },
+  );
+  const bar = cards.find((el) => el.type === InterruptedBar);
+  expect(bar).toBeDefined();
+  // Still answerable alongside the close.
+  expect(cards.find((el) => el.type === PermissionCard)?.props.pending).toBe(
+    true,
+  );
+  (bar!.props.onClose as () => void)();
+  expect(withdrawn).toEqual([request.seq]);
+});
+
+test("a request with no interrupt after it shows no interrupted bar", () => {
+  const cards = render([stamped("Bash")], { onWithdraw: () => {} });
+  expect(cards.find((el) => el.type === InterruptedBar)).toBeUndefined();
 });

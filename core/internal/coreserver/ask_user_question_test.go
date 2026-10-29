@@ -302,3 +302,27 @@ func TestAskUserQuestion_ARewordedReAskSupersedesTheOldOne(t *testing.T) {
 func (*fakeQAStore) AppendAuthored(context.Context, string, transcript.Author, string, string, string, *int64) (int64, error) {
 	return 0, nil
 }
+
+// docs/adr/0082 §5: core holds a question at most DECISION_WAIT_MS, and never
+// past what the sidecar asked.
+func TestAskUserQuestion_HoldsTheShorterOfDecisionWaitAndTheRequest(t *testing.T) {
+	for _, c := range []struct {
+		wait      time.Duration
+		requestMs int32
+		max       time.Duration
+	}{
+		{20 * time.Millisecond, 5000, 2 * time.Second},
+		{10 * time.Minute, 30, 2 * time.Second},
+	} {
+		s := New(&fakeQAStore{}, nil, nil, nil, nil, nil, nil)
+		s.SetDecisionWait(c.wait)
+		start := time.Now()
+		resp, err := s.AskUserQuestion(context.Background(), &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: c.requestMs})
+		if err != nil || resp.GetAnswered() {
+			t.Fatalf("AskUserQuestion: %v, %v", resp, err)
+		}
+		if took := time.Since(start); took > c.max {
+			t.Errorf("wait %v, request %dms: held %v", c.wait, c.requestMs, took)
+		}
+	}
+}

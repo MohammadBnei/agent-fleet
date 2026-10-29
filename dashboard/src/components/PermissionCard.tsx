@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { PermissionOutcome } from "../transcript";
 import { ActionButton } from "./ActionButton";
 import { ToolInputView } from "./ToolInputView";
 
@@ -50,7 +51,8 @@ export function PermissionCard({
   // (no PERMISSION_RESPONSE ever posted for those, see that function's own
   // comment); undefined only for a pre-fix legacy row with no matching
   // response yet, where "allowed" stays the fallback.
-  decision?: "allow" | "deny" | "interrupted";
+  // "withdrawn" is one closed unanswered from the decision dock.
+  decision?: PermissionOutcome;
   // The human's own words when they denied — parsed from the
   // PERMISSION_RESPONSE payload and, until now, never shown anywhere, so a
   // denial read as an unexplained refusal in the one place its reason
@@ -100,7 +102,9 @@ export function PermissionCard({
       >
         <span
           className={`flex-none border px-1 ${
-            decision === "deny" || decision === "interrupted"
+            decision === "deny" ||
+            decision === "interrupted" ||
+            decision === "withdrawn"
               ? "border-pink-line text-error"
               : "border-line text-dim"
           }`}
@@ -110,7 +114,9 @@ export function PermissionCard({
             ? "denied"
             : decision === "interrupted"
               ? "interrupted"
-              : "allowed"}
+              : decision === "withdrawn"
+                ? "closed"
+                : "allowed"}
         </span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">

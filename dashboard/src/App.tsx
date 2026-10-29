@@ -7,6 +7,7 @@ import { NeedsYouModal } from "./components/NeedsYouModal";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { Segmented } from "./components/Segmented";
 import { client } from "./connectClient";
+import { fetchWithdrawn } from "./decisions";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
@@ -19,7 +20,11 @@ import { SessionList } from "./pages/SessionList";
 import { Settings } from "./pages/Settings";
 import { pollVisible } from "./pollVisible";
 import { LIVE_STATES } from "./sessionState";
-import { type ListSummary, listSummary } from "./transcript";
+import {
+  findPendingPermissions,
+  type ListSummary,
+  listSummary,
+} from "./transcript";
 import { useFeedWidth } from "./useFeedWidth";
 import { useMediaQuery } from "./useMediaQuery";
 import { useTheme } from "./useTheme";
@@ -306,7 +311,16 @@ export default function App() {
           // 200 matches the detail view. A summary only needs the tail: the
           // pending decision, the latest todos, the in-flight tool.
           .getTranscript({ sessionId: t.id, limit: SUMMARY_PAGE })
-          .then((res) => [t.id, listSummary(res.entries)] as const)
+          // A withdrawn request leaves no transcript row (decisions.ts), so
+          // the store is read too — only where a permission looks pending,
+          // which keeps the usual poll at one fetch per session.
+          .then(async (res) => {
+            const entries =
+              findPendingPermissions(res.entries).length > 0
+                ? [...(await fetchWithdrawn(t.id)), ...res.entries]
+                : res.entries;
+            return [t.id, listSummary(entries)] as const;
+          })
           .catch(() => null),
       ),
     ).then((results) => {

@@ -100,7 +100,7 @@ message AskUserQuestionRequest {
   string questions_json = 2;
   // Fixed by the sidecar (blockingWaitMs, 45s), never chosen by the agent:
   // the agent's MCP client aborts a request at 60s (docs/adr/0058). <=0 falls
-  // back to core's own default.
+  // back to core's own default. Core waits min(DECISION_WAIT_MS, this).
   int32 timeout_ms = 3;
   // The agent_spec_sha the worker applied, as for StreamHumanMessagesRequest
   // (docs/adr/0066 §8): an answer is human input too.
@@ -123,6 +123,9 @@ message AskUserQuestionResponse {
   // re-ask mints a NEW entry with a new seq, which is what makes any
   // control posted against an older one dead.
   int64 question_seq = 3;
+  // The question's decision (docs/adr/0082 §5), for the pending reply the
+  // agent reads. Empty when answered.
+  string decision_id = 5;
 }
 
 // RequestE2eEnvRequest/Response and KillE2eEnvRequest/Response are gone with
@@ -351,6 +354,10 @@ message GetSessionResponse {
   // docs/adr/0076 §3: the session's grants and its definition's live ones,
   // outside agent_spec and its sha so a new grant never stops delivery.
   repeated string grants = 4;
+  // docs/adr/0082 §5: how long the worker's gate waits on a permission or
+  // plan decision before answering "pending" (core's DECISION_WAIT_MS).
+  // 0 means the worker's own default, 45 s.
+  int32 decision_wait_ms = 5;
 }
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).
