@@ -43,7 +43,6 @@ type Keyed = Exclude<keyof typeof AgentErrorKey, "UNSPECIFIED">;
 const keyText: Record<Keyed, string> = {
   DEFINITION_CHANGED: "This agent was updated. Start a new thread to continue.",
   THREAD_CAP: "You have too many open threads. Close one to start another.",
-  THREAD_UNTRUSTED: "This thread holds untrusted input, so only an admin can answer it, from the console.",
   DEFINITION_UNAVAILABLE: "This agent is not available to you.",
 };
 

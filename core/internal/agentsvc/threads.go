@@ -239,8 +239,7 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 		return nil, err
 	}
 	if !canAnswer(p, t) {
-		// A thread the caller sees is refused only for its taint.
-		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyThreadUntrusted, errors.New("you cannot post to this thread"))
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot post to this thread"))
 	}
 	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
 		// The words' prefix stays one release for islands that still read it (mountain plan/15 §4: the key is the API).

@@ -11,7 +11,6 @@ type Keyed = Exclude<keyof typeof AgentErrorKey, "UNSPECIFIED">;
 const keyText: Record<Keyed, string> = {
   DEFINITION_CHANGED: "The agent's definition changed since this thread opened. Start a new thread.",
   THREAD_CAP: "This agent's client has too many open threads. Close some, then try again.",
-  THREAD_UNTRUSTED: "This thread holds untrusted input: only an admin can answer it, from its session here.",
   DEFINITION_UNAVAILABLE: "The bridge may not open this agent's threads: the definition and the client must list each other.",
 };
 

@@ -11,8 +11,8 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
-	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -135,7 +135,7 @@ func TestThreads_Visibility(t *testing.T) {
 		VALUES ($1, 0, 'human', 'event', 'discussion', 'e1', true, true)`, shared); err != nil {
 		t.Fatal(err)
 	}
-	if err := post(bob, shared); connect.CodeOf(err) != connect.CodePermissionDenied || errkeys.Of(err) != errkeys.KeyThreadUntrusted {
+	if err := post(bob, shared); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("bob posts to tainted shared: %v", err)
 	}
 	// The definition moved on: the thread is not silently carried over.

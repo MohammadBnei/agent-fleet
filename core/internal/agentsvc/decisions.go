@@ -9,7 +9,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -25,11 +24,7 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	if err != nil {
 		return nil, err
 	}
-	// A thread the caller sees is refused by canAnswer only for its taint.
-	if !canAnswer(p, t) {
-		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyThreadUntrusted, errors.New("you cannot answer in this thread"))
-	}
-	if !s.stillRegistered(p, t) {
+	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker

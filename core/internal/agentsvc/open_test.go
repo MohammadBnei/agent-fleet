@@ -11,8 +11,8 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
-	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -204,8 +204,8 @@ func TestOpen_DelistedClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	testClients = nil // de-listed on the next sync
-	if _, err := s.RespondToPermission(bot, connect.NewRequest(&agentfleetv1.AgentServiceRespondToPermissionRequest{ThreadId: id, Seq: req, Behavior: "allow"})); connect.CodeOf(err) != connect.CodePermissionDenied || errkeys.Of(err) != "" {
-		t.Errorf("de-listed client answers: %v key %q", err, errkeys.Of(err))
+	if _, err := s.RespondToPermission(bot, connect.NewRequest(&agentfleetv1.AgentServiceRespondToPermissionRequest{ThreadId: id, Seq: req, Behavior: "allow"})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("de-listed client answers: %v", err)
 	}
 	if _, err := s.GetTranscript(bot, connect.NewRequest(&agentfleetv1.AgentServiceGetTranscriptRequest{ThreadId: id})); err != nil {
 		t.Errorf("de-listed client reads: %v", err)

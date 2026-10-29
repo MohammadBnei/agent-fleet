@@ -35,8 +35,6 @@ const (
 	KeyDefinitionChanged errs.Key = "agent.definition_changed"
 	// KeyThreadCap: the owner's open threads are at the cap; close one first.
 	KeyThreadCap errs.Key = "agent.thread_cap"
-	// KeyThreadUntrusted: the thread holds untrusted input (docs/adr/0067 §2); only an admin posts or answers in it.
-	KeyThreadUntrusted errs.Key = "agent.thread_untrusted"
 	// KeyDefinitionUnavailable: the definition does not exist or is not the caller's to use.
 	KeyDefinitionUnavailable errs.Key = "agent.definition_unavailable"
 )

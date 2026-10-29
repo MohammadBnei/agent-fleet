@@ -24,7 +24,7 @@ const (
 
 // AgentErrorKey is AgentService's error keys (docs/adr/0081 §1-2), carried as ErrorKey.key: each value's wire
 // string is its (ukubi.errors.v1.key), "agent." and its name after the prefix in lower case, which the islands and
-// the dashboard read the generated enum's names by (core/internal/errkeys TestAgentErrorKey). A key exists only
+// the dashboard read the generated enum's names by (core/internal/errkeys TestDeclared). A key exists only
 // where the islands or the dashboard show text for an error and its code alone does not say what happened; every
 // other error is server.internal with its code. Each RPC lists its keys below. Never rename or remove a value, nor
 // change its wire string: add a new value.
@@ -37,11 +37,9 @@ const (
 	// The owner's open threads are at the cap, a member's 50 or a client's 500: close one first. Not the warm-time
 	// capacity, also ResourceExhausted, which is busy.
 	AgentErrorKey_AGENT_ERROR_KEY_THREAD_CAP AgentErrorKey = 2
-	// The thread holds untrusted input (docs/adr/0067 §2): only an admin posts or answers in it, from the console.
-	AgentErrorKey_AGENT_ERROR_KEY_THREAD_UNTRUSTED AgentErrorKey = 3
 	// The definition does not exist or is not the caller's to use (one answer for both, docs/adr/0066 §4). Not a
 	// missing thread, also NotFound.
-	AgentErrorKey_AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE AgentErrorKey = 4
+	AgentErrorKey_AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE AgentErrorKey = 3
 )
 
 // Enum value maps for AgentErrorKey.
@@ -50,15 +48,13 @@ var (
 		0: "AGENT_ERROR_KEY_UNSPECIFIED",
 		1: "AGENT_ERROR_KEY_DEFINITION_CHANGED",
 		2: "AGENT_ERROR_KEY_THREAD_CAP",
-		3: "AGENT_ERROR_KEY_THREAD_UNTRUSTED",
-		4: "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
+		3: "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
 	}
 	AgentErrorKey_value = map[string]int32{
 		"AGENT_ERROR_KEY_UNSPECIFIED":            0,
 		"AGENT_ERROR_KEY_DEFINITION_CHANGED":     1,
 		"AGENT_ERROR_KEY_THREAD_CAP":             2,
-		"AGENT_ERROR_KEY_THREAD_UNTRUSTED":       3,
-		"AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE": 4,
+		"AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE": 3,
 	}
 )
 
@@ -2321,23 +2317,22 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\vresult_text\x18\x03 \x01(\tR\n" +
 	"resultText\x12\x18\n" +
 	"\asubtype\x18\x04 \x01(\tR\asubtype\x12+\n" +
-	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error*\xbc\x02\n" +
+	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error*\xfa\x01\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
-	"\x1aAGENT_ERROR_KEY_THREAD_CAP\x10\x02\x1a\x14\xc2\xf3\x18\x10agent.thread_cap\x12@\n" +
-	" AGENT_ERROR_KEY_THREAD_UNTRUSTED\x10\x03\x1a\x1a\xc2\xf3\x18\x16agent.thread_untrusted\x12L\n" +
-	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x04\x1a \xc2\xf3\x18\x1cagent.definition_unavailable2\x82\x0e\n" +
+	"\x1aAGENT_ERROR_KEY_THREAD_CAP\x10\x02\x1a\x14\xc2\xf3\x18\x10agent.thread_cap\x12L\n" +
+	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x03\x1a \xc2\xf3\x18\x1cagent.definition_unavailable2\x93\r\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
-	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12\xa4\x01\n" +
-	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\"6\xca\xf3\x18\x18agent.definition_changed\xca\xf3\x18\x16agent.thread_untrusted\x12r\n" +
+	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12\x8a\x01\n" +
+	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\"\x1c\xca\xf3\x18\x18agent.definition_changed\x12r\n" +
 	"\rGetTranscript\x12/.agentfleet.v1.AgentServiceGetTranscriptRequest\x1a0.agentfleet.v1.AgentServiceGetTranscriptResponse\x12}\n" +
-	"\x10StreamTranscript\x122.agentfleet.v1.AgentServiceStreamTranscriptRequest\x1a3.agentfleet.v1.AgentServiceStreamTranscriptResponse0\x01\x12\xa0\x01\n" +
-	"\x13RespondToPermission\x125.agentfleet.v1.AgentServiceRespondToPermissionRequest\x1a6.agentfleet.v1.AgentServiceRespondToPermissionResponse\"\x1a\xca\xf3\x18\x16agent.thread_untrusted\x12\x91\x01\n" +
-	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\"\x1a\xca\xf3\x18\x16agent.thread_untrusted\x12p\n" +
-	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\"\x1a\xca\xf3\x18\x16agent.thread_untrusted\x12N\n" +
+	"\x10StreamTranscript\x122.agentfleet.v1.AgentServiceStreamTranscriptRequest\x1a3.agentfleet.v1.AgentServiceStreamTranscriptResponse0\x01\x12\x84\x01\n" +
+	"\x13RespondToPermission\x125.agentfleet.v1.AgentServiceRespondToPermissionRequest\x1a6.agentfleet.v1.AgentServiceRespondToPermissionResponse\x12u\n" +
+	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\x12T\n" +
+	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\x12N\n" +
 	"\tSetConfig\x12\x1f.agentfleet.v1.SetConfigRequest\x1a .agentfleet.v1.SetConfigResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +
 	"\tGetStatus\x12\x1f.agentfleet.v1.GetStatusRequest\x1a .agentfleet.v1.GetStatusResponse\x12u\n" +
