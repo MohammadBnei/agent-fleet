@@ -11,6 +11,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -63,7 +64,7 @@ func TestThreads_Visibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alice shared: %v", err)
 	}
-	if _, err := create(eve, "shared"); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := create(eve, "shared"); connect.CodeOf(err) != connect.CodeNotFound || errkeys.Of(err) != errkeys.KeyDefinitionUnavailable {
 		t.Fatalf("eve outside the audience: %v", err)
 	}
 	if _, err := create(alice, "public"); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -134,7 +135,7 @@ func TestThreads_Visibility(t *testing.T) {
 		VALUES ($1, 0, 'human', 'event', 'discussion', 'e1', true, true)`, shared); err != nil {
 		t.Fatal(err)
 	}
-	if err := post(bob, shared); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if err := post(bob, shared); connect.CodeOf(err) != connect.CodePermissionDenied || errkeys.Of(err) != errkeys.KeyThreadUntrusted {
 		t.Errorf("bob posts to tainted shared: %v", err)
 	}
 	// The definition moved on: the thread is not silently carried over.
