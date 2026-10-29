@@ -392,15 +392,17 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return dec, err
 	}
-	wake, err := d.gate(ctx, e, def)
+	// One read of the client's actors, so wake and trust agree across a reload.
+	claimable := d.mayClaim(e.GetActorLogin())
+	wake, err := d.gate(ctx, e, def, claimable)
 	if err != nil {
 		return dec, err
 	}
 	// Tainted is the entry's trust, set once here for every reader (Open,
 	// the proposal, PublishEvent's cause): untrusted, or an actor the bridge
 	// may not claim, such as a bot or the fleet's GitHub login
-	// (docs/adr/0082 §3). A waking event has passed mayClaim already.
-	tainted := !e.GetTrusted() || !d.mayClaim(e.GetActorLogin())
+	// (docs/adr/0082 §3). A waking event is claimable already.
+	tainted := !e.GetTrusted() || !claimable
 	err = d.pool.QueryRow(ctx, `
 		INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, thread, hops, by_agent)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -415,9 +417,9 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 // and never a thread that waits on a person, whose follow-ups are context.
 // Only a live pod waits: an unanswered request left by a pod that is gone is
 // closed as stale at the next warm (ReserveSlot), so it blocks nothing.
-func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def string) (bool, error) {
+func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def string, claimable bool) (bool, error) {
 	agent := e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:")
-	if !e.GetTrusted() || e.GetReplayed() || (e.GetActor() != "human" && !agent) || !d.mayClaim(e.GetActorLogin()) {
+	if !e.GetTrusted() || e.GetReplayed() || (e.GetActor() != "human" && !agent) || !claimable {
 		return false, nil
 	}
 	if agent {
