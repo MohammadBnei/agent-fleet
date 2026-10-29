@@ -380,9 +380,14 @@ jobs:
       - name: Typecheck
         working-directory: worker
         run: bun run typecheck
+      # `bun run test`, not bare `bun test`: the script adds --isolate.
+      # session.test.ts mock.module()s ./sidecarClient.js, which is
+      # process-global and survives mock.restore(), so without a fresh
+      # module registry per file sidecarClient.test.ts gets the fake
+      # whenever the runner's readdir order puts session.test.ts first.
       - name: Run tests
         working-directory: worker
-        run: bun test
+        run: bun run test
 
   # The dashboard ships inside core's image rather than one of its own, so it
   # has no leg in the build below (that builds an image per component).

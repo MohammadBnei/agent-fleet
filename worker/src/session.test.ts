@@ -48,7 +48,8 @@ let humanMessageHandler:
 // mock.module() replaces this specifier in Bun's module registry for the
 // rest of the whole `bun test` process, not just this file — bun test
 // runs every file in one shared process (sidecarClient.ts's own comment
-// documents this same hazard for a different reason). Left unrestored,
+// documents this same hazard for a different reason). mock.restore() does
+// not undo it, so without `bun test --isolate` (the package's test script),
 // sidecarClient.test.ts (which needs the REAL implementation against a
 // real local HTTP server) can end up importing this fake instead — its
 // streamHumanMessages here only resolves on external abort and never
@@ -1938,9 +1939,11 @@ test("session init relays the full environment, not four of fourteen fields", as
   }
 });
 
-// Undoes this file's mock.module("./sidecarClient.js", ...) once this
-// file's own tests are done — see the comment on that call for why this
-// is required, not optional, in a shared-process test run.
+// Restores mock()/spyOn() fakes only. It does NOT undo this file's
+// mock.module("./sidecarClient.js", ...): the fake stays in the module
+// registry, and sidecarClient.test.ts got it in CI whenever this file ran
+// first. What keeps the files apart is `bun test --isolate` in the
+// package's test script (a fresh registry per file), so run `bun run test`.
 afterAll(() => {
   mock.restore();
 });
