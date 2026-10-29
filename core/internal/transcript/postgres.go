@@ -18,10 +18,24 @@ import (
 type PostgresStore struct {
 	pool  *pgxpool.Pool
 	nudge func() // optional; set via SetNudge
+	hook  AppendHook
 }
 
-func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
-	return &PostgresStore{pool: pool}
+// AppendHook runs inside an append's transaction, after the entry is written
+// and before it commits: decisions.OnAppend, which projects requests and
+// their replies into the decisions table (docs/adr/0082 §5). An error fails
+// the append. Not called for an idempotent retry, which writes nothing.
+type AppendHook func(ctx context.Context, tx pgx.Tx, sessionID string, e Entry) error
+
+// NewPostgresStore takes the hook as an argument, never a setter: a store
+// without it writes no decisions, so nothing is ever pending and the idle
+// sweep reaps the pods holding a permission. A nil hook panics, so core
+// cannot start with one; a test that wants none passes a no-op.
+func NewPostgresStore(pool *pgxpool.Pool, hook AppendHook) *PostgresStore {
+	if hook == nil {
+		panic("transcript: NewPostgresStore needs the decisions append hook")
+	}
+	return &PostgresStore{pool: pool, hook: hook}
 }
 
 // SetNudge wires an immediate-relay trigger (reliability-findings.md #5) —
@@ -101,6 +115,10 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 			return 0, ErrAlreadyAnswered
 		}
 		return 0, fmt.Errorf("insert: %w", err)
+	}
+	e := Entry{Seq: seq, From: from, Text: text, Type: msgType, ReplyTo: replyToSeq, AuthorName: author.Name, AuthorSub: author.Sub}
+	if err := s.hook(ctx, tx, taskID, e); err != nil {
+		return 0, fmt.Errorf("append hook: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

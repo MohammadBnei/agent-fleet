@@ -88,8 +88,8 @@ type Session struct {
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 
 	// PendingDecisions is how many unanswered questions and pending
-	// permission requests this session has right now. Populated by a join,
-	// not stored.
+	// permission requests this session has right now: its open rows in the
+	// decisions table (docs/adr/0082 §5), counted, not stored.
 	//
 	// It replaces an `awaiting_human` boolean that could not be correct:
 	// permissions are a LIST — parallel tool calls each get their own seq —
@@ -194,13 +194,8 @@ const selectCols = `
 	s.worker_image, s.sidecar_image, s.fleet_version,
 	s.definition_name, s.definition_sha,
 	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
-	(SELECT count(*) FROM transcript q
-	   WHERE q.session_id = s.id
-	     AND q.type IN ('question', 'permission_request')
-	     AND NOT EXISTS (
-	       SELECT 1 FROM transcript r
-	        WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
-	     )) AS pending_decisions`
+	(SELECT count(*) FROM decisions d
+	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions`
 
 func scanSession(row pgx.Row) (*Session, error) {
 	var s Session
@@ -635,6 +630,15 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	`, id); err != nil {
 		return "", fmt.Errorf("reserve slot: resolve stale decisions: %w", err)
 	}
+	// The same requests in the decisions table (docs/adr/0082 §5), which the
+	// insert above bypasses: it writes no transcript append, so no hook runs.
+	// A permission or plan whose pod is gone is withdrawn, not answered.
+	if _, err := tx.Exec(ctx, `
+		UPDATE decisions SET state = 'withdrawn', version = nextval('decisions_version_seq')
+		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
+	`, id); err != nil {
+		return "", fmt.Errorf("reserve slot: withdraw stale decisions: %w", err)
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("reserve slot: commit: %w", err)
@@ -1024,7 +1028,7 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 	// forgotten subsidiary question hold 20% of a five-pod fleet forever.
 	//
 	// Written out rather than sharing selectCols' pending_decisions fragment:
-	// that one is a count over both types, this is a filter over one, and
+	// that one is a count over every kind, this is a filter over two, and
 	// gluing SQL strings together to save a duplicate NOT EXISTS is how a
 	// WHERE clause ends up applying to the wrong query.
 	//
@@ -1041,13 +1045,8 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 		WHERE s.pod_phase = ANY($1)
 		  AND s.last_active_at IS NOT NULL
 		  AND NOT EXISTS (
-		    SELECT 1 FROM transcript q
-		     WHERE q.session_id = s.id
-		       AND q.type = 'permission_request'
-		       AND NOT EXISTS (
-		         SELECT 1 FROM transcript r
-		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
-		       )
+		    SELECT 1 FROM decisions d
+		     WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
 		  )
 	`, livePhases)
 	if err != nil {

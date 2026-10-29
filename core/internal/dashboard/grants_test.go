@@ -13,6 +13,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -26,7 +27,7 @@ func TestGrants_RememberedAllow(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
-	transcr := transcript.NewPostgresStore(pool)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
 		VALUES ('a', 'sha-a', '{}', '{"mode":{"default":"auto","allow":["auto","default"]}}', true)`); err != nil {
 		t.Fatal(err)

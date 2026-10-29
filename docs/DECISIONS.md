@@ -328,7 +328,8 @@ Any doc, code, comment, or memory that contradicts this file or an
   traced by its trace id (Accepted 2026-10-28, not built).
 - [`0082`](adr/0082-decision-cards.md) — decision cards: only an explicit address wakes an
   agent; taint is removed; agents draft cards, which the owner answers by
-  choosing an option bound to one effect (Accepted 2026-10-28, not built).
+  choosing an option bound to one effect (Accepted 2026-10-28; slice 1 and
+  slice 2's decisions store and read API built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

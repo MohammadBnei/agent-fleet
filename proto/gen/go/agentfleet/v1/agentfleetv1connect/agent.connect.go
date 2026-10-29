@@ -60,6 +60,15 @@ const (
 	// AgentServiceApprovePlanProcedure is the fully-qualified name of the AgentService's ApprovePlan
 	// RPC.
 	AgentServiceApprovePlanProcedure = "/agentfleet.v1.AgentService/ApprovePlan"
+	// AgentServiceListDecisionsProcedure is the fully-qualified name of the AgentService's
+	// ListDecisions RPC.
+	AgentServiceListDecisionsProcedure = "/agentfleet.v1.AgentService/ListDecisions"
+	// AgentServiceGetDecisionProcedure is the fully-qualified name of the AgentService's GetDecision
+	// RPC.
+	AgentServiceGetDecisionProcedure = "/agentfleet.v1.AgentService/GetDecision"
+	// AgentServiceWatchDecisionsProcedure is the fully-qualified name of the AgentService's
+	// WatchDecisions RPC.
+	AgentServiceWatchDecisionsProcedure = "/agentfleet.v1.AgentService/WatchDecisions"
 	// AgentServiceSetConfigProcedure is the fully-qualified name of the AgentService's SetConfig RPC.
 	AgentServiceSetConfigProcedure = "/agentfleet.v1.AgentService/SetConfig"
 	// AgentServiceStopProcedure is the fully-qualified name of the AgentService's Stop RPC.
@@ -91,6 +100,14 @@ type AgentServiceClient interface {
 	RespondToPermission(context.Context, *connect.Request[v1.AgentServiceRespondToPermissionRequest]) (*connect.Response[v1.AgentServiceRespondToPermissionResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AgentServiceAnswerQuestionRequest]) (*connect.Response[v1.AgentServiceAnswerQuestionResponse], error)
 	ApprovePlan(context.Context, *connect.Request[v1.ApprovePlanRequest]) (*connect.Response[v1.ApprovePlanResponse], error)
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
+	ListDecisions(context.Context, *connect.Request[v1.ListDecisionsRequest]) (*connect.Response[v1.ListDecisionsResponse], error)
+	GetDecision(context.Context, *connect.Request[v1.GetDecisionRequest]) (*connect.Response[v1.GetDecisionResponse], error)
+	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
+	// the client reconnects with since_version and re-reads the ids it holds.
+	WatchDecisions(context.Context, *connect.Request[v1.WatchDecisionsRequest]) (*connect.ServerStreamForClient[v1.WatchDecisionsResponse], error)
 	// Control: the owner's or an admin's.
 	SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
@@ -167,6 +184,24 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ApprovePlan")),
 			connect.WithClientOptions(opts...),
 		),
+		listDecisions: connect.NewClient[v1.ListDecisionsRequest, v1.ListDecisionsResponse](
+			httpClient,
+			baseURL+AgentServiceListDecisionsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ListDecisions")),
+			connect.WithClientOptions(opts...),
+		),
+		getDecision: connect.NewClient[v1.GetDecisionRequest, v1.GetDecisionResponse](
+			httpClient,
+			baseURL+AgentServiceGetDecisionProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetDecision")),
+			connect.WithClientOptions(opts...),
+		),
+		watchDecisions: connect.NewClient[v1.WatchDecisionsRequest, v1.WatchDecisionsResponse](
+			httpClient,
+			baseURL+AgentServiceWatchDecisionsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("WatchDecisions")),
+			connect.WithClientOptions(opts...),
+		),
 		setConfig: connect.NewClient[v1.SetConfigRequest, v1.SetConfigResponse](
 			httpClient,
 			baseURL+AgentServiceSetConfigProcedure,
@@ -223,6 +258,9 @@ type agentServiceClient struct {
 	respondToPermission *connect.Client[v1.AgentServiceRespondToPermissionRequest, v1.AgentServiceRespondToPermissionResponse]
 	answerQuestion      *connect.Client[v1.AgentServiceAnswerQuestionRequest, v1.AgentServiceAnswerQuestionResponse]
 	approvePlan         *connect.Client[v1.ApprovePlanRequest, v1.ApprovePlanResponse]
+	listDecisions       *connect.Client[v1.ListDecisionsRequest, v1.ListDecisionsResponse]
+	getDecision         *connect.Client[v1.GetDecisionRequest, v1.GetDecisionResponse]
+	watchDecisions      *connect.Client[v1.WatchDecisionsRequest, v1.WatchDecisionsResponse]
 	setConfig           *connect.Client[v1.SetConfigRequest, v1.SetConfigResponse]
 	stop                *connect.Client[v1.StopRequest, v1.StopResponse]
 	getStatus           *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
@@ -277,6 +315,21 @@ func (c *agentServiceClient) ApprovePlan(ctx context.Context, req *connect.Reque
 	return c.approvePlan.CallUnary(ctx, req)
 }
 
+// ListDecisions calls agentfleet.v1.AgentService.ListDecisions.
+func (c *agentServiceClient) ListDecisions(ctx context.Context, req *connect.Request[v1.ListDecisionsRequest]) (*connect.Response[v1.ListDecisionsResponse], error) {
+	return c.listDecisions.CallUnary(ctx, req)
+}
+
+// GetDecision calls agentfleet.v1.AgentService.GetDecision.
+func (c *agentServiceClient) GetDecision(ctx context.Context, req *connect.Request[v1.GetDecisionRequest]) (*connect.Response[v1.GetDecisionResponse], error) {
+	return c.getDecision.CallUnary(ctx, req)
+}
+
+// WatchDecisions calls agentfleet.v1.AgentService.WatchDecisions.
+func (c *agentServiceClient) WatchDecisions(ctx context.Context, req *connect.Request[v1.WatchDecisionsRequest]) (*connect.ServerStreamForClient[v1.WatchDecisionsResponse], error) {
+	return c.watchDecisions.CallServerStream(ctx, req)
+}
+
 // SetConfig calls agentfleet.v1.AgentService.SetConfig.
 func (c *agentServiceClient) SetConfig(ctx context.Context, req *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error) {
 	return c.setConfig.CallUnary(ctx, req)
@@ -325,6 +378,14 @@ type AgentServiceHandler interface {
 	RespondToPermission(context.Context, *connect.Request[v1.AgentServiceRespondToPermissionRequest]) (*connect.Response[v1.AgentServiceRespondToPermissionResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AgentServiceAnswerQuestionRequest]) (*connect.Response[v1.AgentServiceAnswerQuestionResponse], error)
 	ApprovePlan(context.Context, *connect.Request[v1.ApprovePlanRequest]) (*connect.Response[v1.ApprovePlanResponse], error)
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
+	ListDecisions(context.Context, *connect.Request[v1.ListDecisionsRequest]) (*connect.Response[v1.ListDecisionsResponse], error)
+	GetDecision(context.Context, *connect.Request[v1.GetDecisionRequest]) (*connect.Response[v1.GetDecisionResponse], error)
+	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
+	// the client reconnects with since_version and re-reads the ids it holds.
+	WatchDecisions(context.Context, *connect.Request[v1.WatchDecisionsRequest], *connect.ServerStream[v1.WatchDecisionsResponse]) error
 	// Control: the owner's or an admin's.
 	SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
@@ -397,6 +458,24 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ApprovePlan")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceListDecisionsHandler := connect.NewUnaryHandler(
+		AgentServiceListDecisionsProcedure,
+		svc.ListDecisions,
+		connect.WithSchema(agentServiceMethods.ByName("ListDecisions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetDecisionHandler := connect.NewUnaryHandler(
+		AgentServiceGetDecisionProcedure,
+		svc.GetDecision,
+		connect.WithSchema(agentServiceMethods.ByName("GetDecision")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceWatchDecisionsHandler := connect.NewServerStreamHandler(
+		AgentServiceWatchDecisionsProcedure,
+		svc.WatchDecisions,
+		connect.WithSchema(agentServiceMethods.ByName("WatchDecisions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetConfigHandler := connect.NewUnaryHandler(
 		AgentServiceSetConfigProcedure,
 		svc.SetConfig,
@@ -459,6 +538,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceAnswerQuestionHandler.ServeHTTP(w, r)
 		case AgentServiceApprovePlanProcedure:
 			agentServiceApprovePlanHandler.ServeHTTP(w, r)
+		case AgentServiceListDecisionsProcedure:
+			agentServiceListDecisionsHandler.ServeHTTP(w, r)
+		case AgentServiceGetDecisionProcedure:
+			agentServiceGetDecisionHandler.ServeHTTP(w, r)
+		case AgentServiceWatchDecisionsProcedure:
+			agentServiceWatchDecisionsHandler.ServeHTTP(w, r)
 		case AgentServiceSetConfigProcedure:
 			agentServiceSetConfigHandler.ServeHTTP(w, r)
 		case AgentServiceStopProcedure:
@@ -516,6 +601,18 @@ func (UnimplementedAgentServiceHandler) AnswerQuestion(context.Context, *connect
 
 func (UnimplementedAgentServiceHandler) ApprovePlan(context.Context, *connect.Request[v1.ApprovePlanRequest]) (*connect.Response[v1.ApprovePlanResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.ApprovePlan is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ListDecisions(context.Context, *connect.Request[v1.ListDecisionsRequest]) (*connect.Response[v1.ListDecisionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.ListDecisions is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetDecision(context.Context, *connect.Request[v1.GetDecisionRequest]) (*connect.Response[v1.GetDecisionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.GetDecision is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) WatchDecisions(context.Context, *connect.Request[v1.WatchDecisionsRequest], *connect.ServerStream[v1.WatchDecisionsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WatchDecisions is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetConfig(context.Context, *connect.Request[v1.SetConfigRequest]) (*connect.Response[v1.SetConfigResponse], error) {

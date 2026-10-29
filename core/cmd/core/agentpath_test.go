@@ -11,7 +11,7 @@ import (
 // must be the path the handler is mounted on, or members reach nothing (or
 // the Gate's member route covers the wrong prefix).
 func TestAgentServicePathMatchesHandler(t *testing.T) {
-	path, _ := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(nil, nil, nil, nil, nil))
+	path, _ := agentfleetv1connect.NewAgentServiceHandler(agentsvc.NewServer(nil, nil, nil, nil, nil, nil))
 	if want := "/" + agentfleetv1connect.AgentServiceName + "/"; path != want {
 		t.Fatalf("handler path %q, gate prefix %q", path, want)
 	}

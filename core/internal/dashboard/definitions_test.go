@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
@@ -153,7 +154,7 @@ func newDefinitionsServerPool(t *testing.T) (*Server, *definitionsProvisioner, *
 		t.Fatal(err)
 	}
 	store := sessions.NewStore(pool)
-	s := &Server{sessions: store, repos: repos.NewStore(pool), transcr: transcript.NewPostgresStore(pool), e2e: client,
+	s := &Server{sessions: store, repos: repos.NewStore(pool), transcr: transcript.NewPostgresStore(pool, decisions.OnAppend), e2e: client,
 		caps: sessions.Caps{MaxLive: 5, MaxDefinition: 2}, definitions: reg}
 	return s, prov, reg, store, pool
 }

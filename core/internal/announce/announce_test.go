@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	bridgev1 "github.com/MohammadBnei/ukubi-bridge/proto/gen/go/bridge/v1"
 )
@@ -52,7 +53,7 @@ func thread(t *testing.T, pool *pgxpool.Pool, invoker string) string {
 func TestEdgesForOptedInClientsOnly(t *testing.T) {
 	pool := dbtest.NewPool(t)
 	ctx := context.Background()
-	tr := transcript.NewPostgresStore(pool)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	pub := &fakePub{}
 	a := New(pool, pub, func() []string { return []string{"game"} })
 
@@ -147,7 +148,7 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 func TestArchivedWhileWaitingResumes(t *testing.T) {
 	pool := dbtest.NewPool(t)
 	ctx := context.Background()
-	tr := transcript.NewPostgresStore(pool)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	pub := &fakePub{}
 	a := New(pool, pub, func() []string { return []string{"game"} })
 	id := thread(t, pool, "game")
@@ -200,7 +201,7 @@ func TestBackoff(t *testing.T) {
 func TestRefusedEventDoesNotStall(t *testing.T) {
 	pool := dbtest.NewPool(t)
 	ctx := context.Background()
-	tr := transcript.NewPostgresStore(pool)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	pub := &refusingPub{refuse: map[string]bool{}}
 	a := New(pool, pub, func() []string { return []string{"game"} })
 	bad, good := thread(t, pool, "game"), thread(t, pool, "game")

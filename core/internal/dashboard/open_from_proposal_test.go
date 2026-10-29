@@ -12,6 +12,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -46,7 +47,7 @@ func TestOpenFromProposal_StoresNoModelAndAutoMode(t *testing.T) {
 	propStore := proposals.NewStore(pool)
 	s := &Server{
 		sessions: sessionStore, repos: repoStore, proposals: propStore,
-		transcr: transcript.NewPostgresStore(pool), e2e: provClient, caps: sessions.Caps{MaxLive: 5},
+		transcr: transcript.NewPostgresStore(pool, decisions.OnAppend), e2e: provClient, caps: sessions.Caps{MaxLive: 5},
 	}
 
 	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('editable-blog', 'https://example.invalid/x.git')`); err != nil {

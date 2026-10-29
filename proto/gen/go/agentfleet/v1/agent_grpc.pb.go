@@ -28,6 +28,9 @@ const (
 	AgentService_RespondToPermission_FullMethodName = "/agentfleet.v1.AgentService/RespondToPermission"
 	AgentService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.AgentService/AnswerQuestion"
 	AgentService_ApprovePlan_FullMethodName         = "/agentfleet.v1.AgentService/ApprovePlan"
+	AgentService_ListDecisions_FullMethodName       = "/agentfleet.v1.AgentService/ListDecisions"
+	AgentService_GetDecision_FullMethodName         = "/agentfleet.v1.AgentService/GetDecision"
+	AgentService_WatchDecisions_FullMethodName      = "/agentfleet.v1.AgentService/WatchDecisions"
 	AgentService_SetConfig_FullMethodName           = "/agentfleet.v1.AgentService/SetConfig"
 	AgentService_Stop_FullMethodName                = "/agentfleet.v1.AgentService/Stop"
 	AgentService_GetStatus_FullMethodName           = "/agentfleet.v1.AgentService/GetStatus"
@@ -60,6 +63,14 @@ type AgentServiceClient interface {
 	RespondToPermission(ctx context.Context, in *AgentServiceRespondToPermissionRequest, opts ...grpc.CallOption) (*AgentServiceRespondToPermissionResponse, error)
 	AnswerQuestion(ctx context.Context, in *AgentServiceAnswerQuestionRequest, opts ...grpc.CallOption) (*AgentServiceAnswerQuestionResponse, error)
 	ApprovePlan(ctx context.Context, in *ApprovePlanRequest, opts ...grpc.CallOption) (*ApprovePlanResponse, error)
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
+	ListDecisions(ctx context.Context, in *ListDecisionsRequest, opts ...grpc.CallOption) (*ListDecisionsResponse, error)
+	GetDecision(ctx context.Context, in *GetDecisionRequest, opts ...grpc.CallOption) (*GetDecisionResponse, error)
+	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
+	// the client reconnects with since_version and re-reads the ids it holds.
+	WatchDecisions(ctx context.Context, in *WatchDecisionsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchDecisionsResponse], error)
 	// Control: the owner's or an admin's.
 	SetConfig(ctx context.Context, in *SetConfigRequest, opts ...grpc.CallOption) (*SetConfigResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
@@ -178,6 +189,45 @@ func (c *agentServiceClient) ApprovePlan(ctx context.Context, in *ApprovePlanReq
 	return out, nil
 }
 
+func (c *agentServiceClient) ListDecisions(ctx context.Context, in *ListDecisionsRequest, opts ...grpc.CallOption) (*ListDecisionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDecisionsResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListDecisions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) GetDecision(ctx context.Context, in *GetDecisionRequest, opts ...grpc.CallOption) (*GetDecisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDecisionResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetDecision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) WatchDecisions(ctx context.Context, in *WatchDecisionsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchDecisionsResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[1], AgentService_WatchDecisions_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchDecisionsRequest, WatchDecisionsResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchDecisionsClient = grpc.ServerStreamingClient[WatchDecisionsResponse]
+
 func (c *agentServiceClient) SetConfig(ctx context.Context, in *SetConfigRequest, opts ...grpc.CallOption) (*SetConfigResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetConfigResponse)
@@ -271,6 +321,14 @@ type AgentServiceServer interface {
 	RespondToPermission(context.Context, *AgentServiceRespondToPermissionRequest) (*AgentServiceRespondToPermissionResponse, error)
 	AnswerQuestion(context.Context, *AgentServiceAnswerQuestionRequest) (*AgentServiceAnswerQuestionResponse, error)
 	ApprovePlan(context.Context, *ApprovePlanRequest) (*ApprovePlanResponse, error)
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
+	ListDecisions(context.Context, *ListDecisionsRequest) (*ListDecisionsResponse, error)
+	GetDecision(context.Context, *GetDecisionRequest) (*GetDecisionResponse, error)
+	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
+	// the client reconnects with since_version and re-reads the ids it holds.
+	WatchDecisions(*WatchDecisionsRequest, grpc.ServerStreamingServer[WatchDecisionsResponse]) error
 	// Control: the owner's or an admin's.
 	SetConfig(context.Context, *SetConfigRequest) (*SetConfigResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
@@ -316,6 +374,15 @@ func (UnimplementedAgentServiceServer) AnswerQuestion(context.Context, *AgentSer
 }
 func (UnimplementedAgentServiceServer) ApprovePlan(context.Context, *ApprovePlanRequest) (*ApprovePlanResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApprovePlan not implemented")
+}
+func (UnimplementedAgentServiceServer) ListDecisions(context.Context, *ListDecisionsRequest) (*ListDecisionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDecisions not implemented")
+}
+func (UnimplementedAgentServiceServer) GetDecision(context.Context, *GetDecisionRequest) (*GetDecisionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDecision not implemented")
+}
+func (UnimplementedAgentServiceServer) WatchDecisions(*WatchDecisionsRequest, grpc.ServerStreamingServer[WatchDecisionsResponse]) error {
+	return status.Error(codes.Unimplemented, "method WatchDecisions not implemented")
 }
 func (UnimplementedAgentServiceServer) SetConfig(context.Context, *SetConfigRequest) (*SetConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetConfig not implemented")
@@ -514,6 +581,53 @@ func _AgentService_ApprovePlan_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_ListDecisions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDecisionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListDecisions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListDecisions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListDecisions(ctx, req.(*ListDecisionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_GetDecision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDecisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetDecision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetDecision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetDecision(ctx, req.(*GetDecisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_WatchDecisions_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchDecisionsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServiceServer).WatchDecisions(m, &grpc.GenericServerStream[WatchDecisionsRequest, WatchDecisionsResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchDecisionsServer = grpc.ServerStreamingServer[WatchDecisionsResponse]
+
 func _AgentService_SetConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetConfigRequest)
 	if err := dec(in); err != nil {
@@ -680,6 +794,14 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentService_ApprovePlan_Handler,
 		},
 		{
+			MethodName: "ListDecisions",
+			Handler:    _AgentService_ListDecisions_Handler,
+		},
+		{
+			MethodName: "GetDecision",
+			Handler:    _AgentService_GetDecision_Handler,
+		},
+		{
 			MethodName: "SetConfig",
 			Handler:    _AgentService_SetConfig_Handler,
 		},
@@ -712,6 +834,11 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamTranscript",
 			Handler:       _AgentService_StreamTranscript_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchDecisions",
+			Handler:       _AgentService_WatchDecisions_Handler,
 			ServerStreams: true,
 		},
 	},

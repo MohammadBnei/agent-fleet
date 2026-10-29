@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -82,7 +83,7 @@ func TestAnswerQuestion_WarmsFirstSoTheAnswerIsAboveTheResumeCursor(t *testing.T
 
 	sessionStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	transcr := transcript.NewPostgresStore(pool)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 
 	// Only the four collaborators this path touches; the rest of Server is
 	// unreachable from AnswerQuestion.
@@ -161,7 +162,7 @@ func TestTranscriptWindow_ALimitedReadReturnsTheNewestEntries(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	sessionStore := sessions.NewStore(pool)
-	transcr := transcript.NewPostgresStore(pool)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	repoStore := repos.NewStore(pool)
 
 	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('editable-blog', 'https://example.invalid/x.git')`); err != nil {

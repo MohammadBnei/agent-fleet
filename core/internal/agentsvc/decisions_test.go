@@ -11,6 +11,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -25,7 +26,7 @@ func TestDecisions(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
-	transcr := transcript.NewPostgresStore(pool)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
 		t.Fatal(err)
 	}

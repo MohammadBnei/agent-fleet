@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
@@ -41,7 +42,7 @@ func newTestTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool) string {
 func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	store := NewPostgresStore(pool)
+	store := NewPostgresStore(pool, noHook)
 
 	sessionID := newTestTask(t, ctx, pool)
 
@@ -79,7 +80,7 @@ func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
 func TestPostgresStore_IdempotentAppendDoesNotDuplicate(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	store := NewPostgresStore(pool)
+	store := NewPostgresStore(pool, noHook)
 
 	sessionID := newTestTask(t, ctx, pool)
 
@@ -111,7 +112,7 @@ func TestPostgresStore_IdempotentAppendDoesNotDuplicate(t *testing.T) {
 func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	store := NewPostgresStore(pool)
+	store := NewPostgresStore(pool, noHook)
 
 	sessionID := newTestTask(t, ctx, pool)
 
@@ -145,7 +146,7 @@ func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 func TestPostgresStore_SecondReplyToOnePromptIsRefused(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	store := NewPostgresStore(pool)
+	store := NewPostgresStore(pool, noHook)
 	sessionID := newTestTask(t, ctx, pool)
 
 	reqSeq, err := store.Append(ctx, sessionID, "agent", `{"tool":"Bash"}`, "permission_request", "")
@@ -170,7 +171,7 @@ func TestPostgresStore_SecondReplyToOnePromptIsRefused(t *testing.T) {
 func TestReadSince_ReturnsCreatedAt(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	store := NewPostgresStore(pool)
+	store := NewPostgresStore(pool, noHook)
 	sessionID := newTestTask(t, ctx, pool)
 
 	before := time.Now().Add(-2 * time.Second)
@@ -205,3 +206,7 @@ func TestRFC3339OrEmpty(t *testing.T) {
 		t.Errorf("got %q, want 2026-08-12T10:30:00Z", got)
 	}
 }
+
+// noHook: these tests are about the transcript alone; the decisions hook's
+// own are core/internal/decisions'.
+func noHook(context.Context, pgx.Tx, string, Entry) error { return nil }
