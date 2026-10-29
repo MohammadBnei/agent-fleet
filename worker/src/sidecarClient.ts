@@ -87,6 +87,14 @@ export async function getSession(): Promise<{
   return res.json();
 }
 
+// The taint gate's source (docs/adr/0082 §4): whether this session is tainted,
+// read from core. With `outsideRead`, core first records that command as an
+// outside read, which taints the session. Nothing here can clear taint.
+export async function taint(outsideRead?: string): Promise<boolean> {
+  const res = await postJSON<{ tainted?: boolean }>("/taint", outsideRead ? { outsideRead } : {});
+  return res.tainted === true;
+}
+
 export async function savePermissionMode(mode: string): Promise<void> {
   await postJSON("/permission-mode", { mode });
 }

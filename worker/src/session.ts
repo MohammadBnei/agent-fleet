@@ -1,4 +1,4 @@
-import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode, type EffortLevel } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode, type EffortLevel, type PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
 import type { AgentSpec } from "./sidecarClient.js";
 import { log } from "./log.js";
@@ -53,8 +53,14 @@ const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_
 // Adding to this list is the same decision as adding to allowedTools, in
 // reverse — and a broad prefix here silently swallows every narrower allow
 // beneath it (adr/0049's `curl` worked example).
+//
+// git fetch and git pull are here so every outside read the fleet names
+// (docs/adr/0082 §3: gh, curl, wget, and these) reaches canUseTool, which
+// marks the taint, whatever the SDK's own `auto` or the repo's allow rules say.
 const FLEET_ASK_RULES = [
   "Bash(git push:*)",
+  "Bash(git fetch:*)",
+  "Bash(git pull:*)",
   "Bash(gh:*)",
   "Bash(rm:*)",
   "Bash(sudo:*)",
@@ -63,6 +69,59 @@ const FLEET_ASK_RULES = [
   "Bash(wget:*)",
   "Bash(env:*)",
 ];
+
+// docs/adr/0082 §4: what a tainted (T2) session may still run. Everything
+// else is denied, whatever tools.allow, a remembered grant or the mode (auto
+// included) says, and no permission request is raised for it: until cards
+// exist (slice 3), an ask from a tainted session is denied in the worker, so
+// the owner never sees one that looks untainted.
+const T2_TOOLS = new Set(["Read", "Glob", "Grep"]);
+
+export const TAINTED_DENY =
+  "Denied: this session is tainted (ADR-0082). It holds untrusted input or ran an outside read, so from now on it may only read (Read, Glob, Grep) and report what it found to the owner in its reply. Every other tool is refused, whatever the permission mode, tools.allow or a remembered grant says, and no permission request is raised. draft_card, for proposing an action to the owner, is coming.";
+const TAINT_UNKNOWN = "Denied: could not check whether this session is tainted (ADR-0082). Try again.";
+
+// docs/adr/0082 §3's outside reads, by command text: `gh` against issues, PRs,
+// comments or CI, `curl`/`wget`, and `git fetch`/`pull` of a non-default ref.
+// Over-matching taints a session that read nothing outside, the safe
+// direction, so an unknown `gh` form, flag or ref counts as a read.
+// ponytail: the command text, not a bash parse, as AUTO_MODE_STILL_ASKS_BASH:
+// `echo "curl"` taints, and `python -c 'urlopen(…)'` or `$GH pr view` does
+// not. The ceiling is the rule's own: it names commands, not network access.
+const SHELL_HEAD = String.raw`(?:^|[\s;&|('"\x60/])`;
+const CURL_WGET = new RegExp(`${SHELL_HEAD}(?:curl|wget)(?=\\s|$)`);
+const GH_CALL = new RegExp(`${SHELL_HEAD}gh\\s+(\\S+)(?:\\s+(\\S+))?`, "g");
+// gh forms that write and print only a URL or a status, never outside text.
+const GH_NO_READ = new Set(["pr create", "pr comment", "pr edit", "pr ready", "issue create", "issue comment", "issue edit", "auth status"]);
+const GIT_SYNC = new RegExp(`${SHELL_HEAD}git(?:\\s+-[Cc]\\s+\\S+)*\\s+(?:fetch|pull)(?=\\s|$)([^;&|\\n)]*)`, "g");
+const GIT_SYNC_FLAGS = new Set(["-q", "--quiet", "-p", "--prune", "--rebase", "-r", "--ff-only", "--no-rebase"]);
+
+// Whether a call is an outside read. `git fetch`/`pull` is one unless it names
+// at most `origin` and the default branch (`defaultBranch`, the clone's
+// origin/HEAD; unknown, only a bare or `origin`-only form is not a read).
+export function outsideRead(toolName: string, input: Record<string, unknown>, defaultBranch?: string): boolean {
+  if (toolName !== "Bash" || typeof input.command !== "string") return false;
+  const command = input.command;
+  if (CURL_WGET.test(command)) return true;
+  for (const m of command.matchAll(GH_CALL)) if (!GH_NO_READ.has(`${m[1]} ${m[2] ?? ""}`)) return true;
+  for (const m of command.matchAll(GIT_SYNC)) {
+    const words = m[1].split(/\s+/).filter((w) => w !== "" && !GIT_SYNC_FLAGS.has(w));
+    if (words.length > 2 || words.some((w) => w.startsWith("-"))) return true;
+    if (words[0] !== undefined && words[0] !== "origin") return true;
+    if (words[1] !== undefined && words[1] !== defaultBranch) return true;
+  }
+  return false;
+}
+
+// The clone's default branch, from origin/HEAD, or undefined.
+function defaultBranchOf(worktree: string): string | undefined {
+  try {
+    const p = Bun.spawnSync(["git", "-C", worktree, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+    return p.exitCode === 0 ? p.stdout.toString().trim().replace(/^origin\//, "") || undefined : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // The fleet's own tools. Reaching one of these is never a question for a
 // human: AskUserQuestion and send_message ARE how the agent talks to one, so
@@ -1104,6 +1163,83 @@ export async function runSession(): Promise<SessionResult> {
   const definitionSidecarTools = new Set((spec?.sidecarTools ?? []).map((t) => `mcp__agent-fleet-sidecar__${t}`));
   const peerTools = ["SendMessage", "ListAgents"];
 
+  // docs/adr/0082 §4: the taint gate. Core is the source (an untrusted entry
+  // in the transcript, or this worker's own outside-read mark), re-read on
+  // every call it gates, since taint can arrive mid-session; once seen it is
+  // latched, since nothing clears it. Read/Glob/Grep need no read at all.
+  let tainted = false;
+  const defaultBranch = defaultBranchOf(WORKTREE_PATH);
+  async function taintedDeny(toolName: string): Promise<string | undefined> {
+    if (T2_TOOLS.has(toolName)) return undefined;
+    try {
+      tainted ||= await sidecar.taint();
+    } catch (err) {
+      log("warn", "taint check failed", { taskId: SESSION_ID, toolName, error: String(err) });
+      return TAINT_UNKNOWN;
+    }
+    return tainted ? TAINTED_DENY : undefined;
+  }
+
+  // What canUseTool answers for an untainted session: the definition's
+  // decision or the fleet's own tools, the fleet's auto, else a human.
+  async function decideTool(toolName: string, toolInput: Record<string, unknown>): Promise<PermissionResult> {
+    let noGrant = false;
+    if (spec) {
+      // Only the sidecar tools this definition lists are the fleet's own,
+      // with the same plan-mode carve-out as a repo session's: in plan, a
+      // granted tool that acts outside the session goes to the prompt.
+      if (definitionSidecarTools.has(toolName)) {
+        if (!(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) return { behavior: "allow", updatedInput: toolInput };
+      } else {
+        const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
+        if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
+        if (decision.behavior === "deny") return decision;
+        noGrant = decision.noGrant === true;
+      }
+      // "ask": the ordinary prompt below. definitionDecision already
+      // decided what the fleet's auto allows (docs/adr/0076 §2), so the
+      // repo-session auto branch below is skipped.
+    } else if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
+      // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
+      return { behavior: "allow", updatedInput: toolInput };
+    }
+    // toolInput passes through untouched, and that is the whole point:
+    // what the permission_request below carries is what the resolver
+    // hands back as updatedInput, so the command a human reads is the
+    // command that runs. This used to sit between the two — an rtk
+    // rewrite that compacted the command's output after the request had
+    // already been posted with the original text (docs/adr/0046). It is
+    // gone (issue #229): rtk is a prefix the agent types when it wants
+    // one, which fleet-shared/CLAUDE.md asks it to do, and nothing in
+    // this process rewrites a call on the agent's behalf.
+    //
+    // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
+    // leaving `auto` is a live control request, so this has to read what
+    // the session is in now.
+    if (!spec && currentMode === "auto" && !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)) {
+      return { behavior: "allow", updatedInput: toolInput };
+    }
+    const seq = await sidecar
+      .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput, ...(noGrant ? { noGrant: true } : {}) }), "permission_request")
+      .catch((err) => {
+        log("warn", "permission_request push failed", { toolName, error: String(err) });
+        return null;
+      });
+    if (seq === null) {
+      return { behavior: "deny", message: "Could not reach the dashboard to request permission — try again." };
+    }
+    const answer = await new Promise<PermissionResult>((resolve) => {
+      pendingPermissions.set(seq, { resolve, input: toolInput as Record<string, unknown>, tool: toolName });
+    });
+    // An ask can wait minutes, and taint can arrive meanwhile: an approval
+    // that lands on a session tainted since it asked is a deny.
+    if (answer.behavior === "allow") {
+      const refused = await taintedDeny(toolName);
+      if (refused) return { behavior: "deny", message: refused };
+    }
+    return answer;
+  }
+
   const abortController = new AbortController();
   const q = query({
     prompt: input.stream(),
@@ -1180,8 +1316,8 @@ export async function runSession(): Promise<SessionResult> {
       // reads and prompts on writes — which is false for MCP tools. Checked
       // against the vendored SDK: every MCP tool's checkPermissions returns
       // {behavior: "passthrough"}, and the evaluator converts passthrough to
-      // "ask". WebSearch is passthrough too. With no allowlist, the agent
-      // would need a human's permission to call send_message, and would need
+      // "ask" (WebSearch was passthrough too, before it left: docs/adr/0082
+      // §3). With no allowlist, the agent would need a human's permission to call send_message, and would need
       // permission before it could ASK for permission.
       //
       // The nine explicit mcp__agent-fleet-sidecar__<name> entries that used
@@ -1196,7 +1332,7 @@ export async function runSession(): Promise<SessionResult> {
       // (docs/adr/0062 §7).
       // The plan-mode carve-out's tools stay out of it, so canUseTool sees them.
       allowedTools: spec ? spec.sidecarTools.map((t) => `mcp__agent-fleet-sidecar__${t}`).filter((t) => !PLAN_MODE_STILL_ASKS.has(t)) : [
-        "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
+        "Read", "Glob", "Grep", "Task",
         // Claude Code's native cross-session channel (docs/adr/0060). Listed so
         // the agent uses it on its own, without a human prompt per message.
         // Not for a definition pod, which disallows them below.
@@ -1220,7 +1356,12 @@ export async function runSession(): Promise<SessionResult> {
       // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
       // no way to actually deliver a chosen answer back. Removing it from
       // context forces the only question tool that's actually wired up.
-      disallowedTools: ["AskUserQuestion", ...(definitionPod ? peerTools : [])],
+      //
+      // WebFetch and WebSearch are outside reads (docs/adr/0082 §3, owner
+      // 2026-10-29): gone from repo sessions as from definitions, whose
+      // `tools` never lists them. Out of allowedTools alone would only make
+      // them ask, and in `auto` the fleet answers that ask itself.
+      disallowedTools: ["AskUserQuestion", "WebFetch", "WebSearch", ...(definitionPod ? peerTools : [])],
       // A definition session's built-ins stop at its ceiling (see
       // DEFINITION_BUILTIN_TOOLS): denied in canUseTool is not enough, since a
       // tool the model can see is one it keeps reaching for.
@@ -1236,54 +1377,43 @@ export async function runSession(): Promise<SessionResult> {
       // dangerous — they are the two answers the fleet has already made and
       // will not re-ask a human for. Everything else still blocks.
       canUseTool: async (toolName, toolInput) => {
-        let noGrant = false;
-        if (spec) {
-          // Only the sidecar tools this definition lists are the fleet's own,
-          // with the same plan-mode carve-out as a repo session's: in plan, a
-          // granted tool that acts outside the session goes to the prompt.
-          if (definitionSidecarTools.has(toolName)) {
-            if (!(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) return { behavior: "allow", updatedInput: toolInput };
-          } else {
-            const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
-            if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
-            if (decision.behavior === "deny") return decision;
-            noGrant = decision.noGrant === true;
+        // The taint gate first: tools.allow, grants and the mode come after
+        // it, and a tainted session raises no permission request.
+        const refused = await taintedDeny(toolName);
+        if (refused) return { behavior: "deny", message: refused };
+        const result = await decideTool(toolName, toolInput);
+        if (result.behavior !== "allow") return result;
+        // An outside read taints as it runs (docs/adr/0082 §3): marked in core
+        // before it is allowed, from the input that will actually run, and
+        // refused when the mark cannot be recorded.
+        const ran = (result.updatedInput ?? toolInput) as Record<string, unknown>;
+        if (outsideRead(toolName, ran, defaultBranch)) {
+          try {
+            await sidecar.taint(String(ran.command));
+            tainted = true;
+          } catch (err) {
+            log("warn", "marking an outside read failed", { taskId: SESSION_ID, toolName, error: String(err) });
+            return { behavior: "deny", message: "Denied: could not record this outside read in core, so it did not run (ADR-0082). Try again." };
           }
-          // "ask": the ordinary prompt below. definitionDecision already
-          // decided what the fleet's auto allows (docs/adr/0076 §2), so the
-          // repo-session auto branch below is skipped.
-        } else if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
-          // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
-          return { behavior: "allow", updatedInput: toolInput };
         }
-        // toolInput passes through untouched, and that is the whole point:
-        // what the permission_request below carries is what the resolver
-        // hands back as updatedInput, so the command a human reads is the
-        // command that runs. This used to sit between the two — an rtk
-        // rewrite that compacted the command's output after the request had
-        // already been posted with the original text (docs/adr/0046). It is
-        // gone (issue #229): rtk is a prefix the agent types when it wants
-        // one, which fleet-shared/CLAUDE.md asks it to do, and nothing in
-        // this process rewrites a call on the agent's behalf.
-        //
-        // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
-        // leaving `auto` is a live control request, so this has to read what
-        // the session is in now.
-        if (!spec && currentMode === "auto" && !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)) {
-          return { behavior: "allow", updatedInput: toolInput };
-        }
-        const seq = await sidecar
-          .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput, ...(noGrant ? { noGrant: true } : {}) }), "permission_request")
-          .catch((err) => {
-            log("warn", "permission_request push failed", { toolName, error: String(err) });
-            return null;
-          });
-        if (seq === null) {
-          return { behavior: "deny", message: "Could not reach the dashboard to request permission — try again." };
-        }
-        return new Promise<PermissionResult>((resolve) => {
-          pendingPermissions.set(seq, { resolve, input: toolInput as Record<string, unknown>, tool: toolName });
-        });
+        return result;
+      },
+      // docs/adr/0082 §4, for every call canUseTool never sees: what
+      // allowedTools lists (the sidecar and Playwright tools, Task, the peer
+      // tools), what the SDK's own `auto` classifier allows in a repo session,
+      // and a subagent's calls. A PreToolUse deny resolves before allowedTools,
+      // the mode and canUseTool, so nothing below can widen it.
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              async (hookInput) => {
+                const refused = await taintedDeny((hookInput as PreToolUseHookInput).tool_name);
+                return refused ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: refused } } : {};
+              },
+            ],
+          },
+        ],
       },
       mcpServers: {
         "agent-fleet-sidecar": sidecarMcpServer(),

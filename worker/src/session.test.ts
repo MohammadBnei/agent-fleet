@@ -25,6 +25,14 @@ let nextSeq = 1;
 let sessionAgentSpec: Record<string, unknown> | null = null;
 // The agentSpecSha the worker passed when it opened the human-message feed.
 let streamedSpecSha: string | undefined = undefined;
+// What core's Taint answers (docs/adr/0082 §4), and every outside read the
+// worker marked through it.
+let sessionTainted = false;
+let taintError = false;
+// The live grants GET /task returns for a definition session.
+let sessionGrants: string[] = [];
+const taintMarks: string[] = [];
+let taintCalls = 0;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
 // drive this directly instead of a real HTTP connection. onEntry is
@@ -52,6 +60,15 @@ mock.module("./sidecarClient.js", () => ({
     savedSessionIds.push(id);
     savedModels.push(model);
   }),
+  taint: mock(async (outsideRead?: string) => {
+    taintCalls++;
+    if (taintError) throw new Error("sidecar /taint failed: 502");
+    if (outsideRead) {
+      taintMarks.push(outsideRead);
+      sessionTainted = true;
+    }
+    return sessionTainted;
+  }),
   savePermissionMode: mock(async (mode: string) => {
     savedPermissionModes.push(mode);
   }),
@@ -60,7 +77,7 @@ mock.module("./sidecarClient.js", () => ({
     permissionMode: sessionPermissionMode,
     model: sessionModel,
     effort: sessionEffort,
-    ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha", definitionSha: "def-sha" } : {}),
+    ...(sessionAgentSpec ? { agentSpec: sessionAgentSpec, agentSpecSha: "spec-sha", definitionSha: "def-sha", grants: sessionGrants } : {}),
   })),
   streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal, _startSeq?: number, agentSpecSha?: string) => {
     humanMessageHandler = onEntry;
@@ -272,7 +289,7 @@ for (const key of [
 }
 
 const { FLEET_TRAILER } = await import("./gitHooks.js");
-const { runSession, sumModelUsage, formatAnswerTurn, humanTurn, authorLabel, senderOf, denyReason, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert, sdkMode, playwrightMcpServer } = await import("./session.js");
+const { runSession, outsideRead, TAINTED_DENY, sumModelUsage, formatAnswerTurn, humanTurn, authorLabel, senderOf, denyReason, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS, matchesToolRule, definitionDecision, gitArgsAreInert, sdkMode, playwrightMcpServer } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -299,6 +316,11 @@ beforeEach(() => {
   preInitMessages = [];
   sessionAgentSpec = null;
   streamedSpecSha = undefined;
+  sessionTainted = false;
+  taintError = false;
+  sessionGrants = [];
+  taintMarks.length = 0;
+  taintCalls = 0;
 });
 
 // makeTask is gone: runSession takes no argument now. A session's identity
@@ -328,7 +350,7 @@ test("definition pod: native cross-session channel refused, SendMessage/ListAgen
   expect((queryOptions?.settings as { attribution?: unknown })?.attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
   expect(allowedTools).not.toContain("SendMessage");
   expect(allowedTools).not.toContain("ListAgents");
-  expect(queryOptions?.disallowedTools).toEqual(["AskUserQuestion", "SendMessage", "ListAgents"]);
+  expect(queryOptions?.disallowedTools).toEqual(["AskUserQuestion", "WebFetch", "WebSearch", "SendMessage", "ListAgents"]);
   expect(allowedTools).toContain("mcp__agent-fleet-sidecar__*");
 });
 
@@ -1009,6 +1031,8 @@ test("switching to auto mid-session is a live control request, not a relaunch", 
   await Bun.sleep(20);
 
   const call = capturedCanUseTool!("Write", { file_path: "x" });
+  // The gate reads taint before it asks (docs/adr/0082 §4): let the ask land.
+  await Bun.sleep(5);
   pushHuman("auto", "permission_mode");
   const result = await call;
 
@@ -2101,4 +2125,173 @@ test("the browser runs with no proxy env", () => {
   for (const k of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]) {
     expect(env[k as keyof typeof env]).toBe("");
   }
+});
+
+// docs/adr/0082 §4: T2 = read only, enforced in the worker. A tainted session
+// may run Read, Glob and Grep and nothing else, whatever tools.allow, a grant
+// or the mode says, and raises no permission request.
+describe("taint gate", () => {
+  // opus-workspace's own rules: `git push` to main runs unasked in auto.
+  const OPUS = { ...DEF_SPEC, toolsAllow: ["Read", "Edit", "Write", "Glob", "Grep", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git pull --rebase:*)", "Bash(git push:*)"], sidecarTools: ["send_message", "publish_event"] };
+  type Hook = (input: { tool_name: string }) => Promise<{ hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } }>;
+  const preToolUse = () => ((queryOptions?.hooks as { PreToolUse: { hooks: Hook[] }[] }).PreToolUse[0].hooks[0]);
+  const requests = () => pushedMessages.filter((m) => m.type === "permission_request");
+
+  // Boxed: an async function returning runSession's promise would wait on it.
+  async function start(): Promise<{ done: Promise<unknown> }> {
+    const done = runSession();
+    await Bun.sleep(20);
+    return { done };
+  }
+  async function stop(session: { done: Promise<unknown> }): Promise<void> {
+    pushHuman("", "abort");
+    await session.done;
+  }
+
+  test("the opus-workspace git-push hole is closed once tainted", async () => {
+    sessionAgentSpec = OPUS;
+    sessionPermissionMode = "auto";
+    const promise = await start();
+    // Positive control: clean, tools.allow runs the push unasked.
+    expect((await capturedCanUseTool!("Bash", { command: "git push origin main" })).behavior).toBe("allow");
+    sessionTainted = true;
+    expect(await capturedCanUseTool!("Bash", { command: "git push origin main" })).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    expect((await capturedCanUseTool!("Edit", { file_path: "a.md" })).behavior).toBe("deny");
+    // A listed sidecar tool skips canUseTool through allowedTools; the hook holds it.
+    expect((await preToolUse()({ tool_name: "mcp__agent-fleet-sidecar__publish_event" })).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(requests()).toEqual([]);
+    await stop(promise);
+  }, 10000);
+
+  test("auto mode cannot bypass the deny, in canUseTool or around it", async () => {
+    sessionPermissionMode = "auto";
+    sessionTainted = true;
+    const promise = await start();
+    for (const [tool, input] of [["Write", { file_path: "x" }], ["Bash", { command: "go build ./..." }], ["mcp__agent-fleet-sidecar__send_message", { text: "hi" }], ["ExitPlanMode", { plan: "p" }]] as const) {
+      expect(await capturedCanUseTool!(tool, input)).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    }
+    // What the SDK's own auto allows never reaches canUseTool: the hook denies
+    // it, and lets the three reads through.
+    for (const tool of ["Edit", "Write", "Bash", "Task", "SendMessage", "mcp__playwright__browser_navigate", "TodoWrite"]) {
+      const out = await preToolUse()({ tool_name: tool });
+      expect(out.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(out.hookSpecificOutput?.permissionDecisionReason).toBe(TAINTED_DENY);
+    }
+    for (const tool of ["Read", "Glob", "Grep"]) {
+      expect(await preToolUse()({ tool_name: tool })).toEqual({});
+      expect((await capturedCanUseTool!(tool, {})).behavior).toBe("allow");
+    }
+    expect(requests()).toEqual([]);
+    await stop(promise);
+  }, 10000);
+
+  test("a grant is ignored once tainted", async () => {
+    sessionAgentSpec = { ...DEF_SPEC, toolsAllow: [] };
+    sessionPermissionMode = "default";
+    sessionGrants = ["Bash(npm test)"];
+    const promise = await start();
+    // Positive control: the grant runs it unasked while clean.
+    expect((await capturedCanUseTool!("Bash", { command: "npm test" })).behavior).toBe("allow");
+    sessionTainted = true;
+    expect(await capturedCanUseTool!("Bash", { command: "npm test" })).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    expect(requests()).toEqual([]);
+    await stop(promise);
+  }, 10000);
+
+  test("a mid-session taint applies to the next call, and to an ask answered after it", async () => {
+    sessionPermissionMode = "default";
+    const promise = await start();
+    const asked = capturedCanUseTool!("Bash", { command: "make deploy" });
+    await Bun.sleep(5);
+    const req = findPermissionRequest("Bash")!;
+    expect(req).toBeDefined();
+    // Taint lands while the ask waits on a human; the approval is a deny.
+    sessionTainted = true;
+    respondToPermission(req.seq, { behavior: "allow" });
+    expect(await asked).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    expect(await capturedCanUseTool!("Write", { file_path: "x" })).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    expect(requests().length).toBe(1);
+    await stop(promise);
+  }, 10000);
+
+  test("an outside read taints as it runs, and the next call is denied", async () => {
+    sessionPermissionMode = "auto";
+    const promise = await start();
+    expect((await capturedCanUseTool!("Bash", { command: "gh pr view 12 --comments" })).behavior).toBe("allow");
+    expect(taintMarks).toEqual(["gh pr view 12 --comments"]);
+    expect(await capturedCanUseTool!("Bash", { command: "git push" })).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    await stop(promise);
+  }, 10000);
+
+  test("an outside read whose mark fails does not run", async () => {
+    sessionPermissionMode = "auto";
+    const promise = await start();
+    taintError = true;
+    const r = await capturedCanUseTool!("Bash", { command: "curl https://example.com" });
+    expect(r.behavior).toBe("deny");
+    // And a gate that cannot read taint fails closed.
+    expect((await preToolUse()({ tool_name: "Bash" })).hookSpecificOutput?.permissionDecision).toBe("deny");
+    taintError = false;
+    await stop(promise);
+  }, 10000);
+
+  test("an untaint attempt fails: once seen, taint is latched in the worker", async () => {
+    sessionPermissionMode = "auto";
+    sessionTainted = true;
+    const promise = await start();
+    expect((await capturedCanUseTool!("Write", { file_path: "x" })).behavior).toBe("deny");
+    sessionTainted = false; // a forged or stale "untainted" answer
+    const calls = taintCalls;
+    expect(await capturedCanUseTool!("Write", { file_path: "x" })).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    expect((await preToolUse()({ tool_name: "Bash" })).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(taintCalls).toBe(calls);
+    await stop(promise);
+  }, 10000);
+
+  test("WebFetch and WebSearch are gone from repo sessions", async () => {
+    const promise = await start();
+    expect(queryOptions?.allowedTools as string[]).not.toContain("WebFetch");
+    expect(queryOptions?.allowedTools as string[]).not.toContain("WebSearch");
+    expect(queryOptions?.disallowedTools as string[]).toEqual(expect.arrayContaining(["WebFetch", "WebSearch"]));
+    expect((queryOptions?.settings as { permissions: { ask: string[] } }).permissions.ask).toEqual(expect.arrayContaining(["Bash(git fetch:*)", "Bash(git pull:*)"]));
+    await stop(promise);
+  }, 10000);
+});
+
+// docs/adr/0082 §3's outside reads, by command text.
+test.each([
+  ["gh pr view 3", true],
+  ["cd /workspace && gh issue list", true],
+  ["gh run view 1 --log", true],
+  ["gh api repos/o/r/issues/1/comments", true],
+  ["gh -R o/r pr view 3", true],
+  ["gh pr checks", true],
+  ["gh pr create --title t --body b", false],
+  ["gh issue comment 4 --body done", false],
+  ["gh auth status", false],
+  ["curl -s https://example.com", true],
+  ["/usr/bin/wget x", true],
+  ["bash -c 'curl x'", true],
+  ["git fetch", false],
+  ["git fetch origin", false],
+  ["git pull --rebase", false],
+  ["git pull --rebase origin main", false],
+  ["git -C /workspace fetch origin main", false],
+  ["git fetch origin pull/5/head", true],
+  ["git fetch origin feature/x", true],
+  ["git pull https://github.com/stranger/fork main", true],
+  ["git fetch upstream", true],
+  ["git fetch --all", true],
+  ["git fetch origin main:refs/x", true],
+  ["git -C sub pull other main", true],
+  ["git status && git log", false],
+  ["ls -la", false],
+] as const)("outsideRead(%j) is %p", (command, want) => {
+  expect(outsideRead("Bash", { command }, "main")).toBe(want);
+});
+
+test("outsideRead: an unknown default branch makes a named branch a read, and only Bash counts", () => {
+  expect(outsideRead("Bash", { command: "git pull origin main" })).toBe(true);
+  expect(outsideRead("Bash", { command: "git pull origin" })).toBe(false);
+  expect(outsideRead("Read", { command: "curl x" })).toBe(false);
 });

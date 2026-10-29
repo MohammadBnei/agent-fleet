@@ -318,9 +318,13 @@ permission tiers instead of a second, fleet-specific gate on top of them
   edits, `auto` (SDK 0.3.233) has a model classifier answer the ordinary
   prompts instead of a human, `plan` blocks mutation without invoking it,
   `default` invokes it
-  for anything not auto-safe (`Read`/`Glob`/`Grep`/`WebSearch`/`WebFetch`
-  stay in `allowedTools`, so the SDK never even calls the callback for
-  those). `canUseTool`'s only remaining job: post a `permission_request`
+  for anything not auto-safe (`Read`/`Glob`/`Grep` stay in `allowedTools`,
+  so the SDK never even calls the callback for those; `WebSearch`/`WebFetch`
+  are disallowed, `docs/adr/0082` §3). A tainted session (`docs/adr/0082` §4:
+  an untrusted entry, or an outside read the worker marked through core's
+  `Taint`) may only `Read`/`Glob`/`Grep`: `canUseTool` and a `PreToolUse` hook
+  deny the rest, whatever the mode, `tools.allow` or a grant says, and core
+  refuses its `PublishEvent`, `PromptSession`, `Expose` and `RequestService`. `canUseTool`'s only remaining job: post a `permission_request`
   transcript entry and block on the matching `permission_response` —
   generalizing `ExitPlanMode`'s own original ask-and-block-and-resolve
   pattern from one hardcoded case to a `Map<seq, resolver>` so parallel
