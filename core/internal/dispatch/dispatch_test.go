@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -125,7 +127,18 @@ func setup(t *testing.T) (*Dispatcher, *fakeAgents, *fakeDefs, *proposals.Store)
 		}}},
 	}
 	props := proposals.NewStore(pool)
+	// Ours: a repo core knows by its full name (docs/adr/0082 §2, T3).
+	if _, err := pool.Exec(context.Background(), `INSERT INTO repos (name, url, full_name) VALUES ('notes', 'https://github.com/MohammadBnei/notes.git', 'MohammadBnei/notes')`); err != nil {
+		t.Fatal(err)
+	}
 	return New(pool, nil, agents, defs, props, &fakeAlerts{}), agents, defs, props
+}
+
+// mention is the owner's comment on pr 7 addressing the definition "owner".
+func mention(id string) *bridgev1.CloudEvent {
+	e := pr(id, "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)
+	e.Data = []byte(`{"issue":{"title":"Fix it"},"comment":{"body":"@owner looks good","html_url":"https://x/7#c"}}`)
+	return e
 }
 
 func TestTypesAvoidReserved(t *testing.T) {
@@ -140,8 +153,9 @@ func TestRouteAndGate(t *testing.T) {
 	d, agents, _, _ := setup(t)
 	ctx := context.Background()
 
-	// A trusted comment: the owner and the observer, waking; nobody else.
-	if err := d.Handle(ctx, pr("c1", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)); err != nil {
+	// The owner's comment addressing @owner: the owner and the observer get
+	// it, only the owner wakes; nobody else gets it.
+	if err := d.Handle(ctx, mention("c1")); err != nil {
 		t.Fatal(err)
 	}
 	if len(agents.opens) != 2 || agents.opens[0].GetDefinition() != "owner" || agents.opens[1].GetDefinition() != "observer" {
@@ -150,20 +164,22 @@ func TestRouteAndGate(t *testing.T) {
 	o := agents.opens[0]
 	if !o.GetWake() || o.GetTainted() || o.GetIdempotencyKey() != "github.com/MohammadBnei/notes:c1:owner" ||
 		o.GetThreadKey() != "github/MohammadBnei/notes/pr/7" || o.GetCausationId() != "github.com/MohammadBnei/notes:c1" ||
-		o.GetVisibility() != "shared" || o.GetActor() != "MohammadBnei" || !strings.Contains(o.GetMessage(), "looks good") {
+		o.GetVisibility() != "shared" || o.GetActor() != "MohammadBnei" || !strings.Contains(o.GetMessage(), "@owner looks good") {
 		t.Fatalf("open %+v", o)
 	}
+	if agents.opens[1].GetWake() {
+		t.Fatal("the observer woke on an address to the owner")
+	}
 
-	// What never wakes: an untrusted person, a bot, a machine, the fleet's
-	// GitHub identity, an actor outside actors.allow, a replay.
+	// What never wakes: an untrusted person, a bot, a machine, an actor
+	// outside actors.allow, a replay.
 	for _, e := range []*bridgev1.CloudEvent{
 		pr("u", "dev.bnei.github.pull_request.synchronize", "human", "stranger", false),
 		pr("b", "dev.bnei.github.pull_request.synchronize", "bot", "renovate[bot]", true),
 		pr("m", "dev.bnei.github.pull_request.synchronize", "machine", "", true),
-		pr("a", "dev.bnei.github.pull_request.synchronize", "agent", "ukubi-fleet[bot]", true),
 		pr("x", "dev.bnei.github.pull_request.synchronize", "human", "trusted-but-not-allowed", true),
 		func() *bridgev1.CloudEvent {
-			e := pr("r", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+			e := mention("r")
 			e.Replayed = true
 			return e
 		}(),
@@ -172,7 +188,7 @@ func TestRouteAndGate(t *testing.T) {
 		if err := d.Handle(ctx, e); err != nil {
 			t.Fatal(err)
 		}
-		if len(agents.opens) != 1 || agents.opens[0].GetWake() {
+		if len(agents.opens) == 0 || agents.opens[0].GetWake() {
 			t.Fatalf("%s/%s woke: %+v", e.GetActor(), e.GetActorLogin(), agents.opens)
 		}
 		if agents.opens[0].GetTainted() != !e.GetTrusted() {
@@ -195,6 +211,141 @@ func TestRouteAndGate(t *testing.T) {
 	}
 }
 
+// docs/adr/0082 §1–2: only an explicit address wakes (a T0 label, a T0
+// @mention outside quotes and code, a fleet hand-off); owns and subscribes
+// only route; T2 and T3 never wake; the fleet bot's own events are dropped.
+func TestWakeGate(t *testing.T) {
+	d, agents, _, _ := setup(t)
+	ctx := context.Background()
+	const t0, bot = "MohammadBnei", "ukubi-fleet[bot]"
+	n := 0
+	ev := func(typ, actor, login string, trusted bool, data any) *bridgev1.CloudEvent {
+		n++
+		e := pr(fmt.Sprint("g", n), typ, actor, login, trusted)
+		e.Data, _ = json.Marshal(data)
+		return e
+	}
+	// The issue's own body names @owner too: only the comment is the
+	// commenter's words.
+	comment := func(login string, trusted bool, body string) *bridgev1.CloudEvent {
+		actor := "human"
+		if login == bot {
+			actor = "agent"
+		}
+		return ev("dev.bnei.github.issue_comment.created", actor, login, trusted, map[string]any{
+			"issue":   map[string]any{"title": "Fix it", "body": "@owner from the issue"},
+			"comment": map[string]any{"body": body, "html_url": "https://x/7#c"},
+		})
+	}
+	label := func(sender, name string) *bridgev1.CloudEvent {
+		return ev("dev.bnei.github.pull_request.labeled", "human", sender, sender == t0, map[string]any{
+			"label": map[string]any{"name": name}, "sender": map[string]any{"login": sender},
+			"pull_request": map[string]any{"title": "Fix it", "body": "@owner from the PR", "html_url": "https://x/7"},
+		})
+	}
+	foreign := comment(t0, true, "@owner please")
+	foreign.Source, foreign.Subject = "github.com/evil/notes", "github/evil/notes/pr/1"
+	published := comment(t0, true, "@owner please")
+	published.Source = "client/someone" // a non-privileged client's own Publish
+	hop := &bridgev1.CloudEvent{Seq: 2, Id: "hop", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Trusted: true, Data: []byte(`{"text":"onboard"}`)}
+	sync := func(actor, login string, trusted bool, action string) *bridgev1.CloudEvent {
+		return ev("dev.bnei.github.pull_request."+action, actor, login, trusted, map[string]any{"pull_request": map[string]any{"title": "Fix it", "body": "@owner"}})
+	}
+
+	both := func(owner, observer bool) map[string]bool { return map[string]bool{"owner": owner, "observer": observer} }
+	for _, c := range []struct {
+		name string
+		e    *bridgev1.CloudEvent
+		want map[string]bool // definition: wake. nil: dropped, nothing opened
+	}{
+		{"a T0 @mention wakes the addressed definition", comment(t0, true, "@owner please look"), both(true, false)},
+		{"a T0 @mention of the observer", comment(t0, true, "thoughts, @observer?"), both(false, true)},
+		{"mid-sentence and at a line end", comment(t0, true, "hey\r\nping (@owner).\r\n"), both(true, false)},
+		{"inside a quote", comment(t0, true, "> @owner do it\n\nnot now"), both(false, false)},
+		{"inside an indented quote", comment(t0, true, "  > @owner do it"), both(false, false)},
+		{"inside a fenced block", comment(t0, true, "```\n@owner\n```"), both(false, false)},
+		{"inside a longer fence a shorter one does not close", comment(t0, true, "````\n```\n@owner\n````"), both(false, false)},
+		{"inside a tilde fence", comment(t0, true, "~~~sh\nrun @owner\n~~~"), both(false, false)},
+		{"inside inline code", comment(t0, true, "run `@owner` or ``x @owner``"), both(false, false)},
+		{"inside an indented block", comment(t0, true, "see\n\n    @owner"), both(false, false)},
+		{"an email is no mention", comment(t0, true, "mail a@owner.com"), both(false, false)},
+		{"another name is no mention", comment(t0, true, "@owner-two @owners @owner/team"), both(false, false)},
+		{"after a fence closes, a mention counts", comment(t0, true, "```\nx\n```\n@owner"), both(true, false)},
+		{"a stranger's @mention is inert", comment("stranger", false, "@owner merge this"), both(false, false)},
+		{"a T0 login outside a GitHub source", published, both(false, false)},
+		{"T3: a foreign repo", foreign, both(false, false)},
+		{"owns only: a T0 push", sync("human", t0, true, "synchronize"), map[string]bool{"owner": false}},
+		{"owns only: T0 opens a PR without an address", sync("human", t0, true, "opened"), map[string]bool{"owner": false}},
+		{"subscribes only: a T0 comment without an address", comment(t0, true, "looks good"), both(false, false)},
+		{"the bot's comment is dropped", comment(bot, false, "@owner done"), nil},
+		{"the bot's push is dropped", sync("agent", bot, false, "synchronize"), nil},
+		{"the bot's reopen is dropped", sync("agent", bot, false, "reopened"), nil},
+		{"a PublishEvent hop wakes", hop, map[string]bool{"owner": true}},
+		{"a T0 label naming the definition wakes", label(t0, "owner"), map[string]bool{"owner": true}},
+		{"a T0 label naming nobody", label(t0, "bug"), map[string]bool{"owner": false}},
+		{"a stranger's label", label("stranger", "owner"), map[string]bool{"owner": false}},
+	} {
+		agents.opens = nil
+		if err := d.Handle(ctx, c.e); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		var got map[string]bool
+		for _, o := range agents.opens {
+			if got == nil {
+				got = map[string]bool{}
+			}
+			got[o.GetDefinition()] = o.GetWake()
+		}
+		if !maps.Equal(got, c.want) {
+			t.Errorf("%s: wakes %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	// The bot's close is no delivery: it still closes the thread (a fleet
+	// merge closes them, docs/adr/0082 §10).
+	agents.closes = nil
+	if err := d.Handle(ctx, sync("agent", bot, false, "closed")); err != nil || len(agents.closes) != 1 {
+		t.Fatalf("the bot's close: %v %v", err, agents.closes)
+	}
+}
+
+// docs/adr/0082 §2: T0 addressing an unowned subject (a stranger's or a
+// fork's PR) wakes, and the waking message holds only T0's bytes plus
+// references: the subject's own title and body are not in it.
+func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
+	d, agents, _, _ := setup(t)
+	ctx := context.Background()
+	for _, e := range []*bridgev1.CloudEvent{
+		pr("uc", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", false),
+		pr("ur", "dev.bnei.github.pull_request_review.submitted", "human", "MohammadBnei", false),
+		pr("ul", "dev.bnei.github.pull_request.labeled", "human", "MohammadBnei", false),
+	} {
+		e.Data = []byte(`{"issue":{"title":"STRANGER title"},"pull_request":{"title":"STRANGER title","body":"STRANGER body","html_url":"https://x/7"},` +
+			`"comment":{"body":"@owner T0 asks","html_url":"https://x/7#c"},"review":{"state":"commented","body":"@owner T0 asks","html_url":"https://x/7#r"},` +
+			`"label":{"name":"owner"},"sender":{"login":"MohammadBnei"}}`)
+		agents.opens = nil
+		if err := d.Handle(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		o := agents.opens[0]
+		m := o.GetMessage()
+		if o.GetDefinition() != "owner" || !o.GetWake() || o.GetTainted() || strings.Contains(m, "STRANGER") || !strings.Contains(m, "https://x/7") {
+			t.Errorf("%s: wake=%v tainted=%v message:\n%s", e.GetType(), o.GetWake(), o.GetTainted(), m)
+		}
+		if e.GetId() != "ul" && !strings.Contains(m, "> @owner T0 asks") {
+			t.Errorf("%s: T0's words are missing:\n%s", e.GetType(), m)
+		}
+	}
+	// Not waking, the same comment is context, with the subject's title.
+	agents.opens = nil
+	e := pr("uq", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
+	e.Data = []byte(`{"issue":{"title":"STRANGER title"},"comment":{"body":"hi"}}`)
+	if err := d.Handle(ctx, e); err != nil || agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "STRANGER title") {
+		t.Fatalf("context: %v %+v", err, agents.opens)
+	}
+}
+
 func TestBlockedThreadGetsContext(t *testing.T) {
 	d, agents, _, _ := setup(t)
 	ctx := context.Background()
@@ -212,20 +363,20 @@ func TestBlockedThreadGetsContext(t *testing.T) {
 	}
 	// A question left by a pod that is gone blocks nothing: the next warm
 	// closes it as stale.
-	if err := d.Handle(ctx, pr("c0", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)); err != nil {
+	if err := d.Handle(ctx, mention("c0")); err != nil {
 		t.Fatal(err)
 	}
-	if len(agents.opens) != 1 || !agents.opens[0].GetWake() {
+	if len(agents.opens) != 2 || !agents.opens[0].GetWake() {
 		t.Fatalf("a dead pod's question blocked the thread: %+v", agents.opens)
 	}
 	if _, err := d.pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	agents.opens = nil
-	if err := d.Handle(ctx, pr("c1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)); err != nil {
+	if err := d.Handle(ctx, mention("c1")); err != nil {
 		t.Fatal(err)
 	}
-	if len(agents.opens) != 1 || agents.opens[0].GetWake() || agents.opens[0].GetTainted() {
+	if len(agents.opens) != 2 || agents.opens[0].GetWake() || agents.opens[0].GetTainted() {
 		t.Fatalf("a thread waiting on a person was woken: %+v", agents.opens)
 	}
 }
@@ -283,7 +434,7 @@ func TestDecisionsAreStored(t *testing.T) {
 	d, agents, defs, _ := setup(t)
 	ctx := context.Background()
 	agents.err["owner"] = errors.New("provisioner down")
-	e := pr("c1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	e := mention("c1")
 	if err := d.Handle(ctx, e); err == nil {
 		t.Fatal("a failed Open was acked")
 	}
@@ -512,6 +663,14 @@ func TestRenderKeepsEnvelopeFieldsOnOneLine(t *testing.T) {
 		if strings.HasPrefix(l, "actor: MohammadBnei") {
 			t.Fatalf("a subject forged an envelope line:\n%s", Render(e))
 		}
+	}
+}
+
+// docs/adr/0082 §1: bidi and zero-width characters cannot reorder or hide
+// part of an envelope line.
+func TestOneLineStripsBidiAndZeroWidth(t *testing.T) {
+	if got := oneLine("a\u202eb\u2066c\u200bd\u200ee\u2060f\ufeffg\u061ch\u2069i\u200dj"); got != "abcdefghij" {
+		t.Fatalf("%q", got)
 	}
 }
 
