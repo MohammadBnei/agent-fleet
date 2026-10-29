@@ -10,166 +10,53 @@
 // A specific key is not coming to every site (docs/adr/0081 §2). A site gets one only when a client must act on the
 // error or show text for it and the code alone does not say what happened; every other site stays KeyInternal with
 // its specific code, and where it came from is answered by its trace id, not its key. The keys move into each
-// service's proto (ADR-0081 §1), and this package gives way to ukubi-go's errs/connectkeys (§5).
+// service's proto (ADR-0081 §1). The detail and the fallback are ukubi-go's errs/connectkeys (§5), with
+// agentfleet.v1.ErrorKey its one template; this package is core's wrapper of it: the registry, and the wiring
+// connectkeys/wiring checks (TestWiring).
 package errkeys
 
 import (
-	"context"
-	"errors"
-	"os"
-
 	"connectrpc.com/connect"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+
+	"github.com/MohammadBnei/ukubi-go/errs"
+	"github.com/MohammadBnei/ukubi-go/errs/connectkeys"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
-// Key is one of core's error keys.
-type Key string
-
 const (
-	// KeyInternal is the interceptors' key for an error built without one: its code says what it was.
-	KeyInternal Key = "server.internal"
+	// KeyInternal is the fallback's key for an error built without one: its code says what it was. It is
+	// connectkeys.KeyInternal, the Connect wire key (TestInternalIsConnectkeys).
+	KeyInternal errs.Key = "server.internal"
 	// KeyDefinitionChanged: the thread's agent definition changed since it opened (docs/adr/0066); start a new one.
-	KeyDefinitionChanged Key = "agent.definition_changed"
+	KeyDefinitionChanged errs.Key = "agent.definition_changed"
 )
 
-func detail(key Key) *agentfleetv1.ErrorKey { return &agentfleetv1.ErrorKey{Key: string(key)} }
+// keys is the one detail template, agentfleet.v1.ErrorKey (docs/adr/0081 §5): the wire is what errkeys sent.
+var keys = connectkeys.New(&agentfleetv1.ErrorKey{})
 
 // Connect is Connect's error for code with err's words, keyed.
-func Connect(code connect.Code, key Key, err error) *connect.Error {
-	e := connect.NewError(code, err)
-	addConnect(e, key)
-	return e
-}
-
-func addConnect(e *connect.Error, key Key) {
-	d, err := connect.NewErrorDetail(detail(key))
-	if err != nil {
-		panic(err) // a two-string message always marshals
-	}
-	e.AddDetail(d)
+func Connect(code connect.Code, key errs.Key, err error) *connect.Error {
+	return keys.Connect(code, key, err)
 }
 
 // Status is gRPC's error for code with msg, keyed.
-func Status(code codes.Code, key Key, msg string) error {
-	s, err := status.New(code, msg).WithDetails(detail(key))
-	if err != nil {
-		panic(err) // a two-string message always marshals; an OK code is a caller's bug
-	}
-	return s.Err()
-}
+func Status(code codes.Code, key errs.Key, msg string) error { return keys.Status(code, key, msg) }
 
 // Of is the key an error carries, Connect's or gRPC's, or "" without one.
-func Of(err error) Key {
-	var ce *connect.Error
-	if errors.As(err, &ce) {
-		for _, d := range ce.Details() {
-			if v, derr := d.Value(); derr == nil {
-				if k, ok := v.(*agentfleetv1.ErrorKey); ok {
-					return Key(k.GetKey())
-				}
-			}
-		}
-		return ""
-	}
-	if s, ok := status.FromError(err); ok {
-		for _, d := range s.Details() {
-			if k, ok := d.(*agentfleetv1.ErrorKey); ok {
-				return Key(k.GetKey())
-			}
-		}
-	}
-	return ""
-}
+func Of(err error) errs.Key { return keys.Of(err) }
 
 // WithInterceptors is a Connect handler's interceptors, ics, behind the fallback: outermost, it keys an error the
-// handler or any of ics returns without one as KeyInternal, keeping its code and words. Every handler core serves
-// takes its interceptors through this, never connect.WithInterceptors (TestWiring).
+// handler or any of ics returns without one as KeyInternal, keeping its code and words, on a copy of it. Every handler
+// core serves takes it as its first option, never connect.WithInterceptors (TestWiring).
 func WithInterceptors(ics ...connect.Interceptor) connect.HandlerOption {
-	return connect.WithInterceptors(append([]connect.Interceptor{keyAll{}}, ics...)...)
-}
-
-type keyAll struct{}
-
-func (keyAll) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		res, err := next(ctx, req)
-		return res, withConnectKey(err)
-	}
-}
-
-func (keyAll) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
-}
-
-func (keyAll) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		return withConnectKey(next(ctx, conn))
-	}
-}
-
-func withConnectKey(err error) error {
-	if err == nil || Of(err) != "" {
-		return err
-	}
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
-		return Connect(plainCode(err), KeyInternal, err)
-	}
-	// A copy, never ce itself: a handler may return a shared sentinel (agentsvc's errNoThread), which adding to
-	// would race across requests and stay keyed for in-process callers.
-	e := connect.NewError(ce.Code(), ce.Unwrap())
-	for _, d := range ce.Details() {
-		e.AddDetail(d)
-	}
-	for k, v := range ce.Meta() {
-		e.Meta()[k] = append([]string(nil), v...)
-	}
-	addConnect(e, KeyInternal)
-	return e
-}
-
-// plainCode is the code Connect sends for a plain error (its toWire, wrapIfContextError): a context error's own, else
-// Unknown.
-func plainCode(err error) connect.Code {
-	switch {
-	case errors.Is(err, context.Canceled):
-		return connect.CodeCanceled
-	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded):
-		return connect.CodeDeadlineExceeded
-	}
-	return connect.CodeUnknown
+	return keys.WithInterceptors(ics...)
 }
 
 // UnaryServerInterceptor and StreamServerInterceptor key an error a gRPC handler returns without one as KeyInternal,
 // keeping its code and message. Chain them first.
-func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
-		res, err := next(ctx, req)
-		return res, withStatusKey(err)
-	}
-}
+func UnaryServerInterceptor() grpc.UnaryServerInterceptor { return keys.UnaryServerInterceptor() }
 
-func StreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, next grpc.StreamHandler) error {
-		return withStatusKey(next(srv, ss))
-	}
-}
-
-func withStatusKey(err error) error {
-	if err == nil || Of(err) != "" {
-		return err
-	}
-	s, ok := status.FromError(err)
-	if !ok {
-		s = status.FromContextError(err) // a plain error: a context error's code, else Unknown, as gRPC would answer
-	}
-	k, kerr := s.WithDetails(detail(KeyInternal))
-	if kerr != nil {
-		return err // an OK status carries no detail; never reached for a non-nil error
-	}
-	return k.Err()
-}
+func StreamServerInterceptor() grpc.StreamServerInterceptor { return keys.StreamServerInterceptor() }

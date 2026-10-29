@@ -441,8 +441,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		clientList = func() []definitions.Client { return nil }
 	}
 	clientMux := http.NewServeMux()
-	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, connect.WithReadMaxBytes(1<<20), errkeys.WithInterceptors(
-		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)))
+	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, errkeys.WithInterceptors(
+		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)), connect.WithReadMaxBytes(1<<20))
 	clientMux.Handle(agentPath, clientHandler)
 	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {

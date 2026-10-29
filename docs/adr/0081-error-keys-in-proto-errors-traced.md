@@ -1,8 +1,10 @@
 # ADR-0081 — Error keys are declared in each service's proto; an error is traced by its trace id
 
 - **Status:** Accepted (2026-10-28)
-- **Built:** none of it. The errkeys package comment is rewritten here to say what
-  this ADR decides (§2).
+- **Built:** §5 step 1: core requires `ukubi-go` v0.1.0 and `core/internal/errkeys` is
+  its wrapper (one `connectkeys.Keys`, template `agentfleet.v1.ErrorKey`, the registry
+  constants); the `Meta()` race is gone and `connectkeys/wiring` is `TestWiring`.
+  **Not yet built:** §1–§4 and the rest of §5 (they wait on `ukubi-go` v0.2.0).
 - **Date:** 2026-10-28
 - **Related:** [ADR-0066](0066-agent-service.md) (AgentService),
   [ADR-0067](0067-shared-and-private-sessions.md) (who may do what in a thread),
