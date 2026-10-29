@@ -10,7 +10,8 @@
 // did not apply on CI's bun, where the "test" then exercised the real
 // transport against a relative URL and reported an empty call list.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { subscribeTranscript } from "./connectClient";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { subscribeTranscript, watchDecisions } from "./connectClient";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 type Call = { sinceSeq: bigint; signal: AbortSignal };
@@ -180,5 +181,127 @@ describe("subscribeTranscript visibility handling", () => {
     mockDocument._setHidden(false);
     await tick(1200);
     expect(calls).toHaveLength(1);
+  }, 10000);
+});
+
+// The deck's watch: every message (the baseline included) is only a "go
+// re-list" nudge, so the loop carries no cursor and always reopens from 0.
+describe("watchDecisions", () => {
+  let originalDocument: typeof document;
+  let calls: { sinceVersion: bigint; signal: AbortSignal }[];
+
+  // Yields `messages`, then either ends cleanly (the server's 90s cut), stays
+  // open until aborted, or throws `fail` on the first read.
+  const fakeOpen =
+    (opts: { messages?: number; end?: boolean; fail?: Error }) =>
+    (req: { sinceVersion: bigint }, o: { signal: AbortSignal }) => {
+      calls.push({ sinceVersion: req.sinceVersion, signal: o.signal });
+      return (async function* () {
+        if (opts.fail) throw opts.fail;
+        for (let i = 0; i < (opts.messages ?? 0); i++)
+          yield { version: BigInt(i + 1), changedIds: [] };
+        if (opts.end) return;
+        await new Promise((_resolve, reject) => {
+          o.signal.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            {
+              once: true,
+            },
+          );
+        });
+      })();
+    };
+
+  beforeEach(() => {
+    originalDocument = global.document;
+    // @ts-expect-error — a stand-in with only the members this uses
+    global.document = mockDocument;
+    mockDocument.hidden = false;
+    mockDocument._listeners.clear();
+    calls = [];
+  });
+
+  afterEach(() => {
+    global.document = originalDocument;
+  });
+
+  test("calls onChange on the baseline and on every later message", async () => {
+    let changes = 0;
+    let unavailable = 0;
+    const stop = watchDecisions(
+      () => changes++,
+      () => unavailable++,
+      fakeOpen({ messages: 3 }),
+    );
+    await tick();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sinceVersion).toBe(0n);
+    expect(changes).toBe(3);
+    expect(unavailable).toBe(0);
+    stop();
+    await tick();
+    expect(calls[0].signal.aborted).toBe(true);
+  }, 10000);
+
+  test("reopens from version 0 after the server ends the stream", async () => {
+    let changes = 0;
+    const stop = watchDecisions(
+      () => changes++,
+      () => {},
+      fakeOpen({ messages: 1, end: true }),
+    );
+    await tick(1400);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    // No resume version: the re-list on the new baseline covers the gap.
+    expect(calls[1].sinceVersion).toBe(0n);
+    expect(changes).toBeGreaterThanOrEqual(2);
+    stop();
+  }, 10000);
+
+  for (const code of [Code.Unauthenticated, Code.PermissionDenied]) {
+    test(`stops for good on ${Code[code]} and reports unavailable once`, async () => {
+      let unavailable = 0;
+      let changes = 0;
+      const stop = watchDecisions(
+        () => changes++,
+        () => unavailable++,
+        fakeOpen({ fail: new ConnectError("no", code) }),
+      );
+      await tick(1400);
+      expect(calls).toHaveLength(1);
+      expect(unavailable).toBe(1);
+      expect(changes).toBe(0);
+      stop();
+    }, 10000);
+  }
+
+  // A dropped connection heals on a retry; only auth stops the watch.
+  test("reopens after a non-auth error and stays available", async () => {
+    let unavailable = 0;
+    const stop = watchDecisions(
+      () => {},
+      () => unavailable++,
+      fakeOpen({ fail: new ConnectError("down", Code.Unavailable) }),
+    );
+    await tick(1400);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(unavailable).toBe(0);
+    stop();
+  }, 10000);
+
+  test("opens nothing while the page is hidden", async () => {
+    mockDocument.hidden = true;
+    const stop = watchDecisions(
+      () => {},
+      () => {},
+      fakeOpen({}),
+    );
+    await tick(300);
+    expect(calls).toHaveLength(0);
+    mockDocument._setHidden(false);
+    await tick(300);
+    expect(calls).toHaveLength(1);
+    stop();
   }, 10000);
 });

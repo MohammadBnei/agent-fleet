@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { approvePlan } from "../approvePlan";
+import { type ReactNode, useState } from "react";
+import { approvePlan, planFeedback } from "../approvePlan";
 import { client } from "../connectClient";
 import { withdrawDecision } from "../decisions";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
@@ -71,7 +71,15 @@ function useDecision(reload: () => void) {
 // Edit/Write render as a real diff; anything else shows its one-line summary.
 // A permission prompt whose content is unreadable trains people to approve
 // without looking, which is worse than no prompt at all.
-function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
+function PermissionBody({
+  tool,
+  input,
+  claim,
+}: {
+  tool: string;
+  input: unknown;
+  claim?: ReactNode;
+}) {
   const i = (input ?? {}) as {
     file_path?: string;
     old_string?: string;
@@ -94,6 +102,7 @@ function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
           </>
         )}
       </div>
+      {claim && <div className="mt-2">{claim}</div>}
       <div className="mt-2">
         {isDiff ? (
           <DiffLines
@@ -119,12 +128,18 @@ export function DecisionInline({
   // Mobile lets you defer a question without answering it. Purely local: the
   // agent stays blocked, this human just isn't dealing with it now.
   onAskLater,
+  claimLabel = false,
 }: {
   session: Session;
   summary?: ListSummary;
   reload: () => void;
   layout?: Layout;
   onAskLater?: () => void;
+  // Heads the agent's own words (the command, the plan, the question) with
+  // "Agent claim", so they read as a claim to check rather than a fact the
+  // console vouches for. Placed under the console's own header line, not
+  // above it, or the label seems to vouch for the kind line too.
+  claimLabel?: boolean;
 }) {
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
@@ -141,6 +156,9 @@ export function DecisionInline({
   // with gaps of 12, 10 and 10 depending on which branch rendered, so three
   // cards in a row sat on three different rhythms.
   const pad = stacked ? "px-3.5 pt-1 pb-3.5" : "px-4 pt-1 pb-4";
+  const claim = claimLabel && (
+    <div className="text-2xs tracking-[0.05em] text-dim2">Agent claim</div>
+  );
 
   // Touch targets: the mobile mockup's allow/deny are ~44px tall, because this
   // is the surface most likely used to unblock a session away from a desk.
@@ -186,7 +204,11 @@ export function DecisionInline({
     ) {
       return (
         <div className={`${pad} flex flex-col gap-2`}>
-          <PermissionBody tool={permission.tool} input={permission.input} />
+          <PermissionBody
+            tool={permission.tool}
+            input={permission.input}
+            claim={claim}
+          />
           <span className="text-xs text-warning">
             {session.sweptAt !== undefined
               ? "This session's working directory was reclaimed — the request can no longer be answered."
@@ -253,6 +275,7 @@ export function DecisionInline({
               read in full ▸
             </button>
           </div>
+          {claim}
           {/* The preview is itself the way in — clicking the plan you are
               trying to read is the gesture people try first. */}
           <button
@@ -329,11 +352,12 @@ export function DecisionInline({
             onClose={() => setPlanOpen(false)}
           />
           {/* The third answer to a plan, which the list did not offer: neither
-              approve nor walk away, but say what to change. Posted as an
-              ordinary message — the worker treats a human reply arriving while
-              a permission is pending as deny-with-feedback and re-arms the
-              plan, so this needs no separate RPC (see PlanCard, which takes the
-              same path from the session view). */}
+              approve nor walk away, but say what to change. A live plan takes
+              it as an ordinary message (the worker reads a human reply while a
+              permission is pending as deny-with-feedback). A stamped one has no
+              worker waiting: a message would leave the plan open, so it is a
+              deny carrying the feedback, as DecisionDock does. planFeedback
+              picks. */}
           <TextResponseModal
             open={feedbackOpen}
             title="REQUEST CHANGES"
@@ -344,7 +368,13 @@ export function DecisionInline({
             onSubmit={(text) =>
               send(
                 "deny",
-                () => client.postMessage({ sessionId: session.id, text }),
+                () =>
+                  planFeedback(
+                    session.id,
+                    permission.entry.seq,
+                    permission.stamped,
+                    text,
+                  ),
                 permission.entry.seq,
               )
             }
@@ -449,7 +479,11 @@ export function DecisionInline({
     return (
       <div className={`${pad} flex flex-col gap-3`}>
         {interrupted}
-        <PermissionBody tool={permission.tool} input={permission.input} />
+        <PermissionBody
+          tool={permission.tool}
+          input={permission.input}
+          claim={claim}
+        />
         {actions}
       </div>
     );
@@ -473,6 +507,7 @@ export function DecisionInline({
 
     return (
       <div className={`${pad} flex flex-col gap-3`}>
+        {claim}
         <QuestionCard
           entry={questionEntry}
           answer={null}

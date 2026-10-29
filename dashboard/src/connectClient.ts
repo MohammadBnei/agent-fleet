@@ -68,12 +68,13 @@ export const agent = createClient(
 
 const RECONNECT_DELAY_MS = 1000;
 
-// Wraps client.streamTranscript in a resubscribe-on-drop retry loop.
+// A server stream in a resubscribe-on-drop retry loop.
 // EventSource (what this replaced) auto-reconnects on a dropped
 // connection; a bare `for await` over a Connect stream does not. This
 // whole system's pull/cursor design exists specifically so a reconnect
 // can resume without loss (docs/adr/0013) — losing that here would
-// silently regress a property the architecture already paid for.
+// silently regress a property the architecture already paid for. Where to
+// resume from is the caller's: `open` reads its own cursor on every attempt.
 //
 // Page visibility handling: when the page becomes hidden (tab switched,
 // app backgrounded on mobile), the in-flight subscription is aborted, and
@@ -88,27 +89,15 @@ const RECONNECT_DELAY_MS = 1000;
 // stayed open, the phone suspended its socket underneath it, and the throw
 // arrived anyway, followed by a 1s retry loop hammering a network that
 // wasn't there.
-// What opens one stream attempt. Defaulted to the real client below; the
-// only reason it is a parameter at all is that this loop's actual job —
-// pause on hide, drop the connection, resume from the cursor — is worth
-// testing without a server or a browser, and mocking the module instead
-// turned out to depend on bun-version-specific `mock.module` timing (it
-// silently didn't apply on CI's bun, so the "test" exercised the real
-// transport against a relative URL). Production callers pass three args.
-type OpenStream = (
-  req: { sessionId: string; sinceSeq: bigint },
-  opts: { signal: AbortSignal },
-) => AsyncIterable<TranscriptEntry>;
-
-export function subscribeTranscript(
-  sessionId: string,
-  since: bigint,
-  onEntry: (entry: TranscriptEntry) => void,
-  openStream: OpenStream = (req, opts) => client.streamTranscript(req, opts),
+//
+// `isFatal` names an error no retry can fix: the loop stops for good on it.
+export function resubscribe<T>(
+  open: (signal: AbortSignal) => AsyncIterable<T>,
+  onMsg: (msg: T) => void,
+  isFatal?: (err: unknown) => boolean,
 ): () => void {
   const controller = new AbortController();
   let attempt: AbortController | null = null;
-  let cursor = since;
 
   async function streamLoop() {
     while (!controller.signal.aborted) {
@@ -123,18 +112,13 @@ export function subscribeTranscript(
       const abortAttempt = () => attempt?.abort();
       controller.signal.addEventListener("abort", abortAttempt, { once: true });
       try {
-        for await (const entry of openStream(
-          { sessionId, sinceSeq: cursor },
-          { signal: attempt.signal },
-        )) {
-          cursor = entry.seq + 1n;
-          onEntry(entry);
-        }
-      } catch {
+        for await (const msg of open(attempt.signal)) onMsg(msg);
+      } catch (err) {
         // stream ended or dropped — fall through to the resubscribe delay
         // below unless we were deliberately aborted (cleanup, not a retry).
         // Distinguishing abort from network error helps avoid noise in logs.
         if (controller.signal.aborted) return;
+        if (isFatal?.(err)) return;
       } finally {
         controller.signal.removeEventListener("abort", abortAttempt);
         attempt = null;
@@ -146,8 +130,8 @@ export function subscribeTranscript(
 
   function handleVisibilityChange() {
     // Drop the connection now rather than letting the OS kill it and
-    // surface as an error. `cursor` survives, so the loop resubscribes
-    // without loss once the page is visible again.
+    // surface as an error. The caller's cursor survives, so the loop
+    // resubscribes without loss once the page is visible again.
     if (document.hidden) attempt?.abort();
   }
 
@@ -162,4 +146,65 @@ export function subscribeTranscript(
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     controller.abort();
   };
+}
+
+// What opens one stream attempt. Defaulted to the real client below; the
+// only reason it is a parameter at all is that this loop's actual job —
+// pause on hide, drop the connection, resume from the cursor — is worth
+// testing without a server or a browser, and mocking the module instead
+// turned out to depend on bun-version-specific `mock.module` timing (it
+// silently didn't apply on CI's bun, so the "test" exercised the real
+// transport against a relative URL). Production callers pass three args.
+type OpenStream = (
+  req: { sessionId: string; sinceSeq: bigint },
+  opts: { signal: AbortSignal },
+) => AsyncIterable<TranscriptEntry>;
+
+// client.streamTranscript, resumed from the entry after the last one seen.
+export function subscribeTranscript(
+  sessionId: string,
+  since: bigint,
+  onEntry: (entry: TranscriptEntry) => void,
+  openStream: OpenStream = (req, opts) => client.streamTranscript(req, opts),
+): () => void {
+  let cursor = since;
+  return resubscribe(
+    (signal) => openStream({ sessionId, sinceSeq: cursor }, { signal }),
+    (entry) => {
+      cursor = entry.seq + 1n;
+      onEntry(entry);
+    },
+  );
+}
+
+type OpenWatch = (
+  req: { sinceVersion: bigint },
+  opts: { signal: AbortSignal },
+) => AsyncIterable<unknown>;
+
+// The decisions store's change feed (docs/adr/0082 §5), as a bare "something
+// changed": every message, the baseline included, has the caller re-list. So
+// there is nothing to resume from and every attempt starts at the current
+// version; the server ends each stream after 90s and the loop reopens it.
+//
+// Unauthenticated (FLEET_AUTH_DISABLED=1: AgentService refuses every call) and
+// PermissionDenied never heal on a retry: the watch stops for good and says so
+// once, and the caller falls back to what it had before the store.
+export function watchDecisions(
+  onChange: () => void,
+  onUnavailable: () => void,
+  open: OpenWatch = (req, opts) => agent.watchDecisions(req, opts),
+): () => void {
+  return resubscribe(
+    (signal) => open({ sinceVersion: 0n }, { signal }),
+    onChange,
+    (err) => {
+      const fatal =
+        err instanceof ConnectError &&
+        (err.code === Code.Unauthenticated ||
+          err.code === Code.PermissionDenied);
+      if (fatal) onUnavailable();
+      return fatal;
+    },
+  );
 }
