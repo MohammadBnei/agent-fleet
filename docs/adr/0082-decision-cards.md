@@ -1,16 +1,18 @@
-# ADR-0082 — Decision cards: only an explicit address wakes an agent, and a tainted agent only drafts a card
+# ADR-0082 — Decision cards: only an explicit address wakes an agent, and the owner decides on cards
 
-- **Status:** Accepted (owner-approved 2026-10-28)
+- **Status:** Accepted (owner-approved 2026-10-28; taint dropped by the owner 2026-10-29)
 - **Built:** none of it.
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
-- **Amends:** [ADR-0053](0053-the-gate-is-canusetool-not-a-rule-list.md) (`auto` does not reach a tainted session),
-  [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §4 (routing is not a wake), §6 (the gate), §7 (taint),
-  [ADR-0072](0072-approval-gated-executor.md) §5 (a tainted step is a card), [ADR-0078](0078-core-on-the-bridge.md)
-  §5 (the gate, closing) and §8 (the echo); bridge ADR-0060 §6 (one `trusted` bit becomes two facts)
-- **Related:** [ADR-0043](0043-one-decision-surface.md), [ADR-0064](0064-definition-pod-profile.md),
-  [ADR-0066](0066-agent-service.md), [ADR-0068](0068-islands.md), [ADR-0075](0075-github-app-identity-and-vault-credentials.md),
-  [ADR-0076](0076-definition-sessions-run-in-auto.md), [ADR-0081](0081-error-keys-in-proto-errors-traced.md)
+- **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
+  [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §4 (routing is not a wake), §6 (the gate), §7 (no
+  taint), [ADR-0072](0072-approval-gated-executor.md) §5 (no taint warning; approvals are cards),
+  [ADR-0078](0078-core-on-the-bridge.md) §5 (the gate, closing) and §8 (the echo, the trust bit); bridge ADR-0060 §6
+  (one `trusted` bit becomes two facts)
+- **Related:** [ADR-0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md),
+  [ADR-0043](0043-one-decision-surface.md), [ADR-0053](0053-the-gate-is-canusetool-not-a-rule-list.md),
+  [ADR-0064](0064-definition-pod-profile.md), [ADR-0066](0066-agent-service.md), [ADR-0068](0068-islands.md),
+  [ADR-0075](0075-github-app-identity-and-vault-credentials.md), [ADR-0081](0081-error-keys-in-proto-errors-traced.md)
 
 ## Context
 
@@ -18,61 +20,52 @@ This is the baseline for all agentic work: agents draft decisions, and the owner
 information in front of him. ADR-0079 tried to make the fleet's own GitHub echoes trustworthy with a ledger of every
 write. It was heavy, automatic by default, and still rested on matching bot events. What the code does today:
 
-- **Taint does not stop anything.** `canUseTool` (`worker/src/session.ts`) never reads taint; the worker has no notion
-  of it. A definition session's `allowedTools` are its `sidecarTools`, which skip `canUseTool` entirely, and
-  `definitionDecision` runs whatever `tools.allow` or a remembered grant (`core/internal/grants`) matches.
-  `opus-workspace` lists `Bash(git push:*)` with `git.branch: main`, and `gitArgsAreInert` lets `git push` run
-  unasked. ADR-0053's `auto` answers everything but `rm`/`sudo`. A session tainted by a stranger can push to main.
-- **Core does not refuse a tainted caller.** `dispatch.Publish` publishes for a tainted session (untrusted, but sent).
-- **Taint means two things.** `Open` writes `Untrusted: contextOnly || tainted` (`core/internal/agentsvc/open.go`),
-  so every context-only entry taints; `sessions.Store.Tainted` reads `untrusted` and `Publish` reads
-  `context_only OR untrusted`.
 - **The wake is trust, not address.** `dispatch.gate` wakes on any trusted `human` event whose login is in
   `actors.allow`, on any thread `route` sends it to through `owns` or `subscribes`. `Render` quotes the PR body or
   comment into the waking message, and `oneLine` strips control characters but not bidi or zero-width ones.
+- **Taint is half a mechanism.** Core marks a thread tainted when it holds an untrusted or context-only entry
+  (`Open`, `sessions.Store.Tainted`). `Publish` then sends the session's hand-offs as untrusted, and the island hands
+  a tainted thread to admins only (ADR-0067 §3). The worker never reads it. Enforcing it fully (slice 1 of this ADR's
+  first draft, #341: a tainted session may only read) made any `gh`, `curl` or browser read cage a session for good,
+  its own CI checks included.
 - **Decisions are scattered.** Permission asks pin a pod; plan approval, event proposals (`FoldEvent`) and ADR-0072's
-  executor rows are separate shapes. `Principal.Admin()` requires `Origin == ""`, so an island is never admin, and the
-  island tells a tainted thread's viewer to go to the console. Core sends `frame-ancestors 'none'`.
+  executor rows are separate shapes. `Principal.Admin()` requires `Origin == ""`, so an island is never admin.
+  Core sends `frame-ancestors 'none'`.
 
 ## Decision
 
 1. **Wake: only an explicit address wakes an agent.**
    - A GitHub label whose sender is the T0 login, or `@<definition>` in a T0-written comment or body, outside `>`
-     quotes and code blocks; a fleet `PublishEvent` from a T1 session; a console or island open (T0 by sign-in).
+     quotes and code blocks; a fleet `PublishEvent`; a console or island open (T0 by sign-in).
    - `owns` and `subscribes` only route: what they match arrives as context, never as a wake. An event type alone
      never wakes.
    - The fleet bot's own GitHub events never wake: they are acked and dropped. That covers self-echo and
      `synchronize`/`reopened`.
-2. **Trust ladder.**
-   - **T0**, the owner: the `actors.allow` GitHub login, and console or island platform-admins. He vouches for every
-     byte he writes or pastes, quotes included.
-   - **T1**: a fleet session into which core delivered no untrusted entry and which ran no outside-read tool call.
-   - **T2**: a fleet session that did either.
-   - **T3**: a stranger in our repo. **T4**: anything in a foreign repo.
-   - T3 and T4 never wake, and their @mentions are inert. Their text reaches an agent only as T3 context, which makes
-     that session T2. An unowned subject (a stranger's or a fork's PR or issue) arrives with its title, body and diff
-     as T3 context even when T0 addressed it: the wake message holds only T0 bytes plus references.
-3. **Taint by rule.**
-   - A session is tainted by an untrusted entry, or by an outside read at the moment it runs: `gh` against issues,
-     PRs, comments or CI; `curl`/`wget`; `git fetch`/`pull` of a non-default ref. `canUseTool` marks it.
-   - `WebFetch` and `WebSearch` stay out of definitions (`DEFINITION_BUILTIN_TOOLS` already omits them) and leave
-     repo sessions too (owner, 2026-10-29). `git fetch` and `git pull` join `FLEET_ASK_RULES`, so every outside read
-     reaches `canUseTool`, which taints, whatever the SDK's own `auto` classifier or the target repo's allow rules say.
-   - "Context-only" (it did not wake) and "untrusted" become separate: ADR-0071 §7 now reads "a session is tainted
-     when it holds an untrusted entry", not a context-only one.
-4. **T2 reads and drafts a card, nothing else.** Enforced twice.
-   - **Worker:** a tainted session may use only `Read`, `Glob`, `Grep` and a `draft_card` sidecar tool. `tools.allow`,
-     definition grants and the session mode (`auto` included) are ignored, and the sidecar tools leave `allowedTools`
-     so `canUseTool` sees them. Taint is re-read on every call, since it can arrive mid-session.
-   - **Core:** `PublishEvent`, `PromptSession`, `Expose` and `RequestService` refuse a tainted session.
-   - A T2 session's permission asks become cards.
+2. **Who may wake.**
+   - **T0**, the owner: the `actors.allow` GitHub login, and console or island platform-admins.
+   - **T1**: any fleet session, through `PublishEvent`.
+   - **T2**: a stranger in our repo. **T3**: anything in a foreign repo.
+   - T2 and T3 never wake, and their @mentions are inert. Their text reaches an agent only as context of work T0 or
+     T1 started, labelled with its author. An unowned subject (a stranger's or a fork's PR or issue) arrives with its
+     title, body and diff as context even when T0 addressed it: the wake message holds only T0 bytes plus references.
+3. **No taint (owner, 2026-10-29).** What a session reads changes nothing about what it may do or whom it may wake.
+   - Sessions keep today's tools and modes: `auto` answers everything but `rm`/`sudo` (ADR-0053); `gh`, `curl`,
+     `wget`, `git fetch`, `WebFetch`, `WebSearch` and the browser stay available.
+   - An entry keeps its author and tier as a label, for the reader and for a card's `outside_inputs`, never as a
+     gate.
+   - Core's taint goes: `Open`'s `Untrusted`, `sessions.Store.Tainted`, `Publish`'s trust bit (a fleet hand-off
+     wakes), the island's admin-only tainted thread (ADR-0067 §3) and ADR-0072's tainted-step warning.
+   - What bounds a stranger's words: they never start work (§1, §2), a card option carries only its bound effect
+     (§6), and the default branch moves only through the merge right (§9) or an owner card.
+4. **An agent drafts a card when the choice is the owner's**: a stranger's PR, a step outside its mandate, a
+   decision with real options. It uses a `draft_card` sidecar tool. Permission asks stay as they are (ADR-0029).
 5. **The card** is a durable question entry in the proposals inbox, never a `permission_request`, so it never pins a
    pod.
 
    | Field | Filled by |
    |---|---|
    | `id`, `state` (`open` \| `answered` \| `expired` \| `stale`), `expires_at` | core |
-   | `writer {definition, session, tier}`, `subject {repo (full `owner/name`), kind (`pr` \| `issue` \| `alert` \| `repo`), number (none for `repo`), url}` | core |
+   | `writer {definition, session}`, `subject {repo (full `owner/name`), kind (`pr` \| `issue` \| `alert` \| `repo`), number (none for `repo`), url}` | core |
    | `ask`: at most 280 chars | agent claim |
    | `pinned {head_sha, sources [{object_id, sha256}], open/closed}` | core |
    | `outside_inputs [{author, tier, object_id, url, text}]`, verbatim | core |
@@ -92,9 +85,10 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    labelled "agent claim" and set apart from what core filled, the recommendation marked but never pre-selected. On a
    phone: the ask, 2–3 buttons, an "N outside inputs" chip and a stale badge.
 6. **Choosing.**
-   - An option authorizes only its bound effect. Core runs the effect, or opens a fresh T0 session that replaces the
-     tainted thread, from a fixed template: "owner chose option k of card c: <effect>".
-   - Agent prose passed on stays labelled "T2, owner-approved", never T0. Only write-your-own text becomes T0.
+   - An option authorizes only its bound effect. Core runs the effect, or hands it to the writer's thread as a T0
+     message from a fixed template: "owner chose option k of card c: <effect>".
+   - Agent prose passed on stays labelled "agent claim, owner-chosen", never the owner's words. Only write-your-own
+     text is T0.
    - Core re-checks the pinned state when the owner answers and again at hand-off. On a mismatch the card goes stale
      and must be re-drafted.
    - Error keys (ADR-0081): `card.stale`, `card.expired`, `card.fresh_auth_required`.
@@ -119,13 +113,13 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      (`MaxAgentWakes`).
    - Plan approval, "Close threads" and ADR-0072 executor approvals become cards.
 9. **Merge right.**
-   - Approval by a T1 review agent lets the writer agent merge exactly that head. The approval is a core record (a
+   - Approval by a fleet review agent lets the writer agent merge exactly that head. The approval is a core record (a
      `PublishEvent` such as `review.approved` pinned to `head_sha`), not a GitHub review: every agent shares the bot
      identity, and GitHub refuses self-approval.
    - On approval core posts an `agent-review` commit status; each repo's ruleset requires it on the default branch. A
      push after approval voids it.
-   - A T2 reviewer can only draft a card. A stranger's PR merges only through an owner card.
-   - So the default branch holds only T1-vouched content: written by T1, approved by T1, or chosen by the owner.
+   - A stranger's PR merges only through an owner card.
+   - So the default branch holds only content written and approved by fleet agents, or chosen by the owner.
 10. **Closing** (kept from ADR-0079): a human close closes the threads; a fleet merge into the default branch closes
     them; any other fleet close becomes a "Close threads" card. Capacity is unchanged: a writer and a reviewer need
     two sessions at once, and `MAX_EXTERNAL_SESSIONS=1` (ADR-0078 §7) makes the second a card until a deploy raises it.
@@ -142,23 +136,28 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 
 ## Alternatives considered
 
-- **Trust the bot.** Every session shares its identity, so a T2 session would launder into a clean one.
+- **Taint with read-only enforcement** (this ADR's first draft; slice 1 built and reviewed as #341, closed unmerged).
+  Rejected by the owner, 2026-10-29: it caged ordinary work (checking one's own CI tainted a session for good) to
+  guard a path the address-only wake already closes for strangers.
+- **Taint as a hand-off bit only** (a session holding a stranger's text cannot wake others). Rejected by the owner,
+  2026-10-29: hand-offs between our own sessions stay free, and the wake gate is the boundary.
+- **Trust the bot's events.** Its own pushes and comments would wake loops on the fleet's own writes; an explicit
+  address is enough.
 - **ADR-0079 as written.** Heavy (a ledger, four tools, a write path, an echo wait), and automatic by default.
 - **Wake by humans only.** Kills agent hand-offs.
-- **T2 works in plan mode.** Its side effects would still originate from a stranger's words.
 - **One GitHub App per definition.** Hand-made Apps, and still per definition, not per session.
 - **The owner's click makes agent prose T0.** That launders through the click.
 - **A slim ledger.** Once bot events never wake, trust does not need one.
 
 ## Consequences
 
-- The owner becomes the gate for anything outside-influenced. Clean agent loops run only through explicit addresses.
+- Strangers' words never start work, but they can steer a session the owner or the fleet started, and that session
+  can hand off. The owner accepts this (2026-10-29); bound card effects and the merge right are the checks left.
 - A rubber-stamped option still carries only its bound effect.
 - Card volume must be measured before this is called done.
-- Code that changes: `dispatch.gate`, `route` and `Render`; `dispatch.Publish` and the `PromptSession`, `Expose` and
-  `RequestService` handlers; `Open`'s `Untrusted`; the worker's `canUseTool`, `allowedTools` and
-  `definitionDecision`; `Principal.Admin()` and `frame-ancestors`; the island's tainted-thread path; the proposals
-  store (a card kind) and the console's decision UI (ADR-0043's dock shows cards).
+- Code that changes: `dispatch.gate`, `route` and `Render`; core's taint (`Open`'s `Untrusted`,
+  `sessions.Store.Tainted`, `Publish`'s trust bit, the island's tainted-thread path); `Principal.Admin()` and
+  `frame-ancestors`; the proposals store (a card kind) and the console's decision UI (ADR-0043's dock shows cards).
 - Core has no GitHub write path (ADR-0078 §5) and holds no GitHub credential (ADR-0075). Card effects and the
   `agent-review` status go through the provisioner, which holds the App key.
 
@@ -166,12 +165,10 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 
 None of it is built. Slices, in order:
 
-1. Taint enforcement in the worker and in core, first, because the hole is live. It includes taking `WebFetch` and
-   `WebSearch` out of repo sessions and adding `git fetch`/`pull` to `FLEET_ASK_RULES`.
-2. The context-only versus untrusted split.
-3. The card store, the `AnswerCard` API and the console UI.
-4. The address-only gate, and dropping the bot's events.
-5. The bridge's events and trust facts.
-6. The merge right: the `agent-review` status and the rulesets.
-7. Island and embedded surfaces, with `frame-ancestors`.
-8. Folding the old decision kinds into cards.
+1. The address-only gate, and dropping the bot's events.
+2. The card store, the `AnswerCard` API, `draft_card` and the console UI.
+3. Removing core's taint.
+4. The bridge's events and trust facts.
+5. The merge right: the `agent-review` status and the rulesets.
+6. Island and embedded surfaces, with `frame-ancestors`.
+7. Folding the old decision kinds into cards.

@@ -1,8 +1,8 @@
 # ADR-0078 — Core on the bridge: its sign-in, session announcements, the dispatcher's rules, and what agents cannot touch
 
 - **Status:** Proposed; §5's gate and closing and §8's echo are amended by [ADR-0082](0082-decision-cards.md) (Accepted,
-  not built; it supersedes ADR-0079): only an explicit address wakes, the bot's own events are acked and dropped, and
-  a fleet close that is not a merge into the default branch becomes a "Close threads" card
+  not built; it supersedes ADR-0079): only an explicit address wakes, the bot's own events are acked and dropped, taint is
+  removed (a fleet hand-off wakes), and a fleet close that is not a merge into the default branch becomes a "Close threads" card
 - **Date:** 2026-10-23
 - **Amends:** [ADR-0071](0071-events-reach-sessions-through-the-bridge.md) §2–4 and §6 (how core signs in, which types
   it reads, how the dispatcher calls `Open`, what a proposal carries); infra-bootstrap ADR-0066 §3–4 on three points

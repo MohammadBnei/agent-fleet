@@ -1,7 +1,7 @@
 # ADR-0072 — An approval button runs exactly the step it showed
 
-- **Status:** Accepted, not built; §5 amended by [ADR-0082](0082-decision-cards.md): a tainted session cannot propose a
-  step, only draft a card, and executor approvals become cards bound to their row
+- **Status:** Accepted, not built; §5 amended by [ADR-0082](0082-decision-cards.md): taint and its warning are removed,
+  and executor approvals become cards bound to their row
 - **Date:** 2026-10-18
 - **Related:** ADR-0071 (events, threads, taint), infra-bootstrap ADR-0060
   (`ukubi-bridge`), infra-bootstrap ADR-0055 (`netbird-agent` short-lived JWT),

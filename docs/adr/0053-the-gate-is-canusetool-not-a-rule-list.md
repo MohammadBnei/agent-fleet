@@ -1,6 +1,6 @@
 # ADR-0053 — The gate is `canUseTool`, not a list the SDK re-interprets
 
-- **Status:** Accepted — amended by [ADR-0061](0061-sessions-launch-in-auto.md) (`auto` is now the launch default, not an opt-in); amended by [ADR-0082](0082-decision-cards.md) §4: a tainted session gets none of `auto`, only `Read`, `Glob`, `Grep` and `draft_card`
+- **Status:** Accepted — amended by [ADR-0061](0061-sessions-launch-in-auto.md) (`auto` is now the launch default, not an opt-in)
 - **Date:** 2026-08-17
 - **Supersedes:** [ADR-0052](0052-auto-mode-and-the-bypass-launch-profile.md)'s
   `bypassPermissions`-as-launch-profile half (the mode is deleted; `auto`,

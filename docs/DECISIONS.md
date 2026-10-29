@@ -327,7 +327,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   each service's proto, only where the code alone is ambiguous to a client; an error is
   traced by its trace id (Accepted 2026-10-28, not built).
 - [`0082`](adr/0082-decision-cards.md) — decision cards: only an explicit address wakes an
-  agent; a tainted session only reads and drafts a card, which the owner answers by
+  agent; taint is removed; agents draft cards, which the owner answers by
   choosing an option bound to one effect (Accepted 2026-10-28, not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
