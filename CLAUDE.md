@@ -43,7 +43,7 @@ is stale → check code.**
 | k8s client | `client-go` (`provisioner/` — only component with cluster RBAC) |
 | DB | `jackc/pgx/v5` (`core/` only — **sole** `AGENTFLEET_DB_*` holder, `adr/0020` pt1). worker/sidecar/provisioner hold zero DB creds |
 | Deploy | Docker per component. `core` = two-source ArgoCD app (chart from `infra-bootstrap`, values `k8s/core.yaml`). `provisioner` = standalone plain manifests (`k8s/provisioner/`, RBAC `common-app-chart` can't express) |
-| CI/CD | Actions: `docker.yml` (on push to `main`: `release` job runs `release-it`, then build/push/deploy), `go.yml` (vet/lint/test + buf lint/breaking/drift). No `release.yml`: it was folded into `docker.yml`. **Images build on ukubi-cluster `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub.** One job loops all six components — self-hosted runner does one job at a time (infra-bootstrap ADR-0034) |
+| CI/CD | Actions: `docker.yml` (on push to `main`: `release` job runs `release-it`, then build/push/deploy), `go.yml` (vet/lint/test + buf lint/breaking/drift). `biome.yml` (`biome ci .` over every JS/TS package; root `biome.jsonc`, Biome pinned in root `package.json`; `bun run lint` / `bun run format` from the root). No `release.yml`: it was folded into `docker.yml`. **Images build on ukubi-cluster `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub.** One job loops all six components — self-hosted runner does one job at a time (infra-bootstrap ADR-0034) |
 
 ## Directory map
 

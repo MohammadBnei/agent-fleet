@@ -74,6 +74,8 @@ jobs:
               - '*/Dockerfile'
               - '.github/image-inputs.txt'
               - '.github/workflows/docker.yml'
+              # TestWorkflowsWriteOnlyInReleaseJobs reads every workflow.
+              - '.github/workflows/biome.yml'
               # core/internal/buildguard (TestLogGuardCopiesAreIdentical) reads
               # the logging guard's copy in every module, so an edit to one
               # copy must run it even when core itself did not change.

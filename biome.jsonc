@@ -1,0 +1,119 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    // The JS/TS packages only. The Go modules, k8s/, definitions/ and
+    // fleet-shared/ are not Biome's: provisioner's testdata/*.golden.json is
+    // byte-compared by its test.
+    "includes": [
+      "dashboard/**",
+      "islands/**",
+      "worker/**",
+      "biome.jsonc",
+      "package.json",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/bun.lock",
+      // buf-generated *_pb.ts.
+      "!dashboard/src/gen",
+      // Playwright output.
+      "!dashboard/test-results",
+      // Vendored from ukubi-stt ("Do not edit here").
+      "!dashboard/src/audio/stt-capture.js",
+      "!dashboard/src/audio/stt-capture.d.ts",
+      // tokens.json is copied from the design-system artifact and
+      // tokens.css is generated from it by islands/ukubi/gen.py.
+      "!islands/ukubi/tokens.json",
+      "!islands/src/tokens.css",
+      // Markup is out of scope: Biome's HTML support is experimental, and
+      // the SVGs are icons, not code.
+      "!**/*.html",
+      "!**/*.svg"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "html": {
+    // .svelte files: only the <script> and <style> blocks are formatted and
+    // linted. svelte-check (islands' build) still checks the markup.
+    "experimentalFullSupportEnabled": false,
+    "formatter": {
+      "indentScriptAndStyle": true
+    }
+  },
+  "linter": {
+    "rules": {
+      "correctness": {
+        // Replaces oxlint's react/rules-of-hooks, which dashboard/ ran.
+        "useHookAtTopLevel": "error",
+        // Every site it flags is a deliberate mount-only or reset-on-change
+        // effect; adding or removing a dependency changes when it fires.
+        "useExhaustiveDependencies": "off"
+      },
+      "complexity": {
+        // Its fix turns `e.seq > max ? e.seq : max` into Math.max, which
+        // throws on the bigint seq (useSessionDetail.ts).
+        "useMathMinMax": "off"
+      },
+      "style": {
+        // `!` marks lookups known to succeed (getElementById("root"), test
+        // fixtures). Replacing them means runtime checks the code never had.
+        "noNonNullAssertion": "off",
+        // Moving a rule to satisfy it changes the cascade.
+        "noDescendingSpecificity": "off"
+      },
+      "suspicious": {
+        // Feed, plan and diff rows are rendered from append-only or
+        // fixed-order arrays; a different key changes React's reconciliation.
+        "noArrayIndexKey": "off"
+      },
+      "a11y": {
+        // Dialog inputs focus on open on purpose: the decision UI is
+        // keyboard-first.
+        "noAutofocus": "off",
+        // Hover/selection/drop handlers on <g> and <div> (topology, plan
+        // text selection, file drop). A role would change what assistive
+        // tech announces.
+        "noStaticElementInteractions": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.svelte"],
+      "linter": {
+        "rules": {
+          // Biome cannot see markup usage, so script bindings used only in
+          // the template look unused.
+          "correctness": {
+            "noUnusedVariables": "off",
+            "noUnusedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          // Fixture strings carry literal ${x} on purpose (template
+          // detection tests in worker/src/session.test.ts).
+          "suspicious": {
+            "noTemplateCurlyInString": "off"
+          }
+        }
+      }
+    }
+  ]
+}

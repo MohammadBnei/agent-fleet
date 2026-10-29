@@ -1,0 +1,61 @@
+name: Biome
+
+# Lint + format check for every JS/TS package (dashboard/, islands/, worker/),
+# one root config (biome.jsonc), one pinned Biome in the root package.json.
+#
+# Its own workflow, not a job in docker.yml next to dashboard-test and
+# friends: docker.yml's PR runs share a concurrency group with build-push,
+# which waits on the self-hosted build runner, and while that runner is down
+# a whole run can sit "pending" with no job started. A lint check must not
+# depend on the build box. GitHub-hosted only.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Same shape as docker.yml's `changes`: PR-only, and the check job runs
+  # anyway on a push (always() + the event test), so main is always checked.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Declaring any permission zeroes the rest; contents: read must be explicit.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      js: ${{ steps.filter.outputs.js }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            js:
+              - 'dashboard/**'
+              - 'islands/**'
+              - 'worker/**'
+              - 'biome.jsonc'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/biome.yml'
+
+  biome:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.js == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # The root install is Biome plus release-it; no package's own
+      # node_modules is needed to lint it.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: biome ci
+        run: bun run lint
