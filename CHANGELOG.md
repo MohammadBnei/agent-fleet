@@ -1,5 +1,27 @@
 # Changelog
 
+# [7.0.0](https://github.com/MohammadBnei/agent-fleet/compare/6.26.1...7.0.0) (2026-10-29)
+
+* feat(dispatch)!: only an explicit address wakes; the bot's own events are dropped (ADR-0082 slice 1) (#344) ([9596716](https://github.com/MohammadBnei/agent-fleet/commit/95967160b79a216524b64a7e4ae0d33f02e43035)), closes [#344](https://github.com/MohammadBnei/agent-fleet/issues/344)
+
+### Bug Fixes
+
+* **core:** error keys through ukubi-go connectkeys v0.1.0 (ADR-0081 §5.1) ([#342](https://github.com/MohammadBnei/agent-fleet/issues/342)) ([d95be82](https://github.com/MohammadBnei/agent-fleet/commit/d95be828d56cd6ce1f3e58bde78366f92d968663))
+* **dashboard:** approvePlan's test fakes its client by parameter, and CI pins bun 1.4.2 ([#337](https://github.com/MohammadBnei/agent-fleet/issues/337)) ([1ae8eb5](https://github.com/MohammadBnei/agent-fleet/commit/1ae8eb5156c1126095e32103826da7ccc78ae17e))
+* **provisioner:** refuse a non-positive RECONCILE_INTERVAL_MS or SHARED_INSTANCE_IDLE_TIMEOUT_MS ([#334](https://github.com/MohammadBnei/agent-fleet/issues/334)) ([4a65ce7](https://github.com/MohammadBnei/agent-fleet/commit/4a65ce74e4febeff574bf0d40a52d8133007bd1a))
+* **worker:** run each test file in its own module registry ([#348](https://github.com/MohammadBnei/agent-fleet/issues/348)) ([7c447ff](https://github.com/MohammadBnei/agent-fleet/commit/7c447ffa8bee5fe98b798907d6db1aec6ad7e038))
+
+### Features
+
+* **core,provisioner:** a bad optional setting warns and takes its default; only a required one refuses ([#336](https://github.com/MohammadBnei/agent-fleet/issues/336)) ([93d72fa](https://github.com/MohammadBnei/agent-fleet/commit/93d72fa07dded045b093ec83494fd7f1fcb7984e))
+* **core:** every error carries a key (ErrorKey); DEFINITION_CHANGED is the first ([#332](https://github.com/MohammadBnei/agent-fleet/issues/332)) ([e24a79c](https://github.com/MohammadBnei/agent-fleet/commit/e24a79c841f7935e8a9dfab06fa2029aafaaacf0))
+* declare AgentService's error keys in proto, with client maps (ADR-0081 §5.3) ([#343](https://github.com/MohammadBnei/agent-fleet/issues/343)) ([d006bb7](https://github.com/MohammadBnei/agent-fleet/commit/d006bb7632c01de9aa9a55b9004b19924bec30ad))
+* net/http's own lines log at ERROR, and a trailer check on PRs ([#335](https://github.com/MohammadBnei/agent-fleet/issues/335)) ([c3f80b7](https://github.com/MohammadBnei/agent-fleet/commit/c3f80b70a030c6d7ffeaff62f1ebc46d7b6f6006)), closes [high-error-log-rate](https://github.com/hi/issues/error-log-rate)
+
+### BREAKING CHANGES
+
+* owns/subscribes no longer wake a definition; only an explicit address does.
+
 ## [6.26.1](https://github.com/MohammadBnei/agent-fleet/compare/6.26.0...6.26.1) (2026-10-28)
 
 # [6.26.0](https://github.com/MohammadBnei/agent-fleet/compare/6.25.0...6.26.0) (2026-10-25)
