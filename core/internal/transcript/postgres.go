@@ -18,6 +18,20 @@ import (
 type PostgresStore struct {
 	pool  *pgxpool.Pool
 	nudge func() // optional; set via SetNudge
+	hook  AppendHook
+}
+
+// AppendHook runs inside an append's transaction, after the entry is written
+// and before it commits: decisions.OnAppend, which projects requests and
+// their replies into the decisions table (docs/adr/0082 §5). An error fails
+// the append. Not called for an idempotent retry, which writes nothing.
+type AppendHook func(ctx context.Context, tx pgx.Tx, sessionID string, e Entry) error
+
+// SetAppendHook wires the hook, once at startup, as SetNudge does. Without
+// one, appends write no decisions: every reader of pending decisions then
+// sees none, so run.go must set it.
+func (s *PostgresStore) SetAppendHook(h AppendHook) {
+	s.hook = h
 }
 
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
@@ -101,6 +115,12 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 			return 0, ErrAlreadyAnswered
 		}
 		return 0, fmt.Errorf("insert: %w", err)
+	}
+	if s.hook != nil {
+		e := Entry{Seq: seq, From: from, Text: text, Type: msgType, ReplyTo: replyToSeq, AuthorName: author.Name, AuthorSub: author.Sub}
+		if err := s.hook(ctx, tx, taskID, e); err != nil {
+			return 0, fmt.Errorf("append hook: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

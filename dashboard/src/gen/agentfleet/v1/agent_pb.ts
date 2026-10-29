@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/agent.proto.
  */
 export const file_agentfleet_v1_agent: GenFile = /*@__PURE__*/
-  fileDesc("ChlhZ2VudGZsZWV0L3YxL2FnZW50LnByb3RvEg1hZ2VudGZsZWV0LnYxIoABChNBZ2VudERlZmluaXRpb25JbmZvEgwKBG5hbWUYASABKAkSEwoLbW9kZWxfYWxsb3cYAiADKAkSEgoKbW9kZV9hbGxvdxgDIAMoCRIZChFpbnRlcmFjdGlvbl9hbGxvdxgEIAMoCRIXCg9saWZlY3ljbGVfYWxsb3cYBSADKAkiJAoiQWdlbnRTZXJ2aWNlTGlzdERlZmluaXRpb25zUmVxdWVzdCJeCiNBZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXNwb25zZRI3CgtkZWZpbml0aW9ucxgBIAMoCzIiLmFnZW50ZmxlZXQudjEuQWdlbnREZWZpbml0aW9uSW5mbyKCAgoGVGhyZWFkEgoKAmlkGAEgASgJEhIKCmRlZmluaXRpb24YAiABKAkSDQoFdGl0bGUYAyABKAkSEgoKdmlzaWJpbGl0eRgEIAEoCRIMCgRtaW5lGAUgASgIEhMKC2ludGVyYWN0aW9uGAYgASgJEhEKCWxpZmVjeWNsZRgHIAEoCRINCgVtb2RlbBgIIAEoCRIMCgRtb2RlGAkgASgJEg8KB3RhaW50ZWQYCiABKAgSEgoKY3JlYXRlZF9hdBgLIAEoCRIWCg5sYXN0X2FjdGl2ZV9hdBgMIAEoCRIlCgZzdGF0dXMYDSABKAsyFS5hZ2VudGZsZWV0LnYxLlN0YXR1cyI2CgZTdGF0dXMSDQoFc3RhdGUYASABKAkSDAoEY29kZRgCIAEoCRIPCgdtZXNzYWdlGAMgASgJIuYBCgVFbnRyeRILCgNzZXEYASABKAMSMAoEdHlwZRgCIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSFQoIcmVwbHlfdG8YBSABKANIAIgBARISCgpjcmVhdGVkX2F0GAYgASgJEhMKC2F1dGhvcl9uYW1lGAcgASgJEhQKDGNvbnRleHRfb25seRgIIAEoCBIRCgl1bnRydXN0ZWQYCSABKAgSDAoEbWluZRgKIAEoCEILCglfcmVwbHlfdG8iKAoSTGlzdFRocmVhZHNSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkiPQoTTGlzdFRocmVhZHNSZXNwb25zZRImCgd0aHJlYWRzGAEgAygLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiTAoTQ3JlYXRlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnZpc2liaWxpdHkYAiABKAkSDQoFdGl0bGUYAyABKAkiPQoUQ3JlYXRlVGhyZWFkUmVzcG9uc2USJQoGdGhyZWFkGAEgASgLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiQQoeQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIi4KH0FnZW50U2VydmljZVBvc3RNZXNzYWdlUmVzcG9uc2USCwoDc2VxGAEgASgDIlcKIEFnZW50U2VydmljZUdldFRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMSDQoFbGltaXQYAyABKAUiXAohQWdlbnRTZXJ2aWNlR2V0VHJhbnNjcmlwdFJlc3BvbnNlEiUKB2VudHJpZXMYASADKAsyFC5hZ2VudGZsZWV0LnYxLkVudHJ5EhAKCG5leHRfc2VxGAIgASgDIksKI0FnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMiSwokQWdlbnRTZXJ2aWNlU3RyZWFtVHJhbnNjcmlwdFJlc3BvbnNlEiMKBWVudHJ5GAEgASgLMhQuYWdlbnRmbGVldC52MS5FbnRyeSJrCiZBZ2VudFNlcnZpY2VSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDEhAKCGJlaGF2aW9yGAMgASgJEg8KB21lc3NhZ2UYBCABKAkiNgonQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJZCiFBZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEQoJdGhyZWFkX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIUCgxhbnN3ZXJzX2pzb24YAyABKAkiMQoiQWdlbnRTZXJ2aWNlQW5zd2VyUXVlc3Rpb25SZXNwb25zZRILCgNzZXEYASABKAMiQgoSQXBwcm92ZVBsYW5SZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRILCgNzZXEYAiABKAMSDAoEbW9kZRgDIAEoCSIiChNBcHByb3ZlUGxhblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJCChBTZXRDb25maWdSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRINCgVtb2RlbBgCIAEoCRIMCgRtb2RlGAMgASgJIhMKEVNldENvbmZpZ1Jlc3BvbnNlIiAKC1N0b3BSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCSIOCgxTdG9wUmVzcG9uc2UiJQoQR2V0U3RhdHVzUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkiOgoRR2V0U3RhdHVzUmVzcG9uc2USJQoGc3RhdHVzGAEgASgLMhUuYWdlbnRmbGVldC52MS5TdGF0dXMi3wEKC09wZW5SZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSEgoKdGhyZWFkX2tleRgCIAEoCRIPCgdtZXNzYWdlGAMgASgJEgwKBHdha2UYBCABKAgSDwoHdGFpbnRlZBgFIAEoCBITCgtpbnRlcmFjdGlvbhgGIAEoCRIRCglsaWZlY3ljbGUYByABKAkSEgoKdmlzaWJpbGl0eRgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSDQoFYWN0b3IYCiABKAkSFAoMY2F1c2F0aW9uX2lkGAsgASgJIi4KDE9wZW5SZXNwb25zZRIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDIjwKEkNsb3NlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnRocmVhZF9rZXkYAiABKAkiFQoTQ2xvc2VUaHJlYWRSZXNwb25zZSJLCg1JbnZva2VSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSDQoFaW5wdXQYAiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIiMKDkludm9rZVJlc3BvbnNlEhEKCXRocmVhZF9pZBgBIAEoCSI/ChRXYWl0Rm9yUmVzdWx0UmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSFAoMd2FpdF9zZWNvbmRzGAIgASgFIo0BChVXYWl0Rm9yUmVzdWx0UmVzcG9uc2USDQoFc3RhdGUYASABKAkSGQoRc3RydWN0dXJlZF9vdXRwdXQYAiABKAkSEwoLcmVzdWx0X3RleHQYAyABKAkSDwoHc3VidHlwZRgEIAEoCRIkCgVlcnJvchgFIAEoCzIVLmFnZW50ZmxlZXQudjEuU3RhdHVzKvoBCg1BZ2VudEVycm9yS2V5Eh8KG0FHRU5UX0VSUk9SX0tFWV9VTlNQRUNJRklFRBAAEkQKIkFHRU5UX0VSUk9SX0tFWV9ERUZJTklUSU9OX0NIQU5HRUQQARocwvMYGGFnZW50LmRlZmluaXRpb25fY2hhbmdlZBI0ChpBR0VOVF9FUlJPUl9LRVlfVEhSRUFEX0NBUBACGhTC8xgQYWdlbnQudGhyZWFkX2NhcBJMCiZBR0VOVF9FUlJPUl9LRVlfREVGSU5JVElPTl9VTkFWQUlMQUJMRRADGiDC8xgcYWdlbnQuZGVmaW5pdGlvbl91bmF2YWlsYWJsZTKTDQoMQWdlbnRTZXJ2aWNlEngKD0xpc3REZWZpbml0aW9ucxIxLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlTGlzdERlZmluaXRpb25zUmVxdWVzdBoyLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlTGlzdERlZmluaXRpb25zUmVzcG9uc2USVAoLTGlzdFRocmVhZHMSIS5hZ2VudGZsZWV0LnYxLkxpc3RUaHJlYWRzUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuTGlzdFRocmVhZHNSZXNwb25zZRKNAQoMQ3JlYXRlVGhyZWFkEiIuYWdlbnRmbGVldC52MS5DcmVhdGVUaHJlYWRSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5DcmVhdGVUaHJlYWRSZXNwb25zZSI0yvMYEGFnZW50LnRocmVhZF9jYXDK8xgcYWdlbnQuZGVmaW5pdGlvbl91bmF2YWlsYWJsZRKKAQoLUG9zdE1lc3NhZ2USLS5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVBvc3RNZXNzYWdlUmVxdWVzdBouLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXNwb25zZSIcyvMYGGFnZW50LmRlZmluaXRpb25fY2hhbmdlZBJyCg1HZXRUcmFuc2NyaXB0Ei8uYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VHZXRUcmFuc2NyaXB0UmVxdWVzdBowLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlR2V0VHJhbnNjcmlwdFJlc3BvbnNlEn0KEFN0cmVhbVRyYW5zY3JpcHQSMi5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0GjMuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VTdHJlYW1UcmFuc2NyaXB0UmVzcG9uc2UwARKEAQoTUmVzcG9uZFRvUGVybWlzc2lvbhI1LmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlcXVlc3QaNi5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVJlc3BvbmRUb1Blcm1pc3Npb25SZXNwb25zZRJ1Cg5BbnN3ZXJRdWVzdGlvbhIwLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlQW5zd2VyUXVlc3Rpb25SZXF1ZXN0GjEuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlc3BvbnNlElQKC0FwcHJvdmVQbGFuEiEuYWdlbnRmbGVldC52MS5BcHByb3ZlUGxhblJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkFwcHJvdmVQbGFuUmVzcG9uc2USTgoJU2V0Q29uZmlnEh8uYWdlbnRmbGVldC52MS5TZXRDb25maWdSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5TZXRDb25maWdSZXNwb25zZRI/CgRTdG9wEhouYWdlbnRmbGVldC52MS5TdG9wUmVxdWVzdBobLmFnZW50ZmxlZXQudjEuU3RvcFJlc3BvbnNlEk4KCUdldFN0YXR1cxIfLmFnZW50ZmxlZXQudjEuR2V0U3RhdHVzUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuR2V0U3RhdHVzUmVzcG9uc2USdQoET3BlbhIaLmFnZW50ZmxlZXQudjEuT3BlblJlcXVlc3QaGy5hZ2VudGZsZWV0LnYxLk9wZW5SZXNwb25zZSI0yvMYEGFnZW50LnRocmVhZF9jYXDK8xgcYWdlbnQuZGVmaW5pdGlvbl91bmF2YWlsYWJsZRJUCgtDbG9zZVRocmVhZBIhLmFnZW50ZmxlZXQudjEuQ2xvc2VUaHJlYWRSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5DbG9zZVRocmVhZFJlc3BvbnNlEkUKBkludm9rZRIcLmFnZW50ZmxlZXQudjEuSW52b2tlUmVxdWVzdBodLmFnZW50ZmxlZXQudjEuSW52b2tlUmVzcG9uc2USWgoNV2FpdEZvclJlc3VsdBIjLmFnZW50ZmxlZXQudjEuV2FpdEZvclJlc3VsdFJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLldhaXRGb3JSZXN1bHRSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_transcript, file_ukubi_errors_v1_options]);
+  fileDesc("ChlhZ2VudGZsZWV0L3YxL2FnZW50LnByb3RvEg1hZ2VudGZsZWV0LnYxIoABChNBZ2VudERlZmluaXRpb25JbmZvEgwKBG5hbWUYASABKAkSEwoLbW9kZWxfYWxsb3cYAiADKAkSEgoKbW9kZV9hbGxvdxgDIAMoCRIZChFpbnRlcmFjdGlvbl9hbGxvdxgEIAMoCRIXCg9saWZlY3ljbGVfYWxsb3cYBSADKAkiJAoiQWdlbnRTZXJ2aWNlTGlzdERlZmluaXRpb25zUmVxdWVzdCJeCiNBZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXNwb25zZRI3CgtkZWZpbml0aW9ucxgBIAMoCzIiLmFnZW50ZmxlZXQudjEuQWdlbnREZWZpbml0aW9uSW5mbyKCAgoGVGhyZWFkEgoKAmlkGAEgASgJEhIKCmRlZmluaXRpb24YAiABKAkSDQoFdGl0bGUYAyABKAkSEgoKdmlzaWJpbGl0eRgEIAEoCRIMCgRtaW5lGAUgASgIEhMKC2ludGVyYWN0aW9uGAYgASgJEhEKCWxpZmVjeWNsZRgHIAEoCRINCgVtb2RlbBgIIAEoCRIMCgRtb2RlGAkgASgJEg8KB3RhaW50ZWQYCiABKAgSEgoKY3JlYXRlZF9hdBgLIAEoCRIWCg5sYXN0X2FjdGl2ZV9hdBgMIAEoCRIlCgZzdGF0dXMYDSABKAsyFS5hZ2VudGZsZWV0LnYxLlN0YXR1cyI2CgZTdGF0dXMSDQoFc3RhdGUYASABKAkSDAoEY29kZRgCIAEoCRIPCgdtZXNzYWdlGAMgASgJIuYBCgVFbnRyeRILCgNzZXEYASABKAMSMAoEdHlwZRgCIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSFQoIcmVwbHlfdG8YBSABKANIAIgBARISCgpjcmVhdGVkX2F0GAYgASgJEhMKC2F1dGhvcl9uYW1lGAcgASgJEhQKDGNvbnRleHRfb25seRgIIAEoCBIRCgl1bnRydXN0ZWQYCSABKAgSDAoEbWluZRgKIAEoCEILCglfcmVwbHlfdG8iKAoSTGlzdFRocmVhZHNSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkiPQoTTGlzdFRocmVhZHNSZXNwb25zZRImCgd0aHJlYWRzGAEgAygLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiTAoTQ3JlYXRlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnZpc2liaWxpdHkYAiABKAkSDQoFdGl0bGUYAyABKAkiPQoUQ3JlYXRlVGhyZWFkUmVzcG9uc2USJQoGdGhyZWFkGAEgASgLMhUuYWdlbnRmbGVldC52MS5UaHJlYWQiQQoeQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIi4KH0FnZW50U2VydmljZVBvc3RNZXNzYWdlUmVzcG9uc2USCwoDc2VxGAEgASgDIlcKIEFnZW50U2VydmljZUdldFRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMSDQoFbGltaXQYAyABKAUiXAohQWdlbnRTZXJ2aWNlR2V0VHJhbnNjcmlwdFJlc3BvbnNlEiUKB2VudHJpZXMYASADKAsyFC5hZ2VudGZsZWV0LnYxLkVudHJ5EhAKCG5leHRfc2VxGAIgASgDIksKI0FnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMiSwokQWdlbnRTZXJ2aWNlU3RyZWFtVHJhbnNjcmlwdFJlc3BvbnNlEiMKBWVudHJ5GAEgASgLMhQuYWdlbnRmbGVldC52MS5FbnRyeSJrCiZBZ2VudFNlcnZpY2VSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDEhAKCGJlaGF2aW9yGAMgASgJEg8KB21lc3NhZ2UYBCABKAkiNgonQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJZCiFBZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEQoJdGhyZWFkX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIUCgxhbnN3ZXJzX2pzb24YAyABKAkiMQoiQWdlbnRTZXJ2aWNlQW5zd2VyUXVlc3Rpb25SZXNwb25zZRILCgNzZXEYASABKAMiQgoSQXBwcm92ZVBsYW5SZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRILCgNzZXEYAiABKAMSDAoEbW9kZRgDIAEoCSIiChNBcHByb3ZlUGxhblJlc3BvbnNlEgsKA3NlcRgBIAEoAyJCChBTZXRDb25maWdSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCRINCgVtb2RlbBgCIAEoCRIMCgRtb2RlGAMgASgJIhMKEVNldENvbmZpZ1Jlc3BvbnNlIiAKC1N0b3BSZXF1ZXN0EhEKCXRocmVhZF9pZBgBIAEoCSIOCgxTdG9wUmVzcG9uc2UiJQoQR2V0U3RhdHVzUmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkiOgoRR2V0U3RhdHVzUmVzcG9uc2USJQoGc3RhdHVzGAEgASgLMhUuYWdlbnRmbGVldC52MS5TdGF0dXMi3wEKC09wZW5SZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSEgoKdGhyZWFkX2tleRgCIAEoCRIPCgdtZXNzYWdlGAMgASgJEgwKBHdha2UYBCABKAgSDwoHdGFpbnRlZBgFIAEoCBITCgtpbnRlcmFjdGlvbhgGIAEoCRIRCglsaWZlY3ljbGUYByABKAkSEgoKdmlzaWJpbGl0eRgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSDQoFYWN0b3IYCiABKAkSFAoMY2F1c2F0aW9uX2lkGAsgASgJIi4KDE9wZW5SZXNwb25zZRIRCgl0aHJlYWRfaWQYASABKAkSCwoDc2VxGAIgASgDIjwKEkNsb3NlVGhyZWFkUmVxdWVzdBISCgpkZWZpbml0aW9uGAEgASgJEhIKCnRocmVhZF9rZXkYAiABKAkiFQoTQ2xvc2VUaHJlYWRSZXNwb25zZSJLCg1JbnZva2VSZXF1ZXN0EhIKCmRlZmluaXRpb24YASABKAkSDQoFaW5wdXQYAiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIiMKDkludm9rZVJlc3BvbnNlEhEKCXRocmVhZF9pZBgBIAEoCSI/ChRXYWl0Rm9yUmVzdWx0UmVxdWVzdBIRCgl0aHJlYWRfaWQYASABKAkSFAoMd2FpdF9zZWNvbmRzGAIgASgFIo0BChVXYWl0Rm9yUmVzdWx0UmVzcG9uc2USDQoFc3RhdGUYASABKAkSGQoRc3RydWN0dXJlZF9vdXRwdXQYAiABKAkSEwoLcmVzdWx0X3RleHQYAyABKAkSDwoHc3VidHlwZRgEIAEoCRIkCgVlcnJvchgFIAEoCzIVLmFnZW50ZmxlZXQudjEuU3RhdHVzIsECCghEZWNpc2lvbhIKCgJpZBgBIAEoCRIpCgRraW5kGAIgASgOMhsuYWdlbnRmbGVldC52MS5EZWNpc2lvbktpbmQSKwoFc3RhdGUYAyABKA4yHC5hZ2VudGZsZWV0LnYxLkRlY2lzaW9uU3RhdGUSEQoJdGhyZWFkX2lkGAQgASgJEhMKC3JlcXVlc3Rfc2VxGAUgASgDEgsKA2FzaxgGIAEoCRIUCgxwYXlsb2FkX2pzb24YByABKAkSDAoEdG9vbBgIIAEoCRITCgthbnN3ZXJfanNvbhgJIAEoCRITCgthbnN3ZXJlZF9ieRgKIAEoCRITCgthbnN3ZXJlZF9hdBgLIAEoCRISCgpjcmVhdGVkX2F0GAwgASgJEg8KB3ZlcnNpb24YDSABKAMSFAoMc3ViamVjdF9yZXBvGA4gASgJIsABChRMaXN0RGVjaXNpb25zUmVxdWVzdBIsCgZzdGF0ZXMYASADKA4yHC5hZ2VudGZsZWV0LnYxLkRlY2lzaW9uU3RhdGUSKgoFa2luZHMYAiADKA4yGy5hZ2VudGZsZWV0LnYxLkRlY2lzaW9uS2luZBIUCgxzdWJqZWN0X3JlcG8YAyABKAkSEQoJdGhyZWFkX2lkGAQgASgJEhEKCXBhZ2Vfc2l6ZRgFIAEoBRISCgpwYWdlX3Rva2VuGAYgASgJIlwKFUxpc3REZWNpc2lvbnNSZXNwb25zZRIqCglkZWNpc2lvbnMYASADKAsyFy5hZ2VudGZsZWV0LnYxLkRlY2lzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIgChJHZXREZWNpc2lvblJlcXVlc3QSCgoCaWQYASABKAkiQAoTR2V0RGVjaXNpb25SZXNwb25zZRIpCghkZWNpc2lvbhgBIAEoCzIXLmFnZW50ZmxlZXQudjEuRGVjaXNpb24iLgoVV2F0Y2hEZWNpc2lvbnNSZXF1ZXN0EhUKDXNpbmNlX3ZlcnNpb24YASABKAMiPgoWV2F0Y2hEZWNpc2lvbnNSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgDEhMKC2NoYW5nZWRfaWRzGAIgAygJKvoBCg1BZ2VudEVycm9yS2V5Eh8KG0FHRU5UX0VSUk9SX0tFWV9VTlNQRUNJRklFRBAAEkQKIkFHRU5UX0VSUk9SX0tFWV9ERUZJTklUSU9OX0NIQU5HRUQQARocwvMYGGFnZW50LmRlZmluaXRpb25fY2hhbmdlZBI0ChpBR0VOVF9FUlJPUl9LRVlfVEhSRUFEX0NBUBACGhTC8xgQYWdlbnQudGhyZWFkX2NhcBJMCiZBR0VOVF9FUlJPUl9LRVlfREVGSU5JVElPTl9VTkFWQUlMQUJMRRADGiDC8xgcYWdlbnQuZGVmaW5pdGlvbl91bmF2YWlsYWJsZSp/CgxEZWNpc2lvbktpbmQSHQoZREVDSVNJT05fS0lORF9VTlNQRUNJRklFRBAAEhoKFkRFQ0lTSU9OX0tJTkRfUVVFU1RJT04QARIcChhERUNJU0lPTl9LSU5EX1BFUk1JU1NJT04QAhIWChJERUNJU0lPTl9LSU5EX1BMQU4QAyq5AQoNRGVjaXNpb25TdGF0ZRIeChpERUNJU0lPTl9TVEFURV9VTlNQRUNJRklFRBAAEhcKE0RFQ0lTSU9OX1NUQVRFX09QRU4QARIbChdERUNJU0lPTl9TVEFURV9BTlNXRVJFRBACEhwKGERFQ0lTSU9OX1NUQVRFX1dJVEhEUkFXThADEhoKFkRFQ0lTSU9OX1NUQVRFX0VYUElSRUQQBBIYChRERUNJU0lPTl9TVEFURV9TVEFMRRAFMqYPCgxBZ2VudFNlcnZpY2USeAoPTGlzdERlZmluaXRpb25zEjEuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXF1ZXN0GjIuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VMaXN0RGVmaW5pdGlvbnNSZXNwb25zZRJUCgtMaXN0VGhyZWFkcxIhLmFnZW50ZmxlZXQudjEuTGlzdFRocmVhZHNSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5MaXN0VGhyZWFkc1Jlc3BvbnNlEo0BCgxDcmVhdGVUaHJlYWQSIi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRocmVhZFJlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRocmVhZFJlc3BvbnNlIjTK8xgQYWdlbnQudGhyZWFkX2NhcMrzGBxhZ2VudC5kZWZpbml0aW9uX3VuYXZhaWxhYmxlEooBCgtQb3N0TWVzc2FnZRItLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUG9zdE1lc3NhZ2VSZXF1ZXN0Gi4uYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VQb3N0TWVzc2FnZVJlc3BvbnNlIhzK8xgYYWdlbnQuZGVmaW5pdGlvbl9jaGFuZ2VkEnIKDUdldFRyYW5zY3JpcHQSLy5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZUdldFRyYW5zY3JpcHRSZXF1ZXN0GjAuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VHZXRUcmFuc2NyaXB0UmVzcG9uc2USfQoQU3RyZWFtVHJhbnNjcmlwdBIyLmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QaMy5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZVN0cmVhbVRyYW5zY3JpcHRSZXNwb25zZTABEoQBChNSZXNwb25kVG9QZXJtaXNzaW9uEjUuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBo2LmFnZW50ZmxlZXQudjEuQWdlbnRTZXJ2aWNlUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEnUKDkFuc3dlclF1ZXN0aW9uEjAuYWdlbnRmbGVldC52MS5BZ2VudFNlcnZpY2VBbnN3ZXJRdWVzdGlvblJlcXVlc3QaMS5hZ2VudGZsZWV0LnYxLkFnZW50U2VydmljZUFuc3dlclF1ZXN0aW9uUmVzcG9uc2USVAoLQXBwcm92ZVBsYW4SIS5hZ2VudGZsZWV0LnYxLkFwcHJvdmVQbGFuUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuQXBwcm92ZVBsYW5SZXNwb25zZRJaCg1MaXN0RGVjaXNpb25zEiMuYWdlbnRmbGVldC52MS5MaXN0RGVjaXNpb25zUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuTGlzdERlY2lzaW9uc1Jlc3BvbnNlElQKC0dldERlY2lzaW9uEiEuYWdlbnRmbGVldC52MS5HZXREZWNpc2lvblJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkdldERlY2lzaW9uUmVzcG9uc2USXwoOV2F0Y2hEZWNpc2lvbnMSJC5hZ2VudGZsZWV0LnYxLldhdGNoRGVjaXNpb25zUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuV2F0Y2hEZWNpc2lvbnNSZXNwb25zZTABEk4KCVNldENvbmZpZxIfLmFnZW50ZmxlZXQudjEuU2V0Q29uZmlnUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuU2V0Q29uZmlnUmVzcG9uc2USPwoEU3RvcBIaLmFnZW50ZmxlZXQudjEuU3RvcFJlcXVlc3QaGy5hZ2VudGZsZWV0LnYxLlN0b3BSZXNwb25zZRJOCglHZXRTdGF0dXMSHy5hZ2VudGZsZWV0LnYxLkdldFN0YXR1c1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkdldFN0YXR1c1Jlc3BvbnNlEnUKBE9wZW4SGi5hZ2VudGZsZWV0LnYxLk9wZW5SZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5PcGVuUmVzcG9uc2UiNMrzGBBhZ2VudC50aHJlYWRfY2FwyvMYHGFnZW50LmRlZmluaXRpb25fdW5hdmFpbGFibGUSVAoLQ2xvc2VUaHJlYWQSIS5hZ2VudGZsZWV0LnYxLkNsb3NlVGhyZWFkUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuQ2xvc2VUaHJlYWRSZXNwb25zZRJFCgZJbnZva2USHC5hZ2VudGZsZWV0LnYxLkludm9rZVJlcXVlc3QaHS5hZ2VudGZsZWV0LnYxLkludm9rZVJlc3BvbnNlEloKDVdhaXRGb3JSZXN1bHQSIy5hZ2VudGZsZWV0LnYxLldhaXRGb3JSZXN1bHRSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5XYWl0Rm9yUmVzdWx0UmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM", [file_agentfleet_v1_transcript, file_ukubi_errors_v1_options]);
 
 /**
  * @generated from message agentfleet.v1.AgentDefinitionInfo
@@ -959,6 +959,249 @@ export const WaitForResultResponseSchema: GenMessage<WaitForResultResponse> = /*
   messageDesc(file_agentfleet_v1_agent, 35);
 
 /**
+ * @generated from message agentfleet.v1.Decision
+ */
+export type Decision = Message<"agentfleet.v1.Decision"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: agentfleet.v1.DecisionKind kind = 2;
+   */
+  kind: DecisionKind;
+
+  /**
+   * @generated from field: agentfleet.v1.DecisionState state = 3;
+   */
+  state: DecisionState;
+
+  /**
+   * @generated from field: string thread_id = 4;
+   */
+  threadId: string;
+
+  /**
+   * The request's seq in the thread's transcript: what RespondToPermission, AnswerQuestion and ApprovePlan name.
+   *
+   * @generated from field: int64 request_seq = 5;
+   */
+  requestSeq: bigint;
+
+  /**
+   * At most 280 characters, an agent claim: the first question, the tool, or the plan.
+   *
+   * @generated from field: string ask = 6;
+   */
+  ask: string;
+
+  /**
+   * The request as the agent sent it, as JSON.
+   *
+   * @generated from field: string payload_json = 7;
+   */
+  payloadJson: string;
+
+  /**
+   * A permission's or plan's tool.
+   *
+   * @generated from field: string tool = 8;
+   */
+  tool: string;
+
+  /**
+   * Set once answered: the reply as JSON, who wrote it and when.
+   *
+   * @generated from field: string answer_json = 9;
+   */
+  answerJson: string;
+
+  /**
+   * @generated from field: string answered_by = 10;
+   */
+  answeredBy: string;
+
+  /**
+   * @generated from field: string answered_at = 11;
+   */
+  answeredAt: string;
+
+  /**
+   * @generated from field: string created_at = 12;
+   */
+  createdAt: string;
+
+  /**
+   * The decisions version of this decision's last change.
+   *
+   * @generated from field: int64 version = 13;
+   */
+  version: bigint;
+
+  /**
+   * owner/name, when the thread is about a GitHub subject.
+   *
+   * @generated from field: string subject_repo = 14;
+   */
+  subjectRepo: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.Decision.
+ * Use `create(DecisionSchema)` to create a new message.
+ */
+export const DecisionSchema: GenMessage<Decision> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 36);
+
+/**
+ * @generated from message agentfleet.v1.ListDecisionsRequest
+ */
+export type ListDecisionsRequest = Message<"agentfleet.v1.ListDecisionsRequest"> & {
+  /**
+   * Empty matches every state, kind, repo or thread.
+   *
+   * @generated from field: repeated agentfleet.v1.DecisionState states = 1;
+   */
+  states: DecisionState[];
+
+  /**
+   * @generated from field: repeated agentfleet.v1.DecisionKind kinds = 2;
+   */
+  kinds: DecisionKind[];
+
+  /**
+   * @generated from field: string subject_repo = 3;
+   */
+  subjectRepo: string;
+
+  /**
+   * @generated from field: string thread_id = 4;
+   */
+  threadId: string;
+
+  /**
+   * At most 200; 0 is 50.
+   *
+   * @generated from field: int32 page_size = 5;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 6;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ListDecisionsRequest.
+ * Use `create(ListDecisionsRequestSchema)` to create a new message.
+ */
+export const ListDecisionsRequestSchema: GenMessage<ListDecisionsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 37);
+
+/**
+ * @generated from message agentfleet.v1.ListDecisionsResponse
+ */
+export type ListDecisionsResponse = Message<"agentfleet.v1.ListDecisionsResponse"> & {
+  /**
+   * Newest first. A page can hold fewer than page_size while more follow.
+   *
+   * @generated from field: repeated agentfleet.v1.Decision decisions = 1;
+   */
+  decisions: Decision[];
+
+  /**
+   * Empty on the last page.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ListDecisionsResponse.
+ * Use `create(ListDecisionsResponseSchema)` to create a new message.
+ */
+export const ListDecisionsResponseSchema: GenMessage<ListDecisionsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 38);
+
+/**
+ * @generated from message agentfleet.v1.GetDecisionRequest
+ */
+export type GetDecisionRequest = Message<"agentfleet.v1.GetDecisionRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.GetDecisionRequest.
+ * Use `create(GetDecisionRequestSchema)` to create a new message.
+ */
+export const GetDecisionRequestSchema: GenMessage<GetDecisionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 39);
+
+/**
+ * @generated from message agentfleet.v1.GetDecisionResponse
+ */
+export type GetDecisionResponse = Message<"agentfleet.v1.GetDecisionResponse"> & {
+  /**
+   * @generated from field: agentfleet.v1.Decision decision = 1;
+   */
+  decision?: Decision | undefined;
+};
+
+/**
+ * Describes the message agentfleet.v1.GetDecisionResponse.
+ * Use `create(GetDecisionResponseSchema)` to create a new message.
+ */
+export const GetDecisionResponseSchema: GenMessage<GetDecisionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 40);
+
+/**
+ * @generated from message agentfleet.v1.WatchDecisionsRequest
+ */
+export type WatchDecisionsRequest = Message<"agentfleet.v1.WatchDecisionsRequest"> & {
+  /**
+   * 0 starts at the current version.
+   *
+   * @generated from field: int64 since_version = 1;
+   */
+  sinceVersion: bigint;
+};
+
+/**
+ * Describes the message agentfleet.v1.WatchDecisionsRequest.
+ * Use `create(WatchDecisionsRequestSchema)` to create a new message.
+ */
+export const WatchDecisionsRequestSchema: GenMessage<WatchDecisionsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 41);
+
+/**
+ * @generated from message agentfleet.v1.WatchDecisionsResponse
+ */
+export type WatchDecisionsResponse = Message<"agentfleet.v1.WatchDecisionsResponse"> & {
+  /**
+   * @generated from field: int64 version = 1;
+   */
+  version: bigint;
+
+  /**
+   * @generated from field: repeated string changed_ids = 2;
+   */
+  changedIds: string[];
+};
+
+/**
+ * Describes the message agentfleet.v1.WatchDecisionsResponse.
+ * Use `create(WatchDecisionsResponseSchema)` to create a new message.
+ */
+export const WatchDecisionsResponseSchema: GenMessage<WatchDecisionsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_agent, 42);
+
+/**
  * AgentErrorKey is AgentService's error keys (docs/adr/0081 §1-2), carried as ErrorKey.key: each value's wire
  * string is its (ukubi.errors.v1.key), "agent." and its name after the prefix in lower case, which the islands and
  * the dashboard read the generated enum's names by (core/internal/errkeys TestDeclared). A key exists only
@@ -1003,6 +1246,90 @@ export enum AgentErrorKey {
  */
 export const AgentErrorKeySchema: GenEnum<AgentErrorKey> = /*@__PURE__*/
   enumDesc(file_agentfleet_v1_agent, 0);
+
+/**
+ * A decision's kind (docs/adr/0082 §5). A card, the fourth kind, comes with draft_card in a later slice.
+ *
+ * @generated from enum agentfleet.v1.DecisionKind
+ */
+export enum DecisionKind {
+  /**
+   * @generated from enum value: DECISION_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * AskUserQuestion.
+   *
+   * @generated from enum value: DECISION_KIND_QUESTION = 1;
+   */
+  QUESTION = 1,
+
+  /**
+   * A permission request, of any tool but ExitPlanMode.
+   *
+   * @generated from enum value: DECISION_KIND_PERMISSION = 2;
+   */
+  PERMISSION = 2,
+
+  /**
+   * ExitPlanMode's permission request: approving the plan.
+   *
+   * @generated from enum value: DECISION_KIND_PLAN = 3;
+   */
+  PLAN = 3,
+}
+
+/**
+ * Describes the enum agentfleet.v1.DecisionKind.
+ */
+export const DecisionKindSchema: GenEnum<DecisionKind> = /*@__PURE__*/
+  enumDesc(file_agentfleet_v1_agent, 1);
+
+/**
+ * @generated from enum agentfleet.v1.DecisionState
+ */
+export enum DecisionState {
+  /**
+   * @generated from enum value: DECISION_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DECISION_STATE_OPEN = 1;
+   */
+  OPEN = 1,
+
+  /**
+   * @generated from enum value: DECISION_STATE_ANSWERED = 2;
+   */
+  ANSWERED = 2,
+
+  /**
+   * Closed without an answer: the agent re-asked, or the pod a permission was bound to is gone.
+   *
+   * @generated from enum value: DECISION_STATE_WITHDRAWN = 3;
+   */
+  WITHDRAWN = 3,
+
+  /**
+   * A card's (docs/adr/0082 §5-6): past expires_at, or its pinned state moved.
+   *
+   * @generated from enum value: DECISION_STATE_EXPIRED = 4;
+   */
+  EXPIRED = 4,
+
+  /**
+   * @generated from enum value: DECISION_STATE_STALE = 5;
+   */
+  STALE = 5,
+}
+
+/**
+ * Describes the enum agentfleet.v1.DecisionState.
+ */
+export const DecisionStateSchema: GenEnum<DecisionState> = /*@__PURE__*/
+  enumDesc(file_agentfleet_v1_agent, 2);
 
 /**
  * AgentService (docs/adr/0066): the one API members and registered clients
@@ -1091,6 +1418,36 @@ export const AgentService: GenService<{
     methodKind: "unary";
     input: typeof ApprovePlanRequestSchema;
     output: typeof ApprovePlanResponseSchema;
+  },
+  /**
+   * The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
+   * is still the three methods above.
+   *
+   * @generated from rpc agentfleet.v1.AgentService.ListDecisions
+   */
+  listDecisions: {
+    methodKind: "unary";
+    input: typeof ListDecisionsRequestSchema;
+    output: typeof ListDecisionsResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.AgentService.GetDecision
+   */
+  getDecision: {
+    methodKind: "unary";
+    input: typeof GetDecisionRequestSchema;
+    output: typeof GetDecisionResponseSchema;
+  },
+  /**
+   * Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
+   * the client reconnects with since_version and re-reads the ids it holds.
+   *
+   * @generated from rpc agentfleet.v1.AgentService.WatchDecisions
+   */
+  watchDecisions: {
+    methodKind: "server_streaming";
+    input: typeof WatchDecisionsRequestSchema;
+    output: typeof WatchDecisionsResponseSchema;
   },
   /**
    * Control: the owner's or an admin's.

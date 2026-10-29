@@ -50,6 +50,14 @@ service AgentService {
   rpc AnswerQuestion(AgentServiceAnswerQuestionRequest) returns (AgentServiceAnswerQuestionResponse);
   rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse);
 
+  // The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
+  // is still the three methods above.
+  rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
+  rpc GetDecision(GetDecisionRequest) returns (GetDecisionResponse);
+  // Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
+  // the client reconnects with since_version and re-reads the ids it holds.
+  rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
+
   // Control: the owner's or an admin's.
   rpc SetConfig(SetConfigRequest) returns (SetConfigResponse);
   rpc Stop(StopRequest) returns (StopResponse);
@@ -281,4 +289,86 @@ message WaitForResultResponse {
   string result_text = 3;
   string subtype = 4;
   Status error = 5;
+}
+
+// A decision's kind (docs/adr/0082 §5). A card, the fourth kind, comes with draft_card in a later slice.
+enum DecisionKind {
+  DECISION_KIND_UNSPECIFIED = 0;
+  // AskUserQuestion.
+  DECISION_KIND_QUESTION = 1;
+  // A permission request, of any tool but ExitPlanMode.
+  DECISION_KIND_PERMISSION = 2;
+  // ExitPlanMode's permission request: approving the plan.
+  DECISION_KIND_PLAN = 3;
+}
+
+enum DecisionState {
+  DECISION_STATE_UNSPECIFIED = 0;
+  DECISION_STATE_OPEN = 1;
+  DECISION_STATE_ANSWERED = 2;
+  // Closed without an answer: the agent re-asked, or the pod a permission was bound to is gone.
+  DECISION_STATE_WITHDRAWN = 3;
+  // A card's (docs/adr/0082 §5-6): past expires_at, or its pinned state moved.
+  DECISION_STATE_EXPIRED = 4;
+  DECISION_STATE_STALE = 5;
+}
+
+message Decision {
+  string id = 1;
+  DecisionKind kind = 2;
+  DecisionState state = 3;
+  string thread_id = 4;
+  // The request's seq in the thread's transcript: what RespondToPermission, AnswerQuestion and ApprovePlan name.
+  int64 request_seq = 5;
+  // At most 280 characters, an agent claim: the first question, the tool, or the plan.
+  string ask = 6;
+  // The request as the agent sent it, as JSON.
+  string payload_json = 7;
+  // A permission's or plan's tool.
+  string tool = 8;
+  // Set once answered: the reply as JSON, who wrote it and when.
+  string answer_json = 9;
+  string answered_by = 10;
+  string answered_at = 11;
+  string created_at = 12;
+  // The decisions version of this decision's last change.
+  int64 version = 13;
+  // owner/name, when the thread is about a GitHub subject.
+  string subject_repo = 14;
+}
+
+message ListDecisionsRequest {
+  // Empty matches every state, kind, repo or thread.
+  repeated DecisionState states = 1;
+  repeated DecisionKind kinds = 2;
+  string subject_repo = 3;
+  string thread_id = 4;
+  // At most 200; 0 is 50.
+  int32 page_size = 5;
+  string page_token = 6;
+}
+
+message ListDecisionsResponse {
+  // Newest first. A page can hold fewer than page_size while more follow.
+  repeated Decision decisions = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
+}
+
+message GetDecisionRequest {
+  string id = 1;
+}
+
+message GetDecisionResponse {
+  Decision decision = 1;
+}
+
+message WatchDecisionsRequest {
+  // 0 starts at the current version.
+  int64 since_version = 1;
+}
+
+message WatchDecisionsResponse {
+  int64 version = 1;
+  repeated string changed_ids = 2;
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
@@ -56,6 +57,10 @@ import (
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
 	// The pools' rule (MAX_DEFINITION_SESSIONS < MAX_IN_FLIGHT_TASKS, ...) is config.Load's.
 	store := transcript.NewPostgresStore(pool)
+	// docs/adr/0082 §5: every request and reply is projected into the
+	// decisions table in its append's transaction. Without it nothing is ever
+	// pending, and the idle sweep reaps pods holding a permission.
+	store.SetAppendHook(decisions.OnAppend)
 	sessionStore := sessions.NewStore(pool)
 	journalStore := journal.NewStore(pool)
 	repoStore := repos.NewStore(pool)
@@ -411,7 +416,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// call is Unauthenticated: the service has no unauthenticated mode.
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
-	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub)
+	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisions.NewStore(pool))
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
 	// definition threads through agentSvc as client bridge, and a firing
 	// alert reaches the same handler as /webhook/alertmanager.

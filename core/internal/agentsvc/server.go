@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -23,6 +24,7 @@ type Server struct {
 	sessions    *sessions.Store
 	transcr     transcript.Store
 	hub         *dashboard.Hub
+	decisions   *decisions.Store
 }
 
 // console is the part of *dashboard.Server AgentService reuses, so every pod
@@ -48,8 +50,8 @@ var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
 
 // NewServer reuses the console's server for creates and warms, so every pod
 // still goes through WarmIfIdle (docs/adr/0066 §8).
-func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub) *Server {
-	s := &Server{sessions: store, transcr: transcr, hub: hub}
+func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub, decs *decisions.Store) *Server {
+	s := &Server{sessions: store, transcr: transcr, hub: hub, decisions: decs}
 	if dash != nil {
 		s.dash = dash
 	}

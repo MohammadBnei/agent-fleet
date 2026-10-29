@@ -8,7 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
 // The sessions store is what the whole of docs/adr/0048 rests on, and every
@@ -219,15 +223,7 @@ func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	store := NewStore(pool)
 	id := newSession(t, ctx, store)
 
-	appendEntry := func(seq int, kind, text string, replyTo *int) {
-		t.Helper()
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
-			 VALUES ($1, $2, 'agent', $3, $4, $5, $6)`,
-			id, seq, text, kind, fmt.Sprintf("k-%d", seq), replyTo); err != nil {
-			t.Fatalf("append %s at seq %d: %v", kind, seq, err)
-		}
-	}
+	appendEntry := appender(t, pool, id)
 
 	answered := 3
 	appendEntry(1, "permission_request", `{"tool":"Bash"}`, nil)
@@ -851,18 +847,11 @@ func TestListIdleSessionIDs_APermissionHoldsThePodButAQuestionDoesNot(t *testing
 		}
 	}
 	ask := func(id string, seq int64, kind string) {
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key)
-			 VALUES ($1, $2, 'agent', '{}', $3, $4)`, id, seq, kind, kind+"-"+id); err != nil {
-			t.Fatalf("ask: %v", err)
-		}
+		appender(t, pool, id)(int(seq), kind, `{}`, nil)
 	}
 	answer := func(id string, seq, replyTo int64, kind string) {
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO transcript (session_id, seq, "from", text, type, reply_to_seq, idempotency_key)
-			 VALUES ($1, $2, 'human', '{}', $3, $4, $5)`, id, seq, kind, replyTo, kind+"-a-"+id); err != nil {
-			t.Fatalf("answer: %v", err)
-		}
+		r := int(replyTo)
+		appender(t, pool, id)(int(seq), kind, `{}`, &r)
 	}
 
 	// Quiet for two hours with nothing outstanding — what the sweep is for.
@@ -901,5 +890,35 @@ func TestListIdleSessionIDs_APermissionHoldsThePodButAQuestionDoesNot(t *testing
 	}
 	if !contains(ids, answered) {
 		t.Error("a session whose permission was answered two hours ago is idle again and must sweep")
+	}
+}
+
+// appender writes transcript entries the way core does, through the
+// transcript store with the decisions hook (docs/adr/0082 §5), since
+// pending_decisions and the idle sweep read the decisions it writes. Each
+// entry must land at seq, so the fixture says where its replies point: the
+// store numbers from 0, and a gap below seq is filled with discussion.
+func appender(t *testing.T, pool *pgxpool.Pool, id string) func(seq int, kind, text string, replyTo *int) {
+	tr := transcript.NewPostgresStore(pool)
+	tr.SetAppendHook(decisions.OnAppend)
+	return func(seq int, kind, text string, replyTo *int) {
+		t.Helper()
+		next, err := tr.LatestSeq(context.Background(), id)
+		for ; err == nil && next < int64(seq); next++ {
+			_, err = tr.Append(context.Background(), id, "human", "filler", "discussion", "")
+		}
+		if err != nil {
+			t.Fatalf("fill below seq %d: %v", seq, err)
+		}
+		key := fmt.Sprintf("k-%d", seq)
+		var got int64
+		if replyTo == nil {
+			got, err = tr.Append(context.Background(), id, "agent", text, kind, key)
+		} else {
+			got, err = tr.AppendReply(context.Background(), id, "human", text, kind, key, int64(*replyTo))
+		}
+		if err != nil || got != int64(seq) {
+			t.Fatalf("append %s: seq %d, %v; the fixture wants seq %d", kind, got, err, seq)
+		}
 	}
 }
