@@ -82,13 +82,18 @@ func TestAnswer_StampedWarmsThenAppends(t *testing.T) {
 		{`{"tool":"Bash","input":{"command":"ls"}}`, decisions.Reply{Behavior: "allow"}, false},
 		{`{"tool":"ExitPlanMode","input":{"plan":"p"}}`, decisions.Reply{Behavior: "allow"}, false},
 	} {
-		fx := &effects{}
+		fx := &effects{tr: f.tr}
 		seq := f.ask(t, s, "permission_request", c.text)
 		if _, err := f.answer(t, fx, s, seq, c.reply); err != nil {
 			t.Fatal(err)
 		}
 		if got := slices.Equal(fx.warms, []string{s}); got != c.warm {
 			t.Errorf("%s: warms %v, want warmed %v", c.text, fx.warms, c.warm)
+		}
+		// The warm reads RESUME_FROM_SEQ as LatestSeq: it must see the
+		// transcript before the answer, or the new pod starts past it.
+		if after, _ := f.tr.LatestSeq(f.ctx, s); c.warm && (len(fx.warmedAt) != 1 || fx.warmedAt[0] >= after) {
+			t.Errorf("%s: warmed at seq %v, answer at %d; want the warm first", c.text, fx.warmedAt, after)
 		}
 	}
 }
@@ -274,5 +279,23 @@ func TestOpenRequestAndPlans(t *testing.T) {
 	pl := f.ask(t, s, "permission_request", `{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`)
 	if got, err := f.store.OpenPlans(f.ctx, s); err != nil || !slices.Equal(got, []int64{pl}) {
 		t.Errorf("OpenPlans = %v, %v; want [%d]", got, err, pl)
+	}
+}
+
+// Only an older worker's open permission or plan counts as blocking
+// (DeriveLiveState's always-Blocked rule); a stamped one and a question do not.
+func TestBlockingDecisions_CountsUnstampedOnly(t *testing.T) {
+	f := setup(t)
+	id := f.session(t)
+	f.ask(t, id, "permission_request", `{"tool":"Bash","input":{},"nb":1}`)
+	f.ask(t, id, "permission_request", `{"tool":"ExitPlanMode","input":{},"nb":1}`)
+	f.ask(t, id, "question", `{"questions":[]}`)
+	f.ask(t, id, "permission_request", `{"tool":"Bash","input":{}}`)
+	s, err := f.sessions.Get(f.ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.PendingDecisions != 4 || s.BlockingDecisions != 1 {
+		t.Errorf("pending %d, blocking %d: want 4, 1", s.PendingDecisions, s.BlockingDecisions)
 	}
 }

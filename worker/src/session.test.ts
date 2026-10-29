@@ -1139,22 +1139,16 @@ test.each([
 );
 
 // A plan is the one thing whose whole value is a human reading it, so it asks
-// in plan mode. Outside it ExitPlanMode is allowed (docs/adr/0082 §5): a late
-// plan approval moves the mode, and the agent's retry must not ask again.
-test("ExitPlanMode asks only in plan mode", async () => {
+// in auto too. The SDK's EnterPlanMode moves the SDK into plan without the
+// worker seeing it, so the worker's own mode cannot excuse the ask.
+test("ExitPlanMode asks in auto, after an EnterPlanMode the worker never saw", async () => {
   sessionPermissionMode = "auto";
   const promise = runSession();
   await Bun.sleep(20);
 
-  expect(
-    (await capturedCanUseTool!("ExitPlanMode", { plan: "p" })).behavior,
-  ).toBe("allow");
-  expect(findPermissionRequest("ExitPlanMode")).toBeUndefined();
-  // Allowing it moves no mode.
-  expect(setPermissionModeCalls).toEqual([]);
-
-  pushHuman("plan", "permission_mode");
-  await Bun.sleep(20);
+  expect((await capturedCanUseTool!("EnterPlanMode", {})).behavior).toBe(
+    "allow",
+  );
   let resolved: unknown = null;
   const call = capturedCanUseTool!("ExitPlanMode", {
     plan: "do the thing",
@@ -3141,10 +3135,85 @@ describe("non-blocking decisions", () => {
     ).toEqual([
       `Plan approved (request seq ${seq}); now in default mode. Go ahead with the plan.`,
     ]);
-    // The agent's retry is out of plan mode now, so it runs.
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a late plan approval that names a mode lets exactly one ExitPlanMode retry through", async () => {
+    sessionPermissionMode = "plan";
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("start");
+    await Bun.sleep(20);
+
+    await capturedCanUseTool!("ExitPlanMode", { plan: "p" });
+    const seq = requestSeq("ExitPlanMode");
+    // core appends the named mode first, then the allow.
+    pushHuman("auto", "permission_mode");
+    await Bun.sleep(20);
+    respondToPermission(seq, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
+
     expect(
       (await capturedCanUseTool!("ExitPlanMode", { plan: "p" })).behavior,
     ).toBe("allow");
+    // Spent: the next plan asks again.
+    expect(
+      (await capturedCanUseTool!("ExitPlanMode", { plan: "q" })).behavior,
+    ).toBe("deny");
+    expect(
+      pushedMessages.filter((m) => m.type === "permission_request"),
+    ).toHaveLength(2);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a late plan approval lets through only the approved plan, and a mode switch drops it", async () => {
+    sessionPermissionMode = "plan";
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("start");
+    await Bun.sleep(20);
+    const requests = () =>
+      pushedMessages.filter((m) => m.type === "permission_request").length;
+
+    await capturedCanUseTool!("ExitPlanMode", { plan: "A" });
+    const seq = requestSeq("ExitPlanMode");
+    pushHuman("auto", "permission_mode");
+    await Bun.sleep(20);
+    respondToPermission(seq, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
+
+    // A rewritten plan is not the one approved: it asks, and the approval is spent.
+    expect(
+      (await capturedCanUseTool!("ExitPlanMode", { plan: "A'" })).behavior,
+    ).toBe("deny");
+    expect(requests()).toBe(2);
+    expect(
+      (await capturedCanUseTool!("ExitPlanMode", { plan: "A" })).behavior,
+    ).toBe("deny");
+    expect(requests()).toBe(3);
+
+    // An approval followed by a mode switch: the next plan asks too.
+    await capturedCanUseTool!("ExitPlanMode", { plan: "B" });
+    const seqB = pushedMessages
+      .filter((m) => m.type === "permission_request")
+      .at(-1)!.seq;
+    respondToPermission(seqB, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(turns()).toContain(`Approved: retry request seq ${seqB} once.`);
+    pushHuman("plan", "permission_mode");
+    await Bun.sleep(20);
+    expect(
+      (await capturedCanUseTool!("ExitPlanMode", { plan: "B" })).behavior,
+    ).toBe("deny");
+    expect(requests()).toBe(5);
 
     pushHuman("", "abort");
     await promise;

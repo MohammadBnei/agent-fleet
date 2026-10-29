@@ -21,8 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -445,9 +443,8 @@ func permissionModeHandler(core *coreclient.Client) http.HandlerFunc {
 
 // grantConsumeHandler spends a one-time grant for {tool, input}
 // (docs/adr/0082 §5): {"granted", "decisionId"}. The session is the
-// sidecar's own; the body cannot name another. An input core cannot
-// canonicalize (InvalidArgument) is never granted, so it answers
-// granted: false rather than an error.
+// sidecar's own; the body cannot name another. Any core error is a 502:
+// the worker reads every failure as not granted.
 func grantConsumeHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -463,10 +460,6 @@ func grantConsumeHandler(core *coreclient.Client) http.HandlerFunc {
 			return
 		}
 		res, err := core.ConsumeGrant(r.Context(), body.Tool, string(body.Input))
-		if status.Code(err) == codes.InvalidArgument {
-			writeJSON(w, http.StatusOK, map[string]any{"granted": false, "decisionId": ""})
-			return
-		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return

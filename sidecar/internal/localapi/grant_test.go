@@ -76,11 +76,10 @@ func TestGrantConsume(t *testing.T) {
 	if r.GetSessionId() != "s1" || r.GetTool() != "Bash" || r.GetInputJson() != `{"command":"ls"}` {
 		t.Errorf("ConsumeGrant got %v", r)
 	}
-	// An input with no canon is never granted: not granted, not an error.
-	resp = post(`{"tool":"NoCanon","input":{}}`)
-	got.Granted, got.DecisionID = true, "x"
-	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil || resp.StatusCode != http.StatusOK || got.Granted || got.DecisionID != "" {
-		t.Errorf("no canon: HTTP %d, %+v, %v; want 200 and not granted", resp.StatusCode, got, err)
+	// A core error, such as an input with no canon, is a 502; the worker
+	// reads it as not granted.
+	if resp := post(`{"tool":"NoCanon","input":{}}`); resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("no canon: HTTP %d, want 502", resp.StatusCode)
 	}
 	if resp := post(`{"tool":"Bash"}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("no input: HTTP %d", resp.StatusCode)

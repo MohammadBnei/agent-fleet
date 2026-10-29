@@ -8,6 +8,7 @@ import {
   resolve,
   sep,
 } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   type EffortLevel,
   type PermissionMode,
@@ -153,14 +154,16 @@ function autoModeStillAsksCommand(
   );
 }
 
-// ExitPlanMode asks only in plan mode (docs/adr/0082 §5): a plan is the one
-// thing whose whole value is a human reading it, so the next plan still comes
-// to a human whatever mode the session left plan into. Outside plan mode it is
-// allowed: a plan approved after its call timed out switches the mode here
-// (approvePlanLate), and the agent's retry must not ask again. Allowing it
-// there changes no mode: the SDK's ExitPlanMode refuses to run outside plan
-// mode, and only moves the mode (to its prePlanMode) when it is in plan, so
-// auto never drops to default through it.
+// ExitPlanMode asks in every mode, auto included: a plan is the one thing whose
+// whole value is a human reading it, and AUTO_MODE_WARNING promises "and so
+// does the next plan". The worker's currentMode is no guide here: the SDK's own
+// EnterPlanMode moves it into plan without the worker seeing it. The one
+// exception is the retry a late plan approval asks for ("Approved: retry
+// request seq N once", see planRetry): the next ExitPlanMode, allowed without
+// asking only if it carries the very plan approved (docs/adr/0082 §5).
+// Allowing it changes no mode outside plan (the SDK's ExitPlanMode refuses to
+// run there) and in plan moves the SDK to its prePlanMode, so auto never drops
+// to default through it.
 
 // A `Bash(<prefix>:*)` rule. Matching one asks (docs/adr/0062 §7): `:*` admits
 // every argument, and `git push --receive-pack=…` runs a local command. The
@@ -1260,13 +1263,22 @@ export async function runSession(): Promise<SessionResult> {
     }
   >();
   // Requests this pod let go of without an answer (timed out, aborted, denied
-  // by a chat message or an interrupt), seq -> tool. The decision stays open:
-  // its answer arrives later as a message, and a retry of the same call gets
-  // the same seq back from core, which is refused at once.
-  const released = new Map<number, string>();
+  // by a chat message or an interrupt), seq -> the call. The decision stays
+  // open: its answer arrives later as a message, and a retry of the same call
+  // gets the same seq back from core, which is refused at once.
+  const released = new Map<
+    number,
+    { tool: string; input: Record<string, unknown> }
+  >();
   // One-time grants this pod spent (decision ids), so the late answer of a
   // decision whose retry already ran is not delivered as a second turn.
   const spentDecisions = new Set<string>();
+  // The input of the plan a late approval told the agent to retry. The next
+  // ExitPlanMode spends it whatever it carries, and runs unasked only if it is
+  // that same plan. EnterPlanMode, a mode switch and /clear drop it: what
+  // comes after is a new plan to read. Never set for a plan this pod did not
+  // hold (input unknown): that retry asks again.
+  let planRetry: Record<string, unknown> | undefined;
   const waitMs = decisionWaitMs(session.decisionWaitMs);
 
   // Takes a parked call out of the map before anything else happens to it, so
@@ -1283,7 +1295,7 @@ export async function runSession(): Promise<SessionResult> {
   function release(seq: number, result: PermissionResult): void {
     const pending = claim(seq);
     if (!pending) return;
-    released.set(seq, pending.tool);
+    released.set(seq, { tool: pending.tool, input: pending.input });
     pending.resolve(result);
   }
 
@@ -1539,10 +1551,14 @@ export async function runSession(): Promise<SessionResult> {
       // will not re-ask a human for. Everything else asks, for at most the
       // decision wait (docs/adr/0082 §5).
       canUseTool: async (toolName, toolInput, options) => {
-        // A plan asks only in plan mode: see the ExitPlanMode note beside
-        // autoModeStillAsksCommand.
-        if (toolName === "ExitPlanMode" && currentMode !== "plan")
-          return { behavior: "allow", updatedInput: toolInput };
+        // See the ExitPlanMode note beside autoModeStillAsksCommand.
+        if (toolName === "EnterPlanMode") planRetry = undefined;
+        if (toolName === "ExitPlanMode" && planRetry) {
+          const approved = planRetry;
+          planRetry = undefined;
+          if (isDeepStrictEqual(approved, toolInput))
+            return { behavior: "allow", updatedInput: toolInput };
+        }
         let noGrant = false;
         if (spec) {
           // Only the sidecar tools this definition lists are the fleet's own,
@@ -1591,6 +1607,7 @@ export async function runSession(): Promise<SessionResult> {
         if (
           !spec &&
           currentMode === "auto" &&
+          toolName !== "ExitPlanMode" &&
           !autoModeStillAsksCommand(
             toolName,
             toolInput as Record<string, unknown>,
@@ -1759,18 +1776,19 @@ export async function runSession(): Promise<SessionResult> {
 
   // A plan approved after its ExitPlanMode call let go (docs/adr/0082 §5),
   // while the SDK is still in plan mode: nothing is parked to move it out, so
-  // this does, into the mode the answer names, else default, else the
-  // definition's first allowed mode that is not plan. Then the agent is told.
+  // this does, into default, else the definition's first allowed mode that is
+  // not plan. Then the agent is told. A mode the answer names never gets here:
+  // core appends it first as a permission_mode entry, which moves currentMode
+  // out of plan before the allow arrives.
   // Never throws: it runs inside onEntry.
-  async function approvePlanLate(seq: number, named: unknown): Promise<void> {
+  async function approvePlanLate(
+    seq: number,
+    plan: Record<string, unknown> | undefined,
+  ): Promise<void> {
     const allowed = (m: string) => !spec || spec.modeAllow.includes(m);
-    const target = [
-      typeof named === "string" ? named : "",
-      "default",
-      ...(spec?.modeAllow ?? []),
-    ].find((m) => m && m !== "plan" && allowed(m)) as
-      | PermissionMode
-      | undefined;
+    const target = ["default", ...(spec?.modeAllow ?? [])].find(
+      (m) => m && m !== "plan" && allowed(m),
+    ) as PermissionMode | undefined;
     const failure = !target
       ? "no mode to leave plan mode into"
       : await q
@@ -1783,6 +1801,7 @@ export async function runSession(): Promise<SessionResult> {
         mode: target,
         error: failure,
       });
+      planRetry = plan;
       input.push(`Approved: retry request seq ${seq} once.`);
       return;
     }
@@ -1887,7 +1906,6 @@ export async function runSession(): Promise<SessionResult> {
             message?: string;
             grant?: string;
             decisionId?: string;
-            mode?: string;
           } = {};
           try {
             decision = JSON.parse(entry.text);
@@ -1954,21 +1972,22 @@ export async function runSession(): Promise<SessionResult> {
           // answer is a message (docs/adr/0082 §5). One whose retry already
           // spent its grant here has nothing left to say.
           if (decisionId && spentDecisions.has(decisionId)) return;
-          const tool = released.get(seq);
+          const call = released.get(seq);
           released.delete(seq);
+          const tool = call?.tool;
           if (decision.behavior === "allow") {
             // ponytail: an answer carries no tool, so a plan is told apart by
             // what this pod remembers, else by "no grant id while in plan
             // mode" (a plan is never a grant; a permission allow carries one).
             // Upgrade path: core puts the decision's kind in the response.
-            if (
-              currentMode === "plan" &&
-              !decisionId &&
-              (tool === undefined || tool === "ExitPlanMode")
-            ) {
-              await approvePlanLate(seq, decision.mode);
+            const plan =
+              !decisionId && (tool === undefined || tool === "ExitPlanMode");
+            if (plan && currentMode === "plan") {
+              await approvePlanLate(seq, call?.input);
               return;
             }
+            // Only a plan this pod held: its input is what the retry must match.
+            if (plan && call) planRetry = call.input;
             input.push(`Approved: retry request seq ${seq} once.`);
           } else if (decision.behavior === "deny") {
             input.push(`Request seq ${seq} was denied. ${reason}`);
@@ -1980,6 +1999,7 @@ export async function runSession(): Promise<SessionResult> {
         // approval is its own permission_response, appended after the switch.
         if (entry.type === "permission_mode") {
           const mode = entry.text as PermissionMode;
+          planRetry = undefined;
 
           // Every mode switch is a live control request again (docs/adr/0053).
           // adr/0052's bypass-boundary relaunch is gone with the mode that
@@ -2054,6 +2074,7 @@ export async function runSession(): Promise<SessionResult> {
         // hang), but preceded by clearing the resume identity.
         if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
           aborted = true;
+          planRetry = undefined;
           // record=true: this pod ends itself without an interrupt/abort entry,
           // and every dashboard surface reads one of those as resolving whatever
           // was pending — so without the record, a card sits "waiting for a

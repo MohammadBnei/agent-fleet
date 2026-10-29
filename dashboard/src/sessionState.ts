@@ -30,13 +30,15 @@ export const LIVE_STATES = new Set([
 // it. bucketSessions.test.ts guards exactly this, and it is why `quiet` is
 // defined as "everything not already claimed" rather than by its own
 // predicate.
-// `answerableIds` are sessions holding an unanswered QUESTION — computed
-// client-side from the summaries App already fetches, because the wire carries
-// one `pendingDecisions` count and cannot tell the two kinds apart.
+// `answerableIds` are sessions holding an unanswered QUESTION or a stamped
+// PERMISSION (transcript.ts summaryAnswerable) — computed client-side from the
+// summaries App already fetches, because the wire carries one
+// `pendingDecisions` count and cannot tell the kinds apart.
 //
-// The distinction is the one docs/adr/0050 turns on. A question is durable and
-// pod-independent: answering it warms a fresh pod and the answer is delivered
-// there, so it belongs in NEEDS YOU whether or not a pod exists right now. A
+// The distinction is the one docs/adr/0050 and 0082 §5 turn on. A question and
+// a stamped permission are durable and pod-independent: answering warms a
+// fresh pod and the answer is delivered there, so they belong in NEEDS YOU
+// whether or not a pod exists right now. An old worker's (unstamped)
 // permission is bound to one live pod's canUseTool promise: with the pod gone
 // its buttons reach nothing, so it belongs in STUCK, shown but not answerable.
 export function bucketSessions(
@@ -84,9 +86,10 @@ export function bucketSessions(
     //    alone, so such a session sat at the top of the list under a header
     //    reading "0 waiting on you". It goes to `stuck` below instead: same
     //    visibility, and actions that can actually succeed.
-    //    A dead pod holding an unanswered QUESTION belongs here too, and that
-    //    is new: since AnswerQuestion warms, its allow/answer form is live
-    //    again. Only a stranded PERMISSION drops through to `stuck` now.
+    //    A dead pod holding an unanswered QUESTION or a stamped PERMISSION
+    //    belongs here too: core warms to deliver either answer, so its form
+    //    is live. Only an old worker's stranded PERMISSION drops through to
+    //    `stuck` now.
     if (
       t.archivedAt === undefined &&
       (t.liveState === "blocked" || answerableIds.has(t.id))
@@ -95,8 +98,9 @@ export function bucketSessions(
       continue;
     }
     // 2. Burning wall-clock with nothing a human can usefully answer: a
-    //    stalled session, or one whose pod died holding a PERMISSION — the
-    //    question case was claimed above, because that one IS answerable.
+    //    stalled session, or one whose pod died holding an old worker's
+    //    PERMISSION — questions and stamped permissions were claimed above,
+    //    because those ARE answerable.
     //    Above the fold, because the alternative was the quiet tail — and on
     //    mobile, a collapsed accordion behind a chip.
     if (
@@ -352,7 +356,7 @@ export const TERMINAL = new Set(["archived", "swept"]);
 export function stuckLabel(session: Session): string {
   if (isPodPhaseLive(session.podPhase)) return "stalled";
   return session.pendingDecisions > 0
-    ? "pod gone, decision unanswerable"
+    ? "pod gone, permission unanswerable"
     : "stalled";
 }
 

@@ -97,6 +97,11 @@ type Session struct {
 	// answering one decision marked the session unblocked while others were
 	// still waiting, and it sat stalled with nobody notified.
 	PendingDecisions int `json:"pendingDecisions"`
+	// BlockingDecisions is the part of PendingDecisions an older worker
+	// really is blocked on: open permissions and plans without the "nb": 1
+	// stamp (docs/adr/0082 §5), whose canUseTool promise waits with no time
+	// limit. DeriveLiveState keeps today's always-Blocked rule for these.
+	BlockingDecisions int `json:"-"`
 
 	// WorkerImage/SidecarImage are the images this session's pod actually got,
 	// written by SetPodImages from CreateWorkerPodResponse. Empty for a session
@@ -195,7 +200,10 @@ const selectCols = `
 	s.definition_name, s.definition_sha,
 	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
 	(SELECT count(*) FROM decisions d
-	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions`
+	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
+	(SELECT count(*) FROM decisions d
+	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
+	     AND COALESCE(d.payload ->> 'nb', '') <> '1') AS blocking_decisions`
 
 func scanSession(row pgx.Row) (*Session, error) {
 	var s Session
@@ -209,7 +217,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
-		&s.PendingDecisions,
+		&s.PendingDecisions, &s.BlockingDecisions,
 	)
 	if err != nil {
 		return nil, err

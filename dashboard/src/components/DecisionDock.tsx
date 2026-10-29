@@ -79,6 +79,12 @@ export function DecisionDock({
       swept,
       stamped: permission.stamped,
     });
+  // An answer and a close on the same request lock each other out: whichever
+  // lands second would fail as no longer open.
+  const seqBusy =
+    permission !== null &&
+    (busyKey === `permission:${permission.entry.seq}` ||
+      busyKey === `withdraw:${permission.entry.seq}`);
   const pad = compact ? "px-3.5 py-3" : "px-4.5 py-3.5";
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
@@ -117,6 +123,7 @@ export function DecisionDock({
       {permission && permissionLive && permission.interrupted && (
         <InterruptedBar
           busy={busyKey === `withdraw:${permission.entry.seq}`}
+          disabled={seqBusy}
           onClose={onWithdraw && (() => onWithdraw(permission.entry.seq))}
         />
       )}
@@ -129,7 +136,7 @@ export function DecisionDock({
             }
             pending
             docked
-            busy={busyKey === `permission:${permission.entry.seq}`}
+            busy={seqBusy}
             onApprove={(mode) => onApprovePlan(permission.entry.seq, mode)}
             onFeedback={onPlanFeedback}
             edgeClassName={edge}
@@ -140,7 +147,7 @@ export function DecisionDock({
             tool={permission.tool}
             input={permission.input}
             pending
-            busy={busyKey === `permission:${permission.entry.seq}`}
+            busy={seqBusy}
             onAllow={(grant) =>
               onRespond(permission.entry.seq, { behavior: "allow" }, grant)
             }
@@ -170,9 +177,12 @@ export function DecisionDock({
 // it. Exported for the list row, which shows the same bar.
 export function InterruptedBar({
   busy,
+  disabled = false,
   onClose,
 }: {
   busy: boolean;
+  // An answer to the same request is in flight.
+  disabled?: boolean;
   onClose?: () => void;
 }) {
   return (
@@ -184,7 +194,7 @@ export function InterruptedBar({
       {onClose && (
         <ActionButton
           busy={busy}
-          disabled={busy}
+          disabled={disabled}
           title="Close this request without answering it"
           className="ml-auto text-xs text-dim hover:text-error cursor-pointer border border-line px-2 py-0.5"
           onClick={onClose}

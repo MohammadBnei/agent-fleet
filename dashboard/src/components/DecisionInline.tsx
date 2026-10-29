@@ -43,7 +43,12 @@ type Layout = "wide" | "stacked";
 // question that was already answered.
 function useDecision(reload: () => void) {
   const [pending, setPending] = useState<string | null>(null);
-  const [answered, setAnswered] = useState<bigint | null>(null);
+  // `key` tells a close ("withdraw") from an answer: a close sends the agent
+  // nothing, so it must not read as a delivery.
+  const [answered, setAnswered] = useState<{
+    seq: bigint;
+    key: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const send = (
     key: string,
@@ -54,7 +59,7 @@ function useDecision(reload: () => void) {
     setError(null);
     action()
       .then(() => {
-        if (decidedSeq !== undefined) setAnswered(decidedSeq);
+        if (decidedSeq !== undefined) setAnswered({ seq: decidedSeq, key });
         reload();
       })
       .catch((err: Error) => setError(err.message))
@@ -154,9 +159,12 @@ export function DecisionInline({
   // *different* decision arriving next renders normally with no reset logic.
   if (
     answered !== null &&
-    (permission?.entry.seq === answered || questionEntry?.seq === answered)
+    (permission?.entry.seq === answered.seq ||
+      questionEntry?.seq === answered.seq)
   ) {
-    return (
+    return answered.key === "withdraw" ? (
+      <div className={`${pad} text-sm text-dim`}>closed</div>
+    ) : (
       <div className={`${pad} flex items-center gap-2 text-sm text-dim`}>
         <span className="loading loading-spinner loading-xs flex-none" />
         sent — waiting for the agent to pick it up
@@ -191,6 +199,7 @@ export function DecisionInline({
     const interrupted = permission.interrupted && (
       <InterruptedBar
         busy={pending === "withdraw"}
+        disabled={busy}
         onClose={() =>
           send(
             "withdraw",

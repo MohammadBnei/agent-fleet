@@ -65,13 +65,18 @@ func DeriveLiveState(t *Session, now time.Time, turnStall time.Duration) LiveSta
 	if !IsPodPhaseLive(t.PodPhase) {
 		return LiveStateNone
 	}
+	// An older worker's unstamped permission or plan holds its canUseTool
+	// promise until answered, so that session is blocked whatever else its
+	// transcript says: today's rule, kept for old workers (docs/adr/0082 §5).
+	if t.BlockingDecisions > 0 {
+		return LiveStateBlocked
+	}
 	state := deriveTurnState(t, now, turnStall)
 	// Blocked never overrides work (docs/adr/0082 §5). Nothing blocks any
 	// more: past DECISION_WAIT_MS the agent hears "pending" and carries on,
 	// so an open decision says the session is blocked only where it would
 	// otherwise read as finished or stuck, or while its last word is the
-	// request itself, which is still waiting on its answer (an older
-	// worker's request waits there until answered).
+	// request itself, which is still waiting on its answer.
 	//
 	// A count, not the old awaiting_human boolean. That flag was set and
 	// cleared by ANY permission_response, but permissions are a list —

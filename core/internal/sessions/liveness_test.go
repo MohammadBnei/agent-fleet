@@ -41,6 +41,18 @@ func TestDeriveLiveState(t *testing.T) {
 			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
 			want: LiveStateWorking,
 		},
+		// An older worker's unstamped permission or plan really blocks its
+		// pod, so it reads Blocked whatever the last entry is.
+		{
+			name: "an unstamped open permission after a human permission_response is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 1, BlockingDecisions: 1, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("permission_response"), LastEntryFrom: ptr("human")},
+			want: LiveStateBlocked,
+		},
+		{
+			name: "an unstamped open permission after an agent tool_result is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 1, BlockingDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("tool_result"), LastEntryFrom: ptr("agent")},
+			want: LiveStateBlocked,
+		},
 		{
 			name: "an open decision on a finished turn is blocked",
 			task: Session{PodPhase: live, PendingDecisions: 2, ActivitySeen: true, LastActiveAt: &recent, SeenAt: &longAgo, LastEntryType: ptr("result")},

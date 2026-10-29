@@ -1204,6 +1204,15 @@ export function decisionAnswerable(
   return kind === "question" || opts.stamped === true || opts.podLive;
 }
 
+// A list summary's session is answerable from the list whatever its pod is
+// doing: it holds a question or a stamped permission (decisionAnswerable).
+// What App.tsx hands bucketSessions as answerableIds.
+export function summaryAnswerable(sum: ListSummary): boolean {
+  return (
+    sum.pendingQuestion !== null || sum.pendingPermission?.stamped === true
+  );
+}
+
 export type Density = "everything" | "narrative" | "decisions";
 export type FeedVisibility = {
   narrative: boolean;

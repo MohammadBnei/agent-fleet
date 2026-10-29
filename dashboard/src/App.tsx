@@ -24,6 +24,7 @@ import {
   findPendingPermissions,
   type ListSummary,
   listSummary,
+  summaryAnswerable,
 } from "./transcript";
 import { useFeedWidth } from "./useFeedWidth";
 import { useMediaQuery } from "./useMediaQuery";
@@ -240,15 +241,16 @@ export default function App() {
     [loadProposals],
   );
 
-  // Sessions holding an unanswered QUESTION, from the summaries above. A
-  // question survives its pod (docs/adr/0050) and answering one warms a fresh
-  // pod to receive the answer, so these stay answerable in the list whatever
-  // pod_phase says. A stranded PERMISSION does not — see bucketSessions.
+  // Sessions holding an unanswered QUESTION or a stamped PERMISSION, from the
+  // summaries above. Both survive their pod (docs/adr/0050, 0082 §5) and
+  // answering one warms a fresh pod to receive the answer, so these stay
+  // answerable in the list whatever pod_phase says. An old worker's stranded
+  // permission does not — see bucketSessions.
   const answerableIds = useMemo(
     () =>
       new Set(
         [...summaries.entries()]
-          .filter(([, sum]) => sum.pendingQuestion !== null)
+          .filter(([, sum]) => summaryAnswerable(sum))
           .map(([id]) => id),
       ),
     [summaries],
