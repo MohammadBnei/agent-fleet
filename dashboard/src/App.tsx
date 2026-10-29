@@ -7,6 +7,7 @@ import { NeedsYouModal } from "./components/NeedsYouModal";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { Segmented } from "./components/Segmented";
 import { client } from "./connectClient";
+import { fetchWithdrawn } from "./decisions";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
@@ -19,7 +20,12 @@ import { SessionList } from "./pages/SessionList";
 import { Settings } from "./pages/Settings";
 import { pollVisible } from "./pollVisible";
 import { LIVE_STATES } from "./sessionState";
-import { type ListSummary, listSummary } from "./transcript";
+import {
+  findPendingPermissions,
+  type ListSummary,
+  listSummary,
+  summaryAnswerable,
+} from "./transcript";
 import { useFeedWidth } from "./useFeedWidth";
 import { useMediaQuery } from "./useMediaQuery";
 import { useTheme } from "./useTheme";
@@ -235,15 +241,16 @@ export default function App() {
     [loadProposals],
   );
 
-  // Sessions holding an unanswered QUESTION, from the summaries above. A
-  // question survives its pod (docs/adr/0050) and answering one warms a fresh
-  // pod to receive the answer, so these stay answerable in the list whatever
-  // pod_phase says. A stranded PERMISSION does not — see bucketSessions.
+  // Sessions holding an unanswered QUESTION or a stamped PERMISSION, from the
+  // summaries above. Both survive their pod (docs/adr/0050, 0082 §5) and
+  // answering one warms a fresh pod to receive the answer, so these stay
+  // answerable in the list whatever pod_phase says. An old worker's stranded
+  // permission does not — see bucketSessions.
   const answerableIds = useMemo(
     () =>
       new Set(
         [...summaries.entries()]
-          .filter(([, sum]) => sum.pendingQuestion !== null)
+          .filter(([, sum]) => summaryAnswerable(sum))
           .map(([id]) => id),
       ),
     [summaries],
@@ -306,7 +313,16 @@ export default function App() {
           // 200 matches the detail view. A summary only needs the tail: the
           // pending decision, the latest todos, the in-flight tool.
           .getTranscript({ sessionId: t.id, limit: SUMMARY_PAGE })
-          .then((res) => [t.id, listSummary(res.entries)] as const)
+          // A withdrawn request leaves no transcript row (decisions.ts), so
+          // the store is read too — only where a permission looks pending,
+          // which keeps the usual poll at one fetch per session.
+          .then(async (res) => {
+            const entries =
+              findPendingPermissions(res.entries).length > 0
+                ? [...(await fetchWithdrawn(t.id)), ...res.entries]
+                : res.entries;
+            return [t.id, listSummary(entries)] as const;
+          })
           .catch(() => null),
       ),
     ).then((results) => {

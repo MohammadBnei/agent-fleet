@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "./gen/agentfleet/v1/transcript_pb";
 import { bucketSessions } from "./sessionState";
+import { listSummary, summaryAnswerable } from "./transcript";
 
 // These tests used to be written against sessions.status ("proposed", "running",
 // "done") and a `shipped` bucket. All three are gone in docs/adr/0048: a
@@ -277,4 +282,44 @@ test("a stranded question is needsYou; a stranded permission is stuck", () => {
 
   expect(b.needsYou.map((t) => t.id)).toEqual(["q"]);
   expect(b.stuck.map((t) => t.id)).toEqual(["p"]);
+});
+
+// A stamped permission (docs/adr/0082 §5) is answerable with its pod gone:
+// core warms the session and delivers the answer as a message. So the list
+// must claim it for NEEDS YOU, as the detail dock offers it; an old worker's
+// unstamped one on a dead pod still goes to STUCK.
+test("a stamped permission on a dead pod is needsYou; an unstamped one is stuck", () => {
+  const request = (nb: boolean) =>
+    ({
+      $typeName: "agentfleet.v1.TranscriptEntry",
+      sessionId: "s",
+      seq: 5n,
+      from: "agent",
+      type: TranscriptEntryType.PERMISSION_REQUEST,
+      text: JSON.stringify({
+        tool: "Bash",
+        input: { command: "ls" },
+        ...(nb ? { nb: 1 } : {}),
+      }),
+      createdAt: "",
+    }) as TranscriptEntry;
+  const summaries = new Map([
+    ["new", listSummary([request(true)])],
+    ["old", listSummary([request(false)])],
+  ]);
+  const answerable = new Set(
+    [...summaries].filter(([, s]) => summaryAnswerable(s)).map(([id]) => id),
+  );
+
+  const b = bucketSessions(
+    [
+      session("new", { liveState: "", pendingDecisions: 1 }),
+      session("old", { liveState: "", pendingDecisions: 1 }),
+    ],
+    new Set(["new", "old"]),
+    answerable,
+  );
+
+  expect(b.needsYou.map((t) => t.id)).toEqual(["new"]);
+  expect(b.stuck.map((t) => t.id)).toEqual(["old"]);
 });

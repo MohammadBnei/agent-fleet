@@ -25,9 +25,10 @@ type specRecorder struct {
 
 func (f *specRecorder) GetSession(context.Context, *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
 	return &agentfleetv1.GetSessionResponse{
-		Session:      &agentfleetv1.Session{Id: "s1", Effort: proto.String("high"), DefinitionSha: proto.String("d3f")},
-		AgentSpec:    &agentfleetv1.AgentSpec{ToolsAllow: []string{"Read"}, SidecarTools: []string{"send_message"}, MaxTurns: 60},
-		AgentSpecSha: "abc",
+		Session:        &agentfleetv1.Session{Id: "s1", Effort: proto.String("high"), DefinitionSha: proto.String("d3f")},
+		AgentSpec:      &agentfleetv1.AgentSpec{ToolsAllow: []string{"Read"}, SidecarTools: []string{"send_message"}, MaxTurns: 60},
+		AgentSpecSha:   "abc",
+		DecisionWaitMs: 45000,
 	}, nil
 }
 
@@ -75,6 +76,7 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 		AgentSpecSha string         `json:"agentSpecSha"`
 		Effort       string         `json:"effort"`
 		DefSha       string         `json:"definitionSha"`
+		DecisionWait int            `json:"decisionWaitMs"`
 	}
 	err = json.NewDecoder(resp.Body).Decode(&task)
 	_ = resp.Body.Close()
@@ -87,6 +89,10 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 	// docs/adr/0077: the row's effort reaches the worker.
 	if task.Effort != "high" {
 		t.Fatalf("/task effort %q, want high", task.Effort)
+	}
+	// docs/adr/0082 §5: core's DECISION_WAIT_MS reaches the worker's gate.
+	if task.DecisionWait != 45000 {
+		t.Fatalf("/task decisionWaitMs %d, want 45000", task.DecisionWait)
 	}
 	if task.DefSha != "d3f" {
 		t.Fatalf("/task definitionSha %q, want the pinned commit", task.DefSha)

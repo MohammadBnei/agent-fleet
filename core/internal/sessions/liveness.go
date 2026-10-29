@@ -17,8 +17,8 @@ const (
 	// No live pod. The workflow status governs; there is nothing to be
 	// live about.
 	LiveStateNone LiveState = ""
-	// A human decision is outstanding (a permission request or a
-	// question). This is exactly tasks.awaiting_human.
+	// A human decision is outstanding (a permission request, a plan or a
+	// question) and the session is not working (DeriveLiveState).
 	LiveStateBlocked LiveState = "blocked"
 	// The pod is up but its agent has not posted anything at all yet.
 	// Either it is still starting, or it never will — enforceStartupStall
@@ -65,10 +65,18 @@ func DeriveLiveState(t *Session, now time.Time, turnStall time.Duration) LiveSta
 	if !IsPodPhaseLive(t.PodPhase) {
 		return LiveStateNone
 	}
-	// Checked before everything else: a session waiting on a human is not
-	// stalled, idle or working, whatever its timestamps say. Nothing will
-	// happen until someone clicks, and reporting it as anything else is
-	// what buries the one session that actually needs attention.
+	// An older worker's unstamped permission or plan holds its canUseTool
+	// promise until answered, so that session is blocked whatever else its
+	// transcript says: today's rule, kept for old workers (docs/adr/0082 §5).
+	if t.BlockingDecisions > 0 {
+		return LiveStateBlocked
+	}
+	state := deriveTurnState(t, now, turnStall)
+	// Blocked never overrides work (docs/adr/0082 §5). Nothing blocks any
+	// more: past DECISION_WAIT_MS the agent hears "pending" and carries on,
+	// so an open decision says the session is blocked only where it would
+	// otherwise read as finished or stuck, or while its last word is the
+	// request itself, which is still waiting on its answer.
 	//
 	// A count, not the old awaiting_human boolean. That flag was set and
 	// cleared by ANY permission_response, but permissions are a list —
@@ -77,8 +85,20 @@ func DeriveLiveState(t *Session, now time.Time, turnStall time.Duration) LiveSta
 	// and it sat there stalled with nobody notified. Counting the unanswered
 	// ones cannot go wrong that way (docs/adr/0048).
 	if t.PendingDecisions > 0 {
-		return LiveStateBlocked
+		switch state {
+		case LiveStateIdle, LiveStateDone, LiveStateStalled:
+			return LiveStateBlocked
+		case LiveStateWorking:
+			if t.LastEntryType != nil && (*t.LastEntryType == "permission_request" || *t.LastEntryType == "question") {
+				return LiveStateBlocked
+			}
+		}
 	}
+	return state
+}
+
+// deriveTurnState is DeriveLiveState for a live pod, decisions aside.
+func deriveTurnState(t *Session, now time.Time, turnStall time.Duration) LiveState {
 	if !t.ActivitySeen {
 		return LiveStateUnknown
 	}

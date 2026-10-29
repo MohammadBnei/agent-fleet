@@ -59,6 +59,7 @@ func decisionToProto(r decisions.Record) *agentfleetv1.Decision {
 		RequestSeq: r.RequestSeq, Ask: r.Ask, PayloadJson: r.Payload, Tool: r.Tool,
 		AnswerJson: r.Answer, AnsweredBy: r.AnsweredBy, AnsweredAt: timeOrEmpty(r.AnsweredAt),
 		CreatedAt: transcript.RFC3339OrEmpty(r.CreatedAt), Version: r.Version, SubjectRepo: r.SubjectRepo,
+		Interrupted: r.Interrupted,
 	}
 }
 

@@ -94,7 +94,14 @@ type Server struct {
 	// decisions spends one-time grants (ConsumeGrant). nil answers
 	// Unavailable.
 	decisions *decisions.Store
+	// decisionWait is DECISION_WAIT_MS (docs/adr/0082 §5): sent to the
+	// worker on GetSession, and AskUserQuestion's longest hold. 0 sends 0
+	// (the worker's own default) and holds what the sidecar asks.
+	decisionWait time.Duration
 }
+
+// SetDecisionWait sets DECISION_WAIT_MS.
+func (s *Server) SetDecisionWait(d time.Duration) { s.decisionWait = d }
 
 func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *journal.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
 	return &Server{transcr: transcr, sessions: sessionStore, journal: journalStore, repos: repoStore, provisioner: provisioner, files: files, loki: loki}
@@ -149,6 +156,14 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	// AppendReply only when the caller actually asked for correlation —
 	// same reason transcript keeps these as two methods rather than one
 	// that takes a meaningless zero.
+	typ := protoTypeToString(req.GetType())
+	if typ == "permission_request" && req.ReplyToSeq == nil {
+		if seq, ok, err := s.askOnce(ctx, req.GetSessionId(), req.GetText()); err != nil {
+			return nil, fmt.Errorf("SendMessage: %w", err)
+		} else if ok {
+			return &agentfleetv1.AppendResponse{Seq: seq}, nil
+		}
+	}
 	var seq int64
 	var err error
 	if req.ReplyToSeq != nil {
@@ -164,10 +179,45 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	}
 	// A permission request is the moment a session stops making progress and
 	// starts waiting on a person, so it is the moment worth telling them about.
-	if protoTypeToString(req.GetType()) == "permission_request" {
+	if typ == "permission_request" {
 		s.announceBlocked(ctx, req.GetSessionId(), "needs a permission decision")
 	}
 	return &agentfleetv1.AppendResponse{Seq: seq}, nil
+}
+
+// askOnce keeps one open decision per call a non-blocking worker asks
+// (docs/adr/0082 §5; an older worker's request, unstamped, is untouched).
+// The same call asked again, the same tool and canonical input while its
+// decision is open, is that decision: its seq, with nothing appended or
+// announced (ok). A new plan supersedes the session's open one first, as a
+// re-asked question does (reuseOrAppendQuestion): an agent-authored reply,
+// which withdraws it and reaches no agent.
+func (s *Server) askOnce(ctx context.Context, sessionID, text string) (int64, bool, error) {
+	tool, canon, isPlan, ok := decisions.NonBlocking(text)
+	if !ok || s.decisions == nil {
+		return 0, false, nil
+	}
+	if canon != "" {
+		if seq, found, err := s.decisions.OpenRequest(ctx, sessionID, tool, canon); err != nil || found {
+			return seq, found, err
+		}
+	}
+	if !isPlan {
+		return 0, false, nil
+	}
+	open, err := s.decisions.OpenPlans(ctx, sessionID)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, seq := range open {
+		if _, err := s.transcr.AppendReply(ctx, sessionID, "agent",
+			`{"behavior":"deny","message":"superseded: the agent asked again before this was answered"}`,
+			"permission_response", uuid.NewString(), seq); err != nil && !errors.Is(err, transcript.ErrAlreadyAnswered) {
+			// Not fatal, as for a question: an extra open plan, not a lost one.
+			slog.Warn("coreserver: could not supersede stale plan", "sessionId", sessionID, "seq", seq, "error", err)
+		}
+	}
+	return 0, false, nil
 }
 
 // WaitForMessages ports waitForMessagesHandler verbatim.
@@ -246,6 +296,11 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 	if timeoutMs <= 0 {
 		timeoutMs = 60000
 	}
+	// docs/adr/0082 §5: at most DECISION_WAIT_MS, and never past what the
+	// sidecar asked, which stays under the agent's MCP client deadline.
+	if w := int32(s.decisionWait.Milliseconds()); w > 0 && w < timeoutMs {
+		timeoutMs = w
+	}
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
 	cursor := seq
 
@@ -265,7 +320,15 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 			}
 		}
 		if time.Now().After(deadline) {
-			return &agentfleetv1.AskUserQuestionResponse{Answered: false, QuestionSeq: seq}, nil
+			resp := &agentfleetv1.AskUserQuestionResponse{Answered: false, QuestionSeq: seq}
+			if s.decisions != nil {
+				// The pending reply names its decision. Best-effort: the
+				// question is live either way.
+				if r, err := s.decisions.Request(ctx, req.GetSessionId(), seq); err == nil {
+					resp.DecisionId = r.ID
+				}
+			}
+			return resp, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -458,7 +521,10 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 	if err != nil {
 		return nil, err
 	}
-	resp := &agentfleetv1.GetSessionResponse{Session: dashboard.SessionToProto(*t), AgentSpec: spec, AgentSpecSha: sha}
+	resp := &agentfleetv1.GetSessionResponse{
+		Session: dashboard.SessionToProto(*t), AgentSpec: spec, AgentSpecSha: sha,
+		DecisionWaitMs: int32(s.decisionWait.Milliseconds()),
+	}
 	if spec != nil && s.grants != nil {
 		if resp.Grants, err = s.grants.Rules(ctx, req.GetId()); err != nil {
 			return nil, err

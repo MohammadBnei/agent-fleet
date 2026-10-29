@@ -382,6 +382,43 @@ func TestBackfill(t *testing.T) {
 	}
 }
 
+// 000024 closes what a session swept before MarkSwept withdrew still holds:
+// its open decisions withdrawn, its unused grants cleared, a spent grant's
+// record kept; a session not swept is left alone.
+func TestWithdrawSweptMigration(t *testing.T) {
+	f := setup(t)
+	swept, kept := f.session(t), f.session(t)
+	open := f.ask(t, swept, "question", `{"questions":[]}`)
+	unused := f.ask(t, swept, "permission_request", `{"tool":"Bash","input":{"command":"a"},"nb":1}`)
+	used := f.ask(t, swept, "permission_request", `{"tool":"Bash","input":{"command":"b"},"nb":1}`)
+	for _, seq := range []int64{unused, used} {
+		if _, err := f.answer(t, &effects{}, swept, seq, decisions.Reply{Behavior: "allow"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.consume(t, swept, "Bash", `{"command":"b"}`)
+	other := f.ask(t, kept, "question", `{"questions":[]}`)
+	// Swept as the retention GC did before this change: the column alone.
+	if _, err := f.pool.Exec(f.ctx, `UPDATE sessions SET swept_at = now() WHERE id = $1`, swept); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(f.ctx, migration(t, "000024_withdraw_swept_decisions.up.sql")); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	if r := f.row(t, swept, open); r.State != "withdrawn" {
+		t.Errorf("swept session's question: %s, want withdrawn", r.State)
+	}
+	if f.grantableAt(t, swept, unused) || !f.grantableAt(t, swept, used) {
+		t.Errorf("unused grantable %v (want false), used %v (want true)", f.grantableAt(t, swept, unused), f.grantableAt(t, swept, used))
+	}
+	if r := f.row(t, kept, other); r.State != "open" {
+		t.Errorf("a session not swept: %s, want open", r.State)
+	}
+	if _, err := f.pool.Exec(f.ctx, migration(t, "000024_withdraw_swept_decisions.down.sql")); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+}
+
 // Visibility as ListThreads filters it, the filters, and newest-first pages.
 func TestList(t *testing.T) {
 	f := setup(t)
@@ -390,12 +427,18 @@ func TestList(t *testing.T) {
 	mine := f.thread(t, "alice", "private", "")
 	console := f.session(t)
 	gone := f.thread(t, "alice", "shared", "")
+	// Swept before MarkSwept withdrew anything: its decisions are still
+	// open, and the deck never lists them.
+	swept := f.thread(t, "alice", "shared", "")
 	var all []string
-	for _, s := range []string{web, api, mine, console, gone} {
+	for _, s := range []string{web, api, mine, console, gone, swept} {
 		f.ask(t, s, "question", `{"questions":[]}`)
 		f.ask(t, s, "permission_request", `{"tool":"ExitPlanMode","input":{}}`)
 	}
 	if _, err := f.pool.Exec(f.ctx, `UPDATE sessions SET archived_at = now() WHERE id = $1`, gone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(f.ctx, `UPDATE sessions SET swept_at = now() WHERE id = $1`, swept); err != nil {
 		t.Fatal(err)
 	}
 	q := int64(0)

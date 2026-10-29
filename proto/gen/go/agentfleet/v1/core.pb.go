@@ -370,7 +370,7 @@ type AskUserQuestionRequest struct {
 	QuestionsJson string                 `protobuf:"bytes,2,opt,name=questions_json,json=questionsJson,proto3" json:"questions_json,omitempty"`
 	// Fixed by the sidecar (blockingWaitMs, 45s), never chosen by the agent:
 	// the agent's MCP client aborts a request at 60s (docs/adr/0058). <=0 falls
-	// back to core's own default.
+	// back to core's own default. Core waits min(DECISION_WAIT_MS, this).
 	TimeoutMs int32 `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	// The agent_spec_sha the worker applied, as for StreamHumanMessagesRequest
 	// (docs/adr/0066 §8): an answer is human input too.
@@ -450,7 +450,10 @@ type AskUserQuestionResponse struct {
 	// re-invocations only if the caller passes the same questions — a
 	// re-ask mints a NEW entry with a new seq, which is what makes any
 	// control posted against an older one dead.
-	QuestionSeq   int64 `protobuf:"varint,3,opt,name=question_seq,json=questionSeq,proto3" json:"question_seq,omitempty"`
+	QuestionSeq int64 `protobuf:"varint,3,opt,name=question_seq,json=questionSeq,proto3" json:"question_seq,omitempty"`
+	// The question's decision (docs/adr/0082 §5), for the pending reply the
+	// agent reads. Empty when answered.
+	DecisionId    string `protobuf:"bytes,5,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -504,6 +507,13 @@ func (x *AskUserQuestionResponse) GetQuestionSeq() int64 {
 		return x.QuestionSeq
 	}
 	return 0
+}
+
+func (x *AskUserQuestionResponse) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
 }
 
 // RequestE2eEnvRequest/Response and KillE2eEnvRequest/Response are gone with
@@ -1547,9 +1557,13 @@ type GetSessionResponse struct {
 	AgentSpecSha string `protobuf:"bytes,3,opt,name=agent_spec_sha,json=agentSpecSha,proto3" json:"agent_spec_sha,omitempty"`
 	// docs/adr/0076 §3: the session's grants and its definition's live ones,
 	// outside agent_spec and its sha so a new grant never stops delivery.
-	Grants        []string `protobuf:"bytes,4,rep,name=grants,proto3" json:"grants,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Grants []string `protobuf:"bytes,4,rep,name=grants,proto3" json:"grants,omitempty"`
+	// docs/adr/0082 §5: how long the worker's gate waits on a permission or
+	// plan decision before answering "pending" (core's DECISION_WAIT_MS).
+	// 0 means the worker's own default, 45 s.
+	DecisionWaitMs int32 `protobuf:"varint,5,opt,name=decision_wait_ms,json=decisionWaitMs,proto3" json:"decision_wait_ms,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetSessionResponse) Reset() {
@@ -1608,6 +1622,13 @@ func (x *GetSessionResponse) GetGrants() []string {
 		return x.Grants
 	}
 	return nil
+}
+
+func (x *GetSessionResponse) GetDecisionWaitMs() int32 {
+	if x != nil {
+		return x.DecisionWaitMs
+	}
+	return 0
 }
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).
@@ -3237,11 +3258,13 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x0equestions_json\x18\x02 \x01(\tR\rquestionsJson\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\x12$\n" +
-	"\x0eagent_spec_sha\x18\x04 \x01(\tR\fagentSpecSha\"\x89\x01\n" +
+	"\x0eagent_spec_sha\x18\x04 \x01(\tR\fagentSpecSha\"\xaa\x01\n" +
 	"\x17AskUserQuestionResponse\x12\x1a\n" +
 	"\banswered\x18\x04 \x01(\bR\banswered\x12!\n" +
 	"\fanswers_json\x18\x02 \x01(\tR\vanswersJson\x12!\n" +
-	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeqJ\x04\b\x01\x10\x02R\x06status\"B\n" +
+	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeq\x12\x1f\n" +
+	"\vdecision_id\x18\x05 \x01(\tR\n" +
+	"decisionIdJ\x04\b\x01\x10\x02R\x06status\"B\n" +
 	"\rExposeRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -3337,13 +3360,14 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"live_state\x18\x01 \x01(\tR\tliveState\x12\x1b\n" +
 	"\ttimed_out\x18\x02 \x01(\bR\btimedOut\"#\n" +
 	"\x11GetSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xbd\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xe7\x01\n" +
 	"\x12GetSessionResponse\x120\n" +
 	"\asession\x18\x01 \x01(\v2\x16.agentfleet.v1.SessionR\asession\x127\n" +
 	"\n" +
 	"agent_spec\x18\x02 \x01(\v2\x18.agentfleet.v1.AgentSpecR\tagentSpec\x12$\n" +
 	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\x12\x16\n" +
-	"\x06grants\x18\x04 \x03(\tR\x06grants\"\x89\x03\n" +
+	"\x06grants\x18\x04 \x03(\tR\x06grants\x12(\n" +
+	"\x10decision_wait_ms\x18\x05 \x01(\x05R\x0edecisionWaitMs\"\x89\x03\n" +
 	"\tAgentSpec\x12\x1f\n" +
 	"\vtools_allow\x18\x01 \x03(\tR\n" +
 	"toolsAllow\x12\x1d\n" +

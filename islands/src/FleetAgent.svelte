@@ -12,9 +12,10 @@
 <script lang="ts">
   import { Code, ConnectError } from "@connectrpc/connect";
   import { onMount } from "svelte";
-  import type {
-    Entry,
-    Thread,
+  import {
+    DecisionState,
+    type Entry,
+    type Thread,
   } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
   import {
     agentClient,
@@ -25,7 +26,7 @@
     isUnauthenticated,
   } from "./api";
   import { drawDiagrams } from "./diagram";
-  import { conversation, decisions } from "./feed";
+  import { conversation, decisions, liveState } from "./feed";
   import { createRenderer } from "./render";
   import styles from "./styles.css?inline";
   import { threadTitle, withOther } from "./text";
@@ -46,6 +47,8 @@
   let threads = $state<Thread[]>([]);
   let current = $state<Thread | undefined>();
   let entries = $state<Entry[]>([]);
+  // Request seqs closed unanswered in the decisions store (see feed.ts).
+  let withdrawn = $state<Set<bigint>>(new Set());
   let draft = $state("");
   let busy = $state(false);
   let answers = $state<Record<string, string>>({});
@@ -66,9 +69,9 @@
   let seen = new Set<bigint>();
 
   const items = $derived(conversation(entries));
-  const open = $derived(decisions(entries));
+  const open = $derived(decisions(entries, withdrawn));
   const live = $derived(
-    open.length ? "waiting" : (current?.status?.state ?? "idle"),
+    liveState(entries, open.length, current?.status?.state ?? "idle"),
   );
 
   // One event per change, for the host (§2).
@@ -188,6 +191,7 @@
     current = t;
     pinned = true;
     entries = [];
+    withdrawn = new Set();
     seen = new Set();
     answers = {};
     pending = [];
@@ -196,9 +200,23 @@
     stale = false;
     reconnecting = false;
     await guard(async () => {
-      const res = await api.getTranscript({ threadId: t.id });
+      const [res, closed] = await Promise.all([
+        api.getTranscript({ threadId: t.id }),
+        // ponytail: read per load; a close elsewhere shows on the next one
+        // (an answer's AlreadyExists reloads). One page of 200, newest first.
+        api
+          .listDecisions({
+            threadId: t.id,
+            states: [DecisionState.WITHDRAWN],
+            pageSize: 200,
+          })
+          .then((r) => new Set(r.decisions.map((d) => d.requestSeq)))
+          // The transcript alone is today's view; a failed read must not blank it.
+          .catch(() => new Set<bigint>()),
+      ]);
       if (my !== gen) return;
       entries = res.entries;
+      withdrawn = closed;
       seen = new Set(res.entries.map((e) => e.seq));
       follow(t.id, res.nextSeq, my);
     });
@@ -270,6 +288,7 @@
     stream?.abort();
     current = undefined;
     entries = [];
+    withdrawn = new Set();
     pending = [];
     error = "";
     stale = false;

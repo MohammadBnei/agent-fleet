@@ -5,6 +5,7 @@ import {
   findPendingQuestion,
   hasPendingDecision,
 } from "../transcript";
+import { ActionButton } from "./ActionButton";
 import {
   type Grant,
   type GrantPreview,
@@ -37,6 +38,7 @@ export function DecisionDock({
   onApprovePlan,
   onAnswer,
   onPlanFeedback,
+  onWithdraw,
 }: {
   entries: TranscriptEntry[];
   busyKey: string | null;
@@ -54,7 +56,14 @@ export function DecisionDock({
   // (approvePlan.ts).
   onApprovePlan: (seq: bigint, mode?: "auto") => void;
   onAnswer: (seq: bigint, answers: Record<string, string>) => void;
+  // "Request changes" on an old worker's (unstamped) plan: a plain reply,
+  // which that worker records as the deny. A stamped plan is denied with the
+  // feedback through onRespond instead (docs/adr/0082 §5): a new worker
+  // records nothing for a reply, so the plan would stay open.
   onPlanFeedback: (text: string) => void;
+  // AnswerDecision "withdraw" (docs/adr/0082 §5): closes an interrupted
+  // request unanswered, with no warm and no message.
+  onWithdraw?: (seq: bigint) => void;
 }) {
   if (!hasPendingDecision(entries)) return null;
 
@@ -63,11 +72,23 @@ export function DecisionDock({
   const permissions = findPendingPermissions(entries);
   const permission = permissions[0] ?? null;
   const question = permission ? null : findPendingQuestion(entries);
-  // Same rule as the list (see decisionAnswerable): a permission dies with the
-  // pod that raised it; a question does not. Offering allow/deny here on a dead
-  // pod is the detail view telling a different story from the list about the
-  // same session.
-  const permissionLive = decisionAnswerable("permission", { podLive, swept });
+  // Same rule as the list (see decisionAnswerable): an old worker's permission
+  // dies with the pod that raised it; a stamped one and a question do not.
+  // Offering allow/deny here on a dead pod is the detail view telling a
+  // different story from the list about the same session.
+  const permissionLive =
+    permission !== null &&
+    decisionAnswerable("permission", {
+      podLive,
+      swept,
+      stamped: permission.stamped,
+    });
+  // An answer and a close on the same request lock each other out: whichever
+  // lands second would fail as no longer open.
+  const seqBusy =
+    permission !== null &&
+    (busyKey === `permission:${permission.entry.seq}` ||
+      busyKey === `withdraw:${permission.entry.seq}`);
   const pad = compact ? "px-3.5 py-3" : "px-4.5 py-3.5";
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
@@ -103,6 +124,13 @@ export function DecisionDock({
           </span>
         </div>
       )}
+      {permission && permissionLive && permission.interrupted && (
+        <InterruptedBar
+          busy={busyKey === `withdraw:${permission.entry.seq}`}
+          disabled={seqBusy}
+          onClose={onWithdraw && (() => onWithdraw(permission.entry.seq))}
+        />
+      )}
       {permission &&
         permissionLive &&
         (permission.tool === "ExitPlanMode" ? (
@@ -112,9 +140,16 @@ export function DecisionDock({
             }
             pending
             docked
-            busy={busyKey === `permission:${permission.entry.seq}`}
+            busy={seqBusy}
             onApprove={(mode) => onApprovePlan(permission.entry.seq, mode)}
-            onFeedback={onPlanFeedback}
+            onFeedback={(text) =>
+              permission.stamped
+                ? onRespond(permission.entry.seq, {
+                    behavior: "deny",
+                    message: text,
+                  })
+                : onPlanFeedback(text)
+            }
             edgeClassName={edge}
           />
         ) : (
@@ -123,7 +158,7 @@ export function DecisionDock({
             tool={permission.tool}
             input={permission.input}
             pending
-            busy={busyKey === `permission:${permission.entry.seq}`}
+            busy={seqBusy}
             onAllow={(grant) =>
               onRespond(permission.entry.seq, { behavior: "allow" }, grant)
             }
@@ -142,6 +177,41 @@ export function DecisionDock({
           compact={compact}
           onSubmit={(answers) => onAnswer(question.seq, answers)}
         />
+      )}
+    </div>
+  );
+}
+
+// The turn that asked has ended (an interrupt or a stop after the request).
+// The request is still open and still answerable — an answer reaches the agent
+// as a message — but it may no longer matter, so the human can also just close
+// it. Exported for the list row, which shows the same bar.
+export function InterruptedBar({
+  busy,
+  disabled = false,
+  onClose,
+}: {
+  busy: boolean;
+  // An answer to the same request is in flight.
+  disabled?: boolean;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-2 text-xs text-warning">
+      <span className="border border-pink-line px-1 tracking-[0.05em]">
+        interrupted
+      </span>
+      <span className="text-dim">the turn that asked has ended</span>
+      {onClose && (
+        <ActionButton
+          busy={busy}
+          disabled={disabled}
+          title="Close this request without answering it"
+          className="ml-auto text-xs text-dim hover:text-error cursor-pointer border border-line px-2 py-0.5"
+          onClick={onClose}
+        >
+          close
+        </ActionButton>
       )}
     </div>
   );

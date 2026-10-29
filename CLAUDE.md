@@ -97,7 +97,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   inter-component protocol.
 - **No prospective Write/Edit gate — `canUseTool` reproduces the SDK's own live prompt**
   (`adr/0029`, superseding `adr/0021`). Sessions start `"auto"` (`adr/0061`; worker fallback stays `"default"`); the SDK's
-  `permissionMode` decides when `canUseTool` fires; it asks a human and blocks. Never
+  `permissionMode` decides when `canUseTool` fires; it asks a human and waits `DECISION_WAIT_MS`
+  (45s), then denies "pending" and the decision parks (`adr/0082` §5, new workers only). Never
   inferred from silence or round completion — a decision is always a real structured
   `RespondToPermission` or `SetPermissionMode`. `/approve` gone.
 - **Gate is `canUseTool`, not a rule list the SDK re-interprets** (`adr/0053`). Two
@@ -167,8 +168,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   delivered. `PostMessage`/`OpenFromProposal`/`PromptSession` all carry the comment —
   copy it, don't re-derive.
 - **Dashboard is a console; the list answers decisions** (`adr/0042`). Blocked session
-  renders its pending permission/question inline, answerable without opening it —
-  blocked = stalled until a human clicks. Five feed tiers stay visually distinct; a new
+  renders its pending permission/question inline, answerable without opening it.
+  A parked decision never stalls the session: the answer reaches the agent as a message. Five feed tiers stay visually distinct; a new
   entry kind belongs in a tier, not a uniform grey log line. Anything both form factors
   show goes in shared components.
 - **Console gate lives in `core`, not at ingress** (`adr/0056`). `fleet.bnei.dev` has

@@ -29,9 +29,49 @@ func TestDeriveLiveState(t *testing.T) {
 			// The whole point of the taxonomy: this one must never be
 			// reported as anything else, because nothing will happen
 			// until a human clicks.
-			name: "awaiting a human wins over every timing signal",
+			name: "a session whose last word is its request is blocked",
 			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("permission_request")},
 			want: LiveStateBlocked,
+		},
+		// docs/adr/0082 §5: nothing blocks, so an open decision never hides
+		// work; it shows where the session would otherwise read as finished
+		// or stuck.
+		{
+			name: "an open decision does not override work",
+			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
+			want: LiveStateWorking,
+		},
+		// An older worker's unstamped permission or plan really blocks its
+		// pod, so it reads Blocked whatever the last entry is.
+		{
+			name: "an unstamped open permission after a human permission_response is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 1, BlockingDecisions: 1, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("permission_response"), LastEntryFrom: ptr("human")},
+			want: LiveStateBlocked,
+		},
+		{
+			name: "an unstamped open permission after an agent tool_result is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 1, BlockingDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("tool_result"), LastEntryFrom: ptr("agent")},
+			want: LiveStateBlocked,
+		},
+		{
+			name: "an open decision on a finished turn is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 2, ActivitySeen: true, LastActiveAt: &recent, SeenAt: &longAgo, LastEntryType: ptr("result")},
+			want: LiveStateBlocked,
+		},
+		{
+			name: "an open decision on a seen, finished turn is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, SeenAt: &recent, LastEntryType: ptr("result")},
+			want: LiveStateBlocked,
+		},
+		{
+			name: "an open decision on a stalled turn is blocked",
+			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("human")},
+			want: LiveStateBlocked,
+		},
+		{
+			name: "an open decision on a pod that never spoke is unknown",
+			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: false},
+			want: LiveStateUnknown,
 		},
 		{
 			name: "a pod that has never spoken is unknown, not working",

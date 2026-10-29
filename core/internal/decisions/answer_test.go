@@ -18,10 +18,21 @@ import (
 // effects records what an answer asked of the console.
 type effects struct {
 	warms, modes []string
+	// tr, when set, records the transcript's LatestSeq at each warm, so a
+	// test can tell a warm came before the answer's append.
+	tr       transcript.Store
+	warmedAt []int64
 }
 
-func (e *effects) WarmIfIdle(_ context.Context, id string) (string, error) {
+func (e *effects) WarmIfIdle(ctx context.Context, id string) (string, error) {
 	e.warms = append(e.warms, id)
+	if e.tr != nil {
+		n, err := e.tr.LatestSeq(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		e.warmedAt = append(e.warmedAt, n)
+	}
 	return "", nil
 }
 

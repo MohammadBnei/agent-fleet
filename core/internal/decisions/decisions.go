@@ -65,10 +65,14 @@ func (q question) Ask() string {
 	return q.Questions[0].Question
 }
 
-// permission is canUseTool's {"tool", "input"} (worker/src/session.ts).
+// permission is canUseTool's {"tool", "input"} (worker/src/session.ts). A
+// worker that never blocks on it stamps "nb": 1 (docs/adr/0082 §5); an older
+// one, which an image override keeps running indefinitely, does not, and its
+// requests keep the blocking behaviour.
 type permission struct {
 	Tool  string          `json:"tool"`
 	Input json.RawMessage `json:"input"`
+	NB    int             `json:"nb"`
 }
 
 func (permission) Kind() Kind    { return Permission }
@@ -104,6 +108,19 @@ func read(msgType, text string) Decision {
 		return p
 	}
 	return nil
+}
+
+// NonBlocking reads a permission request a worker that never blocks sent
+// (stamped "nb": 1): its tool, its input's Canon ("" when it has none) and
+// whether it is a plan. ok is false for any other text.
+func NonBlocking(text string) (tool, canon string, isPlan, ok bool) {
+	var p permission
+	_ = json.Unmarshal([]byte(text), &p)
+	if p.NB != 1 {
+		return "", "", false, false
+	}
+	canon, _ = Canon(p.Input)
+	return clip(p.Tool, 200), canon, p.Tool == "ExitPlanMode", true
 }
 
 // Canon is raw's canonical JSON: object keys sorted, numbers as written
@@ -205,9 +222,11 @@ func clip(s string, n int) string {
 // agent's own reply withdraws rather than answers: that is core's supersede
 // of a re-asked question (coreserver reuseOrAppendQuestion).
 //
-// Only a human's allow keeps a request grantable: a session authors only as
-// agent or worker (coreserver auth.go), so it cannot answer itself into a
-// one-time grant (ConsumeGrant), and a deny is never one.
+// A stamped permission (not a plan) with a canonical input is grantable from
+// its insert: a human's allow of it is a one-time grant (ConsumeGrant). Only
+// that allow keeps it so: a session authors only as agent or worker
+// (coreserver auth.go), so it cannot answer itself into a grant, and a deny
+// is never one.
 func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry) error {
 	if e.ReplyTo != nil {
 		var reply struct {
@@ -238,6 +257,7 @@ func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Ent
 		return nil
 	}
 	var tool, canon *string
+	grantable := false
 	var p permission
 	switch v := d.(type) {
 	case permission:
@@ -251,10 +271,11 @@ func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Ent
 		if c, err := Canon(p.Input); err == nil {
 			canon = &c
 		}
+		grantable = d.Kind() == Permission && p.NB == 1 && canon != nil
 	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO decisions (session_id, request_seq, kind, ask, payload, tool, input_canon)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
-		sessionID, e.Seq, string(d.Kind()), clip(d.Ask(), maxAsk), asJSON(e.Text), tool, canon)
+		INSERT INTO decisions (session_id, request_seq, kind, ask, payload, tool, input_canon, grantable)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
+		sessionID, e.Seq, string(d.Kind()), clip(d.Ask(), maxAsk), asJSON(e.Text), tool, canon, grantable)
 	return err
 }

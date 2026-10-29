@@ -5,6 +5,7 @@ import {
   type Interceptor,
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import { AgentService } from "./gen/agentfleet/v1/agent_pb";
 import { DashboardService } from "./gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
@@ -54,6 +55,16 @@ const transport = createConnectTransport({
 });
 
 export const client = createClient(DashboardService, transport);
+
+// The decision deck's API (docs/adr/0082 §5) is on AgentService, served on the
+// same origin behind the same CSRF header. Without the login redirect: with
+// FLEET_AUTH_DISABLED=1 every AgentService call is Unauthenticated, and that
+// must not bounce a local console to a login route that does not exist. An
+// expired session still redirects through `client`'s next poll.
+export const agent = createClient(
+  AgentService,
+  createConnectTransport({ baseUrl: "/", interceptors: [csrfInterceptor] }),
+);
 
 const RECONNECT_DELAY_MS = 1000;
 

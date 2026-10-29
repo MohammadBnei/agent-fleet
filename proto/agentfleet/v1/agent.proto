@@ -339,6 +339,9 @@ message Decision {
   int64 version = 13;
   // owner/name, when the thread is about a GitHub subject.
   string subject_repo = 14;
+  // An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
+  // the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.
+  bool interrupted = 15;
 }
 
 message ListDecisionsRequest {
@@ -369,7 +372,8 @@ message GetDecisionResponse {
 
 message AnswerDecisionRequest {
   string decision_id = 1;
-  // A permission or a plan: "allow" or "deny".
+  // A permission or a plan: "allow" or "deny". Any kind: "withdraw" closes it unanswered, appending nothing and
+  // warming nothing (admin or the session's owner only).
   string behavior = 2;
   // A question: its answers, a JSON object.
   string answers_json = 3;

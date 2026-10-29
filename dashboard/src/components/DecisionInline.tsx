@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { approvePlan } from "../approvePlan";
 import { client } from "../connectClient";
+import { withdrawDecision } from "../decisions";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { isPodPhaseLive } from "../sessionState";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../transcript";
 import { ActionButton } from "./ActionButton";
 import { AutoModeConfirm } from "./AutoModeConfirm";
+import { InterruptedBar } from "./DecisionDock";
 import { DiffLines } from "./DiffLines";
 import { InlineError } from "./InlineError";
 import { Markdown } from "./Markdown";
@@ -41,7 +43,12 @@ type Layout = "wide" | "stacked";
 // question that was already answered.
 function useDecision(reload: () => void) {
   const [pending, setPending] = useState<string | null>(null);
-  const [answered, setAnswered] = useState<bigint | null>(null);
+  // `key` tells a close ("withdraw") from an answer: a close sends the agent
+  // nothing, so it must not read as a delivery.
+  const [answered, setAnswered] = useState<{
+    seq: bigint;
+    key: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const send = (
     key: string,
@@ -52,7 +59,7 @@ function useDecision(reload: () => void) {
     setError(null);
     action()
       .then(() => {
-        if (decidedSeq !== undefined) setAnswered(decidedSeq);
+        if (decidedSeq !== undefined) setAnswered({ seq: decidedSeq, key });
         reload();
       })
       .catch((err: Error) => setError(err.message))
@@ -152,9 +159,12 @@ export function DecisionInline({
   // *different* decision arriving next renders normally with no reset logic.
   if (
     answered !== null &&
-    (permission?.entry.seq === answered || questionEntry?.seq === answered)
+    (permission?.entry.seq === answered.seq ||
+      questionEntry?.seq === answered.seq)
   ) {
-    return (
+    return answered.key === "withdraw" ? (
+      <div className={`${pad} text-sm text-dim`}>closed</div>
+    ) : (
       <div className={`${pad} flex items-center gap-2 text-sm text-dim`}>
         <span className="loading loading-spinner loading-xs flex-none" />
         sent — waiting for the agent to pick it up
@@ -163,14 +173,15 @@ export function DecisionInline({
   }
 
   if (permission) {
-    // A permission belongs to the pod that raised it. If that pod is gone,
-    // show what was asked and say so — allow/deny would append a row the dead
-    // canUseTool promise will never read. Questions are unaffected: answering
-    // one warms a pod to receive it.
+    // An old worker's permission belongs to the pod that raised it. If that
+    // pod is gone, show what was asked and say so — allow/deny would append a
+    // row the dead canUseTool promise will never read. A stamped one and a
+    // question are unaffected: answering warms a pod to receive it.
     if (
       !decisionAnswerable("permission", {
         podLive: isPodPhaseLive(session.podPhase),
         swept: session.sweptAt !== undefined,
+        stamped: permission.stamped,
       })
     ) {
       return (
@@ -185,6 +196,19 @@ export function DecisionInline({
       );
     }
     const isPlan = permission.tool === "ExitPlanMode";
+    const interrupted = permission.interrupted && (
+      <InterruptedBar
+        busy={pending === "withdraw"}
+        disabled={busy}
+        onClose={() =>
+          send(
+            "withdraw",
+            () => withdrawDecision(session.id, permission.entry.seq),
+            permission.entry.seq,
+          )
+        }
+      />
+    );
     const respond = (behavior: "allow" | "deny", message?: string) =>
       send(
         behavior,
@@ -213,6 +237,7 @@ export function DecisionInline({
         (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
         <div className={`${pad} flex flex-col gap-3`}>
+          {interrupted}
           <div className="flex items-center gap-2">
             <span className="text-xs text-dim tracking-[0.05em]">
               PLAN · waiting for approval
@@ -423,6 +448,7 @@ export function DecisionInline({
 
     return (
       <div className={`${pad} flex flex-col gap-3`}>
+        {interrupted}
         <PermissionBody tool={permission.tool} input={permission.input} />
         {actions}
       </div>

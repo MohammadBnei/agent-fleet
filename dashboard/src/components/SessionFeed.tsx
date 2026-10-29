@@ -340,13 +340,16 @@ export function SessionFeed({
   // path rather than an allow decision (approvePlan.ts).
   onApprovePlan: (seq: bigint, mode?: "auto") => void;
   onAnswer: (seq: bigint, answers: Record<string, string>) => void;
+  // Unstamped plans only; a stamped one is denied through onRespond (see
+  // DecisionDock's onPlanFeedback).
   onPlanFeedback: (text: string) => void;
 }) {
   const pairs = buildToolCallPairs(entries);
   const pairsBySeq = new Map(pairs.map((p) => [p.call.seq, p]));
   const consumedResults = pairedResultSeqs(pairs);
-  const pendingSeqs = new Set(
-    findPendingPermissions(entries).map((p) => p.entry.seq),
+  // seq -> stamped, for every open permission.
+  const pendingSeqs = new Map(
+    findPendingPermissions(entries).map((p) => [p.entry.seq, p.stamped]),
   );
   const decisions = resolvedPermissionDecisions(entries);
   const denyMessages = permissionDenyMessages(entries);
@@ -507,7 +510,11 @@ export function SessionFeed({
               busy={busyKey === permissionKey}
               decision={decisions.get(entry.seq)}
               onApprove={(mode) => onApprovePlan(entry.seq, mode)}
-              onFeedback={onPlanFeedback}
+              onFeedback={(text) =>
+                pendingSeqs.get(entry.seq)
+                  ? respond({ behavior: "deny", message: text })
+                  : onPlanFeedback(text)
+              }
               edgeClassName={edge}
             />
           </div>,

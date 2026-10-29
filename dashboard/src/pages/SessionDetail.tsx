@@ -84,6 +84,7 @@ export function SessionDetail({
     previewGrant,
     approvePlanDecision,
     answerQuestion,
+    withdraw,
     clearActionError,
   } = useSessionDetail(
     sessionId,
@@ -244,6 +245,7 @@ export function SessionDetail({
           onApprovePlan={approvePlanDecision}
           onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
+          onWithdraw={withdraw}
         />
 
         <div className="flex-none px-4.5 py-3 border-t border-line">

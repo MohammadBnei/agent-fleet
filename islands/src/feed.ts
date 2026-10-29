@@ -62,12 +62,20 @@ function outlived(entries: Entry[], seq: bigint): boolean {
 }
 
 // Open decisions, oldest first. ExitPlanMode is a plan, not a tool call.
-export function decisions(entries: Entry[]): Item[] {
+// `withdrawn` holds the request seqs closed unanswered in the decisions store
+// (AnswerDecision "withdraw", the retention sweep): that leaves no transcript
+// row, and a stamped request outlives an interrupt (docs/adr/0082 §5), so
+// without it such a card stays open for good and every answer fails.
+export function decisions(
+  entries: Entry[],
+  withdrawn: ReadonlySet<bigint> = new Set(),
+): Item[] {
   const out: Item[] = [];
   const q = findPendingQuestion(entries);
   const qs = q && !outlived(entries, q.seq) ? parseQuestions(q.text) : null;
   if (q && qs) out.push({ kind: "question", seq: q.seq, questions: qs });
   for (const p of findPendingPermissions(entries)) {
+    if (withdrawn.has(p.entry.seq)) continue;
     if (p.tool === "ExitPlanMode") {
       out.push({
         kind: "plan",
@@ -84,4 +92,20 @@ export function decisions(entries: Entry[]): Item[] {
     }
   }
   return out.sort((a, b) => (a.seq < b.seq ? -1 : 1));
+}
+
+// The header state. Blocked never overrides work (docs/adr/0082 §5, core's
+// DeriveLiveState): a stamped request no longer stops the agent, so an open
+// decision reads "waiting" only where the thread is not working, or while the
+// request is still the last word (an older worker waits there until answered).
+export function liveState(
+  entries: Entry[],
+  open: number,
+  state: string,
+): string {
+  const last = entries.at(-1)?.type;
+  const asking =
+    last === TranscriptEntryType.PERMISSION_REQUEST ||
+    last === TranscriptEntryType.QUESTION;
+  return open && (state !== "working" || asking) ? "waiting" : state;
 }

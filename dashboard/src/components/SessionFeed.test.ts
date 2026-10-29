@@ -13,6 +13,7 @@ import {
   type SdkResultSummary,
   shortTool,
 } from "../transcript";
+import { PlanCard } from "./PlanCard";
 import { LoadOlder, SessionFeed } from "./SessionFeed";
 import { ToolCallLine } from "./ToolCallLine";
 import { TranscriptEntryView } from "./TranscriptEntryView";
@@ -631,4 +632,52 @@ test("a paired tool_result is not also rendered as an orphan", () => {
       ),
     ]),
   ).toHaveLength(0);
+});
+
+// The inline plan card routes "request changes" the same way the dock does
+// (see DecisionDock.test.ts): stamped is a deny with the feedback, unstamped
+// a plain reply.
+test("an inline plan's request changes: deny when stamped, reply when not", () => {
+  const planEntry = (nb?: number) =>
+    entry(
+      TranscriptEntryType.PERMISSION_REQUEST,
+      JSON.stringify({ tool: "ExitPlanMode", input: { plan: "x" }, nb }),
+    );
+  for (const nb of [1, undefined]) {
+    const request = planEntry(nb);
+    const responded: unknown[] = [];
+    const replied: string[] = [];
+    const tree = SessionFeed({
+      entries: [request],
+      visibility: feedVisibility("everything", false),
+      density: "everything",
+      busyKey: null,
+      onRespond: (seq, decision) => responded.push([seq, decision]),
+      onApprovePlan: () => {},
+      onAnswer: () => {},
+      onPlanFeedback: (text) => replied.push(text),
+    });
+    let card: { props: Record<string, unknown> } | undefined;
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (!node || typeof node !== "object") return;
+      const el = node as { type?: unknown; props?: Record<string, unknown> };
+      if (el.type === PlanCard) card = el as { props: Record<string, unknown> };
+      if (el.props?.children) walk(el.props.children);
+    };
+    walk(tree);
+    (card!.props.onFeedback as (t: string) => void)("redo it");
+    if (nb === 1) {
+      expect(responded).toEqual([
+        [request.seq, { behavior: "deny", message: "redo it" }],
+      ]);
+      expect(replied).toEqual([]);
+    } else {
+      expect(replied).toEqual(["redo it"]);
+      expect(responded).toEqual([]);
+    }
+  }
 });

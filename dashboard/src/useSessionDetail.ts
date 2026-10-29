@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { approvePlan } from "./approvePlan";
 import type { Grant, GrantPreview } from "./components/PermissionCard";
 import { client, subscribeTranscript } from "./connectClient";
+import { fetchWithdrawn, withdrawDecision, withdrawnReply } from "./decisions";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import {
   type TranscriptEntry,
@@ -83,6 +84,11 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   // from entries — feed card, dock, list row — agrees instantly, and the
   // real entry supersedes it the moment it lands. See withOptimistic.
   const [optimistic, setOptimistic] = useState<TranscriptEntry[]>([]);
+  // Requests closed in the decisions store, which leaves no transcript row
+  // (decisions.ts). Read once per open, and echoed on this view's own close.
+  // ponytail: a close from another surface shows on the next open; watch
+  // WatchDecisions when that lag matters.
+  const [withdrawn, setWithdrawn] = useState<TranscriptEntry[]>([]);
   // Two states, not one: loadError blocks rendering (nothing to show
   // without a session), actionError (from useBusyAction) is inline while the
   // loaded view stays up.
@@ -105,8 +111,10 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     setActionError(null);
     pendingRef.current = null;
     setPendingMessage(null);
+    setWithdrawn([]);
 
     let cancelled = false;
+    fetchWithdrawn(sessionId).then((w) => !cancelled && setWithdrawn(w));
     // Opening a session is what marks it seen (docs/adr/0040) — the
     // difference between `done` (finished while nobody was looking) and
     // plain `idle`. Fire-and-forget: this is a read-receipt, and failing
@@ -284,6 +292,15 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       `question:${seq}`,
     );
 
+  // Closes an interrupted request unanswered. No optimistic echo through
+  // decide(): nothing real ever supersedes a withdraw, so the closure is held
+  // here instead, once core has confirmed it.
+  const withdraw = (seq: bigint) =>
+    run(() => withdrawDecision(sessionId, seq), `withdraw:${seq}`).then(
+      (ok) =>
+        ok && setWithdrawn((prev) => [...prev, withdrawnReply(sessionId, seq)]),
+    );
+
   // Through run() like everything else, with one extra job: roll back the
   // optimistic echo when the post fails, so a message that never left does not
   // sit in the feed looking sent.
@@ -348,7 +365,13 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     // Prefer the list's copy, but only once the one-shot fetch has landed, so
     // `session === null` still means "loading" to both views.
     session: session && (listed ?? session),
-    entries: withOptimistic(entries, optimistic),
+    // Withdrawn closures first: every derivation correlates by replyTo, and
+    // anything positional (the newest entry, loadOlder's oldest) still sees
+    // only real rows at the ends that matter.
+    entries: withOptimistic(
+      withdrawn.length === 0 ? entries : [...withdrawn, ...entries],
+      optimistic,
+    ),
     busyKey,
     loadError,
     actionError,
@@ -363,6 +386,7 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     previewGrant: session?.definitionName ? previewGrant : undefined,
     approvePlanDecision,
     answerQuestion,
+    withdraw,
     clearActionError: () => setActionError(null),
   };
 }

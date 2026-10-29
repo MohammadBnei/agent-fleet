@@ -49,6 +49,7 @@ func New(core *coreclient.Client) http.Handler {
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
 	mux.HandleFunc("GET /task", taskHandler(core))
 	mux.HandleFunc("POST /permission-mode", permissionModeHandler(core))
+	mux.HandleFunc("POST /grant/consume", grantConsumeHandler(core))
 	return mux
 }
 
@@ -393,6 +394,9 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 		if session.Effort != nil {
 			response["effort"] = *session.Effort
 		}
+		// How long the gate waits on a decision (docs/adr/0082 §5); 0 is
+		// the worker's own default.
+		response["decisionWaitMs"] = resp.GetDecisionWaitMs()
 		// For the commit hook's Agent-Definition trailer (worker/git-hooks).
 		if session.DefinitionSha != nil {
 			response["definitionSha"] = *session.DefinitionSha
@@ -434,5 +438,32 @@ func permissionModeHandler(core *coreclient.Client) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
+// grantConsumeHandler spends a one-time grant for {tool, input}
+// (docs/adr/0082 §5): {"granted", "decisionId"}. The session is the
+// sidecar's own; the body cannot name another. Any core error is a 502:
+// the worker reads every failure as not granted.
+func grantConsumeHandler(core *coreclient.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Tool  string          `json:"tool"`
+			Input json.RawMessage `json:"input"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if body.Tool == "" || len(body.Input) == 0 {
+			writeError(w, http.StatusBadRequest, errors.New("tool and input are required"))
+			return
+		}
+		res, err := core.ConsumeGrant(r.Context(), body.Tool, string(body.Input))
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"granted": res.GetGranted(), "decisionId": res.GetDecisionId()})
 	}
 }

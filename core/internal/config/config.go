@@ -126,6 +126,12 @@ type Config struct {
 	// clock, since a slow turn is not a dead one. Env: TURN_STALL_MS,
 	// default 90s.
 	TurnStall time.Duration
+	// DecisionWait is how long an asking side waits on a decision before it
+	// hears "pending" and carries on (docs/adr/0082 §5): the worker's gate,
+	// told on GetSession, and AskUserQuestion's long poll, which also stays
+	// within the sidecar's own timeout. Env: DECISION_WAIT_MS, default 45 s,
+	// at most MaxDecisionWait.
+	DecisionWait time.Duration
 	// DashboardPublicURL is the externally-reachable dashboard base, used to
 	// build the deep link in a Discord notification. Empty posts the
 	// notification without a link rather than a broken one.
@@ -241,6 +247,9 @@ func FromProcess() (Config, error) { return Load(os.Getenv) }
 // and the bridge is off (Bridge.URL is blank).
 //
 // The Config returned with an error is the zero value, so nothing can run on a half-read one.
+// MaxDecisionWait is DECISION_WAIT_MS's ceiling (docs/adr/0082 §5: up to 10 min).
+const MaxDecisionWait = 10 * time.Minute
+
 func Load(getenv func(string) string) (Config, error) {
 	l := &loader{getenv: getenv}
 	c := Config{
@@ -274,6 +283,7 @@ func Load(getenv func(string) string) (Config, error) {
 		IdleTimeout:           l.millis("IDLE_TIMEOUT_MS", 30*60*1000),
 		StartupStall:          l.millis("STARTUP_STALL_MS", 3*60*1000),
 		TurnStall:             l.millis("TURN_STALL_MS", 90*1000),
+		DecisionWait:          l.millis("DECISION_WAIT_MS", 45*1000),
 		SessionRetention:      l.retention("SESSION_RETENTION", 10*24*time.Hour),
 		OIDCClientID:          getenv("OIDC_CLIENT_ID"),
 		OIDCClientSecret:      getenv("OIDC_CLIENT_SECRET"),
@@ -317,6 +327,11 @@ func Load(getenv func(string) string) (Config, error) {
 		// rather than keep a cap the numbers contradict, and says why.
 		l.warns = append(l.warns, err.Error()+"; using the defaults (5, 0, 0, 1): the definition, member and client pools are off")
 		c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember = 5, 0, 0, 1
+	}
+	if c.DecisionWait > MaxDecisionWait {
+		l.warns = append(l.warns, fmt.Sprintf("DECISION_WAIT_MS=%d: must be at most %d; using %[2]d",
+			c.DecisionWait.Milliseconds(), MaxDecisionWait.Milliseconds()))
+		c.DecisionWait = MaxDecisionWait
 	}
 	if len(l.errs) > 0 {
 		return Config{}, &RefusalError{
