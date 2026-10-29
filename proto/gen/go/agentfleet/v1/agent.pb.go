@@ -2270,11 +2270,12 @@ func (x *WaitForResultResponse) GetError() *Status {
 }
 
 type Decision struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Kind     DecisionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.DecisionKind" json:"kind,omitempty"`
-	State    DecisionState          `protobuf:"varint,3,opt,name=state,proto3,enum=agentfleet.v1.DecisionState" json:"state,omitempty"`
-	ThreadId string                 `protobuf:"bytes,4,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Kind  DecisionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.DecisionKind" json:"kind,omitempty"`
+	State DecisionState          `protobuf:"varint,3,opt,name=state,proto3,enum=agentfleet.v1.DecisionState" json:"state,omitempty"`
+	// The session the decision is on: a thread, or for an admin also a console or repo session.
+	ThreadId string `protobuf:"bytes,4,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	// The request's seq in the thread's transcript: what RespondToPermission, AnswerQuestion and ApprovePlan name.
 	RequestSeq int64 `protobuf:"varint,5,opt,name=request_seq,json=requestSeq,proto3" json:"request_seq,omitempty"`
 	// At most 280 characters, an agent claim: the first question, the tool, or the plan.

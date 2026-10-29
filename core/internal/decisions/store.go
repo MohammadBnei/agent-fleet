@@ -76,9 +76,10 @@ func collect(rows pgx.Rows, err error) ([]Record, error) {
 }
 
 // Filter is List's query. The audience fields are the store's half of the
-// visibility rule, as in sessions.ListThreads: an admin reads every
-// definition session's decisions, anyone else their own and (Shared) the
-// shared ones. The caller still checks each row.
+// visibility rule: an admin reads the decisions of every open session, since
+// the deck is the global sink between agent and human (docs/adr/0082 §5);
+// anyone else reads definition sessions only, their own and (Shared) the
+// shared ones, as sessions.ListThreads does. The caller still checks each row.
 type Filter struct {
 	States      []string
 	Kinds       []Kind
@@ -100,7 +101,7 @@ type Cursor struct {
 	ID        string
 }
 
-// List is decisions on open definition sessions, newest first.
+// List is decisions on sessions that are not archived, newest first.
 func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	before := Cursor{CreatedAt: time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC), ID: "ffffffff-ffff-ffff-ffff-ffffffffffff"}
 	if f.Before != nil {
@@ -114,8 +115,8 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 		f.States = []string{}
 	}
 	out, err := collect(s.pool.Query(ctx, `SELECT `+cols+`
-		WHERE s.archived_at IS NULL AND s.definition_name IS NOT NULL
-		  AND ($1 OR s.owner = $2 OR ($3 AND s.visibility = 'shared'))
+		WHERE s.archived_at IS NULL
+		  AND ($1 OR (s.definition_name IS NOT NULL AND (s.owner = $2 OR ($3 AND s.visibility = 'shared'))))
 		  AND (cardinality($4::text[]) = 0 OR d.state = ANY($4))
 		  AND (cardinality($5::text[]) = 0 OR d.kind = ANY($5))
 		  AND ($6 = '' OR COALESCE(substring(s.thread_key from '^github/([^/]+/[^/]+)'), '') = $6)

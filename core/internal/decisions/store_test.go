@@ -78,8 +78,8 @@ func (f fixture) ask(t *testing.T, session, typ, text string) int64 {
 
 type row struct {
 	Kind, State, Ask, Tool, Canon, Payload, Answer, By string
-	AnsweredAt                                       *time.Time
-	Version                                          int64
+	AnsweredAt                                         *time.Time
+	Version                                            int64
 }
 
 func (f fixture) row(t *testing.T, session string, seq int64) *row {
@@ -126,7 +126,7 @@ func TestOnAppend(t *testing.T) {
 		{p, "permission", "Bash", "Bash", `{"command":"ls","timeout":5}`, `{"tool": "Bash", "input": {"command": "ls", "timeout": 5}}`},
 		{pl, "plan", "do x", "ExitPlanMode", `{"plan":"do x"}`, `{"tool": "ExitPlanMode", "input": {"plan": "do x"}}`},
 		{junk, "question", "", "", "", `"?"`},
-			{nul, "question", "ab", "", "", `"{\"questions\":[{\"question\":\"a\\u0000b\"}]}"`},
+		{nul, "question", "ab", "", "", `"{\"questions\":[{\"question\":\"a\\u0000b\"}]}"`},
 	} {
 		r := f.row(t, id, c.seq)
 		if r == nil || r.Kind != c.kind || r.State != "open" || r.Ask != c.ask || r.Tool != c.tool || r.Canon != c.canon || r.Payload != c.pay {
@@ -426,13 +426,14 @@ func TestList(t *testing.T) {
 		f    decisions.Filter
 		want map[string]int
 	}{
-		{"admin", decisions.Filter{Admin: true}, map[string]int{web: 2, api: 2, mine: 2}},
+		// The admin's deck is every open session's, a console session's too.
+		{"admin", decisions.Filter{Admin: true}, map[string]int{web: 2, api: 2, mine: 2, console: 2}},
 		{"alice", decisions.Filter{Owner: "alice", Shared: true}, map[string]int{web: 2, mine: 2}},
 		{"bob", decisions.Filter{Owner: "bob", Shared: true}, map[string]int{web: 2}},
 		{"client", decisions.Filter{Owner: "client:other"}, map[string]int{api: 2}},
-		{"open", decisions.Filter{Admin: true, States: []string{"open"}}, map[string]int{web: 1, api: 2, mine: 2}},
+		{"open", decisions.Filter{Admin: true, States: []string{"open"}}, map[string]int{web: 1, api: 2, mine: 2, console: 2}},
 		{"answered", decisions.Filter{Admin: true, States: []string{"answered", "withdrawn"}}, map[string]int{web: 1}},
-		{"plans", decisions.Filter{Admin: true, Kinds: []decisions.Kind{decisions.Plan}}, map[string]int{web: 1, api: 1, mine: 1}},
+		{"plans", decisions.Filter{Admin: true, Kinds: []decisions.Kind{decisions.Plan}}, map[string]int{web: 1, api: 1, mine: 1, console: 1}},
 		{"repo", decisions.Filter{Admin: true, SubjectRepo: "acme/api"}, map[string]int{api: 2}},
 		{"thread", decisions.Filter{Admin: true, SessionID: mine}, map[string]int{mine: 2}},
 	} {
@@ -453,7 +454,7 @@ func TestList(t *testing.T) {
 		}
 	}
 
-	// Pages of two walk all six, newest first, each once.
+	// Pages of two walk all eight, newest first, each once.
 	whole := list(decisions.Filter{Admin: true})
 	var paged []decisions.Record
 	var before *decisions.Cursor
@@ -466,8 +467,8 @@ func TestList(t *testing.T) {
 		last := page[len(page)-1]
 		before = &decisions.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
 	}
-	if len(paged) != 6 || len(whole) != 6 {
-		t.Fatalf("paged %d, whole %d, want 6", len(paged), len(whole))
+	if len(paged) != 8 || len(whole) != 8 {
+		t.Fatalf("paged %d, whole %d, want 8", len(paged), len(whole))
 	}
 	for i := range whole {
 		all = append(all, whole[i].ID)

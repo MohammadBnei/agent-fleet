@@ -63,8 +63,9 @@ type AgentServiceClient interface {
 	RespondToPermission(ctx context.Context, in *AgentServiceRespondToPermissionRequest, opts ...grpc.CallOption) (*AgentServiceRespondToPermissionResponse, error)
 	AnswerQuestion(ctx context.Context, in *AgentServiceAnswerQuestionRequest, opts ...grpc.CallOption) (*AgentServiceAnswerQuestionResponse, error)
 	ApprovePlan(ctx context.Context, in *ApprovePlanRequest, opts ...grpc.CallOption) (*ApprovePlanResponse, error)
-	// The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
-	// is still the three methods above.
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
 	ListDecisions(ctx context.Context, in *ListDecisionsRequest, opts ...grpc.CallOption) (*ListDecisionsResponse, error)
 	GetDecision(ctx context.Context, in *GetDecisionRequest, opts ...grpc.CallOption) (*GetDecisionResponse, error)
 	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
@@ -320,8 +321,9 @@ type AgentServiceServer interface {
 	RespondToPermission(context.Context, *AgentServiceRespondToPermissionRequest) (*AgentServiceRespondToPermissionResponse, error)
 	AnswerQuestion(context.Context, *AgentServiceAnswerQuestionRequest) (*AgentServiceAnswerQuestionResponse, error)
 	ApprovePlan(context.Context, *ApprovePlanRequest) (*ApprovePlanResponse, error)
-	// The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
-	// is still the three methods above.
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
 	ListDecisions(context.Context, *ListDecisionsRequest) (*ListDecisionsResponse, error)
 	GetDecision(context.Context, *GetDecisionRequest) (*GetDecisionResponse, error)
 	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;

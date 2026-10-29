@@ -24,7 +24,8 @@ import (
 )
 
 // asSub stands in for the listeners: the principal is the member named by
-// the X-Sub header, in the audience group unless it is "carol".
+// the X-Sub header, in the audience group unless it is "carol", and "root" is
+// in platform-admins. X-Origin makes the call an island's.
 type asSub struct{}
 
 func (asSub) principal(ctx context.Context, h http.Header) context.Context {
@@ -36,7 +37,7 @@ func (asSub) principal(ctx context.Context, h http.Header) context.Context {
 	case "root":
 		groups = []string{auth.RequiredGroup}
 	}
-	return withPrincipal(ctx, Principal{Member: &auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}})
+	return withPrincipal(ctx, Principal{Member: &auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}, Origin: h.Get("X-Origin")})
 }
 
 func (a asSub) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
@@ -61,8 +62,10 @@ func as[T any](sub string, msg *T) *connect.Request[T] {
 	return r
 }
 
-// The deck's reads see exactly the threads GetTranscript would show the
-// caller, page newest first, and stream only the caller's changes.
+// The deck's reads: an admin in the console sees every open session's
+// decisions, console sessions included; a member, or an admin from an island,
+// exactly the threads GetTranscript would show them. Pages are newest first,
+// and a stream carries only the caller's changes.
 func TestDecisionDeck(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -98,6 +101,10 @@ func TestDecisionDeck(t *testing.T) {
 		return r.Msg.GetThread().GetId()
 	}
 	shared, priv := thread("shared"), thread("private")
+	console, err := store.Create(ctx, sessions.CreateParams{Repo: "notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ask := func(id, typ, text string) int64 {
 		seq, err := transcr.Append(ctx, id, "agent", text, typ, "")
 		if err != nil {
@@ -109,6 +116,7 @@ func TestDecisionDeck(t *testing.T) {
 	ask(shared, "permission_request", `{"tool":"Bash","input":{"command":"ls"}}`)
 	ask(priv, "question", `{"questions":[]}`)
 	planSeq := ask(priv, "permission_request", `{"tool":"ExitPlanMode","input":{"plan":"p"}}`)
+	consoleSeq := ask(console, "permission_request", `{"tool":"Bash","input":{"command":"make"}}`)
 	if _, err := transcr.AppendAuthored(ctx, shared, transcript.Author{Sub: "bob", Name: "bob@bnei.dev"}, `{"which?":"a"}`, "answer", "", &q); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +128,7 @@ func TestDecisionDeck(t *testing.T) {
 		}
 		return r.Msg.GetDecisions(), nil
 	}
-	for sub, want := range map[string]int{"alice": 4, "bob": 2, "carol": 0, "root": 4} {
+	for sub, want := range map[string]int{"alice": 4, "bob": 2, "carol": 0, "root": 5} {
 		if got, err := list(sub, &agentfleetv1.ListDecisionsRequest{}); err != nil || len(got) != want {
 			t.Errorf("%s sees %d decisions (%v), want %d", sub, len(got), err, want)
 		}
@@ -141,6 +149,22 @@ func TestDecisionDeck(t *testing.T) {
 	}
 	if got, _ := list("root", &agentfleetv1.ListDecisionsRequest{ThreadId: shared}); len(got) != 2 {
 		t.Errorf("root on one thread: %d, want 2", len(got))
+	}
+	onConsole, _ := list("root", &agentfleetv1.ListDecisionsRequest{ThreadId: console})
+	if len(onConsole) != 1 || onConsole[0].GetRequestSeq() != consoleSeq || onConsole[0].GetTool() != "Bash" {
+		t.Fatalf("root on the console session: %v", onConsole)
+	}
+	consoleID := onConsole[0].GetId()
+	if got, _ := list("alice", &agentfleetv1.ListDecisionsRequest{ThreadId: console}); len(got) != 0 {
+		t.Errorf("a member sees a console session's decision: %v", got)
+	}
+	// From an island an admin is a member: no console sessions, and no
+	// definition that does not embed the island.
+	island := connect.NewRequest(&agentfleetv1.ListDecisionsRequest{})
+	island.Header().Set("X-Sub", "root")
+	island.Header().Set("X-Origin", "https://opus.bnei.dev")
+	if r, err := c.ListDecisions(ctx, island); err != nil || len(r.Msg.GetDecisions()) != 0 {
+		t.Errorf("an admin from an island: %v, %v", r, err)
 	}
 	for name, req := range map[string]*agentfleetv1.ListDecisionsRequest{
 		"unknown state": {States: []agentfleetv1.DecisionState{99}},
@@ -184,34 +208,78 @@ func TestDecisionDeck(t *testing.T) {
 	if err := get("alice", plans[0].GetId()); err != nil {
 		t.Errorf("alice gets her plan: %v", err)
 	}
-	for sub, id := range map[string]string{"bob": plans[0].GetId(), "carol": answered[0].GetId(), "alice": "nope"} {
-		if err := get(sub, id); connect.CodeOf(err) != connect.CodeNotFound {
-			t.Errorf("%s get %s: %v", sub, id, err)
+	for _, sub := range []string{"root", "alice"} {
+		if err := get(sub, plans[0].GetId()); err != nil {
+			t.Errorf("%s gets alice's private plan: %v", sub, err)
 		}
 	}
+	if err := get("root", consoleID); err != nil {
+		t.Errorf("root gets the console session's decision: %v", err)
+	}
+	for _, c := range []struct{ sub, id string }{
+		{"bob", plans[0].GetId()}, {"carol", answered[0].GetId()}, {"alice", "nope"},
+		{"alice", consoleID}, {"bob", consoleID}, {"carol", consoleID},
+	} {
+		if err := get(c.sub, c.id); connect.CodeOf(err) != connect.CodeNotFound {
+			t.Errorf("%s get %s: %v", c.sub, c.id, err)
+		}
+	}
+	islandGet := connect.NewRequest(&agentfleetv1.GetDecisionRequest{Id: consoleID})
+	islandGet.Header().Set("X-Sub", "root")
+	islandGet.Header().Set("X-Origin", "https://opus.bnei.dev")
+	if _, err := c.GetDecision(ctx, islandGet); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("an admin from an island gets a console decision: %v", err)
+	}
 
-	// Bob's stream: the baseline, then only the change on the thread he sees.
+	// Streams: each opens with the baseline. Bob's then carries only the
+	// change on the thread he sees; root's carries all three, the console
+	// session's included.
 	decisions.PollEvery = 20 * time.Millisecond
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := c.WatchDecisions(sctx, as("bob", &agentfleetv1.WatchDecisionsRequest{}))
-	if err != nil {
-		t.Fatal(err)
+	watch := func(sub string) *connect.ServerStreamForClient[agentfleetv1.WatchDecisionsResponse] {
+		stream, err := c.WatchDecisions(sctx, as(sub, &agentfleetv1.WatchDecisionsRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stream.Receive() || len(stream.Msg().GetChangedIds()) != 0 || stream.Msg().GetVersion() == 0 {
+			t.Fatalf("%s's baseline: %v %v", sub, stream.Msg(), stream.Err())
+		}
+		return stream
 	}
-	if !stream.Receive() || len(stream.Msg().GetChangedIds()) != 0 || stream.Msg().GetVersion() == 0 {
-		t.Fatalf("baseline: %v %v", stream.Msg(), stream.Err())
-	}
+	stream, rootStream := watch("bob"), watch("root")
 	base := stream.Msg().GetVersion()
-	ask(priv, "question", `{"questions":[]}`)
-	time.Sleep(100 * time.Millisecond) // a poll passes with only alice's change
+	privSeq := ask(priv, "question", `{"questions":[]}`)
+	consoleAsk := ask(console, "question", `{"questions":[]}`)
+	time.Sleep(100 * time.Millisecond) // a poll passes with only changes bob may not see
 	seen := ask(shared, "question", `{"questions":[]}`)
 	if !stream.Receive() {
 		t.Fatal(stream.Err())
 	}
 	got := stream.Msg()
 	mine, _ := list("bob", &agentfleetv1.ListDecisionsRequest{ThreadId: shared})
-	if len(got.GetChangedIds()) != 1 || got.GetChangedIds()[0] != mine[0].GetId() || mine[0].GetRequestSeq() != seen || got.GetVersion() <= base+1 {
+	if len(got.GetChangedIds()) != 1 || got.GetChangedIds()[0] != mine[0].GetId() || mine[0].GetRequestSeq() != seen || got.GetVersion() <= base+2 {
 		t.Errorf("bob's change: %v, want only %s", got, mine[0].GetId())
+	}
+	idOf := func(thread string, seq int64) string {
+		t.Helper()
+		all, _ := list("root", &agentfleetv1.ListDecisionsRequest{ThreadId: thread})
+		for _, d := range all {
+			if d.GetRequestSeq() == seq {
+				return d.GetId()
+			}
+		}
+		t.Fatalf("no decision at %s/%d", thread, seq)
+		return ""
+	}
+	want := map[string]bool{idOf(priv, privSeq): true, idOf(console, consoleAsk): true, mine[0].GetId(): true}
+	for len(want) > 0 {
+		if !rootStream.Receive() {
+			t.Fatalf("root's stream ended still missing %v: %v", want, rootStream.Err())
+		}
+		for _, id := range rootStream.Msg().GetChangedIds() {
+			delete(want, id)
+		}
 	}
 
 	// An archived thread's decisions leave the deck.

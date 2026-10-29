@@ -50,8 +50,9 @@ service AgentService {
   rpc AnswerQuestion(AgentServiceAnswerQuestionRequest) returns (AgentServiceAnswerQuestionResponse);
   rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse);
 
-  // The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
-  // is still the three methods above.
+  // The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+  // session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+  // Answering is still the three methods above.
   rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
   rpc GetDecision(GetDecisionRequest) returns (GetDecisionResponse);
   // Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
@@ -317,6 +318,7 @@ message Decision {
   string id = 1;
   DecisionKind kind = 2;
   DecisionState state = 3;
+  // The session the decision is on: a thread, or for an admin also a console or repo session.
   string thread_id = 4;
   // The request's seq in the thread's transcript: what RespondToPermission, AnswerQuestion and ApprovePlan name.
   int64 request_seq = 5;

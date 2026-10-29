@@ -16,9 +16,12 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
-// The decision deck's reads (docs/adr/0082 §5). A caller sees a decision
-// exactly when it may read its thread's transcript: canSee, on a definition
-// session that is not archived, as thread() decides.
+// The decision deck's reads (docs/adr/0082 §5). The deck is the global sink
+// between agent and human, so an admin in the console (Admin(): no island
+// origin) sees the decisions of every session that is not archived: console,
+// repo and definition sessions. Anyone else sees a decision exactly when they
+// may read its thread's transcript: canSee, on a definition session that is
+// not archived, as thread() decides.
 
 var errNoDecision = connect.NewError(connect.CodeNotFound, errors.New("no such decision"))
 
@@ -37,7 +40,13 @@ var stateToProto = map[string]agentfleetv1.DecisionState{
 }
 
 func (s *Server) visible(p Principal, r decisions.Record) bool {
-	if r.Definition == nil || r.Archived {
+	if r.Archived {
+		return false
+	}
+	if p.Admin() {
+		return true
+	}
+	if r.Definition == nil {
 		return false
 	}
 	h, _ := s.definitions.Resolve(*r.Definition)

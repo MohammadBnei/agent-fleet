@@ -978,6 +978,8 @@ export type Decision = Message<"agentfleet.v1.Decision"> & {
   state: DecisionState;
 
   /**
+   * The session the decision is on: a thread, or for an admin also a console or repo session.
+   *
    * @generated from field: string thread_id = 4;
    */
   threadId: string;
@@ -1420,8 +1422,9 @@ export const AgentService: GenService<{
     output: typeof ApprovePlanResponseSchema;
   },
   /**
-   * The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
-   * is still the three methods above.
+   * The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+   * session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+   * Answering is still the three methods above.
    *
    * @generated from rpc agentfleet.v1.AgentService.ListDecisions
    */

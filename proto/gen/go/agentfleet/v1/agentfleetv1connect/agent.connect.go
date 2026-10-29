@@ -100,8 +100,9 @@ type AgentServiceClient interface {
 	RespondToPermission(context.Context, *connect.Request[v1.AgentServiceRespondToPermissionRequest]) (*connect.Response[v1.AgentServiceRespondToPermissionResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AgentServiceAnswerQuestionRequest]) (*connect.Response[v1.AgentServiceAnswerQuestionResponse], error)
 	ApprovePlan(context.Context, *connect.Request[v1.ApprovePlanRequest]) (*connect.Response[v1.ApprovePlanResponse], error)
-	// The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
-	// is still the three methods above.
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
 	ListDecisions(context.Context, *connect.Request[v1.ListDecisionsRequest]) (*connect.Response[v1.ListDecisionsResponse], error)
 	GetDecision(context.Context, *connect.Request[v1.GetDecisionRequest]) (*connect.Response[v1.GetDecisionResponse], error)
 	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
@@ -377,8 +378,9 @@ type AgentServiceHandler interface {
 	RespondToPermission(context.Context, *connect.Request[v1.AgentServiceRespondToPermissionRequest]) (*connect.Response[v1.AgentServiceRespondToPermissionResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AgentServiceAnswerQuestionRequest]) (*connect.Response[v1.AgentServiceAnswerQuestionResponse], error)
 	ApprovePlan(context.Context, *connect.Request[v1.ApprovePlanRequest]) (*connect.Response[v1.ApprovePlanResponse], error)
-	// The decision deck (docs/adr/0082 §5): every decision on a thread the caller may read, whatever its kind. Answering
-	// is still the three methods above.
+	// The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
+	// session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
+	// Answering is still the three methods above.
 	ListDecisions(context.Context, *connect.Request[v1.ListDecisionsRequest]) (*connect.Response[v1.ListDecisionsResponse], error)
 	GetDecision(context.Context, *connect.Request[v1.GetDecisionRequest]) (*connect.Response[v1.GetDecisionResponse], error)
 	// Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
