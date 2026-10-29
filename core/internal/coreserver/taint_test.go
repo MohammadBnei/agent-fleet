@@ -6,14 +6,18 @@ import (
 	"context"
 	"net"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
+	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -170,6 +174,95 @@ func TestTaint_CoreRefusesTaintedSessions(t *testing.T) {
 			}
 			if after := prov.calls + published; after != before {
 				t.Fatalf("a tainted session's call reached the provisioner or the bridge")
+			}
+		})
+	}
+}
+
+type fakeFiles struct{ calls int }
+
+func (f *fakeFiles) List(context.Context) ([]filestore.FileMetadata, error) { return nil, nil }
+func (f *fakeFiles) PresignUpload(context.Context, string, string) (string, string, time.Time, error) {
+	f.calls++
+	return "https://u", "k", time.Now(), nil
+}
+func (f *fakeFiles) PresignDownload(context.Context, string) (string, time.Time, error) {
+	return "https://d", time.Now(), nil
+}
+func (f *fakeFiles) Delete(context.Context, string) error {
+	f.calls++
+	return nil
+}
+
+// docs/adr/0082 §4, widened: what other sessions read back without being
+// tainted by it (the journal, shared files, a session's description) refuses
+// a tainted writer too. The journal and file methods name no session, so the
+// caller is the one whose lease the interceptor verified.
+func TestTaint_CoreRefusesTaintedWritesOthersRead(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	files := &fakeFiles{}
+	s := New(transcript.NewPostgresStore(pool), store, journal.NewStore(pool), nil, nil, files, nil)
+	effects := func() int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM knowledge_journal`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		var meta int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE description = 'relabelled'`).Scan(&meta); err != nil {
+			t.Fatal(err)
+		}
+		return n + meta + files.calls
+	}
+	asSession := func(id string) context.Context {
+		return metadata.NewIncomingContext(ctx, metadata.Pairs(mdSessionID, id))
+	}
+	desc := "relabelled"
+	calls := map[string]func(id string) error{
+		"AppendJournal": func(id string) error {
+			_, err := s.AppendJournal(asSession(id), &agentfleetv1.AppendJournalRequest{Repo: "r", Actor: "worker", EventType: "note", PayloadJson: `{"a":1}`})
+			return err
+		},
+		"GetFileUploadUrl": func(id string) error {
+			_, err := s.GetFileUploadUrl(asSession(id), &agentfleetv1.GetFileUploadUrlRequest{Filename: "f", ContentType: "text/plain"})
+			return err
+		},
+		"DeleteFile": func(id string) error {
+			_, err := s.DeleteFile(asSession(id), &agentfleetv1.DeleteFileRequest{Key: "k"})
+			return err
+		},
+		"UpdateSessionMeta": func(id string) error {
+			_, err := s.UpdateSessionMeta(ctx, &agentfleetv1.UpdateSessionMetaRequest{SessionId: id, Description: &desc})
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			id, err := store.Create(ctx, sessions.CreateParams{Repo: "r"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := effects()
+			if err := call(id); err != nil {
+				t.Fatalf("clean session refused: %v", err)
+			}
+			if effects() == before {
+				t.Fatal("a clean session's call had no effect")
+			}
+			if _, err := pool.Exec(ctx, `UPDATE sessions SET description = '' WHERE id = $1`, id); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.MarkOutsideRead(ctx, id, "curl https://example.com"); err != nil {
+				t.Fatal(err)
+			}
+			before = effects()
+			if err := call(id); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("tainted session: got %v, want PermissionDenied", err)
+			}
+			if effects() != before {
+				t.Fatal("a tainted session's call took effect")
 			}
 		})
 	}

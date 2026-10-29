@@ -417,6 +417,9 @@ func (s *Server) ListFiles(ctx context.Context, _ *agentfleetv1.ListFilesRequest
 }
 
 func (s *Server) GetFileUploadUrl(ctx context.Context, req *agentfleetv1.GetFileUploadUrlRequest) (*agentfleetv1.GetFileUploadUrlResponse, error) {
+	if err := s.refuseTaintedCaller(ctx); err != nil {
+		return nil, err
+	}
 	url, key, expiresAt, err := s.files.PresignUpload(ctx, req.GetFilename(), req.GetContentType())
 	if err != nil {
 		return nil, fmt.Errorf("GetFileUploadUrl: %w", err)
@@ -433,6 +436,9 @@ func (s *Server) GetFileDownloadUrl(ctx context.Context, req *agentfleetv1.GetFi
 }
 
 func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileRequest) (*agentfleetv1.DeleteFileResponse, error) {
+	if err := s.refuseTaintedCaller(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.files.Delete(ctx, req.GetKey()); err != nil {
 		return nil, fmt.Errorf("DeleteFile: %w", err)
 	}
@@ -501,6 +507,9 @@ func (s *Server) UpdateSessionMeta(ctx context.Context, req *agentfleetv1.Update
 	if req.GetSessionId() == "" {
 		return nil, fmt.Errorf("session_id is required")
 	}
+	if err := s.refuseTainted(ctx, req.GetSessionId()); err != nil {
+		return nil, err
+	}
 	if err := s.sessions.UpdateMeta(ctx, req.GetSessionId(), req.Title, req.Description); err != nil {
 		return nil, fmt.Errorf("UpdateSessionMeta: %w", err)
 	}
@@ -525,6 +534,9 @@ func (s *Server) UpdateSessionMeta(ctx context.Context, req *agentfleetv1.Update
 // idle/stall sweeps, and ArchiveSession.
 
 func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJournalRequest) (*agentfleetv1.AppendJournalResponse, error) {
+	if err := s.refuseTaintedCaller(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.journal.Append(ctx, req.GetRepo(), req.GetActor(), req.GetEventType(), req.GetPayloadJson()); err != nil {
 		return nil, fmt.Errorf("AppendJournal: %w", err)
 	}
