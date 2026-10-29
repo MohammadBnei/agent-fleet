@@ -1,6 +1,6 @@
 # ADR-0082 — Decision cards: only an explicit address wakes an agent, and the owner decides on cards
 
-- **Status:** Accepted (owner-approved 2026-10-28; taint dropped by the owner 2026-10-29)
+- **Status:** Accepted (owner-approved 2026-10-28; taint dropped and the deck made one feed by the owner 2026-10-29)
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
   (no proposal; alerts and hand-offs keep theirs). Until the bridge's slice (§12) delivers `labeled` events, a T0 label is
@@ -61,7 +61,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - What bounds a stranger's words: they never start work (§1, §2), a card option carries only its bound effect
      (§6), and the default branch moves only through the merge right (§9) or an owner card.
 4. **An agent drafts a card when the choice is the owner's**: a stranger's PR, a step outside its mandate, a
-   decision with real options. It uses a `draft_card` sidecar tool. Permission asks stay as they are (ADR-0029).
+   decision with real options. It uses a `draft_card` sidecar tool. A session's live asks (question, permission, plan approval) stay what they
+   are (ADR-0029) and reach the deck as projected entries (§5).
 5. **The card** is a durable question entry in the proposals inbox, never a `permission_request`, so it never pins a
    pod.
 
@@ -83,6 +84,16 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    **API** (`AgentService`): `ListCards` filters by state (any set of the four), `subject.repo`, newest first, paged;
    answered, expired and stale cards stay listable as history. `GetCard`; `AnswerCard {card_id, option_id |
    own_text}`; `WatchCards`, a stream that sends each changed card id and a list version, so surfaces never poll.
+
+   **One feed (owner, 2026-10-29):** "The decision deck is a global sink between agent and human." Every
+   agent-to-human decision reaches the same surface. `ListCards` and `WatchCards` carry `kind` (`card` | `ask`):
+   - An `ask` is a session's pending question, permission request or plan approval, projected by core from the
+     transcript at read time. It is not stored as a card, keeps its pod pinned, and is answered as today
+     (`RespondToPermission`, `AnswerQuestion`, `ApprovePlan`), bound to its seq. `AnswerCard` refuses an ask.
+   - It carries the card's common fields where they apply (`id` = session and seq, `state`, `writer`, `subject`,
+     `ask` text) plus `session` and `seq`. Its `state` is `open` until the transcript holds its reply, then it leaves
+     the open list; it has no `expires_at`.
+   - The LED and any badge count the open entries of this one feed, so nothing is counted twice.
 
    Rendering: plain text, every href shown, bidi and zero-width characters stripped, lengths bounded, agent text
    labelled "agent claim" and set apart from what core filled, the recommendation marked but never pre-selected. On a
@@ -114,7 +125,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - At most one open card per subject; later inputs fold into it (`FoldEvent`).
    - A daily card budget per definition, with a digest card for the overflow. Cards count toward the thread's wake cap
      (`MaxAgentWakes`).
-   - Plan approval, "Close threads" and ADR-0072 executor approvals become cards.
+   - "Close threads" and ADR-0072 executor approvals become cards. Plan approval stays a session ask, shown in
+     the one feed.
 9. **Merge right.**
    - Approval by a fleet review agent lets the writer agent merge exactly that head. The approval is a core record (a
      `PublishEvent` such as `review.approved` pinned to `head_sha`), not a GitHub review: every agent shares the bot
@@ -169,7 +181,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 Slice 1 is built. Slices, in order:
 
 1. The address-only gate, and dropping the bot's events and unaddressed GitHub events on subjects with no open thread.
-2. The card store, the `AnswerCard` API, `draft_card` and the console UI.
+2. The card store, the `AnswerCard` API, `draft_card`, the one feed (asks projected) and the console UI.
 3. Removing core's taint.
 4. The bridge's events and trust facts.
 5. The merge right: the `agent-review` status and the rulesets.
