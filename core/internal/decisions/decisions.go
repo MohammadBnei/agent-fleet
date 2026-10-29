@@ -153,6 +153,10 @@ func clip(s string, n int) string {
 // A reply of any type closes it, as pending_decisions always counted. The
 // agent's own reply withdraws rather than answers: that is core's supersede
 // of a re-asked question (coreserver reuseOrAppendQuestion).
+//
+// Only a human's reply keeps a request grantable: a session authors only as
+// agent or worker (coreserver auth.go), so it cannot answer itself into a
+// one-time grant (ConsumeGrant).
 func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry) error {
 	if e.ReplyTo != nil {
 		state, by := Answered, e.AuthorName
@@ -167,9 +171,10 @@ func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Ent
 			       answer      = CASE WHEN $3 = 'answered' THEN $4::jsonb END,
 			       answered_by = CASE WHEN $3 = 'answered' THEN $5 END,
 			       answered_at = CASE WHEN $3 = 'answered' THEN now() END,
+			       grantable   = grantable AND $6,
 			       version     = nextval('decisions_version_seq')
 			 WHERE session_id = $1 AND request_seq = $2 AND state = 'open'`,
-			sessionID, *e.ReplyTo, state, asJSON(e.Text), by); err != nil {
+			sessionID, *e.ReplyTo, state, asJSON(e.Text), by, e.From == "human"); err != nil {
 			return err
 		}
 	}

@@ -14,15 +14,10 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
-// recordingStore captures the arguments its last Append call was made
-// with — enough to verify Server.Kill/RespondToPermission call
-// transcript.Store the same way core/internal/discord/handlers.go's
-// Discord commands do
-// (see docs/adr/0014, docs/adr/0015), without needing a real Postgres for
-// logic this thin. transcript.Store.Append's own idempotency guarantee is
-// PostgresStore's responsibility, not this package's. Server.GetE2EStatus/
-// KillE2E aren't covered here — they're one-line pass-throughs to a
-// concrete *provisionerclient.Client, already exercised by provisionerclient's own tests.
+// recordingStore is a transcript.Store that records its last append and
+// stores nothing, for the paths that return before touching Postgres. The
+// answer RPCs go through decisions.Answer, so they are tested over real
+// Postgres (grants_test.go, answer_warms_test.go, decisions' own tests).
 type recordingStore struct {
 	lastTaskID, lastFrom, lastText, lastType string
 	lastReplyTo                              int64
@@ -44,26 +39,6 @@ func (r *recordingStore) ReadSince(context.Context, string, int64, int) ([]trans
 
 func (r *recordingStore) LatestSeq(context.Context, string) (int64, error) {
 	return 0, nil
-}
-
-func TestServer_RespondToPermission(t *testing.T) {
-	store := &recordingStore{}
-	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")
-
-	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
-		SessionId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
-	}))
-	if err != nil {
-		t.Fatalf("RespondToPermission: %v", err)
-	}
-	if resp.Msg.GetSeq() < 0 {
-		t.Errorf("status = %d, want %q", resp.Msg.GetSeq(), "answered")
-	}
-	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != `{"behavior":"allow"}` ||
-		store.lastType != "permission_response" || store.lastReplyTo != 7 {
-		t.Errorf("AppendReply(%q, %q, %q, %q, replyTo=%d), want (task-1, human, {\"behavior\":\"allow\"}, permission_response, replyTo=7)",
-			store.lastTaskID, store.lastFrom, store.lastText, store.lastType, store.lastReplyTo)
-	}
 }
 
 // What can and cannot be tested in this file, since it keeps coming up:

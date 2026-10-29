@@ -296,6 +296,8 @@ func requestFor(method string) any {
 		return &agentfleetv1.PromptSessionRequest{CallerSessionId: "s1", TargetSessionId: "peer"}
 	case "/agentfleet.v1.CoreService/PublishEvent":
 		return &agentfleetv1.PublishEventRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/ConsumeGrant":
+		return &agentfleetv1.ConsumeGrantRequest{SessionId: "s1"}
 	}
 	return nil // unbound methods: the request names no caller
 }
@@ -395,4 +397,22 @@ func coreMethods() []string {
 		out = append(out, "/agentfleet.v1.CoreService/"+st.StreamName)
 	}
 	return out
+}
+
+// A one-time grant is a human's approval of one session's call
+// (docs/adr/0082 §5): only that session's own lease spends it. Another
+// session's lease naming it, and the provisioner token, are refused.
+func TestAuth_ConsumeGrantIsTheLeasesOwnSession(t *testing.T) {
+	const m = "/agentfleet.v1.CoreService/ConsumeGrant"
+	a := NewAuthenticator(fakeLeases{session: "s2", lease: "L2"}, "provtoken")
+	other := ctxWith(mdSessionID, "s2", mdLeaseID, "L2")
+	if err := callUnary(t, a, other, m, &agentfleetv1.ConsumeGrantRequest{SessionId: "s1", Tool: "Bash"}); codeOf(err) != codes.PermissionDenied {
+		t.Errorf("s2's lease spending s1's grant: %v, want PermissionDenied", err)
+	}
+	if err := callUnary(t, a, other, m, &agentfleetv1.ConsumeGrantRequest{SessionId: "s2", Tool: "Bash"}); err != nil {
+		t.Errorf("s2's own grant: %v", err)
+	}
+	if err := callUnary(t, a, ctxWith(mdProvisionerToken, "provtoken"), m, &agentfleetv1.ConsumeGrantRequest{SessionId: "s1"}); codeOf(err) != codes.PermissionDenied {
+		t.Errorf("provisioner token: %v, want PermissionDenied", err)
+	}
 }

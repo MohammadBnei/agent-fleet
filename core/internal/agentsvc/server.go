@@ -31,8 +31,9 @@ type Server struct {
 // still goes through WarmIfIdle (docs/adr/0066 §8). An interface so a test
 // can stand in for the warm, which needs a provisioner.
 type console interface {
+	// WarmIfIdle, SetMode and RememberGrant: what an answer does.
+	decisions.Effects
 	CreateThread(ctx context.Context, head definitions.Head, title string, thread sessions.CreateParams) (*sessions.Session, error)
-	WarmIfIdle(ctx context.Context, sessionID string) (string, error)
 	ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error)
 	SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error)
 	StopSession(ctx context.Context, req *connect.Request[agentfleetv1.StopSessionRequest]) (*connect.Response[agentfleetv1.StopSessionResponse], error)

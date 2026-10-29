@@ -45,16 +45,18 @@ service AgentService {
   rpc GetTranscript(AgentServiceGetTranscriptRequest) returns (AgentServiceGetTranscriptResponse);
   rpc StreamTranscript(AgentServiceStreamTranscriptRequest) returns (stream AgentServiceStreamTranscriptResponse);
 
-  // Decisions: each names the seq of an unanswered request of its type.
+  // Decisions: each names the seq of an unanswered request of its type. Each is AnswerDecision for that request.
   rpc RespondToPermission(AgentServiceRespondToPermissionRequest) returns (AgentServiceRespondToPermissionResponse);
   rpc AnswerQuestion(AgentServiceAnswerQuestionRequest) returns (AgentServiceAnswerQuestionResponse);
   rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse);
 
   // The decision deck (docs/adr/0082 §5), whatever the kind: an admin in the console sees the decisions of every
   // session that is not archived, console and repo sessions included; anyone else, those on the threads they may read.
-  // Answering is still the three methods above.
   rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
   rpc GetDecision(GetDecisionRequest) returns (GetDecisionResponse);
+  // Answers one open decision by id. An admin in the console answers any decision it can see; anyone else, on the
+  // threads canAnswer allows (docs/adr/0067 §2).
+  rpc AnswerDecision(AnswerDecisionRequest) returns (AnswerDecisionResponse);
   // Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
   // the client reconnects with since_version and re-reads the ids it holds.
   rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
@@ -363,6 +365,28 @@ message GetDecisionRequest {
 
 message GetDecisionResponse {
   Decision decision = 1;
+}
+
+message AnswerDecisionRequest {
+  string decision_id = 1;
+  // A permission or a plan: "allow" or "deny".
+  string behavior = 2;
+  // A question: its answers, a JSON object.
+  string answers_json = 3;
+  // A permission's or plan's message to the agent, at most 10,000 characters.
+  string message = 4;
+  // A plan approved: the mode to leave plan mode into, within mode.allow. Empty takes mode.allow's first mode that
+  // is not plan, when the session is in plan.
+  string mode = 5;
+  // A permission allowed (docs/adr/0076 §3): "once" (the default), "session", or "definition" (admins only), and
+  // the rule's form, "exact" or "prefix".
+  string scope = 6;
+  string rule_form = 7;
+}
+
+message AnswerDecisionResponse {
+  // The answer's seq in the thread's transcript.
+  int64 seq = 1;
 }
 
 message WatchDecisionsRequest {

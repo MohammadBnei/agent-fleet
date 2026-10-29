@@ -66,6 +66,7 @@ var table = map[string]access{
 	agentfleetv1connect.AgentServiceApprovePlanProcedure:         {member: true, client: true},
 	agentfleetv1connect.AgentServiceListDecisionsProcedure:       {member: true, client: true},
 	agentfleetv1connect.AgentServiceGetDecisionProcedure:         {member: true, client: true},
+	agentfleetv1connect.AgentServiceAnswerDecisionProcedure:      {member: true, client: true},
 	agentfleetv1connect.AgentServiceWatchDecisionsProcedure:      {member: true, client: true},
 	agentfleetv1connect.AgentServiceSetConfigProcedure:           {member: true, client: true},
 	agentfleetv1connect.AgentServiceStopProcedure:                {member: true, client: true},

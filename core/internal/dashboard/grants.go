@@ -69,33 +69,15 @@ func (s *Server) PreviewGrant(ctx context.Context, req *connect.Request[agentfle
 	return connect.NewResponse(&agentfleetv1.PreviewGrantResponse{Exact: r.Exact, Prefix: r.Prefix}), nil
 }
 
-// withoutGrant drops a "grant" key from an answerer's decision JSON. Text
-// that is not a JSON object passes through: the worker ignores it anyway.
-func withoutGrant(decisionJSON string) string {
-	var m map[string]json.RawMessage
-	if json.Unmarshal([]byte(decisionJSON), &m) != nil {
-		return decisionJSON
-	}
-	if _, ok := m["grant"]; !ok {
-		return decisionJSON
-	}
-	delete(m, "grant")
-	b, err := json.Marshal(m)
-	if err != nil {
-		return decisionJSON
-	}
-	return string(b)
-}
-
-// rememberGrant stores the rule a remembered allow names and returns the
-// decision the worker receives: {behavior, message} as the answerer sent it,
-// plus core's own "grant". Stored before the answer is appended, so a grant
-// the worker applies is never one the store lacks; undo removes it again if
-// the append then fails.
-func (s *Server) rememberGrant(ctx context.Context, sessionID string, seq int64, decisionJSON, scope, form string) (string, func(), error) {
+// RememberGrant stores the rule a remembered allow names and returns the
+// decision the worker receives: decisions.Answer's, plus core's own "grant".
+// Stored before the answer is appended, so a grant the worker applies is
+// never one the store lacks; undo removes it again if the append then fails.
+func (s *Server) RememberGrant(ctx context.Context, sessionID string, seq int64, decisionJSON, scope, form string) (string, func(), error) {
 	var d struct {
-		Behavior string `json:"behavior"`
-		Message  string `json:"message,omitempty"`
+		Behavior   string `json:"behavior"`
+		Message    string `json:"message,omitempty"`
+		DecisionID string `json:"decisionId,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(decisionJSON), &d); err != nil || d.Behavior != "allow" {
 		return "", nil, fmt.Errorf("%w: only an allow is remembered", grants.ErrInvalid)
@@ -121,10 +103,11 @@ func (s *Server) rememberGrant(ctx context.Context, sessionID string, seq int64,
 		return "", nil, err
 	}
 	b, err := json.Marshal(struct {
-		Behavior string `json:"behavior"`
-		Message  string `json:"message,omitempty"`
-		Grant    string `json:"grant"`
-	}{d.Behavior, d.Message, rule})
+		Behavior   string `json:"behavior"`
+		Message    string `json:"message,omitempty"`
+		DecisionID string `json:"decisionId,omitempty"`
+		Grant      string `json:"grant"`
+	}{d.Behavior, d.Message, d.DecisionID, rule})
 	if err != nil {
 		undo()
 		return "", nil, err

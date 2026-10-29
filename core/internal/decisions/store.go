@@ -29,6 +29,8 @@ type Record struct {
 	AnsweredAt *time.Time
 	Version    int64
 	CreatedAt  time.Time
+	// Grantable: an allow of this request is a one-time grant (ConsumeGrant).
+	Grantable bool
 	// owner/name, from a thread keyed github/<owner>/<name>/...; "" otherwise.
 	SubjectRepo string
 
@@ -44,7 +46,7 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 const cols = `
 	d.id::text, d.kind, d.session_id::text, d.request_seq, d.state, d.ask,
 	COALESCE(d.payload::text, ''), COALESCE(d.tool, ''), COALESCE(d.answer::text, ''),
-	COALESCE(d.answered_by, ''), d.answered_at, d.version, d.created_at,
+	COALESCE(d.answered_by, ''), d.answered_at, d.version, d.created_at, d.grantable,
 	COALESCE(substring(s.thread_key from '^github/([^/]+/[^/]+)'), ''),
 	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL
 	FROM decisions d JOIN sessions s ON s.id = d.session_id`
@@ -53,7 +55,7 @@ func scan(row pgx.Row) (Record, error) {
 	var r Record
 	var kind string
 	err := row.Scan(&r.ID, &kind, &r.SessionID, &r.RequestSeq, &r.State, &r.Ask,
-		&r.Payload, &r.Tool, &r.Answer, &r.AnsweredBy, &r.AnsweredAt, &r.Version, &r.CreatedAt,
+		&r.Payload, &r.Tool, &r.Answer, &r.AnsweredBy, &r.AnsweredAt, &r.Version, &r.CreatedAt, &r.Grantable,
 		&r.SubjectRepo, &r.Owner, &r.Visibility, &r.Definition, &r.Archived)
 	r.Kind = Kind(kind)
 	return r, err

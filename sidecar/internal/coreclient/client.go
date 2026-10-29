@@ -414,6 +414,17 @@ func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 	return nil
 }
 
+// ConsumeGrant spends one of this pod's own session's one-time grants for
+// tool and its input JSON (docs/adr/0082 §5): granted, and the decision it
+// came from. taskID is this pod's identity, injected here, not an argument.
+func (c *Client) ConsumeGrant(ctx context.Context, tool, inputJSON string) (*agentfleetv1.ConsumeGrantResponse, error) {
+	res, err := c.rpc.ConsumeGrant(ctx, &agentfleetv1.ConsumeGrantRequest{SessionId: c.taskID, Tool: tool, InputJson: inputJSON})
+	if err != nil {
+		return nil, fmt.Errorf("ConsumeGrant: %w", err)
+	}
+	return res, nil
+}
+
 // UpdateSessionMeta relabels this pod's OWN session's title/description. A nil
 // title or description leaves that field unchanged. taskID is this pod's
 // identity, injected here, not an argument.

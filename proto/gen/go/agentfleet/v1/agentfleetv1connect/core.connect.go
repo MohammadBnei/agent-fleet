@@ -98,6 +98,9 @@ const (
 	// CoreServicePublishEventProcedure is the fully-qualified name of the CoreService's PublishEvent
 	// RPC.
 	CoreServicePublishEventProcedure = "/agentfleet.v1.CoreService/PublishEvent"
+	// CoreServiceConsumeGrantProcedure is the fully-qualified name of the CoreService's ConsumeGrant
+	// RPC.
+	CoreServiceConsumeGrantProcedure = "/agentfleet.v1.CoreService/ConsumeGrant"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -180,6 +183,9 @@ type CoreServiceClient interface {
 	// Publishes an event to the bridge as the calling definition session
 	// (docs/adr/0078 §8). Only for a definition granting publish_event.
 	PublishEvent(context.Context, *connect.Request[v1.PublishEventRequest]) (*connect.Response[v1.PublishEventResponse], error)
+	// Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
+	// for this tool and this exact input. Each grant lets one call through, once.
+	ConsumeGrant(context.Context, *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -337,6 +343,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("PublishEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		consumeGrant: connect.NewClient[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse](
+			httpClient,
+			baseURL+CoreServiceConsumeGrantProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ConsumeGrant")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -366,6 +378,7 @@ type coreServiceClient struct {
 	promptSession       *connect.Client[v1.PromptSessionRequest, v1.PromptSessionResponse]
 	waitForSessionState *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
 	publishEvent        *connect.Client[v1.PublishEventRequest, v1.PublishEventResponse]
+	consumeGrant        *connect.Client[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -488,6 +501,11 @@ func (c *coreServiceClient) PublishEvent(ctx context.Context, req *connect.Reque
 	return c.publishEvent.CallUnary(ctx, req)
 }
 
+// ConsumeGrant calls agentfleet.v1.CoreService.ConsumeGrant.
+func (c *coreServiceClient) ConsumeGrant(ctx context.Context, req *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error) {
+	return c.consumeGrant.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -568,6 +586,9 @@ type CoreServiceHandler interface {
 	// Publishes an event to the bridge as the calling definition session
 	// (docs/adr/0078 §8). Only for a definition granting publish_event.
 	PublishEvent(context.Context, *connect.Request[v1.PublishEventRequest]) (*connect.Response[v1.PublishEventResponse], error)
+	// Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
+	// for this tool and this exact input. Each grant lets one call through, once.
+	ConsumeGrant(context.Context, *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -721,6 +742,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("PublishEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceConsumeGrantHandler := connect.NewUnaryHandler(
+		CoreServiceConsumeGrantProcedure,
+		svc.ConsumeGrant,
+		connect.WithSchema(coreServiceMethods.ByName("ConsumeGrant")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -771,6 +798,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceWaitForSessionStateHandler.ServeHTTP(w, r)
 		case CoreServicePublishEventProcedure:
 			coreServicePublishEventHandler.ServeHTTP(w, r)
+		case CoreServiceConsumeGrantProcedure:
+			coreServiceConsumeGrantHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -874,4 +903,8 @@ func (UnimplementedCoreServiceHandler) WaitForSessionState(context.Context, *con
 
 func (UnimplementedCoreServiceHandler) PublishEvent(context.Context, *connect.Request[v1.PublishEventRequest]) (*connect.Response[v1.PublishEventResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.PublishEvent is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ConsumeGrant(context.Context, *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ConsumeGrant is not implemented"))
 }
