@@ -75,3 +75,24 @@ export async function approvePlan(
     throw err;
   }
 }
+
+// "Request changes" on a plan. A stamped plan (docs/adr/0082 §5) is a durable
+// decision: only a deny carrying the feedback closes it, and core delivers that
+// as the agent's message. An unstamped one belongs to an old worker, which
+// reads a human message arriving while the plan is pending as
+// deny-with-feedback and re-arms it, so a plain message is the whole answer.
+export function planFeedback(
+  sessionId: string,
+  seq: bigint,
+  stamped: boolean,
+  text: string,
+  api: Pick<typeof client, "respondToPermission" | "postMessage"> = client,
+): Promise<unknown> {
+  return stamped
+    ? api.respondToPermission({
+        sessionId,
+        seq,
+        decisionJson: JSON.stringify({ behavior: "deny", message: text }),
+      })
+    : api.postMessage({ sessionId, text });
+}

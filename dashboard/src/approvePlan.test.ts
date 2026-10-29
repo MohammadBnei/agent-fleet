@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { approvePlan } from "./approvePlan";
+import { approvePlan, planFeedback } from "./approvePlan";
 
 const calls: string[] = [];
 let respondError: Error | undefined;
@@ -51,4 +51,44 @@ test("plain approve still surfaces AlreadyExists", async () => {
   } finally {
     respondError = undefined;
   }
+});
+
+// "Request changes" on a plan. A stamped plan has no worker blocked on it, so a
+// plain message would leave the plan open forever: it is a deny carrying the
+// feedback, as DecisionDock does. A live unstamped plan takes a message, which
+// the worker reads as deny-with-feedback.
+function feedbackApi() {
+  const seen: [string, unknown][] = [];
+  const api = {
+    respondToPermission: async (req: unknown) => {
+      seen.push(["respond", req]);
+    },
+    postMessage: async (req: unknown) => {
+      seen.push(["post", req]);
+    },
+  } as unknown as Parameters<typeof planFeedback>[4];
+  return { seen, api };
+}
+
+test("planFeedback on a stamped plan denies with the feedback", async () => {
+  const { seen, api } = feedbackApi();
+  await planFeedback("s1", 7n, true, "smaller steps", api);
+  expect(seen).toHaveLength(1);
+  const [kind, req] = seen[0] as [
+    string,
+    { sessionId: string; seq: bigint; decisionJson: string },
+  ];
+  expect(kind).toBe("respond");
+  expect(req.sessionId).toBe("s1");
+  expect(req.seq).toBe(7n);
+  expect(JSON.parse(req.decisionJson)).toEqual({
+    behavior: "deny",
+    message: "smaller steps",
+  });
+});
+
+test("planFeedback on an unstamped plan only posts a message", async () => {
+  const { seen, api } = feedbackApi();
+  await planFeedback("s1", 7n, false, "smaller steps", api);
+  expect(seen).toEqual([["post", { sessionId: "s1", text: "smaller steps" }]]);
 });

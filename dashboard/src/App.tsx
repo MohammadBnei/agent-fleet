@@ -7,7 +7,7 @@ import { NeedsYouModal } from "./components/NeedsYouModal";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { Segmented } from "./components/Segmented";
 import { client } from "./connectClient";
-import { fetchWithdrawn } from "./decisions";
+import { type DeckItem, deckItems, fetchWithdrawn } from "./decisions";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
@@ -26,6 +26,7 @@ import {
   listSummary,
   summaryAnswerable,
 } from "./transcript";
+import { useDecisionDeck } from "./useDecisionDeck";
 import { useFeedWidth } from "./useFeedWidth";
 import { useMediaQuery } from "./useMediaQuery";
 import { useTheme } from "./useTheme";
@@ -241,12 +242,27 @@ export default function App() {
     [loadProposals],
   );
 
+  // Open decisions from the store, kept current by its watch stream. See
+  // useDecisionDeck; the items it yields are derived below.
+  const deck = useDecisionDeck();
+  const { relist } = deck;
+  // What an answer refreshes: the session poll for the row, the store for the
+  // deck. Either alone leaves the answered decision up until the next tick.
+  const reload = useCallback(() => {
+    relist();
+    return loadSessions();
+  }, [relist, loadSessions]);
+
   // Sessions holding an unanswered QUESTION or a stamped PERMISSION, from the
   // summaries above. Both survive their pod (docs/adr/0050, 0082 §5) and
   // answering one warms a fresh pod to receive the answer, so these stay
   // answerable in the list whatever pod_phase says. An old worker's stranded
   // permission does not — see bucketSessions.
-  const answerableIds = useMemo(
+  //
+  // Plus every session the deck can answer: a parked decision whose session
+  // fell out of the summaries fetch is still answerable, and the list must not
+  // say otherwise while the header counts it. Defined below, with the deck.
+  const summaryAnswerableIds = useMemo(
     () =>
       new Set(
         [...summaries.entries()]
@@ -408,8 +424,8 @@ export default function App() {
 
   // The header's live census. `liveState` is server-derived (docs/adr/0040), so
   // every client agrees on what "working" means.
-  // The badge's own predicate, once. The modal renders exactly what the badge
-  // counted — deriving it twice is how a "3 waiting" button opens an empty box.
+  // The fallback deck, used only while the decisions store is unavailable
+  // (see `items` below).
   //
   // Sorted longest-waiting first, matching bucketSessions' needsYou order. The
   // modal does not go through bucketSessions, so it does NOT inherit that sort
@@ -428,12 +444,42 @@ export default function App() {
     [sessions],
   );
 
+  // What the header counts, the sheet renders and needsYouOnly keeps: one
+  // list, so the three cannot disagree. Open decisions the viewer can answer
+  // (deckItems drops an old worker's request whose pod is gone), one item per
+  // decision. Without the store (FLEET_AUTH_DISABLED=1, where AgentService
+  // refuses every call) it is today's derivation: one item per blocked
+  // session, from the summaries.
+  const items = useMemo<DeckItem[]>(
+    () =>
+      deck.available
+        ? deckItems(deck.open, sessions)
+        : blockedSessions.map((s) => ({
+            key: s.id,
+            session: s,
+            summary: summaries.get(s.id),
+          })),
+    [deck.available, deck.open, sessions, blockedSessions, summaries],
+  );
+  const itemSessionIds = useMemo(
+    () => new Set(items.map((i) => i.session.id)),
+    [items],
+  );
+  const answerableIds = useMemo(
+    () =>
+      new Set([
+        ...summaryAnswerableIds,
+        ...items.filter((i) => i.decision).map((i) => i.session.id),
+      ]),
+    [summaryAnswerableIds, items],
+  );
+
   const counts = useMemo(() => {
-    // Same rule the needsYou bucket uses, and for the same reason: the raw
-    // pendingDecisions count counts sessions whose pod is gone (and archived
-    // ones), so the badge would show work waiting on a human that no human
-    // can act on. "blocked" is live-and-pending, already derived server-side.
-    const waiting = blockedSessions.length;
+    // The deck, not pendingDecisions: that raw count includes sessions whose
+    // pod is gone (and archived ones), so the badge would show work waiting on
+    // a human that no human can act on. Decisions, not sessions: a session
+    // holding two counts two.
+    const waiting = items.length;
     // `working` means the badge says WORKING, not "has a live pod".
     // LIVE_STATES is the pod-liveness set — it includes idle, unknown and
     // stalled — so counting it here reported "1 working · 0 idle" for a fleet
@@ -457,27 +503,25 @@ export default function App() {
         !["working", "done", "blocked"].includes(t.liveState),
     ).length;
     return { waiting, working, done, idle };
-  }, [sessions, blockedSessions]);
+  }, [sessions, items]);
 
   const filteredSessions = useMemo(() => {
     // needsYouOnly is the manifest's "Waiting on you" shortcut. Mobile already
     // opens on its needs-you bucket, so this only changes the desktop list —
     // but it narrows the shared array either way, which keeps the two honest.
     //
-    // Same predicate as the needsYou bucket and the header count, and for the
-    // same reason: pendingDecisions is a raw count that stays above zero
-    // forever when a pod dies mid-decision, so filtering on it showed sessions
-    // nobody can act on — and hid nothing, since the shortcut's whole promise
-    // is "these are waiting on you".
+    // Same predicate as the header count, and for the same reason:
+    // pendingDecisions is a raw count that stays above zero forever when a pod
+    // dies mid-decision, so filtering on it showed sessions nobody can act on
+    // — and hid nothing, since the shortcut's whole promise is "these are
+    // waiting on you".
     // Text search is server-side now (the poll passes `query`), so this only
     // applies the needsYouOnly live-state shortcut — a predicate the server
     // doesn't know about.
     return needsYouOnly
-      ? sessions.filter(
-          (t) => t.archivedAt === undefined && t.liveState === "blocked",
-        )
+      ? sessions.filter((t) => itemSessionIds.has(t.id))
       : sessions;
-  }, [sessions, needsYouOnly]);
+  }, [sessions, needsYouOnly, itemSessionIds]);
 
   const shared = {
     answerableIds,
@@ -487,7 +531,7 @@ export default function App() {
     onSelect: selectSession,
     onDelete: deleteSession,
     onOpenLogs: setLogSessionId,
-    reload: loadSessions,
+    reload,
     loaded: sessionsLoaded,
   };
 
@@ -532,7 +576,8 @@ export default function App() {
               >
                 <span className="w-[7px] h-[7px] rounded-full bg-error ring-glow animate-fpulse" />
                 <span className="text-sm font-medium text-error whitespace-nowrap">
-                  {counts.waiting} waiting on you
+                  {counts.waiting} decision{counts.waiting === 1 ? "" : "s"}{" "}
+                  waiting on you
                 </span>
               </button>
               {/* A filter with no visible way out is a trap — especially when an
@@ -602,7 +647,7 @@ export default function App() {
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-error ring-glow animate-fpulse" />
                 <span className="text-sm font-medium text-error whitespace-nowrap">
-                  {counts.waiting} waiting
+                  {counts.waiting} decision{counts.waiting === 1 ? "" : "s"}
                 </span>
               </button>
             )}
@@ -659,8 +704,8 @@ export default function App() {
       />
       <NeedsYouModal
         open={decisionsOpen}
-        sessions={blockedSessions}
-        summaries={summaries}
+        items={items}
+        available={deck.available}
         onClose={() => setDecisionsOpen(false)}
         onOpenSession={(id) => {
           // Close first: a plan sends you into the session, and leaving this
@@ -669,7 +714,7 @@ export default function App() {
           setDecisionsOpen(false);
           selectSession(id);
         }}
-        reload={loadSessions}
+        reload={reload}
       />
 
       {/* min-w-0 alongside min-h-0: a flex item's min-width defaults to auto, so
