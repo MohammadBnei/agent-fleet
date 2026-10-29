@@ -433,8 +433,12 @@ is the reason.
   `adr/0078`). One dispatcher (`core/internal/dispatch`) consumes
   `dev.bnei.github.`/`alert.`/`agent.` events and routes each to the
   definitions that own or subscribe to it, through in-process
-  `AgentService.Open` as the `bridge` client. A trusted human's event wakes
-  a thread; anything else becomes a proposal. Delivery and retry are the
+  `AgentService.Open` as the `bridge` client. Only an explicit address wakes
+  a thread (`adr/0082` §1-2): the owner's label naming the definition, an
+  `@<definition>` the owner wrote outside quotes and code, in one of the
+  repos core syncs, or a fleet hand-off. What `owns` or `subscribes` matches
+  without one is context on an open thread, a proposal otherwise. The fleet
+  bot's own GitHub events are acked and dropped. Delivery and retry are the
   bridge's: core acks or nacks, and holds no queue. A definition granted
   `publish_event` hands work on through `CoreService.PublishEvent`
   (`dispatch/publish.go`; depth, per-session budget and per-thread wake

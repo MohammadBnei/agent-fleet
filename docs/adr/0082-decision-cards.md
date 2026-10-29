@@ -1,7 +1,9 @@
 # ADR-0082 — Decision cards: only an explicit address wakes an agent, and the owner decides on cards
 
 - **Status:** Accepted (owner-approved 2026-10-28; taint dropped by the owner 2026-10-29)
-- **Built:** none of it.
+- **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
+  wake and the bot's own events dropped. Until the bridge's slice (§12) delivers `labeled` events, a T0 label is
+  accepted but never arrives, and an unowned subject is read from today's single `trusted` bit
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
@@ -163,7 +165,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 
 ## Rollout
 
-None of it is built. Slices, in order:
+Slice 1 is built. Slices, in order:
 
 1. The address-only gate, and dropping the bot's events.
 2. The card store, the `AnswerCard` API, `draft_card` and the console UI.
