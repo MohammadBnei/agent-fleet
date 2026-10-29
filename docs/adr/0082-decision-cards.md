@@ -4,7 +4,11 @@
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
   (no proposal; alerts and hand-offs keep theirs). Until the bridge's slice (§12) delivers `labeled` events, a T0 label is
-  accepted but never arrives, and an unowned subject is read from today's single `trusted` bit
+  accepted but never arrives, and an unowned subject is read from today's single `trusted` bit. Slice 2's first PR:
+  the `decisions` store (`core/internal/decisions`, migration 000023), written from each transcript append's own
+  transaction, and the read API (`ListDecisions`, `GetDecision`, `WatchDecisions`; an admin sees every open
+  session's decisions). Answering through it, one-time grants, `draft_card`, `DECISION_WAIT` and the console UI are
+  not built yet
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
