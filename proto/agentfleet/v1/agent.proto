@@ -3,6 +3,27 @@ package agentfleet.v1;
 option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
 
 import "agentfleet/v1/transcript.proto";
+import "ukubi/errors/v1/options.proto";
+
+// AgentErrorKey is AgentService's error keys (docs/adr/0081 §1-2), carried as ErrorKey.key: each value's wire
+// string is its (ukubi.errors.v1.key), "agent." and its name after the prefix in lower case, which the islands and
+// the dashboard read the generated enum's names by (core/internal/errkeys TestAgentErrorKey). A key exists only
+// where the islands or the dashboard show text for an error and its code alone does not say what happened; every
+// other error is server.internal with its code. Each RPC lists its keys below. Never rename or remove a value, nor
+// change its wire string: add a new value.
+enum AgentErrorKey {
+  AGENT_ERROR_KEY_UNSPECIFIED = 0;
+  // The thread's definition changed since it opened (docs/adr/0066 §6): start a new thread.
+  AGENT_ERROR_KEY_DEFINITION_CHANGED = 1 [(ukubi.errors.v1.key) = "agent.definition_changed"];
+  // The owner's open threads are at the cap, a member's 50 or a client's 500: close one first. Not the warm-time
+  // capacity, also ResourceExhausted, which is busy.
+  AGENT_ERROR_KEY_THREAD_CAP = 2 [(ukubi.errors.v1.key) = "agent.thread_cap"];
+  // The thread holds untrusted input (docs/adr/0067 §2): only an admin posts or answers in it, from the console.
+  AGENT_ERROR_KEY_THREAD_UNTRUSTED = 3 [(ukubi.errors.v1.key) = "agent.thread_untrusted"];
+  // The definition does not exist or is not the caller's to use (one answer for both, docs/adr/0066 §4). Not a
+  // missing thread, also NotFound.
+  AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE = 4 [(ukubi.errors.v1.key) = "agent.definition_unavailable"];
+}
 
 // AgentService (docs/adr/0066): the one API members and registered clients
 // drive definition sessions through. Members call it on :8080 with their
@@ -16,15 +37,27 @@ service AgentService {
 
   // Threads (docs/adr/0067): a thread is one definition session.
   rpc ListThreads(ListThreadsRequest) returns (ListThreadsResponse);
-  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse);
-  rpc PostMessage(AgentServicePostMessageRequest) returns (AgentServicePostMessageResponse);
+  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse) {
+    option (ukubi.errors.v1.keys) = "agent.thread_cap";
+    option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
+  }
+  rpc PostMessage(AgentServicePostMessageRequest) returns (AgentServicePostMessageResponse) {
+    option (ukubi.errors.v1.keys) = "agent.definition_changed";
+    option (ukubi.errors.v1.keys) = "agent.thread_untrusted";
+  }
   rpc GetTranscript(AgentServiceGetTranscriptRequest) returns (AgentServiceGetTranscriptResponse);
   rpc StreamTranscript(AgentServiceStreamTranscriptRequest) returns (stream AgentServiceStreamTranscriptResponse);
 
   // Decisions: each names the seq of an unanswered request of its type.
-  rpc RespondToPermission(AgentServiceRespondToPermissionRequest) returns (AgentServiceRespondToPermissionResponse);
-  rpc AnswerQuestion(AgentServiceAnswerQuestionRequest) returns (AgentServiceAnswerQuestionResponse);
-  rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse);
+  rpc RespondToPermission(AgentServiceRespondToPermissionRequest) returns (AgentServiceRespondToPermissionResponse) {
+    option (ukubi.errors.v1.keys) = "agent.thread_untrusted";
+  }
+  rpc AnswerQuestion(AgentServiceAnswerQuestionRequest) returns (AgentServiceAnswerQuestionResponse) {
+    option (ukubi.errors.v1.keys) = "agent.thread_untrusted";
+  }
+  rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse) {
+    option (ukubi.errors.v1.keys) = "agent.thread_untrusted";
+  }
 
   // Control: the owner's or an admin's.
   rpc SetConfig(SetConfigRequest) returns (SetConfigResponse);
@@ -32,7 +65,10 @@ service AgentService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 
   // Clients only (docs/adr/0066 §6-7, 0070).
-  rpc Open(OpenRequest) returns (OpenResponse);
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (ukubi.errors.v1.keys) = "agent.thread_cap";
+    option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
+  }
   rpc CloseThread(CloseThreadRequest) returns (CloseThreadResponse);
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
   rpc WaitForResult(WaitForResultRequest) returns (WaitForResultResponse);

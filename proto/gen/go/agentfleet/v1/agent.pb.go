@@ -7,6 +7,7 @@
 package agentfleetv1
 
 import (
+	_ "github.com/MohammadBnei/ukubi-go/proto/gen/go/ukubi/errors/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -20,6 +21,73 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+// AgentErrorKey is AgentService's error keys (docs/adr/0081 §1-2), carried as ErrorKey.key: each value's wire
+// string is its (ukubi.errors.v1.key), "agent." and its name after the prefix in lower case, which the islands and
+// the dashboard read the generated enum's names by (core/internal/errkeys TestAgentErrorKey). A key exists only
+// where the islands or the dashboard show text for an error and its code alone does not say what happened; every
+// other error is server.internal with its code. Each RPC lists its keys below. Never rename or remove a value, nor
+// change its wire string: add a new value.
+type AgentErrorKey int32
+
+const (
+	AgentErrorKey_AGENT_ERROR_KEY_UNSPECIFIED AgentErrorKey = 0
+	// The thread's definition changed since it opened (docs/adr/0066 §6): start a new thread.
+	AgentErrorKey_AGENT_ERROR_KEY_DEFINITION_CHANGED AgentErrorKey = 1
+	// The owner's open threads are at the cap, a member's 50 or a client's 500: close one first. Not the warm-time
+	// capacity, also ResourceExhausted, which is busy.
+	AgentErrorKey_AGENT_ERROR_KEY_THREAD_CAP AgentErrorKey = 2
+	// The thread holds untrusted input (docs/adr/0067 §2): only an admin posts or answers in it, from the console.
+	AgentErrorKey_AGENT_ERROR_KEY_THREAD_UNTRUSTED AgentErrorKey = 3
+	// The definition does not exist or is not the caller's to use (one answer for both, docs/adr/0066 §4). Not a
+	// missing thread, also NotFound.
+	AgentErrorKey_AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE AgentErrorKey = 4
+)
+
+// Enum value maps for AgentErrorKey.
+var (
+	AgentErrorKey_name = map[int32]string{
+		0: "AGENT_ERROR_KEY_UNSPECIFIED",
+		1: "AGENT_ERROR_KEY_DEFINITION_CHANGED",
+		2: "AGENT_ERROR_KEY_THREAD_CAP",
+		3: "AGENT_ERROR_KEY_THREAD_UNTRUSTED",
+		4: "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
+	}
+	AgentErrorKey_value = map[string]int32{
+		"AGENT_ERROR_KEY_UNSPECIFIED":            0,
+		"AGENT_ERROR_KEY_DEFINITION_CHANGED":     1,
+		"AGENT_ERROR_KEY_THREAD_CAP":             2,
+		"AGENT_ERROR_KEY_THREAD_UNTRUSTED":       3,
+		"AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE": 4,
+	}
+)
+
+func (x AgentErrorKey) Enum() *AgentErrorKey {
+	p := new(AgentErrorKey)
+	*p = x
+	return p
+}
+
+func (x AgentErrorKey) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AgentErrorKey) Descriptor() protoreflect.EnumDescriptor {
+	return file_agentfleet_v1_agent_proto_enumTypes[0].Descriptor()
+}
+
+func (AgentErrorKey) Type() protoreflect.EnumType {
+	return &file_agentfleet_v1_agent_proto_enumTypes[0]
+}
+
+func (x AgentErrorKey) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AgentErrorKey.Descriptor instead.
+func (AgentErrorKey) EnumDescriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{0}
+}
 
 type AgentDefinitionInfo struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -2093,7 +2161,7 @@ var File_agentfleet_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x19agentfleet/v1/agent.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\"\xbf\x01\n" +
+	"\x19agentfleet/v1/agent.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1dukubi/errors/v1/options.proto\"\xbf\x01\n" +
 	"\x13AgentDefinitionInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
 	"\vmodel_allow\x18\x02 \x03(\tR\n" +
@@ -2253,21 +2321,27 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\vresult_text\x18\x03 \x01(\tR\n" +
 	"resultText\x12\x18\n" +
 	"\asubtype\x18\x04 \x01(\tR\asubtype\x12+\n" +
-	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error2\x87\f\n" +
+	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error*\xbc\x02\n" +
+	"\rAgentErrorKey\x12\x1f\n" +
+	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
+	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
+	"\x1aAGENT_ERROR_KEY_THREAD_CAP\x10\x02\x1a\x14\xc2\xf3\x18\x10agent.thread_cap\x12@\n" +
+	" AGENT_ERROR_KEY_THREAD_UNTRUSTED\x10\x03\x1a\x1a\xc2\xf3\x18\x16agent.thread_untrusted\x12L\n" +
+	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x04\x1a \xc2\xf3\x18\x1cagent.definition_unavailable2\x82\x0e\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
-	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12W\n" +
-	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\x12l\n" +
-	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\x12r\n" +
+	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
+	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12\xa4\x01\n" +
+	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\"6\xca\xf3\x18\x18agent.definition_changed\xca\xf3\x18\x16agent.thread_untrusted\x12r\n" +
 	"\rGetTranscript\x12/.agentfleet.v1.AgentServiceGetTranscriptRequest\x1a0.agentfleet.v1.AgentServiceGetTranscriptResponse\x12}\n" +
-	"\x10StreamTranscript\x122.agentfleet.v1.AgentServiceStreamTranscriptRequest\x1a3.agentfleet.v1.AgentServiceStreamTranscriptResponse0\x01\x12\x84\x01\n" +
-	"\x13RespondToPermission\x125.agentfleet.v1.AgentServiceRespondToPermissionRequest\x1a6.agentfleet.v1.AgentServiceRespondToPermissionResponse\x12u\n" +
-	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\x12T\n" +
-	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\x12N\n" +
+	"\x10StreamTranscript\x122.agentfleet.v1.AgentServiceStreamTranscriptRequest\x1a3.agentfleet.v1.AgentServiceStreamTranscriptResponse0\x01\x12\xa0\x01\n" +
+	"\x13RespondToPermission\x125.agentfleet.v1.AgentServiceRespondToPermissionRequest\x1a6.agentfleet.v1.AgentServiceRespondToPermissionResponse\"\x1a\xca\xf3\x18\x16agent.thread_untrusted\x12\x91\x01\n" +
+	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\"\x1a\xca\xf3\x18\x16agent.thread_untrusted\x12p\n" +
+	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\"\x1a\xca\xf3\x18\x16agent.thread_untrusted\x12N\n" +
 	"\tSetConfig\x12\x1f.agentfleet.v1.SetConfigRequest\x1a .agentfleet.v1.SetConfigResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +
-	"\tGetStatus\x12\x1f.agentfleet.v1.GetStatusRequest\x1a .agentfleet.v1.GetStatusResponse\x12?\n" +
-	"\x04Open\x12\x1a.agentfleet.v1.OpenRequest\x1a\x1b.agentfleet.v1.OpenResponse\x12T\n" +
+	"\tGetStatus\x12\x1f.agentfleet.v1.GetStatusRequest\x1a .agentfleet.v1.GetStatusResponse\x12u\n" +
+	"\x04Open\x12\x1a.agentfleet.v1.OpenRequest\x1a\x1b.agentfleet.v1.OpenResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12T\n" +
 	"\vCloseThread\x12!.agentfleet.v1.CloseThreadRequest\x1a\".agentfleet.v1.CloseThreadResponse\x12E\n" +
 	"\x06Invoke\x12\x1c.agentfleet.v1.InvokeRequest\x1a\x1d.agentfleet.v1.InvokeResponse\x12Z\n" +
 	"\rWaitForResult\x12#.agentfleet.v1.WaitForResultRequest\x1a$.agentfleet.v1.WaitForResultResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
@@ -2284,88 +2358,90 @@ func file_agentfleet_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agentfleet_v1_agent_proto_rawDescData
 }
 
+var file_agentfleet_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_agentfleet_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_agentfleet_v1_agent_proto_goTypes = []any{
-	(*AgentDefinitionInfo)(nil),                 // 0: agentfleet.v1.AgentDefinitionInfo
-	(*AgentServiceListDefinitionsRequest)(nil),  // 1: agentfleet.v1.AgentServiceListDefinitionsRequest
-	(*AgentServiceListDefinitionsResponse)(nil), // 2: agentfleet.v1.AgentServiceListDefinitionsResponse
-	(*Thread)(nil),                                  // 3: agentfleet.v1.Thread
-	(*Status)(nil),                                  // 4: agentfleet.v1.Status
-	(*Entry)(nil),                                   // 5: agentfleet.v1.Entry
-	(*ListThreadsRequest)(nil),                      // 6: agentfleet.v1.ListThreadsRequest
-	(*ListThreadsResponse)(nil),                     // 7: agentfleet.v1.ListThreadsResponse
-	(*CreateThreadRequest)(nil),                     // 8: agentfleet.v1.CreateThreadRequest
-	(*CreateThreadResponse)(nil),                    // 9: agentfleet.v1.CreateThreadResponse
-	(*AgentServicePostMessageRequest)(nil),          // 10: agentfleet.v1.AgentServicePostMessageRequest
-	(*AgentServicePostMessageResponse)(nil),         // 11: agentfleet.v1.AgentServicePostMessageResponse
-	(*AgentServiceGetTranscriptRequest)(nil),        // 12: agentfleet.v1.AgentServiceGetTranscriptRequest
-	(*AgentServiceGetTranscriptResponse)(nil),       // 13: agentfleet.v1.AgentServiceGetTranscriptResponse
-	(*AgentServiceStreamTranscriptRequest)(nil),     // 14: agentfleet.v1.AgentServiceStreamTranscriptRequest
-	(*AgentServiceStreamTranscriptResponse)(nil),    // 15: agentfleet.v1.AgentServiceStreamTranscriptResponse
-	(*AgentServiceRespondToPermissionRequest)(nil),  // 16: agentfleet.v1.AgentServiceRespondToPermissionRequest
-	(*AgentServiceRespondToPermissionResponse)(nil), // 17: agentfleet.v1.AgentServiceRespondToPermissionResponse
-	(*AgentServiceAnswerQuestionRequest)(nil),       // 18: agentfleet.v1.AgentServiceAnswerQuestionRequest
-	(*AgentServiceAnswerQuestionResponse)(nil),      // 19: agentfleet.v1.AgentServiceAnswerQuestionResponse
-	(*ApprovePlanRequest)(nil),                      // 20: agentfleet.v1.ApprovePlanRequest
-	(*ApprovePlanResponse)(nil),                     // 21: agentfleet.v1.ApprovePlanResponse
-	(*SetConfigRequest)(nil),                        // 22: agentfleet.v1.SetConfigRequest
-	(*SetConfigResponse)(nil),                       // 23: agentfleet.v1.SetConfigResponse
-	(*StopRequest)(nil),                             // 24: agentfleet.v1.StopRequest
-	(*StopResponse)(nil),                            // 25: agentfleet.v1.StopResponse
-	(*GetStatusRequest)(nil),                        // 26: agentfleet.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),                       // 27: agentfleet.v1.GetStatusResponse
-	(*OpenRequest)(nil),                             // 28: agentfleet.v1.OpenRequest
-	(*OpenResponse)(nil),                            // 29: agentfleet.v1.OpenResponse
-	(*CloseThreadRequest)(nil),                      // 30: agentfleet.v1.CloseThreadRequest
-	(*CloseThreadResponse)(nil),                     // 31: agentfleet.v1.CloseThreadResponse
-	(*InvokeRequest)(nil),                           // 32: agentfleet.v1.InvokeRequest
-	(*InvokeResponse)(nil),                          // 33: agentfleet.v1.InvokeResponse
-	(*WaitForResultRequest)(nil),                    // 34: agentfleet.v1.WaitForResultRequest
-	(*WaitForResultResponse)(nil),                   // 35: agentfleet.v1.WaitForResultResponse
-	(TranscriptEntryType)(0),                        // 36: agentfleet.v1.TranscriptEntryType
+	(AgentErrorKey)(0),                              // 0: agentfleet.v1.AgentErrorKey
+	(*AgentDefinitionInfo)(nil),                     // 1: agentfleet.v1.AgentDefinitionInfo
+	(*AgentServiceListDefinitionsRequest)(nil),      // 2: agentfleet.v1.AgentServiceListDefinitionsRequest
+	(*AgentServiceListDefinitionsResponse)(nil),     // 3: agentfleet.v1.AgentServiceListDefinitionsResponse
+	(*Thread)(nil),                                  // 4: agentfleet.v1.Thread
+	(*Status)(nil),                                  // 5: agentfleet.v1.Status
+	(*Entry)(nil),                                   // 6: agentfleet.v1.Entry
+	(*ListThreadsRequest)(nil),                      // 7: agentfleet.v1.ListThreadsRequest
+	(*ListThreadsResponse)(nil),                     // 8: agentfleet.v1.ListThreadsResponse
+	(*CreateThreadRequest)(nil),                     // 9: agentfleet.v1.CreateThreadRequest
+	(*CreateThreadResponse)(nil),                    // 10: agentfleet.v1.CreateThreadResponse
+	(*AgentServicePostMessageRequest)(nil),          // 11: agentfleet.v1.AgentServicePostMessageRequest
+	(*AgentServicePostMessageResponse)(nil),         // 12: agentfleet.v1.AgentServicePostMessageResponse
+	(*AgentServiceGetTranscriptRequest)(nil),        // 13: agentfleet.v1.AgentServiceGetTranscriptRequest
+	(*AgentServiceGetTranscriptResponse)(nil),       // 14: agentfleet.v1.AgentServiceGetTranscriptResponse
+	(*AgentServiceStreamTranscriptRequest)(nil),     // 15: agentfleet.v1.AgentServiceStreamTranscriptRequest
+	(*AgentServiceStreamTranscriptResponse)(nil),    // 16: agentfleet.v1.AgentServiceStreamTranscriptResponse
+	(*AgentServiceRespondToPermissionRequest)(nil),  // 17: agentfleet.v1.AgentServiceRespondToPermissionRequest
+	(*AgentServiceRespondToPermissionResponse)(nil), // 18: agentfleet.v1.AgentServiceRespondToPermissionResponse
+	(*AgentServiceAnswerQuestionRequest)(nil),       // 19: agentfleet.v1.AgentServiceAnswerQuestionRequest
+	(*AgentServiceAnswerQuestionResponse)(nil),      // 20: agentfleet.v1.AgentServiceAnswerQuestionResponse
+	(*ApprovePlanRequest)(nil),                      // 21: agentfleet.v1.ApprovePlanRequest
+	(*ApprovePlanResponse)(nil),                     // 22: agentfleet.v1.ApprovePlanResponse
+	(*SetConfigRequest)(nil),                        // 23: agentfleet.v1.SetConfigRequest
+	(*SetConfigResponse)(nil),                       // 24: agentfleet.v1.SetConfigResponse
+	(*StopRequest)(nil),                             // 25: agentfleet.v1.StopRequest
+	(*StopResponse)(nil),                            // 26: agentfleet.v1.StopResponse
+	(*GetStatusRequest)(nil),                        // 27: agentfleet.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),                       // 28: agentfleet.v1.GetStatusResponse
+	(*OpenRequest)(nil),                             // 29: agentfleet.v1.OpenRequest
+	(*OpenResponse)(nil),                            // 30: agentfleet.v1.OpenResponse
+	(*CloseThreadRequest)(nil),                      // 31: agentfleet.v1.CloseThreadRequest
+	(*CloseThreadResponse)(nil),                     // 32: agentfleet.v1.CloseThreadResponse
+	(*InvokeRequest)(nil),                           // 33: agentfleet.v1.InvokeRequest
+	(*InvokeResponse)(nil),                          // 34: agentfleet.v1.InvokeResponse
+	(*WaitForResultRequest)(nil),                    // 35: agentfleet.v1.WaitForResultRequest
+	(*WaitForResultResponse)(nil),                   // 36: agentfleet.v1.WaitForResultResponse
+	(TranscriptEntryType)(0),                        // 37: agentfleet.v1.TranscriptEntryType
 }
 var file_agentfleet_v1_agent_proto_depIdxs = []int32{
-	0,  // 0: agentfleet.v1.AgentServiceListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinitionInfo
-	4,  // 1: agentfleet.v1.Thread.status:type_name -> agentfleet.v1.Status
-	36, // 2: agentfleet.v1.Entry.type:type_name -> agentfleet.v1.TranscriptEntryType
-	3,  // 3: agentfleet.v1.ListThreadsResponse.threads:type_name -> agentfleet.v1.Thread
-	3,  // 4: agentfleet.v1.CreateThreadResponse.thread:type_name -> agentfleet.v1.Thread
-	5,  // 5: agentfleet.v1.AgentServiceGetTranscriptResponse.entries:type_name -> agentfleet.v1.Entry
-	5,  // 6: agentfleet.v1.AgentServiceStreamTranscriptResponse.entry:type_name -> agentfleet.v1.Entry
-	4,  // 7: agentfleet.v1.GetStatusResponse.status:type_name -> agentfleet.v1.Status
-	4,  // 8: agentfleet.v1.WaitForResultResponse.error:type_name -> agentfleet.v1.Status
-	1,  // 9: agentfleet.v1.AgentService.ListDefinitions:input_type -> agentfleet.v1.AgentServiceListDefinitionsRequest
-	6,  // 10: agentfleet.v1.AgentService.ListThreads:input_type -> agentfleet.v1.ListThreadsRequest
-	8,  // 11: agentfleet.v1.AgentService.CreateThread:input_type -> agentfleet.v1.CreateThreadRequest
-	10, // 12: agentfleet.v1.AgentService.PostMessage:input_type -> agentfleet.v1.AgentServicePostMessageRequest
-	12, // 13: agentfleet.v1.AgentService.GetTranscript:input_type -> agentfleet.v1.AgentServiceGetTranscriptRequest
-	14, // 14: agentfleet.v1.AgentService.StreamTranscript:input_type -> agentfleet.v1.AgentServiceStreamTranscriptRequest
-	16, // 15: agentfleet.v1.AgentService.RespondToPermission:input_type -> agentfleet.v1.AgentServiceRespondToPermissionRequest
-	18, // 16: agentfleet.v1.AgentService.AnswerQuestion:input_type -> agentfleet.v1.AgentServiceAnswerQuestionRequest
-	20, // 17: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
-	22, // 18: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
-	24, // 19: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
-	26, // 20: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
-	28, // 21: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
-	30, // 22: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
-	32, // 23: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
-	34, // 24: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
-	2,  // 25: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
-	7,  // 26: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
-	9,  // 27: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
-	11, // 28: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
-	13, // 29: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
-	15, // 30: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
-	17, // 31: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
-	19, // 32: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
-	21, // 33: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
-	23, // 34: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
-	25, // 35: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
-	27, // 36: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
-	29, // 37: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
-	31, // 38: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
-	33, // 39: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
-	35, // 40: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
+	1,  // 0: agentfleet.v1.AgentServiceListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinitionInfo
+	5,  // 1: agentfleet.v1.Thread.status:type_name -> agentfleet.v1.Status
+	37, // 2: agentfleet.v1.Entry.type:type_name -> agentfleet.v1.TranscriptEntryType
+	4,  // 3: agentfleet.v1.ListThreadsResponse.threads:type_name -> agentfleet.v1.Thread
+	4,  // 4: agentfleet.v1.CreateThreadResponse.thread:type_name -> agentfleet.v1.Thread
+	6,  // 5: agentfleet.v1.AgentServiceGetTranscriptResponse.entries:type_name -> agentfleet.v1.Entry
+	6,  // 6: agentfleet.v1.AgentServiceStreamTranscriptResponse.entry:type_name -> agentfleet.v1.Entry
+	5,  // 7: agentfleet.v1.GetStatusResponse.status:type_name -> agentfleet.v1.Status
+	5,  // 8: agentfleet.v1.WaitForResultResponse.error:type_name -> agentfleet.v1.Status
+	2,  // 9: agentfleet.v1.AgentService.ListDefinitions:input_type -> agentfleet.v1.AgentServiceListDefinitionsRequest
+	7,  // 10: agentfleet.v1.AgentService.ListThreads:input_type -> agentfleet.v1.ListThreadsRequest
+	9,  // 11: agentfleet.v1.AgentService.CreateThread:input_type -> agentfleet.v1.CreateThreadRequest
+	11, // 12: agentfleet.v1.AgentService.PostMessage:input_type -> agentfleet.v1.AgentServicePostMessageRequest
+	13, // 13: agentfleet.v1.AgentService.GetTranscript:input_type -> agentfleet.v1.AgentServiceGetTranscriptRequest
+	15, // 14: agentfleet.v1.AgentService.StreamTranscript:input_type -> agentfleet.v1.AgentServiceStreamTranscriptRequest
+	17, // 15: agentfleet.v1.AgentService.RespondToPermission:input_type -> agentfleet.v1.AgentServiceRespondToPermissionRequest
+	19, // 16: agentfleet.v1.AgentService.AnswerQuestion:input_type -> agentfleet.v1.AgentServiceAnswerQuestionRequest
+	21, // 17: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
+	23, // 18: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
+	25, // 19: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
+	27, // 20: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
+	29, // 21: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
+	31, // 22: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
+	33, // 23: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
+	35, // 24: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
+	3,  // 25: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
+	8,  // 26: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
+	10, // 27: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
+	12, // 28: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
+	14, // 29: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
+	16, // 30: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
+	18, // 31: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
+	20, // 32: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
+	22, // 33: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
+	24, // 34: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
+	26, // 35: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
+	28, // 36: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
+	30, // 37: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
+	32, // 38: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
+	34, // 39: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
+	36, // 40: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
 	25, // [25:41] is the sub-list for method output_type
 	9,  // [9:25] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
@@ -2385,13 +2461,14 @@ func file_agentfleet_v1_agent_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_agent_proto_rawDesc), len(file_agentfleet_v1_agent_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_agentfleet_v1_agent_proto_goTypes,
 		DependencyIndexes: file_agentfleet_v1_agent_proto_depIdxs,
+		EnumInfos:         file_agentfleet_v1_agent_proto_enumTypes,
 		MessageInfos:      file_agentfleet_v1_agent_proto_msgTypes,
 	}.Build()
 	File_agentfleet_v1_agent_proto = out.File
