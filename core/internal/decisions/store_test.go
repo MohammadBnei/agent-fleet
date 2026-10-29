@@ -36,8 +36,7 @@ type fixture struct {
 func setup(t *testing.T) fixture {
 	t.Helper()
 	pool := dbtest.NewPool(t)
-	tr := transcript.NewPostgresStore(pool)
-	tr.SetAppendHook(decisions.OnAppend)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	return fixture{context.Background(), pool, tr, sessions.NewStore(pool), decisions.NewStore(pool)}
 }
 

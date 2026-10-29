@@ -20,8 +20,7 @@ func TestReuseOrAppendQuestion_WithdrawsTheSupersededDecision(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
-	tr := transcript.NewPostgresStore(pool)
-	tr.SetAppendHook(decisions.OnAppend)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	srv := New(tr, store, journal.NewStore(pool), nil, nil, nil, nil)
 	id, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet"})
 	if err != nil {

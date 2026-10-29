@@ -69,7 +69,7 @@ type permission struct {
 	Input json.RawMessage `json:"input"`
 }
 
-func (permission) Kind() Kind     { return Permission }
+func (permission) Kind() Kind    { return Permission }
 func (p permission) Ask() string { return p.Tool }
 
 // plan is the permission request ExitPlanMode makes; its input is the plan.
@@ -144,8 +144,8 @@ func clip(s string, n int) string {
 	return string(r[:n])
 }
 
-// OnAppend is the transcript's append hook (transcript.PostgresStore's
-// SetAppendHook): a reply closes the open decision it names, and a request
+// OnAppend is the transcript's append hook (transcript.NewPostgresStore's
+// argument): a reply closes the open decision it names, and a request
 // opens one. It runs in the append's transaction, so an error fails the
 // append, and the decisions table cannot drift from the transcript it
 // replaces as pending_decisions' source.

@@ -18,6 +18,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -32,7 +33,7 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
-	transcr := transcript.NewPostgresStore(pool)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
 		VALUES ('a', 'sha-a', '{}', '{"limits":{"concurrency":1,"maxTurns":60},"mode":{"default":"default","allow":["default","plan"]},
 		        "tools":{"allow":["Read","Bash(git add:*)"],"deny":["Edit(.git/**)"]},"sidecarTools":["send_message","wait_for_messages"],

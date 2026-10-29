@@ -17,6 +17,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -54,7 +55,7 @@ func TestDefinitionLease_OverGRPC(t *testing.T) {
 		grpc.ChainUnaryInterceptor(AccessLogInterceptor, grpcAuth.UnaryInterceptor),
 		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
 	)
-	agentfleetv1.RegisterCoreServiceServer(gs, New(transcript.NewPostgresStore(pool), store, journal.NewStore(pool), nil, nil, nil, nil))
+	agentfleetv1.RegisterCoreServiceServer(gs, New(transcript.NewPostgresStore(pool, decisions.OnAppend), store, journal.NewStore(pool), nil, nil, nil, nil))
 	go func() { _ = gs.Serve(lis) }()
 	t.Cleanup(gs.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",

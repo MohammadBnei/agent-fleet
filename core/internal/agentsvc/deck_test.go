@@ -67,8 +67,7 @@ func TestDecisionDeck(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
-	transcr := transcript.NewPostgresStore(pool)
-	transcr.SetAppendHook(decisions.OnAppend)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
 		t.Fatal(err)
 	}

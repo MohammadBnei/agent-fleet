@@ -56,11 +56,7 @@ import (
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
 	// The pools' rule (MAX_DEFINITION_SESSIONS < MAX_IN_FLIGHT_TASKS, ...) is config.Load's.
-	store := transcript.NewPostgresStore(pool)
-	// docs/adr/0082 §5: every request and reply is projected into the
-	// decisions table in its append's transaction. Without it nothing is ever
-	// pending, and the idle sweep reaps pods holding a permission.
-	store.SetAppendHook(decisions.OnAppend)
+	store := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	sessionStore := sessions.NewStore(pool)
 	journalStore := journal.NewStore(pool)
 	repoStore := repos.NewStore(pool)

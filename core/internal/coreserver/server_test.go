@@ -14,6 +14,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -375,7 +376,7 @@ func TestPromptSession_IntoADefinitionSessionIsRefused(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
-	srv := New(transcript.NewPostgresStore(pool), store, journal.NewStore(pool), nil, nil, nil, nil)
+	srv := New(transcript.NewPostgresStore(pool, decisions.OnAppend), store, journal.NewStore(pool), nil, nil, nil, nil)
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
 		VALUES ('a', 'sha-a', '{}', '{}', true)`); err != nil {
 		t.Fatal(err)
@@ -392,7 +393,7 @@ func TestPromptSession_IntoADefinitionSessionIsRefused(t *testing.T) {
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("got %v, want PermissionDenied", err)
 	}
-	if entries, _, err := transcript.NewPostgresStore(pool).ReadSince(ctx, def, 0, 10); err != nil || len(entries) != 0 {
+	if entries, _, err := transcript.NewPostgresStore(pool, decisions.OnAppend).ReadSince(ctx, def, 0, 10); err != nil || len(entries) != 0 {
 		t.Fatalf("a refused prompt reached the transcript: %v %v", entries, err)
 	}
 }
