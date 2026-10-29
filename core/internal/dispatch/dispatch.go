@@ -4,9 +4,10 @@
 // and in the end dead-letters it. Core holds no queue (docs/adr/0048 §2).
 //
 // An event goes to the definitions whose owns or subscribes match it and that
-// the bridge client may open, through AgentService.Open as that client. A
-// firing alert goes to the alert handler instead, which dedups it against the
-// direct webhook (docs/adr/0078 §6).
+// the bridge client may open, through AgentService.Open as that client. Only
+// an explicit address wakes one (docs/adr/0082 §1-2); the fleet bot's own
+// GitHub events are dropped. A firing alert goes to the alert handler
+// instead, which dedups it against the direct webhook (docs/adr/0078 §6).
 package dispatch
 
 import (
@@ -272,6 +273,15 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 	if strings.HasPrefix(e.GetType(), "dev.bnei.alert.") {
 		return nil
 	}
+	// The fleet bot's own GitHub events (the bridge tags its login
+	// actor=agent, BRIDGE_AGENT_LOGINS) are never delivered: no self-echo,
+	// no synchronize or reopened of its own (docs/adr/0082 §1). Its close
+	// still closes the thread, which delivers nothing: a fleet merge closes
+	// them (§10).
+	if botEvent(e) && e.GetType() != typePRClosed {
+		slog.Debug("dispatch: the fleet bot's own event, dropped", "type", e.GetType(), "subject", e.GetSubject())
+		return nil
+	}
 	targets := d.route(e)
 	if len(targets) == 0 {
 		slog.Debug("dispatch: no definition owns or subscribes to this event", "type", e.GetType(), "subject", e.GetSubject())
@@ -374,6 +384,153 @@ func repoOf(subject string) (full, name string) {
 	return parts[1] + "/" + parts[2], parts[2]
 }
 
+// botEvent: the fleet bot's own GitHub event. The bridge tags its login
+// (BRIDGE_AGENT_LOGINS, the ukubi-fleet App's bot) actor=agent; a
+// PublishEvent hop is actor=agent too, but never from a github.com source.
+func botEvent(e *bridgev1.CloudEvent) bool {
+	return e.GetActor() == "agent" && strings.HasPrefix(e.GetSource(), "github.com/")
+}
+
+// addresses: the event's own text addresses def. A label naming it, added
+// by the event's actor (the sender), or @def in what the actor wrote: a
+// comment, a review, or the body of the PR or issue they opened. Not the
+// issue's or PR's body under a comment, which its author wrote.
+func addresses(e *bridgev1.CloudEvent, def string) bool {
+	var p struct {
+		Label  *struct{ Name string } `json:"label"`
+		Sender struct {
+			Login string `json:"login"`
+		} `json:"sender"`
+		PullRequest *struct{ Body string } `json:"pull_request"`
+		Issue       *struct{ Body string } `json:"issue"`
+		Comment     *struct{ Body string } `json:"comment"`
+		Review      *struct{ Body string } `json:"review"`
+	}
+	if json.Unmarshal(e.GetData(), &p) != nil {
+		return false
+	}
+	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), "dev.bnei.github."), ".")
+	var body *struct{ Body string }
+	switch {
+	case action == "labeled":
+		return p.Label != nil && strings.EqualFold(p.Label.Name, def) && p.Sender.Login == e.GetActorLogin()
+	case kind == "issue_comment":
+		body = p.Comment
+	case kind == "pull_request_review":
+		body = p.Review
+	case kind == "pull_request" && action == "opened":
+		body = p.PullRequest
+	case kind == "issues" && action == "opened":
+		body = p.Issue
+	}
+	return body != nil && mentions(body.Body, def)
+}
+
+// mentions: @def in markdown, outside > quote lines, fenced and indented
+// code blocks and inline code spans.
+// ponytail: line-based, not a CommonMark parser. Where it errs, it errs
+// toward no wake: a 4-space indented list continuation counts as code.
+func mentions(text, def string) bool {
+	fence := ""
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimRight(l, "\r")
+		t := strings.TrimLeft(l, " ")
+		if fence != "" {
+			if strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]+" \t") == "" {
+				fence = ""
+			}
+			continue
+		}
+		if run := fenceRun(t); run != "" {
+			fence = run
+			continue
+		}
+		if strings.HasPrefix(t, ">") || len(l)-len(t) >= 4 || strings.HasPrefix(t, "\t") {
+			continue
+		}
+		if mentionIn(stripCodeSpans(l), def) {
+			return true
+		}
+	}
+	return false
+}
+
+// fenceRun is the opening run of a code fence (``` or ~~~, or longer).
+func fenceRun(t string) string {
+	for _, c := range []string{"`", "~"} {
+		n := len(t) - len(strings.TrimLeft(t, c))
+		if n >= 3 {
+			return t[:n]
+		}
+	}
+	return ""
+}
+
+// stripCodeSpans drops each `code` span: a backtick run up to the next run
+// of the same length. An unmatched run is literal.
+func stripCodeSpans(l string) string {
+	var b strings.Builder
+	for {
+		i := strings.IndexByte(l, '`')
+		if i < 0 {
+			return b.String() + l
+		}
+		n := i + len(l[i:]) - len(strings.TrimLeft(l[i:], "`"))
+		run, rest := l[i:n], l[n:]
+		end := -1
+		for j := 0; j < len(rest); {
+			k := strings.IndexByte(rest[j:], '`')
+			if k < 0 {
+				break
+			}
+			k += j
+			m := k + len(rest[k:]) - len(strings.TrimLeft(rest[k:], "`"))
+			if m-k == len(run) {
+				end = m
+				break
+			}
+			j = m
+		}
+		if end < 0 {
+			b.WriteString(l[:n])
+		} else {
+			b.WriteString(l[:i] + " ")
+			n += end
+		}
+		l = l[n:]
+	}
+}
+
+// mentionIn: "@def" as a whole GitHub mention, case-insensitive: not inside
+// a word or address before it (a@def.com), and not a longer name or a team
+// (@def-two, @def/team) after it.
+func mentionIn(l, def string) bool {
+	l, at := strings.ToLower(l), "@"+def
+	for i := strings.Index(l, at); i >= 0; {
+		before := byte(' ')
+		if i > 0 {
+			before = l[i-1]
+		}
+		after := byte(' ')
+		if j := i + len(at); j < len(l) {
+			after = l[j]
+		}
+		if !nameByte(before) && !strings.ContainsRune("./@`", rune(before)) && !nameByte(after) && after != '/' {
+			return true
+		}
+		next := strings.Index(l[i+1:], at)
+		if next < 0 {
+			return false
+		}
+		i += 1 + next
+	}
+	return false
+}
+
+func nameByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c >= 0x80
+}
+
 type decision struct {
 	wake, tainted bool
 	outcome       *string
@@ -396,26 +553,35 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 	if err != nil {
 		return dec, err
 	}
+	// A waking message holds only the addresser's bytes plus references
+	// (Render), so it is not tainted even on an unowned subject; otherwise
+	// Open would append it context-only to an existing thread.
 	err = d.pool.QueryRow(ctx, `
 		INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, thread, hops, by_agent)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (source, event_id, definition) DO UPDATE SET source = dispatch_decisions.source
-		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, !e.GetTrusted(),
+		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, !e.GetTrusted() && !wake,
 		e.GetSubject(), e.GetHops(), e.GetActor() == "agent").Scan(&dec.wake, &dec.tainted, &dec.outcome)
 	return dec, err
 }
 
-// gate is docs/adr/0071 §6: only a trusted person (or a trusted hand-off
-// through PublishEvent) the bridge client may claim wakes, never a replay,
-// and never a thread that waits on a person, whose follow-ups are context.
-// Only a live pod waits: an unanswered request left by a pod that is gone is
-// closed as stale at the next warm (ReserveSlot), so it blocks nothing.
+// gate is docs/adr/0082 §1-2: only an explicit address wakes, never a
+// replay, and never a thread that waits on a person, whose follow-ups are
+// context. owns and subscribes only route: what they match without an
+// address is context. An address is a fleet hand-off through PublishEvent
+// (T1), or T0's (a GitHub login in the bridge client's actors.allow) label
+// naming the definition or @mention of it, in one of our repos. Only a live
+// pod waits: an unanswered request left by a pod that is gone is closed as
+// stale at the next warm (ReserveSlot), so it blocks nothing.
 func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def string) (bool, error) {
-	agent := e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:")
-	if !e.GetTrusted() || e.GetReplayed() || (e.GetActor() != "human" && !agent) || !d.mayClaim(e.GetActorLogin()) {
+	if e.GetReplayed() || !d.mayClaim(e.GetActorLogin()) {
 		return false, nil
 	}
-	if agent {
+	switch {
+	case e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:"):
+		if !e.GetTrusted() {
+			return false, nil // Publish's trust bit; removed with core's taint (docs/adr/0082 rollout 3)
+		}
 		// PublishEvent's hops end at a GitHub round-trip (an agent's push
 		// comes back as a fresh event), so its wakes are capped per thread.
 		var n int
@@ -429,6 +595,19 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 			slog.Warn("dispatch: agent hand-offs reached their cap on this thread, delivering as context", "definition", def, "subject", e.GetSubject(), "wakes", n)
 			return false, nil
 		}
+	case e.GetActor() == "human" && strings.HasPrefix(e.GetSource(), "github.com/") && addresses(e, def):
+		// The bridge's trusted bit is not asked: T0 addressing a stranger's
+		// or a fork's PR wakes too (docs/adr/0082 §2), with only T0's bytes.
+		// A foreign repo (T3) never wakes: the App is public, so anyone may
+		// install it; ours are the repos core syncs (docs/adr/0075 §3-4).
+		full, _ := repoOf(e.GetSubject())
+		var ours bool
+		if err := d.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM repos WHERE lower(full_name) = lower($1) AND gone_since IS NULL)`,
+			full).Scan(&ours); err != nil || !ours {
+			return false, err
+		}
+	default:
+		return false, nil
 	}
 	var blocked bool
 	err := d.pool.QueryRow(ctx, `
@@ -473,8 +652,9 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	if e.GetType() == typePRClosed && !e.GetReplayed() {
 		return d.close(ctx, actx, e, h)
 	}
+	msg := Render(e, dec.wake)
 	req := &agentfleetv1.OpenRequest{
-		Definition: h.Name, ThreadKey: e.GetSubject(), Message: Render(e),
+		Definition: h.Name, ThreadKey: e.GetSubject(), Message: msg,
 		Wake: dec.wake, Tainted: dec.tainted,
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: e.GetSource() + ":" + e.GetId() + ":" + h.Name,
@@ -487,12 +667,17 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	switch {
 	case err == nil:
 		return d.finish(ctx, e, h.Name, "delivered")
+	case errors.Is(err, agentsvc.ErrNeedsWake) && strings.HasPrefix(e.GetType(), "dev.bnei.github."):
+		// No open thread and no address: GitHub chatter nobody asked an
+		// agent about, from T0 or anyone. Never a thread, never a proposal
+		// (docs/adr/0082 §1); a hand-off keeps its proposal below.
+		return d.finish(ctx, e, h.Name, "skipped")
 	case errors.Is(err, agentsvc.ErrNeedsWake), connect.CodeOf(err) == connect.CodeResourceExhausted,
 		connect.CodeOf(err) == connect.CodePermissionDenied:
 		// No thread and not waking, no slot, or a stored wake whose actor
 		// left actors.allow since: a person decides. Acked either way,
 		// since the bridge delivers head-of-line.
-		if err := d.propose(ctx, e, h, dec.tainted); err != nil {
+		if err := d.propose(ctx, e, h, msg, dec.tainted); err != nil {
 			return err
 		}
 		return d.finish(ctx, e, h.Name, "proposal")
@@ -542,8 +727,8 @@ func retryBusy(ctx context.Context, f func() error) error {
 // propose files the event as a proposal for the definition's thread, one per
 // thread while it stands: a later event folds into it, so nothing is lost
 // while it waits, and opening it delivers them all.
-func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head, tainted bool) error {
-	repo, key, text := h.Effective.Workspace.Repo, proposalKey(h.Name, e.GetSubject()), Render(e)
+func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head, text string, tainted bool) error {
+	repo, key := h.Effective.Workspace.Repo, proposalKey(h.Name, e.GetSubject())
 	title := truncate(fmt.Sprintf("%s: %s on %s", h.Name, oneLine(strings.TrimPrefix(e.GetType(), "dev.bnei.")), oneLine(e.GetSubject())), 100)
 	if tainted {
 		title += proposals.UntrustedSuffix // FoldEvent adds it when a later event taints the proposal
@@ -584,10 +769,13 @@ const (
 )
 
 // Render is the message an event delivers: its envelope, then what a person
-// wrote in it (a PR's title and body, a comment, a review), never the whole
-// webhook payload. Deterministic, since it is part of Open's request
-// identity.
-func Render(e *bridgev1.CloudEvent) string {
+// wrote in it (a PR's or issue's title and body, a comment, a review), never
+// the whole webhook payload. A waking message on an unowned subject (a
+// stranger's or a fork's) leaves out the subject's own title, which its
+// author wrote: it holds the addresser's bytes plus references (the url),
+// and the agent reads the rest as context (docs/adr/0082 §2). Deterministic
+// for one stored decision, since it is part of Open's request identity.
+func Render(e *bridgev1.CloudEvent, wake bool) string {
 	var b strings.Builder
 	trust := "trusted"
 	if !e.GetTrusted() {
@@ -619,6 +807,7 @@ func Render(e *bridgev1.CloudEvent) string {
 		} `json:"pull_request"`
 		Issue *struct {
 			Title   string `json:"title"`
+			Body    string `json:"body"`
 			HTMLURL string `json:"html_url"`
 		} `json:"issue"`
 		Comment *struct {
@@ -630,6 +819,9 @@ func Render(e *bridgev1.CloudEvent) string {
 			Body    string `json:"body"`
 			HTMLURL string `json:"html_url"`
 		} `json:"review"`
+		Label *struct {
+			Name string `json:"name"`
+		} `json:"label"`
 	}
 	_ = json.Unmarshal(e.GetData(), &gh)
 	quote := func(label, s string) {
@@ -640,36 +832,60 @@ func Render(e *bridgev1.CloudEvent) string {
 	// The kind, not what the payload happens to carry: a comment's payload
 	// holds its issue, a review's its PR.
 	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), "dev.bnei.github."), ".")
+	// The subject's title is its author's; on opened that is the actor.
+	subjectText := !wake || e.GetTrusted() || action == "opened"
+	label := func() {
+		if action == "labeled" && gh.Label != nil {
+			line("label", gh.Label.Name)
+		}
+	}
 	switch {
 	case kind == "issue_comment" && gh.Comment != nil:
-		if gh.Issue != nil {
+		if gh.Issue != nil && subjectText {
 			line("on", gh.Issue.Title)
 		}
 		line("url", gh.Comment.HTMLURL)
 		quote("comment", gh.Comment.Body)
 	case kind == "pull_request_review" && gh.Review != nil:
-		if gh.PullRequest != nil {
+		if gh.PullRequest != nil && subjectText {
 			line("on", gh.PullRequest.Title)
 		}
 		line("url", gh.Review.HTMLURL)
 		line("state", gh.Review.State)
 		quote("review", gh.Review.Body)
 	case kind == "pull_request" && gh.PullRequest != nil:
-		line("title", gh.PullRequest.Title)
+		if subjectText {
+			line("title", gh.PullRequest.Title)
+		}
 		line("url", gh.PullRequest.HTMLURL)
+		label()
 		if action == "opened" {
 			quote("description", gh.PullRequest.Body)
+		}
+	case kind == "issues" && gh.Issue != nil:
+		if subjectText {
+			line("title", gh.Issue.Title)
+		}
+		line("url", gh.Issue.HTMLURL)
+		label()
+		if action == "opened" {
+			quote("description", gh.Issue.Body)
 		}
 	}
 	return b.String()
 }
 
 // oneLine keeps an envelope field on its line: no field, wherever it came
-// from, can start a line of its own that passes for the envelope.
+// from, can start a line of its own that passes for the envelope, or reorder
+// or hide part of one with bidi or zero-width characters.
 func oneLine(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || r == '\u2028' || r == '\u2029' || r == '\u0085' {
+		switch {
+		case r < 0x20 || r == 0x7f || r == '\u2028' || r == '\u2029' || r == '\u0085':
 			return ' '
+		case r == '\u061c' || r == '\u200e' || r == '\u200f' || (r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069'),
+			(r >= '\u200b' && r <= '\u200d') || r == '\u2060' || r == '\ufeff':
+			return -1
 		}
 		return r
 	}, truncate(s, 512))
