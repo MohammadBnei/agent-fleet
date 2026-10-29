@@ -209,12 +209,13 @@ function OpenRow({
       </div>
       {/* Title first, id demoted to the meta line — same ordering as the list
           rows and the actions modal, so the thing you scan for is always in
-          the same place. */}
+          the same place. Nothing in the sheet is cut short: an answer is
+          given on what it shows, so it wraps (owner, 2026-10-29). */}
       <div className="flex items-baseline gap-2 px-3.5 pt-1 min-w-0">
         <button
           type="button"
           onClick={() => onOpenSession(s.id)}
-          className="text-sm font-semibold min-w-0 truncate text-left hover:text-primary cursor-pointer flex-1"
+          className="text-sm font-semibold min-w-0 break-words text-left hover:text-primary cursor-pointer flex-1"
         >
           {sessionLabel(s)}
         </button>
@@ -311,7 +312,7 @@ function History({
           <span className="flex-none text-2xs text-dim2 border border-line px-1">
             {STATE[d.state]}
           </span>
-          <span className="flex-1 min-w-0 truncate text-text2">
+          <span className="flex-1 min-w-0 break-words text-text2">
             {answerLine(d)}
           </span>
           <span className="flex-none text-xs text-dim2">
