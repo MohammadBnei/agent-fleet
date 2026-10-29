@@ -158,6 +158,10 @@ type Config struct {
 	// wrote down, never something that happened because a secret failed to
 	// render.
 	AuthDisabled bool
+	// DevOrigins are browser origins (scheme://host[:port]) that AgentService treats as the console's own while the
+	// gate is off, so a local page (the game's dev server, the dashboard's vite proxy) can call it as the dev
+	// identity. Only with FLEET_AUTH_DISABLED=1: set otherwise, core refuses to start.
+	DevOrigins []string
 	// SessionRetention is how long an untouched session keeps its disk — its
 	// working directory and per-session SDK state (docs/adr/0048). After
 	// this the retention GC reclaims both and marks the session swept:
@@ -315,6 +319,7 @@ func Load(getenv func(string) string) (Config, error) {
 	// The issuer and the dashboard's public URL are required while the gate is on (run() builds the OIDC relying
 	// party from them: discovery target, redirect URI base); a malformed one makes the console unusable for every
 	// human. With the gate explicitly off nothing reads them, so a malformed one is only a warning.
+	c.DevOrigins = l.devOrigins("FLEET_DEV_ORIGINS", c.AuthDisabled)
 	c.OIDCIssuerURL = l.urlWith("OIDC_ISSUER_URL", "", l.requiredIf(!c.AuthDisabled))
 	c.DashboardPublicURL = l.urlWith("DASHBOARD_PUBLIC_URL", "", l.requiredIf(!c.AuthDisabled))
 	// The three pools are one rule, checked on the values in use (a count that did not parse is its default).
@@ -471,6 +476,32 @@ func (l *loader) authDisabled(key string) bool {
 		l.warn(key, v, "must be 1 (the console is unauthenticated: local stacks only), or 0 or unset")
 		return false
 	}
+}
+
+// devOrigins is a comma-separated list of http(s) origins, honoured only with the gate off. Any problem refuses: a
+// dev origin set on a gated core is a mistake about which core this is, and a malformed one would silently admit
+// nothing.
+func (l *loader) devOrigins(key string, authDisabled bool) []string {
+	v := l.getenv(key)
+	if v == "" {
+		return nil
+	}
+	if !authDisabled {
+		l.refuse(key, v, "must be unset while the console gate is on (dev origins call AgentService as the dev identity)")
+		return nil
+	}
+	var out []string
+	for _, o := range strings.Split(v, ",") {
+		o = strings.TrimSpace(o)
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			l.refuse(key, v, "must be comma-separated origins, each scheme://host[:port]")
+			return nil
+		}
+		out = append(out, u.Scheme+"://"+u.Host)
+	}
+	return out
 }
 
 // url is an absolute http(s) URL with a host. Nothing else is parsed out of it here: each consumer takes the string.

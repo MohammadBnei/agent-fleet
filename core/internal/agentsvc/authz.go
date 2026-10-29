@@ -94,13 +94,17 @@ func allowed(procedure string, p Principal) bool {
 // console; one of embedOrigins() is an island, member rights only; anything
 // else, "null" included, is refused. The CORS layer refuses those first;
 // this is the second layer.
-func MemberInterceptor(fleetOrigin string, embedOrigins func() []string) connect.Interceptor {
-	return memberAuth{fleet: fleetOrigin, embed: embedOrigins}
+//
+// devOrigins pass as the fleet's own (admin rights for an admin). Only set with the gate off (config refuses
+// FLEET_DEV_ORIGINS otherwise), where the caller is the dev identity anyway.
+func MemberInterceptor(fleetOrigin string, embedOrigins func() []string, devOrigins ...string) connect.Interceptor {
+	return memberAuth{fleet: fleetOrigin, embed: embedOrigins, dev: devOrigins}
 }
 
 type memberAuth struct {
 	fleet string
 	embed func() []string
+	dev   []string
 }
 
 var errOrigin = errors.New("calls from this origin are not accepted")
@@ -111,7 +115,7 @@ func (m memberAuth) principal(ctx context.Context, procedure string, h http.Head
 		return nil, connect.NewError(connect.CodeUnauthenticated, errNoPrincipal)
 	}
 	p := Principal{Member: &id}
-	if o := h.Get("Origin"); o != "" && o != m.fleet {
+	if o := h.Get("Origin"); o != "" && o != m.fleet && !slices.Contains(m.dev, o) {
 		if m.embed == nil || !slices.Contains(m.embed(), o) {
 			slog.Warn("agentsvc: refused origin", "email", id.Email, "origin", o, "procedure", procedure)
 			return nil, connect.NewError(connect.CodePermissionDenied, errOrigin)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -119,5 +120,43 @@ func TestLoadMoved(t *testing.T) {
 	}
 	if c := mustLoad(t, nil); c.Version != "" || c.ClaudeModel != "" {
 		t.Errorf("unset: version %q model %q", c.Version, c.ClaudeModel)
+	}
+}
+
+// FLEET_DEV_ORIGINS admits pages as the dev identity, so it is honoured only with the gate off and refused
+// (core does not start) on a gated core or when malformed.
+func TestLoadDevOrigins(t *testing.T) {
+	base := map[string]string{"FLEET_AUTH_DISABLED": "1"}
+	with := func(m map[string]string) map[string]string {
+		out := map[string]string{}
+		for k, v := range base {
+			out[k] = v
+		}
+		for k, v := range m {
+			out[k] = v
+		}
+		return out
+	}
+	c, err := Load(env(with(map[string]string{"FLEET_DEV_ORIGINS": "http://127.0.0.1:7410, http://localhost:5173/"})))
+	if err != nil {
+		t.Fatalf("good list refused: %v", err)
+	}
+	if want := []string{"http://127.0.0.1:7410", "http://localhost:5173"}; !reflect.DeepEqual(c.DevOrigins, want) {
+		t.Errorf("DevOrigins = %q, want %q", c.DevOrigins, want)
+	}
+	if c, err := Load(env(base)); err != nil || c.DevOrigins != nil {
+		t.Errorf("unset: %q, %v; want none", c.DevOrigins, err)
+	}
+	for _, v := range []string{"127.0.0.1:7410", "ftp://x", "http://x/path", "http://x?q=1", "http://u:p@x", "http://a,"} {
+		if _, err := Load(env(with(map[string]string{"FLEET_DEV_ORIGINS": v}))); err == nil || !strings.Contains(err.Error(), "FLEET_DEV_ORIGINS=") {
+			t.Errorf("%q: %v; want a refusal naming FLEET_DEV_ORIGINS", v, err)
+		}
+	}
+	gated := map[string]string{
+		"FLEET_DEV_ORIGINS": "http://127.0.0.1:7410", "OIDC_ISSUER_URL": "https://auth.bnei.dev/application/o/fleet/",
+		"DASHBOARD_PUBLIC_URL": "https://fleet.bnei.dev",
+	}
+	if _, err := Load(env(gated)); err == nil || !strings.Contains(err.Error(), "gate is on") {
+		t.Errorf("gated core: %v; want a refusal", err)
 	}
 }

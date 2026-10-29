@@ -294,6 +294,28 @@ type authError struct{ msg string }
 
 func (e *authError) Error() string { return e.msg }
 
+// DevInterceptor stands in for ConnectInterceptor while the gate is off (FLEET_AUTH_DISABLED=1): every call runs
+// as id. Local stacks only; run() installs it on AgentService and nowhere else.
+func DevInterceptor(id Identity) connect.Interceptor { return devAuth{id} }
+
+type devAuth struct{ id Identity }
+
+func (d devAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		return next(WithIdentity(ctx, d.id), req)
+	}
+}
+
+func (d devAuth) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (d devAuth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		return next(WithIdentity(ctx, d.id), conn)
+	}
+}
+
 // WithIdentity is the context FromContext reads. For an interceptor that
 // stands in for this package's in tests.
 func WithIdentity(ctx context.Context, id Identity) context.Context {
