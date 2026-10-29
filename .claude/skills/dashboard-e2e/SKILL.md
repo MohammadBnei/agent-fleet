@@ -49,7 +49,7 @@ next run of this skill.
 ```bash
 docker run --rm -d --name agent-fleet-e2e-pg \
   -e POSTGRES_USER=agentfleet -e POSTGRES_PASSWORD=agentfleet -e POSTGRES_DB=agentfleetdb \
-  -p 5433:5432 postgres:16
+  -p 5433:5432 postgres:18
 
 until docker exec agent-fleet-e2e-pg pg_isready -U agentfleet >/dev/null 2>&1; do sleep 0.5; done
 ```
