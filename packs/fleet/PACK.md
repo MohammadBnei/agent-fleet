@@ -7,6 +7,14 @@
 - Scope = what you can verify. Report second problems, don't widen into them
 - Never conclude from truncated output when the answer is not shown
 
+## Session title
+
+The console lists sessions by title. Once you understand the request, give your
+session a 3–6 word title naming the work (`Fix stale decision badge`, not
+`Session about the dashboard`) with `mcp__agent-fleet-sidecar__set_session_meta`,
+if you have it. Set it again when the work's direction changes, e.g. after a plan
+is approved.
+
 ## Diagrams
 
 Mermaid renders live — in the console (plans, questions, every markdown
