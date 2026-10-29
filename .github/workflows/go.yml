@@ -234,7 +234,7 @@ jobs:
         module: ${{ fromJSON(needs.changes.outputs.go-modules) }}
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: agentfleet
           POSTGRES_PASSWORD: agentfleet

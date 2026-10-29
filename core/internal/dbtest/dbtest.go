@@ -35,7 +35,7 @@ func migrationsURL() string {
 	return "file://" + filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "db", "migrations")
 }
 
-// NewPool starts a real postgres:16 container, applies every migration in
+// NewPool starts a real postgres:18 container, applies every migration in
 // db/migrations/ via golang-migrate, and returns a ready pgxpool.Pool.
 // Container and pool are torn down automatically via t.Cleanup.
 func NewPool(t *testing.T) *pgxpool.Pool {
@@ -47,7 +47,7 @@ func NewPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 
-	container, err := postgres.Run(ctx, "postgres:16",
+	container, err := postgres.Run(ctx, "postgres:18",
 		postgres.WithDatabase("agentfleettest"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
