@@ -494,12 +494,13 @@ func (l *loader) devOrigins(key string, authDisabled bool) []string {
 	for _, o := range strings.Split(v, ",") {
 		o = strings.TrimSpace(o)
 		u, err := url.Parse(o)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil ||
 			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 			l.refuse(key, v, "must be comma-separated origins, each scheme://host[:port]")
 			return nil
 		}
-		out = append(out, u.Scheme+"://"+u.Host)
+		// A browser sends the host lowercased; one written otherwise would never match.
+		out = append(out, u.Scheme+"://"+strings.ToLower(u.Host))
 	}
 	return out
 }

@@ -137,7 +137,7 @@ func TestLoadDevOrigins(t *testing.T) {
 		}
 		return out
 	}
-	c, err := Load(env(with(map[string]string{"FLEET_DEV_ORIGINS": "http://127.0.0.1:7410, http://localhost:5173/"})))
+	c, err := Load(env(with(map[string]string{"FLEET_DEV_ORIGINS": "http://127.0.0.1:7410, http://LocalHost:5173/"})))
 	if err != nil {
 		t.Fatalf("good list refused: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestLoadDevOrigins(t *testing.T) {
 	if c, err := Load(env(base)); err != nil || c.DevOrigins != nil {
 		t.Errorf("unset: %q, %v; want none", c.DevOrigins, err)
 	}
-	for _, v := range []string{"127.0.0.1:7410", "ftp://x", "http://x/path", "http://x?q=1", "http://u:p@x", "http://a,"} {
+	for _, v := range []string{"127.0.0.1:7410", "ftp://x", "http://x/path", "http://x?q=1", "http://u:p@x", "http://a,", " ", ",http://x", "http://:80"} {
 		if _, err := Load(env(with(map[string]string{"FLEET_DEV_ORIGINS": v}))); err == nil || !strings.Contains(err.Error(), "FLEET_DEV_ORIGINS=") {
 			t.Errorf("%q: %v; want a refusal naming FLEET_DEV_ORIGINS", v, err)
 		}

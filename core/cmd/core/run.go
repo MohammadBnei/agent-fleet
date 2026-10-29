@@ -339,16 +339,14 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// perfectly healthy. Refusing to start is loud; serving unauthenticated is
 	// not. FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out, so "no
 	// auth" is always something someone wrote down.
-	var authInterceptors, memberInterceptors []connect.Interceptor
+	var authInterceptors []connect.Interceptor
+	memberInterceptors := devInterceptors(cfg.AuthDisabled)
 	gate := func(h http.Handler) http.Handler { return h }
 	// The constant, not NewAgentServiceHandler(nil): the generated constructor
 	// reads method values off its argument and panics on nil.
 	agentPath := "/" + agentfleetv1connect.AgentServiceName + "/"
 	if cfg.AuthDisabled {
 		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
-		// AgentService has no anonymous mode, so with the gate off every call runs as one fixed admin. Without it
-		// the decisions API, the islands and the game could not be exercised on a local stack at all.
-		memberInterceptors = append(memberInterceptors, auth.DevInterceptor(devIdentity))
 		slog.Warn("FLEET_AUTH_DISABLED=1: AgentService calls run as the dev identity",
 			"email", devIdentity.Email, "group", auth.RequiredGroup, "dev_origins", cfg.DevOrigins)
 	} else {
@@ -504,6 +502,16 @@ func originOf(raw string) string {
 
 // devIdentity is every AgentService caller while the gate is off (FLEET_AUTH_DISABLED=1).
 var devIdentity = auth.Identity{Sub: "dev", Email: "dev@localhost", Groups: []string{auth.RequiredGroup}}
+
+// devInterceptors is AgentService's caller identity while the gate is off, and nothing while it is on. AgentService
+// has no anonymous mode, so with the gate off every call runs as one fixed admin; without it the decisions API, the
+// islands and the game could not be exercised on a local stack at all.
+func devInterceptors(authDisabled bool) []connect.Interceptor {
+	if !authDisabled {
+		return nil
+	}
+	return []connect.Interceptor{auth.DevInterceptor(devIdentity)}
+}
 
 // withDev adds the dev origins (set only with the gate off) to the origins CORS answers.
 func withDev(embed func() []string, dev []string) func() []string {
