@@ -1,8 +1,8 @@
-import { SelectBox } from "./BatchActions";
-import { ActionButton } from "./ActionButton";
-import { useBusyAction } from "../useBusyAction";
 import { client } from "../connectClient";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { useBusyAction } from "../useBusyAction";
+import { ActionButton } from "./ActionButton";
+import { SelectBox } from "./BatchActions";
 
 // A row's own one-click action (interrupt / warm / archive). These were six
 // `void client.x().then(reload)` calls: no spinner, and a rejection went
@@ -98,13 +98,25 @@ export function RowSelect({
   inline?: boolean;
 }) {
   return (
-    <div className={inline ? `flex-none ${REVEAL}` : `absolute top-1.5 right-[50px] flex items-center ${REVEAL}`}>
+    <div
+      className={
+        inline
+          ? `flex-none ${REVEAL}`
+          : `absolute top-1.5 right-[50px] flex items-center ${REVEAL}`
+      }
+    >
       <SelectBox checked={picked} onToggle={onPick} />
     </div>
   );
 }
 
-export function RowActionsButton({ onOpen, inline }: { onOpen: () => void; inline?: boolean }) {
+export function RowActionsButton({
+  onOpen,
+  inline,
+}: {
+  onOpen: () => void;
+  inline?: boolean;
+}) {
   return (
     <button
       type="button"

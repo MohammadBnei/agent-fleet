@@ -84,7 +84,9 @@ export function Composer({
         onClick={onSend}
         title="Enter to send, Shift+Enter for a newline"
         className={`text-xs text-dim2 disabled:opacity-40 flex-none leading-[1.7] ${
-          compact ? "" : "hover:text-primary disabled:hover:text-dim2 cursor-pointer whitespace-nowrap"
+          compact
+            ? ""
+            : "hover:text-primary disabled:hover:text-dim2 cursor-pointer whitespace-nowrap"
         }`}
       >
         {compact ? "send" : "⏎ send · ⇧⏎ newline"}

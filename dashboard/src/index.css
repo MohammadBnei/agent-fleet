@@ -283,5 +283,9 @@
 }
 
 .bar-provisioning {
-  background: repeating-linear-gradient(90deg, var(--acc-line) 0 7px, var(--line3) 7px 14px);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--acc-line) 0 7px,
+    var(--line3) 7px 14px
+  );
 }

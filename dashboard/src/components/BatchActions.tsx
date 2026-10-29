@@ -1,9 +1,9 @@
 import { useState } from "react";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { isPodPhaseLive } from "../sessionState";
 import { ConfirmModal } from "./ConfirmModal";
 import { InlineError } from "./InlineError";
-import { isPodPhaseLive } from "../sessionState";
 
 // Multi-select over the list, so "archive these twelve" is one gesture rather
 // than twelve trips through the actions modal.
@@ -97,7 +97,11 @@ export function BatchBar({
   // allSettled, not all: one failure must not abandon the other eleven, and
   // the count of each is the whole report. There is no batch RPC and none is
   // needed — the fleet is capped at a handful of live sessions.
-  async function runBatch(targets: Session[], verb: string, call: (s: Session) => Promise<unknown>) {
+  async function runBatch(
+    targets: Session[],
+    verb: string,
+    call: (s: Session) => Promise<unknown>,
+  ) {
     setBusy(true);
     setResult(null);
     const outcomes = await Promise.allSettled(targets.map(call));
@@ -111,46 +115,78 @@ export function BatchBar({
     }
     // Partial success is the case worth being loud about: the list reloads and
     // looks plausible either way, so silence here reads as "it all worked".
-    setResult(`${targets.length - failed} of ${targets.length} ${verb}, ${failed} failed`);
+    setResult(
+      `${targets.length - failed} of ${targets.length} ${verb}, ${failed} failed`,
+    );
   }
 
-  const btn = "border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary disabled:opacity-40";
+  const btn =
+    "border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary disabled:opacity-40";
 
   return (
     <>
       <div className="flex items-center gap-2 flex-wrap border border-primary/40 bg-base-200 px-3 py-2">
-        <span className="text-sm text-base-content flex-none">{sessions.length} selected</span>
+        <span className="text-sm text-base-content flex-none">
+          {sessions.length} selected
+        </span>
         <button
           type="button"
           disabled={busy || archivable.length === 0}
           className={btn}
           title={archivable.length === 0 ? "all already archived" : undefined}
-          onClick={() => setPending({ kind: "archive", label: `Archive ${sessionsWord(archivable.length)}?` })}
+          onClick={() =>
+            setPending({
+              kind: "archive",
+              label: `Archive ${sessionsWord(archivable.length)}?`,
+            })
+          }
         >
-          archive {archivable.length > 0 && archivable.length !== sessions.length ? archivable.length : ""}
+          archive{" "}
+          {archivable.length > 0 && archivable.length !== sessions.length
+            ? archivable.length
+            : ""}
         </button>
         <button
           type="button"
           disabled={busy || live.length === 0}
           className={btn}
           title={live.length === 0 ? "none have a live pod" : undefined}
-          onClick={() => setPending({ kind: "stop", label: `Stop ${live.length} running ${live.length === 1 ? "pod" : "pods"}?` })}
+          onClick={() =>
+            setPending({
+              kind: "stop",
+              label: `Stop ${live.length} running ${live.length === 1 ? "pod" : "pods"}?`,
+            })
+          }
         >
-          stop {live.length > 0 && live.length !== sessions.length ? live.length : ""}
+          stop{" "}
+          {live.length > 0 && live.length !== sessions.length
+            ? live.length
+            : ""}
         </button>
         <button
           type="button"
           disabled={busy}
           className="border border-pink-line text-error px-3 py-1 text-sm hover:bg-pink-chip disabled:opacity-40"
-          onClick={() => setPending({ kind: "delete", label: `Delete ${sessionsWord(sessions.length)}?` })}
+          onClick={() =>
+            setPending({
+              kind: "delete",
+              label: `Delete ${sessionsWord(sessions.length)}?`,
+            })
+          }
         >
           delete
         </button>
-        <button type="button" onClick={onClear} className="ml-auto text-xs text-dim2 hover:text-base-content flex-none">
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-auto text-xs text-dim2 hover:text-base-content flex-none"
+        >
           clear ✕
         </button>
       </div>
-      {result && <InlineError message={result} onDismiss={() => setResult(null)} />}
+      {result && (
+        <InlineError message={result} onDismiss={() => setResult(null)} />
+      )}
 
       {/* Delete destroys the transcript, so past one session it asks for the
           word. Archive is reversible and
@@ -165,7 +201,11 @@ export function BatchBar({
               ? "Ends the pod for each running session. The session itself stays and can be warmed again."
               : "Marks each session finished. Reversible — an archived session can still be warmed."
         }
-        confirmWord={pending?.kind === "delete" && sessions.length > 1 ? "delete" : undefined}
+        confirmWord={
+          pending?.kind === "delete" && sessions.length > 1
+            ? "delete"
+            : undefined
+        }
         confirmLabel={pending?.kind ?? "confirm"}
         danger={pending?.kind !== "archive"}
         onCancel={() => setPending(null)}
@@ -174,9 +214,17 @@ export function BatchBar({
           setPending(null);
           if (!p) return;
           if (p.kind === "archive")
-            void runBatch(archivable, "archived", (s) => client.archiveSession({ sessionId: s.id }));
-          else if (p.kind === "stop") void runBatch(live, "stopped", (s) => client.stopSession({ sessionId: s.id }));
-          else void runBatch(sessions, "deleted", (s) => client.deleteSession({ sessionId: s.id }));
+            void runBatch(archivable, "archived", (s) =>
+              client.archiveSession({ sessionId: s.id }),
+            );
+          else if (p.kind === "stop")
+            void runBatch(live, "stopped", (s) =>
+              client.stopSession({ sessionId: s.id }),
+            );
+          else
+            void runBatch(sessions, "deleted", (s) =>
+              client.deleteSession({ sessionId: s.id }),
+            );
         }}
       />
     </>

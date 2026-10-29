@@ -1,8 +1,8 @@
-import { Modal } from "./Modal";
-import { ToolCallDetail } from "./ToolCallItem";
+import type { SubagentRun, ToolCallPair } from "../transcript";
 import { entryTime } from "../transcript";
 import { Markdown } from "./Markdown";
-import type { ToolCallPair, SubagentRun } from "../transcript";
+import { Modal } from "./Modal";
+import { ToolCallDetail } from "./ToolCallItem";
 
 // The full story behind one row, for the two places that only ever had room
 // for a truncated one: an AGENTS row (whose description and returned summary
@@ -21,13 +21,23 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Heading({ kind, title, tone }: { kind: string; title: string; tone: string }) {
+function Heading({
+  kind,
+  title,
+  tone,
+}: {
+  kind: string;
+  title: string;
+  tone: string;
+}) {
   return (
     <div className="flex flex-col gap-1.5 flex-none">
       <span className="text-2xs tracking-[0.12em] text-dim2">{kind}</span>
       {/* break-words, never truncate: being untruncated is the entire reason
           this modal exists. */}
-      <span className={`text-base font-semibold break-words ${tone}`}>{title}</span>
+      <span className={`text-base font-semibold break-words ${tone}`}>
+        {title}
+      </span>
     </div>
   );
 }
@@ -43,10 +53,20 @@ const STATUS_GLYPH: Record<SubagentRun["status"], string> = {
   failed: "✗",
 };
 
-export function AgentDetailModal({ run, onClose }: { run: SubagentRun | null; onClose: () => void }) {
+export function AgentDetailModal({
+  run,
+  onClose,
+}: {
+  run: SubagentRun | null;
+  onClose: () => void;
+}) {
   if (!run) return null;
   return (
-    <Modal open onClose={onClose} boxClassName="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+    <Modal
+      open
+      onClose={onClose}
+      boxClassName="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
+    >
       <div className="flex flex-col gap-4 overflow-y-auto min-h-0">
         <Heading
           kind="SUBAGENT"
@@ -83,14 +103,18 @@ export function AgentDetailModal({ run, onClose }: { run: SubagentRun | null; on
             which is most of the value of having spawned the subagent at all. */}
         {run.summary ? (
           <div className="flex flex-col gap-1.5 min-w-0">
-            <span className="text-2xs tracking-[0.08em] text-dim2">RETURNED</span>
+            <span className="text-2xs tracking-[0.08em] text-dim2">
+              RETURNED
+            </span>
             <div className="text-sm leading-[1.6] whitespace-pre-wrap break-words rounded-md bg-base-200/40 p-3">
               {run.summary}
             </div>
           </div>
         ) : (
           <div className="text-sm text-dim2">
-            {run.status === "running" ? "Still running — nothing returned yet." : "No summary was reported."}
+            {run.status === "running"
+              ? "Still running — nothing returned yet."
+              : "No summary was reported."}
           </div>
         )}
       </div>
@@ -98,12 +122,22 @@ export function AgentDetailModal({ run, onClose }: { run: SubagentRun | null; on
   );
 }
 
-export function ToolCallDetailModal({ pair, onClose }: { pair: ToolCallPair | null; onClose: () => void }) {
+export function ToolCallDetailModal({
+  pair,
+  onClose,
+}: {
+  pair: ToolCallPair | null;
+  onClose: () => void;
+}) {
   if (!pair) return null;
   const failed = pair.resultInfo?.isError === true;
   const when = entryTime(pair.call);
   return (
-    <Modal open onClose={onClose} boxClassName="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+    <Modal
+      open
+      onClose={onClose}
+      boxClassName="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
+    >
       <div className="flex flex-col gap-4 overflow-y-auto min-h-0">
         <Heading
           kind="TOOL CALL"
@@ -111,7 +145,10 @@ export function ToolCallDetailModal({ pair, onClose }: { pair: ToolCallPair | nu
           title={pair.callInfo.tool ?? "tool"}
         />
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 min-w-0">
-          <Row label="STATUS" value={failed ? "failed" : pair.result ? "ok" : "running"} />
+          <Row
+            label="STATUS"
+            value={failed ? "failed" : pair.result ? "ok" : "running"}
+          />
           {when && <Row label="STARTED" value={when} />}
         </dl>
         {/* Same renderer the inline expander used, so an Edit is still a real

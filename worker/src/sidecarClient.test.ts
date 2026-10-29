@@ -7,7 +7,7 @@
 // loop anywhere in the old implementation). See sidecar/internal/localapi's
 // humanMessagesHandler for the other half of this fix (sinceSeq query
 // param + keep-alive pings).
-import { test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 
 type Handler = (req: Request) => Response | Promise<Response>;
 
@@ -33,14 +33,23 @@ const server = Bun.serve({
 });
 process.env.SIDECAR_API_ADDR = `127.0.0.1:${server.port}`;
 
-const { streamHumanMessages, saveSessionId } = await import("./sidecarClient.js");
+const { streamHumanMessages, saveSessionId } = await import(
+  "./sidecarClient.js"
+);
 
 function sseResponse(lines: string[]): Response {
   const body = lines.map((l) => `${l}\n\n`).join("");
-  return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+  return new Response(body, {
+    headers: { "Content-Type": "text/event-stream" },
+  });
 }
 
-function dataLine(entry: { seq: number; from: string; text: string; type?: string }): string {
+function dataLine(entry: {
+  seq: number;
+  from: string;
+  text: string;
+  type?: string;
+}): string {
   return `data: ${JSON.stringify(entry)}`;
 }
 
@@ -103,7 +112,15 @@ test.skip("startSeq seeds the initial cursor instead of always requesting from 0
   // Covers a real regression: a resumed/warmed pod's cursor always
   // defaulted to 0, replaying every pre-existing human directive
   // (including a stale Stop's "abort" entry) into the new session.
-  handler = () => sseResponse([dataLine({ seq: 10, from: "human", text: "only new stuff", type: "discussion" })]);
+  handler = () =>
+    sseResponse([
+      dataLine({
+        seq: 10,
+        from: "human",
+        text: "only new stuff",
+        type: "discussion",
+      }),
+    ]);
 
   const entries: { seq: number; text: string }[] = [];
   const abortController = new AbortController();
@@ -122,7 +139,11 @@ test.skip("startSeq seeds the initial cursor instead of always requesting from 0
 }, 10000);
 
 test.skip("keep-alive comment lines are ignored, not mistaken for a message", async () => {
-  handler = () => sseResponse([": keep-alive", dataLine({ seq: 1, from: "human", text: "real message" })]);
+  handler = () =>
+    sseResponse([
+      ": keep-alive",
+      dataLine({ seq: 1, from: "human", text: "real message" }),
+    ]);
 
   const entries: { seq: number; text: string }[] = [];
   const abortController = new AbortController();
@@ -140,7 +161,9 @@ test.skip("reconnects after a non-2xx response instead of giving up", async () =
   handler = () => {
     call++;
     if (call === 1) return new Response("boom", { status: 500 });
-    return sseResponse([dataLine({ seq: 1, from: "human", text: "recovered" })]);
+    return sseResponse([
+      dataLine({ seq: 1, from: "human", text: "recovered" }),
+    ]);
   };
 
   const entries: { seq: number; text: string }[] = [];

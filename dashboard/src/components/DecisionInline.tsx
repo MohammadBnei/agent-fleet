@@ -1,19 +1,21 @@
 import { useState } from "react";
-import { ActionButton } from "./ActionButton";
-import { client } from "../connectClient";
-import { decisionAnswerable } from "../transcript";
-import { isPodPhaseLive } from "../sessionState";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { type ListSummary } from "../transcript";
-import { DiffLines } from "./DiffLines";
-import { QuestionCard } from "./QuestionCard";
-import { Markdown } from "./Markdown";
-import { summarizeToolInput } from "../transcript";
 import { approvePlan } from "../approvePlan";
+import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { isPodPhaseLive } from "../sessionState";
+import {
+  decisionAnswerable,
+  type ListSummary,
+  summarizeToolInput,
+} from "../transcript";
+import { ActionButton } from "./ActionButton";
 import { AutoModeConfirm } from "./AutoModeConfirm";
-import { TextResponseModal } from "./TextResponseModal";
-import { PlanModal } from "./PlanModal";
+import { DiffLines } from "./DiffLines";
 import { InlineError } from "./InlineError";
+import { Markdown } from "./Markdown";
+import { PlanModal } from "./PlanModal";
+import { QuestionCard } from "./QuestionCard";
+import { TextResponseModal } from "./TextResponseModal";
 
 // The pending decision, answerable from the list.
 //
@@ -41,7 +43,11 @@ function useDecision(reload: () => void) {
   const [pending, setPending] = useState<string | null>(null);
   const [answered, setAnswered] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const send = (key: string, action: () => Promise<unknown>, decidedSeq?: bigint) => {
+  const send = (
+    key: string,
+    action: () => Promise<unknown>,
+    decidedSeq?: bigint,
+  ) => {
     setPending(key);
     setError(null);
     action()
@@ -59,9 +65,16 @@ function useDecision(reload: () => void) {
 // A permission prompt whose content is unreadable trains people to approve
 // without looking, which is worse than no prompt at all.
 function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
-  const i = (input ?? {}) as { file_path?: string; old_string?: string; new_string?: string; content?: string };
+  const i = (input ?? {}) as {
+    file_path?: string;
+    old_string?: string;
+    new_string?: string;
+    content?: string;
+  };
   const path = i.file_path;
-  const isDiff = (tool === "Edit" || tool === "Write") && typeof (i.new_string ?? i.content) === "string";
+  const isDiff =
+    (tool === "Edit" || tool === "Write") &&
+    typeof (i.new_string ?? i.content) === "string";
 
   return (
     <>
@@ -76,7 +89,11 @@ function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
       </div>
       <div className="mt-2">
         {isDiff ? (
-          <DiffLines before={i.old_string ?? ""} after={(i.new_string ?? i.content) as string} maxLines={4} />
+          <DiffLines
+            before={i.old_string ?? ""}
+            after={(i.new_string ?? i.content) as string}
+            maxLines={4}
+          />
         ) : (
           <div className="border border-line bg-code px-2.5 py-[3px] text-sm text-text2 overflow-x-auto whitespace-pre-wrap break-all">
             {summarizeToolInput(input)}
@@ -133,7 +150,10 @@ export function DecisionInline({
   // Answered, but the summary still says pending — the answer is on the wire
   // and reload() hasn't come back yet. Keyed by the decision's own seq, so a
   // *different* decision arriving next renders normally with no reset logic.
-  if (answered !== null && (permission?.entry.seq === answered || questionEntry?.seq === answered)) {
+  if (
+    answered !== null &&
+    (permission?.entry.seq === answered || questionEntry?.seq === answered)
+  ) {
     return (
       <div className={`${pad} flex items-center gap-2 text-sm text-dim`}>
         <span className="loading loading-spinner loading-xs flex-none" />
@@ -147,7 +167,12 @@ export function DecisionInline({
     // show what was asked and say so — allow/deny would append a row the dead
     // canUseTool promise will never read. Questions are unaffected: answering
     // one warms a pod to receive it.
-    if (!decisionAnswerable("permission", { podLive: isPodPhaseLive(session.podPhase), swept: session.sweptAt !== undefined })) {
+    if (
+      !decisionAnswerable("permission", {
+        podLive: isPodPhaseLive(session.podPhase),
+        swept: session.sweptAt !== undefined,
+      })
+    ) {
       return (
         <div className={`${pad} flex flex-col gap-2`}>
           <PermissionBody tool={permission.tool} input={permission.input} />
@@ -184,11 +209,14 @@ export function DecisionInline({
     // markdown in a scroll box: enough to actually judge a short plan from the
     // list, and "read it first" still exists for a long one.
     if (isPlan) {
-      const plan = (permission.input as { plan?: string } | undefined)?.plan ?? "";
+      const plan =
+        (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
         <div className={`${pad} flex flex-col gap-3`}>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-dim tracking-[0.05em]">PLAN · waiting for approval</span>
+            <span className="text-xs text-dim tracking-[0.05em]">
+              PLAN · waiting for approval
+            </span>
             {/* Top-right, not down with the actions: the preview between them
                 is its own scroll box (max-h-[40vh]), so the control for
                 reading the plan sat below the thing you were scrolling. */}
@@ -216,7 +244,9 @@ export function DecisionInline({
           {/* Same menu the dock's PlanCard offers, so approving from the list
               is not a lesser decision than approving from the session — auto
               behind a confirm, plain approve beside it (docs/adr/0052). */}
-          <div className={`flex flex-wrap gap-2.5 ${stacked ? "" : "items-center"}`}>
+          <div
+            className={`flex flex-wrap gap-2.5 ${stacked ? "" : "items-center"}`}
+          >
             <ActionButton
               busy={pending === "allow"}
               disabled={busy}
@@ -229,13 +259,22 @@ export function DecisionInline({
               type="button"
               disabled={busy}
               onClick={() =>
-                send("allow", () => approvePlan(session.id, permission.entry.seq), permission.entry.seq)
+                send(
+                  "allow",
+                  () => approvePlan(session.id, permission.entry.seq),
+                  permission.entry.seq,
+                )
               }
               className={secondaryBtn}
             >
               approve only
             </button>
-            <button type="button" disabled={busy} onClick={() => setFeedbackOpen(true)} className={secondaryBtn}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setFeedbackOpen(true)}
+              className={secondaryBtn}
+            >
               request changes
             </button>
           </div>
@@ -250,7 +289,11 @@ export function DecisionInline({
             }}
             onApprove={() => {
               setPlanOpen(false);
-              send("allow", () => approvePlan(session.id, permission.entry.seq), permission.entry.seq);
+              send(
+                "allow",
+                () => approvePlan(session.id, permission.entry.seq),
+                permission.entry.seq,
+              );
             }}
             onRequestChanges={() => {
               // Closed first: the feedback dialog is a second <dialog>, and
@@ -273,7 +316,13 @@ export function DecisionInline({
             placeholder="What should change before this is approved?"
             submitLabel="send"
             busy={busy}
-            onSubmit={(text) => send("deny", () => client.postMessage({ sessionId: session.id, text }), permission.entry.seq)}
+            onSubmit={(text) =>
+              send(
+                "deny",
+                () => client.postMessage({ sessionId: session.id, text }),
+                permission.entry.seq,
+              )
+            }
             onClose={() => setFeedbackOpen(false)}
           />
           <AutoModeConfirm
@@ -281,7 +330,11 @@ export function DecisionInline({
             approving
             onConfirm={() => {
               setAutoConfirmOpen(false);
-              send("allow", () => approvePlan(session.id, permission.entry.seq, "auto"), permission.entry.seq);
+              send(
+                "allow",
+                () => approvePlan(session.id, permission.entry.seq, "auto"),
+                permission.entry.seq,
+              );
             }}
             onCancel={() => setAutoConfirmOpen(false)}
           />
@@ -334,19 +387,33 @@ export function DecisionInline({
             >
               send deny
             </ActionButton>
-            <button type="button" onClick={() => {
+            <button
+              type="button"
+              onClick={() => {
                 setReason("");
                 setDenyingSeq(null);
-              }} className="text-xs text-dim2 hover:text-dim cursor-pointer">
+              }}
+              className="text-xs text-dim2 hover:text-dim cursor-pointer"
+            >
               cancel
             </button>
           </div>
         ) : (
           <div className="flex items-center gap-2.5 flex-wrap">
-            <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
+            <ActionButton
+              busy={pending === "allow"}
+              disabled={busy}
+              className={primaryBtn}
+              onClick={() => respond("allow")}
+            >
               allow
             </ActionButton>
-            <button type="button" disabled={busy} onClick={() => setDenyingSeq(permission.entry.seq)} className={secondaryBtn}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setDenyingSeq(permission.entry.seq)}
+              className={secondaryBtn}
+            >
               deny
             </button>
           </div>
@@ -380,11 +447,24 @@ export function DecisionInline({
 
     return (
       <div className={`${pad} flex flex-col gap-3`}>
-        <QuestionCard entry={questionEntry} answer={null} busy={busy} compact={stacked} embedded onSubmit={submit} />
+        <QuestionCard
+          entry={questionEntry}
+          answer={null}
+          busy={busy}
+          compact={stacked}
+          embedded
+          onSubmit={submit}
+        />
         <InlineError message={error} />
-        <div className={`flex gap-3.5 ${stacked ? "justify-center" : "items-center"}`}>
+        <div
+          className={`flex gap-3.5 ${stacked ? "justify-center" : "items-center"}`}
+        >
           {onAskLater && (
-            <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">
+            <button
+              type="button"
+              onClick={onAskLater}
+              className="text-xs text-dim2 hover:text-dim cursor-pointer py-1"
+            >
               ask me later
             </button>
           )}
@@ -400,7 +480,9 @@ export function DecisionInline({
   // session" control under every decision was the same destination said twice.
   return (
     <div className={`${pad} flex flex-col gap-2`}>
-      <div className="text-sm text-dim">A decision is waiting in this session.</div>
+      <div className="text-sm text-dim">
+        A decision is waiting in this session.
+      </div>
     </div>
   );
 }

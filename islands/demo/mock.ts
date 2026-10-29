@@ -2,16 +2,39 @@
 // the real methods are live. Not part of the bundle (vite build uses src/main.ts).
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
-import { setTransport } from "../src/main";
-import { AgentService, EntrySchema, ThreadSchema, StatusSchema, type Entry } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
+import {
+  AgentService,
+  type Entry,
+  EntrySchema,
+  StatusSchema,
+  ThreadSchema,
+} from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
 import { TranscriptEntryType as T } from "../../dashboard/src/gen/agentfleet/v1/transcript_pb";
+import { setTransport } from "../src/main";
 
 let seq = 0n;
-const entry = (type: T, from: string, text: string, extra: MessageInitShape<typeof EntrySchema> = {}) =>
-  create(EntrySchema, { seq: ++seq, type, from, text, createdAt: new Date().toISOString(), ...extra });
+const entry = (
+  type: T,
+  from: string,
+  text: string,
+  extra: MessageInitShape<typeof EntrySchema> = {},
+) =>
+  create(EntrySchema, {
+    seq: ++seq,
+    type,
+    from,
+    text,
+    createdAt: new Date().toISOString(),
+    ...extra,
+  });
 
 const log: Entry[] = [
-  entry(T.DISCUSSION, "human", "Can you tidy the onboarding page and link it from the index?", { authorName: "nadia@opus.tech" }),
+  entry(
+    T.DISCUSSION,
+    "human",
+    "Can you tidy the onboarding page and link it from the index?",
+    { authorName: "nadia@opus.tech" },
+  ),
   entry(
     T.DISCUSSION,
     "agent",
@@ -32,33 +55,61 @@ const log: Entry[] = [
           question: "Keep the old Tools page as a redirect?",
           header: "Tools page",
           options: [
-            { label: "Keep a redirect", description: "Old links keep working." },
-            { label: "Delete it", description: "Cleaner space, old links break." },
+            {
+              label: "Keep a redirect",
+              description: "Old links keep working.",
+            },
+            {
+              label: "Delete it",
+              description: "Cleaner space, old links break.",
+            },
           ],
         },
       ],
     }),
   ),
-  entry(T.PERMISSION_REQUEST, "agent", JSON.stringify({ tool: "Bash", input: { command: "git push origin main" } })),
+  entry(
+    T.PERMISSION_REQUEST,
+    "agent",
+    JSON.stringify({
+      tool: "Bash",
+      input: { command: "git push origin main" },
+    }),
+  ),
 ];
 
 const thread = (id: string, title: string, visibility: string) =>
-  create(ThreadSchema, { id, definition: "opus-workspace", title, visibility, mine: true, status: create(StatusSchema, { state: "idle" }) });
-const threads = [thread("a1b2c3", "Onboarding cleanup", "shared"), thread("d4e5f6", "", "private")];
+  create(ThreadSchema, {
+    id,
+    definition: "opus-workspace",
+    title,
+    visibility,
+    mine: true,
+    status: create(StatusSchema, { state: "idle" }),
+  });
+const threads = [
+  thread("a1b2c3", "Onboarding cleanup", "shared"),
+  thread("d4e5f6", "", "private"),
+];
 
 const listeners = new Set<(e: Entry) => void>();
 const push = (e: Entry) => {
   log.push(e);
   for (const l of listeners) l(e);
 };
-const say = (msg: string) => ((document.getElementById("log") as HTMLElement).textContent = msg);
+const say = (msg: string) =>
+  ((document.getElementById("log") as HTMLElement).textContent = msg);
 
 setTransport(
   createRouterTransport(({ service }) => {
     service(AgentService, {
       listThreads: () => ({ threads }),
       createThread: (req) => {
-        const t = thread(Math.random().toString(16).slice(2, 8), req.title, req.visibility);
+        const t = thread(
+          Math.random().toString(16).slice(2, 8),
+          req.title,
+          req.visibility,
+        );
         threads.unshift(t);
         return { thread: t };
       },
@@ -82,8 +133,23 @@ setTransport(
         }
       },
       postMessage: (req) => {
-        push(entry(T.DISCUSSION, "human", req.text, { authorName: "you@bnei.dev", mine: true }));
-        setTimeout(() => push(entry(T.DISCUSSION, "agent", `Noted: _${req.text}_. Working on it.`)), 900);
+        push(
+          entry(T.DISCUSSION, "human", req.text, {
+            authorName: "you@bnei.dev",
+            mine: true,
+          }),
+        );
+        setTimeout(
+          () =>
+            push(
+              entry(
+                T.DISCUSSION,
+                "agent",
+                `Noted: _${req.text}_. Working on it.`,
+              ),
+            ),
+          900,
+        );
         return { seq };
       },
       answerQuestion: (req) => {
@@ -93,12 +159,26 @@ setTransport(
       },
       respondToPermission: (req) => {
         say(`RespondToPermission seq=${req.seq} ${req.behavior}`);
-        push(entry(T.PERMISSION_RESPONSE, "human", JSON.stringify({ behavior: req.behavior }), { replyTo: req.seq }));
+        push(
+          entry(
+            T.PERMISSION_RESPONSE,
+            "human",
+            JSON.stringify({ behavior: req.behavior }),
+            { replyTo: req.seq },
+          ),
+        );
         return { seq };
       },
       approvePlan: (req) => {
         say(`ApprovePlan seq=${req.seq}`);
-        push(entry(T.PERMISSION_RESPONSE, "human", JSON.stringify({ behavior: "allow" }), { replyTo: req.seq }));
+        push(
+          entry(
+            T.PERMISSION_RESPONSE,
+            "human",
+            JSON.stringify({ behavior: "allow" }),
+            { replyTo: req.seq },
+          ),
+        );
         return { seq };
       },
     });
@@ -108,6 +188,12 @@ setTransport(
 const el = document.createElement("fleet-agent");
 el.setAttribute("definition", "opus-workspace");
 el.setAttribute("context", "Onboarding");
-el.addEventListener("fleet-status", (e) => say(`fleet-status ${JSON.stringify((e as CustomEvent).detail)}`));
+el.addEventListener("fleet-status", (e) =>
+  say(`fleet-status ${JSON.stringify((e as CustomEvent).detail)}`),
+);
 document.getElementById("slot")!.append(el);
-document.getElementById("theme")!.addEventListener("change", (e) => el.setAttribute("theme", (e.target as HTMLSelectElement).value));
+document
+  .getElementById("theme")!
+  .addEventListener("change", (e) =>
+    el.setAttribute("theme", (e.target as HTMLSelectElement).value),
+  );

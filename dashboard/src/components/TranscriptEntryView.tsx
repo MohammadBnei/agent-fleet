@@ -1,4 +1,7 @@
-import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "../gen/agentfleet/v1/transcript_pb";
 import {
   asDisplayMarkdown,
   parseSdkResultSummary,
@@ -9,9 +12,9 @@ import {
   type SdkResultSummary,
   type SdkSignal,
 } from "../transcript";
-import { Markdown } from "./Markdown";
-import { JsonView } from "./JsonView";
 import { Collapse } from "./Collapse";
+import { JsonView } from "./JsonView";
+import { Markdown } from "./Markdown";
 
 // The single renderer for a transcript entry that isn't a card (question,
 // permission, tool-call pair) — those stay with the feed loops that own
@@ -54,7 +57,11 @@ function LogLine({
     <div className="flex items-center gap-2.5">
       <span className={`${size} ${tone} whitespace-nowrap`}>{badge}</span>
       <span className="flex-1 h-px bg-line3" />
-      {children && <span className={`${size} text-dim2 text-right min-w-0`}>{children}</span>}
+      {children && (
+        <span className={`${size} text-dim2 text-right min-w-0`}>
+          {children}
+        </span>
+      )}
     </div>
   );
 }
@@ -62,17 +69,37 @@ function LogLine({
 // A signal that means the session is in trouble gets an alert row, not a
 // log line — silence with no visible cause is the exact failure this whole
 // relay exists to remove.
-function AlertRow({ tone, title, detail }: { tone: "error" | "warning"; title: string; detail?: string }) {
+function AlertRow({
+  tone,
+  title,
+  detail,
+}: {
+  tone: "error" | "warning";
+  title: string;
+  detail?: string;
+}) {
   return (
     <div
       className={`border px-3 py-2.5 flex gap-2.5 items-start ${
-        tone === "error" ? "border-pink-line bg-pink-bg" : "border-orange-line bg-orange-bg"
+        tone === "error"
+          ? "border-pink-line bg-pink-bg"
+          : "border-orange-line bg-orange-bg"
       }`}
     >
-      <span className={`text-sm flex-none ${tone === "error" ? "text-error" : "text-warning"}`}>!</span>
+      <span
+        className={`text-sm flex-none ${tone === "error" ? "text-error" : "text-warning"}`}
+      >
+        !
+      </span>
       <div className="min-w-0">
-        <div className={`text-sm ${tone === "error" ? "text-error" : "text-warning"}`}>{title}</div>
-        {detail && <div className="text-xs text-dim mt-0.5 break-words">{detail}</div>}
+        <div
+          className={`text-sm ${tone === "error" ? "text-error" : "text-warning"}`}
+        >
+          {title}
+        </div>
+        {detail && (
+          <div className="text-xs text-dim mt-0.5 break-words">{detail}</div>
+        )}
       </div>
     </div>
   );
@@ -80,7 +107,11 @@ function AlertRow({ tone, title, detail }: { tone: "error" | "warning"; title: s
 
 function formatDuration(ms?: number): string | null {
   if (typeof ms !== "number" || ms <= 0) return null;
-  return ms < 1000 ? `${ms}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
+  return ms < 1000
+    ? `${ms}ms`
+    : ms < 60_000
+      ? `${(ms / 1000).toFixed(1)}s`
+      : `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
 }
 
 function formatTokens(n?: number): string | null {
@@ -88,13 +119,23 @@ function formatTokens(n?: number): string | null {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean }) {
+function SignalView({
+  signal,
+  compact,
+}: {
+  signal: SdkSignal;
+  compact?: boolean;
+}) {
   switch (signal.sdk) {
     case "auth_status":
       // The single highest-value entry in this file: without it an expired
       // OAuth token is indistinguishable from a hung worker.
       return signal.error ? (
-        <AlertRow tone="error" title="Authentication failed" detail={signal.error} />
+        <AlertRow
+          tone="error"
+          title="Authentication failed"
+          detail={signal.error}
+        />
       ) : (
         <LogLine badge="auth" compact={compact}>
           {signal.isAuthenticating ? "authenticating…" : "authenticated"}
@@ -102,7 +143,13 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       );
 
     case "assistant_error":
-      return <AlertRow tone="error" title={`Model error — ${signal.error ?? "unknown"}`} detail="The turn returned no content." />;
+      return (
+        <AlertRow
+          tone="error"
+          title={`Model error — ${signal.error ?? "unknown"}`}
+          detail="The turn returned no content."
+        />
+      );
 
     case "status":
       return signal.status ? (
@@ -117,7 +164,10 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
         <div className="flex items-center gap-2 py-1">
           <div className="h-px flex-1 bg-warning/30" />
           <span className="text-2xs tracking-[0.09em] text-warning/80 whitespace-nowrap">
-            CONTEXT COMPACTED{signal.compact_metadata?.trigger ? ` · ${signal.compact_metadata.trigger}` : ""}
+            CONTEXT COMPACTED
+            {signal.compact_metadata?.trigger
+              ? ` · ${signal.compact_metadata.trigger}`
+              : ""}
             {pre ? ` · ${pre} tokens before` : ""}
           </span>
           <div className="h-px flex-1 bg-warning/30" />
@@ -126,12 +176,19 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
     }
 
     case "hook_response": {
-      const failed = typeof signal.exit_code === "number" && signal.exit_code !== 0;
+      const failed =
+        typeof signal.exit_code === "number" && signal.exit_code !== 0;
       const label = `${signal.hook_name ?? "hook"}${signal.hook_event ? ` · ${signal.hook_event}` : ""}`;
-      const body = [signal.stdout, signal.stderr].filter((s) => s && s.trim()).join("\n");
+      const body = [signal.stdout, signal.stderr]
+        .filter((s) => s?.trim())
+        .join("\n");
       if (!body) {
         return (
-          <LogLine badge="hook" badgeClass={failed ? "badge-error" : "badge-ghost"} compact={compact}>
+          <LogLine
+            badge="hook"
+            badgeClass={failed ? "badge-error" : "badge-ghost"}
+            compact={compact}
+          >
             {label}
             {failed ? ` — exit ${signal.exit_code}` : ""}
           </LogLine>
@@ -144,15 +201,21 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
           contentClassName="px-0 pt-1.5"
           summary={
             <div className="flex items-center gap-2.5">
-              <span className={`text-xs whitespace-nowrap ${failed ? "text-warning" : "text-dim2"}`}>
+              <span
+                className={`text-xs whitespace-nowrap ${failed ? "text-warning" : "text-dim2"}`}
+              >
                 ▸ hook {failed ? `failed — exit ${signal.exit_code}` : ""}
               </span>
               <span className="flex-1 h-px bg-line3" />
-              <span className="text-xs text-dim2 text-right min-w-0 truncate">{label}</span>
+              <span className="text-xs text-dim2 text-right min-w-0 truncate">
+                {label}
+              </span>
             </div>
           }
         >
-          <pre className="text-xs whitespace-pre-wrap font-mono text-dim">{body}</pre>
+          <pre className="text-xs whitespace-pre-wrap font-mono text-dim">
+            {body}
+          </pre>
         </Collapse>
       );
     }
@@ -163,7 +226,11 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       // not the originating toolu_ id, so there is nothing to join on.
       const elapsed = signal.elapsed_time_seconds;
       return (
-        <LogLine badge={signal.tool_name ?? "tool"} badgeClass="info" compact={compact}>
+        <LogLine
+          badge={signal.tool_name ?? "tool"}
+          badgeClass="info"
+          compact={compact}
+        >
           <span className="loading loading-spinner loading-xs" />
           still running{typeof elapsed === "number" ? ` · ${elapsed}s` : ""}
         </LogLine>
@@ -179,7 +246,12 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       return (
         <LogLine badge="published" badgeClass="info" compact={compact}>
           {signal.url ? (
-            <a className="text-primary underline" href={signal.url} target="_blank" rel="noreferrer">
+            <a
+              className="text-primary underline"
+              href={signal.url}
+              target="_blank"
+              rel="noreferrer"
+            >
               {signal.identifier ? `#${signal.identifier}` : "link"}
             </a>
           ) : (
@@ -192,9 +264,14 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
     case "task_notification": {
       // Only reaches here for a NON-subagent task — a backgrounded Bash, whose
       // tool row went "ok" the moment it launched and has said nothing since.
-      const failed = signal.status !== undefined && signal.status !== "completed";
+      const failed =
+        signal.status !== undefined && signal.status !== "completed";
       return (
-        <LogLine badge="background" badgeClass={failed ? "warning" : undefined} compact={compact}>
+        <LogLine
+          badge="background"
+          badgeClass={failed ? "warning" : undefined}
+          compact={compact}
+        >
           {signal.summary ?? signal.status}
         </LogLine>
       );
@@ -228,7 +305,11 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       // rules, or the classifier. Without this it was JSON, and "why did it
       // stop doing that" had no readable answer anywhere.
       return (
-        <LogLine badge={`${signal.tool_name ?? "tool"} denied`} badgeClass="warning" compact={compact}>
+        <LogLine
+          badge={`${signal.tool_name ?? "tool"} denied`}
+          badgeClass="warning"
+          compact={compact}
+        >
           {signal.decision_reason ?? signal.status}
         </LogLine>
       );
@@ -247,17 +328,27 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
         : [
             `${signal.memory_files?.length ?? 0} memory files`,
             `${signal.skills?.length ?? 0} skills`,
-            signal.collisions?.length ? `collision: ${signal.collisions.join(", ")}` : null,
+            signal.collisions?.length
+              ? `collision: ${signal.collisions.join(", ")}`
+              : null,
           ];
       const detail = rendered
-        ? signal.skipped ?? []
+        ? (signal.skipped ?? [])
         : [
             ...(signal.memory_files ?? []).map((f) => `${f.type} ${f.path}`),
-            ...(signal.skills ?? []).map((sk) => `skill ${sk.name} (${sk.source})`),
+            ...(signal.skills ?? []).map(
+              (sk) => `skill ${sk.name} (${sk.source})`,
+            ),
           ];
-      const warn = rendered ? signal.applied === false || !!signal.skipped?.length : !!signal.collisions?.length;
+      const warn = rendered
+        ? signal.applied === false || !!signal.skipped?.length
+        : !!signal.collisions?.length;
       const line = (
-        <LogLine badge={rendered ? "context" : "loaded"} badgeClass={warn ? "warning" : "info"} compact={compact}>
+        <LogLine
+          badge={rendered ? "context" : "loaded"}
+          badgeClass={warn ? "warning" : "info"}
+          compact={compact}
+        >
           {summary.filter(Boolean).join(" · ")}
         </LogLine>
       );
@@ -306,11 +397,20 @@ function ResultView({
   result?: SdkResultSummary | null;
 }) {
   const r = result ?? parseSdkResultSummary(entry.text);
-  if (!r) return <LogLine badge="turn ended" compact={compact}>{entry.text}</LogLine>;
+  if (!r)
+    return (
+      <LogLine badge="turn ended" compact={compact}>
+        {entry.text}
+      </LogLine>
+    );
 
   const wall = formatDuration(r.durationMs);
   const api = formatDuration(r.durationApiMs);
-  const inTok = formatTokens((r.usage?.input_tokens ?? 0) + (r.usage?.cache_read_input_tokens ?? 0) + (r.usage?.cache_creation_input_tokens ?? 0));
+  const inTok = formatTokens(
+    (r.usage?.input_tokens ?? 0) +
+      (r.usage?.cache_read_input_tokens ?? 0) +
+      (r.usage?.cache_creation_input_tokens ?? 0),
+  );
   const outTok = formatTokens(r.usage?.output_tokens);
   const parts = [
     `${r.numTurns ?? "?"} turns`,
@@ -332,27 +432,50 @@ function ResultView({
       >
         {parts.join(" · ")}
       </LogLine>
-      {r.errors && r.errors.length > 0 && <AlertRow tone="error" title="Session errors" detail={r.errors.join("; ")} />}
+      {r.errors && r.errors.length > 0 && (
+        <AlertRow
+          tone="error"
+          title="Session errors"
+          detail={r.errors.join("; ")}
+        />
+      )}
       {r.permissionDenials && r.permissionDenials.length > 0 && (
         <div className="text-xs text-warning">
-          {r.permissionDenials.length} permission {r.permissionDenials.length === 1 ? "denial" : "denials"}
+          {r.permissionDenials.length} permission{" "}
+          {r.permissionDenials.length === 1 ? "denial" : "denials"}
           {": "}
-          {r.permissionDenials.map((d) => d.tool_name).filter(Boolean).join(", ")}
+          {r.permissionDenials
+            .map((d) => d.tool_name)
+            .filter(Boolean)
+            .join(", ")}
         </div>
       )}
       {models.length > 1 && (
         <div className="text-xs text-dim2">
-          {models.map(([name, u]) => `${name.replace(/-\d{8}$/, "")} $${(u.costUSD ?? 0).toFixed(3)}`).join(" · ")}
+          {models
+            .map(
+              ([name, u]) =>
+                `${name.replace(/-\d{8}$/, "")} $${(u.costUSD ?? 0).toFixed(3)}`,
+            )
+            .join(" · ")}
         </div>
       )}
     </div>
   );
 }
 
-function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?: boolean }) {
+function SessionInitView({
+  entry,
+  compact,
+}: {
+  entry: TranscriptEntry;
+  compact?: boolean;
+}) {
   const info = parseSdkSystemInfo(entry.text);
   if (!info) return null;
-  const offline = (info.mcpServers ?? []).filter((s) => s.status !== "connected");
+  const offline = (info.mcpServers ?? []).filter(
+    (s) => s.status !== "connected",
+  );
   const rows: [string, string | undefined][] = [
     ["model", info.model],
     ["mode", info.permissionMode],
@@ -361,9 +484,19 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
     ["output style", info.outputStyle],
     ["tools", info.tools?.length ? String(info.tools.length) : undefined],
     ["skills", info.skills?.length ? info.skills.join(", ") : undefined],
-    ["plugins", info.plugins?.length ? info.plugins.map((p) => p.name).join(", ") : undefined],
+    [
+      "plugins",
+      info.plugins?.length
+        ? info.plugins.map((p) => p.name).join(", ")
+        : undefined,
+    ],
     ["agents", info.agents?.length ? info.agents.join(", ") : undefined],
-    ["mcp", (info.mcpServers ?? []).map((s) => `${s.name} (${s.status})`).join(", ") || undefined],
+    [
+      "mcp",
+      (info.mcpServers ?? [])
+        .map((s) => `${s.name} (${s.status})`)
+        .join(", ") || undefined,
+    ],
   ];
 
   return (
@@ -373,11 +506,15 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
       contentClassName="px-0 pt-1.5"
       summary={
         <div className="flex items-center gap-2.5">
-          <span className={`${compact ? "text-2xs" : "text-xs"} text-dim2 whitespace-nowrap`}>
+          <span
+            className={`${compact ? "text-2xs" : "text-xs"} text-dim2 whitespace-nowrap`}
+          >
             session started
           </span>
           <span className="flex-1 h-px bg-line3" />
-          <span className={`${compact ? "text-2xs" : "text-xs"} text-dim2 text-right min-w-0 truncate`}>
+          <span
+            className={`${compact ? "text-2xs" : "text-xs"} text-dim2 text-right min-w-0 truncate`}
+          >
             {[
               info.model,
               info.permissionMode && `${info.permissionMode} mode`,
@@ -388,7 +525,9 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
               .join(" · ")}
             {/* An MCP server that failed to connect silently removes tools the
                 agent is about to be asked to use. */}
-            {offline.length > 0 && <span className="text-error"> · {offline.length} offline</span>}
+            {offline.length > 0 && (
+              <span className="text-error"> · {offline.length} offline</span>
+            )}
           </span>
         </div>
       }
@@ -420,7 +559,11 @@ export function TranscriptEntryView({
 
   if (entry.type === TranscriptEntryType.SYSTEM) {
     const signal = parseSdkSignal(entry.text);
-    return signal ? <SignalView signal={signal} compact={compact} /> : <SessionInitView entry={entry} compact={compact} />;
+    return signal ? (
+      <SignalView signal={signal} compact={compact} />
+    ) : (
+      <SessionInitView entry={entry} compact={compact} />
+    );
   }
 
   if (entry.type === TranscriptEntryType.ASSISTANT) {
@@ -433,9 +576,15 @@ export function TranscriptEntryView({
         className="border-0 bg-transparent"
         summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
         contentClassName="px-0 pt-1.5"
-        summary={<span className={`${logSize} text-dim2 hover:text-dim`}>▸ thinking</span>}
+        summary={
+          <span className={`${logSize} text-dim2 hover:text-dim`}>
+            ▸ thinking
+          </span>
+        }
       >
-        <div className="text-xs leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
+        <div className="text-xs leading-[1.7] text-dim whitespace-pre-wrap">
+          {info.text}
+        </div>
       </Collapse>
     );
   }
@@ -446,9 +595,13 @@ export function TranscriptEntryView({
   if (entry.type === TranscriptEntryType.USER) {
     const tr = parseSdkToolResult(entry.text);
     return (
-      <div className={`border px-2.5 py-2 ${tr?.isError ? "border-pink-line bg-pink-bg" : "border-line bg-base-300/40"}`}>
+      <div
+        className={`border px-2.5 py-2 ${tr?.isError ? "border-pink-line bg-pink-bg" : "border-line bg-base-300/40"}`}
+      >
         {typeof tr?.content === "string" ? (
-          <pre className="text-xs whitespace-pre-wrap font-mono text-dim">{tr.content}</pre>
+          <pre className="text-xs whitespace-pre-wrap font-mono text-dim">
+            {tr.content}
+          </pre>
         ) : (
           <JsonView value={tr?.content ?? entry.text} />
         )}

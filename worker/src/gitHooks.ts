@@ -14,7 +14,9 @@ const FLEET_GIT_HOOKS = process.env.FLEET_GIT_HOOKS ?? "/app/worker/git-hooks";
 //
 // ponytail: `git -c core.hooksPath= commit` or `--no-verify` skips it; the
 // definition `tools` that could deny those are inert until P4.
-export function gitHooksEnv(env: Record<string, string | undefined>): Record<string, string> {
+export function gitHooksEnv(
+  env: Record<string, string | undefined>,
+): Record<string, string> {
   const n = Number(env.GIT_CONFIG_COUNT) || 0;
   return {
     GIT_CONFIG_COUNT: String(n + 1),

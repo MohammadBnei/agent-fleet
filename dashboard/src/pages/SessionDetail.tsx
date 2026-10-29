@@ -1,29 +1,38 @@
 import { useState } from "react";
-import { client } from "../connectClient";
-import { sessionLabel } from "../sessionLabel";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { sessionBadge } from "../sessionState";
+import { AutoModeConfirm } from "../components/AutoModeConfirm";
+import { Composer } from "../components/Composer";
+import { DecisionDock } from "../components/DecisionDock";
+import { AgentDetailModal } from "../components/DetailModal";
+import { ErrorModal } from "../components/ErrorModal";
+import { FileDiffModal } from "../components/FileDiffModal";
+import { Markdown } from "../components/Markdown";
+import { Segmented } from "../components/Segmented";
+import { SessionFeed } from "../components/SessionFeed";
 import {
+  AgentsPanel,
+  BackgroundPanel,
+  ChangesPanel,
+  SessionPanel,
+  TodosPanel,
+} from "../components/SessionPanels";
+import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { sessionLabel } from "../sessionLabel";
+import { isPodPhaseLive, sessionBadge } from "../sessionState";
+import type { SubagentRun } from "../transcript";
+import {
+  asDisplayMarkdown,
+  type Density,
   feedVisibility,
   latestResultSummary,
-  type Density,
 } from "../transcript";
-import { useSessionDetail } from "../useSessionDetail";
-import { useComposer, useFeedScroll, sessionPanelData } from "../useSessionView";
 import { useLocalStorageState } from "../useLocalStorageState";
-import { ErrorModal } from "../components/ErrorModal";
-import { Markdown } from "../components/Markdown";
-import { AutoModeConfirm } from "../components/AutoModeConfirm";
-import { Segmented } from "../components/Segmented";
-import { DecisionDock } from "../components/DecisionDock";
-import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, AgentsPanel, BackgroundPanel, SessionPanel } from "../components/SessionPanels";
-import { FileDiffModal } from "../components/FileDiffModal";
-import { isPodPhaseLive } from "../sessionState";
-import { AgentDetailModal } from "../components/DetailModal";
-import type { SubagentRun } from "../transcript";
-import { asDisplayMarkdown } from "../transcript";
-import { Composer } from "../components/Composer";
+import { useSessionDetail } from "../useSessionDetail";
+import {
+  sessionPanelData,
+  useComposer,
+  useFeedScroll,
+} from "../useSessionView";
 
 // The console's desktop session view: feed · decision dock · composer, beside a
 // fixed panel column. Full-width — the permanent 320px session-list sidebar is
@@ -35,9 +44,21 @@ import { Composer } from "../components/Composer";
 // rendering it a second time.
 
 const DENSITY: readonly { value: Density; label: string; title: string }[] = [
-  { value: "everything", label: "everything", title: "every entry, including tool calls and lifecycle lines" },
-  { value: "narrative", label: "narrative", title: "the readable conversation only" },
-  { value: "decisions", label: "decisions", title: "decisions and alarms only" },
+  {
+    value: "everything",
+    label: "everything",
+    title: "every entry, including tool calls and lifecycle lines",
+  },
+  {
+    value: "narrative",
+    label: "narrative",
+    title: "the readable conversation only",
+  },
+  {
+    value: "decisions",
+    label: "decisions",
+    title: "decisions and alarms only",
+  },
 ];
 
 export function SessionDetail({
@@ -68,7 +89,10 @@ export function SessionDetail({
     sessionId,
     sessions.find((t) => t.id === sessionId),
   );
-  const { message, setMessage, slashCommands, sendMessage } = useComposer(entries, sendDiscuss);
+  const { message, setMessage, slashCommands, sendMessage } = useComposer(
+    entries,
+    sendDiscuss,
+  );
   const [autoOpen, setAutoOpen] = useState(false);
   // The CHANGES row a human clicked, or null. See FileDiffModal.
   const [diffPath, setDiffPath] = useState<string | null>(null);
@@ -76,7 +100,10 @@ export function SessionDetail({
   const [agentDetail, setAgentDetail] = useState<SubagentRun | null>(null);
   // Key deliberately not renamed with the file: it is persisted in every
   // operator's browser, and renaming it silently resets their density choice.
-  const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
+  const [density, setDensity] = useLocalStorageState<Density>(
+    "taskDetail.density",
+    "everything",
+  );
   const {
     ref: feedRef,
     atBottom: feedAtBottom,
@@ -86,7 +113,12 @@ export function SessionDetail({
     hasNew: hasNewAiMessage,
   } = useFeedScroll(sessionId, entries, pendingMessage);
 
-  if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">{loadError}</div>;
+  if (loadError)
+    return (
+      <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">
+        {loadError}
+      </div>
+    );
   // `session` is App's polled list copy when the list has it, and
   // useSessionDetail's own poll when it does not — live either way.
   if (!session) return <div className="p-4 text-base text-dim">Loading…</div>;
@@ -99,7 +131,8 @@ export function SessionDetail({
   const blocked = session.liveState === "blocked";
   const visibility = feedVisibility(density, false);
 
-  const { todos, branch, changes, agents, background, model } = sessionPanelData(entries);
+  const { todos, branch, changes, agents, background, model } =
+    sessionPanelData(entries);
   const result = latestResultSummary(entries);
   const contextTokens =
     (result?.usage?.input_tokens ?? 0) +
@@ -115,7 +148,9 @@ export function SessionDetail({
               title row does not carry its own, and the title starts the row. */}
           {/* No id — see the note in MobileSessionDetail. It is in the SESSION
               panel with the other facts. */}
-          <h2 className="text-lg font-semibold min-w-0 break-words">{sessionLabel(session)}</h2>
+          <h2 className="text-lg font-semibold min-w-0 break-words">
+            {sessionLabel(session)}
+          </h2>
           {blocked ? (
             <span className="flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
               <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse" />
@@ -131,15 +166,19 @@ export function SessionDetail({
               </span>
             )
           )}
-          
+
           <span className="text-xs text-dim2 min-w-0 truncate">
             {session.repo}
             {branch && ` · ${branch}`}
           </span>
-          
+
           <div className="ml-auto flex items-center gap-2 flex-none">
             <span className="text-2xs tracking-[0.1em] text-dim2">DENSITY</span>
-            <Segmented value={density} options={DENSITY} onChange={setDensity} />
+            <Segmented
+              value={density}
+              options={DENSITY}
+              onChange={setDensity}
+            />
           </div>
         </div>
 
@@ -169,7 +208,12 @@ export function SessionDetail({
               <div className="flex gap-2.5 items-baseline opacity-60">
                 <span className="text-primary flex-none text-base">❯</span>
                 <div className="flex-1 min-w-0 text-base leading-[1.7] text-text2">
-                  <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
+                  <Markdown
+                    text={asDisplayMarkdown({
+                      from: "human",
+                      text: pendingMessage,
+                    })}
+                  />
                 </div>
                 <span className="loading loading-spinner loading-xs flex-none" />
               </div>
@@ -204,14 +248,25 @@ export function SessionDetail({
 
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
-          <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
-          <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
+          <FileDiffModal
+            sessionId={sessionId}
+            path={diffPath}
+            entries={entries}
+            onClose={() => setDiffPath(null)}
+          />
+          <AgentDetailModal
+            run={agentDetail}
+            onClose={() => setAgentDetail(null)}
+          />
           <AutoModeConfirm
             open={autoOpen}
             onCancel={() => setAutoOpen(false)}
             onConfirm={() => {
               setAutoOpen(false);
-              run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "action:mode");
+              run(
+                () => client.setPermissionMode({ sessionId, mode: "auto" }),
+                "action:mode",
+              );
             }}
           />
 
@@ -243,7 +298,10 @@ export function SessionDetail({
               this line is for is the thing nothing else answers from the
               composer: which branch the agent is committing to. */}
           <div className="flex gap-3.5 mt-2 text-xs text-dim2 flex-wrap">
-            <span className={branch ? "text-text2" : undefined} title="the branch the agent is working on">
+            <span
+              className={branch ? "text-text2" : undefined}
+              title="the branch the agent is working on"
+            >
               ⑂ {branch ?? "no branch yet"}
             </span>
             {/* contextTokens > 0: a result without usage rendered "ctx 0k". */}
@@ -261,7 +319,11 @@ export function SessionDetail({
 
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
-        <ChangesPanel branch={branch} changes={changes} onOpenFile={setDiffPath} />
+        <ChangesPanel
+          branch={branch}
+          changes={changes}
+          onOpenFile={setDiffPath}
+        />
         <AgentsPanel runs={agents} onOpenAgent={setAgentDetail} />
         <BackgroundPanel tasks={background} />
         <div className="mt-auto">
@@ -276,7 +338,6 @@ export function SessionDetail({
           />
         </div>
       </div>
-
     </div>
   );
 }

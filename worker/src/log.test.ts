@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import { log } from "./log.js";
 
 test("LOG_LEVEL filters out lower-severity lines", () => {
@@ -19,7 +19,11 @@ test("LOG_LEVEL filters out lower-severity lines", () => {
   expect(lines).toHaveLength(2);
   const parsed = lines.map((l) => JSON.parse(l));
   expect(parsed[0]).toMatchObject({ level: "WARN", msg: "should print" });
-  expect(parsed[1]).toMatchObject({ level: "ERROR", msg: "should print", taskId: "t1" });
+  expect(parsed[1]).toMatchObject({
+    level: "ERROR",
+    msg: "should print",
+    taskId: "t1",
+  });
   expect(parsed[1]).toHaveProperty("time");
 });
 

@@ -30,14 +30,25 @@ export function displayNames(authorNames: string[]): Map<string, string> {
   const out = new Map<string, string>();
   for (const raw of authorNames) {
     const n = raw.trim();
-    out.set(raw, !n ? "Another member" : (owners.get(local(n))?.size ?? 0) > 1 ? n : local(n));
+    out.set(
+      raw,
+      !n
+        ? "Another member"
+        : (owners.get(local(n))?.size ?? 0) > 1
+          ? n
+          : local(n),
+    );
   }
   return out;
 }
 
 // Typing while a question is open answers it, as "Other" does in Claude Code:
 // an option already picked keeps its question, the text answers the rest.
-export function withOther(questions: string[], picked: Record<string, string>, text: string): Record<string, string> {
+export function withOther(
+  questions: string[],
+  picked: Record<string, string>,
+  text: string,
+): Record<string, string> {
   return Object.fromEntries(questions.map((q) => [q, picked[q] || text]));
 }
 
@@ -46,7 +57,9 @@ export function answerText(json: string): string {
   try {
     const a = (JSON.parse(json) as { answers?: unknown }).answers;
     if (a && typeof a === "object") {
-      const lines = Object.values(a).map((v) => (typeof v === "string" ? v : JSON.stringify(v)));
+      const lines = Object.values(a).map((v) =>
+        typeof v === "string" ? v : JSON.stringify(v),
+      );
       return [...new Set(lines)].join("\n");
     }
   } catch {

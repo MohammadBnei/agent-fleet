@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 type ModalProps = {
   open: boolean;
@@ -11,7 +11,12 @@ type ModalProps = {
 // pattern (bottom sheet on mobile, centered box on desktop) instead of each
 // dialog picking its own. Native <dialog>.showModal()/.close() driven by
 // `open` gets focus-trap/ESC/backdrop-click dismissal for free.
-export function Modal({ open, onClose, children, boxClassName = "" }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  children,
+  boxClassName = "",
+}: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -39,7 +44,7 @@ export function Modal({ open, onClose, children, boxClassName = "" }: ModalProps
     >
       <div className={`modal-box ${boxClassName}`}>{children}</div>
       <form method="dialog" className="modal-backdrop">
-        <button>close</button>
+        <button type="submit">close</button>
       </form>
     </dialog>
   );

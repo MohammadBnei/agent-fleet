@@ -1,11 +1,24 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import type { Repo } from "./gen/agentfleet/v1/dashboard_pb";
-import { activeRepos, filterRepos, isNew, keepShown, ownerOf, toggleAll } from "./repoFilter";
+import {
+  activeRepos,
+  filterRepos,
+  isNew,
+  keepShown,
+  ownerOf,
+  toggleAll,
+} from "./repoFilter";
 
 const now = Date.parse("2026-10-21T00:00:00Z");
 
 function repo(name: string, over: Partial<Repo> = {}): Repo {
-  return { name, fullName: `MohammadBnei/${name}`, active: true, createdAt: "2026-01-01T00:00:00Z", ...over } as Repo;
+  return {
+    name,
+    fullName: `MohammadBnei/${name}`,
+    active: true,
+    createdAt: "2026-01-01T00:00:00Z",
+    ...over,
+  } as Repo;
 }
 
 const repos = [
@@ -26,12 +39,27 @@ test("ownerOf reads full_name", () => {
 });
 
 test("filters compose: query, owner, status", () => {
-  const names = (f: Parameters<typeof filterRepos>[1]) => filterRepos(repos, f, now).map((r) => r.name);
-  expect(names({ query: "", owner: "", status: "all" })).toEqual(["blog", "notes", "workspace"]);
-  expect(names({ query: "OPUS", owner: "", status: "all" })).toEqual(["workspace"]);
-  expect(names({ query: "", owner: "MohammadBnei", status: "all" })).toEqual(["blog", "notes"]);
-  expect(names({ query: "", owner: "", status: "inactive" })).toEqual(["notes"]);
-  expect(names({ query: "", owner: "", status: "active" })).toEqual(["blog", "workspace"]);
+  const names = (f: Parameters<typeof filterRepos>[1]) =>
+    filterRepos(repos, f, now).map((r) => r.name);
+  expect(names({ query: "", owner: "", status: "all" })).toEqual([
+    "blog",
+    "notes",
+    "workspace",
+  ]);
+  expect(names({ query: "OPUS", owner: "", status: "all" })).toEqual([
+    "workspace",
+  ]);
+  expect(names({ query: "", owner: "MohammadBnei", status: "all" })).toEqual([
+    "blog",
+    "notes",
+  ]);
+  expect(names({ query: "", owner: "", status: "inactive" })).toEqual([
+    "notes",
+  ]);
+  expect(names({ query: "", owner: "", status: "active" })).toEqual([
+    "blog",
+    "workspace",
+  ]);
   expect(names({ query: "", owner: "", status: "new" })).toEqual(["blog"]);
 });
 
@@ -43,10 +71,16 @@ test("toggleAll selects every filtered row, then clears only those", () => {
 });
 
 test("keepShown drops selected rows the filter now hides", () => {
-  expect([...keepShown(new Set(["blog", "notes", "gone"]), repos.slice(0, 1))]).toEqual(["blog"]);
+  expect([
+    ...keepShown(new Set(["blog", "notes", "gone"]), repos.slice(0, 1)),
+  ]).toEqual(["blog"]);
 });
 
 test("activeRepos keeps active rows plus the one named", () => {
   expect(activeRepos(repos).map((r) => r.name)).toEqual(["blog", "workspace"]);
-  expect(activeRepos(repos, "notes").map((r) => r.name)).toEqual(["blog", "notes", "workspace"]);
+  expect(activeRepos(repos, "notes").map((r) => r.name)).toEqual([
+    "blog",
+    "notes",
+    "workspace",
+  ]);
 });

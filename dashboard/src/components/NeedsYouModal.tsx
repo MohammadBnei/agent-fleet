@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import type { ListSummary } from "../transcript";
-import { Modal } from "./Modal";
-import { DecisionInline } from "./DecisionInline";
 import { sessionLabel } from "../sessionLabel";
 import { blockedForLabel, shortId } from "../sessionState";
+import type { ListSummary } from "../transcript";
+import { DecisionInline } from "./DecisionInline";
+import { Modal } from "./Modal";
 
 // Every pending decision, answerable without leaving where you are.
 //
@@ -56,9 +56,15 @@ export function NeedsYouModal({
   if (!open) return null;
 
   return (
-    <Modal open={open} onClose={onClose} boxClassName="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+    <Modal
+      open={open}
+      onClose={onClose}
+      boxClassName="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
+    >
       <div className="flex items-baseline gap-2 mb-3 flex-none">
-        <span className="text-2xs tracking-[0.12em] text-error">WAITING ON YOU</span>
+        <span className="text-2xs tracking-[0.12em] text-error">
+          WAITING ON YOU
+        </span>
         <span className="flex-1 h-px bg-pink-line" />
         <span className="text-xs text-dim2">{sessions.length}</span>
       </div>
@@ -92,14 +98,12 @@ export function NeedsYouModal({
                     {queued > 1 ? ` · ${queued} decisions` : ""}
                   </span>
                 </div>
-                <div className="px-3.5 pt-0.5 text-2xs text-dim2">#{shortId(s.id)}</div>
+                <div className="px-3.5 pt-0.5 text-2xs text-dim2">
+                  #{shortId(s.id)}
+                </div>
                 {/* Same component the list row uses: whatever the list can
                     answer, this answers the same way. */}
-                <DecisionInline
-                  session={s}
-                  summary={summary}
-                  reload={reload}
-                />
+                <DecisionInline session={s} summary={summary} reload={reload} />
               </div>
             );
           })

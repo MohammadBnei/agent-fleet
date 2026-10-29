@@ -1,13 +1,16 @@
+import { Code, type ConnectError } from "@connectrpc/connect";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBusyAction } from "./useBusyAction";
-import { Code, ConnectError } from "@connectrpc/connect";
-import { client, subscribeTranscript } from "./connectClient";
-import { withOptimistic } from "./transcript";
-import { pollVisible } from "./pollVisible";
 import { approvePlan } from "./approvePlan";
 import type { Grant, GrantPreview } from "./components/PermissionCard";
+import { client, subscribeTranscript } from "./connectClient";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
-import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "./gen/agentfleet/v1/transcript_pb";
+import { pollVisible } from "./pollVisible";
+import { withOptimistic } from "./transcript";
+import { useBusyAction } from "./useBusyAction";
 
 // The first message of a brand-new session, handed over by NewSessionDialog so
 // the dialog can close the instant the session row exists.
@@ -59,7 +62,12 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   // setActionError is useBusyAction's useState setter and therefore stable, but
   // the linter cannot see through the hook boundary — so it is listed in the
   // reset effect's deps below rather than the rule being silenced.
-  const { busyKey, error: actionError, run, setError: setActionError } = useBusyAction();
+  const {
+    busyKey,
+    error: actionError,
+    run,
+    setError: setActionError,
+  } = useBusyAction();
   // Optimistic echo for a just-sent human message — client.postMessage() plus
   // the streamTranscript round trip to see it reflected back is enough
   // latency to feel laggy, so this shows the message immediately with a
@@ -121,7 +129,9 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       })
       .catch((err: ConnectError) => {
         if (cancelled) return;
-        setLoadError(err.code === Code.NotFound ? "Session not found." : err.message);
+        setLoadError(
+          err.code === Code.NotFound ? "Session not found." : err.message,
+        );
       });
 
     // The e2e status poll is gone with the sandbox it described
@@ -144,7 +154,11 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
         setHasOlder(res.entries.length >= PAGE);
         unsubscribe = subscribeTranscript(sessionId, res.nextSeq, (entry) => {
           setEntries((prev) => [...prev, entry]);
-          if (pendingRef.current !== null && entry.from === "human" && entry.text === pendingRef.current) {
+          if (
+            pendingRef.current !== null &&
+            entry.from === "human" &&
+            entry.text === pendingRef.current
+          ) {
             pendingRef.current = null;
             setPendingMessage(null);
           }
@@ -170,7 +184,11 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     }
     setLoadingOlder(true);
     try {
-      const res = await client.getTranscript({ sessionId, beforeSeq: oldest, limit: PAGE });
+      const res = await client.getTranscript({
+        sessionId,
+        beforeSeq: oldest,
+        limit: PAGE,
+      });
       setEntries((prev) => [...res.entries, ...prev]);
       setHasOlder(res.entries.length >= PAGE);
     } catch (err) {
@@ -179,7 +197,6 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       setLoadingOlder(false);
     }
   }
-
 
   // Both decisions go through here so the optimistic entry and the RPC can
   // never drift apart — a card showing "allowed" for a call that failed to
@@ -212,17 +229,31 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     });
   }
 
-  const respondToPermission = (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) =>
+  const respondToPermission = (
+    seq: bigint,
+    decision: { behavior: "allow" | "deny"; message?: string },
+    grant?: Grant,
+  ) =>
     decide(
       seq,
       TranscriptEntryType.PERMISSION_RESPONSE,
       JSON.stringify(decision),
-      () => client.respondToPermission({ sessionId, seq, decisionJson: JSON.stringify(decision), scope: grant?.scope, ruleForm: grant?.ruleForm }),
+      () =>
+        client.respondToPermission({
+          sessionId,
+          seq,
+          decisionJson: JSON.stringify(decision),
+          scope: grant?.scope,
+          ruleForm: grant?.ruleForm,
+        }),
       `permission:${seq}`,
     );
 
   const previewGrant: GrantPreview = useCallback(
-    (seq: bigint) => client.previewGrant({ sessionId, seq }).then((r) => ({ exact: r.exact, prefix: r.prefix })),
+    (seq: bigint) =>
+      client
+        .previewGrant({ sessionId, seq })
+        .then((r) => ({ exact: r.exact, prefix: r.prefix })),
     [sessionId],
   );
 
@@ -244,22 +275,33 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       seq,
       TranscriptEntryType.ANSWER,
       JSON.stringify({ answers }),
-      () => client.answerQuestion({ sessionId, seq, answersJson: JSON.stringify({ answers }) }),
+      () =>
+        client.answerQuestion({
+          sessionId,
+          seq,
+          answersJson: JSON.stringify({ answers }),
+        }),
       `question:${seq}`,
     );
 
   // Through run() like everything else, with one extra job: roll back the
   // optimistic echo when the post fails, so a message that never left does not
   // sit in the feed looking sent.
-  const sendDiscuss = useCallback(async (text: string) => {
-    pendingRef.current = text;
-    setPendingMessage(text);
-    const ok = await run(() => client.postMessage({ sessionId, text }), "discuss");
-    if (!ok) {
-      pendingRef.current = null;
-      setPendingMessage(null);
-    }
-  }, [sessionId, run]);
+  const sendDiscuss = useCallback(
+    async (text: string) => {
+      pendingRef.current = text;
+      setPendingMessage(text);
+      const ok = await run(
+        () => client.postMessage({ sessionId, text }),
+        "discuss",
+      );
+      if (!ok) {
+        pendingRef.current = null;
+        setPendingMessage(null);
+      }
+    },
+    [sessionId, run],
+  );
 
   // A brand-new session's first message, if NewSessionDialog left one here.
   // Its own effect, not folded into the session load above, so it can depend

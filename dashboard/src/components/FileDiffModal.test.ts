@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import { unifiedToLines } from "./FileDiffModal";
 
 // git's own output for a one-line sed edit — the case this whole path exists
@@ -50,7 +50,9 @@ index 0000000..e69de29
 
 // "\ No newline at end of file" is git commentary, not a line of the file.
 test("the no-newline marker is dropped", () => {
-  expect(unifiedToLines("@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b")).toEqual([
+  expect(
+    unifiedToLines("@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b"),
+  ).toEqual([
     { kind: "context", text: "@@ -1 +1 @@" },
     { kind: "remove", text: "a" },
     { kind: "add", text: "b" },

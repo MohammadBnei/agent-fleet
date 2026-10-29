@@ -23,7 +23,12 @@ export function ActionButton({
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { busy?: boolean }) {
   return (
-    <button type="button" disabled={busy || disabled} aria-busy={busy || undefined} {...rest}>
+    <button
+      type="button"
+      disabled={busy || disabled}
+      aria-busy={busy || undefined}
+      {...rest}
+    >
       {busy ? (
         <span className="inline-flex items-center justify-center">
           <span className="loading loading-spinner loading-xs" />

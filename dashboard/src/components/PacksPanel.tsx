@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
+import type { Pack } from "../gen/agentfleet/v1/dashboard_pb";
 import { activeRepos } from "../repoFilter";
 import { ConfirmModal } from "./ConfirmModal";
-import type { Pack } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
 
 // Live context packs (docs/adr/0063): instructions and skills that load into
@@ -13,21 +13,44 @@ import { InlineError } from "./InlineError";
 // packs/repo) change by pull request and are not shown here.
 
 type Targets = { definition: string[]; repo: string[] };
-type SkillDraft = { id: number; name: string; description: string; body: string };
+type SkillDraft = {
+  id: number;
+  name: string;
+  description: string;
+  body: string;
+};
 type Use = { kind: string; target: string };
 
 const keyOf = (u: Use) => `${u.kind}/${u.target}`;
 // "*" is core's AllTargets: every agent or repo, including ones added later.
 const ALL = "*";
-const labelOf = (u: Use) => (u.target === ALL ? (u.kind === "repo" ? "all repos" : "all agents") : u.target);
-const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const labelOf = (u: Use) =>
+  u.target === ALL
+    ? u.kind === "repo"
+      ? "all repos"
+      : "all agents"
+    : u.target;
+const errText = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 // What the server stores, without the editor's own ids.
 const contentOf = (text: string, skills: SkillDraft[]) =>
-  JSON.stringify({ text, skills: skills.map(({ name, description, body }) => ({ name, description, body })) });
+  JSON.stringify({
+    text,
+    skills: skills.map(({ name, description, body }) => ({
+      name,
+      description,
+      body,
+    })),
+  });
 
 let nextSkillId = 1;
 
-function SkillEditor({ skill, onChange, onDone, onRemove }: {
+function SkillEditor({
+  skill,
+  onChange,
+  onDone,
+  onRemove,
+}: {
   skill: SkillDraft;
   onChange: (s: SkillDraft) => void;
   onDone: () => void;
@@ -60,10 +83,19 @@ function SkillEditor({ skill, onChange, onDone, onRemove }: {
         className="textarea textarea-bordered textarea-sm w-full"
       />
       <div className="flex gap-2 justify-end">
-        <button type="button" className="btn btn-xs btn-ghost" onClick={onRemove}>
+        <button
+          type="button"
+          className="btn btn-xs btn-ghost"
+          onClick={onRemove}
+        >
           remove
         </button>
-        <button type="button" className="btn btn-xs" onClick={onDone} disabled={!skill.name.trim()}>
+        <button
+          type="button"
+          className="btn btn-xs"
+          onClick={onDone}
+          disabled={!skill.name.trim()}
+        >
           done
         </button>
       </div>
@@ -71,7 +103,13 @@ function SkillEditor({ skill, onChange, onDone, onRemove }: {
   );
 }
 
-function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
+function PackEditor({
+  pack,
+  targets,
+  onBack,
+  onSaved,
+  onRequestDelete,
+}: {
   pack: Pack | null; // null = a new pack
   targets: Targets;
   onBack: () => void;
@@ -79,9 +117,17 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
   onRequestDelete: (pack: Pack) => void;
 }) {
   const [initialSkills] = useState<SkillDraft[]>(() =>
-    (pack?.skills ?? []).map((s) => ({ id: nextSkillId++, name: s.name, description: s.description, body: s.body })),
+    (pack?.skills ?? []).map((s) => ({
+      id: nextSkillId++,
+      name: s.name,
+      description: s.description,
+      body: s.body,
+    })),
   );
-  const initialUses: Use[] = (pack?.attachments ?? []).map((a) => ({ kind: a.kind, target: a.target }));
+  const initialUses: Use[] = (pack?.attachments ?? []).map((a) => ({
+    kind: a.kind,
+    target: a.target,
+  }));
   const [name, setName] = useState(pack?.name ?? "");
   const [text, setText] = useState(pack?.text ?? "");
   const [skills, setSkills] = useState<SkillDraft[]>(initialSkills);
@@ -100,13 +146,16 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
 
   const used = new Set(uses.map(keyOf));
   const contentChanged = contentOf(text, skills) !== done.content;
-  const usesChanged = used.size !== done.uses.size || [...used].some((k) => !done.uses.has(k));
+  const usesChanged =
+    used.size !== done.uses.size || [...used].some((k) => !done.uses.has(k));
   const skillsNamed = skills.every((s) => s.name.trim() !== "");
   const canSave =
     !saving &&
     name.trim() !== "" &&
     skillsNamed &&
-    (!done.created ? text.trim() !== "" || skills.length > 0 : contentChanged || usesChanged);
+    (!done.created
+      ? text.trim() !== "" || skills.length > 0
+      : contentChanged || usesChanged);
 
   async function save() {
     setSaving(true);
@@ -124,7 +173,11 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
         await client.savePackVersion({
           name: packName,
           text,
-          skills: skills.map(({ name, description, body }) => ({ name, description, body })),
+          skills: skills.map(({ name, description, body }) => ({
+            name,
+            description,
+            body,
+          })),
         });
         d.content = content;
       }
@@ -136,7 +189,10 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
       for (const k of [...d.uses]) {
         if (used.has(k)) continue;
         const [kind, ...rest] = k.split("/");
-        await client.detachPack({ name: packName, attachment: { kind, target: rest.join("/") } });
+        await client.detachPack({
+          name: packName,
+          attachment: { kind, target: rest.join("/") },
+        });
         d.uses.delete(k);
       }
       // Stays "saving" until the list has reloaded: the editor then remounts
@@ -173,7 +229,11 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
             className="input input-sm input-bordered flex-1 font-mono"
           />
         )}
-        {pack && pack.latestVersion > 0 && <span className="badge badge-sm badge-ghost">v{pack.latestVersion}</span>}
+        {pack && pack.latestVersion > 0 && (
+          <span className="badge badge-sm badge-ghost">
+            v{pack.latestVersion}
+          </span>
+        )}
       </div>
 
       <section className="flex flex-col gap-1.5">
@@ -193,14 +253,20 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
       <section className="flex flex-col gap-1.5">
         <div className="flex items-center">
           <h4 className="text-sm font-medium flex-1">
-            2. Skills <span className="text-dim font-normal">(optional, used when relevant)</span>
+            2. Skills{" "}
+            <span className="text-dim font-normal">
+              (optional, used when relevant)
+            </span>
           </h4>
           <button
             type="button"
             className="btn btn-xs"
             onClick={() => {
               const id = nextSkillId++;
-              setSkills((l) => [...l, { id, name: "", description: "", body: "" }]);
+              setSkills((l) => [
+                ...l,
+                { id, name: "", description: "", body: "" },
+              ]);
               setEditing(id);
             }}
           >
@@ -213,18 +279,32 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
             <SkillEditor
               key={s.id}
               skill={s}
-              onChange={(next) => setSkills((l) => l.map((x) => (x.id === s.id ? next : x)))}
+              onChange={(next) =>
+                setSkills((l) => l.map((x) => (x.id === s.id ? next : x)))
+              }
               onDone={() => setEditing(null)}
               onRemove={() => removeSkill(s.id)}
             />
           ) : (
             <div key={s.id} className="flex items-center gap-2 text-sm">
               <span className="font-mono">{s.name || "(unnamed)"}</span>
-              <span className="text-dim flex-1 truncate">— {s.description || "no description"}</span>
-              <button type="button" className="btn btn-xs btn-ghost" aria-label={`edit skill ${s.name}`} onClick={() => setEditing(s.id)}>
+              <span className="text-dim flex-1 truncate">
+                — {s.description || "no description"}
+              </span>
+              <button
+                type="button"
+                className="btn btn-xs btn-ghost"
+                aria-label={`edit skill ${s.name}`}
+                onClick={() => setEditing(s.id)}
+              >
                 ✎
               </button>
-              <button type="button" className="btn btn-xs btn-ghost" aria-label={`remove skill ${s.name}`} onClick={() => removeSkill(s.id)}>
+              <button
+                type="button"
+                className="btn btn-xs btn-ghost"
+                aria-label={`remove skill ${s.name}`}
+                onClick={() => removeSkill(s.id)}
+              >
                 ✕
               </button>
             </div>
@@ -238,12 +318,18 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
           {uses.map((u) => (
             <span key={keyOf(u)} className="badge gap-1">
               {labelOf(u)}
-              {u.target !== ALL && <span className="text-dim">{u.kind === "repo" ? "repo" : "agent"}</span>}
+              {u.target !== ALL && (
+                <span className="text-dim">
+                  {u.kind === "repo" ? "repo" : "agent"}
+                </span>
+              )}
               <button
                 type="button"
                 aria-label={`stop using in ${labelOf(u)}`}
                 className="hover:text-error"
-                onClick={() => setUses((l) => l.filter((x) => keyOf(x) !== keyOf(u)))}
+                onClick={() =>
+                  setUses((l) => l.filter((x) => keyOf(x) !== keyOf(u)))
+                }
               >
                 ✕
               </button>
@@ -254,13 +340,16 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
             value=""
             onChange={(e) => {
               const [kind, ...rest] = e.target.value.split("/");
-              if (rest.length) setUses((l) => [...l, { kind, target: rest.join("/") }]);
+              if (rest.length)
+                setUses((l) => [...l, { kind, target: rest.join("/") }]);
             }}
             className="select select-sm select-bordered"
           >
             <option value="">+ add agent or repo</option>
             <optgroup label="Agents">
-              {!used.has(`definition/${ALL}`) && <option value={`definition/${ALL}`}>all agents</option>}
+              {!used.has(`definition/${ALL}`) && (
+                <option value={`definition/${ALL}`}>all agents</option>
+              )}
               {targets.definition
                 .filter((t) => !used.has(`definition/${t}`))
                 .map((t) => (
@@ -270,7 +359,9 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
                 ))}
             </optgroup>
             <optgroup label="Repos">
-              {!used.has(`repo/${ALL}`) && <option value={`repo/${ALL}`}>all repos</option>}
+              {!used.has(`repo/${ALL}`) && (
+                <option value={`repo/${ALL}`}>all repos</option>
+              )}
               {targets.repo
                 .filter((t) => !used.has(`repo/${t}`))
                 .map((t) => (
@@ -281,20 +372,37 @@ function PackEditor({ pack, targets, onBack, onSaved, onRequestDelete }: {
             </optgroup>
           </select>
         </div>
-        {uses.length === 0 && <p className="text-xs text-dim">Not used anywhere yet: saving keeps it, but no agent loads it.</p>}
+        {uses.length === 0 && (
+          <p className="text-xs text-dim">
+            Not used anywhere yet: saving keeps it, but no agent loads it.
+          </p>
+        )}
       </section>
 
-      {!skillsNamed && <p className="text-xs text-warning">Every skill needs a name before saving.</p>}
+      {!skillsNamed && (
+        <p className="text-xs text-warning">
+          Every skill needs a name before saving.
+        </p>
+      )}
       <InlineError message={error} />
 
       <div className="flex items-center gap-3 pt-2 border-t border-base-content/10">
         {pack && (
-          <button type="button" className="link link-error text-xs" onClick={() => onRequestDelete(pack)}>
+          <button
+            type="button"
+            className="link link-error text-xs"
+            onClick={() => onRequestDelete(pack)}
+          >
             delete pack
           </button>
         )}
         <span className="flex-1" />
-        <button type="button" className="btn btn-sm btn-primary" disabled={!canSave} onClick={save}>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={!canSave}
+          onClick={save}
+        >
           {saving ? "Saving…" : "Save — applies at next start"}
         </button>
       </div>
@@ -312,10 +420,17 @@ export function PacksPanel() {
   const [pendingDelete, setPendingDelete] = useState<Pack | null>(null);
 
   function load() {
-    return Promise.all([client.listPacks({}), client.listDefinitions({}), client.listRepos({})])
+    return Promise.all([
+      client.listPacks({}),
+      client.listDefinitions({}),
+      client.listRepos({}),
+    ])
       .then(([p, d, r]) => {
         setPacks(p.packs);
-        setTargets({ definition: d.definitions.map((x) => x.name), repo: activeRepos(r.repos).map((x) => x.name) });
+        setTargets({
+          definition: d.definitions.map((x) => x.name),
+          repo: activeRepos(r.repos).map((x) => x.name),
+        });
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoaded(true));
@@ -339,7 +454,8 @@ export function PacksPanel() {
     }
   }
 
-  const current = typeof open === "string" ? packs.find((p) => p.name === open) : undefined;
+  const current =
+    typeof open === "string" ? packs.find((p) => p.name === open) : undefined;
 
   return (
     <>
@@ -347,12 +463,17 @@ export function PacksPanel() {
         <div className="flex flex-col">
           <div className="flex items-center mb-1">
             <h3 className="font-semibold text-base flex-1">Packs</h3>
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => setOpen(null)}>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() => setOpen(null)}
+            >
               + New pack
             </button>
           </div>
           <p className="text-xs text-dim mb-3">
-            Instructions and skills an agent loads every time it starts. Fleet-wide rules change by pull request.
+            Instructions and skills an agent loads every time it starts.
+            Fleet-wide rules change by pull request.
           </p>
           {packs.map((p) => (
             <button
@@ -362,20 +483,32 @@ export function PacksPanel() {
               className="flex items-center gap-3 py-2.5 px-1 border-b border-base-content/5 last:border-0 text-left hover:bg-base-content/5"
             >
               <span className="font-medium font-mono">{p.name}</span>
-              <span className="text-xs text-dim w-8">{p.latestVersion ? `v${p.latestVersion}` : "—"}</span>
+              <span className="text-xs text-dim w-8">
+                {p.latestVersion ? `v${p.latestVersion}` : "—"}
+              </span>
               <span className="text-xs text-dim flex-1 truncate">
-                {p.attachments.length ? `used by: ${p.attachments.map(labelOf).join(", ")}` : "not used yet"}
+                {p.attachments.length
+                  ? `used by: ${p.attachments.map(labelOf).join(", ")}`
+                  : "not used yet"}
               </span>
               <span className="text-dim">›</span>
             </button>
           ))}
-          {packs.length === 0 && <p className="text-sm text-dim py-2">{loaded ? "No packs yet." : "Loading…"}</p>}
+          {packs.length === 0 && (
+            <p className="text-sm text-dim py-2">
+              {loaded ? "No packs yet." : "Loading…"}
+            </p>
+          )}
           <InlineError message={error} />
         </div>
       ) : (
         <PackEditor
           // Remounts on the server's state after every save.
-          key={current ? `${current.name}@${current.latestVersion}/${current.attachments.map((a) => a.kind + a.target).join(",")}` : "new"}
+          key={
+            current
+              ? `${current.name}@${current.latestVersion}/${current.attachments.map((a) => a.kind + a.target).join(",")}`
+              : "new"
+          }
           pack={current ?? null}
           targets={targets}
           onBack={() => setOpen(undefined)}

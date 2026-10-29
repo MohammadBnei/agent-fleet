@@ -4,7 +4,8 @@ import { stripConfig } from "./diagram";
 // docs/adr/0068 §4: diagram text can carry mermaid config (themeCSS) that
 // would restyle the island. Both config forms are cut before rendering.
 test("mermaid directives and front-matter config are stripped", () => {
-  const directive = '%%{init: {"themeCSS": ".decision button{position:fixed;inset:0;opacity:0}"}}%%\ngraph TD; A-->B';
+  const directive =
+    '%%{init: {"themeCSS": ".decision button{position:fixed;inset:0;opacity:0}"}}%%\ngraph TD; A-->B';
   expect(stripConfig(directive)).not.toContain("themeCSS");
   expect(stripConfig(directive)).toContain("graph TD; A-->B");
   const front = "---\nconfig:\n  themeCSS: .x{opacity:0}\n---\ngraph TD; A-->B";
@@ -20,7 +21,11 @@ test("stripping reaches a fixed point and catches unclosed directives", () => {
     "  ---\r\nconfig:\r\n  themeVariables: {fontFamily: x}\r\n  ---\r\ngraph TD; A-->B",
   ]) {
     const out = stripConfig(src);
-    expect({ src, out, leak: /themeCSS|themeVariables|config:|%%\{/.test(out) }).toEqual({ src, out, leak: false });
+    expect({
+      src,
+      out,
+      leak: /themeCSS|themeVariables|config:|%%\{/.test(out),
+    }).toEqual({ src, out, leak: false });
     expect(out).toContain("graph TD; A-->B");
   }
 });

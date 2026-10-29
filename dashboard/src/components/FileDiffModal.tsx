@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Modal } from "./Modal";
-import { ToolInputView } from "./ToolInputView";
-import { DiffLines } from "./DiffLines";
-import type { Line } from "./ToolInputView";
-import { fileEdits } from "../transcript";
 import { client } from "../connectClient";
 import { GetFileDiffResponse_Status } from "../gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
+import { fileEdits } from "../transcript";
+import { DiffLines } from "./DiffLines";
+import { Modal } from "./Modal";
+import type { Line } from "./ToolInputView";
+import { ToolInputView } from "./ToolInputView";
 
 // What the CHANGES panel's `+12 −3` actually was. Same renderer the feed uses
 // when you expand an Edit — ToolInputView already turns Edit's old_string/
@@ -38,7 +38,11 @@ type Fetched =
   | { state: "timeout" }
   | { state: "error"; message: string };
 
-function useLiveDiff(sessionId: string, path: string | null, enabled: boolean): Fetched | null {
+function useLiveDiff(
+  sessionId: string,
+  path: string | null,
+  enabled: boolean,
+): Fetched | null {
   const [fetched, setFetched] = useState<Fetched | null>(null);
 
   useEffect(() => {
@@ -66,7 +70,8 @@ function useLiveDiff(sessionId: string, path: string | null, enabled: boolean): 
             return;
           default:
             // PENDING: armed, waiting on the pod's next tick.
-            if (Date.now() - startedAt > GIVE_UP_MS) setFetched({ state: "timeout" });
+            if (Date.now() - startedAt > GIVE_UP_MS)
+              setFetched({ state: "timeout" });
             else timer = setTimeout(ask, POLL_MS);
         }
       } catch (err) {
@@ -117,9 +122,12 @@ export function unifiedToLines(diff: string): Line[] {
       continue;
     }
     if (raw.startsWith("+")) out.push({ kind: "add", text: raw.slice(1) });
-    else if (raw.startsWith("-")) out.push({ kind: "remove", text: raw.slice(1) });
-    else if (raw.startsWith(" ")) out.push({ kind: "context", text: raw.slice(1) });
-    else if (raw.startsWith("\\")) continue; // "\ No newline at end of file"
+    else if (raw.startsWith("-"))
+      out.push({ kind: "remove", text: raw.slice(1) });
+    else if (raw.startsWith(" "))
+      out.push({ kind: "context", text: raw.slice(1) });
+    else if (raw.startsWith("\\"))
+      continue; // "\ No newline at end of file"
     else if (raw !== "") out.push({ kind: "context", text: raw });
   }
   return out;
@@ -142,22 +150,34 @@ export function FileDiffModal({
   // Only ask the pod when the transcript has nothing. A file the agent wrote
   // with Edit/Write is fully answerable offline, and every such open would
   // otherwise cost a poll and up to 10s of latency for a diff already on hand.
-  const live = useLiveDiff(sessionId, path, path !== null && edits.length === 0);
+  const live = useLiveDiff(
+    sessionId,
+    path,
+    path !== null && edits.length === 0,
+  );
 
   return (
     <Modal open={path !== null} onClose={onClose} boxClassName="max-w-4xl">
       <div className="flex flex-col gap-3">
         <div className="flex items-baseline gap-2 min-w-0">
-          <span className="text-2xs tracking-[0.12em] text-dim2 flex-none">DIFF</span>
-          <span className="text-sm text-base-content min-w-0 break-all">{path}</span>
+          <span className="text-2xs tracking-[0.12em] text-dim2 flex-none">
+            DIFF
+          </span>
+          <span className="text-sm text-base-content min-w-0 break-all">
+            {path}
+          </span>
           {edits.length > 1 && (
-            <span className="text-xs text-dim2 flex-none ml-auto">{edits.length} edits</span>
+            <span className="text-xs text-dim2 flex-none ml-auto">
+              {edits.length} edits
+            </span>
           )}
           {edits.length === 0 && live?.state === "ready" && (
             // Say where this one came from. It is not the same claim as the
             // replayed-tool-input diff above: this is the working tree as git
             // sees it right now, not a record of a decision the agent made.
-            <span className="text-xs text-dim2 flex-none ml-auto">from git</span>
+            <span className="text-xs text-dim2 flex-none ml-auto">
+              from git
+            </span>
           )}
         </div>
         <div className="max-h-[70vh] overflow-auto flex flex-col gap-4">
@@ -165,7 +185,10 @@ export function FileDiffModal({
             <LiveDiff fetched={live} />
           ) : (
             edits.map((e, i) => (
-              <div key={String(e.seq)} className="flex flex-col gap-1.5 min-w-0">
+              <div
+                key={String(e.seq)}
+                className="flex flex-col gap-1.5 min-w-0"
+              >
                 {edits.length > 1 && (
                   <span className="text-2xs tracking-[0.1em] text-dim2">
                     {e.tool.toUpperCase()} {i + 1} OF {edits.length}
@@ -186,14 +209,18 @@ export function FileDiffModal({
 // which was a guess about the cause presented as fact, and on a torn-down
 // session it was the wrong guess.
 function LiveDiff({ fetched }: { fetched: Fetched | null }) {
-  const note = (text: string) => <div className="text-sm text-dim2 leading-[1.6]">{text}</div>;
+  const note = (text: string) => (
+    <div className="text-sm text-dim2 leading-[1.6]">{text}</div>
+  );
   switch (fetched?.state) {
     case "ready":
       // 40 rather than DiffLines' 4-line default: this is the modal a human
       // opened to read a whole file's change, not a preview beside a decision.
       return <DiffLines lines={unifiedToLines(fetched.diff)} maxLines={40} />;
     case "loading":
-      return note("Asking the session's pod for this diff… (up to ~10s — it answers on its own telemetry tick)");
+      return note(
+        "Asking the session's pod for this diff… (up to ~10s — it answers on its own telemetry tick)",
+      );
     case "empty":
       return note(
         "git reports no change for this file right now. The line counts came from an earlier snapshot — the change has since been committed or reverted.",
@@ -203,7 +230,9 @@ function LiveDiff({ fetched }: { fetched: Fetched | null }) {
         "This session has no live pod, and the working tree is only readable from inside one. The line counts are the last snapshot its sidecar pushed.",
       );
     case "timeout":
-      return note("The session's pod did not answer. It may be busy or shutting down — reopen this file to ask again.");
+      return note(
+        "The session's pod did not answer. It may be busy or shutting down — reopen this file to ask again.",
+      );
     case "error":
       return note(`Could not fetch this diff: ${fetched.message}`);
     default:

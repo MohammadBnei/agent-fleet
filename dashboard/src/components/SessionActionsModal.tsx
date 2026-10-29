@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { useBusyAction } from "../useBusyAction";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
-import { Modal } from "./Modal";
-import { InlineError } from "./InlineError";
-import { ActionsMenu } from "./ActionsMenu";
-import { AutoModeConfirm } from "./AutoModeConfirm";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { sessionLabel } from "../sessionLabel";
 import { shortId } from "../sessionState";
+import { useBusyAction } from "../useBusyAction";
+import { ActionsMenu } from "./ActionsMenu";
+import { AutoModeConfirm } from "./AutoModeConfirm";
+import { InlineError } from "./InlineError";
+import { Modal } from "./Modal";
 
 // Interrupt / Stop / Warm / Archive / Mode, from a list row.
 //
@@ -69,7 +69,9 @@ export function SessionActionsModal({
                 where it lives now, with room to be labelled and to show more of
                 itself. */}
             <div className="flex flex-col gap-1 min-w-0">
-              <span className="text-sm font-semibold break-words">{sessionLabel(session)}</span>
+              <span className="text-sm font-semibold break-words">
+                {sessionLabel(session)}
+              </span>
               <span className="text-2xs text-dim2 break-all">
                 {session.repo} · #{shortId(session.id)}
               </span>
@@ -116,7 +118,15 @@ export function SessionActionsModal({
         onCancel={() => setAutoOpen(false)}
         onConfirm={() => {
           setAutoOpen(false);
-          if (session) run(() => client.setPermissionMode({ sessionId: session.id, mode: "auto" }), "action:mode");
+          if (session)
+            run(
+              () =>
+                client.setPermissionMode({
+                  sessionId: session.id,
+                  mode: "auto",
+                }),
+              "action:mode",
+            );
         }}
       />
     </>

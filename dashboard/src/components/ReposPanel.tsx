@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { Repo, SyncRepoResponse } from "../gen/agentfleet/v1/dashboard_pb";
+import {
+  filterRepos,
+  isNew,
+  keepShown,
+  ownerOf,
+  type RepoFilter,
+  type RepoStatus,
+  toggleAll,
+} from "../repoFilter";
 import { useToggleSet } from "../useToggleSet";
-import { filterRepos, isNew, keepShown, ownerOf, toggleAll, type RepoFilter, type RepoStatus } from "../repoFilter";
 import { ConfirmModal } from "./ConfirmModal";
 import { InlineError } from "./InlineError";
 
@@ -44,7 +52,18 @@ type SyncState = { text: string; failed: boolean };
 // A bulk deactivation past this many repos asks first.
 const CONFIRM_OVER = 10;
 
-function RepoRow({ repo, isNewRepo, selected, onSelect, onActive, writing, onSync, syncing, busy, sync }: {
+function RepoRow({
+  repo,
+  isNewRepo,
+  selected,
+  onSelect,
+  onActive,
+  writing,
+  onSync,
+  syncing,
+  busy,
+  sync,
+}: {
   repo: Repo;
   isNewRepo: boolean;
   // An active write is in flight: the switch waits for its reload.
@@ -63,47 +82,95 @@ function RepoRow({ repo, isNewRepo, selected, onSelect, onActive, writing, onSyn
   sync: SyncState | undefined;
 }) {
   return (
-    <div className={`py-1 border-b border-base-content/5 last:border-0 ${repo.active ? "" : "opacity-60"}`}>
-    <div className="flex items-center gap-2">
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={onSelect}
-        aria-label={`select ${repo.name}`}
-        className="checkbox checkbox-xs flex-none"
-      />
-      <input
-        type="checkbox"
-        role="switch"
-        checked={repo.active}
-        onChange={(e) => onActive(e.target.checked)}
-        disabled={writing}
-        aria-label={`${repo.name} active`}
-        title={repo.active ? "Active: new sessions allowed" : "Inactive: no new sessions"}
-        className="toggle toggle-xs toggle-success flex-none"
-      />
-      <span className="text-sm font-medium w-36 truncate flex-none" title={repo.name}>{repo.name}</span>
-      <span className="text-xs text-dim flex-1 min-w-0 truncate" title={repo.url}>{repo.fullName || repo.url}</span>
-      {isNewRepo && <span className="badge badge-sm badge-info flex-none" title="Seen by the sync in the last 7 days">new</span>}
-      {repo.clusterAccess && <span className="badge badge-sm badge-warning flex-none" title="Sessions get the kubectl shim (docs/adr/0037)">cluster</span>}
-      <span className="text-xs flex-none hidden sm:inline">{repo.baseBranch || "main"}</span>
-      {repo.image && <span className="text-xs text-dim w-32 truncate flex-none hidden sm:inline" title={repo.image}>{repo.image}</span>}
-      {/* Refreshes the provisioner's clone cache for this repo. Nothing else
+    <div
+      className={`py-1 border-b border-base-content/5 last:border-0 ${repo.active ? "" : "opacity-60"}`}
+    >
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onSelect}
+          aria-label={`select ${repo.name}`}
+          className="checkbox checkbox-xs flex-none"
+        />
+        <input
+          type="checkbox"
+          role="switch"
+          checked={repo.active}
+          aria-checked={repo.active}
+          onChange={(e) => onActive(e.target.checked)}
+          disabled={writing}
+          aria-label={`${repo.name} active`}
+          title={
+            repo.active
+              ? "Active: new sessions allowed"
+              : "Inactive: no new sessions"
+          }
+          className="toggle toggle-xs toggle-success flex-none"
+        />
+        <span
+          className="text-sm font-medium w-36 truncate flex-none"
+          title={repo.name}
+        >
+          {repo.name}
+        </span>
+        <span
+          className="text-xs text-dim flex-1 min-w-0 truncate"
+          title={repo.url}
+        >
+          {repo.fullName || repo.url}
+        </span>
+        {isNewRepo && (
+          <span
+            className="badge badge-sm badge-info flex-none"
+            title="Seen by the sync in the last 7 days"
+          >
+            new
+          </span>
+        )}
+        {repo.clusterAccess && (
+          <span
+            className="badge badge-sm badge-warning flex-none"
+            title="Sessions get the kubectl shim (docs/adr/0037)"
+          >
+            cluster
+          </span>
+        )}
+        <span className="text-xs flex-none hidden sm:inline">
+          {repo.baseBranch || "main"}
+        </span>
+        {repo.image && (
+          <span
+            className="text-xs text-dim w-32 truncate flex-none hidden sm:inline"
+            title={repo.image}
+          >
+            {repo.image}
+          </span>
+        )}
+        {/* Refreshes the provisioner's clone cache for this repo. Nothing else
           advances it between pod creations, so a new repo has no cache at all
           until its first session pays for a cold clone. */}
-      <button
-        type="button"
-        onClick={() => onSync(repo)}
-        disabled={busy || !repo.active}
-        title={repo.active ? "Fetch this repo into the fleet's shared clone cache" : "Inactive repos are not synced"}
-        className="btn btn-xs flex-none"
-      >
-        {syncing ? "Syncing…" : "Sync"}
-      </button>
-    </div>
-    {sync && (
-      <p className={`text-xs mt-1 ${sync.failed ? "text-error" : "text-dim"}`}>{sync.text}</p>
-    )}
+        <button
+          type="button"
+          onClick={() => onSync(repo)}
+          disabled={busy || !repo.active}
+          title={
+            repo.active
+              ? "Fetch this repo into the fleet's shared clone cache"
+              : "Inactive repos are not synced"
+          }
+          className="btn btn-xs flex-none"
+        >
+          {syncing ? "Syncing…" : "Sync"}
+        </button>
+      </div>
+      {sync && (
+        <p
+          className={`text-xs mt-1 ${sync.failed ? "text-error" : "text-dim"}`}
+        >
+          {sync.text}
+        </p>
+      )}
     </div>
   );
 }
@@ -113,15 +180,26 @@ export function ReposPanel() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<Record<string, SyncState>>({});
-  const [filter, setFilter] = useState<RepoFilter>({ query: "", owner: "", status: "all" });
-  const { set: selected, toggle: select, setSet: setSelected, clear: clearSelected } = useToggleSet();
+  const [filter, setFilter] = useState<RepoFilter>({
+    query: "",
+    owner: "",
+    status: "all",
+  });
+  const {
+    set: selected,
+    toggle: select,
+    setSet: setSelected,
+    clear: clearSelected,
+  } = useToggleSet();
   // A count, not a flag: two overlapping writes must not end "writing" when
   // the first one finishes.
   const [writes, setWrites] = useState(0);
   const writing = writes > 0;
   // Only the latest reload may land: a slow one must not overwrite a newer list.
   const loadSeq = useRef(0);
-  const [pendingDeactivate, setPendingDeactivate] = useState<string[] | null>(null);
+  const [pendingDeactivate, setPendingDeactivate] = useState<string[] | null>(
+    null,
+  );
 
   function load() {
     const seq = ++loadSeq.current;
@@ -146,7 +224,10 @@ export function ReposPanel() {
 
   // Mount time: "new" is a 7-day window, so a stale clock costs nothing.
   const [now] = useState(() => Date.now());
-  const owners = useMemo(() => [...new Set(repos.map(ownerOf).filter(Boolean))].sort(), [repos]);
+  const owners = useMemo(
+    () => [...new Set(repos.map(ownerOf).filter(Boolean))].sort(),
+    [repos],
+  );
   const shown = filterRepos(repos, filter, now);
   // Bulk actions act on what is both selected and shown: a row the filter
   // hides is never switched off by a click the operator could not see.
@@ -180,9 +261,12 @@ export function ReposPanel() {
 
   // Only rows that would actually change are sent, and counted for the confirm.
   function bulk(active: boolean) {
-    const changing = picked.filter((r) => r.active !== active).map((r) => r.name);
+    const changing = picked
+      .filter((r) => r.active !== active)
+      .map((r) => r.name);
     if (changing.length === 0) clearSelected();
-    else if (!active && changing.length > CONFIRM_OVER) setPendingDeactivate(changing);
+    else if (!active && changing.length > CONFIRM_OVER)
+      setPendingDeactivate(changing);
     else void setActive(changing, active);
   }
 
@@ -193,10 +277,16 @@ export function ReposPanel() {
     setSyncing(repo.name);
     try {
       const res = await client.syncRepo({ name: repo.name });
-      setSyncState((prev) => ({ ...prev, [repo.name]: { text: syncLabel(res), failed: false } }));
+      setSyncState((prev) => ({
+        ...prev,
+        [repo.name]: { text: syncLabel(res), failed: false },
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setSyncState((prev) => ({ ...prev, [repo.name]: { text: msg, failed: true } }));
+      setSyncState((prev) => ({
+        ...prev,
+        [repo.name]: { text: msg, failed: true },
+      }));
     } finally {
       setSyncing(null);
     }
@@ -219,7 +309,8 @@ export function ReposPanel() {
           <div className="flex items-baseline gap-2 min-w-0">
             <h3 className="font-semibold text-base">Repos</h3>
             <span className="text-xs text-dim truncate">
-              {activeCount} active · {repos.length - activeCount} inactive · {newCount} new
+              {activeCount} active · {repos.length - activeCount} inactive ·{" "}
+              {newCount} new
             </span>
           </div>
           <button
@@ -244,13 +335,27 @@ export function ReposPanel() {
             aria-label="search repos"
             className={`${field} w-auto flex-1 min-w-0`}
           />
-          <select value={filter.owner} onChange={(e) => updateFilter({ owner: e.target.value })} aria-label="owner" className="select select-sm select-bordered w-auto flex-none">
+          <select
+            value={filter.owner}
+            onChange={(e) => updateFilter({ owner: e.target.value })}
+            aria-label="owner"
+            className="select select-sm select-bordered w-auto flex-none"
+          >
             <option value="">all owners</option>
             {owners.map((o) => (
-              <option key={o} value={o}>{o}</option>
+              <option key={o} value={o}>
+                {o}
+              </option>
             ))}
           </select>
-          <select value={filter.status} onChange={(e) => updateFilter({ status: e.target.value as RepoStatus })} aria-label="status" className="select select-sm select-bordered w-auto flex-none">
+          <select
+            value={filter.status}
+            onChange={(e) =>
+              updateFilter({ status: e.target.value as RepoStatus })
+            }
+            aria-label="status"
+            className="select select-sm select-bordered w-auto flex-none"
+          >
             <option value="all">all</option>
             <option value="active">active</option>
             <option value="inactive">inactive</option>
@@ -268,12 +373,24 @@ export function ReposPanel() {
             className="checkbox checkbox-xs flex-none"
           />
           <span className="text-xs text-dim flex-1">
-            {picked.length > 0 ? `${picked.length} of ${shown.length} selected` : `${shown.length} shown`}
+            {picked.length > 0
+              ? `${picked.length} of ${shown.length} selected`
+              : `${shown.length} shown`}
           </span>
-          <button type="button" className="btn btn-xs" disabled={writing || picked.length === 0} onClick={() => bulk(true)}>
+          <button
+            type="button"
+            className="btn btn-xs"
+            disabled={writing || picked.length === 0}
+            onClick={() => bulk(true)}
+          >
             Activate
           </button>
-          <button type="button" className="btn btn-xs" disabled={writing || picked.length === 0} onClick={() => bulk(false)}>
+          <button
+            type="button"
+            className="btn btn-xs"
+            disabled={writing || picked.length === 0}
+            onClick={() => bulk(false)}
+          >
             Deactivate
           </button>
         </div>
@@ -295,14 +412,22 @@ export function ReposPanel() {
             />
           ))}
           {shown.length === 0 && (
-            <p className="text-sm text-dim py-2">{!loaded ? "Loading…" : repos.length === 0 ? "No repos yet." : "No repos match."}</p>
+            <p className="text-sm text-dim py-2">
+              {!loaded
+                ? "Loading…"
+                : repos.length === 0
+                  ? "No repos yet."
+                  : "No repos match."}
+            </p>
           )}
         </div>
 
         <p className="text-xs text-dim mt-3 pt-3 border-t border-base-content/10">
-          To add a repo, invite <code>argocd-ukubi-bot</code> as a collaborator; it shows up within two minutes,
-          active. Remove the bot to remove it. An inactive repo starts no new session; its existing sessions keep
-          working. Name, base branch, image and cluster access are set in infra-bootstrap's{" "}
+          To add a repo, invite <code>argocd-ukubi-bot</code> as a collaborator;
+          it shows up within two minutes, active. Remove the bot to remove it.
+          An inactive repo starts no new session; its existing sessions keep
+          working. Name, base branch, image and cluster access are set in
+          infra-bootstrap's{" "}
           <code>gitops/bootstrap/fleet-repo-overrides.yaml</code>.
         </p>
 

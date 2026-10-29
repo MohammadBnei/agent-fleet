@@ -1,12 +1,16 @@
-import { relativeTime } from "../relativeTime";
 import { useCallback, useEffect, useState } from "react";
 import { agentErrorText } from "../agentErrors";
-import { client } from "../connectClient";
-import { activeRepos } from "../repoFilter";
-import type { Schedule, Proposal, Repo } from "../gen/agentfleet/v1/dashboard_pb";
-import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { InlineError } from "../components/InlineError";
 import { Modal } from "../components/Modal";
+import { client } from "../connectClient";
+import type {
+  Proposal,
+  Repo,
+  Schedule,
+} from "../gen/agentfleet/v1/dashboard_pb";
+import { relativeTime } from "../relativeTime";
+import { activeRepos } from "../repoFilter";
 import { useMediaQuery } from "../useMediaQuery";
 
 // Scheduled work as a top-level view rather than a header modal (docs/adr/0035
@@ -56,7 +60,12 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
   let alert: AlertJSON | null = null;
   try {
     const parsed: unknown = JSON.parse(payload || "{}");
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Object.keys(parsed).length > 0
+    ) {
       alert = parsed as AlertJSON;
     }
   } catch {
@@ -64,31 +73,48 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
   }
 
   if (!alert) {
-    return body ? <div className="text-xs text-dim whitespace-pre-wrap break-words">{body}</div> : null;
+    return body ? (
+      <div className="text-xs text-dim whitespace-pre-wrap break-words">
+        {body}
+      </div>
+    ) : null;
   }
 
   // Same reasoning as the typeof guards below: these maps are string->string
   // in the Go decode, but nothing revalidates the JSONB column on the way out.
   const strings = (v: unknown): [string, string][] =>
     v && typeof v === "object" && !Array.isArray(v)
-      ? Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")
+      ? Object.entries(v).filter(
+          (e): e is [string, string] => typeof e[1] === "string",
+        )
       : [];
 
   const annotations = strings(alert.annotations);
   // summary and description first — they are the sentence a human reads to
   // decide — then whatever else the rule set, in name order so two renders of
   // the same alert do not reshuffle.
-  const rank = (k: string) => (k === "summary" ? 0 : k === "description" ? 1 : 2);
-  annotations.sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
+  const rank = (k: string) =>
+    k === "summary" ? 0 : k === "description" ? 1 : 2;
+  annotations.sort(
+    (a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]),
+  );
   const labels = strings(alert.labels).sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <div className="flex flex-col gap-1.5">
       {annotations.map(([k, v]) => (
-        <div key={k} className="text-xs text-text2 whitespace-pre-wrap break-words">
+        <div
+          key={k}
+          className="text-xs text-text2 whitespace-pre-wrap break-words"
+        >
           {k !== "summary" && <span className="text-dim2">{k}: </span>}
           {/^https?:\/\/\S+$/.test(v) ? (
-            <a href={v} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
+            <a
+              href={v}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary hover:underline break-all"
+            >
               {v}
             </a>
           ) : (
@@ -101,10 +127,15 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
           sentence above is what a human decides on; the labels are evidence. */}
       {labels.length > 0 && (
         <details className="text-2xs text-dim2">
-          <summary className="cursor-pointer py-0.5">{labels.length} labels</summary>
+          <summary className="cursor-pointer py-0.5">
+            {labels.length} labels
+          </summary>
           <div className="flex flex-wrap gap-1 mt-1">
             {labels.map(([k, v]) => (
-              <span key={k} className="border border-line px-1.5 py-0.5 break-all">
+              <span
+                key={k}
+                className="border border-line px-1.5 py-0.5 break-all"
+              >
                 {k}={v}
               </span>
             ))}
@@ -118,16 +149,27 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
           takes the whole tree down along with the dismiss button that would
           have cleared the bad row. */}
       <div className="flex flex-wrap items-center gap-2.5 text-2xs text-dim2">
-        {typeof alert.startsAt === "string" && <span title={alert.startsAt}>firing since {relativeTime(alert.startsAt) ?? "just now"}</span>}
+        {typeof alert.startsAt === "string" && (
+          <span title={alert.startsAt}>
+            firing since {relativeTime(alert.startsAt) ?? "just now"}
+          </span>
+        )}
         {typeof alert.generatorURL === "string" && (
-          <a href={alert.generatorURL} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
+          <a
+            href={alert.generatorURL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary hover:underline break-all"
+          >
             source query ▸
           </a>
         )}
       </div>
       {body && (
         <details className="text-xs text-dim">
-          <summary className="cursor-pointer text-dim2 py-1">what the agent will be sent</summary>
+          <summary className="cursor-pointer text-dim2 py-1">
+            what the agent will be sent
+          </summary>
           <div className="whitespace-pre-wrap break-words mt-1">{body}</div>
         </details>
       )}
@@ -193,7 +235,8 @@ function payload(s: Schedule) {
     prompt: s.prompt,
     cron: s.cron,
     intervalSeconds: s.intervalSeconds,
-    runAt: s.cron || s.intervalSeconds ? "" : new Date(s.nextRunAt).toISOString(),
+    runAt:
+      s.cron || s.intervalSeconds ? "" : new Date(s.nextRunAt).toISOString(),
   };
 }
 
@@ -213,7 +256,9 @@ function ScheduleForm({
   const [prompt, setPrompt] = useState(schedule?.prompt ?? "");
   const [mode, setMode] = useState<Mode>(modeOf(schedule));
   const [cron, setCron] = useState(schedule?.cron ?? "0 9 * * MON");
-  const [intervalSeconds, setIntervalSeconds] = useState(schedule?.intervalSeconds || 3600);
+  const [intervalSeconds, setIntervalSeconds] = useState(
+    schedule?.intervalSeconds || 3600,
+  );
   const [runAt, setRunAt] = useState(toLocalInput(schedule?.nextRunAt ?? ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -226,7 +271,9 @@ function ScheduleForm({
       .listRepos({})
       .then((res) => {
         setRepos(res.repos);
-        setRepo((current) => current || res.repos.find((r) => r.active)?.name || "");
+        setRepo(
+          (current) => current || res.repos.find((r) => r.active)?.name || "",
+        );
       })
       .catch((err: Error) => setError(err.message));
   }, []);
@@ -241,7 +288,14 @@ function ScheduleForm({
     };
     try {
       if (schedule) {
-        await client.updateSchedule({ id: schedule.id, name, repo, prompt, enabled: schedule.enabled, ...cadenceFields });
+        await client.updateSchedule({
+          id: schedule.id,
+          name,
+          repo,
+          prompt,
+          enabled: schedule.enabled,
+          ...cadenceFields,
+        });
       } else {
         await client.createSchedule({ name, repo, prompt, ...cadenceFields });
       }
@@ -259,10 +313,12 @@ function ScheduleForm({
 
   return (
     <Modal open onClose={onClose} boxClassName="max-w-lg">
-      <h3 className="text-base font-semibold mb-1">{schedule ? "Edit schedule" : "New schedule"}</h3>
+      <h3 className="text-base font-semibold mb-1">
+        {schedule ? "Edit schedule" : "New schedule"}
+      </h3>
       <p className="text-xs text-dim2 mb-3.5">
-        Work an agent runs on a cadence. Each run lands as a proposal you open — it still asks for permission before
-        any mutating action.
+        Work an agent runs on a cadence. Each run lands as a proposal you open —
+        it still asks for permission before any mutating action.
       </p>
       <div className="flex flex-col gap-2.5">
         <input
@@ -274,7 +330,12 @@ function ScheduleForm({
         />
         <label className="flex flex-col gap-1 text-xs text-dim2">
           repo
-          <select value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="repo" className={field}>
+          <select
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+            aria-label="repo"
+            className={field}
+          >
             {/* Active repos only, except the one an existing schedule already
                 targets: hiding it would silently retarget the schedule on save. */}
             {activeRepos(repos, schedule?.repo).map((r) => (
@@ -295,16 +356,28 @@ function ScheduleForm({
         <div className="flex gap-3.5 text-xs text-dim">
           {(["cron", "interval", "once"] as Mode[]).map((m) => (
             <label key={m} className="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" name="mode" checked={mode === m} onChange={() => setMode(m)} aria-label={m} />
+              <input
+                type="radio"
+                name="mode"
+                checked={mode === m}
+                onChange={() => setMode(m)}
+                aria-label={m}
+              />
               {m}
             </label>
           ))}
         </div>
         {mode === "cron" && (
           <div className="flex flex-col gap-1">
-            <input value={cron} onChange={(e) => setCron(e.target.value)} aria-label="cron expression" className={field} />
+            <input
+              value={cron}
+              onChange={(e) => setCron(e.target.value)}
+              aria-label="cron expression"
+              className={field}
+            />
             <span className="text-xs text-dim2">
-              5-field cron. Prefix <code>CRON_TZ=Europe/Paris </code> to pin a timezone — without one it is UTC.
+              5-field cron. Prefix <code>CRON_TZ=Europe/Paris </code> to pin a
+              timezone — without one it is UTC.
             </span>
           </div>
         )}
@@ -319,7 +392,8 @@ function ScheduleForm({
               className={`w-28 ${field}`}
             />
             <span className="text-xs text-dim2">
-              seconds between runs — {humanInterval(Math.max(60, intervalSeconds))} (minimum 60)
+              seconds between runs —{" "}
+              {humanInterval(Math.max(60, intervalSeconds))} (minimum 60)
             </span>
           </div>
         )}
@@ -332,7 +406,9 @@ function ScheduleForm({
               aria-label="run at"
               className={field}
             />
-            <span className="text-xs text-dim2">fires once, then pauses itself</span>
+            <span className="text-xs text-dim2">
+              fires once, then pauses itself
+            </span>
           </div>
         )}
         <InlineError message={error} />
@@ -353,7 +429,11 @@ function ScheduleForm({
           >
             {schedule ? "Save" : "Create"}
           </button>
-          <button type="button" onClick={onClose} className="border border-line px-4 py-2 text-sm text-dim">
+          <button
+            type="button"
+            onClick={onClose}
+            className="border border-line px-4 py-2 text-sm text-dim"
+          >
             Cancel
           </button>
         </div>
@@ -386,10 +466,16 @@ function scheduleActions(
   onDelete: () => void,
   busy: boolean,
 ) {
-  const btn = "border border-line px-2.5 py-1 text-xs text-dim hover:text-base-content disabled:opacity-50";
+  const btn =
+    "border border-line px-2.5 py-1 text-xs text-dim hover:text-base-content disabled:opacity-50";
   return (
     <>
-      <button type="button" disabled={busy} onClick={() => act(() => client.runScheduleNow({ id: s.id }))} className={btn}>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => act(() => client.runScheduleNow({ id: s.id }))}
+        className={btn}
+      >
         run now
       </button>
       <button type="button" onClick={onEdit} className={btn}>
@@ -398,7 +484,11 @@ function scheduleActions(
       <button
         type="button"
         disabled={busy}
-        onClick={() => act(() => client.updateSchedule({ ...payload(s), enabled: !s.enabled }))}
+        onClick={() =>
+          act(() =>
+            client.updateSchedule({ ...payload(s), enabled: !s.enabled }),
+          )
+        }
         className={btn}
       >
         {s.enabled ? "pause" : "resume"}
@@ -469,9 +559,20 @@ export function Schedules({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-4.5 pt-4 sm:pt-5 pb-6 flex flex-col gap-3.5">
-      <InlineError message={error} onRetry={load} onDismiss={() => setError(null)} />
+      <InlineError
+        message={error}
+        onRetry={load}
+        onDismiss={() => setError(null)}
+      />
       {(creating || editing) && (
-        <ScheduleForm schedule={editing} onClose={() => { setCreating(false); setEditing(null); }} onSaved={load} />
+        <ScheduleForm
+          schedule={editing}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+          onSaved={load}
+        />
       )}
       <ConfirmModal
         open={pendingDelete !== null}
@@ -490,8 +591,9 @@ export function Schedules({
         <h2 className="text-base font-semibold">Schedules</h2>
         {isDesktop && (
           <span className="text-xs text-dim2">
-            cron, interval or one-shot · a run lands below as a <span className="text-primary">proposal</span> and waits for
-            you to open it as a session
+            cron, interval or one-shot · a run lands below as a{" "}
+            <span className="text-primary">proposal</span> and waits for you to
+            open it as a session
           </span>
         )}
         <button
@@ -517,12 +619,16 @@ export function Schedules({
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="w-[7px] h-[7px] rounded-full bg-primary flex-none" />
             <span className="text-sm">
-              {proposals.length} proposed run{proposals.length === 1 ? "" : "s"} waiting for approval
+              {proposals.length} proposed run{proposals.length === 1 ? "" : "s"}{" "}
+              waiting for approval
             </span>
           </div>
           <div className="flex flex-col gap-2.5 mt-2.5">
             {proposals.map((p) => (
-              <div key={p.id} className="flex flex-col gap-1 border-t border-line pt-2.5 first:border-t-0 first:pt-0">
+              <div
+                key={p.id}
+                className="flex flex-col gap-1 border-t border-line pt-2.5 first:border-t-0 first:pt-0"
+              >
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {/* Its own line on a phone: at 390px the buttons beside it
                       left the title a ~90px column, and break-words then
@@ -530,7 +636,9 @@ export function Schedules({
                   <span className="text-sm min-w-0 basis-full sm:basis-0 sm:flex-1 break-words">
                     <span className="text-dim2">{p.repo}</span> {p.title}
                   </span>
-                  <span className="flex-none text-xs text-dim2 border border-line px-1.5">{p.source}</span>
+                  <span className="flex-none text-xs text-dim2 border border-line px-1.5">
+                    {p.source}
+                  </span>
                   <button
                     type="button"
                     disabled={busy}
@@ -541,7 +649,9 @@ export function Schedules({
                     // will be sent" below.
                     onClick={() =>
                       proposeAct(async () => {
-                        const res = await client.openFromProposal({ proposalId: p.id });
+                        const res = await client.openFromProposal({
+                          proposalId: p.id,
+                        });
                         if (res.session) onSelectSession(res.session.id);
                       })
                     }
@@ -555,7 +665,11 @@ export function Schedules({
                     // dismissProposal, not deleteSession — this used to pass a
                     // proposal id as a sessionId, which could only ever 404
                     // (or, worse, match an unrelated session).
-                    onClick={() => proposeAct(() => client.dismissProposal({ proposalId: p.id }))}
+                    onClick={() =>
+                      proposeAct(() =>
+                        client.dismissProposal({ proposalId: p.id }),
+                      )
+                    }
                     className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error disabled:opacity-50"
                   >
                     dismiss
@@ -568,13 +682,19 @@ export function Schedules({
         </div>
       )}
 
-      {loading && schedules.length === 0 && <div className="text-sm text-dim">Loading…</div>}
-      {!loading && schedules.length === 0 && <div className="text-sm text-dim2">Nothing scheduled.</div>}
+      {loading && schedules.length === 0 && (
+        <div className="text-sm text-dim">Loading…</div>
+      )}
+      {!loading && schedules.length === 0 && (
+        <div className="text-sm text-dim2">Nothing scheduled.</div>
+      )}
 
       {schedules.length > 0 &&
         (isDesktop ? (
           <div className="border border-line2">
-            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}>
+            <div
+              className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}
+            >
               <div />
               <div>SCHEDULE</div>
               <div>CADENCE</div>
@@ -594,7 +714,10 @@ export function Schedules({
                   <div className="text-base truncate">
                     {a.name} <span className="text-xs text-dim2">{a.repo}</span>
                   </div>
-                  <div className="text-xs text-dim2 mt-0.5 truncate" title={a.prompt}>
+                  <div
+                    className="text-xs text-dim2 mt-0.5 truncate"
+                    title={a.prompt}
+                  >
                     {a.prompt.split("\n")[0]}
                   </div>
                 </div>
@@ -602,7 +725,9 @@ export function Schedules({
                 <div className="min-w-0">
                   {a.lastRunAt ? (
                     <>
-                      <div className="text-sm text-text2">{relativeTime(a.lastRunAt) ?? "—"}</div>
+                      <div className="text-sm text-text2">
+                        {relativeTime(a.lastRunAt) ?? "—"}
+                      </div>
                       <div
                         className={`text-xs mt-0.5 truncate ${a.lastStatus.startsWith("error") ? "text-warning" : "text-dim2"}`}
                         title={a.lastStatus}
@@ -614,9 +739,19 @@ export function Schedules({
                     <span className="text-sm text-dim2">never</span>
                   )}
                 </div>
-                <div className="text-sm text-dim">{a.enabled ? relativeTime(a.nextRunAt, { future: true }) ?? "—" : "paused"}</div>
+                <div className="text-sm text-dim">
+                  {a.enabled
+                    ? (relativeTime(a.nextRunAt, { future: true }) ?? "—")
+                    : "paused"}
+                </div>
                 <div className="flex gap-1.5 justify-end flex-wrap">
-                  {scheduleActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}
+                  {scheduleActions(
+                    a,
+                    act,
+                    () => setEditing(a),
+                    () => setPendingDelete(a),
+                    busy,
+                  )}
                 </div>
               </div>
             ))}
@@ -626,7 +761,9 @@ export function Schedules({
             <div
               key={a.id}
               className={`border px-3.5 py-3 ${
-                a.lastStatus.startsWith("error") ? "border-orange-line bg-orange-bg" : "border-line2"
+                a.lastStatus.startsWith("error")
+                  ? "border-orange-line bg-orange-bg"
+                  : "border-line2"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -635,7 +772,9 @@ export function Schedules({
                   {a.name} <span className="text-xs text-dim2">{a.repo}</span>
                 </span>
                 <span className="text-xs text-dim2 ml-auto flex-none">
-                  {a.enabled ? relativeTime(a.nextRunAt, { future: true }) ?? "—" : "paused"}
+                  {a.enabled
+                    ? (relativeTime(a.nextRunAt, { future: true }) ?? "—")
+                    : "paused"}
                 </span>
               </div>
               <div className="text-xs text-dim mt-1.5 leading-[1.6]">
@@ -647,10 +786,18 @@ export function Schedules({
                 className={`text-xs mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}
                 title={a.lastStatus}
               >
-                {a.lastRunAt ? `last: ${relativeTime(a.lastRunAt) ?? "—"} · ${lastStatusLabel(a.lastStatus)}` : "never run"}
+                {a.lastRunAt
+                  ? `last: ${relativeTime(a.lastRunAt) ?? "—"} · ${lastStatusLabel(a.lastStatus)}`
+                  : "never run"}
               </div>
               <div className="flex gap-2 mt-2.5 flex-wrap">
-                {scheduleActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}
+                {scheduleActions(
+                  a,
+                  act,
+                  () => setEditing(a),
+                  () => setPendingDelete(a),
+                  busy,
+                )}
               </div>
             </div>
           ))

@@ -9,6 +9,8 @@
 // Lives here rather than inline because desktop and mobile each render the
 // same information from their own components: a fallback inlined in one is a
 // blank row in the other.
-export function sessionLabel(s: { title?: string; description?: string } | undefined | null): string {
+export function sessionLabel(
+  s: { title?: string; description?: string } | undefined | null,
+): string {
   return s?.title?.trim() || s?.description?.trim() || "untitled session";
 }

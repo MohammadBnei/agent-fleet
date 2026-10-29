@@ -5,7 +5,8 @@ import type { AgentErrorKey } from "../../dashboard/src/gen/agentfleet/v1/agent_
 // code (whose imports resolve from dashboard/, not installed in islands CI):
 // the one import from it is a type, gone at run time.
 
-export const isUnauthenticated = (err: unknown) => ConnectError.from(err).code === Code.Unauthenticated;
+export const isUnauthenticated = (err: unknown) =>
+  ConnectError.from(err).code === Code.Unauthenticated;
 
 // The fleet's error key (proto/agentfleet/v1/errors.proto, mountain plan/15 §4), or "": the ErrorKey detail's
 // field 1, read by hand, since the islands do not import the generated code (see above). Both of its fields are
@@ -29,7 +30,8 @@ export function errorKey(err: unknown): string {
       const tag = varint();
       const len = varint();
       if (tag < 0 || len < 0 || tag % 8 !== 2 || i + len > b.length) break; // not this message's shape
-      if (Math.floor(tag / 8) === 1) return new TextDecoder().decode(b.subarray(i, i + len));
+      if (Math.floor(tag / 8) === 1)
+        return new TextDecoder().decode(b.subarray(i, i + len));
       i += len;
     }
   }
@@ -48,13 +50,17 @@ const keyText: Record<Keyed, string> = {
 
 // The key's text, or "" for a key with none (server.internal, or one a newer core added).
 function textOf(key: string): string {
-  const name = key.startsWith("agent.") ? key.slice("agent.".length).toUpperCase() : "";
+  const name = key.startsWith("agent.")
+    ? key.slice("agent.".length).toUpperCase()
+    : "";
   return Object.hasOwn(keyText, name) ? keyText[name as Keyed] : "";
 }
 
 // stale: the thread's agent changed since it opened. The key says so; the words' prefix is read one release longer,
 // for a core from before the key.
-const stale = (e: ConnectError) => errorKey(e) === "agent.definition_changed" || e.rawMessage.includes("DEFINITION_CHANGED");
+const stale = (e: ConnectError) =>
+  errorKey(e) === "agent.definition_changed" ||
+  e.rawMessage.includes("DEFINITION_CHANGED");
 
 // AgentService's refusals (docs/adr/0066, 0067), said plainly: the key's text, else the code's, else the server's
 // own message.
@@ -79,4 +85,5 @@ export function errorText(err: unknown): string {
 export const isStale = (err: unknown) => stale(ConnectError.from(err));
 
 // Someone else answered first: the stream shows their answer.
-export const isAlreadyAnswered = (err: unknown) => ConnectError.from(err).code === Code.AlreadyExists;
+export const isAlreadyAnswered = (err: unknown) =>
+  ConnectError.from(err).code === Code.AlreadyExists;

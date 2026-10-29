@@ -7,7 +7,9 @@
   line-height: var(--ukubi-body-line);
   color: var(--ukubi-ink);
 }
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 /* A bounded box: header and composer stay put, the conversation scrolls
    between them. Hosts size it with --fleet-max-height. */
 .island {
@@ -21,25 +23,57 @@
   min-width: 0;
   max-height: var(--fleet-max-height, min(80vh, 44rem));
 }
-.island > header, .island > .composer { flex: none; }
+.island > header,
+.island > .composer {
+  flex: none;
+}
 .scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.scroll-inner { display: flex; flex-direction: column; gap: var(--ukubi-space-3); }
-.row { display: flex; flex-wrap: wrap; gap: var(--ukubi-space-2); align-items: center; }
-.grow { flex: 1 1 10rem; min-width: 0; }
-.pad { padding: var(--ukubi-space-4) 0; }
-.pad-x { padding: 0; }
-.stack { display: flex; flex-direction: column; gap: var(--ukubi-space-3); align-items: flex-start; }
-.muted { color: var(--ukubi-ink-muted); margin: 0; }
-.danger { color: var(--ukubi-danger); margin: 0; }
-p { margin: 0; }
+.scroll-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ukubi-space-3);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ukubi-space-2);
+  align-items: center;
+}
+.grow {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.pad {
+  padding: var(--ukubi-space-4) 0;
+}
+.pad-x {
+  padding: 0;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ukubi-space-3);
+  align-items: flex-start;
+}
+.muted {
+  color: var(--ukubi-ink-muted);
+  margin: 0;
+}
+.danger {
+  color: var(--ukubi-danger);
+  margin: 0;
+}
+p {
+  margin: 0;
+}
 
-
-select, textarea {
+select,
+textarea {
   font: inherit;
   color: var(--ukubi-ink);
   background: var(--ukubi-surface-sunken);
@@ -48,11 +82,17 @@ select, textarea {
   padding: var(--ukubi-space-2) var(--ukubi-space-3);
 }
 textarea {
-  resize: none; width: 100%; min-width: 0;
+  resize: none;
+  width: 100%;
+  min-width: 0;
   /* One line that grows with the text, up to ~8 lines. */
-  field-sizing: content; min-height: calc(var(--ukubi-body-line) + 2 * var(--ukubi-space-2) + 2px); max-height: 12rem;
+  field-sizing: content;
+  min-height: calc(var(--ukubi-body-line) + 2 * var(--ukubi-space-2) + 2px);
+  max-height: 12rem;
 }
-textarea::placeholder { color: var(--ukubi-ink-subtle); }
+textarea::placeholder {
+  color: var(--ukubi-ink-subtle);
+}
 
 button {
   font-family: var(--ukubi-font-sans);
@@ -62,114 +102,287 @@ button {
   border-radius: var(--ukubi-radius-sm);
   padding: var(--ukubi-space-2) var(--ukubi-space-3);
   cursor: pointer;
-  transition: background 160ms ease-out, border-color 160ms ease-out;
+  transition:
+    background 160ms ease-out,
+    border-color 160ms ease-out;
 }
-button:disabled { opacity: 0.55; cursor: default; }
-.primary { background: var(--ukubi-ochre-400); color: var(--ukubi-on-ochre); border: 1px solid var(--ukubi-ochre-400); }
-.secondary { background: var(--ukubi-surface-raised); color: var(--ukubi-ink); border: 1px solid var(--ukubi-line-strong); }
-.secondary.picked { background: var(--ukubi-ochre-100); border-color: var(--ukubi-ochre-700); color: var(--ukubi-ochre-700); }
-.danger-text { color: var(--ukubi-danger); }
-:focus-visible { outline: 2px solid var(--ukubi-focus); outline-offset: 2px; }
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.primary {
+  background: var(--ukubi-ochre-400);
+  color: var(--ukubi-on-ochre);
+  border: 1px solid var(--ukubi-ochre-400);
+}
+.secondary {
+  background: var(--ukubi-surface-raised);
+  color: var(--ukubi-ink);
+  border: 1px solid var(--ukubi-line-strong);
+}
+.secondary.picked {
+  background: var(--ukubi-ochre-100);
+  border-color: var(--ukubi-ochre-700);
+  color: var(--ukubi-ochre-700);
+}
+.danger-text {
+  color: var(--ukubi-danger);
+}
+:focus-visible {
+  outline: 2px solid var(--ukubi-focus);
+  outline-offset: 2px;
+}
 
 /* The stone cut: a 45° top-right chamfer. Only the send/primary button and
    the "needs you" card carry it. */
-.chamfer { clip-path: polygon(0 0, calc(100% - var(--ukubi-chamfer-sm)) 0, 100% var(--ukubi-chamfer-sm), 100% 100%, 0 100%); }
-.chamfer-md { clip-path: polygon(0 0, calc(100% - var(--ukubi-chamfer-md)) 0, 100% var(--ukubi-chamfer-md), 100% 100%, 0 100%); }
+.chamfer {
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--ukubi-chamfer-sm)) 0,
+    100% var(--ukubi-chamfer-sm),
+    100% 100%,
+    0 100%
+  );
+}
+.chamfer-md {
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--ukubi-chamfer-md)) 0,
+    100% var(--ukubi-chamfer-md),
+    100% 100%,
+    0 100%
+  );
+}
 
 .status {
-  display: inline-flex; align-items: center; gap: var(--ukubi-space-1);
-  font-size: var(--ukubi-label-size); color: var(--ukubi-ink-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ukubi-space-1);
+  font-size: var(--ukubi-label-size);
+  color: var(--ukubi-ink-muted);
 }
-.status[data-state="error"] { color: var(--ukubi-danger); }
-.status[data-state="waiting"] { color: var(--ukubi-ink); }
+.status[data-state="error"] {
+  color: var(--ukubi-danger);
+}
+.status[data-state="waiting"] {
+  color: var(--ukubi-ink);
+}
 
 /* The LED: lit only while the thread waits on a human. */
 .led {
-  width: 8px; height: 8px; border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   background: var(--ukubi-led-glow);
   animation: led 2.4s ease-in-out infinite;
 }
 @keyframes led {
-  0%, 100% { background: var(--ukubi-led-core); box-shadow: none; }
-  50% { background: var(--ukubi-led-glow); box-shadow: var(--ukubi-shadow-led); }
+  0%,
+  100% {
+    background: var(--ukubi-led-core);
+    box-shadow: none;
+  }
+  50% {
+    background: var(--ukubi-led-glow);
+    box-shadow: var(--ukubi-shadow-led);
+  }
 }
-@media (prefers-reduced-motion: reduce) { .led { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .led {
+    animation: none;
+  }
+}
 
-.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ukubi-space-2); }
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ukubi-space-2);
+}
 .msg {
   background: var(--ukubi-surface-raised);
   border: 1px solid var(--ukubi-line);
   border-radius: var(--ukubi-radius-md);
   padding: var(--ukubi-space-2) var(--ukubi-space-3);
 }
-.msg.human { background: var(--ukubi-ochre-100); border-color: transparent; }
+.msg.human {
+  background: var(--ukubi-ochre-100);
+  border-color: transparent;
+}
 .who {
-  display: block; font-size: var(--ukubi-overline-size); line-height: var(--ukubi-overline-line);
-  font-weight: var(--ukubi-overline-weight); letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--ukubi-ink-muted); margin-bottom: var(--ukubi-space-1);
+  display: block;
+  font-size: var(--ukubi-overline-size);
+  line-height: var(--ukubi-overline-line);
+  font-weight: var(--ukubi-overline-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ukubi-ink-muted);
+  margin-bottom: var(--ukubi-space-1);
 }
-.text { white-space: pre-wrap; }
-.md a { color: var(--ukubi-ochre-700); }
-.md :is(p, ul, ol) { margin: 0 0 var(--ukubi-space-2); }
-.md :is(p, ul, ol):last-child { margin-bottom: 0; }
-pre, .code, code {
-  font-family: var(--ukubi-font-mono); font-size: var(--ukubi-code-size); line-height: var(--ukubi-code-line);
+.text {
+  white-space: pre-wrap;
 }
-pre, .code {
-  background: var(--ukubi-surface-sunken); border-radius: var(--ukubi-radius-sm);
-  padding: var(--ukubi-space-3); overflow-x: auto; margin: var(--ukubi-space-2) 0;
+.md a {
+  color: var(--ukubi-ochre-700);
 }
-.diagram { margin: var(--ukubi-space-2) 0; overflow: auto; position: relative; contain: paint; max-width: 100%; }
+.md :is(p, ul, ol) {
+  margin: 0 0 var(--ukubi-space-2);
+}
+.md :is(p, ul, ol):last-child {
+  margin-bottom: 0;
+}
+pre,
+.code,
+code {
+  font-family: var(--ukubi-font-mono);
+  font-size: var(--ukubi-code-size);
+  line-height: var(--ukubi-code-line);
+}
+pre,
+.code {
+  background: var(--ukubi-surface-sunken);
+  border-radius: var(--ukubi-radius-sm);
+  padding: var(--ukubi-space-3);
+  overflow-x: auto;
+  margin: var(--ukubi-space-2) 0;
+}
+.diagram {
+  margin: var(--ukubi-space-2) 0;
+  overflow: auto;
+  position: relative;
+  contain: paint;
+  max-width: 100%;
+}
 
 .decision {
   background: var(--ukubi-surface-raised);
   border: 1px solid var(--ukubi-ochre-700);
   border-radius: var(--ukubi-radius-md);
   padding: var(--ukubi-space-4);
-  display: flex; flex-direction: column; gap: var(--ukubi-space-3); align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ukubi-space-3);
+  align-items: flex-start;
 }
 .title {
-  font-size: var(--ukubi-title-3-size); line-height: var(--ukubi-title-3-line); font-weight: var(--ukubi-title-3-weight);
+  font-size: var(--ukubi-title-3-size);
+  line-height: var(--ukubi-title-3-line);
+  font-weight: var(--ukubi-title-3-weight);
 }
-.options { display: flex; flex-wrap: wrap; gap: var(--ukubi-space-2); }
-.plan { max-height: 16rem; overflow-y: auto; width: 100%; }
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ukubi-space-2);
+}
+.plan {
+  max-height: 16rem;
+  overflow-y: auto;
+  width: 100%;
+}
 
-.composer { display: flex; gap: var(--ukubi-space-2); align-items: flex-end; }
-.send { flex: none; white-space: nowrap; }
-button { white-space: nowrap; }
+.composer {
+  display: flex;
+  gap: var(--ukubi-space-2);
+  align-items: flex-end;
+}
+.send {
+  flex: none;
+  white-space: nowrap;
+}
+button {
+  white-space: nowrap;
+}
 
-.seg { display: inline-flex; border: 1px solid var(--ukubi-line-strong); border-radius: var(--ukubi-radius-sm); overflow: hidden; }
-.seg button { border: 0; border-radius: 0; background: var(--ukubi-surface-raised); color: var(--ukubi-ink-muted); padding: var(--ukubi-space-1) var(--ukubi-space-3); }
-.seg button.on { background: var(--ukubi-ochre-100); color: var(--ukubi-ochre-700); }
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--ukubi-line-strong);
+  border-radius: var(--ukubi-radius-sm);
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: var(--ukubi-surface-raised);
+  color: var(--ukubi-ink-muted);
+  padding: var(--ukubi-space-1) var(--ukubi-space-3);
+}
+.seg button.on {
+  background: var(--ukubi-ochre-100);
+  color: var(--ukubi-ochre-700);
+}
 
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ukubi-line-strong); }
-.status[data-state="working"] .dot, .status[data-state="loading"] .dot { background: var(--ukubi-palm-400); }
-.status[data-state="error"] .dot { background: var(--ukubi-danger); }
-.pending { opacity: 0.55; }
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ukubi-line-strong);
+}
+.status[data-state="working"] .dot,
+.status[data-state="loading"] .dot {
+  background: var(--ukubi-palm-400);
+}
+.status[data-state="error"] .dot {
+  background: var(--ukubi-danger);
+}
+.pending {
+  opacity: 0.55;
+}
 /* Narrow screens (phones): the status word goes, the dot stays. */
-@media (max-width: 480px) { .status-word { display: none; } }
+@media (max-width: 480px) {
+  .status-word {
+    display: none;
+  }
+}
 /* Without field-sizing the textarea cannot grow: give it room instead. */
-@supports not (field-sizing: content) { textarea { min-height: 4.5rem; } }
+@supports not (field-sizing: content) {
+  textarea {
+    min-height: 4.5rem;
+  }
+}
 
 /* Chat layout after the Claude app: the agent's replies are plain text on the
    page, the user's are a soft bubble on the right, the composer is one
    rounded field with the send arrow inside. Ukubi colours throughout. */
-.island { background: var(--ukubi-surface); border-color: var(--ukubi-line); }
+.island {
+  background: var(--ukubi-surface);
+  border-color: var(--ukubi-line);
+}
 .head select.thread {
-  background: transparent; border-color: transparent;
-  font-weight: var(--ukubi-title-3-weight); font-size: var(--ukubi-title-3-size);
-  padding-left: 0; cursor: pointer;
+  background: transparent;
+  border-color: transparent;
+  font-weight: var(--ukubi-title-3-weight);
+  font-size: var(--ukubi-title-3-size);
+  padding-left: 0;
+  cursor: pointer;
 }
-.head select.thread:hover { border-color: var(--ukubi-line); }
+.head select.thread:hover {
+  border-color: var(--ukubi-line);
+}
 
-.feed { gap: var(--ukubi-space-4); }
-.msg { background: none; border: 0; padding: 0; }
-.msg.human {
-  align-self: flex-end; max-width: 85%;
-  background: var(--ukubi-surface-raised); border: 1px solid var(--ukubi-line);
-  border-radius: var(--ukubi-radius-md); padding: var(--ukubi-space-2) var(--ukubi-space-3);
+.feed {
+  gap: var(--ukubi-space-4);
 }
-.msg .who { text-transform: none; letter-spacing: 0; font-size: var(--ukubi-body-sm-size); font-weight: 500; }
+.msg {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.msg.human {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--ukubi-surface-raised);
+  border: 1px solid var(--ukubi-line);
+  border-radius: var(--ukubi-radius-md);
+  padding: var(--ukubi-space-2) var(--ukubi-space-3);
+}
+.msg .who {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--ukubi-body-sm-size);
+  font-weight: 500;
+}
 
 .composer {
   align-items: flex-end;
@@ -178,33 +391,89 @@ button { white-space: nowrap; }
   border-radius: var(--ukubi-radius-lg);
   padding: var(--ukubi-space-2);
 }
-.composer:focus-within { border-color: var(--ukubi-ochre-700); }
-.composer textarea { background: transparent; border: 0; padding: var(--ukubi-space-1) var(--ukubi-space-2); }
-.composer textarea:focus-visible { outline: none; }
-.send {
-  display: inline-grid; place-items: center;
-  width: 32px; height: 32px; padding: 0;
-  background: var(--ukubi-ochre-400); color: var(--ukubi-on-ochre);
-  border: 0; border-radius: var(--ukubi-radius-sm);
+.composer:focus-within {
+  border-color: var(--ukubi-ochre-700);
 }
-.send:disabled { background: var(--ukubi-line); color: var(--ukubi-ink-subtle); opacity: 1; }
+.composer textarea {
+  background: transparent;
+  border: 0;
+  padding: var(--ukubi-space-1) var(--ukubi-space-2);
+}
+.composer textarea:focus-visible {
+  outline: none;
+}
+.send {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--ukubi-ochre-400);
+  color: var(--ukubi-on-ochre);
+  border: 0;
+  border-radius: var(--ukubi-radius-sm);
+}
+.send:disabled {
+  background: var(--ukubi-line);
+  color: var(--ukubi-ink-subtle);
+  opacity: 1;
+}
 
-.decision { border-color: var(--ukubi-line-strong); gap: var(--ukubi-space-2); padding: var(--ukubi-space-3); }
-.decision .title { font-size: var(--ukubi-body-size); }
-.head select.thread { flex: 0 1 auto; max-width: 100%; field-sizing: content; }
-.head .status, .head .seg { margin-left: auto; }
+.decision {
+  border-color: var(--ukubi-line-strong);
+  gap: var(--ukubi-space-2);
+  padding: var(--ukubi-space-3);
+}
+.decision .title {
+  font-size: var(--ukubi-body-size);
+}
+.head select.thread {
+  flex: 0 1 auto;
+  max-width: 100%;
+  field-sizing: content;
+}
+.head .status,
+.head .seg {
+  margin-left: auto;
+}
 
 /* Focus stays visible without the textarea's own outline (office's ochre-700
    border alone is ~1.2:1 against line-strong). */
-.composer:focus-within { outline: 2px solid var(--ukubi-focus); outline-offset: 2px; }
-.scroll:focus-visible { outline: 2px solid var(--ukubi-focus); outline-offset: -2px; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.composer:focus-within {
+  outline: 2px solid var(--ukubi-focus);
+  outline-offset: 2px;
+}
+.scroll:focus-visible {
+  outline: 2px solid var(--ukubi-focus);
+  outline-offset: -2px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
 /* Who said it (agent-fleet #311 Entry.mine), each in its own colour (Ukubi:
    ochre-100 is the user's own bubble): yours ochre on the right, other
    members' palm on the left under their name, the agent as text behind a
    wire-agent rule. */
-.msg.human.mine { align-self: flex-end; background: var(--ukubi-ochre-100); border-color: transparent; }
-.msg.human.other { align-self: flex-start; background: var(--ukubi-palm-100); border-color: transparent; }
-.msg.human.other .who { color: var(--ukubi-palm-700); }
-.msg:not(.human) { border-left: 2px solid var(--ukubi-wire-agent); padding-left: var(--ukubi-space-3); }
+.msg.human.mine {
+  align-self: flex-end;
+  background: var(--ukubi-ochre-100);
+  border-color: transparent;
+}
+.msg.human.other {
+  align-self: flex-start;
+  background: var(--ukubi-palm-100);
+  border-color: transparent;
+}
+.msg.human.other .who {
+  color: var(--ukubi-palm-700);
+}
+.msg:not(.human) {
+  border-left: 2px solid var(--ukubi-wire-agent);
+  padding-left: var(--ukubi-space-3);
+}

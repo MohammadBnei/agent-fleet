@@ -1,10 +1,14 @@
-
-import { shortId } from "../sessionState";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import type { ToolCallSummary, TodoItem, SubagentRun, BackgroundTask } from "../transcript";
 import { imageTag } from "../imageTag";
-import { TickBar, todoProgress } from "./TickBar";
+import { shortId } from "../sessionState";
+import type {
+  BackgroundTask,
+  SubagentRun,
+  TodoItem,
+  ToolCallSummary,
+} from "../transcript";
 import { ActionsMenu } from "./ActionsMenu";
+import { TickBar, todoProgress } from "./TickBar";
 
 // TODOS / CHANGES / AGENTS / SESSION. Desktop puts these in a fixed 266px
 // right column, mobile behind "panels ▸" as a bottom sheet — one component so
@@ -23,7 +27,13 @@ import { ActionsMenu } from "./ActionsMenu";
 // Mobile's "panels" opener is NOT gated on this: the sheet also carries the
 // SESSION panel, which holds every action a phone has, so it is never empty.
 
-function PanelHeading({ title, extra }: { title: string; extra?: React.ReactNode }) {
+function PanelHeading({
+  title,
+  extra,
+}: {
+  title: string;
+  extra?: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline gap-2 mb-2.5">
       <span className="text-2xs tracking-[0.12em] text-dim2">{title}</span>
@@ -32,21 +42,42 @@ function PanelHeading({ title, extra }: { title: string; extra?: React.ReactNode
   );
 }
 
-export function TodosPanel({ todos, blocked }: { todos: TodoItem[]; blocked: boolean }) {
+export function TodosPanel({
+  todos,
+  blocked,
+}: {
+  todos: TodoItem[];
+  blocked: boolean;
+}) {
   if (todos.length === 0) return null;
   return (
     <div>
-      <PanelHeading title="TODOS" extra={<span className="text-xs text-dim2 ml-auto">{todoProgress(todos)}</span>} />
+      <PanelHeading
+        title="TODOS"
+        extra={
+          <span className="text-xs text-dim2 ml-auto">
+            {todoProgress(todos)}
+          </span>
+        }
+      />
       <TickBar todos={todos} blocked={blocked} className="mb-3" />
       <div className="flex flex-col gap-1.5">
         {todos.map((t, i) => (
           <div
             key={i}
             className={`text-sm leading-[1.5] ${
-              t.status === "in_progress" ? (blocked ? "text-error" : "text-base-content") : "text-dim2"
+              t.status === "in_progress"
+                ? blocked
+                  ? "text-error"
+                  : "text-base-content"
+                : "text-dim2"
             }`}
           >
-            {t.status === "completed" ? "✓ " : t.status === "in_progress" ? "▸ " : "· "}
+            {t.status === "completed"
+              ? "✓ "
+              : t.status === "in_progress"
+                ? "▸ "
+                : "· "}
             {t.status === "in_progress" ? t.activeForm : t.content}
             {t.status === "in_progress" && blocked && (
               <>
@@ -77,7 +108,9 @@ export function ChangesPanel({
   return (
     <div className="min-w-0">
       <PanelHeading title="CHANGES" />
-      {branch && <div className="text-xs text-dim2 mb-2 truncate">{branch}</div>}
+      {branch && (
+        <div className="text-xs text-dim2 mb-2 truncate">{branch}</div>
+      )}
       <div className="flex flex-col gap-1.5">
         {changes.map((c, i) => (
           <button
@@ -89,7 +122,13 @@ export function ChangesPanel({
           >
             <span className="text-dim flex-1 min-w-0 truncate">{c.path}</span>
             <span className="text-green-soft flex-none">+{c.added}</span>
-            <span className={c.removed > 0 ? "text-minus flex-none" : "text-dim2 flex-none"}>−{c.removed}</span>
+            <span
+              className={
+                c.removed > 0 ? "text-minus flex-none" : "text-dim2 flex-none"
+              }
+            >
+              −{c.removed}
+            </span>
           </button>
         ))}
       </div>
@@ -105,7 +144,13 @@ export function ChangesPanel({
 //
 // Tasks and subagents only. Skills and Bash stay in the feed where their tool
 // call already is — this panel exists to remove a duplicate, not to add one.
-export function AgentsPanel({ runs, onOpenAgent }: { runs: SubagentRun[]; onOpenAgent: (run: SubagentRun) => void }) {
+export function AgentsPanel({
+  runs,
+  onOpenAgent,
+}: {
+  runs: SubagentRun[];
+  onOpenAgent: (run: SubagentRun) => void;
+}) {
   if (runs.length === 0) return null;
   const running = runs.filter((r) => r.status === "running").length;
   return (
@@ -132,11 +177,19 @@ export function AgentsPanel({ runs, onOpenAgent }: { runs: SubagentRun[]; onOpen
           >
             <div
               className={`text-sm leading-[1.5] truncate ${
-                r.status === "failed" ? "text-error" : r.status === "running" ? "text-base-content" : "text-dim2"
+                r.status === "failed"
+                  ? "text-error"
+                  : r.status === "running"
+                    ? "text-base-content"
+                    : "text-dim2"
               }`}
               title={r.description || r.subagentType}
             >
-              {r.status === "completed" ? "✓ " : r.status === "failed" ? "✗ " : "▸ "}
+              {r.status === "completed"
+                ? "✓ "
+                : r.status === "failed"
+                  ? "✗ "
+                  : "▸ "}
               {r.subagentType}
             </div>
             {r.description && (
@@ -213,16 +266,27 @@ export function SessionPanel({
         {/* Only when picked at creation (docs/adr/0077); otherwise the CLI's
             own, or a definition's thinking.default. */}
         {session.effort && <Fact label="effort" value={session.effort} />}
-        {session.podPhase && <Fact label="pod" value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()} />}
+        {session.podPhase && (
+          <Fact
+            label="pod"
+            value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()}
+          />
+        )}
         {/* The build this session's pod is actually on — recorded at dispatch,
             so it stays true after the fleet is upgraded underneath it. Absent
             until the session has had a pod. */}
         {/* The release that built the pod. Images are tagged src-<input hash>
             and reused across releases, so the tags below no longer name it.
             Absent for a pod built before the provisioner reported it. */}
-        {session.fleetVersion && <Fact label="release" value={session.fleetVersion} />}
-        {session.workerImage && <Fact label="worker" value={imageTag(session.workerImage)} />}
-        {session.sidecarImage && <Fact label="sidecar" value={imageTag(session.sidecarImage)} />}
+        {session.fleetVersion && (
+          <Fact label="release" value={session.fleetVersion} />
+        )}
+        {session.workerImage && (
+          <Fact label="worker" value={imageTag(session.workerImage)} />
+        )}
+        {session.sidecarImage && (
+          <Fact label="sidecar" value={imageTag(session.sidecarImage)} />
+        )}
       </dl>
       <ActionsMenu
         sessionId={session.id}
@@ -258,7 +322,9 @@ export function BackgroundPanel({ tasks }: { tasks: BackgroundTask[] }) {
       <PanelHeading
         title="BACKGROUND"
         extra={
-          <span className={`text-xs ml-auto ${running > 0 ? "text-base-content" : "text-dim2"}`}>
+          <span
+            className={`text-xs ml-auto ${running > 0 ? "text-base-content" : "text-dim2"}`}
+          >
             {running > 0 ? `${running} running` : `${tasks.length} done`}
           </span>
         }
@@ -273,11 +339,19 @@ export function BackgroundPanel({ tasks }: { tasks: BackgroundTask[] }) {
                 paths hard to scan. */}
             <div
               className={`text-sm leading-[1.5] truncate font-mono ${
-                t.status === "failed" ? "text-error" : t.status === "running" ? "text-base-content" : "text-dim2"
+                t.status === "failed"
+                  ? "text-error"
+                  : t.status === "running"
+                    ? "text-base-content"
+                    : "text-dim2"
               }`}
               title={t.command || t.description}
             >
-              {t.status === "completed" ? "✓ " : t.status === "failed" ? "✗ " : "▸ "}
+              {t.status === "completed"
+                ? "✓ "
+                : t.status === "failed"
+                  ? "✗ "
+                  : "▸ "}
               {t.command || t.description || t.toolUseId}
             </div>
             {/* The outcome line, and the reason this panel is worth having at

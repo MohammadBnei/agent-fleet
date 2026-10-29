@@ -1,39 +1,48 @@
 import { useState } from "react";
-import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "../gen/agentfleet/v1/transcript_pb";
+import { shortId } from "../sessionState";
 import {
   asDisplayMarkdown,
   buildToolCallPairs,
+  type Density,
+  deniedToolUseIds,
   entryTime,
+  type FeedVisibility,
   findPendingPermissions,
+  PANEL_OWNED_SIGNALS,
+  PANEL_OWNED_TOOLS,
   pairedResultSeqs,
   parseAnswers,
+  parseSdkResultSummary,
   parseSdkSignal,
   parseSdkSystemInfo,
   parseSdkToolResult,
-  type SdkToolResult,
   parseSdkToolUse,
-  parseSdkResultSummary,
+  parseToolCallSummary,
   permissionDenyMessages,
   resolvedPermissionDecisions,
   resultDelta,
-  summarizeToolInput,
-  PANEL_OWNED_SIGNALS,
-  PANEL_OWNED_TOOLS,
   type SdkResultSummary,
-  type Density,
-  type FeedVisibility,
+  type SdkToolResult,
+  shortTool,
+  summarizeToolInput,
   type ToolCallPair,
 } from "../transcript";
-import { Markdown } from "./Markdown";
 import { Collapse } from "./Collapse";
-import { TranscriptEntryView } from "./TranscriptEntryView";
 import { ToolCallDetailModal } from "./DetailModal";
-import { ToolCallLine } from "./ToolCallLine";
-import { PermissionCard, type Grant, type GrantPreview } from "./PermissionCard";
+import { Markdown } from "./Markdown";
+import {
+  type Grant,
+  type GrantPreview,
+  PermissionCard,
+} from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
-import { deniedToolUseIds, parseToolCallSummary, shortTool } from "../transcript";
-import { shortId } from "../sessionState";
+import { ToolCallLine } from "./ToolCallLine";
+import { TranscriptEntryView } from "./TranscriptEntryView";
 
 // The feed, shared by both detail views.
 //
@@ -54,11 +63,21 @@ import { shortId } from "../sessionState";
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 
-function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: string | null; compact?: boolean }) {
+function AlarmBar({
+  text,
+  detail,
+  compact,
+}: {
+  text: React.ReactNode;
+  detail?: string | null;
+  compact?: boolean;
+}) {
   return (
     <div className="border border-orange-line bg-orange-bg px-3 py-2.5 flex gap-2.5 items-start">
       <span className="text-warning text-sm flex-none">!</span>
-      <div className={`text-warning ${compact ? "text-xs" : "text-sm"} leading-[1.55] min-w-0`}>
+      <div
+        className={`text-warning ${compact ? "text-xs" : "text-sm"} leading-[1.55] min-w-0`}
+      >
         {text}
         {detail && <div className="text-dim mt-0.5 break-words">{detail}</div>}
       </div>
@@ -80,26 +99,43 @@ function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: s
 // top of a long session, where the call sits one entry above the page
 // boundary, and the output is often the error someone scrolled up to read.
 // Collapsed by default because without its command it is context-free.
-function OrphanToolResult({ result, compact }: { result: SdkToolResult; compact?: boolean }) {
+function OrphanToolResult({
+  result,
+  compact,
+}: {
+  result: SdkToolResult;
+  compact?: boolean;
+}) {
   const failed = result.isError === true;
   // `content` is whatever the SDK block carried — a string for most tools, an
   // array of content blocks for some. Only a string is prose; anything else
   // gets JSON, which is honest here because it IS structured data, unlike in
   // the prose tier where it was just wrong.
-  const text = typeof result.content === "string" ? result.content : JSON.stringify(result.content, null, 2);
+  const text =
+    typeof result.content === "string"
+      ? result.content
+      : JSON.stringify(result.content, null, 2);
   return (
     <Collapse
       className={compact ? "" : "max-w-(--feed-measure)"}
       summaryClassName="px-2.5 py-1.5"
       summary={
         <span className="flex gap-2 items-baseline min-w-0">
-          <span className={`flex-none ${failed ? "text-error" : "text-dim2"}`}>{failed ? "failed" : "ok"}</span>
-          <span className="text-dim2 flex-none">output of an earlier tool call</span>
-          <span className="text-dim truncate min-w-0">{text.split("\n")[0]}</span>
+          <span className={`flex-none ${failed ? "text-error" : "text-dim2"}`}>
+            {failed ? "failed" : "ok"}
+          </span>
+          <span className="text-dim2 flex-none">
+            output of an earlier tool call
+          </span>
+          <span className="text-dim truncate min-w-0">
+            {text.split("\n")[0]}
+          </span>
         </span>
       }
     >
-      <pre className="whitespace-pre-wrap break-all text-2xs text-dim leading-[1.5]">{text}</pre>
+      <pre className="whitespace-pre-wrap break-all text-2xs text-dim leading-[1.5]">
+        {text}
+      </pre>
     </Collapse>
   );
 }
@@ -151,13 +187,23 @@ function ToolGroup({
           {pairs.map((pair, i) => {
             const info = pair.callInfo;
             const errored = pair.resultInfo?.isError === true;
-            const denied = errored && pair.callInfo.id !== undefined && deniedIds.has(pair.callInfo.id);
+            const denied =
+              errored &&
+              pair.callInfo.id !== undefined &&
+              deniedIds.has(pair.callInfo.id);
             const failed = errored && !denied;
             const inFlight = !pair.result;
-            const elapsed = pair.callInfo.id ? elapsedById.get(pair.callInfo.id) : undefined;
+            const elapsed = pair.callInfo.id
+              ? elapsedById.get(pair.callInfo.id)
+              : undefined;
 
             return (
-              <div key={String(pair.call.seq)} className={i === pairs.length - 1 ? "" : "border-b border-line3"}>
+              <div
+                key={String(pair.call.seq)}
+                className={
+                  i === pairs.length - 1 ? "" : "border-b border-line3"
+                }
+              >
                 <button
                   type="button"
                   onClick={() => setDetail(pair)}
@@ -167,7 +213,13 @@ function ToolGroup({
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full flex-none ${
-                      failed ? "bg-warning" : denied ? "bg-dim2" : inFlight ? "bg-info animate-fpulse" : "bg-green-dot"
+                      failed
+                        ? "bg-warning"
+                        : denied
+                          ? "bg-dim2"
+                          : inFlight
+                            ? "bg-info animate-fpulse"
+                            : "bg-green-dot"
                     }`}
                   />
                   {/* `truncate` is load-bearing, not cosmetic: it brings
@@ -184,12 +236,18 @@ function ToolGroup({
                   >
                     {shortTool(info.tool)}
                   </span>
-                  <span className={`text-dim flex-1 min-w-0 truncate ${compact ? "text-xs" : "text-sm"}`}>
+                  <span
+                    className={`text-dim flex-1 min-w-0 truncate ${compact ? "text-xs" : "text-sm"}`}
+                  >
                     {summarizeToolInput(info.input)}
                   </span>
                   <span
                     className={`flex-none text-xs ${
-                      failed ? "text-warning" : inFlight ? "text-info" : "text-dim2"
+                      failed
+                        ? "text-warning"
+                        : inFlight
+                          ? "text-info"
+                          : "text-dim2"
                     }`}
                   >
                     {failed
@@ -197,8 +255,8 @@ function ToolGroup({
                       : denied
                         ? "denied"
                         : inFlight
-                        ? `running${elapsed ? ` · ${elapsed}s` : ""}`
-                        : "ok"}
+                          ? `running${elapsed ? ` · ${elapsed}s` : ""}`
+                          : "ok"}
                   </span>
                 </button>
               </div>
@@ -215,10 +273,18 @@ function ToolGroup({
 // deliberately: a session's transcript is unbounded, and an infinite scroll
 // that keeps fetching as you drag is how you end up holding all of it in
 // memory again — the thing loading the newest page first was meant to stop.
-export function LoadOlder({ loading, onLoad }: { loading: boolean; onLoad: () => void }) {
+export function LoadOlder({
+  loading,
+  onLoad,
+}: {
+  loading: boolean;
+  onLoad: () => void;
+}) {
   return (
     <div className="flex items-center gap-2.5 mb-1.5">
-      <span className="text-2xs tracking-[0.1em] text-dim2 whitespace-nowrap">EARLIER</span>
+      <span className="text-2xs tracking-[0.1em] text-dim2 whitespace-nowrap">
+        EARLIER
+      </span>
       <span className="flex-1 h-px bg-line3" />
       <button
         type="button"
@@ -264,7 +330,11 @@ export function SessionFeed({
   onLoadOlder?: () => void;
   compact?: boolean;
   dockPendingDecision?: boolean;
-  onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) => void;
+  onRespond: (
+    seq: bigint,
+    decision: { behavior: "allow" | "deny"; message?: string },
+    grant?: Grant,
+  ) => void;
   previewGrant?: GrantPreview;
   // Plan approval carries an optional permission-mode switch, so it is its own
   // path rather than an allow decision (approvePlan.ts).
@@ -275,7 +345,9 @@ export function SessionFeed({
   const pairs = buildToolCallPairs(entries);
   const pairsBySeq = new Map(pairs.map((p) => [p.call.seq, p]));
   const consumedResults = pairedResultSeqs(pairs);
-  const pendingSeqs = new Set(findPendingPermissions(entries).map((p) => p.entry.seq));
+  const pendingSeqs = new Set(
+    findPendingPermissions(entries).map((p) => p.entry.seq),
+  );
   const decisions = resolvedPermissionDecisions(entries);
   const denyMessages = permissionDenyMessages(entries);
   const deniedIds = deniedToolUseIds(entries);
@@ -300,7 +372,8 @@ export function SessionFeed({
       if (info?.tool && info.id && PANEL_OWNED_TOOLS.has(info.tool)) {
         panelOwnedToolUseIds.add(info.id);
         if (info.tool === "Agent") {
-          const t = (info.input as { subagent_type?: unknown } | undefined)?.subagent_type;
+          const t = (info.input as { subagent_type?: unknown } | undefined)
+            ?.subagent_type;
           subagentNames.set(info.id, typeof t === "string" ? t : "subagent");
         }
       }
@@ -309,7 +382,11 @@ export function SessionFeed({
     if (e.type === TranscriptEntryType.SYSTEM) {
       const sig = parseSdkSignal(e.text);
       const id = sig?.parent_tool_use_id ?? sig?.tool_use_id;
-      if (sig?.sdk === "tool_progress" && id && typeof sig.elapsed_time_seconds === "number") {
+      if (
+        sig?.sdk === "tool_progress" &&
+        id &&
+        typeof sig.elapsed_time_seconds === "number"
+      ) {
         elapsedById.set(id, sig.elapsed_time_seconds);
       }
     }
@@ -317,7 +394,13 @@ export function SessionFeed({
 
   const out: React.ReactNode[] = [];
   if (hasOlder && onLoadOlder) {
-    out.push(<LoadOlder key="load-older" loading={loadingOlder} onLoad={onLoadOlder} />);
+    out.push(
+      <LoadOlder
+        key="load-older"
+        loading={loadingOlder}
+        onLoad={onLoadOlder}
+      />,
+    );
   }
   // Consecutive tool calls accumulate here and flush as one ToolGroup the
   // moment anything else appears, so the grouping follows the real
@@ -327,7 +410,15 @@ export function SessionFeed({
     if (run.length === 0) return;
     const group = run;
     run = [];
-    out.push(<ToolGroup key={`tools-${group[0].call.seq}`} pairs={group} compact={compact} elapsedById={elapsedById} deniedIds={deniedIds} />);
+    out.push(
+      <ToolGroup
+        key={`tools-${group[0].call.seq}`}
+        pairs={group}
+        compact={compact}
+        elapsedById={elapsedById}
+        deniedIds={deniedIds}
+      />,
+    );
   };
 
   // Both of these track the *previous* occurrence of their entry kind as the
@@ -357,7 +448,11 @@ export function SessionFeed({
     // Rendered by their partner entry, never on their own.
     if (entry.type === TranscriptEntryType.ANSWER) continue;
     if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) continue;
-    if (entry.type === TranscriptEntryType.USER && consumedResults.has(entry.seq)) continue;
+    if (
+      entry.type === TranscriptEntryType.USER &&
+      consumedResults.has(entry.seq)
+    )
+      continue;
     // Every remaining USER entry that is a tool_result is handled HERE and
     // never falls past this block. That is the point of the single guard: the
     // two cases below used to be separate early-continues, and anything
@@ -396,7 +491,10 @@ export function SessionFeed({
       if (isPending && dockPendingDecision) continue;
       flush();
       const permissionKey = `permission:${entry.seq}`;
-      const respond = (decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) => onRespond(entry.seq, decision, grant);
+      const respond = (
+        decision: { behavior: "allow" | "deny"; message?: string },
+        grant?: Grant,
+      ) => onRespond(entry.seq, decision, grant);
 
       if (parsed.tool === "ExitPlanMode") {
         const plan = (parsed.input as { plan?: string } | undefined)?.plan;
@@ -428,7 +526,11 @@ export function SessionFeed({
             onAllow={(grant) => respond({ behavior: "allow" }, grant)}
             onDeny={(message) => respond({ behavior: "deny", message })}
             edgeClassName={edge}
-            preview={isPending && previewGrant ? () => previewGrant(entry.seq) : undefined}
+            preview={
+              isPending && previewGrant
+                ? () => previewGrant(entry.seq)
+                : undefined
+            }
           />
         </div>,
       );
@@ -436,7 +538,9 @@ export function SessionFeed({
     }
 
     if (entry.type === TranscriptEntryType.QUESTION) {
-      const answerEntry = entries.slice(idx + 1).find((e) => e.type === TranscriptEntryType.ANSWER);
+      const answerEntry = entries
+        .slice(idx + 1)
+        .find((e) => e.type === TranscriptEntryType.ANSWER);
       if (!answerEntry && dockPendingDecision) continue;
       flush();
       out.push(
@@ -457,7 +561,9 @@ export function SessionFeed({
     if (entry.type === TranscriptEntryType.SYSTEM) {
       const info = parseSdkSystemInfo(entry.text);
       if (info) {
-        const broken = (info.mcpServers ?? []).filter((s) => s.status !== "connected");
+        const broken = (info.mcpServers ?? []).filter(
+          (s) => s.status !== "connected",
+        );
         if (broken.length > 0) {
           flush();
           out.push(
@@ -468,8 +574,8 @@ export function SessionFeed({
                   compact={compact}
                   text={
                     <>
-                      mcp server <span className="font-semibold">{s.name}</span> {s.status} — its tools are missing from
-                      this session
+                      mcp server <span className="font-semibold">{s.name}</span>{" "}
+                      {s.status} — its tools are missing from this session
                     </>
                   }
                 />
@@ -509,19 +615,30 @@ export function SessionFeed({
       // A subagent's own completion is the AGENTS panel's row; anything else's
       // — overwhelmingly a backgrounded Bash — is news the feed has no other
       // way to deliver.
-      if (sig?.sdk === "task_notification" && sig.tool_use_id && panelOwnedToolUseIds.has(sig.tool_use_id)) continue;
+      if (
+        sig?.sdk === "task_notification" &&
+        sig.tool_use_id &&
+        panelOwnedToolUseIds.has(sig.tool_use_id)
+      )
+        continue;
       // api_retry carries error:"overloaded" but is not an alarm: the SDK
       // retries up to ten times on its own and usually wins. An orange bar per
       // attempt would out-shout the auth failure this tier exists for. It gets
       // a warning-toned log line in SignalView instead.
       const isAlarm =
         (Boolean(sig?.error) && sig?.sdk !== "api_retry") ||
-        (sig?.sdk === "auth_status" && sig.status !== "ok" && Boolean(sig?.status));
+        (sig?.sdk === "auth_status" &&
+          sig.status !== "ok" &&
+          Boolean(sig?.status));
       if (isAlarm && sig) {
         flush();
         out.push(
           <div key={key} id={`entry-${key}`}>
-            <AlarmBar compact={compact} text={sig.sdk.replace(/_/g, " ")} detail={sig.error ?? sig.status ?? null} />
+            <AlarmBar
+              compact={compact}
+              text={sig.sdk.replace(/_/g, " ")}
+              detail={sig.error ?? sig.status ?? null}
+            />
           </div>,
         );
         continue;
@@ -551,12 +668,22 @@ export function SessionFeed({
       if (info?.kind === "subagent_text" && info.text) {
         if (!visibility.narrative) continue;
         flush();
-        const who = info.parentToolUseId ? subagentNames.get(info.parentToolUseId) : undefined;
+        const who = info.parentToolUseId
+          ? subagentNames.get(info.parentToolUseId)
+          : undefined;
         out.push(
-          <div key={key} id={`entry-${key}`} className={compact ? "pl-4" : "pl-[18px]"}>
+          <div
+            key={key}
+            id={`entry-${key}`}
+            className={compact ? "pl-4" : "pl-[18px]"}
+          >
             <div className="border-l-2 border-info/40 pl-3 min-w-0">
-              <div className="text-2xs tracking-[0.08em] text-info/80 mb-1">{who ?? "subagent"} says</div>
-              <div className={`leading-[1.7] min-w-0 text-dim ${compact ? "text-sm" : "text-base max-w-(--feed-measure)"}`}>
+              <div className="text-2xs tracking-[0.08em] text-info/80 mb-1">
+                {who ?? "subagent"} says
+              </div>
+              <div
+                className={`leading-[1.7] min-w-0 text-dim ${compact ? "text-sm" : "text-base max-w-(--feed-measure)"}`}
+              >
                 <Markdown text={info.text} />
               </div>
             </div>
@@ -570,18 +697,27 @@ export function SessionFeed({
         if (!visibility.narrative) continue;
         flush();
         out.push(
-          <div key={key} id={`entry-${key}`} className={compact ? "pl-4" : "pl-[18px]"}>
+          <div
+            key={key}
+            id={`entry-${key}`}
+            className={compact ? "pl-4" : "pl-[18px]"}
+          >
             <Collapse
               className="border-0 bg-transparent"
               summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
               contentClassName="px-0 pt-1.5"
               summary={
                 <span className="text-xs text-dim2 hover:text-dim">
-                  ▸ thinking{info.text.length > 0 ? ` · ${Math.max(1, Math.round(info.text.length / 4 / 100) / 10)}k tokens` : ""}
+                  ▸ thinking
+                  {info.text.length > 0
+                    ? ` · ${Math.max(1, Math.round(info.text.length / 4 / 100) / 10)}k tokens`
+                    : ""}
                 </span>
               }
             >
-              <div className="text-xs leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
+              <div className="text-xs leading-[1.7] text-dim whitespace-pre-wrap">
+                {info.text}
+              </div>
             </Collapse>
           </div>,
         );
@@ -598,7 +734,10 @@ export function SessionFeed({
     // the prose renderer, dumping the raw JSON payload into the conversation.
     if (entry.type === TranscriptEntryType.TOOL_CALL) {
       if (!visibility.quiet) continue;
-      const paths = (parseToolCallSummary(entry.text)?.files ?? []).map((f) => f.path).sort().join("\n");
+      const paths = (parseToolCallSummary(entry.text)?.files ?? [])
+        .map((f) => f.path)
+        .sort()
+        .join("\n");
       if (paths === lastChangedPaths) continue;
       lastChangedPaths = paths;
       flush();
@@ -657,14 +796,28 @@ export function SessionFeed({
     // that happened to start with the literal `[from session x]` as a
     // cross-session prompt. `!== null` rather than truthiness — a session entry
     // whose prefix is missing is still a peer message, not agent prose.
-    const peer = entry.from === "session" ? (CROSS_SESSION.exec(entry.text)?.[1] ?? "") : null;
+    const peer =
+      entry.from === "session"
+        ? (CROSS_SESSION.exec(entry.text)?.[1] ?? "")
+        : null;
     if (peer !== null) {
       out.push(
-        <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
-          <span className="text-green-soft text-xs sm:text-sm flex-none">↘</span>
-          <div className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-xs" : "text-sm"}`}>
-            from <span className="text-text2">{peer ? `#${shortId(peer)}` : "another session"}</span> —{" "}
-            {entry.text.replace(CROSS_SESSION, "")}
+        <div
+          key={key}
+          id={`entry-${key}`}
+          className="flex gap-2.5 items-baseline"
+        >
+          <span className="text-green-soft text-xs sm:text-sm flex-none">
+            ↘
+          </span>
+          <div
+            className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-xs" : "text-sm"}`}
+          >
+            from{" "}
+            <span className="text-text2">
+              {peer ? `#${shortId(peer)}` : "another session"}
+            </span>{" "}
+            — {entry.text.replace(CROSS_SESSION, "")}
           </div>
         </div>,
       );
@@ -673,9 +826,15 @@ export function SessionFeed({
 
     if (entry.from === "human") {
       out.push(
-        <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
+        <div
+          key={key}
+          id={`entry-${key}`}
+          className="flex gap-2.5 items-baseline"
+        >
           <span className="text-primary flex-none text-sm sm:text-base">❯</span>
-          <div className={`text-text2 leading-[1.7] min-w-0 ${compact ? "text-sm" : "text-base"}`}>
+          <div
+            className={`text-text2 leading-[1.7] min-w-0 ${compact ? "text-sm" : "text-base"}`}
+          >
             {entry.text}
           </div>
         </div>,
@@ -710,4 +869,3 @@ export function SessionFeed({
 
   return <>{out}</>;
 }
-

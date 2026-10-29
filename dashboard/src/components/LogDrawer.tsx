@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { LogEntry } from "../gen/agentfleet/v1/core_pb";
-import { Modal } from "./Modal";
 import { shortId } from "../sessionState";
 import { InlineError } from "./InlineError";
+import { Modal } from "./Modal";
 
 // "read log" on a failed session. DashboardService.QueryLogs has existed since
 // the Loki client landed and had no UI caller at all — the reason a session had
@@ -19,7 +19,13 @@ const LEVEL_COLOR: Record<string, string> = {
   debug: "text-dim2",
 };
 
-export function LogDrawer({ sessionId, onClose }: { sessionId: string | null; onClose: () => void }) {
+export function LogDrawer({
+  sessionId,
+  onClose,
+}: {
+  sessionId: string | null;
+  onClose: () => void;
+}) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +54,9 @@ export function LogDrawer({ sessionId, onClose }: { sessionId: string | null; on
 
   return (
     <Modal open={sessionId !== null} onClose={onClose} boxClassName="max-w-4xl">
-      <h3 className="text-base font-semibold mb-1">Logs · #{shortId(sessionId ?? undefined)}</h3>
+      <h3 className="text-base font-semibold mb-1">
+        Logs · #{shortId(sessionId ?? undefined)}
+      </h3>
       <p className="text-xs text-dim2 mb-3">
         Newest 200 lines from Loki for this session's pods.
       </p>
@@ -56,18 +64,29 @@ export function LogDrawer({ sessionId, onClose }: { sessionId: string | null; on
       <InlineError message={error} />
       {!loading && !error && entries.length === 0 && (
         <div className="text-sm text-dim2">
-          No log lines for this session — its pod may already be gone past Loki's retention.
+          No log lines for this session — its pod may already be gone past
+          Loki's retention.
         </div>
       )}
       {entries.length > 0 && (
         <div className="border border-line bg-code max-h-[60vh] overflow-auto">
           {entries.map((e, i) => (
-            <div key={i} className="flex gap-2.5 px-2.5 py-[3px] text-xs whitespace-pre-wrap break-all">
-              <span className="text-dim2 flex-none">{e.timestamp?.slice(11, 19) || "—"}</span>
-              <span className={`flex-none w-10 ${LEVEL_COLOR[e.level?.toLowerCase()] ?? "text-dim2"}`}>
+            <div
+              key={i}
+              className="flex gap-2.5 px-2.5 py-[3px] text-xs whitespace-pre-wrap break-all"
+            >
+              <span className="text-dim2 flex-none">
+                {e.timestamp?.slice(11, 19) || "—"}
+              </span>
+              <span
+                className={`flex-none w-10 ${LEVEL_COLOR[e.level?.toLowerCase()] ?? "text-dim2"}`}
+              >
                 {e.level || "—"}
               </span>
-              <span className="text-dim2 flex-none w-24 truncate" title={e.component}>
+              <span
+                className="text-dim2 flex-none w-24 truncate"
+                title={e.component}
+              >
                 {e.component}
               </span>
               <span className="text-text2 min-w-0">{e.msg}</span>

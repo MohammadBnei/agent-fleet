@@ -1,6 +1,15 @@
 import type { TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
-import { decisionAnswerable, findPendingPermissions, findPendingQuestion, hasPendingDecision } from "../transcript";
-import { PermissionCard, type Grant, type GrantPreview } from "./PermissionCard";
+import {
+  decisionAnswerable,
+  findPendingPermissions,
+  findPendingQuestion,
+  hasPendingDecision,
+} from "../transcript";
+import {
+  type Grant,
+  type GrantPreview,
+  PermissionCard,
+} from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -34,7 +43,11 @@ export function DecisionDock({
   podLive?: boolean;
   swept?: boolean;
   compact?: boolean;
-  onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }, grant?: Grant) => void;
+  onRespond: (
+    seq: bigint,
+    decision: { behavior: "allow" | "deny"; message?: string },
+    grant?: Grant,
+  ) => void;
   previewGrant?: GrantPreview;
   // Plan approval is its own path, not an allow decision: it may also switch
   // the session's permission mode, and the order of those two calls matters
@@ -59,19 +72,30 @@ export function DecisionDock({
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
   return (
-    <div className={`flex-none border-t border-pink-line max-h-[45vh] overflow-y-auto ${pad}`}>
+    <div
+      className={`flex-none border-t border-pink-line max-h-[45vh] overflow-y-auto ${pad}`}
+    >
       {/* Parallel tool calls each get their own permission, so several can be
           open at once — and answering one swaps a different card into the same
           pixels with nothing to say the queue moved. Without this line the
           human cannot tell whether they just finished or are on a treadmill. */}
       {permissions.length > 1 && (
         <div className="text-2xs tracking-[0.1em] text-dim2 mb-2">
-          PERMISSION 1 OF {permissions.length} · {permissions.length - 1} MORE AFTER THIS
+          PERMISSION 1 OF {permissions.length} · {permissions.length - 1} MORE
+          AFTER THIS
         </div>
       )}
       {permission && !permissionLive && (
         <div className="flex flex-col gap-2">
-          <PermissionCard tool={permission.tool} input={permission.input} pending={false} busy onAllow={() => {}} onDeny={() => {}} edgeClassName={edge} />
+          <PermissionCard
+            tool={permission.tool}
+            input={permission.input}
+            pending={false}
+            busy
+            onAllow={() => {}}
+            onDeny={() => {}}
+            edgeClassName={edge}
+          />
           <span className="text-xs text-warning">
             {swept
               ? "This session's working directory was reclaimed — the request can no longer be answered."
@@ -79,10 +103,13 @@ export function DecisionDock({
           </span>
         </div>
       )}
-      {permission && permissionLive &&
+      {permission &&
+        permissionLive &&
         (permission.tool === "ExitPlanMode" ? (
           <PlanCard
-            plan={(permission.input as { plan?: string } | undefined)?.plan ?? ""}
+            plan={
+              (permission.input as { plan?: string } | undefined)?.plan ?? ""
+            }
             pending
             docked
             busy={busyKey === `permission:${permission.entry.seq}`}
@@ -97,9 +124,13 @@ export function DecisionDock({
             input={permission.input}
             pending
             busy={busyKey === `permission:${permission.entry.seq}`}
-            onAllow={(grant) => onRespond(permission.entry.seq, { behavior: "allow" }, grant)}
+            onAllow={(grant) =>
+              onRespond(permission.entry.seq, { behavior: "allow" }, grant)
+            }
             preview={previewGrant && (() => previewGrant(permission.entry.seq))}
-            onDeny={(message) => onRespond(permission.entry.seq, { behavior: "deny", message })}
+            onDeny={(message) =>
+              onRespond(permission.entry.seq, { behavior: "deny", message })
+            }
             edgeClassName={edge}
           />
         ))}

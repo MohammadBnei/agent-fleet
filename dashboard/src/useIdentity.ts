@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
-export type Identity = { authenticated: boolean; email?: string; groups?: string[] };
+export type Identity = {
+  authenticated: boolean;
+  email?: string;
+  groups?: string[];
+};
 
 // Who the console thinks you are, for its own chrome.
 //

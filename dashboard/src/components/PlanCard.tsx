@@ -1,11 +1,16 @@
 import { useRef, useState } from "react";
-import { Markdown } from "./Markdown";
 import { ActionButton } from "./ActionButton";
 import { AutoModeConfirm } from "./AutoModeConfirm";
+import { Markdown } from "./Markdown";
 import { PlanModal } from "./PlanModal";
 
 type Annotation = { quote: string; comment: string };
-type SelectionPopover = { quote: string; x: number; y: number; editing: boolean };
+type SelectionPopover = {
+  quote: string;
+  x: number;
+  y: number;
+  editing: boolean;
+};
 
 // ExitPlanMode's canUseTool call posts a real, seq-correlated
 // PERMISSION_REQUEST entry like any other tool (see transcript.ts's
@@ -95,10 +100,16 @@ export function PlanCard({
             consent. */}
         <span
           className={`flex-none border px-1 ${
-            decision === "interrupted" || decision === "deny" ? "border-pink-line text-error" : "border-green-line text-green-soft"
+            decision === "interrupted" || decision === "deny"
+              ? "border-pink-line text-error"
+              : "border-green-line text-green-soft"
           }`}
         >
-          {decision === "interrupted" ? "plan interrupted" : decision === "deny" ? "changes requested" : "plan approved"}
+          {decision === "interrupted"
+            ? "plan interrupted"
+            : decision === "deny"
+              ? "changes requested"
+              : "plan approved"}
         </span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">
@@ -143,7 +154,10 @@ export function PlanCard({
 
   function addAnnotation() {
     if (!selection || !draft.trim()) return;
-    setAnnotations((prev) => [...prev, { quote: selection.quote, comment: draft.trim() }]);
+    setAnnotations((prev) => [
+      ...prev,
+      { quote: selection.quote, comment: draft.trim() },
+    ]);
     setSelection(null);
     setDraft("");
     window.getSelection()?.removeAllRanges();
@@ -172,10 +186,14 @@ export function PlanCard({
   }
 
   return (
-    <div className={`border-y border-pink-line bg-pink-bg py-4 ${edgeClassName}`}>
+    <div
+      className={`border-y border-pink-line bg-pink-bg py-4 ${edgeClassName}`}
+    >
       <div className="flex items-center gap-2 mb-2.5">
         <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse flex-none" />
-        <span className="text-2xs tracking-[0.1em] text-error">◉ PLAN — NEEDS YOUR REVIEW</span>
+        <span className="text-2xs tracking-[0.1em] text-error">
+          ◉ PLAN — NEEDS YOUR REVIEW
+        </span>
         {/* The dock is 45vh at most, above a composer, beside the panels — so a
             plan of any length is read through a letterbox with its own approve
             buttons pushed under the fold. Same reader the list uses.
@@ -217,7 +235,12 @@ export function PlanCard({
                   autoFocus
                   className="w-48 bg-transparent outline-none text-xs px-1"
                 />
-                <button type="button" className="bg-primary text-primary-content px-2.5 py-1 text-xs font-semibold disabled:opacity-50" disabled={!draft.trim()} onClick={addAnnotation}>
+                <button
+                  type="button"
+                  className="bg-primary text-primary-content px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
+                  disabled={!draft.trim()}
+                  onClick={addAnnotation}
+                >
                   add
                 </button>
               </div>
@@ -225,7 +248,9 @@ export function PlanCard({
               <button
                 type="button"
                 className="bg-primary text-primary-content px-2.5 py-1 text-xs font-semibold"
-                onClick={() => setSelection((s) => (s ? { ...s, editing: true } : s))}
+                onClick={() =>
+                  setSelection((s) => (s ? { ...s, editing: true } : s))
+                }
               >
                 + comment
               </button>
@@ -236,9 +261,14 @@ export function PlanCard({
       {annotations.length > 0 && (
         <div className="flex flex-col gap-1.5 mt-3">
           {annotations.map((a, i) => (
-            <div key={i} className="flex items-start gap-2 text-xs border border-line bg-base-200/50 px-2.5 py-1.5">
+            <div
+              key={i}
+              className="flex items-start gap-2 text-xs border border-line bg-base-200/50 px-2.5 py-1.5"
+            >
               <div className="flex-1 min-w-0">
-                <div className="text-dim2 italic truncate">&quot;{a.quote}&quot;</div>
+                <div className="text-dim2 italic truncate">
+                  &quot;{a.quote}&quot;
+                </div>
                 <div className="text-text2">{a.comment}</div>
               </div>
               <button
@@ -319,9 +349,17 @@ export function PlanCard({
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (feedback.trim() || annotations.length > 0)) send();
+              if (
+                e.key === "Enter" &&
+                (feedback.trim() || annotations.length > 0)
+              )
+                send();
             }}
-            placeholder={annotations.length > 0 ? "add an overall comment (optional)…" : "what should change?"}
+            placeholder={
+              annotations.length > 0
+                ? "add an overall comment (optional)…"
+                : "what should change?"
+            }
             autoFocus
             disabled={busy}
             className="flex-1 min-w-0 bg-transparent border border-line px-3 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"

@@ -37,7 +37,9 @@ export function GrantsPanel() {
   return (
     <div>
       <p className="text-xs text-dim mb-3">
-        Approvals remembered for a whole definition. Running sessions keep a revoked rule until they next warm. To keep one, add it to the definition's tools.allow and revoke it here.
+        Approvals remembered for a whole definition. Running sessions keep a
+        revoked rule until they next warm. To keep one, add it to the
+        definition's tools.allow and revoke it here.
       </p>
       {error && <InlineError message={error} />}
       {grants === null ? (
@@ -46,8 +48,13 @@ export function GrantsPanel() {
         <div className="text-xs text-dim">No definition grants.</div>
       ) : (
         grants.map((g) => (
-          <div key={String(g.id)} className="flex items-center gap-2 flex-wrap py-1.5 border-b border-base-content/5 last:border-0">
-            <span className="text-sm font-medium w-36 truncate flex-none">{g.definition}</span>
+          <div
+            key={String(g.id)}
+            className="flex items-center gap-2 flex-wrap py-1.5 border-b border-base-content/5 last:border-0"
+          >
+            <span className="text-sm font-medium w-36 truncate flex-none">
+              {g.definition}
+            </span>
             <code className="text-xs flex-1 min-w-0 break-all">{g.rule}</code>
             <span className="text-xs text-dim flex-none" title={g.grantedAt}>
               {g.grantedBy}

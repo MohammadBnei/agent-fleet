@@ -1,5 +1,5 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ConnectError, Code } from "@connectrpc/connect";
 import { client } from "../connectClient";
 
 /**
@@ -27,7 +27,10 @@ export function MicButton({
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dictationRef = useRef<{ start: () => Promise<void>; stop: () => Promise<void> } | null>(null);
+  const dictationRef = useRef<{
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+  } | null>(null);
   const streamIdRef = useRef("");
 
   // Crossing the 640px breakpoint swaps SessionDetail for MobileSessionDetail
@@ -101,7 +104,8 @@ export function MicButton({
         // ordering is load-bearing, so a re-sent chunk arriving after a later
         // one corrupts everything following it.
         onError: (e: Error) => {
-          const unavailable = e instanceof ConnectError && e.code === Code.Unavailable;
+          const unavailable =
+            e instanceof ConnectError && e.code === Code.Unavailable;
           setError(unavailable ? "speech-to-text is unavailable" : e.message);
           void stop();
         },

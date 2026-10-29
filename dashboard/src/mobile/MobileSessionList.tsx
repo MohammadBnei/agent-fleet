@@ -1,17 +1,37 @@
-import { relativeTime } from "../relativeTime";
 import { useMemo, useState } from "react";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { client } from "../connectClient";
-import { sessionLabel } from "../sessionLabel";
-import { SectionHeading, AutoBadge, DefinitionBadge } from "../pages/SessionList";
-import { bucketSessions, isPodPhaseLive, sessionBadge, blockedForLabel, stuckLabel, compareSessions, restStatus, TERMINAL, activityLabel, notchLabel, type SortKey } from "../sessionState";
-import type { ListSummary } from "../transcript";
-import { TickBar, todoProgress } from "../components/TickBar";
-import { NotchCard } from "../components/NotchCard";
 import { DecisionInline } from "../components/DecisionInline";
-import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowActionsButton, RowAction, StuckActions } from "../components/RowControls";
+import { NotchCard } from "../components/NotchCard";
 import { QuietControls } from "../components/QuietControls";
+import {
+  RowAction,
+  RowActionsButton,
+  StuckActions,
+} from "../components/RowControls";
+import { SessionActionsModal } from "../components/SessionActionsModal";
+import { TickBar, todoProgress } from "../components/TickBar";
+import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import {
+  AutoBadge,
+  DefinitionBadge,
+  SectionHeading,
+} from "../pages/SessionList";
+import { relativeTime } from "../relativeTime";
+import { sessionLabel } from "../sessionLabel";
+import {
+  activityLabel,
+  blockedForLabel,
+  bucketSessions,
+  compareSessions,
+  isPodPhaseLive,
+  notchLabel,
+  restStatus,
+  type SortKey,
+  sessionBadge,
+  stuckLabel,
+  TERMINAL,
+} from "../sessionState";
+import type { ListSummary } from "../transcript";
 import { useToggleSet } from "../useToggleSet";
 
 // The phone list screen from Agent Fleet Console Mobile.dc.html. Not a
@@ -26,7 +46,6 @@ import { useToggleSet } from "../useToggleSet";
 // "needsYou", which meant a phone opened on an empty screen whenever nothing
 // was blocked. Same sections, same order, always rendered: identical to
 // desktop, which never had one.
-
 
 function NeedsYouCard({
   session,
@@ -50,9 +69,20 @@ function NeedsYouCard({
     <NotchCard label={notchLabel(blockedFor, queued)}>
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-xs text-dim2 min-w-0 truncate">{session.repo}</span>
-          {session.definitionName && <DefinitionBadge name={session.definitionName} />}
-          {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
+          <span className="text-xs text-dim2 min-w-0 truncate">
+            {session.repo}
+          </span>
+          {session.definitionName && (
+            <DefinitionBadge name={session.definitionName} />
+          )}
+          {todos.length > 0 && (
+            <TickBar
+              todos={todos}
+              blocked
+              cell="w-[11px]"
+              className="ml-auto flex-none"
+            />
+          )}
           <RowActionsButton onOpen={onActions} inline />
         </div>
         <button
@@ -90,10 +120,16 @@ function FinishedCard({
   const failed = session.podPhase === "POD_PHASE_CRASHED";
   const when = relativeTime(session.lastActiveAt);
   return (
-    <div className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}>
+    <div
+      className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}
+    >
       <div className="flex items-center gap-2">
-        <span className={`w-1.5 h-1.5 rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        {when && <span className="text-xs text-dim2 ml-auto flex-none">{when}</span>}
+        <span
+          className={`w-1.5 h-1.5 rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`}
+        />
+        {when && (
+          <span className="text-xs text-dim2 ml-auto flex-none">{when}</span>
+        )}
         <RowActionsButton onOpen={onActions} inline />
       </div>
       <button
@@ -109,7 +145,11 @@ function FinishedCard({
             crashed{session.lastError ? ` · ${session.lastError}` : ""}
           </div>
           <div className="flex gap-2 mt-2.5">
-            <button type="button" onClick={onOpenLogs} className="border border-acc-line px-3 py-2 text-xs flex-1">
+            <button
+              type="button"
+              onClick={onOpenLogs}
+              className="border border-acc-line px-3 py-2 text-xs flex-1"
+            >
               read log
             </button>
           </div>
@@ -150,18 +190,32 @@ function WorkingCard({
   // the tap target now; everything below it is decoration that was never worth
   // tapping.
   return (
-    <div className={`w-full text-left px-3.5 py-2.5 ${last ? "" : "border-b border-line3"}`}>
+    <div
+      className={`w-full text-left px-3.5 py-2.5 ${last ? "" : "border-b border-line3"}`}
+    >
       <div className="flex items-center gap-2">
         <span
           className={`w-1.5 h-1.5 rounded-full flex-none ${live ? "bg-info animate-fpulse" : "border border-dim2"}`}
         />
-        <button type="button" onClick={onSelect} className="flex items-center gap-2 min-w-0 flex-1 text-left">
-          <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left"
+        >
+          <span
+            className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}
+          >
+            {sessionLabel(session)}
+          </span>
         </button>
-        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
+        {session.definitionName && (
+          <DefinitionBadge name={session.definitionName} />
+        )}
         {session.permissionMode === "auto" && <AutoBadge className="ml-auto" />}
         {todos.length > 0 && (
-          <span className={`text-xs text-dim2 flex-none ${session.permissionMode === "auto" ? "" : "ml-auto"}`}>
+          <span
+            className={`text-xs text-dim2 flex-none ${session.permissionMode === "auto" ? "" : "ml-auto"}`}
+          >
             {todoProgress(todos)}
           </span>
         )}
@@ -207,9 +261,19 @@ function QuietRow({
         onClick={() => onSelect(session.id)}
         className="flex items-center gap-2 text-left min-w-0 flex-1"
       >
-        <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
-        {badge && <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>}
-        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
+        <span className="text-sm text-dim min-w-0 truncate flex-1">
+          {sessionLabel(session)}
+        </span>
+        {badge && (
+          <span
+            className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}
+          >
+            {badge.label}
+          </span>
+        )}
+        {session.definitionName && (
+          <DefinitionBadge name={session.definitionName} />
+        )}
       </button>
       <RowActionsButton onOpen={onActions} inline />
     </div>
@@ -238,8 +302,14 @@ function StuckCard({
   return (
     <div className="border border-orange-line bg-orange-bg px-3 py-2.5 flex flex-col gap-2">
       <div className="flex items-baseline gap-2 min-w-0">
-        <button type="button" onClick={() => onSelect(session.id)} className="flex items-baseline gap-2 text-left min-w-0 flex-1">
-          <span className="text-sm min-w-0 truncate flex-1">{sessionLabel(session)}</span>
+        <button
+          type="button"
+          onClick={() => onSelect(session.id)}
+          className="flex items-baseline gap-2 text-left min-w-0 flex-1"
+        >
+          <span className="text-sm min-w-0 truncate flex-1">
+            {sessionLabel(session)}
+          </span>
         </button>
         <RowActionsButton onOpen={onActions} inline />
       </div>
@@ -298,16 +368,21 @@ export function MobileSessionList({
   // not rendered is a session that vanishes from this list. Mobile had dropped
   // `archived` and `swept` too, so a session a human had finished existed on
   // neither form factor.
-  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds, answerableIds);
+  const { needsYou, stuck, working, finished, quiet, archived, swept } =
+    bucketSessions(sessions, needsYouIds, answerableIds);
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
   // Same derivation and same axes as desktop, so the two lists cannot disagree
   // about what "filtered by repo" means.
-  const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
+  const repos = useMemo(
+    () => [...new Set(sessions.map((t) => t.repo))].sort(),
+    [sessions],
+  );
   // From the unfiltered tail on purpose: derived from the visible rows, a status
   // would vanish from the menu the moment you hid it, which is the same
   // one-way-door as above one level down.
   const restStatuses = useMemo(
-    () => [...new Set([...quiet, ...archived, ...swept].map(restStatus))].sort(),
+    () =>
+      [...new Set([...quiet, ...archived, ...swept].map(restStatus))].sort(),
     [quiet, archived, swept],
   );
   // Two arrays, exactly as desktop has: `rest` is every quiet session and gates
@@ -322,29 +397,34 @@ export function MobileSessionList({
     .filter((t) => !hidden.has(restStatus(t)))
     .sort((a, b) => compareSessions(a, b, sort));
 
-
-
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pt-4 pb-5 flex flex-col gap-3.5">
-        {sessions.length === 0 && <div className="text-base text-dim">{loaded ? "No sessions." : "Loading…"}</div>}
+        {sessions.length === 0 && (
+          <div className="text-base text-dim">
+            {loaded ? "No sessions." : "Loading…"}
+          </div>
+        )}
 
-        {
-          visibleNeedsYou.map((t) => (
-            <NeedsYouCard
-              key={t.id}
-              session={t}
-              onActions={() => setActionsFor(t)}
-              summary={summaries.get(t.id)}
-              onSelect={() => onSelect(t.id)}
-              reload={reload}
-              onAskLater={() => setDeferred((prev) => new Set(prev).add(t.id))}
-            />
-          ))}
+        {visibleNeedsYou.map((t) => (
+          <NeedsYouCard
+            key={t.id}
+            session={t}
+            onActions={() => setActionsFor(t)}
+            summary={summaries.get(t.id)}
+            onSelect={() => onSelect(t.id)}
+            reload={reload}
+            onAskLater={() => setDeferred((prev) => new Set(prev).add(t.id))}
+          />
+        ))}
 
         {finished.length > 0 && (
           <>
-            <SectionHeading title="DONE WHILE AWAY" tone="green" className="mt-0.5" />
+            <SectionHeading
+              title="DONE WHILE AWAY"
+              tone="green"
+              className="mt-0.5"
+            />
             {finished.map((t) => (
               <FinishedCard
                 key={t.id}
@@ -360,7 +440,12 @@ export function MobileSessionList({
 
         {stuck.length > 0 && (
           <>
-            <SectionHeading title="STUCK" tone="orange" note="burning time, asking nobody" className="mt-0.5" />
+            <SectionHeading
+              title="STUCK"
+              tone="orange"
+              note="burning time, asking nobody"
+              className="mt-0.5"
+            />
             {stuck.map((t) => (
               <StuckCard
                 key={t.id}
@@ -400,7 +485,9 @@ export function MobileSessionList({
         {rest.length > 0 && (
           <div className="flex flex-col mt-1">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs tracking-[0.14em] text-dim2 whitespace-nowrap">QUIET</span>
+              <span className="text-xs tracking-[0.14em] text-dim2 whitespace-nowrap">
+                QUIET
+              </span>
               <span className="flex-1 h-px bg-line2" />
               <span className="text-xs text-dim2 whitespace-nowrap">
                 {visibleRest.length} of {rest.length}
@@ -418,10 +505,17 @@ export function MobileSessionList({
               compact
             />
             {visibleRest.map((t) => (
-              <QuietRow key={t.id} session={t} onSelect={onSelect} onActions={() => setActionsFor(t)} />
+              <QuietRow
+                key={t.id}
+                session={t}
+                onSelect={onSelect}
+                onActions={() => setActionsFor(t)}
+              />
             ))}
             {visibleRest.length === 0 && (
-              <span className="text-xs text-dim2 py-1">nothing matches these filters</span>
+              <span className="text-xs text-dim2 py-1">
+                nothing matches these filters
+              </span>
             )}
           </div>
         )}

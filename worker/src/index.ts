@@ -17,9 +17,10 @@
 // What remains is: run the session, exit non-zero if it
 // threw. The exit code is load-bearing — it is what makes the Job phase
 // Failed rather than Succeeded, and the provisioner reports both.
+
+import { log } from "./log.js";
 import { runSession as defaultRunSession } from "./session.js";
 import * as defaultSidecar from "./sidecarClient.js";
-import { log } from "./log.js";
 
 type Sidecar = typeof defaultSidecar;
 type RunSession = typeof defaultRunSession;
@@ -61,12 +62,16 @@ export async function main(
     // PR-existence check — because a session may end in a PR, an
     // explanation, or a dead end, and nothing here can tell those apart.
     const result = await runSession();
-    log("info", "session ended", { sessionId: SESSION_ID, aborted: result.aborted });
+    log("info", "session ended", {
+      sessionId: SESSION_ID,
+      aborted: result.aborted,
+    });
   } catch (err) {
     // SDK abort errors (from interrupt) are expected and already handled in
     // session.ts. Only a genuinely unexpected error should fail the pod.
     const errStr = String(err);
-    const isAbortError = errStr.includes("Request was aborted") || errStr.includes("AbortError");
+    const isAbortError =
+      errStr.includes("Request was aborted") || errStr.includes("AbortError");
     if (!isAbortError) {
       // This one error string was the only session.* payload that existed
       // nowhere else: it is thrown outside the SDK loop so transcript never
@@ -77,8 +82,17 @@ export async function main(
       // rendered the journal at all. Same shape session.ts uses for an SDK
       // assistant error: a JSON payload on a system entry.
       await sidecar
-        .pushMessage("worker", JSON.stringify({ sdk: "session_failed", error: errStr }), "system")
-        .catch((pushErr) => log("warn", "pushMessage(session_failed) failed", { sessionId: SESSION_ID, error: String(pushErr) }));
+        .pushMessage(
+          "worker",
+          JSON.stringify({ sdk: "session_failed", error: errStr }),
+          "system",
+        )
+        .catch((pushErr) =>
+          log("warn", "pushMessage(session_failed) failed", {
+            sessionId: SESSION_ID,
+            error: String(pushErr),
+          }),
+        );
       log("error", "session failed", { sessionId: SESSION_ID, error: errStr });
       // The non-zero exit is the point, independent of whether the transcript
       // write above succeeded: it is what makes the Job phase Failed rather
@@ -96,7 +110,10 @@ export async function main(
 if (import.meta.main) {
   main()
     .catch((err) => {
-      log("error", "worker crashed", { sessionId: SESSION_ID, error: String(err) });
+      log("error", "worker crashed", {
+        sessionId: SESSION_ID,
+        error: String(err),
+      });
       process.exitCode = 1;
     })
     // process.exitCode only *requests* an exit code; the process still waits

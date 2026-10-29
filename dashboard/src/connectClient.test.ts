@@ -9,9 +9,9 @@
 // rather than `mock.module`. Mocking the module passed locally and silently
 // did not apply on CI's bun, where the "test" then exercised the real
 // transport against a relative URL and reported an empty call list.
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { subscribeTranscript } from "./connectClient";
+import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 type Call = { sinceSeq: bigint; signal: AbortSignal };
 
@@ -27,7 +27,9 @@ const mockDocument = {
   },
   _setHidden(hidden: boolean) {
     this.hidden = hidden;
-    this._listeners.get("visibilitychange")?.forEach((l) => l(new Event("visibilitychange")));
+    this._listeners.get("visibilitychange")?.forEach((l) => {
+      l(new Event("visibilitychange"));
+    });
   },
 };
 
@@ -40,14 +42,21 @@ describe("subscribeTranscript visibility handling", () => {
 
   // Yields whatever is queued for this attempt, then stays open exactly like
   // a live stream with nothing new to say — until somebody aborts it.
-  const openStream = (req: { sessionId: string; sinceSeq: bigint }, opts: { signal: AbortSignal }) => {
+  const openStream = (
+    req: { sessionId: string; sinceSeq: bigint },
+    opts: { signal: AbortSignal },
+  ) => {
     calls.push({ sinceSeq: req.sinceSeq, signal: opts.signal });
     const toYield = queued;
     queued = [];
     return (async function* () {
       for (const entry of toYield) yield entry as TranscriptEntry;
       await new Promise((_resolve, reject) => {
-        opts.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        opts.signal.addEventListener(
+          "abort",
+          () => reject(new Error("aborted")),
+          { once: true },
+        );
       });
     })();
   };
@@ -69,7 +78,12 @@ describe("subscribeTranscript visibility handling", () => {
   test("aborts the in-flight stream when the page is hidden, and resumes from the cursor", async () => {
     queued = [{ seq: 7n } as TranscriptEntry];
     const seen: bigint[] = [];
-    const unsubscribe = subscribeTranscript("session-1", 0n, (entry) => seen.push(entry.seq), openStream);
+    const unsubscribe = subscribeTranscript(
+      "session-1",
+      0n,
+      (entry) => seen.push(entry.seq),
+      openStream,
+    );
 
     await tick();
     expect(calls).toHaveLength(1);
@@ -111,7 +125,10 @@ describe("subscribeTranscript visibility handling", () => {
   test("resubscribes from the cursor when the server ends the stream cleanly", async () => {
     // Ends after yielding — a clean return, not a throw. That is what a server
     // hitting streamMaxAge looks like from here.
-    const cleanlyEnding = (req: { sessionId: string; sinceSeq: bigint }, opts: { signal: AbortSignal }) => {
+    const cleanlyEnding = (
+      req: { sessionId: string; sinceSeq: bigint },
+      opts: { signal: AbortSignal },
+    ) => {
       calls.push({ sinceSeq: req.sinceSeq, signal: opts.signal });
       const toYield = queued;
       queued = [];
@@ -122,7 +139,12 @@ describe("subscribeTranscript visibility handling", () => {
 
     queued = [{ seq: 4n } as TranscriptEntry];
     const seen: bigint[] = [];
-    const unsubscribe = subscribeTranscript("session-3", 0n, (entry) => seen.push(entry.seq), cleanlyEnding);
+    const unsubscribe = subscribeTranscript(
+      "session-3",
+      0n,
+      (entry) => seen.push(entry.seq),
+      cleanlyEnding,
+    );
 
     await tick();
     expect(calls).toHaveLength(1);
@@ -139,7 +161,12 @@ describe("subscribeTranscript visibility handling", () => {
   }, 10000);
 
   test("unsubscribe aborts the live attempt and unregisters the listener", async () => {
-    const unsubscribe = subscribeTranscript("session-2", 3n, () => {}, openStream);
+    const unsubscribe = subscribeTranscript(
+      "session-2",
+      3n,
+      () => {},
+      openStream,
+    );
     await tick();
     expect(calls).toHaveLength(1);
 

@@ -24,7 +24,9 @@ export function TickBar({
   if (todos.length === 0) return null;
   const width = cell === "flex" ? "flex-1" : cell;
   return (
-    <div className={`flex ${cell === "flex" ? "gap-0.5" : "gap-[3px]"} ${className}`}>
+    <div
+      className={`flex ${cell === "flex" ? "gap-0.5" : "gap-[3px]"} ${className}`}
+    >
       {todos.map((t, i) => (
         <div
           key={i}

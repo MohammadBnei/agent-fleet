@@ -1,8 +1,8 @@
 import type { CSSProperties } from "react";
-import { client } from "../connectClient";
-import { ActionButton } from "./ActionButton";
-import { isPodPhaseLive } from "../sessionState";
 import { PERMISSION_MODES } from "../approvePlan";
+import { client } from "../connectClient";
+import { isPodPhaseLive } from "../sessionState";
+import { ActionButton } from "./ActionButton";
 
 // The user-facing SDK modes worth a button — "delegate"/"dontAsk" are
 // SDK-internal/secondary, never surfaced here, and "bypassPermissions" is
@@ -88,7 +88,9 @@ export function ActionsMenu({
               className={BTN}
               busy={busyKey === "action:interrupt"}
               disabled={busy}
-              onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
+              onClick={() =>
+                run(() => client.interrupt({ sessionId }), "action:interrupt")
+              }
             >
               interrupt
             </ActionButton>
@@ -98,7 +100,9 @@ export function ActionsMenu({
             busy={busyKey === "action:stop"}
             disabled={busy}
             title="End the pod. The session stays and can be warmed again."
-            onClick={() => run(() => client.stopSession({ sessionId }), "action:stop")}
+            onClick={() =>
+              run(() => client.stopSession({ sessionId }), "action:stop")
+            }
           >
             stop
           </ActionButton>
@@ -125,7 +129,9 @@ export function ActionsMenu({
             busy={busyKey === "action:warm"}
             disabled={busy}
             title="Start a pod and resume this session"
-            onClick={() => run(() => client.warmSession({ sessionId }), "action:warm")}
+            onClick={() =>
+              run(() => client.warmSession({ sessionId }), "action:warm")
+            }
           >
             warm
           </ActionButton>
@@ -139,7 +145,9 @@ export function ActionsMenu({
           className={BTN}
           busy={busyKey === "action:archive"}
           disabled={busy}
-          onClick={() => run(() => client.archiveSession({ sessionId }), "action:archive")}
+          onClick={() =>
+            run(() => client.archiveSession({ sessionId }), "action:archive")
+          }
         >
           archive
         </ActionButton>
@@ -154,7 +162,13 @@ export function ActionsMenu({
         popoverTarget="popover-mode"
         style={{ anchorName: "--anchor-mode" } as CSSProperties}
       >
-        mode: {(MODES.find((m) => m.value === currentMode)?.label ?? currentMode ?? "?").toLowerCase()} ▾
+        mode:{" "}
+        {(
+          MODES.find((m) => m.value === currentMode)?.label ??
+          currentMode ??
+          "?"
+        ).toLowerCase()}{" "}
+        ▾
       </ActionButton>
       <ul
         className="dropdown menu menu-sm bg-base-100 rounded-box shadow w-44 p-1"
@@ -175,7 +189,11 @@ export function ActionsMenu({
               onClick={() =>
                 "confirm" in m && m.confirm
                   ? onAutoClick()
-                  : run(() => client.setPermissionMode({ sessionId, mode: m.value }), "action:mode")
+                  : run(
+                      () =>
+                        client.setPermissionMode({ sessionId, mode: m.value }),
+                      "action:mode",
+                    )
               }
             >
               {m.value === currentMode ? "✓ " : ""}

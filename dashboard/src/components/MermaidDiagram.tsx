@@ -1,5 +1,5 @@
-import { memo, useEffect, useId, useRef, useState } from "react";
 import mermaid from "mermaid";
+import { memo, useEffect, useId, useRef, useState } from "react";
 
 // securityLevel "strict" is mermaid's default, stated so it can't drift: the
 // SVG below goes in via innerHTML, and diagrams come from agent output.
@@ -17,7 +17,11 @@ mermaid.initialize({
 // mermaid.render() is async and returns raw SVG markup, so this needs its
 // own client-side effect rather than a synchronous component.
 // Memoized to prevent re-rendering diagrams when the code hasn't changed.
-export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) {
+export const MermaidDiagram = memo(function MermaidDiagram({
+  code,
+}: {
+  code: string;
+}) {
   const id = useId().replace(/:/g, "-");
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +34,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
         if (!cancelled && ref.current) ref.current.innerHTML = svg;
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
@@ -38,7 +43,11 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
   }, [id, code]);
 
   if (error) {
-    return <pre className="text-2xs font-mono whitespace-pre-wrap text-error my-2">{error}</pre>;
+    return (
+      <pre className="text-2xs font-mono whitespace-pre-wrap text-error my-2">
+        {error}
+      </pre>
+    );
   }
   return <div ref={ref} className="my-2 [&_svg]:max-w-full" />;
 });

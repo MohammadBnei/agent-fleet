@@ -21,7 +21,12 @@ export function relativeTime(
   if (ms < 0 && !opts.future) return null;
   const mins = Math.floor(Math.abs(ms) / 60_000);
   if (mins < 1) return ms >= 0 || opts.bare ? "just now" : "in <1m";
-  const unit = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
+  const unit =
+    mins < 60
+      ? `${mins}m`
+      : mins < 1440
+        ? `${Math.floor(mins / 60)}h`
+        : `${Math.floor(mins / 1440)}d`;
   if (opts.bare) return unit;
   return ms >= 0 ? `${unit} ago` : `in ${unit}`;
 }

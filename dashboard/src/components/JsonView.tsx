@@ -4,7 +4,13 @@
 // ponytail: opacity-only tinting, not full syntax highlighting — revisit if
 // output review becomes a real workflow (a rainbow scheme would also fight
 // ToolCallItem's error-red wrapper coloring).
-export function JsonView({ value, depth = 0 }: { value: unknown; depth?: number }) {
+export function JsonView({
+  value,
+  depth = 0,
+}: {
+  value: unknown;
+  depth?: number;
+}) {
   if (value === null || value === undefined) {
     return <span className="text-dim">{String(value)}</span>;
   }
@@ -13,7 +19,9 @@ export function JsonView({ value, depth = 0 }: { value: unknown; depth?: number 
   }
   if (typeof value === "string") {
     if (value.includes("\n")) {
-      return <div className="whitespace-pre-wrap text-base-content">{value}</div>;
+      return (
+        <div className="whitespace-pre-wrap text-base-content">{value}</div>
+      );
     }
     return <span className="text-base-content">"{value}"</span>;
   }

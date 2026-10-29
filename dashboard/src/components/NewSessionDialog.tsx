@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
+import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
 import { client } from "../connectClient";
+import type { AgentDefinition, Repo } from "../gen/agentfleet/v1/dashboard_pb";
 import { activeRepos } from "../repoFilter";
 import { queueFirstMessage } from "../useSessionDetail";
-import { Modal } from "./Modal";
-import type { AgentDefinition, Repo } from "../gen/agentfleet/v1/dashboard_pb";
-import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
 import { InlineError } from "./InlineError";
+import { Modal } from "./Modal";
 
 // The first line of the message, as a list label. `description`/`title` are
 // human-facing labels the agent never reads (db/migrations/000001_init.up.sql
@@ -83,7 +83,11 @@ export function NewSessionDialog({
         const active = activeRepos(res.repos);
         setRepos(active);
         setModels(res.models);
-        setRepo((current) => (active.some((r) => r.name === current) ? current : active[0]?.name || ""));
+        setRepo((current) =>
+          active.some((r) => r.name === current)
+            ? current
+            : active[0]?.name || "",
+        );
       })
       .catch((err: Error) => setError(err.message));
   }, [dialogOpen]);
@@ -98,7 +102,9 @@ export function NewSessionDialog({
       })
       // Under the picker, not the dialog's error banner: a definitions
       // outage must not mark repo-session creation as failing.
-      .catch((err: Error) => setSyncErrors([`definitions unavailable: ${err.message}`]));
+      .catch((err: Error) =>
+        setSyncErrors([`definitions unavailable: ${err.message}`]),
+      );
   }, [dialogOpen]);
   const chosen = definitions.find((d) => d.name === definition);
 
@@ -229,7 +235,9 @@ export function NewSessionDialog({
               </select>
               {chosen && (
                 <span className="text-dim text-xs">
-                  Runs {chosen.repo} as {chosen.permissionMode} on {chosen.model || FLEET_MODEL_DEFAULT} — {chosen.name}@{chosen.sha.slice(0, 7)}
+                  Runs {chosen.repo} as {chosen.permissionMode} on{" "}
+                  {chosen.model || FLEET_MODEL_DEFAULT} — {chosen.name}@
+                  {chosen.sha.slice(0, 7)}
                 </span>
               )}
               {syncErrors.length > 0 && (
@@ -298,7 +306,11 @@ export function NewSessionDialog({
               </label>
               <label className="flex flex-col gap-1 text-sm flex-1 min-w-0">
                 Effort
-                <select value={effort} onChange={(e) => setEffort(e.target.value)} className="select select-sm select-bordered">
+                <select
+                  value={effort}
+                  onChange={(e) => setEffort(e.target.value)}
+                  className="select select-sm select-bordered"
+                >
                   <option value="">{CLAUDE_DEFAULT}</option>
                   {EFFORTS.map((e) => (
                     <option key={e} value={e}>
@@ -328,7 +340,11 @@ export function NewSessionDialog({
                   sees what that means — the actions menu's own confirm
                   (SessionActionsModal) never runs for a session that launches in
                   auto. If the consequence is not on screen here, it is nowhere. */}
-              {effectiveMode === "auto" && <span className="text-warning text-xs">{AUTO_MODE_WARNING}</span>}
+              {effectiveMode === "auto" && (
+                <span className="text-warning text-xs">
+                  {AUTO_MODE_WARNING}
+                </span>
+              )}
             </label>
           )}
           <InlineError message={error} />
@@ -336,8 +352,16 @@ export function NewSessionDialog({
             <button type="button" className="btn btn-sm" onClick={close}>
               Cancel
             </button>
-            <button type="submit" disabled={submitting || (!repo && !definition)} className="btn btn-sm btn-primary">
-              {submitting ? "Creating…" : message.trim() ? "Create & send" : "Create"}
+            <button
+              type="submit"
+              disabled={submitting || (!repo && !definition)}
+              className="btn btn-sm btn-primary"
+            >
+              {submitting
+                ? "Creating…"
+                : message.trim()
+                  ? "Create & send"
+                  : "Create"}
             </button>
           </div>
         </form>

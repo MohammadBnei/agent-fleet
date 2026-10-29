@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 // Shared by the message feed and the TODOS card — both grow as new content
 // streams in, and a reader scrolled up to review history shouldn't have to
@@ -16,7 +22,8 @@ export function useAtBottom<T extends HTMLElement>(threshold = 100) {
     // especially on mobile where scroll events can fire before layout completes
     requestAnimationFrame(() => {
       if (!el) return;
-      const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      const isAtBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
       setAtBottom(isAtBottom);
     });
   }, [threshold]);
@@ -29,7 +36,10 @@ export function useAtBottom<T extends HTMLElement>(threshold = 100) {
   // this got a new identity every render, which quietly made every effect
   // listing it in its deps an every-render effect.
   const scrollToBottom = useCallback(() => {
-    ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
+    ref.current?.scrollTo({
+      top: ref.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, []);
 
   // Runs a load-older fetch with the scroll position pinned to whatever the
@@ -69,5 +79,11 @@ export function useAtBottom<T extends HTMLElement>(threshold = 100) {
     pendingAnchor.current = null;
   });
 
-  return { ref, atBottom, onScroll: checkAtBottom, scrollToBottom, anchorPrepend };
+  return {
+    ref,
+    atBottom,
+    onScroll: checkAtBottom,
+    scrollToBottom,
+    anchorPrepend,
+  };
 }
