@@ -18,7 +18,9 @@ export function InlineError({
   return (
     <div className="border border-orange-line bg-orange-bg px-3.5 py-3 flex gap-2.5 items-start">
       <span className="text-warning text-sm flex-none">!</span>
-      <div className="text-sm text-warning leading-[1.55] min-w-0 flex-1 break-words">{message}</div>
+      <div className="text-sm text-warning leading-[1.55] min-w-0 flex-1 break-words">
+        {message}
+      </div>
       {onRetry && (
         <button
           type="button"

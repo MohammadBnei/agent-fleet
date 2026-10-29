@@ -1,35 +1,53 @@
-import { test, expect } from "bun:test";
-import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import { expect, test } from "bun:test";
 import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "./gen/agentfleet/v1/transcript_pb";
+import {
+  backgroundTasks,
+  buildToolCallPairs,
+  decisionAnswerable,
+  deniedToolUseIds,
+  entryTime,
+  feedVisibility,
+  fileEdits,
+  findPendingPermissions,
+  hasPendingDecision,
+  inFlightTool,
   latestSlashCommands,
   latestSystemInfo,
+  listSummary,
   parseSdkSignal,
   parseSdkSystemInfo,
   permissionDenyMessages,
-  buildToolCallPairs,
-  feedVisibility,
-  listSummary,
-  inFlightTool,
-  hasPendingDecision,
-  entryTime,
-  resultDelta,
-  withOptimistic,
-  findPendingPermissions,
   resolvedPermissionDecisions,
+  resultDelta,
   subagentRuns,
-  fileEdits,
-  decisionAnswerable,
-  backgroundTasks,
-  deniedToolUseIds,
+  withOptimistic,
 } from "./transcript";
 
 test("deniedToolUseIds marks the denied call itself, not every call with the same reason", () => {
   const call = (id: string, command: string) =>
-    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id, tool: "Bash", input: { command } }));
+    entry(
+      TranscriptEntryType.ASSISTANT,
+      "agent",
+      JSON.stringify({ id, tool: "Bash", input: { command } }),
+    );
   const request = (command: string) =>
-    entry(TranscriptEntryType.PERMISSION_REQUEST, "agent", JSON.stringify({ tool: "Bash", input: { command } }));
+    entry(
+      TranscriptEntryType.PERMISSION_REQUEST,
+      "agent",
+      JSON.stringify({ tool: "Bash", input: { command } }),
+    );
   const respond = (req: TranscriptEntry, behavior: "allow" | "deny") =>
-    ({ ...entry(TranscriptEntryType.PERMISSION_RESPONSE, "human", JSON.stringify({ behavior, message: "denied" })), replyTo: req.seq }) as TranscriptEntry;
+    ({
+      ...entry(
+        TranscriptEntryType.PERMISSION_RESPONSE,
+        "human",
+        JSON.stringify({ behavior, message: "denied" }),
+      ),
+      replyTo: req.seq,
+    }) as TranscriptEntry;
 
   const earlierSame = call("toolu_old", "rm a"); // an earlier, allowed run of the same command
   const reqOld = request("rm a");
@@ -53,17 +71,36 @@ test("deniedToolUseIds marks the denied call itself, not every call with the sam
 });
 
 let nextSeq = 0n;
-function entry(type: TranscriptEntryType, from = "agent", text = ""): TranscriptEntry {
+function entry(
+  type: TranscriptEntryType,
+  from = "agent",
+  text = "",
+): TranscriptEntry {
   nextSeq += 1n;
-  return { $typeName: "agentfleet.v1.TranscriptEntry", sessionId: "t", seq: nextSeq, from, text, type };
+  return {
+    $typeName: "agentfleet.v1.TranscriptEntry",
+    sessionId: "t",
+    seq: nextSeq,
+    from,
+    text,
+    type,
+  };
 }
 
 // A SYSTEM entry is now two different things, and telling them apart is
 // load-bearing: the worker relays every out-of-band SDK signal under this
 // same entry type, so anything that assumed "SYSTEM means session init"
 // silently started reading a tool_progress instead.
-const INIT_TEXT = JSON.stringify({ model: "opus", slashCommands: ["compact"], mcpServers: [{ name: "sidecar", status: "connected" }] });
-const PROGRESS_TEXT = JSON.stringify({ sdk: "tool_progress", tool_name: "Bash", elapsed_time_seconds: 32 });
+const INIT_TEXT = JSON.stringify({
+  model: "opus",
+  slashCommands: ["compact"],
+  mcpServers: [{ name: "sidecar", status: "connected" }],
+});
+const PROGRESS_TEXT = JSON.stringify({
+  sdk: "tool_progress",
+  tool_name: "Bash",
+  elapsed_time_seconds: 32,
+});
 
 test("parseSdkSystemInfo refuses a signal entry, parseSdkSignal refuses an init entry", () => {
   expect(parseSdkSystemInfo(PROGRESS_TEXT)).toBeNull();
@@ -85,21 +122,46 @@ test("slash commands survive signal entries arriving after session init", () => 
 
 test("a denial's reason is recovered, an allow contributes nothing", () => {
   const request = entry(TranscriptEntryType.PERMISSION_REQUEST);
-  const denied = entry(TranscriptEntryType.PERMISSION_RESPONSE, "human", JSON.stringify({ behavior: "deny", message: "wrong file" }));
+  const denied = entry(
+    TranscriptEntryType.PERMISSION_RESPONSE,
+    "human",
+    JSON.stringify({ behavior: "deny", message: "wrong file" }),
+  );
   denied.replyTo = request.seq;
   const allowRequest = entry(TranscriptEntryType.PERMISSION_REQUEST);
-  const allowed = entry(TranscriptEntryType.PERMISSION_RESPONSE, "human", JSON.stringify({ behavior: "allow" }));
+  const allowed = entry(
+    TranscriptEntryType.PERMISSION_RESPONSE,
+    "human",
+    JSON.stringify({ behavior: "allow" }),
+  );
   allowed.replyTo = allowRequest.seq;
 
-  const messages = permissionDenyMessages([request, denied, allowRequest, allowed]);
+  const messages = permissionDenyMessages([
+    request,
+    denied,
+    allowRequest,
+    allowed,
+  ]);
   expect(messages.get(request.seq)).toBe("wrong file");
   expect(messages.has(allowRequest.seq)).toBe(false);
 });
 
 test("tool calls pair with their results, and thinking blocks are not calls", () => {
-  const call = entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_1", tool: "Bash", input: { command: "ls" } }));
-  const thinking = entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ kind: "thinking", text: "hmm" }));
-  const result = entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_1", isError: false, content: "a.ts" }));
+  const call = entry(
+    TranscriptEntryType.ASSISTANT,
+    "agent",
+    JSON.stringify({ id: "toolu_1", tool: "Bash", input: { command: "ls" } }),
+  );
+  const thinking = entry(
+    TranscriptEntryType.ASSISTANT,
+    "agent",
+    JSON.stringify({ kind: "thinking", text: "hmm" }),
+  );
+  const result = entry(
+    TranscriptEntryType.USER,
+    "agent",
+    JSON.stringify({ toolUseId: "toolu_1", isError: false, content: "a.ts" }),
+  );
 
   const pairs = buildToolCallPairs([call, thinking, result]);
   expect(pairs.length).toBe(1);
@@ -108,8 +170,16 @@ test("tool calls pair with their results, and thinking blocks are not calls", ()
 });
 
 test("a call still awaiting its result pairs with null, not with someone else's result", () => {
-  const inFlight = entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_pending", tool: "Bash", input: {} }));
-  const otherResult = entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_other", content: "x" }));
+  const inFlight = entry(
+    TranscriptEntryType.ASSISTANT,
+    "agent",
+    JSON.stringify({ id: "toolu_pending", tool: "Bash", input: {} }),
+  );
+  const otherResult = entry(
+    TranscriptEntryType.USER,
+    "agent",
+    JSON.stringify({ toolUseId: "toolu_other", content: "x" }),
+  );
 
   const pairs = buildToolCallPairs([inFlight, otherResult]);
   expect(pairs[0].result).toBeNull();
@@ -139,8 +209,16 @@ function full(
 
 const perm = (tool: string, input: unknown = {}) =>
   full(TranscriptEntryType.PERMISSION_REQUEST, JSON.stringify({ tool, input }));
-const respond = (replyTo: bigint, behavior: "allow" | "deny", message?: string) =>
-  full(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior, message }), { from: "human", replyTo });
+const respond = (
+  replyTo: bigint,
+  behavior: "allow" | "deny",
+  message?: string,
+) =>
+  full(
+    TranscriptEntryType.PERMISSION_RESPONSE,
+    JSON.stringify({ behavior, message }),
+    { from: "human", replyTo },
+  );
 const toolUse = (id: string, tool: string, input: unknown = {}) =>
   full(TranscriptEntryType.ASSISTANT, JSON.stringify({ id, tool, input }));
 const toolResult = (toolUseId: string) =>
@@ -150,26 +228,56 @@ const toolResult = (toolUseId: string) =>
 // "calls" shows tool activity, desktop's "decisions" shows nothing but the
 // tier-1 cards. Encoding one and reusing it for both is the bug this guards.
 test("feedVisibility: mobile 'decisions' keeps tools, desktop 'decisions' does not", () => {
-  expect(feedVisibility("decisions", false)).toEqual({ narrative: false, tools: false, quiet: false });
-  expect(feedVisibility("decisions", true)).toEqual({ narrative: false, tools: true, quiet: false });
+  expect(feedVisibility("decisions", false)).toEqual({
+    narrative: false,
+    tools: false,
+    quiet: false,
+  });
+  expect(feedVisibility("decisions", true)).toEqual({
+    narrative: false,
+    tools: true,
+    quiet: false,
+  });
   // The other two modes agree across form factors.
   for (const isMobile of [false, true]) {
-    expect(feedVisibility("everything", isMobile)).toEqual({ narrative: true, tools: true, quiet: true });
-    expect(feedVisibility("narrative", isMobile)).toEqual({ narrative: true, tools: false, quiet: false });
+    expect(feedVisibility("everything", isMobile)).toEqual({
+      narrative: true,
+      tools: true,
+      quiet: true,
+    });
+    expect(feedVisibility("narrative", isMobile)).toEqual({
+      narrative: true,
+      tools: false,
+      quiet: false,
+    });
   }
 });
 
 test("listSummary surfaces the pending permission, question and in-flight tool", () => {
   const entries = [
-    full(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "t1", tool: "TodoWrite", input: { todos: [
-      { content: "a", status: "completed", activeForm: "a" },
-      { content: "b", status: "in_progress", activeForm: "b" },
-    ] } })),
+    full(
+      TranscriptEntryType.ASSISTANT,
+      JSON.stringify({
+        id: "t1",
+        tool: "TodoWrite",
+        input: {
+          todos: [
+            { content: "a", status: "completed", activeForm: "a" },
+            { content: "b", status: "in_progress", activeForm: "b" },
+          ],
+        },
+      }),
+    ),
     toolUse("call-done", "Grep", { pattern: "x" }),
     toolResult("call-done"),
     toolUse("call-live", "Bash", { command: "pytest tests/ingest" }),
     perm("Edit", { file_path: "a.py" }),
-    full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "q?", header: "h", options: [] }] })),
+    full(
+      TranscriptEntryType.QUESTION,
+      JSON.stringify({
+        questions: [{ question: "q?", header: "h", options: [] }],
+      }),
+    ),
   ];
   const s = listSummary(entries);
   expect(s.todos.length).toBe(2);
@@ -189,15 +297,29 @@ test("inFlightTool prefers the SDK's own tool_progress elapsed time", () => {
   const call = toolUse("c1", "Bash", { command: "sleep 60" });
   const progress = full(
     TranscriptEntryType.SYSTEM,
-    JSON.stringify({ sdk: "tool_progress", tool_use_id: "c1", elapsed_time_seconds: 32 }),
+    JSON.stringify({
+      sdk: "tool_progress",
+      tool_use_id: "c1",
+      elapsed_time_seconds: 32,
+    }),
   );
   expect(inFlightTool([call, progress])?.elapsedSeconds).toBe(32);
 });
 
 test("entryTime returns null rather than a fake time for a transcript with no timestamp", () => {
   expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}"))).toBeNull();
-  expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "not-a-date" }))).toBeNull();
-  expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "2026-08-12T12:04:00Z" }))).not.toBeNull();
+  expect(
+    entryTime(
+      full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "not-a-date" }),
+    ),
+  ).toBeNull();
+  expect(
+    entryTime(
+      full(TranscriptEntryType.ASSISTANT, "{}", {
+        createdAt: "2026-08-12T12:04:00Z",
+      }),
+    ),
+  ).not.toBeNull();
 });
 
 // What the dock keys off: it is the only surface a decision is answerable from
@@ -205,11 +327,18 @@ test("entryTime returns null rather than a fake time for a transcript with no ti
 test("hasPendingDecision covers an unanswered permission and an unanswered question", () => {
   const waiting = perm("Edit", { file_path: "a.py" });
   expect(hasPendingDecision([waiting])).toBe(true);
-  expect(hasPendingDecision([waiting, respond(waiting.seq, "allow")])).toBe(false);
+  expect(hasPendingDecision([waiting, respond(waiting.seq, "allow")])).toBe(
+    false,
+  );
 
-  const asked = full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "which?" }] }));
+  const asked = full(
+    TranscriptEntryType.QUESTION,
+    JSON.stringify({ questions: [{ question: "which?" }] }),
+  );
   expect(hasPendingDecision([asked])).toBe(true);
-  expect(hasPendingDecision([asked, full(TranscriptEntryType.ANSWER, "{}")])).toBe(false);
+  expect(
+    hasPendingDecision([asked, full(TranscriptEntryType.ANSWER, "{}")]),
+  ).toBe(false);
 
   expect(hasPendingDecision([])).toBe(false);
 });
@@ -247,8 +376,16 @@ test("resultDelta charges each turn only its own share of a cumulative total", (
 });
 
 test("resultDelta clamps instead of going negative when a resumed session restarts its counters", () => {
-  const before = { totalCostUsd: 1.546, durationApiMs: 444_000, modelUsage: { sonnet: { costUSD: 1.473 } } };
-  const afterResume = { totalCostUsd: 0.02, durationApiMs: 3_000, modelUsage: { sonnet: { costUSD: 0.02 } } };
+  const before = {
+    totalCostUsd: 1.546,
+    durationApiMs: 444_000,
+    modelUsage: { sonnet: { costUSD: 1.473 } },
+  };
+  const afterResume = {
+    totalCostUsd: 0.02,
+    durationApiMs: 3_000,
+    modelUsage: { sonnet: { costUSD: 0.02 } },
+  };
 
   const d = resultDelta(afterResume, before);
   expect(d.totalCostUsd).toBe(0);
@@ -263,11 +400,17 @@ test("resultDelta clamps instead of going negative when a resumed session restar
 // must make the decision look answered everywhere at once, and it must lose
 // to the server the instant the server has an opinion.
 const optimisticResponse = (replyTo: bigint, behavior: "allow" | "deny") =>
-  full(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior }), { from: "human", replyTo });
+  full(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior }), {
+    from: "human",
+    replyTo,
+  });
 
 test("an optimistic response resolves the permission for every surface at once", () => {
   const request = perm("Edit", { file_path: "a.py" });
-  const merged = withOptimistic([request], [optimisticResponse(request.seq, "allow")]);
+  const merged = withOptimistic(
+    [request],
+    [optimisticResponse(request.seq, "allow")],
+  );
 
   expect(findPendingPermissions(merged)).toEqual([]);
   expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("allow");
@@ -277,9 +420,15 @@ test("an optimistic response resolves the permission for every surface at once",
 test("the real response supersedes the optimistic one instead of doubling it", () => {
   const request = perm("Edit");
   const real = respond(request.seq, "allow");
-  const merged = withOptimistic([request, real], [optimisticResponse(request.seq, "allow")]);
+  const merged = withOptimistic(
+    [request, real],
+    [optimisticResponse(request.seq, "allow")],
+  );
 
-  expect(merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE).length).toBe(1);
+  expect(
+    merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE)
+      .length,
+  ).toBe(1);
   expect(merged).toEqual([request, real]);
 });
 
@@ -288,23 +437,43 @@ test("an interrupt supersedes an unanswered optimistic response", () => {
   // never applied is the one failure worse than showing it late.
   const request = perm("Bash");
   const interrupt = full(TranscriptEntryType.INTERRUPT, "stopped");
-  const merged = withOptimistic([request, interrupt], [optimisticResponse(request.seq, "allow")]);
+  const merged = withOptimistic(
+    [request, interrupt],
+    [optimisticResponse(request.seq, "allow")],
+  );
 
-  expect(merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE).length).toBe(0);
-  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("interrupted");
+  expect(
+    merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE)
+      .length,
+  ).toBe(0);
+  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe(
+    "interrupted",
+  );
 });
 
 test("an optimistic answer resolves its question, and the real answer replaces it", () => {
-  const asked = full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "which?" }] }));
-  const echo = full(TranscriptEntryType.ANSWER, JSON.stringify({ answers: { "which?": "a" } }), {
+  const asked = full(
+    TranscriptEntryType.QUESTION,
+    JSON.stringify({ questions: [{ question: "which?" }] }),
+  );
+  const echo = full(
+    TranscriptEntryType.ANSWER,
+    JSON.stringify({ answers: { "which?": "a" } }),
+    {
+      from: "human",
+      replyTo: asked.seq,
+    },
+  );
+  expect(hasPendingDecision(withOptimistic([asked], [echo]))).toBe(false);
+
+  const realAnswer = full(TranscriptEntryType.ANSWER, "{}", {
     from: "human",
     replyTo: asked.seq,
   });
-  expect(hasPendingDecision(withOptimistic([asked], [echo]))).toBe(false);
-
-  const realAnswer = full(TranscriptEntryType.ANSWER, "{}", { from: "human", replyTo: asked.seq });
   const merged = withOptimistic([asked, realAnswer], [echo]);
-  expect(merged.filter((e) => e.type === TranscriptEntryType.ANSWER).length).toBe(1);
+  expect(
+    merged.filter((e) => e.type === TranscriptEntryType.ANSWER).length,
+  ).toBe(1);
 });
 
 test("withOptimistic returns the original array when it has nothing to add", () => {
@@ -313,7 +482,9 @@ test("withOptimistic returns the original array when it has nothing to add", () 
   const entries = [request, real];
   // Same reference, so React's own change detection sees no update.
   expect(withOptimistic(entries, [])).toBe(entries);
-  expect(withOptimistic(entries, [optimisticResponse(request.seq, "allow")])).toBe(entries);
+  expect(
+    withOptimistic(entries, [optimisticResponse(request.seq, "allow")]),
+  ).toBe(entries);
 });
 
 // --- subagents ----------------------------------------------------------------
@@ -322,7 +493,15 @@ test("withOptimistic returns the original array when it has nothing to add", () 
 // a run that fails to correlate still renders, just as a second half-empty row.
 
 const agentCall = (id: string, subagentType: string, description: string) =>
-  entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id, tool: "Agent", input: { subagent_type: subagentType, description } }));
+  entry(
+    TranscriptEntryType.ASSISTANT,
+    "agent",
+    JSON.stringify({
+      id,
+      tool: "Agent",
+      input: { subagent_type: subagentType, description },
+    }),
+  );
 
 const signal = (payload: Record<string, unknown>) =>
   entry(TranscriptEntryType.SYSTEM, "agent", JSON.stringify(payload));
@@ -330,7 +509,12 @@ const signal = (payload: Record<string, unknown>) =>
 test("subagentRuns joins an Agent call to its task_* stream", () => {
   const runs = subagentRuns([
     agentCall("toolu_1", "Explore", "Map dashboard feed rendering"),
-    signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1", subagent_type: "Explore" }),
+    signal({
+      sdk: "task_started",
+      task_id: "t1",
+      tool_use_id: "toolu_1",
+      subagent_type: "Explore",
+    }),
   ]);
   expect(runs).toHaveLength(1);
   expect(runs[0]).toMatchObject({
@@ -349,7 +533,11 @@ test("task_updated resolves through task_id alone", () => {
   const runs = subagentRuns([
     agentCall("toolu_1", "Explore", "d"),
     signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1" }),
-    signal({ sdk: "task_updated", task_id: "t1", patch: { status: "completed", end_time: 1787127340563 } }),
+    signal({
+      sdk: "task_updated",
+      task_id: "t1",
+      patch: { status: "completed", end_time: 1787127340563 },
+    }),
   ]);
   expect(runs[0].status).toBe("completed");
 });
@@ -361,7 +549,11 @@ test("an in-progress patch leaves the run running", () => {
   const runs = subagentRuns([
     agentCall("toolu_1", "Explore", "d"),
     signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1" }),
-    signal({ sdk: "task_updated", task_id: "t1", patch: { status: "in_progress" } }),
+    signal({
+      sdk: "task_updated",
+      task_id: "t1",
+      patch: { status: "in_progress" },
+    }),
   ]);
   expect(runs[0].status).toBe("running");
 });
@@ -369,7 +561,13 @@ test("an in-progress patch leaves the run running", () => {
 test("a non-completed task status is a failure, not a completion", () => {
   const runs = subagentRuns([
     agentCall("toolu_1", "Explore", "d"),
-    signal({ sdk: "task_notification", task_id: "t1", tool_use_id: "toolu_1", status: "error", summary: "boom" }),
+    signal({
+      sdk: "task_notification",
+      task_id: "t1",
+      tool_use_id: "toolu_1",
+      status: "error",
+      summary: "boom",
+    }),
   ]);
   expect(runs[0]).toMatchObject({ status: "failed", summary: "boom" });
 });
@@ -379,7 +577,11 @@ test("a non-completed task status is a failure, not a completion", () => {
 test("the Agent tool_result completes a still-running run but cannot un-fail one", () => {
   const done = subagentRuns([
     agentCall("toolu_1", "Explore", "d"),
-    entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_1", content: "ok" })),
+    entry(
+      TranscriptEntryType.USER,
+      "agent",
+      JSON.stringify({ toolUseId: "toolu_1", content: "ok" }),
+    ),
   ]);
   expect(done[0].status).toBe("completed");
 
@@ -387,7 +589,11 @@ test("the Agent tool_result completes a still-running run but cannot un-fail one
     agentCall("toolu_2", "Explore", "d"),
     signal({ sdk: "task_updated", task_id: "t2", patch: { status: "error" } }),
     signal({ sdk: "task_started", task_id: "t2", tool_use_id: "toolu_2" }),
-    entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_2", content: "ok" })),
+    entry(
+      TranscriptEntryType.USER,
+      "agent",
+      JSON.stringify({ toolUseId: "toolu_2", content: "ok" }),
+    ),
   ]);
   expect(failed[0].status).toBe("failed");
 });
@@ -397,8 +603,20 @@ test("the Agent tool_result completes a still-running run but cannot un-fail one
 test("panel-owned tools never become tool-call pairs", () => {
   const pairs = buildToolCallPairs([
     agentCall("toolu_1", "Explore", "d"),
-    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_2", tool: "TodoWrite", input: { todos: [] } })),
-    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_3", tool: "Bash", input: { command: "ls" } })),
+    entry(
+      TranscriptEntryType.ASSISTANT,
+      "agent",
+      JSON.stringify({
+        id: "toolu_2",
+        tool: "TodoWrite",
+        input: { todos: [] },
+      }),
+    ),
+    entry(
+      TranscriptEntryType.ASSISTANT,
+      "agent",
+      JSON.stringify({ id: "toolu_3", tool: "Bash", input: { command: "ls" } }),
+    ),
   ]);
   expect(pairs.map((p) => p.callInfo.tool)).toEqual(["Bash"]);
 });
@@ -408,8 +626,22 @@ test("panel-owned tools never become tool-call pairs", () => {
 // never once succeeded, and every in-flight row fell through to wall-clock.
 test("inFlightTool reads elapsed time from a heartbeat's parent_tool_use_id", () => {
   const flight = inFlightTool([
-    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_9", tool: "Bash", input: { command: "go test ./..." } })),
-    signal({ sdk: "tool_progress", tool_use_id: "toolu_9-heartbeat-0", parent_tool_use_id: "toolu_9", tool_name: "Bash", elapsed_time_seconds: 90 }),
+    entry(
+      TranscriptEntryType.ASSISTANT,
+      "agent",
+      JSON.stringify({
+        id: "toolu_9",
+        tool: "Bash",
+        input: { command: "go test ./..." },
+      }),
+    ),
+    signal({
+      sdk: "tool_progress",
+      tool_use_id: "toolu_9-heartbeat-0",
+      parent_tool_use_id: "toolu_9",
+      tool_name: "Bash",
+      elapsed_time_seconds: 90,
+    }),
   ]);
   expect(flight).toMatchObject({ tool: "Bash", elapsedSeconds: 90 });
 });
@@ -422,9 +654,28 @@ test("inFlightTool reads elapsed time from a heartbeat's parent_tool_use_id", ()
 // Only an Agent tool_use we have actually seen makes a run.
 test("a backgrounded Bash's task signals never become a subagent row", () => {
   const runs = subagentRuns([
-    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_bash", tool: "Bash", input: { command: "sleep 45", run_in_background: true } })),
-    signal({ sdk: "task_started", task_id: "bw5d5o0s1", tool_use_id: "toolu_bash", description: "Wait briefly for explore agents" }),
-    signal({ sdk: "task_notification", task_id: "bw5d5o0s1", tool_use_id: "toolu_bash", status: "completed", summary: 'Background command "Wait briefly" completed (exit code 0)' }),
+    entry(
+      TranscriptEntryType.ASSISTANT,
+      "agent",
+      JSON.stringify({
+        id: "toolu_bash",
+        tool: "Bash",
+        input: { command: "sleep 45", run_in_background: true },
+      }),
+    ),
+    signal({
+      sdk: "task_started",
+      task_id: "bw5d5o0s1",
+      tool_use_id: "toolu_bash",
+      description: "Wait briefly for explore agents",
+    }),
+    signal({
+      sdk: "task_notification",
+      task_id: "bw5d5o0s1",
+      tool_use_id: "toolu_bash",
+      status: "completed",
+      summary: 'Background command "Wait briefly" completed (exit code 0)',
+    }),
   ]);
   expect(runs).toEqual([]);
 });
@@ -435,11 +686,19 @@ test("a backgrounded Bash's task signals never become a subagent row", () => {
 test("a completed run keeps the summary it came back with", () => {
   const runs = subagentRuns([
     agentCall("toolu_1", "Explore", "Map dashboard feed rendering"),
-    signal({ sdk: "task_notification", task_id: "t1", tool_use_id: "toolu_1", status: "completed", summary: "found it in SignalView" }),
+    signal({
+      sdk: "task_notification",
+      task_id: "t1",
+      tool_use_id: "toolu_1",
+      status: "completed",
+      summary: "found it in SignalView",
+    }),
   ]);
-  expect(runs[0]).toMatchObject({ status: "completed", summary: "found it in SignalView" });
+  expect(runs[0]).toMatchObject({
+    status: "completed",
+    summary: "found it in SignalView",
+  });
 });
-
 
 // The CHANGES panel's rows carry git's repo-relative path; the SDK's file_path
 // is absolute. Comparing them with === matched nothing, ever — and the failure
@@ -447,9 +706,16 @@ test("a completed run keeps the summary it came back with", () => {
 // Bash command rewrote. So both halves get pinned here.
 test("fileEdits: matches a repo-relative telemetry path against an absolute file_path", () => {
   const entries = [
-    toolUse("e1", "Write", { file_path: "/workspace/app/src/a.ts", content: "one\n" }),
+    toolUse("e1", "Write", {
+      file_path: "/workspace/app/src/a.ts",
+      content: "one\n",
+    }),
     toolUse("e2", "Bash", { command: "sed -i s/x/y/ src/b.ts" }),
-    toolUse("e3", "Edit", { file_path: "/workspace/app/src/a.ts", old_string: "one", new_string: "two" }),
+    toolUse("e3", "Edit", {
+      file_path: "/workspace/app/src/a.ts",
+      old_string: "one",
+      new_string: "two",
+    }),
   ];
 
   const found = fileEdits(entries, "src/a.ts");
@@ -469,7 +735,13 @@ test("fileEdits: matches a repo-relative telemetry path against an absolute file
 
 // Suffix matching on a path boundary, not a bare endsWith.
 test("fileEdits: does not match a path that is only a string suffix", () => {
-  const entries = [toolUse("e1", "Edit", { file_path: "/workspace/app/not-a.ts", old_string: "x", new_string: "y" })];
+  const entries = [
+    toolUse("e1", "Edit", {
+      file_path: "/workspace/app/not-a.ts",
+      old_string: "x",
+      new_string: "y",
+    }),
+  ];
   expect(fileEdits(entries, "a.ts")).toEqual([]);
 });
 
@@ -506,23 +778,47 @@ const bgCall = (id: string, command: string, description = "") =>
   entry(
     TranscriptEntryType.ASSISTANT,
     "agent",
-    JSON.stringify({ id, tool: "Bash", input: { command, description, run_in_background: true } }),
+    JSON.stringify({
+      id,
+      tool: "Bash",
+      input: { command, description, run_in_background: true },
+    }),
   );
 
 test("a backgrounded Bash is running until task_notification says otherwise", () => {
   const launched = [
     bgCall("toolu_bg", "bun install"),
     // The launch acknowledgement. NOT the outcome.
-    entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_bg", content: "started" })),
-    signal({ sdk: "task_started", task_id: "b1", tool_use_id: "toolu_bg", description: "Install deps" }),
+    entry(
+      TranscriptEntryType.USER,
+      "agent",
+      JSON.stringify({ toolUseId: "toolu_bg", content: "started" }),
+    ),
+    signal({
+      sdk: "task_started",
+      task_id: "b1",
+      tool_use_id: "toolu_bg",
+      description: "Install deps",
+    }),
   ];
   expect(backgroundTasks(launched)).toEqual([
-    { toolUseId: "toolu_bg", command: "bun install", description: "Install deps", status: "running" },
+    {
+      toolUseId: "toolu_bg",
+      command: "bun install",
+      description: "Install deps",
+      status: "running",
+    },
   ]);
 
   const done = backgroundTasks([
     ...launched,
-    signal({ sdk: "task_notification", task_id: "b1", tool_use_id: "toolu_bg", status: "completed", summary: 'Background command "Install deps" completed (exit code 0)' }),
+    signal({
+      sdk: "task_notification",
+      task_id: "b1",
+      tool_use_id: "toolu_bg",
+      status: "completed",
+      summary: 'Background command "Install deps" completed (exit code 0)',
+    }),
   ]);
   expect(done[0].status).toBe("completed");
   expect(done[0].summary).toContain("exit code 0");
@@ -533,7 +829,15 @@ test("a backgrounded Bash is running until task_notification says otherwise", ()
 test("a foreground Bash never becomes a background row", () => {
   expect(
     backgroundTasks([
-      entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_fg", tool: "Bash", input: { command: "ls" } })),
+      entry(
+        TranscriptEntryType.ASSISTANT,
+        "agent",
+        JSON.stringify({
+          id: "toolu_fg",
+          tool: "Bash",
+          input: { command: "ls" },
+        }),
+      ),
       signal({ sdk: "task_started", task_id: "f1", tool_use_id: "toolu_fg" }),
     ]),
   ).toEqual([]);
@@ -546,8 +850,17 @@ test("a subagent's task stream never becomes a background row", () => {
   expect(
     backgroundTasks([
       agentCall("toolu_agent", "Explore", "map the feed"),
-      signal({ sdk: "task_started", task_id: "a1", tool_use_id: "toolu_agent" }),
-      signal({ sdk: "task_notification", task_id: "a1", tool_use_id: "toolu_agent", status: "completed" }),
+      signal({
+        sdk: "task_started",
+        task_id: "a1",
+        tool_use_id: "toolu_agent",
+      }),
+      signal({
+        sdk: "task_notification",
+        task_id: "a1",
+        tool_use_id: "toolu_agent",
+        status: "completed",
+      }),
     ]),
   ).toEqual([]);
 });
@@ -569,7 +882,11 @@ test("an in-progress patch leaves a background task running", () => {
   const tasks = backgroundTasks([
     bgCall("toolu_bg", "sleep 45"),
     signal({ sdk: "task_started", task_id: "b3", tool_use_id: "toolu_bg" }),
-    signal({ sdk: "task_updated", task_id: "b3", patch: { status: "in_progress" } }),
+    signal({
+      sdk: "task_updated",
+      task_id: "b3",
+      patch: { status: "in_progress" },
+    }),
   ]);
   expect(tasks[0].status).toBe("running");
 });
@@ -579,7 +896,12 @@ test("an in-progress patch leaves a background task running", () => {
 test("running background tasks sort above finished ones", () => {
   const tasks = backgroundTasks([
     bgCall("toolu_a", "first"),
-    signal({ sdk: "task_notification", task_id: "ba", tool_use_id: "toolu_a", status: "completed" }),
+    signal({
+      sdk: "task_notification",
+      task_id: "ba",
+      tool_use_id: "toolu_a",
+      status: "completed",
+    }),
     bgCall("toolu_b", "second"),
   ]);
   expect(tasks.map((t) => t.command)).toEqual(["second", "first"]);

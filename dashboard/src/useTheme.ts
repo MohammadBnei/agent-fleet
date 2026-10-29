@@ -20,12 +20,16 @@ export function useTheme() {
   const [theme, setTheme] = useLocalStorageState<Theme>(THEME_KEY, "herd");
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLOR[theme]);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", THEME_COLOR[theme]);
     // The two SVG favicon links resolve by `prefers-color-scheme`, but the app's
     // theme is an explicit choice that can disagree with the OS. Make the
     // matching one win outright rather than shipping a light mark on a dark tab.
     const light = theme === "herd-light";
-    for (const link of document.querySelectorAll<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]')) {
+    for (const link of document.querySelectorAll<HTMLLinkElement>(
+      'link[rel="icon"][type="image/svg+xml"]',
+    )) {
       const isLight = link.getAttribute("href")?.includes("light") ?? false;
       link.setAttribute("media", isLight === light ? "all" : "not all");
     }

@@ -1,29 +1,38 @@
 import { useState } from "react";
-import { client } from "../connectClient";
-import { sessionLabel } from "../sessionLabel";
-import {
-  feedVisibility,
-  type Density,
-  hasPendingDecision,
-} from "../transcript";
-import { useSessionDetail } from "../useSessionDetail";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { useComposer, useFeedScroll, sessionPanelData } from "../useSessionView";
-import { useLocalStorageState } from "../useLocalStorageState";
-import { sessionBadge, shortId } from "../sessionState";
 import { ActionButton } from "../components/ActionButton";
-import { DecisionDock } from "../components/DecisionDock";
-import { ErrorModal } from "../components/ErrorModal";
 import { AutoModeConfirm } from "../components/AutoModeConfirm";
+import { Composer } from "../components/Composer";
+import { DecisionDock } from "../components/DecisionDock";
+import { AgentDetailModal } from "../components/DetailModal";
+import { ErrorModal } from "../components/ErrorModal";
+import { FileDiffModal } from "../components/FileDiffModal";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, AgentsPanel, BackgroundPanel, SessionPanel } from "../components/SessionPanels";
-import { FileDiffModal } from "../components/FileDiffModal";
-import { isPodPhaseLive } from "../sessionState";
-import { AgentDetailModal } from "../components/DetailModal";
+import {
+  AgentsPanel,
+  BackgroundPanel,
+  ChangesPanel,
+  SessionPanel,
+  TodosPanel,
+} from "../components/SessionPanels";
+import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { sessionLabel } from "../sessionLabel";
+import { isPodPhaseLive, sessionBadge, shortId } from "../sessionState";
 import type { SubagentRun } from "../transcript";
-import { Composer } from "../components/Composer";
+import {
+  type Density,
+  feedVisibility,
+  hasPendingDecision,
+} from "../transcript";
+import { useLocalStorageState } from "../useLocalStorageState";
+import { useSessionDetail } from "../useSessionDetail";
+import {
+  sessionPanelData,
+  useComposer,
+  useFeedScroll,
+} from "../useSessionView";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
@@ -33,7 +42,11 @@ import { Composer } from "../components/Composer";
 
 const DENSITY: readonly { value: Density; label: string; title: string }[] = [
   { value: "everything", label: "all", title: "everything" },
-  { value: "narrative", label: "talk", title: "the readable conversation only" },
+  {
+    value: "narrative",
+    label: "talk",
+    title: "the readable conversation only",
+  },
   { value: "decisions", label: "calls", title: "tool activity and decisions" },
 ];
 
@@ -70,7 +83,10 @@ export function MobileSessionDetail({
     sessionId,
     sessions.find((t) => t.id === sessionId),
   );
-  const { message, setMessage, slashCommands, sendMessage } = useComposer(entries, sendDiscuss);
+  const { message, setMessage, slashCommands, sendMessage } = useComposer(
+    entries,
+    sendDiscuss,
+  );
   const [panelsOpen, setPanelsOpen] = useState(false);
   // The title sheet: the full label, which the header can only ever truncate,
   // plus the density control it used to compete with for the same row.
@@ -81,25 +97,40 @@ export function MobileSessionDetail({
   // The AGENTS row a human tapped, or null. See DetailModal.
   const [agentDetail, setAgentDetail] = useState<SubagentRun | null>(null);
   // Same persisted key as the desktop view — see SessionDetail.tsx.
-  const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
-  const { ref: feedRef, onScroll, anchorPrepend } = useFeedScroll(sessionId, entries, pendingMessage);
+  const [density, setDensity] = useLocalStorageState<Density>(
+    "taskDetail.density",
+    "everything",
+  );
+  const {
+    ref: feedRef,
+    onScroll,
+    anchorPrepend,
+  } = useFeedScroll(sessionId, entries, pendingMessage);
 
   if (loadError) {
     return (
       <div className="flex-1 min-h-0 p-3.5">
-        <button type="button" onClick={onBack} className="text-base text-dim mb-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-base text-dim mb-3"
+        >
           ←
         </button>
-        <div className="border border-pink-line bg-pink-bg px-3 py-2.5 text-sm text-error">{loadError}</div>
+        <div className="border border-pink-line bg-pink-bg px-3 py-2.5 text-sm text-error">
+          {loadError}
+        </div>
       </div>
     );
   }
-  if (!session) return <div className="flex-1 p-4 text-base text-dim">Loading…</div>;
+  if (!session)
+    return <div className="flex-1 p-4 text-base text-dim">Loading…</div>;
 
   const blocked = session.liveState === "blocked";
   const badge = sessionBadge(session);
   const visibility = feedVisibility(density, true);
-  const { todos, branch, changes, agents, background, model } = sessionPanelData(entries);
+  const { todos, branch, changes, agents, background, model } =
+    sessionPanelData(entries);
 
   const docked = hasPendingDecision(entries);
 
@@ -155,7 +186,9 @@ export function MobileSessionDetail({
               </span>
             ) : (
               badge && (
-                <span className={`flex-none text-2xs px-1 border tracking-wide ${badge.className}`}>
+                <span
+                  className={`flex-none text-2xs px-1 border tracking-wide ${badge.className}`}
+                >
                   {badge.label}
                 </span>
               )
@@ -187,7 +220,11 @@ export function MobileSessionDetail({
         </div>
       </div>
 
-      <div ref={feedRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3.5 flex flex-col gap-3.5">
+      <div
+        ref={feedRef}
+        onScroll={onScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3.5 flex flex-col gap-3.5"
+      >
         <SessionFeed
           hasPendingMessage={pendingMessage !== null}
           entries={entries}
@@ -208,7 +245,9 @@ export function MobileSessionDetail({
         {pendingMessage && (
           <div className="flex gap-2.5 items-baseline opacity-60">
             <span className="text-primary flex-none text-sm">❯</span>
-            <div className="text-sm leading-[1.7] text-text2 min-w-0 flex-1">{pendingMessage}</div>
+            <div className="text-sm leading-[1.7] text-text2 min-w-0 flex-1">
+              {pendingMessage}
+            </div>
             <span className="loading loading-spinner loading-xs flex-none" />
           </div>
         )}
@@ -219,14 +258,25 @@ export function MobileSessionDetail({
           CHANGES row is clicked, and a <dialog> nested inside an open one is
           the trap Modal.tsx:36 guards. Opening the diff closes the sheet
           (setPanelsOpen(false) below) so there is only ever one open. */}
-      <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
-      <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
+      <FileDiffModal
+        sessionId={sessionId}
+        path={diffPath}
+        entries={entries}
+        onClose={() => setDiffPath(null)}
+      />
+      <AgentDetailModal
+        run={agentDetail}
+        onClose={() => setAgentDetail(null)}
+      />
       <AutoModeConfirm
         open={autoOpen}
         onCancel={() => setAutoOpen(false)}
         onConfirm={() => {
           setAutoOpen(false);
-          run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "action:mode");
+          run(
+            () => client.setPermissionMode({ sessionId, mode: "auto" }),
+            "action:mode",
+          );
         }}
       />
 
@@ -249,7 +299,9 @@ export function MobileSessionDetail({
             <ActionButton
               busy={busyKey === "action:interrupt"}
               disabled={busyKey !== null}
-              onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
+              onClick={() =>
+                run(() => client.interrupt({ sessionId }), "action:interrupt")
+              }
               className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /interrupt
@@ -257,7 +309,12 @@ export function MobileSessionDetail({
             <ActionButton
               busy={busyKey === "action:mode"}
               disabled={busyKey !== null}
-              onClick={() => run(() => client.setPermissionMode({ sessionId, mode: "plan" }), "action:mode")}
+              onClick={() =>
+                run(
+                  () => client.setPermissionMode({ sessionId, mode: "plan" }),
+                  "action:mode",
+                )
+              }
               className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /mode plan
@@ -292,18 +349,30 @@ export function MobileSessionDetail({
       <Modal open={titleOpen} onClose={() => setTitleOpen(false)}>
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <span className="text-2xs tracking-[0.12em] text-dim2">SESSION</span>
+            <span className="text-2xs tracking-[0.12em] text-dim2">
+              SESSION
+            </span>
             {/* break-words, not truncate — the entire point of this sheet is
                 that the header already truncated it. */}
-            <span className="text-base font-semibold break-words">{sessionLabel(session)}</span>
+            <span className="text-base font-semibold break-words">
+              {sessionLabel(session)}
+            </span>
             <span className="text-2xs text-dim2 break-all">
               #{shortId(session.id)} · {session.repo}
               {branch && ` · ${branch}`}
             </span>
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className="text-2xs tracking-[0.12em] text-dim2">DENSITY</span>
-            <Segmented value={density} options={DENSITY} onChange={setDensity} grow size="lg" />
+            <span className="text-2xs tracking-[0.12em] text-dim2">
+              DENSITY
+            </span>
+            <Segmented
+              value={density}
+              options={DENSITY}
+              onChange={setDensity}
+              grow
+              size="lg"
+            />
           </div>
         </div>
       </Modal>
@@ -321,10 +390,14 @@ export function MobileSessionDetail({
       >
         <div className="flex flex-col gap-5 overflow-y-auto min-h-0">
           <TodosPanel todos={todos} blocked={blocked} />
-          <ChangesPanel branch={branch} changes={changes} onOpenFile={(path) => {
-            setPanelsOpen(false);
-            setDiffPath(path);
-          }} />
+          <ChangesPanel
+            branch={branch}
+            changes={changes}
+            onOpenFile={(path) => {
+              setPanelsOpen(false);
+              setDiffPath(path);
+            }}
+          />
           <AgentsPanel
             runs={agents}
             onOpenAgent={(run) => {

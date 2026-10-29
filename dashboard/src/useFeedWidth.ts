@@ -25,9 +25,15 @@ const MEASURE: Record<FeedWidth, string> = {
 // flash is glaring; a width flash is one frame of wider text. The `:root`
 // default in index.css covers first paint.
 export function useFeedWidth() {
-  const [width, setWidth] = useLocalStorageState<FeedWidth>("herd.feedWidth", "760");
+  const [width, setWidth] = useLocalStorageState<FeedWidth>(
+    "herd.feedWidth",
+    "760",
+  );
   useEffect(() => {
-    document.documentElement.style.setProperty("--feed-measure", MEASURE[width]);
+    document.documentElement.style.setProperty(
+      "--feed-measure",
+      MEASURE[width],
+    );
   }, [width]);
   return [width, setWidth] as const;
 }

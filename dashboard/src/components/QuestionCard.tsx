@@ -64,19 +64,27 @@ export function QuestionCard({
 
   if (!questions) {
     return (
-      <div className={`bg-base-300/40 border border-line ${compact ? "px-3 py-2.5" : "px-3 py-2"}`}>
+      <div
+        className={`bg-base-300/40 border border-line ${compact ? "px-3 py-2.5" : "px-3 py-2"}`}
+      >
         <div className="text-sm whitespace-pre-wrap">{entry.text}</div>
       </div>
     );
   }
 
-  function toggle(qIndex: number, label: string, multiSelect: boolean | undefined) {
+  function toggle(
+    qIndex: number,
+    label: string,
+    multiSelect: boolean | undefined,
+  ) {
     setSelected((prev) => {
       const current = prev[qIndex] ?? [];
       if (multiSelect) {
         return {
           ...prev,
-          [qIndex]: current.includes(label) ? current.filter((l) => l !== label) : [...current, label],
+          [qIndex]: current.includes(label)
+            ? current.filter((l) => l !== label)
+            : [...current, label],
         };
       }
       return { ...prev, [qIndex]: [label] };
@@ -84,7 +92,10 @@ export function QuestionCard({
   }
 
   // A question is answered by picking an option OR typing a free-text reply.
-  const allAnswered = questions.every((_, i) => (selected[i] ?? []).length > 0 || (freeText[i] ?? "").trim().length > 0);
+  const allAnswered = questions.every(
+    (_, i) =>
+      (selected[i] ?? []).length > 0 || (freeText[i] ?? "").trim().length > 0,
+  );
 
   function submit() {
     if (!questions) return;
@@ -92,7 +103,8 @@ export function QuestionCard({
     questions.forEach((q, i) => {
       // Typed text wins over any selected options — it's the more specific
       // intent when the human bothered to write something.
-      answers[q.question] = (freeText[i] ?? "").trim() || (selected[i] ?? []).join(", ");
+      answers[q.question] =
+        (freeText[i] ?? "").trim() || (selected[i] ?? []).join(", ");
     });
     onSubmit(answers);
   }
@@ -100,7 +112,9 @@ export function QuestionCard({
   return (
     <div
       className={
-        embedded ? "" : `border border-pink-line bg-pink-bg ${compact ? "p-3.5" : "p-4 max-w-[760px]"}`
+        embedded
+          ? ""
+          : `border border-pink-line bg-pink-bg ${compact ? "p-3.5" : "p-4 max-w-[760px]"}`
       }
     >
       {/* The header is the card's own identity — redundant when embedded, since
@@ -114,11 +128,19 @@ export function QuestionCard({
           className="flex items-center gap-2 w-full text-left cursor-pointer disabled:cursor-default"
           disabled={!compact || !answer}
         >
-          {!answer && <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse" />}
-          <span className={`text-2xs tracking-[0.1em] ${answer ? "text-dim2" : "text-error"} flex-1`}>
+          {!answer && (
+            <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse" />
+          )}
+          <span
+            className={`text-2xs tracking-[0.1em] ${answer ? "text-dim2" : "text-error"} flex-1`}
+          >
             {answer ? "ANSWERED" : "QUESTION"}
           </span>
-          {compact && answer && <span className="text-2xs text-dim2">{isCollapsed ? "▾" : "▴"}</span>}
+          {compact && answer && (
+            <span className="text-2xs text-dim2">
+              {isCollapsed ? "▾" : "▴"}
+            </span>
+          )}
         </button>
       )}
       {/* No top margin when embedded — that space existed to clear this card's
@@ -126,7 +148,9 @@ export function QuestionCard({
           BETWEEN questions than within one (8px), so two questions read as two
           things rather than one long form. */}
       {!isCollapsed && (
-        <div className={`flex flex-col ${embedded ? "" : "mt-2.5"} ${compact ? "gap-4" : "gap-5"}`}>
+        <div
+          className={`flex flex-col ${embedded ? "" : "mt-2.5"} ${compact ? "gap-4" : "gap-5"}`}
+        >
           {questions.map((q, qIndex) => (
             <fieldset key={qIndex} className="flex flex-col gap-2">
               {/* mb on the legend, not a wider fieldset gap: a <legend> is laid
@@ -134,14 +158,21 @@ export function QuestionCard({
                   the container's `gap` does not separate it from what follows
                   and the question sat flush against its own answer buttons. */}
               <legend className="text-base leading-[1.6] text-base-content mb-3">
-                <span className="border border-line text-dim2 text-2xs px-1.5 py-px mr-2">{q.header}</span>
+                <span className="border border-line text-dim2 text-2xs px-1.5 py-px mr-2">
+                  {q.header}
+                </span>
                 {q.question}
               </legend>
               {answer ? (
-                <div className="self-start border border-acc-line text-primary text-sm px-2 py-0.5">{answer[q.question] ?? "—"}</div>
+                <div className="self-start border border-acc-line text-primary text-sm px-2 py-0.5">
+                  {answer[q.question] ?? "—"}
+                </div>
               ) : q.multiSelect ? (
                 q.options.map((opt) => (
-                  <label key={opt.label} className="flex items-start gap-2 cursor-pointer text-xs">
+                  <label
+                    key={opt.label}
+                    className="flex items-start gap-2 cursor-pointer text-xs"
+                  >
                     <input
                       type="checkbox"
                       className="checkbox checkbox-sm mt-0.5"
@@ -150,15 +181,23 @@ export function QuestionCard({
                     />
                     <span>
                       <span className="font-medium">{opt.label}</span>
-                      {opt.description && <span className="opacity-60"> — {opt.description}</span>}
+                      {opt.description && (
+                        <span className="opacity-60"> — {opt.description}</span>
+                      )}
                     </span>
                   </label>
                 ))
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  <div className={compact ? "flex flex-col gap-2" : "flex flex-wrap gap-2"}>
+                  <div
+                    className={
+                      compact ? "flex flex-col gap-2" : "flex flex-wrap gap-2"
+                    }
+                  >
                     {q.options.map((opt) => {
-                      const active = (selected[qIndex] ?? []).includes(opt.label);
+                      const active = (selected[qIndex] ?? []).includes(
+                        opt.label,
+                      );
                       return (
                         <button
                           key={opt.label}
@@ -181,7 +220,9 @@ export function QuestionCard({
                         onClick={() => openEditor(qIndex)}
                         className={`${chip(false)} border-dashed`}
                       >
-                        {q.options.length ? "type something…" : "type a response…"}
+                        {q.options.length
+                          ? "type something…"
+                          : "type a response…"}
                       </button>
                     )}
                   </div>
@@ -190,7 +231,11 @@ export function QuestionCard({
                       shown inline instead of being lost entirely. */}
                   {compact &&
                     q.options
-                      .filter((opt) => (selected[qIndex] ?? []).includes(opt.label) && opt.description)
+                      .filter(
+                        (opt) =>
+                          (selected[qIndex] ?? []).includes(opt.label) &&
+                          opt.description,
+                      )
                       .map((opt) => (
                         <div key={opt.label} className="text-xs text-dim2">
                           {opt.description}
@@ -217,32 +262,38 @@ export function QuestionCard({
                   no trace that the free-text path had been used at all, while
                   it silently overrode whatever option was selected. */}
               {!answer && typed(qIndex) && (
-                  <div className="mt-1 flex items-start gap-2 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => openEditor(qIndex)}
-                      className="flex-1 min-w-0 text-left border border-primary/50 bg-base-300/40 px-2.5 py-1.5 text-sm hover:border-primary cursor-pointer"
-                      title="Edit this response"
-                    >
-                      <span className="block whitespace-pre-wrap break-words">{freeText[qIndex]}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFreeText((prev) => ({ ...prev, [qIndex]: "" }))}
-                      aria-label="Clear typed response"
-                      title="Clear — falls back to the selected option"
-                      className="flex-none text-dim2 hover:text-error px-1 py-1 cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                <div className="mt-1 flex items-start gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => openEditor(qIndex)}
+                    className="flex-1 min-w-0 text-left border border-primary/50 bg-base-300/40 px-2.5 py-1.5 text-sm hover:border-primary cursor-pointer"
+                    title="Edit this response"
+                  >
+                    <span className="block whitespace-pre-wrap break-words">
+                      {freeText[qIndex]}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFreeText((prev) => ({ ...prev, [qIndex]: "" }))
+                    }
+                    aria-label="Clear typed response"
+                    title="Clear — falls back to the selected option"
+                    className="flex-none text-dim2 hover:text-error px-1 py-1 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
             </fieldset>
           ))}
           {!answer && (
             <ActionButton
               className={`bg-primary text-primary-content font-semibold disabled:opacity-50 ${
-                compact ? "w-full py-3 text-base" : "self-start px-5 py-2 text-sm"
+                compact
+                  ? "w-full py-3 text-base"
+                  : "self-start px-5 py-2 text-sm"
               }`}
               busy={busy}
               disabled={!allAnswered}
@@ -263,7 +314,10 @@ export function QuestionCard({
         placeholder="Anything the options do not cover…"
         initial={editing !== null ? (freeText[editing] ?? "") : ""}
         submitLabel="save"
-        onSubmit={(text) => editing !== null && setFreeText((prev) => ({ ...prev, [editing]: text }))}
+        onSubmit={(text) =>
+          editing !== null &&
+          setFreeText((prev) => ({ ...prev, [editing]: text }))
+        }
         onClose={() => setEditing(null)}
       />
     </div>

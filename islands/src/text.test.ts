@@ -15,7 +15,13 @@ test("titles fit in bytes and keep whole characters", () => {
 });
 
 test("members are named by their email's local part, in full on a collision", () => {
-  const n = displayNames(["nadia@opus.tech", "sam@a.com", "sam@b.com", "", "Nadia"]);
+  const n = displayNames([
+    "nadia@opus.tech",
+    "sam@a.com",
+    "sam@b.com",
+    "",
+    "Nadia",
+  ]);
   expect(n.get("nadia@opus.tech")).toBe("nadia");
   expect(n.get("sam@a.com")).toBe("sam@a.com");
   expect(n.get("sam@b.com")).toBe("sam@b.com");
@@ -24,13 +30,22 @@ test("members are named by their email's local part, in full on a collision", ()
 });
 
 test("typed text answers what was not picked", () => {
-  expect(withOther(["A?", "B?"], { "A?": "yes" }, "my own")).toEqual({ "A?": "yes", "B?": "my own" });
+  expect(withOther(["A?", "B?"], { "A?": "yes" }, "my own")).toEqual({
+    "A?": "yes",
+    "B?": "my own",
+  });
   expect(withOther(["A?"], {}, "free")).toEqual({ "A?": "free" });
 });
 
 test("answer entries read as their answers", () => {
-  expect(answerText(JSON.stringify({ answers: { "A?": "yes", "B?": "my own" } }))).toBe("yes\nmy own");
-  expect(answerText(JSON.stringify({ answers: { "A?": "same", "B?": "same" } }))).toBe("same");
-  expect(answerText(JSON.stringify({ answers: { "A?": ["x"] } }))).toBe('["x"]');
+  expect(
+    answerText(JSON.stringify({ answers: { "A?": "yes", "B?": "my own" } })),
+  ).toBe("yes\nmy own");
+  expect(
+    answerText(JSON.stringify({ answers: { "A?": "same", "B?": "same" } })),
+  ).toBe("same");
+  expect(answerText(JSON.stringify({ answers: { "A?": ["x"] } }))).toBe(
+    '["x"]',
+  );
   expect(answerText("not json")).toBe("not json");
 });

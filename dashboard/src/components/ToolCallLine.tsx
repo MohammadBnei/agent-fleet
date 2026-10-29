@@ -7,7 +7,11 @@ import { parseToolCallSummary } from "../transcript";
 // "Changes" toggle is on), same file-change info desktop's dedicated
 // CHANGES panel always shows regardless.
 // Memoized to prevent re-rendering when the entry hasn't changed.
-export const ToolCallLine = memo(function ToolCallLine({ entry }: { entry: TranscriptEntry }) {
+export const ToolCallLine = memo(function ToolCallLine({
+  entry,
+}: {
+  entry: TranscriptEntry;
+}) {
   const summary = parseToolCallSummary(entry.text);
   const files = summary?.files ?? [];
   if (files.length === 0) return null;
@@ -19,9 +23,13 @@ export const ToolCallLine = memo(function ToolCallLine({ entry }: { entry: Trans
         {files.length} file{files.length === 1 ? "" : "s"} changed
       </span>
       <span className="flex-1 h-px bg-line3" />
-      <span className="text-xs text-dim2 truncate min-w-0">{summary?.branch ?? ""}</span>
+      <span className="text-xs text-dim2 truncate min-w-0">
+        {summary?.branch ?? ""}
+      </span>
       <span className="text-xs text-green-soft flex-none">+{added}</span>
-      {removed > 0 && <span className="text-xs text-minus flex-none">−{removed}</span>}
+      {removed > 0 && (
+        <span className="text-xs text-minus flex-none">−{removed}</span>
+      )}
     </div>
   );
 });

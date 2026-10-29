@@ -4,7 +4,10 @@ import { ToolInputView } from "./ToolInputView";
 
 // A remembered allow (docs/adr/0076 §3): core renders the rule from the
 // request, and the card shows that exact rule before the click.
-export type Grant = { scope: "session" | "definition"; ruleForm: "exact" | "prefix" };
+export type Grant = {
+  scope: "session" | "definition";
+  ruleForm: "exact" | "prefix";
+};
 export type GrantRules = { exact: string; prefix: string };
 export type GrantPreview = (seq: bigint) => Promise<GrantRules>;
 
@@ -67,7 +70,10 @@ export function PermissionCard({
     if (!pending || !preview) return;
     let live = true;
     // No rules (a request no grant could cover) just means no remember row.
-    preview().then((r) => live && setRules(r), () => {});
+    preview().then(
+      (r) => live && setRules(r),
+      () => {},
+    );
     return () => {
       live = false;
     };
@@ -94,18 +100,31 @@ export function PermissionCard({
       >
         <span
           className={`flex-none border px-1 ${
-            decision === "deny" || decision === "interrupted" ? "border-pink-line text-error" : "border-line text-dim"
+            decision === "deny" || decision === "interrupted"
+              ? "border-pink-line text-error"
+              : "border-line text-dim"
           }`}
         >
-          {tool} {decision === "deny" ? "denied" : decision === "interrupted" ? "interrupted" : "allowed"}
+          {tool}{" "}
+          {decision === "deny"
+            ? "denied"
+            : decision === "interrupted"
+              ? "interrupted"
+              : "allowed"}
         </span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">
             <ToolInputView tool={tool} input={input} />
-            {denyMessage && <div className="text-xs text-error mt-1">reason: {denyMessage}</div>}
+            {denyMessage && (
+              <div className="text-xs text-error mt-1">
+                reason: {denyMessage}
+              </div>
+            )}
           </div>
         ) : (
-          <span className="truncate flex-1">{denyMessage || "permission request"}</span>
+          <span className="truncate flex-1">
+            {denyMessage || "permission request"}
+          </span>
         )}
         <span className="text-2xs flex-none group-hover:text-dim">
           {isExpanded ? "▴" : "▾"}
@@ -115,10 +134,14 @@ export function PermissionCard({
   }
 
   return (
-    <div className={`border-y border-pink-line bg-pink-bg py-4 ${edgeClassName}`}>
+    <div
+      className={`border-y border-pink-line bg-pink-bg py-4 ${edgeClassName}`}
+    >
       <div className="flex items-center gap-2 mb-2.5">
         <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse flex-none" />
-        <span className="text-2xs tracking-[0.1em] text-error">◉ PERMISSION REQUEST · {tool.toUpperCase()}</span>
+        <span className="text-2xs tracking-[0.1em] text-error">
+          ◉ PERMISSION REQUEST · {tool.toUpperCase()}
+        </span>
       </div>
       <div className="max-h-[30vh] overflow-y-auto">
         <ToolInputView tool={tool} input={input} />
@@ -153,11 +176,14 @@ export function PermissionCard({
           >
             send deny
           </ActionButton>
-          <button type="button" onClick={() => {
+          <button
+            type="button"
+            onClick={() => {
               setReason("");
               setDenying(false);
             }}
-            className="text-xs text-dim2 hover:text-dim cursor-pointer">
+            className="text-xs text-dim2 hover:text-dim cursor-pointer"
+          >
             cancel
           </button>
         </div>
@@ -186,7 +212,12 @@ export function PermissionCard({
           <code className="text-base-content break-all">{rule}</code>
           {rules.prefix && (
             <label className="flex items-center gap-1 cursor-pointer">
-              <input type="checkbox" checked={wide} disabled={busy} onChange={(e) => setWide(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={wide}
+                disabled={busy}
+                onChange={(e) => setWide(e.target.checked)}
+              />
               wider: covers more than this call
             </label>
           )}

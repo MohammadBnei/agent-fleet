@@ -1,9 +1,9 @@
-import { relativeTime } from "../relativeTime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { InlineError } from "../components/InlineError";
 import { client } from "../connectClient";
 import type { FileMetadata } from "../gen/agentfleet/v1/files_pb";
-import { InlineError } from "../components/InlineError";
-import { ConfirmModal } from "../components/ConfirmModal";
+import { relativeTime } from "../relativeTime";
 import { useMediaQuery } from "../useMediaQuery";
 
 // Fleet-wide shared file space (docs/adr/0030): one flat Garage S3 bucket,
@@ -29,7 +29,8 @@ function RowActions({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const btn = "border border-line px-2.5 py-1 text-xs text-dim hover:text-base-content disabled:opacity-50";
+  const btn =
+    "border border-line px-2.5 py-1 text-xs text-dim hover:text-base-content disabled:opacity-50";
 
   async function download() {
     try {
@@ -118,9 +119,16 @@ export function Files() {
       setError(null);
       try {
         for (const file of selected) {
-          const res = await client.getFileUploadUrl({ filename: file.name, contentType: file.type });
-          const putRes = await fetch(res.uploadUrl, { method: "PUT", body: file });
-          if (!putRes.ok) throw new Error(`upload failed for ${file.name}: ${putRes.status}`);
+          const res = await client.getFileUploadUrl({
+            filename: file.name,
+            contentType: file.type,
+          });
+          const putRes = await fetch(res.uploadUrl, {
+            method: "PUT",
+            body: file,
+          });
+          if (!putRes.ok)
+            throw new Error(`upload failed for ${file.name}: ${putRes.status}`);
         }
         await load();
       } catch (err) {
@@ -137,7 +145,10 @@ export function Files() {
     return q ? files.filter((f) => f.key.toLowerCase().includes(q)) : files;
   }, [files, filter]);
 
-  const totalBytes = useMemo(() => files.reduce((sum, f) => sum + Number(f.sizeBytes), 0), [files]);
+  const totalBytes = useMemo(
+    () => files.reduce((sum, f) => sum + Number(f.sizeBytes), 0),
+    [files],
+  );
 
   return (
     <div
@@ -153,13 +164,19 @@ export function Files() {
         void upload(Array.from(e.dataTransfer.files));
       }}
     >
-      <InlineError message={error} onRetry={load} onDismiss={() => setError(null)} />
+      <InlineError
+        message={error}
+        onRetry={load}
+        onDismiss={() => setError(null)}
+      />
 
       <div className="flex items-baseline gap-3 flex-wrap">
         <h2 className="text-base font-semibold">Shared files</h2>
         <span className="text-xs text-dim2">
-          {isDesktop && "one flat space · every session and you can read, write and delete · "}
-          {files.length} file{files.length === 1 ? "" : "s"} · {formatBytes(totalBytes)}
+          {isDesktop &&
+            "one flat space · every session and you can read, write and delete · "}
+          {files.length} file{files.length === 1 ? "" : "s"} ·{" "}
+          {formatBytes(totalBytes)}
         </span>
         <label className="ml-auto flex items-center gap-2 border border-line px-2.5 py-1.5 text-xs text-dim2 focus-within:border-primary/60">
           <span aria-hidden>⌕</span>
@@ -193,13 +210,20 @@ export function Files() {
         }`}
       >
         <div className="text-sm text-dim">
-          {uploading ? "uploading…" : isDesktop ? "drop files here — or " : "upload a file"}
-          {!uploading && isDesktop && <span className="text-primary">choose from your machine</span>}
+          {uploading
+            ? "uploading…"
+            : isDesktop
+              ? "drop files here — or "
+              : "upload a file"}
+          {!uploading && isDesktop && (
+            <span className="text-primary">choose from your machine</span>
+          )}
         </div>
         <div className="text-2xs sm:text-xs text-dim2 mt-1.5">
           {isDesktop ? (
             <>
-              an agent reads them with <span className="text-dim">list_shared_files</span> /{" "}
+              an agent reads them with{" "}
+              <span className="text-dim">list_shared_files</span> /{" "}
               <span className="text-dim">get_shared_file_download_url</span>
             </>
           ) : (
@@ -208,9 +232,13 @@ export function Files() {
         </div>
       </button>
 
-      {loading && files.length === 0 && <div className="text-sm text-dim">Loading…</div>}
+      {loading && files.length === 0 && (
+        <div className="text-sm text-dim">Loading…</div>
+      )}
       {!loading && files.length === 0 && !error && (
-        <div className="text-sm text-dim2">No files in the shared space yet.</div>
+        <div className="text-sm text-dim2">
+          No files in the shared space yet.
+        </div>
       )}
       {files.length > 0 && shown.length === 0 && (
         <div className="text-sm text-dim2">No file matches “{filter}”.</div>
@@ -219,7 +247,9 @@ export function Files() {
       {shown.length > 0 &&
         (isDesktop ? (
           <div className="border border-line2">
-            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}>
+            <div
+              className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}
+            >
               <div />
               <div>NAME</div>
               <div>SIZE</div>
@@ -239,8 +269,12 @@ export function Files() {
                 <div className="text-sm min-w-0 truncate" title={f.key}>
                   {f.key}
                 </div>
-                <div className="text-sm text-dim">{formatBytes(f.sizeBytes)}</div>
-                <div className="text-sm text-dim">{relativeTime(f.lastModified) ?? "—"}</div>
+                <div className="text-sm text-dim">
+                  {formatBytes(f.sizeBytes)}
+                </div>
+                <div className="text-sm text-dim">
+                  {relativeTime(f.lastModified) ?? "—"}
+                </div>
                 <div className="flex gap-1.5 justify-end">
                   <RowActions file={f} onDeleted={load} onError={setError} />
                 </div>
@@ -254,10 +288,14 @@ export function Files() {
                 <span className="text-sm min-w-0 truncate" title={f.key}>
                   {f.key}
                 </span>
-                <span className="text-xs text-dim2 ml-auto flex-none">{formatBytes(f.sizeBytes)}</span>
+                <span className="text-xs text-dim2 ml-auto flex-none">
+                  {formatBytes(f.sizeBytes)}
+                </span>
               </div>
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs text-dim2">{relativeTime(f.lastModified) ?? "—"}</span>
+                <span className="text-xs text-dim2">
+                  {relativeTime(f.lastModified) ?? "—"}
+                </span>
                 <div className="ml-auto flex gap-1.5">
                   <RowActions file={f} onDeleted={load} onError={setError} />
                 </div>

@@ -1,17 +1,20 @@
 import { useMemo, useState } from "react";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { client } from "../connectClient";
-import { sessionLabel } from "../sessionLabel";
-import { parseQuestions, summarizeToolInput, type ListSummary } from "../transcript";
-import { TickBar, todoProgress } from "../components/TickBar";
-import { DecisionInline } from "../components/DecisionInline";
-import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowSelect, RowActionsButton, RowAction, StuckActions } from "../components/RowControls";
-import { useSelection, BatchBar } from "../components/BatchActions";
-import { QuietControls } from "../components/QuietControls";
-import { useToggleSet } from "../useToggleSet";
-import { NotchCard } from "../components/NotchCard";
 import { AUTO_MODE_WARNING } from "../approvePlan";
+import { BatchBar, useSelection } from "../components/BatchActions";
+import { DecisionInline } from "../components/DecisionInline";
+import { NotchCard } from "../components/NotchCard";
+import { QuietControls } from "../components/QuietControls";
+import {
+  RowAction,
+  RowActionsButton,
+  RowSelect,
+  StuckActions,
+} from "../components/RowControls";
+import { SessionActionsModal } from "../components/SessionActionsModal";
+import { TickBar, todoProgress } from "../components/TickBar";
+import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { sessionLabel } from "../sessionLabel";
 import {
   activityLabel,
   blockedForLabel,
@@ -20,11 +23,17 @@ import {
   isPodPhaseLive,
   notchLabel,
   restStatus,
+  type SortKey,
   sessionBadge,
   stuckLabel,
   TERMINAL,
-  type SortKey,
 } from "../sessionState";
+import {
+  type ListSummary,
+  parseQuestions,
+  summarizeToolInput,
+} from "../transcript";
+import { useToggleSet } from "../useToggleSet";
 
 // Neutral on purpose. Since docs/adr/0061 nearly every session launches in
 // auto, so a warning-coloured badge on every row stopped meaning anything —
@@ -32,7 +41,10 @@ import {
 // confirmed where it is made (AutoModeConfirm); the tooltip repeats it.
 export function AutoBadge({ className = "" }: { className?: string }) {
   return (
-    <span className={`text-2xs text-dim2 border border-line px-1.5 py-px flex-none ${className}`} title={AUTO_MODE_WARNING}>
+    <span
+      className={`text-2xs text-dim2 border border-line px-1.5 py-px flex-none ${className}`}
+      title={AUTO_MODE_WARNING}
+    >
       auto
     </span>
   );
@@ -41,7 +53,10 @@ export function AutoBadge({ className = "" }: { className?: string }) {
 // docs/adr/0062: the session runs a defined agent, pinned to one version.
 export function DefinitionBadge({ name }: { name: string }) {
   return (
-    <span className="text-2xs text-dim2 border border-line px-1.5 py-px flex-none" title={`defined agent ${name}`}>
+    <span
+      className="text-2xs text-dim2 border border-line px-1.5 py-px flex-none"
+      title={`defined agent ${name}`}
+    >
       def:{name}
     </span>
   );
@@ -61,12 +76,24 @@ export function SectionHeading({
   // orange: STUCK. Its rows are warning-orange, and a pink heading over them
   // borrowed the NEEDS YOU colour for a section a human cannot answer.
   const color =
-    tone === "pink" ? "text-error" : tone === "orange" ? "text-warning" : tone === "green" ? "text-success" : "text-dim2";
+    tone === "pink"
+      ? "text-error"
+      : tone === "orange"
+        ? "text-warning"
+        : tone === "green"
+          ? "text-success"
+          : "text-dim2";
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      <span className={`text-xs tracking-[0.14em] ${color} whitespace-nowrap`}>{title}</span>
-      <span className={`flex-1 h-px ${tone === "pink" ? "bg-line" : "bg-line2"}`} />
-      {note && <span className="text-xs text-dim2 whitespace-nowrap">{note}</span>}
+      <span className={`text-xs tracking-[0.14em] ${color} whitespace-nowrap`}>
+        {title}
+      </span>
+      <span
+        className={`flex-1 h-px ${tone === "pink" ? "bg-line" : "bg-line2"}`}
+      />
+      {note && (
+        <span className="text-xs text-dim2 whitespace-nowrap">{note}</span>
+      )}
     </div>
   );
 }
@@ -118,7 +145,7 @@ function NeedsYouCard({
     <div className="relative group">
       <NotchCard label={notchLabel(blockedFor, queued)}>
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-3 flex-wrap">
-            <button
+          <button
             type="button"
             onClick={onSelect}
             className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
@@ -126,8 +153,10 @@ function NeedsYouCard({
             {sessionLabel(session)}
           </button>
           <span className="text-xs text-dim2">{session.repo}</span>
-          {session.definitionName && <DefinitionBadge name={session.definitionName} />}
-          
+          {session.definitionName && (
+            <DefinitionBadge name={session.definitionName} />
+          )}
+
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
               <TickBar todos={todos} blocked cell="w-4" />
@@ -178,41 +207,51 @@ function StuckRow({
   // with no way to see what had been asked — reported live as "I can't see
   // questions now".
   const asked = summary?.pendingQuestion
-    ? (parseQuestions(summary.pendingQuestion.text)?.[0]?.question ?? "a question")
+    ? (parseQuestions(summary.pendingQuestion.text)?.[0]?.question ??
+      "a question")
     : summary?.pendingPermission
       ? `${summary.pendingPermission.tool} · ${summarizeToolInput(summary.pendingPermission.input)}`
       : null;
   return (
     <div className="relative group">
       <div className="flex flex-col gap-1.5 px-4 py-2.5 border border-orange-line bg-orange-bg pr-[70px]">
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="w-[7px] h-[7px] rounded-full flex-none bg-warning" />
-        <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
-          {sessionLabel(session)}
-        </button>
-        <span className="text-xs text-dim2">{session.repo}</span>
-        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
-        <span className="ml-auto text-sm text-warning min-w-0 truncate">
-          {stuckLabel(session)}
-          {stuckFor ? ` · ${stuckFor}` : ""}
-        </span>
-        <StuckActions
-          session={session}
-          live={live}
-          reload={reload}
-          onOpenLogs={onOpenLogs}
-          buttonClass="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-        />
-      </div>
-      {asked && (
-        <div className="text-xs text-dim min-w-0">
-          <span className="text-dim2">unanswered · </span>
-          <span className="break-words">{asked}</span>
-          {!live && session.sweptAt === undefined && (
-            <span className="text-dim2"> — warm the session to answer it</span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="w-[7px] h-[7px] rounded-full flex-none bg-warning" />
+          <button
+            type="button"
+            onClick={onSelect}
+            className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
+          >
+            {sessionLabel(session)}
+          </button>
+          <span className="text-xs text-dim2">{session.repo}</span>
+          {session.definitionName && (
+            <DefinitionBadge name={session.definitionName} />
           )}
+          <span className="ml-auto text-sm text-warning min-w-0 truncate">
+            {stuckLabel(session)}
+            {stuckFor ? ` · ${stuckFor}` : ""}
+          </span>
+          <StuckActions
+            session={session}
+            live={live}
+            reload={reload}
+            onOpenLogs={onOpenLogs}
+            buttonClass="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
+          />
         </div>
-      )}
+        {asked && (
+          <div className="text-xs text-dim min-w-0">
+            <span className="text-dim2">unanswered · </span>
+            <span className="break-words">{asked}</span>
+            {!live && session.sweptAt === undefined && (
+              <span className="text-dim2">
+                {" "}
+                — warm the session to answer it
+              </span>
+            )}
+          </div>
+        )}
       </div>
       <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
@@ -250,27 +289,44 @@ function FinishedRow({
     <div className="relative group">
       <div
         className={`flex items-center gap-3 px-4 py-2.5 border pr-[70px] flex-wrap ${
-          failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"
+          failed
+            ? "border-orange-line bg-orange-bg"
+            : "border-green-line bg-green-bg"
         }`}
       >
-        <span className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
+        <span
+          className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`}
+        />
+        <button
+          type="button"
+          onClick={onSelect}
+          className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
+        >
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2">{session.repo}</span>
-        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
+        {session.definitionName && (
+          <DefinitionBadge name={session.definitionName} />
+        )}
         {/* No "no PR" on the other branch: the fleet does not track PRs (the
             column went with adr/0048), so it said "no PR" on every row,
             including the ones that opened one. */}
         {failed ? (
-          <span className="ml-auto text-sm text-warning min-w-0 truncate" title={session.lastError}>
+          <span
+            className="ml-auto text-sm text-warning min-w-0 truncate"
+            title={session.lastError}
+          >
             crashed{session.lastError ? ` · ${session.lastError}` : ""}
           </span>
         ) : (
           <span className="ml-auto" />
         )}
         {failed ? (
-          <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
+          <button
+            type="button"
+            onClick={onOpenLogs}
+            className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
+          >
             read log
           </button>
         ) : null}
@@ -335,7 +391,9 @@ function WorkingRow({
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2 flex-none">{session.repo}</span>
-        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
+        {session.definitionName && (
+          <DefinitionBadge name={session.definitionName} />
+        )}
         {session.permissionMode === "auto" && <AutoBadge />}
 
         {provisioning ? (
@@ -344,11 +402,15 @@ function WorkingRow({
               booting{session.podMessage ? ` · ${session.podMessage}` : ""}
             </span>
             <span className="w-[105px] h-[3px] bar-provisioning flex-none" />
-            <span className="text-xs text-dim2 w-6 text-right flex-none">—</span>
+            <span className="text-xs text-dim2 w-6 text-right flex-none">
+              —
+            </span>
           </>
         ) : (
           <>
-            <span className="ml-auto text-sm text-dim min-w-0 truncate">{activityLabel(session, inFlight)}</span>
+            <span className="ml-auto text-sm text-dim min-w-0 truncate">
+              {activityLabel(session, inFlight)}
+            </span>
             <TickBar todos={todos} cell="w-4" className="flex-none" />
             <span className="text-xs text-dim2 w-6 text-right flex-none">
               {todos.length > 0 ? todoProgress(todos) : "—"}
@@ -401,11 +463,18 @@ function CompactRow({
         onClick={() => onSelect(session.id)}
         className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer min-w-0 flex-1"
       >
-        <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
+        <span className="text-sm text-dim min-w-0 truncate flex-1">
+          {sessionLabel(session)}
+        </span>
         <span className="text-2xs text-dim2 flex-none">{session.repo}</span>
-        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
+        {session.definitionName && (
+          <DefinitionBadge name={session.definitionName} />
+        )}
         {badge && (
-          <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
+          <span
+            className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}
+            title={badge.title}
+          >
             {badge.label}
           </span>
         )}
@@ -417,7 +486,6 @@ function CompactRow({
     </div>
   );
 }
-
 
 export function SessionList({
   sessions,
@@ -449,7 +517,8 @@ export function SessionList({
   // the only ones a human has explicitly finished — were invisible on both
   // form factors. bucketSessions.test.ts pins the coverage of the destructure so
   // the next bucket added cannot be silently dropped the same way.
-  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds, answerableIds);
+  const { needsYou, stuck, working, finished, quiet, archived, swept } =
+    bucketSessions(sessions, needsYouIds, answerableIds);
   // Which row's "⋯" is open, or null. The Session itself, not an id: the modal
   // reads podPhase/permissionMode/sweptAt off it, and re-looking-it-up by id on
   // every poll is how it would end up rendering a stale one.
@@ -467,9 +536,18 @@ export function SessionList({
   // non-terminal statuses, which is what hideTerminal defaulted to expressing.
   const { set: hidden, toggle: toggleStatus } = useToggleSet(TERMINAL);
 
-  const rest = useMemo(() => [...quiet, ...archived, ...swept], [quiet, archived, swept]);
-  const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
-  const statuses = useMemo(() => [...new Set(rest.map(restStatus))].sort(), [rest]);
+  const rest = useMemo(
+    () => [...quiet, ...archived, ...swept],
+    [quiet, archived, swept],
+  );
+  const repos = useMemo(
+    () => [...new Set(sessions.map((t) => t.repo))].sort(),
+    [sessions],
+  );
+  const statuses = useMemo(
+    () => [...new Set(rest.map(restStatus))].sort(),
+    [rest],
+  );
 
   const visibleRest = useMemo(() => {
     return rest
@@ -486,13 +564,24 @@ export function SessionList({
   // Render order, which is what a shift-click range means. visibleRest is
   // included: the quiet tail is the bulk of a resting fleet, and leaving it out
   // is what made the console look unchanged when nothing was active.
-  const pickable = [...needsYou, ...finished, ...stuck, ...working, ...visibleRest];
+  const pickable = [
+    ...needsYou,
+    ...finished,
+    ...stuck,
+    ...working,
+    ...visibleRest,
+  ];
   const orderedIds = pickable.map((t) => t.id);
   const pickedSessions = pickable.filter((t) => selected.has(t.id));
-  const pick = (id: string) => (shiftKey: boolean) => toggle(id, shiftKey, orderedIds);
+  const pick = (id: string) => (shiftKey: boolean) =>
+    toggle(id, shiftKey, orderedIds);
 
   if (sessions.length === 0) {
-    return <div className="p-5 text-base text-dim">{loaded ? "No sessions." : "Loading…"}</div>;
+    return (
+      <div className="p-5 text-base text-dim">
+        {loaded ? "No sessions." : "Loading…"}
+      </div>
+    );
   }
 
   return (
@@ -523,7 +612,11 @@ export function SessionList({
 
       {finished.length > 0 && (
         <>
-          <SectionHeading title="DONE WHILE AWAY" tone="green" className="mt-4" />
+          <SectionHeading
+            title="DONE WHILE AWAY"
+            tone="green"
+            className="mt-4"
+          />
           {finished.map((t) => (
             <FinishedRow
               key={t.id}
@@ -542,7 +635,12 @@ export function SessionList({
 
       {stuck.length > 0 && (
         <>
-          <SectionHeading title="STUCK" tone="orange" note="burning time, asking nobody" className="mt-4" />
+          <SectionHeading
+            title="STUCK"
+            tone="orange"
+            note="burning time, asking nobody"
+            className="mt-4"
+          />
           {stuck.map((t) => (
             <StuckRow
               key={t.id}
@@ -562,7 +660,11 @@ export function SessionList({
 
       {working.length > 0 && (
         <>
-          <SectionHeading title="WORKING" note="nothing needed from you" className="mt-4" />
+          <SectionHeading
+            title="WORKING"
+            note="nothing needed from you"
+            className="mt-4"
+          />
           <div className="border border-line2">
             {working.map((t, i) => (
               <WorkingRow
@@ -593,9 +695,13 @@ export function SessionList({
       {rest.length > 0 && (
         <div className="flex flex-col gap-2 mt-4">
           <div className="flex items-center gap-2.5">
-            <span className="text-xs tracking-[0.14em] text-dim2 whitespace-nowrap">QUIET</span>
+            <span className="text-xs tracking-[0.14em] text-dim2 whitespace-nowrap">
+              QUIET
+            </span>
             <span className="flex-1 h-px bg-line2" />
-            <span className="text-xs text-dim2 whitespace-nowrap">{visibleRest.length} of {rest.length}</span>
+            <span className="text-xs text-dim2 whitespace-nowrap">
+              {visibleRest.length} of {rest.length}
+            </span>
           </div>
           <QuietControls
             sort={sort}
@@ -618,7 +724,11 @@ export function SessionList({
                 onPick={pick(t.id)}
               />
             ))}
-            {visibleRest.length === 0 && <span className="text-xs text-dim2 py-1">nothing matches these filters</span>}
+            {visibleRest.length === 0 && (
+              <span className="text-xs text-dim2 py-1">
+                nothing matches these filters
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -632,4 +742,3 @@ export function SessionList({
     </div>
   );
 }
-

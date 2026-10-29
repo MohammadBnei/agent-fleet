@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 
 // v4.8.0 shipped multi-select and a per-row actions menu that the operator
 // could not see at all. Every check passed: 85 unit tests, `bun run build`, and
@@ -16,10 +16,18 @@ import { test, expect } from "bun:test";
 // does anything. It exists to make "a new row kind shipped without actions" a
 // test failure instead of a bug report. Same shape and same limits as
 // core/internal/buildguard.
-const SRC = await Bun.file(new URL("./pages/SessionList.tsx", import.meta.url)).text();
-const MOBILE = await Bun.file(new URL("./mobile/MobileSessionList.tsx", import.meta.url)).text();
-const MOBILE_DETAIL = await Bun.file(new URL("./mobile/MobileSessionDetail.tsx", import.meta.url)).text();
-const PANELS = await Bun.file(new URL("./components/SessionPanels.tsx", import.meta.url)).text();
+const SRC = await Bun.file(
+  new URL("./pages/SessionList.tsx", import.meta.url),
+).text();
+const MOBILE = await Bun.file(
+  new URL("./mobile/MobileSessionList.tsx", import.meta.url),
+).text();
+const MOBILE_DETAIL = await Bun.file(
+  new URL("./mobile/MobileSessionDetail.tsx", import.meta.url),
+).text();
+const PANELS = await Bun.file(
+  new URL("./components/SessionPanels.tsx", import.meta.url),
+).text();
 const APP = await Bun.file(new URL("./App.tsx", import.meta.url)).text();
 
 // Slice out one `function Name(...)` block by finding the next top-level
@@ -34,7 +42,13 @@ function componentBody(src: string, name: string): string {
 // Every desktop row a session can land in. If a bucket gains a row component,
 // add it here — bucketSessions.test.ts already forces the bucket itself to be
 // rendered somewhere; this forces it to be actionable once it is.
-const DESKTOP_ROWS = ["NeedsYouCard", "StuckRow", "FinishedRow", "WorkingRow", "CompactRow"];
+const DESKTOP_ROWS = [
+  "NeedsYouCard",
+  "StuckRow",
+  "FinishedRow",
+  "WorkingRow",
+  "CompactRow",
+];
 
 // Both controls come from components/RowControls now; before that each row
 // hand-rolled its own placement, which is how the phone ended up with a 20px
@@ -47,13 +61,15 @@ test.each(DESKTOP_ROWS)("%s offers selection and actions", (name) => {
 
 // Mobile has no batch bar (no room, and bulk tidying is not a phone job), so
 // only the actions menu is required there.
-test.each(["NeedsYouCard", "FinishedCard", "WorkingCard", "StuckCard", "QuietRow"])(
-  "mobile %s offers actions",
-  (name) => {
-    expect(componentBody(MOBILE, name)).toContain("RowActionsButton");
-  },
-);
-
+test.each([
+  "NeedsYouCard",
+  "FinishedCard",
+  "WorkingCard",
+  "StuckCard",
+  "QuietRow",
+])("mobile %s offers actions", (name) => {
+  expect(componentBody(MOBILE, name)).toContain("RowActionsButton");
+});
 
 // Mobile's only route to Interrupt/Stop/Warm/Archive/Mode/Delete is the
 // "panels" sheet, and the sheet always carries the SESSION panel — so the
@@ -83,7 +99,6 @@ test("panelsEmpty is gone entirely, not just unused here", () => {
   expect(PANELS).not.toContain("export function panelsEmpty");
 });
 
-
 // The session list must fetch the NEWEST transcript entries, never a forward
 // read from zero.
 //
@@ -100,8 +115,14 @@ test("panelsEmpty is gone entirely, not just unused here", () => {
 // It exists because this regresses by DELETING an argument, which reads like
 // simplification.
 test("the list's summary fetch asks for a bounded, newest-first page", () => {
-  const call = APP.slice(APP.indexOf(".getTranscript("), APP.indexOf(".getTranscript(") + 200);
-  expect(call, "getTranscript is gone from App.tsx — has the summary fetch moved?").toContain("getTranscript");
+  const call = APP.slice(
+    APP.indexOf(".getTranscript("),
+    APP.indexOf(".getTranscript(") + 200,
+  );
+  expect(
+    call,
+    "getTranscript is gone from App.tsx — has the summary fetch moved?",
+  ).toContain("getTranscript");
   expect(call).toContain("limit");
   expect(call).not.toContain("sinceSeq");
 });

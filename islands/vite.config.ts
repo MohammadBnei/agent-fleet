@@ -9,7 +9,11 @@ export default defineConfig({
   build: {
     // One stable entry, served no-cache by core; mermaid is the only lazy
     // chunk, content-hashed and immutable (docs/adr/0068 §3).
-    lib: { entry: "src/main.ts", formats: ["es"], fileName: () => "fleet-agent.js" },
+    lib: {
+      entry: "src/main.ts",
+      formats: ["es"],
+      fileName: () => "fleet-agent.js",
+    },
     outDir: "dist",
     // The entry's static imports (a DOMPurify chunk it shares with mermaid)
     // load with it, so a fresh page always gets a matching set. Only lazy

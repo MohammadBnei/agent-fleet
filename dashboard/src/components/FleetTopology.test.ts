@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { layout } from "./FleetTopology";
 import type { CellNode } from "../gen/agentfleet/v1/dashboard_pb";
+import { layout } from "./FleetTopology";
 
 function node(id: string, type: string): CellNode {
   return {
@@ -20,7 +20,10 @@ function node(id: string, type: string): CellNode {
 // NaN coordinates — an SVG with NaN in a transform renders nothing at all,
 // silently.
 test("hubs are placed even with no worker cells", () => {
-  const placed = layout([node("core", "core"), node("provisioner", "provisioner")]);
+  const placed = layout([
+    node("core", "core"),
+    node("provisioner", "provisioner"),
+  ]);
   expect(placed).toHaveLength(2);
   for (const p of placed) {
     expect(Number.isFinite(p.x)).toBe(true);

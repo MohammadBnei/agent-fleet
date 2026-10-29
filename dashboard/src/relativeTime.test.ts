@@ -1,8 +1,9 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import { relativeTime } from "./relativeTime";
 
 const now = Date.parse("2026-10-17T12:00:00Z");
-const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+const at = (minutesAgo: number) =>
+  new Date(now - minutesAgo * 60_000).toISOString();
 
 test("relativeTime reads past, future and durations one way everywhere", () => {
   expect(relativeTime(at(0.5), { now })).toBe("just now");

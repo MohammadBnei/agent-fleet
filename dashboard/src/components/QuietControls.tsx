@@ -1,5 +1,5 @@
-import { MultiSelectFilter } from "./MultiSelectFilter";
 import type { SortKey } from "../sessionState";
+import { MultiSelectFilter } from "./MultiSelectFilter";
 
 // The quiet tail's controls, shared by both list views. They were two
 // hand-written rows: desktop's ControlBar and a mobile copy that had drifted to
@@ -35,7 +35,9 @@ export function QuietControls({
   return (
     // No flex-wrap when compact: one row is a requirement on a phone, not a
     // preference, and min-w-0 on the selects is what lets them shrink to hold it.
-    <div className={`flex items-center ${compact ? "gap-1.5 min-w-0" : "gap-2 flex-wrap"}`}>
+    <div
+      className={`flex items-center ${compact ? "gap-1.5 min-w-0" : "gap-2 flex-wrap"}`}
+    >
       <select
         className={select}
         value={sort}
@@ -47,7 +49,13 @@ export function QuietControls({
         <option value="repo">sort: repo</option>
         <option value="title">sort: title</option>
       </select>
-      <MultiSelectFilter id="filter-repo" noun="repos" options={repos} hidden={hiddenRepos} onToggle={toggleRepo} />
+      <MultiSelectFilter
+        id="filter-repo"
+        noun="repos"
+        options={repos}
+        hidden={hiddenRepos}
+        onToggle={toggleRepo}
+      />
       <MultiSelectFilter
         id="filter-status"
         noun="status"

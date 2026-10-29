@@ -31,10 +31,21 @@ function live(html: string): string[] {
   const found: string[] = [];
   for (const el of doc.body.querySelectorAll("*")) {
     const tag = el.tagName.toLowerCase();
-    if (["script", "iframe", "form", "object", "embed", "foreignobject"].includes(tag) || (tag === "style" && !el.closest("svg"))) found.push(tag);
+    if (
+      ["script", "iframe", "form", "object", "embed", "foreignobject"].includes(
+        tag,
+      ) ||
+      (tag === "style" && !el.closest("svg"))
+    )
+      found.push(tag);
     for (const a of el.attributes) {
-      if (a.name.startsWith("on") || a.name === "style") found.push(`${tag}[${a.name}]`);
-      if (/^(href|src|xlink:href|action)$/.test(a.name) && /^\s*(javascript|data|vbscript):/i.test(a.value)) found.push(`${tag}[${a.name}=${a.value}]`);
+      if (a.name.startsWith("on") || a.name === "style")
+        found.push(`${tag}[${a.name}]`);
+      if (
+        /^(href|src|xlink:href|action)$/.test(a.name) &&
+        /^\s*(javascript|data|vbscript):/i.test(a.value)
+      )
+        found.push(`${tag}[${a.name}=${a.value}]`);
     }
   }
   return found;
@@ -58,7 +69,9 @@ test("links open safely, https kept", () => {
 });
 
 test("mermaid stays source until drawn", () => {
-  expect(r.markdown("```mermaid\ngraph TD; A-->B\n```")).toContain('class="mermaid-src"');
+  expect(r.markdown("```mermaid\ngraph TD; A-->B\n```")).toContain(
+    'class="mermaid-src"',
+  );
 });
 
 test("svg payloads are stripped", () => {
@@ -76,7 +89,11 @@ test("svg payloads are stripped", () => {
 // The checker itself must see what the sanitizer removes, or the tests above
 // prove nothing.
 test("checker flags raw payloads", () => {
-  expect(live('<img src=x onerror=alert(1)><a href="javascript:x">y</a><script>1</script>').length).toBe(3);
+  expect(
+    live(
+      '<img src=x onerror=alert(1)><a href="javascript:x">y</a><script>1</script>',
+    ).length,
+  ).toBe(3);
 });
 
 test("relative links are dropped, images become links", () => {
@@ -88,24 +105,47 @@ test("relative links are dropped, images become links", () => {
 });
 
 test("svg keeps plain style, drops fetching style and images", () => {
-  expect(r.svg("<svg><style>.a{fill:red}</style><rect class=\"a\"/></svg>")).toContain("fill:red");
-  for (const css of ["background:url(https://evil.example/x)", "@import url(https://evil.example/x.css);"]) {
-    expect(r.svg(`<svg><style>.a{${css}}</style><rect/></svg>`)).not.toContain("evil.example");
+  expect(
+    r.svg('<svg><style>.a{fill:red}</style><rect class="a"/></svg>'),
+  ).toContain("fill:red");
+  for (const css of [
+    "background:url(https://evil.example/x)",
+    "@import url(https://evil.example/x.css);",
+  ]) {
+    expect(r.svg(`<svg><style>.a{${css}}</style><rect/></svg>`)).not.toContain(
+      "evil.example",
+    );
   }
-  expect(r.svg('<svg><image href="https://evil.example/x.png"/></svg>')).not.toContain("evil.example");
+  expect(
+    r.svg('<svg><image href="https://evil.example/x.png"/></svg>'),
+  ).not.toContain("evil.example");
 });
 
 test("plain attribute values survive (class, viewBox)", () => {
-  const out = r.svg('<svg viewBox="4 4 552 141" class="flowchart"><g class="root"><rect width="10"/></g></svg>');
+  const out = r.svg(
+    '<svg viewBox="4 4 552 141" class="flowchart"><g class="root"><rect width="10"/></g></svg>',
+  );
   expect(out).toContain('viewBox="4 4 552 141"');
   expect(out).toContain('class="flowchart"');
-  expect(r.markdown("```mermaid\ngraph TD; A-->B\n```")).toContain('class="mermaid-src"');
+  expect(r.markdown("```mermaid\ngraph TD; A-->B\n```")).toContain(
+    'class="mermaid-src"',
+  );
 });
 
 test("svg style may reference its own markers", () => {
-  expect(r.svg('<svg><style>.a{marker-end:url(#arrow);fill:url( "#g" )}</style><rect/></svg>')).toContain("url(#arrow)");
-  expect(r.svg("<svg><style>.a{fill:url( https://evil.example/x)}</style><rect/></svg>")).not.toContain("evil.example");
-  expect(r.svg("<svg><style>.a{fill:url('//evil.example/x')}</style><rect/></svg>")).not.toContain("evil.example");
+  expect(
+    r.svg(
+      '<svg><style>.a{marker-end:url(#arrow);fill:url( "#g" )}</style><rect/></svg>',
+    ),
+  ).toContain("url(#arrow)");
+  expect(
+    r.svg(
+      "<svg><style>.a{fill:url( https://evil.example/x)}</style><rect/></svg>",
+    ),
+  ).not.toContain("evil.example");
+  expect(
+    r.svg("<svg><style>.a{fill:url('//evil.example/x')}</style><rect/></svg>"),
+  ).not.toContain("evil.example");
 });
 
 test("svg style escapes and other fetchers are refused", () => {
@@ -114,8 +154,10 @@ test("svg style escapes and other fetchers are refused", () => {
     ".a{fill:\\75rl(https://evil.example/x)}",
     '@\\69mport "https://evil.example/x.css";',
     '.a{background:image-set("https://evil.example/x.png" 1x)}',
-    '@font-face{font-family:x;src:local(x)}',
+    "@font-face{font-family:x;src:local(x)}",
   ]) {
-    expect(r.svg(`<svg><style>${css}</style><rect/></svg>`)).not.toContain("<style");
+    expect(r.svg(`<svg><style>${css}</style><rect/></svg>`)).not.toContain(
+      "<style",
+    );
   }
 });

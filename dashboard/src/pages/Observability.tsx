@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { client } from "../connectClient";
-import { Segmented } from "../components/Segmented";
-import { InlineError } from "../components/InlineError";
 import { FleetTopology } from "../components/FleetTopology";
+import { InlineError } from "../components/InlineError";
+import { Segmented } from "../components/Segmented";
+import { client } from "../connectClient";
 
 type Tab = "topology" | "metrics";
 
@@ -19,12 +19,22 @@ const PRESETS: readonly { label: string; query: string }[] = [
   // (core/internal/metrics/metrics.go), so they stay as they are — but there
   // is no queue any more (docs/adr/0048), and publishLiveStateGauge fills that
   // label with live states, not queue statuses. Only the human label is wrong.
-  { label: "sessions by live state", query: "sum by (status) (agentfleet_tasks_current)" },
-  { label: "headroom", query: "agentfleet_live_pods / agentfleet_max_in_flight" },
-  { label: "rpc rate", query: "sum by (surface) (rate(agentfleet_grpc_requests_total[5m]))" },
+  {
+    label: "sessions by live state",
+    query: "sum by (status) (agentfleet_tasks_current)",
+  },
+  {
+    label: "headroom",
+    query: "agentfleet_live_pods / agentfleet_max_in_flight",
+  },
+  {
+    label: "rpc rate",
+    query: "sum by (surface) (rate(agentfleet_grpc_requests_total[5m]))",
+  },
   {
     label: "rpc errors",
-    query: 'sum by (method) (rate(agentfleet_grpc_requests_total{status!~"ok|OK"}[5m]))',
+    query:
+      'sum by (method) (rate(agentfleet_grpc_requests_total{status!~"ok|OK"}[5m]))',
   },
   {
     label: "git p95",
@@ -132,7 +142,11 @@ function MetricsExplorer() {
         </button>
       </form>
 
-      <InlineError message={error} onRetry={() => run(query)} onDismiss={() => setError(null)} />
+      <InlineError
+        message={error}
+        onRetry={() => run(query)}
+        onDismiss={() => setError(null)}
+      />
 
       {result && rows.length === 0 && !error && (
         <p className="text-xs text-dim2">
@@ -153,11 +167,16 @@ function MetricsExplorer() {
             </thead>
             <tbody className="font-mono">
               {rows.map((r, i) => (
-                <tr key={`${JSON.stringify(r.metric)}-${i}`} className="border-b border-line last:border-0">
+                <tr
+                  key={`${JSON.stringify(r.metric)}-${i}`}
+                  className="border-b border-line last:border-0"
+                >
                   <td className="px-2 py-1 text-base-content whitespace-nowrap">
                     {r.metric.__name__ ?? "—"}
                   </td>
-                  <td className="px-2 py-1 text-dim break-all">{labelsOf(r.metric)}</td>
+                  <td className="px-2 py-1 text-dim break-all">
+                    {labelsOf(r.metric)}
+                  </td>
                   <td className="px-2 py-1 text-base-content text-right whitespace-nowrap">
                     {r.value ? formatValue(r.value[1]) : "—"}
                   </td>
@@ -175,7 +194,11 @@ function MetricsExplorer() {
 // which stays the place for time-series work: what this adds is the live
 // cell view, where a pod maps back to the session it's running so a
 // misbehaving cell is one click from its transcript.
-export function Observability({ onSelectSession }: { onSelectSession: (id: string) => void }) {
+export function Observability({
+  onSelectSession,
+}: {
+  onSelectSession: (id: string) => void;
+}) {
   const [tab, setTab] = useState<Tab>("topology");
 
   return (
@@ -192,7 +215,11 @@ export function Observability({ onSelectSession }: { onSelectSession: (id: strin
         </a>
       </div>
 
-      {tab === "topology" ? <FleetTopology onSelectSession={onSelectSession} /> : <MetricsExplorer />}
+      {tab === "topology" ? (
+        <FleetTopology onSelectSession={onSelectSession} />
+      ) : (
+        <MetricsExplorer />
+      )}
     </div>
   );
 }

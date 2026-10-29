@@ -1,5 +1,10 @@
+import {
+  Code,
+  ConnectError,
+  createClient,
+  type Interceptor,
+} from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
 import { DashboardService } from "./gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
@@ -34,7 +39,9 @@ const authInterceptor: Interceptor = (next) => async (req) => {
     return await next(req);
   } catch (err) {
     if (err instanceof ConnectError && err.code === Code.Unauthenticated) {
-      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+      const returnTo = encodeURIComponent(
+        window.location.pathname + window.location.search,
+      );
       window.location.assign(`/auth/login?return_to=${returnTo}`);
     }
     throw err;
@@ -105,7 +112,10 @@ export function subscribeTranscript(
       const abortAttempt = () => attempt?.abort();
       controller.signal.addEventListener("abort", abortAttempt, { once: true });
       try {
-        for await (const entry of openStream({ sessionId, sinceSeq: cursor }, { signal: attempt.signal })) {
+        for await (const entry of openStream(
+          { sessionId, sinceSeq: cursor },
+          { signal: attempt.signal },
+        )) {
           cursor = entry.seq + 1n;
           onEntry(entry);
         }

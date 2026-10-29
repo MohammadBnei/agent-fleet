@@ -1,19 +1,32 @@
 // DecisionDock uses no hooks, so it can be called as a plain function and its
 // returned element tree inspected — no DOM, no renderer.
-import { test, expect } from "bun:test";
-import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
+import { expect, test } from "bun:test";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "../gen/agentfleet/v1/transcript_pb";
 import { DecisionDock } from "./DecisionDock";
-import { PlanCard } from "./PlanCard";
 import { PermissionCard } from "./PermissionCard";
+import { PlanCard } from "./PlanCard";
 
 let nextSeq = 0n;
 function entry(type: TranscriptEntryType, text: string): TranscriptEntry {
   nextSeq += 1n;
-  return { $typeName: "agentfleet.v1.TranscriptEntry", sessionId: "t", seq: nextSeq, from: "agent", text, type } as TranscriptEntry;
+  return {
+    $typeName: "agentfleet.v1.TranscriptEntry",
+    sessionId: "t",
+    seq: nextSeq,
+    from: "agent",
+    text,
+    type,
+  } as TranscriptEntry;
 }
 
 const permission = (tool: string, input: unknown = {}) =>
-  entry(TranscriptEntryType.PERMISSION_REQUEST, JSON.stringify({ tool, input }));
+  entry(
+    TranscriptEntryType.PERMISSION_REQUEST,
+    JSON.stringify({ tool, input }),
+  );
 
 function render(entries: TranscriptEntry[]) {
   const tree = DecisionDock({
@@ -27,7 +40,10 @@ function render(entries: TranscriptEntry[]) {
 
   const found: { type: unknown; props: Record<string, unknown> }[] = [];
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (!node || typeof node !== "object") return;
     const el = node as { type?: unknown; props?: Record<string, unknown> };
     if (el.type) found.push({ type: el.type, props: el.props ?? {} });
@@ -43,7 +59,9 @@ function render(entries: TranscriptEntry[]) {
 // request changes stayed permanently below the fold with no way to reach
 // them. `docked` is what tells PlanCard to leave the scrolling to the dock.
 test("a docked plan leaves the scrolling to the dock", () => {
-  const plan = permission("ExitPlanMode", { plan: "## Step one\n\nDo the thing." });
+  const plan = permission("ExitPlanMode", {
+    plan: "## Step one\n\nDo the thing.",
+  });
   const card = render([plan]).find((el) => el.type === PlanCard);
 
   expect(card).toBeDefined();
@@ -61,11 +79,13 @@ test("a non-plan permission still renders its own card", () => {
 });
 
 test("an empty dock renders nothing at all", () => {
-  expect(DecisionDock({
-    entries: [],
-    busyKey: null,
-    onRespond: () => {},
-    onAnswer: () => {},
-    onPlanFeedback: () => {},
-  })).toBeNull();
+  expect(
+    DecisionDock({
+      entries: [],
+      busyKey: null,
+      onRespond: () => {},
+      onAnswer: () => {},
+      onPlanFeedback: () => {},
+    }),
+  ).toBeNull();
 });

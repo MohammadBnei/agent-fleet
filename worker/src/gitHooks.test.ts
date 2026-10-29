@@ -1,5 +1,11 @@
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, readFileSync } from "node:fs";
+import { beforeEach, expect, test } from "bun:test";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
@@ -13,11 +19,17 @@ function git(args: string[], extra: Record<string, string> = {}) {
   const base: Record<string, string> = {
     PATH: process.env.PATH ?? "",
     HOME: repo,
-    GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@t",
     FLEET_GIT_HOOKS: HOOKS,
     ...extra,
   };
-  const p = Bun.spawnSync(["git", ...args], { cwd: repo, env: { ...base, ...hooksFor(base) } });
+  const p = Bun.spawnSync(["git", ...args], {
+    cwd: repo,
+    env: { ...base, ...hooksFor(base) },
+  });
   if (p.exitCode !== 0) throw new Error(p.stderr.toString());
   return p.stdout.toString();
 }
@@ -27,7 +39,8 @@ function hooksFor(env: Record<string, string>) {
   out[`GIT_CONFIG_VALUE_${Number(env.GIT_CONFIG_COUNT) || 0}`] = HOOKS;
   return out;
 }
-const msg = "fix: thing\n\nbody\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nco-authored-by: Someone <s@x>\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nClaude-Session: https://claude.ai/code/x\n";
+const msg =
+  "fix: thing\n\nbody\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nco-authored-by: Someone <s@x>\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nClaude-Session: https://claude.ai/code/x\n";
 const lastMessage = () => git(["log", "-1", "--format=%B"]);
 
 beforeEach(() => {
@@ -49,19 +62,27 @@ test("repo session: every attribution line replaced by exactly the fleet trailer
 
 test("definition pod: no trailer at all", () => {
   git(["commit", "-q", "-m", msg], { FLEET_DEFINITION: "dev-notes" });
-  expect(lastMessage()).not.toMatch(/co-authored-by|generated with|claude-session/i);
+  expect(lastMessage()).not.toMatch(
+    /co-authored-by|generated with|claude-session/i,
+  );
 });
 
 test("the repo's own hooks still run, .git/hooks and a local core.hooksPath (husky)", () => {
   const ran = join(repo, "ran");
   mkdirSync(join(repo, ".git", "hooks"), { recursive: true });
-  writeFileSync(join(repo, ".git", "hooks", "pre-commit"), `#!/bin/sh\necho pre-commit >> "${ran}"\n`);
+  writeFileSync(
+    join(repo, ".git", "hooks", "pre-commit"),
+    `#!/bin/sh\necho pre-commit >> "${ran}"\n`,
+  );
   chmodSync(join(repo, ".git", "hooks", "pre-commit"), 0o755);
   git(["commit", "-q", "-m", "one"]);
   expect(readFileSync(ran, "utf8")).toBe("pre-commit\n");
 
   mkdirSync(join(repo, ".husky"));
-  writeFileSync(join(repo, ".husky", "commit-msg"), `#!/bin/sh\necho husky >> "${ran}"\n`);
+  writeFileSync(
+    join(repo, ".husky", "commit-msg"),
+    `#!/bin/sh\necho husky >> "${ran}"\n`,
+  );
   chmodSync(join(repo, ".husky", "commit-msg"), 0o755);
   git(["config", "--local", "core.hooksPath", ".husky"]);
   writeFileSync(join(repo, "f"), "y");
@@ -72,14 +93,23 @@ test("the repo's own hooks still run, .git/hooks and a local core.hooksPath (hus
 
 test("a failing repo hook still fails the commit", () => {
   mkdirSync(join(repo, ".git", "hooks"), { recursive: true });
-  writeFileSync(join(repo, ".git", "hooks", "commit-msg"), "#!/bin/sh\nexit 1\n");
+  writeFileSync(
+    join(repo, ".git", "hooks", "commit-msg"),
+    "#!/bin/sh\nexit 1\n",
+  );
   chmodSync(join(repo, ".git", "hooks", "commit-msg"), 0o755);
   expect(() => git(["commit", "-q", "-m", "x"])).toThrow();
 });
 
 test("gitHooksEnv appends after the provisioner's GIT_CONFIG_* instead of replacing it", () => {
-  expect(gitHooksEnv({})).toMatchObject({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.hooksPath" });
-  expect(gitHooksEnv({ GIT_CONFIG_COUNT: "1" })).toMatchObject({ GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_1: "core.hooksPath" });
+  expect(gitHooksEnv({})).toMatchObject({
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+  });
+  expect(gitHooksEnv({ GIT_CONFIG_COUNT: "1" })).toMatchObject({
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_1: "core.hooksPath",
+  });
 });
 
 test("Agent-Session on every pod, Agent-Definition on a definition pod, once even after an amend", () => {
@@ -87,7 +117,11 @@ test("Agent-Session on every pod, Agent-Definition on a definition pod, once eve
   expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);
   expect(lastMessage()).not.toMatch(/agent-definition/i);
 
-  const def = { SESSION_ID: "s-2", FLEET_DEFINITION: "dev-notes", FLEET_DEFINITION_SHA: "d3f" };
+  const def = {
+    SESSION_ID: "s-2",
+    FLEET_DEFINITION: "dev-notes",
+    FLEET_DEFINITION_SHA: "d3f",
+  };
   git(["commit", "-q", "--amend", "--no-edit"], def);
   const out = lastMessage();
   expect(out.match(/^Agent-Session: /gim)?.length).toBe(1);
@@ -97,7 +131,8 @@ test("Agent-Session on every pod, Agent-Definition on a definition pod, once eve
 });
 
 test("model-written Agent-* trailers are replaced, not kept beside the stamp", () => {
-  const forged = "fix: x\n\nAgent-Session: fake1\nagent-session : fake2\nAgent-Definition: bogus@1\nCo-Authored-By : Claude <x>\n";
+  const forged =
+    "fix: x\n\nAgent-Session: fake1\nagent-session : fake2\nAgent-Definition: bogus@1\nCo-Authored-By : Claude <x>\n";
   git(["commit", "-q", "-m", forged], { SESSION_ID: "s-1" });
   expect(lastMessage()).not.toMatch(/fake|bogus|claude/i);
   expect(lastMessage().match(/^Agent-Session: s-1$/gm)?.length).toBe(1);

@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SessionList } from "./pages/SessionList";
-import { LIVE_STATES } from "./sessionState";
-import { SessionDetail } from "./pages/SessionDetail";
-import { Files } from "./pages/Files";
-import { Schedules } from "./pages/Schedules";
-import { Observability } from "./pages/Observability";
-import { NewSessionDialog } from "./components/NewSessionDialog";
-import { Settings } from "./pages/Settings";
+import { ConfirmModal } from "./components/ConfirmModal";
+import { ErrorModal } from "./components/ErrorModal";
+import { LogDrawer } from "./components/LogDrawer";
+import { Logo } from "./components/Logo";
 import { NeedsYouModal } from "./components/NeedsYouModal";
+import { NewSessionDialog } from "./components/NewSessionDialog";
 import { Segmented } from "./components/Segmented";
-import { MobileSessionList } from "./mobile/MobileSessionList";
-import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
 import { client } from "./connectClient";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
-import { listSummary, type ListSummary } from "./transcript";
-import { ErrorModal } from "./components/ErrorModal";
-import { ConfirmModal } from "./components/ConfirmModal";
-import { LogDrawer } from "./components/LogDrawer";
-import { useMediaQuery } from "./useMediaQuery";
+import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
+import { MobileSessionList } from "./mobile/MobileSessionList";
+import { Files } from "./pages/Files";
+import { Observability } from "./pages/Observability";
+import { Schedules } from "./pages/Schedules";
+import { SessionDetail } from "./pages/SessionDetail";
+import { SessionList } from "./pages/SessionList";
+import { Settings } from "./pages/Settings";
 import { pollVisible } from "./pollVisible";
-import { Logo } from "./components/Logo";
-import { useTheme } from "./useTheme";
+import { LIVE_STATES } from "./sessionState";
+import { type ListSummary, listSummary } from "./transcript";
 import { useFeedWidth } from "./useFeedWidth";
+import { useMediaQuery } from "./useMediaQuery";
+import { useTheme } from "./useTheme";
 
 // No router library (see docs/adr/0013's plan) — state mirrored to
 // ?view=/?session= so a session is still bookmarkable/shareable without pulling
@@ -38,7 +38,13 @@ function readSessionIdFromUrl(): string | null {
 }
 
 // The ⚙ in both headers: opens the Settings page.
-function SettingsButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+function SettingsButton({
+  active,
+  onClick,
+}: {
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -52,7 +58,12 @@ function SettingsButton({ active, onClick }: { active: boolean; onClick: () => v
   );
 }
 
-export type View = "sessions" | "schedules" | "files" | "observability" | "settings";
+export type View =
+  | "sessions"
+  | "schedules"
+  | "files"
+  | "observability"
+  | "settings";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
@@ -60,7 +71,10 @@ export type View = "sessions" | "schedules" | "files" | "observability" | "setti
 // re-trigger them.
 function readShortcut(): { needsYouOnly: boolean; newSession: boolean } {
   const p = new URLSearchParams(window.location.search);
-  return { needsYouOnly: p.get("filter") === "blocked", newSession: p.get("new") === "1" };
+  return {
+    needsYouOnly: p.get("filter") === "blocked",
+    newSession: p.get("new") === "1",
+  };
 }
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
@@ -68,7 +82,12 @@ function readViewFromUrl(): View {
   // until its repo stopped being a constant. "tasks" is the pre-rename name of
   // the default one and falls through to it — listed so it reads as deliberate.
   if (v === "audits") return "schedules";
-  return v === "files" || v === "schedules" || v === "observability" || v === "settings" ? v : "sessions";
+  return v === "files" ||
+    v === "schedules" ||
+    v === "observability" ||
+    v === "settings"
+    ? v
+    : "sessions";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
@@ -89,8 +108,15 @@ const MOBILE_NAV: readonly { value: View; label: string }[] = [
 // Proposals are a human gate like any pending decision, but they live on the
 // schedules view, and nothing outside it said they existed — 24 alerts sat
 // waiting for approval behind a tab whose name promises cron jobs.
-function withProposalCount(nav: readonly { value: View; label: string }[], count: number) {
-  return count === 0 ? nav : nav.map((o) => (o.value === "schedules" ? { ...o, label: `${o.label} · ${count}` } : o));
+function withProposalCount(
+  nav: readonly { value: View; label: string }[],
+  count: number,
+) {
+  return count === 0
+    ? nav
+    : nav.map((o) =>
+        o.value === "schedules" ? { ...o, label: `${o.label} · ${count}` } : o,
+      );
 }
 
 // Plain polling, not a stream — a second live feed just for the list is
@@ -114,14 +140,18 @@ export default function App() {
   // The header badge opens this instead of navigating. See NeedsYouModal.
   const [decisionsOpen, setDecisionsOpen] = useState(false);
   const [view, setView] = useState<View>(readViewFromUrl);
-  const [selectedId, setSelectedId] = useState<string | null>(readSessionIdFromUrl);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    readSessionIdFromUrl,
+  );
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [summaries, setSummaries] = useState<Map<string, ListSummary>>(new Map());
+  const [summaries, setSummaries] = useState<Map<string, ListSummary>>(
+    new Map(),
+  );
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [logSessionId, setLogSessionId] = useState<string | null>(null);
   const [shortcut] = useState(readShortcut);
@@ -200,7 +230,10 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => pollVisible(loadProposals, POLL_INTERVAL_MS), [loadProposals]);
+  useEffect(
+    () => pollVisible(loadProposals, POLL_INTERVAL_MS),
+    [loadProposals],
+  );
 
   // Sessions holding an unanswered QUESTION, from the summaries above. A
   // question survives its pod (docs/adr/0050) and answering one warms a fresh
@@ -209,13 +242,16 @@ export default function App() {
   const answerableIds = useMemo(
     () =>
       new Set(
-        [...summaries.entries()].filter(([, sum]) => sum.pendingQuestion !== null).map(([id]) => id),
+        [...summaries.entries()]
+          .filter(([, sum]) => sum.pendingQuestion !== null)
+          .map(([id]) => id),
       ),
     [summaries],
   );
 
   const needsYouIds = useMemo(
-    () => new Set(sessions.filter((t) => t.pendingDecisions > 0).map((t) => t.id)),
+    () =>
+      new Set(sessions.filter((t) => t.pendingDecisions > 0).map((t) => t.id)),
     [sessions],
   );
 
@@ -239,7 +275,12 @@ export default function App() {
     const active = sessions.filter((t) => LIVE_STATES.has(t.liveState));
     const strandedCap = 10;
     const stranded = sessions
-      .filter((t) => !LIVE_STATES.has(t.liveState) && t.pendingDecisions > 0 && t.archivedAt === undefined)
+      .filter(
+        (t) =>
+          !LIVE_STATES.has(t.liveState) &&
+          t.pendingDecisions > 0 &&
+          t.archivedAt === undefined,
+      )
       .slice(0, strandedCap);
     const wanted = [...active, ...stranded];
     if (wanted.length === 0) {
@@ -270,7 +311,9 @@ export default function App() {
       ),
     ).then((results) => {
       if (cancelled) return;
-      setSummaries(new Map(results.filter((r): r is NonNullable<typeof r> => r !== null)));
+      setSummaries(
+        new Map(results.filter((r): r is NonNullable<typeof r> => r !== null)),
+      );
     });
     return () => {
       cancelled = true;
@@ -381,8 +424,11 @@ export default function App() {
     // whose only live session was rendering an IDLE badge two lines below.
     // The header and the row have to agree; they are read together.
     const working = sessions.filter((t) => t.liveState === "working").length;
-    const open = (t: Session) => t.archivedAt === undefined && t.sweptAt === undefined;
-    const done = sessions.filter((t) => open(t) && t.liveState === "done").length;
+    const open = (t: Session) =>
+      t.archivedAt === undefined && t.sweptAt === undefined;
+    const done = sessions.filter(
+      (t) => open(t) && t.liveState === "done",
+    ).length;
     // Idle is the QUIET tail's own default — not archived, not swept. It was
     // "everything else", so the header said 21 idle over a list showing 4.
     // A session with no pod has no liveState at all (""), and is the most
@@ -411,10 +457,11 @@ export default function App() {
     // applies the needsYouOnly live-state shortcut — a predicate the server
     // doesn't know about.
     return needsYouOnly
-      ? sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked")
+      ? sessions.filter(
+          (t) => t.archivedAt === undefined && t.liveState === "blocked",
+        )
       : sessions;
   }, [sessions, needsYouOnly]);
-
 
   const shared = {
     answerableIds,
@@ -435,14 +482,24 @@ export default function App() {
     <div className="h-dvh overflow-hidden bg-base-100 text-base-content flex flex-col">
       {isDesktop ? (
         <div className="flex-none flex items-center gap-4 px-4.5 py-3 border-b border-line bg-base-200">
-          <a href="/" className="flex items-center gap-2 text-lg font-semibold tracking-[0.02em] text-primary hover:opacity-80">
+          <a
+            href="/"
+            className="flex items-center gap-2 text-lg font-semibold tracking-[0.02em] text-primary hover:opacity-80"
+          >
             <Logo size={18} />
             herd
           </a>
           {/* No repo count: it was the distinct repos among the loaded (and
               search-filtered) sessions, shown beside a picker listing more. */}
-          <span className="text-xs text-dim2 whitespace-nowrap">ukubi-cluster</span>
-          <Segmented value={view} options={withProposalCount(NAV, proposals.length)} onChange={selectView} className="ml-1" />
+          <span className="text-xs text-dim2 whitespace-nowrap">
+            ukubi-cluster
+          </span>
+          <Segmented
+            value={view}
+            options={withProposalCount(NAV, proposals.length)}
+            onChange={selectView}
+            className="ml-1"
+          />
 
           {(counts.waiting > 0 || needsYouOnly) && (
             <div className="flex items-center gap-2 ml-auto">
@@ -480,7 +537,9 @@ export default function App() {
           {/* The one header item allowed to give way: everything else is a
               control, and at laptop widths "N waiting on you" pushed
               "+ new session" off the right edge. */}
-          <span className={`text-xs text-dim2 whitespace-nowrap min-w-0 truncate ${counts.waiting > 0 ? "" : "ml-auto"}`}>
+          <span
+            className={`text-xs text-dim2 whitespace-nowrap min-w-0 truncate ${counts.waiting > 0 ? "" : "ml-auto"}`}
+          >
             {counts.working} working · {counts.done} done · {counts.idle} idle
           </span>
 
@@ -503,12 +562,18 @@ export default function App() {
               selectSession(id);
             }}
           />
-          <SettingsButton active={view === "settings"} onClick={() => selectView("settings")} />
+          <SettingsButton
+            active={view === "settings"}
+            onClick={() => selectView("settings")}
+          />
         </div>
       ) : (
         <div className="flex-none border-b border-line bg-base-200">
           <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <a href="/" className="flex items-center gap-1.5 text-lg font-semibold text-primary">
+            <a
+              href="/"
+              className="flex items-center gap-1.5 text-lg font-semibold text-primary"
+            >
               <Logo size={16} />
               herd
             </a>
@@ -542,7 +607,10 @@ export default function App() {
                 selectSession(id);
               }}
             />
-            <SettingsButton active={view === "settings"} onClick={() => selectView("settings")} />
+            <SettingsButton
+              active={view === "settings"}
+              onClick={() => selectView("settings")}
+            />
           </div>
           {searchOpen && (
             <div className="px-3.5 pb-2.5">
@@ -559,14 +627,20 @@ export default function App() {
         </div>
       )}
 
-      <ErrorModal message={sessionsError} onClose={() => setSessionsError(null)} />
+      <ErrorModal
+        message={sessionsError}
+        onClose={() => setSessionsError(null)}
+      />
       <ConfirmModal
         open={pendingDeleteId !== null}
         message="Delete this session? This tears down any live pod and removes it from the list."
         onConfirm={confirmDeleteSession}
         onCancel={() => setPendingDeleteId(null)}
       />
-      <LogDrawer sessionId={logSessionId} onClose={() => setLogSessionId(null)} />
+      <LogDrawer
+        sessionId={logSessionId}
+        onClose={() => setLogSessionId(null)}
+      />
       <NeedsYouModal
         open={decisionsOpen}
         sessions={blockedSessions}
@@ -593,7 +667,12 @@ export default function App() {
           retention GC reclaims it without anyone clicking.
         */}
         {view === "settings" ? (
-          <Settings theme={theme} onThemeChange={setTheme} feedWidth={feedWidth} onFeedWidthChange={setFeedWidth} />
+          <Settings
+            theme={theme}
+            onThemeChange={setTheme}
+            feedWidth={feedWidth}
+            onFeedWidthChange={setFeedWidth}
+          />
         ) : view === "files" ? (
           <Files />
         ) : view === "schedules" ? (
@@ -611,7 +690,12 @@ export default function App() {
           isDesktop ? (
             <SessionDetail sessionId={selectedId} sessions={sessions} />
           ) : (
-            <MobileSessionDetail sessionId={selectedId} sessions={sessions} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
+            <MobileSessionDetail
+              sessionId={selectedId}
+              sessions={sessions}
+              onBack={clearSelection}
+              onDelete={() => deleteSession(selectedId)}
+            />
           )
         ) : isDesktop ? (
           <SessionList {...shared} />

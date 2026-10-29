@@ -45,7 +45,9 @@ test("approve + auto treats an already-recorded answer as success", async () => 
 test("plain approve still surfaces AlreadyExists", async () => {
   respondError = new ConnectError("already answered", Code.AlreadyExists);
   try {
-    await expect(approvePlan("s1", 7n, undefined, api)).rejects.toThrow("already answered");
+    await expect(approvePlan("s1", 7n, undefined, api)).rejects.toThrow(
+      "already answered",
+    );
   } finally {
     respondError = undefined;
   }

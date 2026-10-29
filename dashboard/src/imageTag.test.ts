@@ -8,7 +8,9 @@ test("takes the tag off a normal ref", () => {
 
 // A registry port is not a tag. Getting this wrong labels every cell "5000".
 test("a registry port is not a tag", () => {
-  expect(imageTag("reg:5000/agent-fleet-worker")).toBe("reg:5000/agent-fleet-worker");
+  expect(imageTag("reg:5000/agent-fleet-worker")).toBe(
+    "reg:5000/agent-fleet-worker",
+  );
   expect(imageTag("reg:5000/agent-fleet-worker:3.5.4")).toBe("3.5.4");
 });
 

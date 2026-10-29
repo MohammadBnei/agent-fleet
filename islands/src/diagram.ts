@@ -22,18 +22,25 @@ export function stripConfig(src: string): string {
   }
 }
 
-export function drawDiagrams(node: HTMLElement, opts: { items: unknown; svg: (s: string) => string }) {
+export function drawDiagrams(
+  node: HTMLElement,
+  opts: { items: unknown; svg: (s: string) => string },
+) {
   let svg = opts.svg;
   const root = node.getRootNode() as ShadowRoot;
   const draw = async () => {
-    const blocks = node.querySelectorAll<HTMLPreElement>("pre.mermaid-src:not([data-drawn])");
+    const blocks = node.querySelectorAll<HTMLPreElement>(
+      "pre.mermaid-src:not([data-drawn])",
+    );
     if (!blocks.length) return;
     try {
       mermaid ??= import("mermaid").then((m) => m.default);
       const m = await mermaid;
       // The host's Ukubi theme picks mermaid's: light office, dark tunnels.
       const host = root.host as HTMLElement | undefined;
-      const theme = host?.getAttribute("theme") ?? (host?.dataset.fleetScheme === "dark" ? "underground" : "office");
+      const theme =
+        host?.getAttribute("theme") ??
+        (host?.dataset.fleetScheme === "dark" ? "underground" : "office");
       m.initialize({
         startOnLoad: false,
         securityLevel: "strict",
@@ -49,7 +56,10 @@ export function drawDiagrams(node: HTMLElement, opts: { items: unknown; svg: (s:
         // body. With error rendering suppressed it removes that node on
         // success and on failure alike, so nothing is left behind.
         try {
-          const out = await m.render(`fleet-diagram-${crypto.randomUUID()}`, stripConfig(pre.textContent ?? ""));
+          const out = await m.render(
+            `fleet-diagram-${crypto.randomUUID()}`,
+            stripConfig(pre.textContent ?? ""),
+          );
           // Each diagram gets its own shadow root, so its <style> styles only
           // the diagram, and paint containment keeps anything it draws, fixed
           // positioning included, inside its box.

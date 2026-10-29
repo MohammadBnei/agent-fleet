@@ -22,7 +22,9 @@ export function filterRepos(repos: Repo[], f: RepoFilter, now: number): Repo[] {
   const q = f.query.trim().toLowerCase();
   return repos.filter(
     (r) =>
-      (!q || r.name.toLowerCase().includes(q) || r.fullName.toLowerCase().includes(q)) &&
+      (!q ||
+        r.name.toLowerCase().includes(q) ||
+        r.fullName.toLowerCase().includes(q)) &&
       (!f.owner || ownerOf(r) === f.owner) &&
       (f.status === "all" ||
         (f.status === "active" && r.active) ||

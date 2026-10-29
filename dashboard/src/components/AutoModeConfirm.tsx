@@ -23,7 +23,9 @@ export function AutoModeConfirm({
   return (
     <ConfirmModal
       open={open}
-      title={approving ? "Approve and switch to auto mode?" : "Switch to auto mode?"}
+      title={
+        approving ? "Approve and switch to auto mode?" : "Switch to auto mode?"
+      }
       message={AUTO_MODE_WARNING}
       confirmLabel={approving ? "approve + auto" : "switch to auto"}
       danger={false}

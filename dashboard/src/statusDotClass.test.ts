@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import { statusDotClass } from "./pages/Schedules";
 
 // A schedule that files nothing every tick, because the previous run still
@@ -9,7 +9,9 @@ import { statusDotClass } from "./pages/Schedules";
 // flight.
 test("a skipped tick is neither healthy nor an error", () => {
   expect(statusDotClass("skipped: session abc-123", true)).toBe("bg-dim2");
-  expect(statusDotClass("skipped: previous run still open", true)).toBe("bg-dim2");
+  expect(statusDotClass("skipped: previous run still open", true)).toBe(
+    "bg-dim2",
+  );
 });
 
 test("a filed proposal is healthy and a failed one is an error", () => {
@@ -19,6 +21,8 @@ test("a filed proposal is healthy and a failed one is an error", () => {
 
 // Paused wins over everything: a disabled schedule is not skipping, it is off.
 test("a disabled schedule reads as paused whatever it last did", () => {
-  expect(statusDotClass("skipped: session abc-123", false)).toBe("border border-dim2");
+  expect(statusDotClass("skipped: session abc-123", false)).toBe(
+    "border border-dim2",
+  );
   expect(statusDotClass("error: bad cron", false)).toBe("border border-dim2");
 });

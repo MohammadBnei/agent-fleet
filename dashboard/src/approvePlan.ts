@@ -68,7 +68,8 @@ export async function approvePlan(
       decisionJson: JSON.stringify({ behavior: "allow" }),
     });
   } catch (err) {
-    if (mode && err instanceof ConnectError && err.code === Code.AlreadyExists) return;
+    if (mode && err instanceof ConnectError && err.code === Code.AlreadyExists)
+      return;
     throw err;
   }
 }

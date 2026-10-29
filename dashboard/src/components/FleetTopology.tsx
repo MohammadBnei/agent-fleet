@@ -3,8 +3,8 @@ import { client } from "../connectClient";
 import type { CellNode, TopologyEdge } from "../gen/agentfleet/v1/dashboard_pb";
 import { imageTag } from "../imageTag";
 import { pollVisible } from "../pollVisible";
-import { InlineError } from "./InlineError";
 import { shortId } from "../sessionState";
+import { InlineError } from "./InlineError";
 
 // The fleet drawn as cells: two long-lived hubs and one cell per live pod.
 //
@@ -24,9 +24,20 @@ const CELL_H = 64;
 
 // Matches the four statuses core's cellStatus() emits. Deliberately theme
 // tokens, not hex: this renders in both themes.
-const STATUS_CLS: Record<string, { stroke: string; text: string; dot: string }> = {
-  healthy: { stroke: "stroke-success", text: "text-success", dot: "fill-success" },
-  degraded: { stroke: "stroke-warning", text: "text-warning", dot: "fill-warning" },
+const STATUS_CLS: Record<
+  string,
+  { stroke: string; text: string; dot: string }
+> = {
+  healthy: {
+    stroke: "stroke-success",
+    text: "text-success",
+    dot: "fill-success",
+  },
+  degraded: {
+    stroke: "stroke-warning",
+    text: "text-warning",
+    dot: "fill-warning",
+  },
   failing: { stroke: "stroke-error", text: "text-error", dot: "fill-error" },
   idle: { stroke: "stroke-line3", text: "text-dim2", dot: "fill-dim2" },
 };
@@ -57,7 +68,13 @@ export function layout(nodes: CellNode[]): Placed[] {
       };
     }
     i += 1;
-    return { ...n, x: step * i - CELL_W / 2, y: TIER_Y.worker, w: CELL_W, h: CELL_H };
+    return {
+      ...n,
+      x: step * i - CELL_W / 2,
+      y: TIER_Y.worker,
+      w: CELL_W,
+      h: CELL_H,
+    };
   });
 }
 
@@ -72,7 +89,11 @@ function formatRate(rps: number): string {
   return rps < 1 ? `${rps.toFixed(2)}/s` : `${rps.toFixed(1)}/s`;
 }
 
-export function FleetTopology({ onSelectSession }: { onSelectSession: (id: string) => void }) {
+export function FleetTopology({
+  onSelectSession,
+}: {
+  onSelectSession: (id: string) => void;
+}) {
   const [nodes, setNodes] = useState<CellNode[]>([]);
   const [edges, setEdges] = useState<TopologyEdge[]>([]);
   const [metricsError, setMetricsError] = useState("");
@@ -114,7 +135,9 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
 
   return (
     <div className="flex flex-col gap-3 min-h-0">
-      {error && <InlineError message={error} onDismiss={() => setError(null)} />}
+      {error && (
+        <InlineError message={error} onDismiss={() => setError(null)} />
+      )}
 
       {/* Prometheus being down is not the topology being wrong — the cells
           are still true, they just have no rates. Saying so beats rendering
@@ -181,13 +204,16 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                 key={p.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className={clickable ? "cursor-pointer" : undefined}
-                onClick={clickable ? () => onSelectSession(p.sessionId) : undefined}
+                onClick={
+                  clickable ? () => onSelectSession(p.sessionId) : undefined
+                }
                 role={clickable ? "button" : undefined}
                 tabIndex={clickable ? 0 : undefined}
                 onKeyDown={
                   clickable
                     ? (ev) => {
-                        if (ev.key === "Enter" || ev.key === " ") onSelectSession(p.sessionId);
+                        if (ev.key === "Enter" || ev.key === " ")
+                          onSelectSession(p.sessionId);
                       }
                     : undefined
                 }
@@ -198,8 +224,17 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                   className={`fill-base-100 ${isHub ? "stroke-primary" : s.stroke}`}
                   strokeWidth={1}
                 />
-                <circle cx={10} cy={11} r={3} className={isHub ? "fill-primary" : s.dot} />
-                <text x={20} y={14} className="fill-base-content text-[10px] font-medium">
+                <circle
+                  cx={10}
+                  cy={11}
+                  r={3}
+                  className={isHub ? "fill-primary" : s.dot}
+                />
+                <text
+                  x={20}
+                  y={14}
+                  className="fill-base-content text-[10px] font-medium"
+                >
                   {isHub ? p.type : truncate(p.repo || "worker", 18)}
                 </text>
                 {/* Hubs carry their build top-right, where there is room next
@@ -209,7 +244,12 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                     provisioner core couldn't reach degrades this cell, not the
                     graph. */}
                 {isHub && p.version && (
-                  <text x={p.w - 8} y={14} textAnchor="end" className="fill-dim2 text-[9px]">
+                  <text
+                    x={p.w - 8}
+                    y={14}
+                    textAnchor="end"
+                    className="fill-dim2 text-[9px]"
+                  >
                     {truncate(p.version, 16)}
                   </text>
                 )}
@@ -228,7 +268,9 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
                       #{shortId(p.sessionId)} ·{" "}
-                      <tspan className={`${s.text} fill-current`}>{p.status}</tspan>
+                      <tspan className={`${s.text} fill-current`}>
+                        {p.status}
+                      </tspan>
                     </text>
                     {/* core's podVersion, "6.22.1 (src-8a19aa40)": its own line,
                         since release + tag outgrow the id line. */}
@@ -249,9 +291,12 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
           got, which is not the same claim. */}
       {(defaults.worker || defaults.sidecar) && (
         <p className="text-xs text-dim2">
-          new sessions boot <span className="text-text2">worker {imageTag(defaults.worker)}</span>
+          new sessions boot{" "}
+          <span className="text-text2">worker {imageTag(defaults.worker)}</span>
           {" · "}
-          <span className="text-text2">sidecar {imageTag(defaults.sidecar)}</span>
+          <span className="text-text2">
+            sidecar {imageTag(defaults.sidecar)}
+          </span>
         </p>
       )}
 

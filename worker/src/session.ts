@@ -1,10 +1,25 @@
-import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode, type EffortLevel } from "@anthropic-ai/claude-agent-sdk";
-import * as sidecar from "./sidecarClient.js";
-import type { AgentSpec } from "./sidecarClient.js";
-import { log } from "./log.js";
-import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
+import {
+  type EffortLevel,
+  type PermissionMode,
+  type PermissionResult,
+  type Query,
+  query,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
+import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
+import { log } from "./log.js";
+import type { AgentSpec } from "./sidecarClient.js";
+import * as sidecar from "./sidecarClient.js";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -19,7 +34,9 @@ const SESSION_ID = process.env.SESSION_ID ?? "";
 // `||` not `??`: the provisioner always sets CLAUDE_MODEL, empty when core has
 // none, and an empty string must never reach the SDK as a model.
 const MODEL = process.env.CLAUDE_MODEL || undefined;
-const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
+const MAX_TURNS = process.env.MAX_TURNS
+  ? Number(process.env.MAX_TURNS)
+  : undefined;
 
 const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "127.0.0.1:9090";
 const WORKTREE_PATH = process.env.WORKTREE_PATH ?? "/workspace";
@@ -36,7 +53,9 @@ const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
 // pre-existing human directive, most critically a stale Stop's "abort"
 // entry — self-aborting a resumed session within seconds of it starting
 // (a real regression, caught live against a kind cluster).
-const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_FROM_SEQ) : 0;
+const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ
+  ? Number(process.env.RESUME_FROM_SEQ)
+  : 0;
 
 // The fleet's authority ceiling (docs/adr/0049), injected per-session through
 // the SDK's `settings` option rather than shipped in fleet-shared/settings.json
@@ -123,8 +142,15 @@ const PLAN_MODE_STILL_ASKS = new Set([
 // tree-sitter-bash if that ever stops being true.
 const AUTO_MODE_STILL_ASKS_BASH = /(^|[\s;&|('"/])(sudo|rm)\s/;
 
-function autoModeStillAsksCommand(toolName: string, input: Record<string, unknown>): boolean {
-  return toolName === "Bash" && typeof input.command === "string" && AUTO_MODE_STILL_ASKS_BASH.test(input.command);
+function autoModeStillAsksCommand(
+  toolName: string,
+  input: Record<string, unknown>,
+): boolean {
+  return (
+    toolName === "Bash" &&
+    typeof input.command === "string" &&
+    AUTO_MODE_STILL_ASKS_BASH.test(input.command)
+  );
 }
 
 // ExitPlanMode is the other one canUseTool holds back, and it is not about
@@ -138,8 +164,13 @@ function autoModeStillAsksCommand(toolName: string, input: Record<string, unknow
 // command check alone: there the human has just clicked something, and a plan
 // is what they were answering (docs/adr/0052's approve+auto). A parked `rm`
 // they never opened is the opposite case.
-function autoModeStillAsks(toolName: string, input: Record<string, unknown>): boolean {
-  return toolName === "ExitPlanMode" || autoModeStillAsksCommand(toolName, input);
+function autoModeStillAsks(
+  toolName: string,
+  input: Record<string, unknown>,
+): boolean {
+  return (
+    toolName === "ExitPlanMode" || autoModeStillAsksCommand(toolName, input)
+  );
 }
 
 // A `Bash(<prefix>:*)` rule. Matching one asks (docs/adr/0062 §7): `:*` admits
@@ -156,13 +187,18 @@ const BASH_EXACT_RULE = /^Bash\((.+)\)$/;
 // ponytail: any other `Tool(<specifier>)` (an `Edit(src/**)` glob) matches
 // nothing, so a definition that lists one is denied the tool, never widened.
 // Add the glob form when a definition needs it in allow.
-export function matchesToolRule(rules: string[], toolName: string, input: Record<string, unknown>): string | undefined {
+export function matchesToolRule(
+  rules: string[],
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
   const command = typeof input.command === "string" ? input.command : undefined;
   const hits = rules.filter((rule) => {
     if (rule === toolName) return true;
     if (toolName !== "Bash" || command === undefined) return false;
     const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
-    if (prefix !== undefined) return command === prefix || command.startsWith(prefix + " ");
+    if (prefix !== undefined)
+      return command === prefix || command.startsWith(`${prefix} `);
     return BASH_EXACT_RULE.exec(rule)?.[1] === command;
   });
   return hits.find((rule) => !BASH_PREFIX_RULE.test(rule)) ?? hits[0];
@@ -176,7 +212,10 @@ export function matchesToolRule(rules: string[], toolName: string, input: Record
 // deny.
 // noGrant: the ask is the script-write one (docs/adr/0068 §4), which no
 // remembered grant can answer, so the request tells core not to offer one.
-export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask"; noGrant?: true } | { behavior: "deny"; message: string };
+export type DefinitionDecision =
+  | { behavior: "allow" }
+  | { behavior: "ask"; noGrant?: true }
+  | { behavior: "deny"; message: string };
 
 // The argument check docs/adr/0067 names as the first follow-up: a git prefix
 // rule's call runs without asking when its arguments cannot run a local
@@ -185,11 +224,17 @@ export type DefinitionDecision = { behavior: "allow" } | { behavior: "ask"; noGr
 // `value` options take the next word as their argument (a commit message).
 const GIT_SAFE_ARGS: Record<string, { flags: string[]; value: string[] }> = {
   "git add": { flags: ["-A", "--all", "-u", "--update"], value: [] },
-  "git commit": { flags: ["-a", "--all", "-q", "--quiet"], value: ["-m", "--message"] },
+  "git commit": {
+    flags: ["-a", "--all", "-q", "--quiet"],
+    value: ["-m", "--message"],
+  },
   "git pull --rebase": { flags: ["-q", "--quiet"], value: [] },
   "git push": { flags: ["-q", "--quiet", "-u", "--set-upstream"], value: [] },
   "git status": { flags: ["-s", "--short", "-b", "--branch"], value: [] },
-  "git diff": { flags: ["--stat", "--cached", "--staged", "--name-only"], value: [] },
+  "git diff": {
+    flags: ["--stat", "--cached", "--staged", "--name-only"],
+    value: [],
+  },
   "git log": { flags: ["--oneline", "--stat"], value: ["-n"] },
 };
 
@@ -231,7 +276,7 @@ const GIT_REMOTE_PREFIXES = new Set(["git push", "git pull --rebase"]);
 export function gitArgsAreInert(prefix: string, command: string): boolean {
   if (!Object.hasOwn(GIT_SAFE_ARGS, prefix)) return false;
   const safe = GIT_SAFE_ARGS[prefix];
-  if (!(command === prefix || command.startsWith(prefix + " "))) return false;
+  if (!(command === prefix || command.startsWith(`${prefix} `))) return false;
   const words = shellWords(command.slice(prefix.length));
   if (!words) return false;
   let positional = 0;
@@ -250,7 +295,12 @@ export function gitArgsAreInert(prefix: string, command: string): boolean {
       // `/`, `.` or `~` there makes it a path, i.e. another local repository
       // (its hooks and config). A later one is a branch, where `/` is common
       // (`feature/x`), so only a leading `.` or `~` asks.
-      if (w.startsWith(".") || w.startsWith("~") || (positional === 0 && w.includes("/"))) return false;
+      if (
+        w.startsWith(".") ||
+        w.startsWith("~") ||
+        (positional === 0 && w.includes("/"))
+      )
+        return false;
       positional++;
     }
   }
@@ -266,11 +316,26 @@ export function sdkMode(mode: PermissionMode): PermissionMode {
 
 // Mirrors core/internal/definitions/load.go's toolCeiling: the tools a
 // definition can ever be allowed. Outside it a call is denied, not asked.
-const DEFINITION_TOOL_CEILING = new Set(["Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"]);
-const PATH_TOOLS: Record<string, string> = { Edit: "file_path", Write: "file_path" };
+const DEFINITION_TOOL_CEILING = new Set([
+  "Read",
+  "Edit",
+  "Write",
+  "Glob",
+  "Grep",
+  "Bash",
+  "TodoWrite",
+]);
+const PATH_TOOLS: Record<string, string> = {
+  Edit: "file_path",
+  Write: "file_path",
+};
 // Git reads these wherever they sit in the tree (a submodule URL, a filter
 // driver, an included config), so a write to one is a write to git config.
-const GIT_CONFIG_FILES = new Set([".gitmodules", ".gitattributes", ".gitconfig"]);
+const GIT_CONFIG_FILES = new Set([
+  ".gitmodules",
+  ".gitattributes",
+  ".gitconfig",
+]);
 
 // `p` with symlinks resolved: the real path of its nearest existing ancestor,
 // plus the part that does not exist yet (a new file). Undefined for a dangling
@@ -300,14 +365,23 @@ function realPath(p: string): string | undefined {
 // ponytail: a `..` segment is refused outright rather than resolved, since a
 // lexical resolve and the kernel disagree when it follows a symlink.
 function workspacePath(path: unknown, worktree: string): string | undefined {
-  if (typeof path !== "string" || path === "" || path.split(/[\/]/).includes("..")) return undefined;
+  if (
+    typeof path !== "string" ||
+    path === "" ||
+    path.split(/[/]/).includes("..")
+  )
+    return undefined;
   const root = realPath(worktree);
   const real = realPath(resolve(worktree, path));
   if (root === undefined || real === undefined) return undefined;
   const rel = relative(root, real);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
   const segments = rel.split(sep);
-  if (segments.some((s) => s === ".git" || s === ".claude") || GIT_CONFIG_FILES.has(segments[segments.length - 1])) return undefined;
+  if (
+    segments.some((s) => s === ".git" || s === ".claude") ||
+    GIT_CONFIG_FILES.has(segments[segments.length - 1])
+  )
+    return undefined;
   return segments.join("/");
 }
 
@@ -323,11 +397,18 @@ function workspacePath(path: unknown, worktree: string): string | undefined {
 // script is as dangerous as adding one. Shared with core's grants.Render.
 // Entities count too: a browser decodes javas&#99;ript: in a link before it
 // runs it, so a link target or tag attribute holding one asks.
-export const ACTIVE_CONTENT = /(?:`{3,}|~{3,})\s*space-|\$\{|\bjs\.(?:import|window)|<\s*(?:script|iframe|object|embed|svg|style|link|meta|base|a|form|button|math|area)\b|\bon[a-z]+\s*=|javascript:|data:text\/html|\]\([^)]*&#?[a-z0-9]+;/i;
+export const ACTIVE_CONTENT =
+  /(?:`{3,}|~{3,})\s*space-|\$\{|\bjs\.(?:import|window)|<\s*(?:script|iframe|object|embed|svg|style|link|meta|base|a|form|button|math|area)\b|\bon[a-z]+\s*=|javascript:|data:text\/html|\]\([^)]*&#?[a-z0-9]+;/i;
 const INERT_FILE = /\.(?:md|txt|csv|pdf|png|jpe?g|gif|webp|avif)$/i;
 
-export function writesScript(toolName: string, input: Record<string, unknown>, rel: string, abs: string): boolean {
-  if (!INERT_FILE.test(rel) || rel === "Library" || rel.startsWith("Library/")) return true;
+export function writesScript(
+  toolName: string,
+  input: Record<string, unknown>,
+  rel: string,
+  abs: string,
+): boolean {
+  if (!INERT_FILE.test(rel) || rel === "Library" || rel.startsWith("Library/"))
+    return true;
   let before = "";
   try {
     before = readFileSync(abs, "utf8");
@@ -341,7 +422,12 @@ export function writesScript(toolName: string, input: Record<string, unknown>, r
     const oldS = typeof input.old_string === "string" ? input.old_string : "";
     const newS = typeof input.new_string === "string" ? input.new_string : "";
     // A function replacer: newS is literal text, never a $& pattern.
-    after = oldS && before.includes(oldS) ? (input.replace_all === true ? before.split(oldS).join(newS) : before.replace(oldS, () => newS)) : before + newS;
+    after =
+      oldS && before.includes(oldS)
+        ? input.replace_all === true
+          ? before.split(oldS).join(newS)
+          : before.replace(oldS, () => newS)
+        : before + newS;
   }
   return ACTIVE_CONTENT.test(after);
 }
@@ -350,7 +436,12 @@ export function writesScript(toolName: string, input: Record<string, unknown>, r
 // grants as tools.allow's forms plus `Edit(<path>)` / `Edit(<dir>/**)` (and
 // Write), with paths relative to the worktree; `rel` is the call's resolved
 // worktree path for Edit/Write.
-export function matchesGrant(grants: string[], toolName: string, input: Record<string, unknown>, rel: string | undefined): string | undefined {
+export function matchesGrant(
+  grants: string[],
+  toolName: string,
+  input: Record<string, unknown>,
+  rel: string | undefined,
+): string | undefined {
   if (rel === undefined) return matchesToolRule(grants, toolName, input);
   return grants.find((g) => {
     const m = /^(Edit|Write)\((.+)\)$/.exec(g);
@@ -364,7 +455,10 @@ export function matchesGrant(grants: string[], toolName: string, input: Record<s
 // The SDK's built-in tool set for a definition session (query()'s `tools`):
 // the ceiling plus ExitPlanMode, which plan mode (in modeAllow) needs to end.
 // WebFetch, WebSearch, Task, NotebookEdit and the rest never reach the model.
-export const DEFINITION_BUILTIN_TOOLS = [...DEFINITION_TOOL_CEILING, "ExitPlanMode"];
+export const DEFINITION_BUILTIN_TOOLS = [
+  ...DEFINITION_TOOL_CEILING,
+  "ExitPlanMode",
+];
 
 export function definitionDecision(
   spec: AgentSpec,
@@ -375,14 +469,23 @@ export function definitionDecision(
   grants: string[] = [],
 ): DefinitionDecision {
   const allow: DefinitionDecision = { behavior: "allow" };
-  const ask: DefinitionDecision = spec.interaction === "deny" ? { behavior: "deny", message: "not allowed in a headless run" } : { behavior: "ask" };
+  const ask: DefinitionDecision =
+    spec.interaction === "deny"
+      ? { behavior: "deny", message: "not allowed in a headless run" }
+      : { behavior: "ask" };
   if (toolName === "ExitPlanMode") return ask;
   // The ceiling first: tools.allow cannot widen it.
-  if (!DEFINITION_TOOL_CEILING.has(toolName)) return { behavior: "deny", message: "not available to definitions" };
+  if (!DEFINITION_TOOL_CEILING.has(toolName))
+    return { behavior: "deny", message: "not available to definitions" };
   const pathKey = PATH_TOOLS[toolName];
   const rel = pathKey ? workspacePath(input[pathKey], worktree) : undefined;
-  if (pathKey && rel === undefined) return { behavior: "deny", message: "outside this definition's workspace" };
-  if (spec.scriptAsk && rel !== undefined && writesScript(toolName, input, rel, join(worktree, rel))) {
+  if (pathKey && rel === undefined)
+    return { behavior: "deny", message: "outside this definition's workspace" };
+  if (
+    spec.scriptAsk &&
+    rel !== undefined &&
+    writesScript(toolName, input, rel, join(worktree, rel))
+  ) {
     return ask.behavior === "ask" ? { behavior: "ask", noGrant: true } : ask;
   }
   // A grant is matched on its own, not only when tools.allow misses: a listed
@@ -390,8 +493,10 @@ export function definitionDecision(
   // fails, must not hide the human's exact approval of the same call.
   const listed = matchesToolRule(spec.toolsAllow, toolName, input);
   const granted = matchesGrant(grants, toolName, input, rel);
-  if (listed !== undefined && ruleRuns(listed, false, toolName, input, mode)) return allow;
-  if (granted !== undefined && ruleRuns(granted, true, toolName, input, mode)) return allow;
+  if (listed !== undefined && ruleRuns(listed, false, toolName, input, mode))
+    return allow;
+  if (granted !== undefined && ruleRuns(granted, true, toolName, input, mode))
+    return allow;
   return ask;
 }
 
@@ -399,7 +504,13 @@ export function definitionDecision(
 // which the SDK already holds back from mutating) asks on an edit tools.allow
 // matched, as Claude Code's `default` does; a grant is already a human's
 // approval, so it does not ask again.
-function ruleRuns(rule: string, isGrant: boolean, toolName: string, input: Record<string, unknown>, mode: PermissionMode): boolean {
+function ruleRuns(
+  rule: string,
+  isGrant: boolean,
+  toolName: string,
+  input: Record<string, unknown>,
+  mode: PermissionMode,
+): boolean {
   if (PATH_TOOLS[toolName]) return mode === "auto" || isGrant;
   if (toolName === "Bash" && typeof input.command === "string") {
     if (autoModeStillAsksCommand(toolName, input)) return false;
@@ -409,7 +520,9 @@ function ruleRuns(rule: string, isGrant: boolean, toolName: string, input: Recor
       // (`git`, `git checkout`) always asks; any other prefix only needs to
       // be plain words: no metacharacter, expansion or chaining.
       const isGit = prefix === "git" || prefix.startsWith("git ");
-      return isGit ? gitArgsAreInert(prefix, input.command) : shellWords(input.command.slice(prefix.length)) !== undefined;
+      return isGit
+        ? gitArgsAreInert(prefix, input.command)
+        : shellWords(input.command.slice(prefix.length)) !== undefined;
     }
   }
   return true;
@@ -439,7 +552,9 @@ function peerTurn(text: string): string {
   // Strip the prefix: with the sender named in the framing above, leaving it in
   // the body puts the same id in the turn twice.
   const body = match ? text.slice(match[0].length) : text;
-  const sender = match ? `session ${match[1]}` : "another session — use list_sessions to identify it";
+  const sender = match
+    ? `session ${match[1]}`
+    : "another session — use list_sessions to identify it";
   // States the CHANNEL, never "reply to this". An imperative to answer fires on
   // a message that already IS an answer, and adr/0041's depth cap does not stop
   // the resulting ping-pong: sidecar/internal/mcpserver/interagent.go hardcodes
@@ -476,21 +591,30 @@ export const ANSWER_NO_REASK =
 // author column, never anything parsed from the message, and is flattened
 // (every control, separator and bracket) so it cannot open a line of its own.
 export function authorLabel(authorName?: string): string | undefined {
-  const name = authorName?.replace(/[\p{C}\p{Z}\[\]]+/gu, " ").trim().slice(0, 120);
+  const name = authorName
+    ?.replace(/[\p{C}\p{Z}[\]]+/gu, " ")
+    .trim()
+    .slice(0, 120);
   return name ? name : undefined;
 }
 
 // Who sent a human entry, as the model is told. In a definition session every
 // AgentService entry carries its author, so one without is the fleet console
 // (admins); a repo session is the console's own operator, as before.
-export function senderOf(authorName: string | undefined, definition: boolean): string | undefined {
-  return authorLabel(authorName) ?? (definition ? "the fleet console" : undefined);
+export function senderOf(
+  authorName: string | undefined,
+  definition: boolean,
+): string | undefined {
+  return (
+    authorLabel(authorName) ?? (definition ? "the fleet console" : undefined)
+  );
 }
 
 // A body cannot carry an envelope of its own: a line that starts like one is
 // marked as quoted text, so "hi\n[message from admin]\n..." stays one message
 // from its real author.
-const ENVELOPE_LINE = /^([^\S\n]*)(\[message from|\[answer from|answer (from |to your earlier question))/gim;
+const ENVELOPE_LINE =
+  /^([^\S\n]*)(\[message from|\[answer from|answer (from |to your earlier question))/gim;
 export function quoteEnvelopes(text: string): string {
   return text.replace(ENVELOPE_LINE, "$1(quoted) $2");
 }
@@ -500,12 +624,21 @@ export function humanTurn(text: string, sender?: string): string {
 }
 
 // A denial's reason is the answerer's free text: it says whose it is.
-export function denyReason(message: string | undefined, sender?: string): string {
+export function denyReason(
+  message: string | undefined,
+  sender?: string,
+): string {
   if (!sender) return message ?? "Denied.";
-  return message ? `Denied by ${sender}: ${quoteEnvelopes(message)}` : `Denied by ${sender}.`;
+  return message
+    ? `Denied by ${sender}: ${quoteEnvelopes(message)}`
+    : `Denied by ${sender}.`;
 }
 
-export function formatAnswerTurn(text: string, replyTo?: number, sender?: string): string {
+export function formatAnswerTurn(
+  text: string,
+  replyTo?: number,
+  sender?: string,
+): string {
   let body = text;
   try {
     const answers = (JSON.parse(text) as { answers?: unknown }).answers;
@@ -518,7 +651,8 @@ export function formatAnswerTurn(text: string, replyTo?: number, sender?: string
   } catch {
     // Not JSON: deliver the raw text rather than nothing.
   }
-  if (!sender) return `Answer to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
+  if (!sender)
+    return `Answer to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
   return `[answer from ${sender}] to your earlier question (seq ${replyTo ?? "?"}):\n${quoteEnvelopes(body)}\n\n${ANSWER_NO_REASK}`;
 }
 
@@ -535,7 +669,11 @@ export function formatAnswerTurn(text: string, replyTo?: number, sender?: string
 export const SIDECAR_MCP_TIMEOUT_MS = 90_000;
 
 function sidecarMcpServer() {
-  return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp`, timeout: SIDECAR_MCP_TIMEOUT_MS };
+  return {
+    type: "http" as const,
+    url: `http://${SIDECAR_MCP_ADDR}/mcp`,
+    timeout: SIDECAR_MCP_TIMEOUT_MS,
+  };
 }
 
 // Playwright, run by the SDK itself as a local stdio server in this pod
@@ -567,7 +705,14 @@ export function playwrightMcpServer() {
     // the fleet: the vault injects the credential on the wire, and
     // api.github.com answers CORS with *. Chromium reads these from env; an
     // empty value is no proxy. Egress is open, so direct works.
-    env: { HTTPS_PROXY: "", https_proxy: "", HTTP_PROXY: "", http_proxy: "", ALL_PROXY: "", all_proxy: "" },
+    env: {
+      HTTPS_PROXY: "",
+      https_proxy: "",
+      HTTP_PROXY: "",
+      http_proxy: "",
+      ALL_PROXY: "",
+      all_proxy: "",
+    },
   };
 }
 
@@ -604,7 +749,9 @@ class InputQueue {
         yield next;
         continue;
       }
-      yield await new Promise<SDKUserMessage>((resolve) => this.waiters.push(resolve));
+      yield await new Promise<SDKUserMessage>((resolve) =>
+        this.waiters.push(resolve),
+      );
     }
   }
 }
@@ -639,7 +786,10 @@ function relayFields(msg: { [key: string]: unknown }): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(msg)) {
     if (envelope.has(key)) continue;
-    out[key] = typeof value === "string" && value.length > 2000 ? `${value.slice(0, 2000)}…` : value;
+    out[key] =
+      typeof value === "string" && value.length > 2000
+        ? `${value.slice(0, 2000)}…`
+        : value;
   }
   return out;
 }
@@ -705,10 +855,20 @@ export function sumModelUsage(modelUsage: unknown): {
   cacheReadInputTokensAll: number;
   cacheCreationInputTokensAll: number;
 } | null {
-  if (!modelUsage || typeof modelUsage !== "object" || Array.isArray(modelUsage)) return null;
+  if (
+    !modelUsage ||
+    typeof modelUsage !== "object" ||
+    Array.isArray(modelUsage)
+  )
+    return null;
   const entries = Object.entries(modelUsage as ModelUsage);
   if (entries.length === 0) return null;
-  const total = { inputTokensAll: 0, outputTokensAll: 0, cacheReadInputTokensAll: 0, cacheCreationInputTokensAll: 0 };
+  const total = {
+    inputTokensAll: 0,
+    outputTokensAll: 0,
+    cacheReadInputTokensAll: 0,
+    cacheCreationInputTokensAll: 0,
+  };
   for (const [, v] of entries) {
     if (!v || typeof v !== "object") continue;
     total.inputTokensAll += v.inputTokens ?? 0;
@@ -719,13 +879,25 @@ export function sumModelUsage(modelUsage: unknown): {
   return { models: entries.map(([m]) => m).sort(), ...total };
 }
 
-async function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
+async function logSdkMessage(
+  actor: string,
+  msg: { type: string; [key: string]: unknown },
+): Promise<void> {
   const push = (text: string, type: string) =>
-    sidecar.pushMessage(actor, text, type).catch((err) => log("warn", "pushMessage failed", { actor, type, error: String(err) }));
+    sidecar
+      .pushMessage(actor, text, type)
+      .catch((err) =>
+        log("warn", "pushMessage failed", { actor, type, error: String(err) }),
+      );
 
   // Dropped before the log line too: a per-frame counter floods Loki for the
   // same reason it floods the feed.
-  if (msg.type === "system" && typeof msg.subtype === "string" && EPHEMERAL_SYSTEM_SUBTYPES.has(msg.subtype)) return;
+  if (
+    msg.type === "system" &&
+    typeof msg.subtype === "string" &&
+    EPHEMERAL_SYSTEM_SUBTYPES.has(msg.subtype)
+  )
+    return;
 
   if (msg.type === "system" && msg.subtype === "init") {
     log("info", `${actor} session started`, {
@@ -773,18 +945,33 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
   // provisioner now does. Its `tool_use_id` is synthetic and unique per
   // emission ("bash-progress-30", "-60", …), NOT the originating
   // toolu_… id, so nothing downstream should try to pair on it.
-  if (msg.type === "system" || msg.type === "auth_status" || msg.type === "tool_progress") {
+  if (
+    msg.type === "system" ||
+    msg.type === "auth_status" ||
+    msg.type === "tool_progress"
+  ) {
     // compact_boundary is the only one of these that costs something: the
     // session just lost its detailed history to a summary. It carries the
     // pre-compaction token count, which is the single most useful context
     // metric the SDK emits — surface it at warn so it's greppable in Loki
     // rather than buried in a system entry nothing reads (ADR-0046).
-    const compactPreTokens = (msg.compact_metadata as { pre_tokens?: number } | undefined)?.pre_tokens;
-    log(compactPreTokens === undefined ? "info" : "warn", `${actor} ${msg.subtype ?? msg.type}`, {
-      ...relayFields(msg),
-      ...(compactPreTokens === undefined ? {} : { preTokens: compactPreTokens }),
-    });
-    await push(JSON.stringify({ sdk: msg.subtype ?? msg.type, ...relayFields(msg) }), "system");
+    const compactPreTokens = (
+      msg.compact_metadata as { pre_tokens?: number } | undefined
+    )?.pre_tokens;
+    log(
+      compactPreTokens === undefined ? "info" : "warn",
+      `${actor} ${msg.subtype ?? msg.type}`,
+      {
+        ...relayFields(msg),
+        ...(compactPreTokens === undefined
+          ? {}
+          : { preTokens: compactPreTokens }),
+      },
+    );
+    await push(
+      JSON.stringify({ sdk: msg.subtype ?? msg.type, ...relayFields(msg) }),
+      "system",
+    );
     return;
   }
   if (msg.type === "assistant") {
@@ -793,12 +980,24 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     // not as a content block — the turn just comes back empty otherwise.
     if (msg.error) {
       log("error", `${actor} assistant error`, { error: msg.error });
-      await push(JSON.stringify({ sdk: "assistant_error", error: msg.error }), "system");
+      await push(
+        JSON.stringify({ sdk: "assistant_error", error: msg.error }),
+        "system",
+      );
     }
-    const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
+    const content =
+      (msg.message as { content?: { type: string; [k: string]: unknown }[] })
+        ?.content ?? [];
     for (const block of content) {
-      if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-        log("info", `${actor} text`, { text: block.text, parentToolUseId: msg.parent_tool_use_id ?? null });
+      if (
+        block.type === "text" &&
+        typeof block.text === "string" &&
+        block.text.trim()
+      ) {
+        log("info", `${actor} text`, {
+          text: block.text,
+          parentToolUseId: msg.parent_tool_use_id ?? null,
+        });
         // A SUBAGENT's prose arrives on this same branch — the SDK streams a
         // spawned agent's assistant messages through the parent stream, and
         // the only thing separating them from the main agent's is
@@ -811,9 +1010,19 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
         // blocks already use, rather than as JSON under "discussion": that type
         // is raw text on the wire and core's Discord allowlist forwards it, so
         // changing its payload would have meant JSON in a Discord message.
-        const parent = typeof msg.parent_tool_use_id === "string" ? msg.parent_tool_use_id : null;
+        const parent =
+          typeof msg.parent_tool_use_id === "string"
+            ? msg.parent_tool_use_id
+            : null;
         if (parent) {
-          await push(JSON.stringify({ kind: "subagent_text", parentToolUseId: parent, text: block.text }), "assistant");
+          await push(
+            JSON.stringify({
+              kind: "subagent_text",
+              parentToolUseId: parent,
+              text: block.text,
+            }),
+            "assistant",
+          );
         } else {
           await push(block.text, "discussion");
         }
@@ -821,12 +1030,29 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
       // Thinking carries its prose on `thinking`, not `text`, and shares
       // the "assistant" type with tool_use — `kind` keeps the two apart
       // for a parser that already expects {id, tool, input} there.
-      if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
-        await push(JSON.stringify({ kind: "thinking", text: block.thinking }), "assistant");
+      if (
+        block.type === "thinking" &&
+        typeof block.thinking === "string" &&
+        block.thinking.trim()
+      ) {
+        await push(
+          JSON.stringify({ kind: "thinking", text: block.thinking }),
+          "assistant",
+        );
       }
       if (block.type === "tool_use") {
-        log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
-        await push(JSON.stringify({ id: block.id, tool: block.name, input: block.input }), "assistant");
+        log("info", `${actor} tool_use`, {
+          tool: block.name,
+          input: block.input,
+        });
+        await push(
+          JSON.stringify({
+            id: block.id,
+            tool: block.name,
+            input: block.input,
+          }),
+          "assistant",
+        );
       }
     }
     return;
@@ -835,17 +1061,32 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     // The SDK's own "this message is already in the messages array"
     // marker. Relaying it posts the entry a second time.
     if (msg.isReplay) return;
-    const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
+    const content =
+      (msg.message as { content?: { type: string; [k: string]: unknown }[] })
+        ?.content ?? [];
     for (const block of content) {
       if (block.type === "tool_result") {
         const isError = Boolean(block.is_error);
-        const resultContent = typeof block.content === "string" ? block.content.slice(0, 2000) : block.content;
-        log(isError ? "error" : "info", `${actor} tool_result`, { isError, content: resultContent });
+        const resultContent =
+          typeof block.content === "string"
+            ? block.content.slice(0, 2000)
+            : block.content;
+        log(isError ? "error" : "info", `${actor} tool_result`, {
+          isError,
+          content: resultContent,
+        });
         // toolUseId correlates back to the tool_use block's own `id` above —
         // the dashboard pairs call+output into one collapsible unit instead
         // of two unrelated-looking bubbles (standard Anthropic content-block
         // shape: tool_result always carries the originating tool_use's id).
-        await push(JSON.stringify({ toolUseId: block.tool_use_id, isError, content: resultContent }), "user");
+        await push(
+          JSON.stringify({
+            toolUseId: block.tool_use_id,
+            isError,
+            content: resultContent,
+          }),
+          "user",
+        );
       }
     }
     return;
@@ -925,14 +1166,20 @@ export type SessionResult = { aborted: boolean; summary: string };
 // agent's, so nothing is allowed or refused on its word.
 async function reportContext(q: Query): Promise<void> {
   const usage = await q.getContextUsage();
-  const skills = (usage.skills?.skillFrontmatter ?? []).map((s) => ({ name: s.name, source: s.source }));
+  const skills = (usage.skills?.skillFrontmatter ?? []).map((s) => ({
+    name: s.name,
+    source: s.source,
+  }));
   const counts = new Map<string, number>();
   for (const s of skills) counts.set(s.name, (counts.get(s.name) ?? 0) + 1);
   await sidecar.pushMessage(
     "agent",
     JSON.stringify({
       sdk: "context_loaded",
-      memory_files: usage.memoryFiles.map((f) => ({ path: f.path, type: f.type })),
+      memory_files: usage.memoryFiles.map((f) => ({
+        path: f.path,
+        type: f.type,
+      })),
       skills,
       collisions: [...counts].filter(([, n]) => n > 1).map(([name]) => name),
     }),
@@ -962,7 +1209,9 @@ export async function runSession(): Promise<SessionResult> {
   const grants = new Set(session.grants ?? []);
   // The effort picked at creation (repo session, docs/adr/0077), else the
   // definition's thinking.default (docs/adr/0067 §4), else none: the CLI decides.
-  const effort = (session.effort || spec?.thinkingDefault || undefined) as EffortLevel | undefined;
+  const effort = (session.effort || spec?.thinkingDefault || undefined) as
+    | EffortLevel
+    | undefined;
   // What the SDK's init says this session runs on, so a repo session's row
   // records Claude Code's own pick, not the configured value (docs/adr/0077).
   // core ignores it for a definition session.
@@ -1000,9 +1249,19 @@ export async function runSession(): Promise<SessionResult> {
   // ExitPlanMode-only gate used — ExitPlanMode is no longer special-cased,
   // it's just one more entry in this map (docs/adr supersession of
   // 0021/0025's Write/Edit-absent-from-allowedTools gate).
-  const pendingPermissions = new Map<number, { resolve: (result: PermissionResult) => void; input: Record<string, unknown>; tool: string }>();
+  const pendingPermissions = new Map<
+    number,
+    {
+      resolve: (result: PermissionResult) => void;
+      input: Record<string, unknown>;
+      tool: string;
+    }
+  >();
 
-  function resolvePending(seq: number, build: (input: Record<string, unknown>) => PermissionResult): boolean {
+  function resolvePending(
+    seq: number,
+    build: (input: Record<string, unknown>) => PermissionResult,
+  ): boolean {
     const pending = pendingPermissions.get(seq);
     if (!pending) return false;
     pendingPermissions.delete(seq);
@@ -1029,10 +1288,24 @@ export async function runSession(): Promise<SessionResult> {
   // Fire-and-forget on purpose. The callers resolve a blocked canUseTool and
   // must not await between asking and being ready for the answer; a failed
   // write is worth a log line, never a stalled permission.
-  function recordResolution(seq: number, decision: { behavior: "allow" | "deny"; message?: string }): void {
+  function recordResolution(
+    seq: number,
+    decision: { behavior: "allow" | "deny"; message?: string },
+  ): void {
     void sidecar
-      .pushMessage("agent", JSON.stringify(decision), "permission_response", seq)
-      .catch((err) => log("warn", "recording auto-resolved permission failed", { taskId: SESSION_ID, seq, error: String(err) }));
+      .pushMessage(
+        "agent",
+        JSON.stringify(decision),
+        "permission_response",
+        seq,
+      )
+      .catch((err) =>
+        log("warn", "recording auto-resolved permission failed", {
+          taskId: SESSION_ID,
+          seq,
+          error: String(err),
+        }),
+      );
   }
 
   // A permission-mode switch pre-empts what it was answering — mirrors Claude
@@ -1056,13 +1329,20 @@ export async function runSession(): Promise<SessionResult> {
   function resolveOnePendingAllow(mode: PermissionMode): void {
     const entries = [...pendingPermissions]
       .sort(([a], [b]) => a - b)
-      .filter(([, p]) => !(mode === "auto" && autoModeStillAsksCommand(p.tool, p.input)));
-    const target = entries.find(([, p]) => p.tool === "ExitPlanMode") ?? entries[0];
+      .filter(
+        ([, p]) =>
+          !(mode === "auto" && autoModeStillAsksCommand(p.tool, p.input)),
+      );
+    const target =
+      entries.find(([, p]) => p.tool === "ExitPlanMode") ?? entries[0];
     if (!target) return;
     const [seq, pending] = target;
     pendingPermissions.delete(seq);
     pending.resolve({ behavior: "allow", updatedInput: pending.input });
-    recordResolution(seq, { behavior: "allow", message: "Allowed by a permission-mode change." });
+    recordResolution(seq, {
+      behavior: "allow",
+      message: "Allowed by a permission-mode change.",
+    });
   }
 
   // `interrupt` is BOTH the SDK's stop-this-turn flag and the "an interrupt/
@@ -1072,9 +1352,17 @@ export async function runSession(): Promise<SessionResult> {
   // writes no such entry, so it needs the turn stopped AND the resolutions
   // recorded, or the plan card sits pending forever on a session whose pod is
   // gone. `record` splits the two.
-  function resolveAllPendingDeny(message: string, interrupt = false, record = !interrupt): void {
+  function resolveAllPendingDeny(
+    message: string,
+    interrupt = false,
+    record = !interrupt,
+  ): void {
     for (const [seq, pending] of pendingPermissions) {
-      pending.resolve({ behavior: "deny", message, ...(interrupt ? { interrupt: true } : {}) });
+      pending.resolve({
+        behavior: "deny",
+        message,
+        ...(interrupt ? { interrupt: true } : {}),
+      });
       // An interrupt/abort already leaves its own entry, and the dashboard
       // reads that as resolving everything pending at that moment — writing
       // a second record for the same event would be redundant, not clearer.
@@ -1101,7 +1389,9 @@ export async function runSession(): Promise<SessionResult> {
   // would bound nothing there. The provisioner sets FLEET_DEFINITION on a
   // definition pod only; read per call so a test can set it.
   const definitionPod = Boolean(process.env.FLEET_DEFINITION);
-  const definitionSidecarTools = new Set((spec?.sidecarTools ?? []).map((t) => `mcp__agent-fleet-sidecar__${t}`));
+  const definitionSidecarTools = new Set(
+    (spec?.sidecarTools ?? []).map((t) => `mcp__agent-fleet-sidecar__${t}`),
+  );
   const peerTools = ["SendMessage", "ListAgents"];
 
   const abortController = new AbortController();
@@ -1112,7 +1402,7 @@ export async function runSession(): Promise<SessionResult> {
       cwd: WORKTREE_PATH,
       // The row's model, else CLAUDE_MODEL, else none at all: Claude Code
       // picks (docs/adr/0077). `||`, so an empty string is never passed.
-      ...((session.model || MODEL) ? { model: session.model || MODEL } : {}),
+      ...(session.model || MODEL ? { model: session.model || MODEL } : {}),
       // Continues the prior conversation instead of starting fresh when
       // this pod is warming an existing session (Phase 4's Warm action) —
       // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
@@ -1123,7 +1413,8 @@ export async function runSession(): Promise<SessionResult> {
       // "Claude Code process exited with code 1" (worker/src/index.ts's
       // catch) — the child process's actual stderr (auth failure, bad
       // resume session, etc.) is otherwise discarded, not just unlogged.
-      stderr: (data) => log("error", "claude stderr", { taskId: SESSION_ID, data }),
+      stderr: (data) =>
+        log("error", "claude stderr", { taskId: SESSION_ID, data }),
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
@@ -1150,10 +1441,17 @@ export async function runSession(): Promise<SessionResult> {
       // tools.deny (docs/adr/0067 §4) sits beside them, flag scope, so it holds
       // in every mode, including the calls canUseTool never sees.
       settings: {
-        permissions: { ask: FLEET_ASK_RULES, ...(spec?.toolsDeny.length ? { deny: spec.toolsDeny } : {}) },
+        permissions: {
+          ask: FLEET_ASK_RULES,
+          ...(spec?.toolsDeny.length ? { deny: spec.toolsDeny } : {}),
+        },
         crossSessionInbound: definitionPod ? "refuse" : "accept",
         remoteControlAtStartup: false,
-        attribution: { commit: definitionPod ? "" : FLEET_TRAILER, pr: "", sessionUrl: false },
+        attribution: {
+          commit: definitionPod ? "" : FLEET_TRAILER,
+          pr: "",
+          sessionUrl: false,
+        },
       },
       // docs/adr/0063: the session's context packs, rendered by core and
       // mounted read-only by the provisioner. The env var makes the SDK load
@@ -1163,11 +1461,16 @@ export async function runSession(): Promise<SessionResult> {
       // A definition session reads no project settings (settingSources below),
       // so its worktree is added here instead: its CLAUDE.md still loads as
       // memory, its settings.json never does (docs/adr/0067 §4).
-      additionalDirectories: [...(existsSync(genomeDir()) ? [genomeDir()] : []), ...(spec ? [WORKTREE_PATH] : [])],
+      additionalDirectories: [
+        ...(existsSync(genomeDir()) ? [genomeDir()] : []),
+        ...(spec ? [WORKTREE_PATH] : []),
+      ],
       env: {
         ...process.env,
         ...gitHooksEnv(process.env),
-        ...(session.definitionSha ? { FLEET_DEFINITION_SHA: session.definitionSha } : {}),
+        ...(session.definitionSha
+          ? { FLEET_DEFINITION_SHA: session.definitionSha }
+          : {}),
         CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1",
       },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
@@ -1195,23 +1498,32 @@ export async function runSession(): Promise<SessionResult> {
       // decided in canUseTool, never here, since this list skips canUseTool
       // (docs/adr/0062 §7).
       // The plan-mode carve-out's tools stay out of it, so canUseTool sees them.
-      allowedTools: spec ? spec.sidecarTools.map((t) => `mcp__agent-fleet-sidecar__${t}`).filter((t) => !PLAN_MODE_STILL_ASKS.has(t)) : [
-        "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
-        // Claude Code's native cross-session channel (docs/adr/0060). Listed so
-        // the agent uses it on its own, without a human prompt per message.
-        // Not for a definition pod, which disallows them below.
-        ...(definitionPod ? [] : peerTools),
-        "mcp__agent-fleet-sidecar__*",
-        // Playwright by the same wildcard rule. Every browser call would
-        // otherwise prompt — including the read-only ones a human would never
-        // want to be asked about (snapshot, console messages) — because MCP
-        // tools are passthrough → ask, not because navigating is dangerous.
-        //
-        // The browser only ever reaches what this pod can reach, and the pod's
-        // own network position is the real boundary. What it can DO with a
-        // page is bounded by the same thing bounding the agent generally.
-        "mcp__playwright__*",
-      ],
+      allowedTools: spec
+        ? spec.sidecarTools
+            .map((t) => `mcp__agent-fleet-sidecar__${t}`)
+            .filter((t) => !PLAN_MODE_STILL_ASKS.has(t))
+        : [
+            "Read",
+            "Glob",
+            "Grep",
+            "WebSearch",
+            "WebFetch",
+            "Task",
+            // Claude Code's native cross-session channel (docs/adr/0060). Listed so
+            // the agent uses it on its own, without a human prompt per message.
+            // Not for a definition pod, which disallows them below.
+            ...(definitionPod ? [] : peerTools),
+            "mcp__agent-fleet-sidecar__*",
+            // Playwright by the same wildcard rule. Every browser call would
+            // otherwise prompt — including the read-only ones a human would never
+            // want to be asked about (snapshot, console messages) — because MCP
+            // tools are passthrough → ask, not because navigating is dangerous.
+            //
+            // The browser only ever reaches what this pod can reach, and the pod's
+            // own network position is the real boundary. What it can DO with a
+            // page is bounded by the same thing bounding the agent generally.
+            "mcp__playwright__*",
+          ],
       // The SDK's own built-in "AskUserQuestion" (distinct from the
       // mcp__agent-fleet-sidecar__ one above) is available by default and
       // has the same name/shape docs/adr/0018 deliberately mirrored — the
@@ -1242,17 +1554,29 @@ export async function runSession(): Promise<SessionResult> {
           // with the same plan-mode carve-out as a repo session's: in plan, a
           // granted tool that acts outside the session goes to the prompt.
           if (definitionSidecarTools.has(toolName)) {
-            if (!(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) return { behavior: "allow", updatedInput: toolInput };
+            if (!(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName)))
+              return { behavior: "allow", updatedInput: toolInput };
           } else {
-            const decision = definitionDecision(spec, toolName, toolInput as Record<string, unknown>, currentMode, WORKTREE_PATH, [...grants]);
-            if (decision.behavior === "allow") return { behavior: "allow", updatedInput: toolInput };
+            const decision = definitionDecision(
+              spec,
+              toolName,
+              toolInput as Record<string, unknown>,
+              currentMode,
+              WORKTREE_PATH,
+              [...grants],
+            );
+            if (decision.behavior === "allow")
+              return { behavior: "allow", updatedInput: toolInput };
             if (decision.behavior === "deny") return decision;
             noGrant = decision.noGrant === true;
           }
           // "ask": the ordinary prompt below. definitionDecision already
           // decided what the fleet's auto allows (docs/adr/0076 §2), so the
           // repo-session auto branch below is skipped.
-        } else if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
+        } else if (
+          FLEET_OWN_TOOL.test(toolName) &&
+          !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))
+        ) {
           // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
           return { behavior: "allow", updatedInput: toolInput };
         }
@@ -1269,20 +1593,43 @@ export async function runSession(): Promise<SessionResult> {
         // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
         // leaving `auto` is a live control request, so this has to read what
         // the session is in now.
-        if (!spec && currentMode === "auto" && !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)) {
+        if (
+          !spec &&
+          currentMode === "auto" &&
+          !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)
+        ) {
           return { behavior: "allow", updatedInput: toolInput };
         }
         const seq = await sidecar
-          .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput, ...(noGrant ? { noGrant: true } : {}) }), "permission_request")
+          .pushMessage(
+            "agent",
+            JSON.stringify({
+              tool: toolName,
+              input: toolInput,
+              ...(noGrant ? { noGrant: true } : {}),
+            }),
+            "permission_request",
+          )
           .catch((err) => {
-            log("warn", "permission_request push failed", { toolName, error: String(err) });
+            log("warn", "permission_request push failed", {
+              toolName,
+              error: String(err),
+            });
             return null;
           });
         if (seq === null) {
-          return { behavior: "deny", message: "Could not reach the dashboard to request permission — try again." };
+          return {
+            behavior: "deny",
+            message:
+              "Could not reach the dashboard to request permission — try again.",
+          };
         }
         return new Promise<PermissionResult>((resolve) => {
-          pendingPermissions.set(seq, { resolve, input: toolInput as Record<string, unknown>, tool: toolName });
+          pendingPermissions.set(seq, {
+            resolve,
+            input: toolInput as Record<string, unknown>,
+            tool: toolName,
+          });
         });
       },
       mcpServers: {
@@ -1331,7 +1678,9 @@ export async function runSession(): Promise<SessionResult> {
       // `effort` is the repo session's pick or the definition's thinking
       // (see above). Unset, both are omitted and the CLI decides.
       ...(effort ? { effort, thinking: { type: "adaptive" as const } } : {}),
-      ...(spec?.systemPromptAppend ? { systemPrompt: spec.systemPromptAppend } : {}),
+      ...(spec?.systemPromptAppend
+        ? { systemPrompt: spec.systemPromptAppend }
+        : {}),
       abortController,
     },
   });
@@ -1353,10 +1702,19 @@ export async function runSession(): Promise<SessionResult> {
   const interruptSafely = async (what: string) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
-      q.interrupt().catch((err) => log("warn", `${what} failed`, { taskId: SESSION_ID, error: String(err) })),
+      q.interrupt().catch((err) =>
+        log("warn", `${what} failed`, {
+          taskId: SESSION_ID,
+          error: String(err),
+        }),
+      ),
       new Promise<void>((resolve) => {
         timer = setTimeout(() => {
-          log("warn", `${what} did not settle — the SDK control channel is gone`, { taskId: SESSION_ID });
+          log(
+            "warn",
+            `${what} did not settle — the SDK control channel is gone`,
+            { taskId: SESSION_ID },
+          );
           resolve();
         }, 5_000);
       }),
@@ -1372,204 +1730,272 @@ export async function runSession(): Promise<SessionResult> {
   // delivers a definition session nothing (docs/adr/0066 §8).
   const humanMessagesAbort = new AbortController();
   const humanMessagesDone = sidecar
-    .streamHumanMessages(async (entry) => {
-      // "session" is another session's prompt, relayed by core
-      // (docs/adr/0041). Our own output is from="agent" and must never be
-      // fed back in — that is what this filter is for.
-      if (entry.from !== "human" && entry.from !== "session") return;
-      // An "answer" to an AskUserQuestion. While a pod is live and its
-      // AskUserQuestion tool call is mid-flight, core's own poll loop
-      // consumes the answer and returns it as the tool_result — nothing to
-      // do here. But a blocking question can outlive its pod: the human
-      // answers days later, after the pod was idle-torn-down, so there is
-      // no live tool call and no core poll waiting. On the next warm this
-      // is the only path that delivers the choice — replayed above
-      // RESUME_FROM_SEQ like any other human entry — so feed it in as an
-      // ordinary turn ("the human answered your earlier question: ...")
-      // and let the agent continue. Pushes a labeled turn (not the raw
-      // answer JSON that input.push at the end would post) and returns.
-      // ponytail: a live blocking poll that IS mid-flight when the answer
-      // lands gets it both ways (tool_result AND this turn) — a harmless
-      // redundant turn the agent has already acted on; dedup by replyTo if
-      // it ever actually bites.
-      if (entry.type === "answer") {
-        input.push(formatAnswerTurn(entry.text, entry.replyTo, senderOf(entry.authorName, !!spec)));
-        return;
-      }
-      if (entry.type === "abort") {
-        aborted = true;
-        // Nothing pending has anything left to wait for — deny it all so
-        // no promise dangles past the session teardown below.
-        resolveAllPendingDeny(`${senderOf(entry.authorName, !!spec) ?? "Mohammad"} stopped the session.`, true);
-        // interrupt() is graceful but only meaningful mid-turn — if the
-        // session is idle (paused between rounds, waiting for the next
-        // streamed input, the common case for an unprompted /stop),
-        // there's nothing active for it to interrupt and the `for await`
-        // loop below would otherwise hang forever waiting for a message
-        // that will never come. abortController.abort() guarantees the
-        // underlying session actually ends either way.
-        await interruptSafely("interrupt");
-        abortController.abort();
-        return;
-      }
-      // A soft interrupt (DashboardService.Interrupt) — stops only the
-      // current turn, session/pod stay alive. Denying any pending
-      // permission with interrupt:true is the SDK's own mid-permission-
-      // prompt stop signal (the model can't be interrupted out of a
-      // canUseTool call any other way, since that call is blocked on our
-      // own Promise, not the SDK's internal generation loop); q.interrupt()
-      // additionally covers the plain-generation/already-approved-tool
-      // case where nothing is pending.
-      if (entry.type === "interrupt") {
-        softInterrupted = true;
-        if (pendingPermissions.size > 0) {
-          resolveAllPendingDeny(entry.text || `${senderOf(entry.authorName, !!spec) ?? "Mohammad"} interrupted the current turn.`, true);
-        }
-        await interruptSafely("soft interrupt");
-        return;
-      }
-      // The human's allow/deny decision for a specific permission_request,
-      // correlated by seq — DashboardService.RespondToPermission (a
-      // generalization of AskUserQuestion's own ask-and-answer plumbing).
-      if (entry.type === "permission_response") {
-        if (typeof entry.replyTo !== "number") return;
-        let decision: { behavior?: "allow" | "deny"; updatedInput?: Record<string, unknown>; message?: string; grant?: string } = {};
-        try {
-          decision = JSON.parse(entry.text);
-        } catch {
+    .streamHumanMessages(
+      async (entry) => {
+        // "session" is another session's prompt, relayed by core
+        // (docs/adr/0041). Our own output is from="agent" and must never be
+        // fed back in — that is what this filter is for.
+        if (entry.from !== "human" && entry.from !== "session") return;
+        // An "answer" to an AskUserQuestion. While a pod is live and its
+        // AskUserQuestion tool call is mid-flight, core's own poll loop
+        // consumes the answer and returns it as the tool_result — nothing to
+        // do here. But a blocking question can outlive its pod: the human
+        // answers days later, after the pod was idle-torn-down, so there is
+        // no live tool call and no core poll waiting. On the next warm this
+        // is the only path that delivers the choice — replayed above
+        // RESUME_FROM_SEQ like any other human entry — so feed it in as an
+        // ordinary turn ("the human answered your earlier question: ...")
+        // and let the agent continue. Pushes a labeled turn (not the raw
+        // answer JSON that input.push at the end would post) and returns.
+        // ponytail: a live blocking poll that IS mid-flight when the answer
+        // lands gets it both ways (tool_result AND this turn) — a harmless
+        // redundant turn the agent has already acted on; dedup by replyTo if
+        // it ever actually bites.
+        if (entry.type === "answer") {
+          input.push(
+            formatAnswerTurn(
+              entry.text,
+              entry.replyTo,
+              senderOf(entry.authorName, !!spec),
+            ),
+          );
           return;
         }
-        // `grant` is core's own rendering of a remembered allow, and only a
-        // human answer carries one: an agent cannot append as "human".
-        if (spec && entry.from === "human" && decision.behavior === "allow" && typeof decision.grant === "string") {
-          grants.add(decision.grant);
+        if (entry.type === "abort") {
+          aborted = true;
+          // Nothing pending has anything left to wait for — deny it all so
+          // no promise dangles past the session teardown below.
+          resolveAllPendingDeny(
+            `${senderOf(entry.authorName, !!spec) ?? "Mohammad"} stopped the session.`,
+            true,
+          );
+          // interrupt() is graceful but only meaningful mid-turn — if the
+          // session is idle (paused between rounds, waiting for the next
+          // streamed input, the common case for an unprompted /stop),
+          // there's nothing active for it to interrupt and the `for await`
+          // loop below would otherwise hang forever waiting for a message
+          // that will never come. abortController.abort() guarantees the
+          // underlying session actually ends either way.
+          await interruptSafely("interrupt");
+          abortController.abort();
+          return;
         }
-        // A definition session's answer is {behavior, message} only
-        // (docs/adr/0067 §4): the call runs as the agent asked for it, so a
-        // human cannot rewrite it into a call nobody was asked about.
-        resolvePending(entry.replyTo, (input) =>
-          decision.behavior === "allow"
-            ? { behavior: "allow", updatedInput: spec ? input : (decision.updatedInput ?? input) }
-            : { behavior: "deny", message: denyReason(decision.message, senderOf(entry.authorName, !!spec)) },
-        );
-        return;
-      }
-      // The dashboard's permission-mode selector (docs/adr/0027) — a mode
-      // switch pre-empts whatever's currently pending (see
-      // resolveOnePendingAllow's own comment) rather than leaving it to
-      // time out unanswered.
-      if (entry.type === "permission_mode") {
-        const mode = entry.text as PermissionMode;
+        // A soft interrupt (DashboardService.Interrupt) — stops only the
+        // current turn, session/pod stay alive. Denying any pending
+        // permission with interrupt:true is the SDK's own mid-permission-
+        // prompt stop signal (the model can't be interrupted out of a
+        // canUseTool call any other way, since that call is blocked on our
+        // own Promise, not the SDK's internal generation loop); q.interrupt()
+        // additionally covers the plain-generation/already-approved-tool
+        // case where nothing is pending.
+        if (entry.type === "interrupt") {
+          softInterrupted = true;
+          if (pendingPermissions.size > 0) {
+            resolveAllPendingDeny(
+              entry.text ||
+                `${senderOf(entry.authorName, !!spec) ?? "Mohammad"} interrupted the current turn.`,
+              true,
+            );
+          }
+          await interruptSafely("soft interrupt");
+          return;
+        }
+        // The human's allow/deny decision for a specific permission_request,
+        // correlated by seq — DashboardService.RespondToPermission (a
+        // generalization of AskUserQuestion's own ask-and-answer plumbing).
+        if (entry.type === "permission_response") {
+          if (typeof entry.replyTo !== "number") return;
+          let decision: {
+            behavior?: "allow" | "deny";
+            updatedInput?: Record<string, unknown>;
+            message?: string;
+            grant?: string;
+          } = {};
+          try {
+            decision = JSON.parse(entry.text);
+          } catch {
+            return;
+          }
+          // `grant` is core's own rendering of a remembered allow, and only a
+          // human answer carries one: an agent cannot append as "human".
+          if (
+            spec &&
+            entry.from === "human" &&
+            decision.behavior === "allow" &&
+            typeof decision.grant === "string"
+          ) {
+            grants.add(decision.grant);
+          }
+          // A definition session's answer is {behavior, message} only
+          // (docs/adr/0067 §4): the call runs as the agent asked for it, so a
+          // human cannot rewrite it into a call nobody was asked about.
+          resolvePending(entry.replyTo, (input) =>
+            decision.behavior === "allow"
+              ? {
+                  behavior: "allow",
+                  updatedInput: spec ? input : (decision.updatedInput ?? input),
+                }
+              : {
+                  behavior: "deny",
+                  message: denyReason(
+                    decision.message,
+                    senderOf(entry.authorName, !!spec),
+                  ),
+                },
+          );
+          return;
+        }
+        // The dashboard's permission-mode selector (docs/adr/0027) — a mode
+        // switch pre-empts whatever's currently pending (see
+        // resolveOnePendingAllow's own comment) rather than leaving it to
+        // time out unanswered.
+        if (entry.type === "permission_mode") {
+          const mode = entry.text as PermissionMode;
 
-        // Every mode switch is a live control request again (docs/adr/0053).
-        // adr/0052's bypass-boundary relaunch is gone with the mode that
-        // needed it — bypassPermissions was the only mode the SDK fixes at
-        // launch, and the only reason FLEET_ASK_RULES varied per pod.
-        //
-        // Caught, not bare-awaited: this is the only await in this callback
-        // that could reject, and a rejection here does not just lose the mode
-        // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
-        // only advanced AFTER onEntry resolves. The reconnect would redeliver
-        // the same entry and throw again every 2s, permanently, so no later
-        // reply, permission response or Stop would ever be delivered and
-        // anything already pending would block forever. Query.request()
-        // rejects on any non-success control response, which an unrecognized
-        // mode string is — and which "auto" is whenever its own gates (remote
-        // circuit breaker, model allow-list) say no.
-        // A definition session only enters a mode its spec allows; core
-        // checks too, this is the worker not trusting a stale or forged entry.
-        const failure =
-          spec && !spec.modeAllow.includes(mode)
-            ? "not one of this definition's modes"
-            : await q
-                .setPermissionMode(spec ? sdkMode(mode) : mode)
-                .then(() => null)
-                .catch((err) => String(err));
-        if (failure !== null) {
-          // NOT resolveOnePendingAllow: the mode did not change, so allowing
-          // the parked call would be this wrapper approving a tool on a
-          // human's behalf on the strength of a request the SDK rejected. The
-          // old code did exactly that, which is what made a refused switch
-          // look like a working one.
-          log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: failure });
-          await sidecar
-            .pushMessage("agent", `Could not switch to ${mode}: ${failure}`, "system")
-            .catch(() => {});
-          // core persisted the column before this pod ever saw the entry, so
-          // the picker is now showing a mode the SDK refused — and that column
-          // is what the next warm LAUNCHES in. Writing the live mode back is
-          // the only thing that keeps the badge and the next pod honest.
-          await sidecar.savePermissionMode(currentMode).catch((err) => log("warn", "restoring permission mode failed", { taskId: SESSION_ID, error: String(err) }));
+          // Every mode switch is a live control request again (docs/adr/0053).
+          // adr/0052's bypass-boundary relaunch is gone with the mode that
+          // needed it — bypassPermissions was the only mode the SDK fixes at
+          // launch, and the only reason FLEET_ASK_RULES varied per pod.
+          //
+          // Caught, not bare-awaited: this is the only await in this callback
+          // that could reject, and a rejection here does not just lose the mode
+          // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
+          // only advanced AFTER onEntry resolves. The reconnect would redeliver
+          // the same entry and throw again every 2s, permanently, so no later
+          // reply, permission response or Stop would ever be delivered and
+          // anything already pending would block forever. Query.request()
+          // rejects on any non-success control response, which an unrecognized
+          // mode string is — and which "auto" is whenever its own gates (remote
+          // circuit breaker, model allow-list) say no.
+          // A definition session only enters a mode its spec allows; core
+          // checks too, this is the worker not trusting a stale or forged entry.
+          const failure =
+            spec && !spec.modeAllow.includes(mode)
+              ? "not one of this definition's modes"
+              : await q
+                  .setPermissionMode(spec ? sdkMode(mode) : mode)
+                  .then(() => null)
+                  .catch((err) => String(err));
+          if (failure !== null) {
+            // NOT resolveOnePendingAllow: the mode did not change, so allowing
+            // the parked call would be this wrapper approving a tool on a
+            // human's behalf on the strength of a request the SDK rejected. The
+            // old code did exactly that, which is what made a refused switch
+            // look like a working one.
+            log("warn", "setPermissionMode failed", {
+              taskId: SESSION_ID,
+              mode,
+              error: failure,
+            });
+            await sidecar
+              .pushMessage(
+                "agent",
+                `Could not switch to ${mode}: ${failure}`,
+                "system",
+              )
+              .catch(() => {});
+            // core persisted the column before this pod ever saw the entry, so
+            // the picker is now showing a mode the SDK refused — and that column
+            // is what the next warm LAUNCHES in. Writing the live mode back is
+            // the only thing that keeps the badge and the next pod honest.
+            await sidecar.savePermissionMode(currentMode).catch((err) =>
+              log("warn", "restoring permission mode failed", {
+                taskId: SESSION_ID,
+                error: String(err),
+              }),
+            );
+            return;
+          }
+          currentMode = mode;
+          // A definition session's mode change approves nothing (docs/adr/0067
+          // §4): a parked call is still answered only by a permission_response.
+          if (!spec) resolveOnePendingAllow(mode);
           return;
         }
-        currentMode = mode;
-        // A definition session's mode change approves nothing (docs/adr/0067
-        // §4): a parked call is still answered only by a permission_response.
-        if (!spec) resolveOnePendingAllow(mode);
-        return;
-      }
-      // `/clear` (and its CLI aliases) must NOT reach the SDK.
-      //
-      // This used to claim that pushing it crashes the query with "only
-      // prompt commands are supported in streaming mode". That was wrong:
-      // the streaming-input reader tags EVERY incoming user message
-      // mode:"prompt" unconditionally, so no human message can trip that
-      // guard. What actually tripped it was a finished background task
-      // enqueueing a "task-notification" command — an SDK bug fixed in
-      // 0.3.x, which is why this worker is pinned there.
-      //
-      // The behavior below still stands on its own: the SDK's Query control
-      // surface has no conversation-reset request (runtimeTypes.d.ts) — the
-      // interactive `/clear` only wipes the REPL's in-memory state, which is
-      // unreachable from here. So the only "clear" streaming mode allows is
-      // a *fresh session*: drop the saved resume id and end this pod. The
-      // next Warm boots with no `resume`, i.e. an empty conversation. Same
-      // teardown path as abort (interrupt the current turn, then
-      // abortController.abort() so an idle between-rounds session doesn't
-      // hang), but preceded by clearing the resume identity.
-      if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
-        aborted = true;
-        // record=true: this pod ends itself without an interrupt/abort entry,
-        // and every dashboard surface reads one of those as resolving whatever
-        // was pending — so without the record, a card sits "waiting for a
-        // human" forever on a session whose pod is gone.
-        resolveAllPendingDeny("Conversation cleared.", true, true);
-        // Empty id => next warm passes resume: undefined => fresh session.
-        await sidecar
-          .saveSessionId("", initModel)
-          .catch((err) => log("warn", "saveSessionId(clear) failed", { taskId: SESSION_ID, error: String(err) }));
-        await sidecar
-          .pushMessage("agent", "Conversation cleared — re-warm this session for a fresh start.", "system")
-          .catch(() => {});
-        await interruptSafely("clear");
-        abortController.abort();
-        return;
-      }
-      // from === "human", not just "anything that got this far": a peer
-      // session's message used to land here too, and resolveAllPendingDeny
-      // records a permission_response — so one agent could terminate a HUMAN's
-      // outstanding permission decision and have it attributed to Mohammad.
-      // adr/0041's "refuse a blocked target" guard does not close that: core
-      // checks blocked-ness and appends either side of a warm plus this
-      // stream's own poll, so a permission raised in that window arrives with
-      // pendingPermissions non-empty. Skipping the branch swallows nothing —
-      // input.push below still delivers the peer's message as a real turn.
-      if (entry.from === "human" && pendingPermissions.size > 0) {
-        // A plain reply while something's pending is feedback, not an
-        // answer — deny every pending request with it (same as choosing
-        // "No, keep planning" with guidance in Claude Code CLI's own
-        // ExitPlanMode prompt: interrupt stays unset so the model
-        // incorporates the reply and keeps going, then retries the call)
-        // AND push it as a real conversational turn below — a denial
-        // message embedded in a tool_result reads as "my call failed," not
-        // "Mohammad is talking to me right now." Without falling through,
-        // the only trace of his reply was buried once per pending call.
-        const sender = senderOf(entry.authorName, !!spec);
-        resolveAllPendingDeny(`${sender ?? "Mohammad"} replied (not an approval): ${sender ? quoteEnvelopes(entry.text) : entry.text}`);
-      }
-      input.push(entry.from === "session" ? peerTurn(entry.text) : humanTurn(entry.text, senderOf(entry.authorName, !!spec)));
-    }, humanMessagesAbort.signal, RESUME_FROM_SEQ, session.agentSpecSha ?? "")
-    .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
+        // `/clear` (and its CLI aliases) must NOT reach the SDK.
+        //
+        // This used to claim that pushing it crashes the query with "only
+        // prompt commands are supported in streaming mode". That was wrong:
+        // the streaming-input reader tags EVERY incoming user message
+        // mode:"prompt" unconditionally, so no human message can trip that
+        // guard. What actually tripped it was a finished background task
+        // enqueueing a "task-notification" command — an SDK bug fixed in
+        // 0.3.x, which is why this worker is pinned there.
+        //
+        // The behavior below still stands on its own: the SDK's Query control
+        // surface has no conversation-reset request (runtimeTypes.d.ts) — the
+        // interactive `/clear` only wipes the REPL's in-memory state, which is
+        // unreachable from here. So the only "clear" streaming mode allows is
+        // a *fresh session*: drop the saved resume id and end this pod. The
+        // next Warm boots with no `resume`, i.e. an empty conversation. Same
+        // teardown path as abort (interrupt the current turn, then
+        // abortController.abort() so an idle between-rounds session doesn't
+        // hang), but preceded by clearing the resume identity.
+        if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
+          aborted = true;
+          // record=true: this pod ends itself without an interrupt/abort entry,
+          // and every dashboard surface reads one of those as resolving whatever
+          // was pending — so without the record, a card sits "waiting for a
+          // human" forever on a session whose pod is gone.
+          resolveAllPendingDeny("Conversation cleared.", true, true);
+          // Empty id => next warm passes resume: undefined => fresh session.
+          await sidecar.saveSessionId("", initModel).catch((err) =>
+            log("warn", "saveSessionId(clear) failed", {
+              taskId: SESSION_ID,
+              error: String(err),
+            }),
+          );
+          await sidecar
+            .pushMessage(
+              "agent",
+              "Conversation cleared — re-warm this session for a fresh start.",
+              "system",
+            )
+            .catch(() => {});
+          await interruptSafely("clear");
+          abortController.abort();
+          return;
+        }
+        // from === "human", not just "anything that got this far": a peer
+        // session's message used to land here too, and resolveAllPendingDeny
+        // records a permission_response — so one agent could terminate a HUMAN's
+        // outstanding permission decision and have it attributed to Mohammad.
+        // adr/0041's "refuse a blocked target" guard does not close that: core
+        // checks blocked-ness and appends either side of a warm plus this
+        // stream's own poll, so a permission raised in that window arrives with
+        // pendingPermissions non-empty. Skipping the branch swallows nothing —
+        // input.push below still delivers the peer's message as a real turn.
+        if (entry.from === "human" && pendingPermissions.size > 0) {
+          // A plain reply while something's pending is feedback, not an
+          // answer — deny every pending request with it (same as choosing
+          // "No, keep planning" with guidance in Claude Code CLI's own
+          // ExitPlanMode prompt: interrupt stays unset so the model
+          // incorporates the reply and keeps going, then retries the call)
+          // AND push it as a real conversational turn below — a denial
+          // message embedded in a tool_result reads as "my call failed," not
+          // "Mohammad is talking to me right now." Without falling through,
+          // the only trace of his reply was buried once per pending call.
+          const sender = senderOf(entry.authorName, !!spec);
+          resolveAllPendingDeny(
+            `${sender ?? "Mohammad"} replied (not an approval): ${sender ? quoteEnvelopes(entry.text) : entry.text}`,
+          );
+        }
+        input.push(
+          entry.from === "session"
+            ? peerTurn(entry.text)
+            : humanTurn(entry.text, senderOf(entry.authorName, !!spec)),
+        );
+      },
+      humanMessagesAbort.signal,
+      RESUME_FROM_SEQ,
+      session.agentSpecSha ?? "",
+    )
+    .catch((err) =>
+      log("error", "human message stream failed", {
+        taskId: SESSION_ID,
+        error: String(err),
+      }),
+    );
 
   let sessionId = "";
   // The SDK re-emits init every turn; only the first one says what launch got.
@@ -1599,7 +2025,11 @@ export async function runSession(): Promise<SessionResult> {
           await sidecar
             .pushMessage(
               "agent",
-              JSON.stringify({ sdk: "resume_failed", requested: RESUME_SESSION_ID, got: sessionId }),
+              JSON.stringify({
+                sdk: "resume_failed",
+                requested: RESUME_SESSION_ID,
+                got: sessionId,
+              }),
               "system",
             )
             .catch(() => {});
@@ -1609,16 +2039,23 @@ export async function runSession(): Promise<SessionResult> {
         // init. If it is not (a SessionStart/Setup hook message carries a
         // session_id too and can arrive first), "" leaves the row's model
         // untouched and the init branch below saves it.
-        if (msg.type === "system" && msg.subtype === "init") initModel = msg.model;
-        await sidecar
-          .saveSessionId(sessionId, initModel)
-          .catch((err) => log("warn", "saveSessionId failed", { taskId: SESSION_ID, error: String(err) }));
+        if (msg.type === "system" && msg.subtype === "init")
+          initModel = msg.model;
+        await sidecar.saveSessionId(sessionId, initModel).catch((err) =>
+          log("warn", "saveSessionId failed", {
+            taskId: SESSION_ID,
+            error: String(err),
+          }),
+        );
         // Also persist the initial permission mode if not already set. This
         // ensures the mode shows up in the dashboard instead of "?".
         if (!session.permissionMode) {
-          await sidecar
-            .savePermissionMode("default")
-            .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
+          await sidecar.savePermissionMode("default").catch((err) =>
+            log("warn", "savePermissionMode failed", {
+              taskId: SESSION_ID,
+              error: String(err),
+            }),
+          );
         }
       }
       // The launch-time twin of the refused-switch write-back above: "auto"
@@ -1632,29 +2069,50 @@ export async function runSession(): Promise<SessionResult> {
         // unless the session-id save above already sent it.
         if (!initModel) {
           initModel = msg.model;
-          await sidecar
-            .saveSessionId(sessionId, initModel)
-            .catch((err) => log("warn", "saveSessionId(init) failed", { taskId: SESSION_ID, error: String(err) }));
+          await sidecar.saveSessionId(sessionId, initModel).catch((err) =>
+            log("warn", "saveSessionId(init) failed", {
+              taskId: SESSION_ID,
+              error: String(err),
+            }),
+          );
         }
         // Not awaited: a control request can hang with the CLI (see q.interrupt).
-        void reportContext(q).catch((err) => log("warn", "context report failed", { taskId: SESSION_ID, error: String(err) }));
+        void reportContext(q).catch((err) =>
+          log("warn", "context report failed", {
+            taskId: SESSION_ID,
+            error: String(err),
+          }),
+        );
         // A definition session in auto runs the SDK in default (sdkMode), so
         // that is what it must report, or every auto session is saved as
         // default.
-        if (msg.permissionMode && msg.permissionMode !== (spec ? sdkMode(currentMode) : currentMode)) {
-          log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
+        if (
+          msg.permissionMode &&
+          msg.permissionMode !== (spec ? sdkMode(currentMode) : currentMode)
+        ) {
+          log("warn", "SDK launched in a different permission mode", {
+            taskId: SESSION_ID,
+            requested: currentMode,
+            got: msg.permissionMode,
+          });
           // A definition session never adopts what the SDK reports: the gate
           // keeps reading the mode the spec allowed (definitionDecision is
           // what decides there, not the SDK's mode).
           if (!spec) {
             currentMode = msg.permissionMode;
-            await sidecar
-              .savePermissionMode(currentMode)
-              .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
+            await sidecar.savePermissionMode(currentMode).catch((err) =>
+              log("warn", "savePermissionMode failed", {
+                taskId: SESSION_ID,
+                error: String(err),
+              }),
+            );
           }
         }
       }
-      await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
+      await logSdkMessage(
+        "agent",
+        msg as { type: string; [key: string]: unknown },
+      );
 
       if (msg.type === "assistant") {
         for (const block of msg.message.content ?? []) {
@@ -1687,7 +2145,9 @@ export async function runSession(): Promise<SessionResult> {
         // the pod exits non-zero and a human sees why. The turn/cost figures
         // stay in the message, since they are what distinguishes "the SDK
         // never got started" from "it ran and failed".
-        throw new Error(`session stopped: ${msg.subtype} after ${msg.num_turns} turns, $${msg.total_cost_usd}`);
+        throw new Error(
+          `session stopped: ${msg.subtype} after ${msg.num_turns} turns, $${msg.total_cost_usd}`,
+        );
       }
     }
   }

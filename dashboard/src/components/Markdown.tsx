@@ -38,17 +38,33 @@ function useMarkdownComponents(): Components {
       // wrong; `ch` measures the thing actually being fitted.
       ol: (props) => <ol className="pl-[4ch] list-decimal mb-2" {...props} />,
       li: (props) => <li className="mb-0.5" {...props} />,
-      a: (props) => <a className="text-primary underline" target="_blank" rel="noreferrer" {...props} />,
-      h1: (props) => <h1 className="font-semibold text-base mt-2 mb-1" {...props} />,
-      h2: (props) => <h2 className="font-semibold text-base mt-2 mb-1" {...props} />,
-      h3: (props) => <h3 className="font-semibold text-base mt-2 mb-1" {...props} />,
+      a: (props) => (
+        <a
+          className="text-primary underline"
+          target="_blank"
+          rel="noreferrer"
+          {...props}
+        />
+      ),
+      h1: (props) => (
+        <h1 className="font-semibold text-base mt-2 mb-1" {...props} />
+      ),
+      h2: (props) => (
+        <h2 className="font-semibold text-base mt-2 mb-1" {...props} />
+      ),
+      h3: (props) => (
+        <h3 className="font-semibold text-base mt-2 mb-1" {...props} />
+      ),
       // Also the human-message treatment — see asDisplayMarkdown in transcript.ts,
       // which is the only thing that ever produces a blockquote in this app.
       // Colored to match the composer's ">"/Send button (text-primary) — this
       // is the actual color human messages render in; a wrapping div's color
       // class has no effect here since this element sets its own.
       blockquote: (props) => (
-        <blockquote className="border-l-2 border-primary/30 pl-2 italic text-primary" {...props} />
+        <blockquote
+          className="border-l-2 border-primary/30 pl-2 italic text-primary"
+          {...props}
+        />
       ),
       // A table is the one block element here that has its own intrinsic
       // minimum width, so it gets the overflow-x-auto wrapper rather than
@@ -58,13 +74,21 @@ function useMarkdownComponents(): Components {
       // width inside the scroller instead of squashing every column.
       table: (props) => (
         <div className="overflow-x-auto my-2">
-          <table className="w-max min-w-full border border-line3 text-xs" {...props} />
+          <table
+            className="w-max min-w-full border border-line3 text-xs"
+            {...props}
+          />
         </div>
       ),
       th: (props) => (
-        <th className="border border-line3 px-2 py-1 text-left font-semibold text-dim2 align-top" {...props} />
+        <th
+          className="border border-line3 px-2 py-1 text-left font-semibold text-dim2 align-top"
+          {...props}
+        />
       ),
-      td: (props) => <td className="border border-line3 px-2 py-1 align-top" {...props} />,
+      td: (props) => (
+        <td className="border border-line3 px-2 py-1 align-top" {...props} />
+      ),
       // Unwrapped so the `code` renderer below fully owns fenced-block markup
       // (needed for mermaid, which renders a <div>, not a <pre><code>).
       pre: ({ children }) => <>{children}</>,
@@ -88,7 +112,11 @@ function useMarkdownComponents(): Components {
         }
         // wrap-anywhere: a long path in backticks is one unbreakable word, and
         // on a phone it pushed the whole feed into horizontal scroll.
-        return <code className="bg-base-content/10 rounded px-1.5 py-0.5 font-mono text-xs wrap-anywhere">{children}</code>;
+        return (
+          <code className="bg-base-content/10 rounded px-1.5 py-0.5 font-mono text-xs wrap-anywhere">
+            {children}
+          </code>
+        );
       },
     }),
     [], // Empty deps - components object is stable

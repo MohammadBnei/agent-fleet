@@ -18,19 +18,22 @@ export function useBusyAction() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = useCallback(async (action: () => Promise<unknown>, key: string): Promise<boolean> => {
-    setBusyKey(key);
-    setError(null);
-    try {
-      await action();
-      return true;
-    } catch (err) {
-      setError((err as Error).message);
-      return false;
-    } finally {
-      setBusyKey(null);
-    }
-  }, []);
+  const run = useCallback(
+    async (action: () => Promise<unknown>, key: string): Promise<boolean> => {
+      setBusyKey(key);
+      setError(null);
+      try {
+        await action();
+        return true;
+      } catch (err) {
+        setError((err as Error).message);
+        return false;
+      } finally {
+        setBusyKey(null);
+      }
+    },
+    [],
+  );
 
   const clearError = useCallback(() => setError(null), []);
   return { busyKey, error, run, clearError, setError } as const;

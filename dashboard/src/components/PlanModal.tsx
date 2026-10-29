@@ -1,6 +1,6 @@
-import { Modal } from "./Modal";
-import { Markdown } from "./Markdown";
 import { ActionButton } from "./ActionButton";
+import { Markdown } from "./Markdown";
+import { Modal } from "./Modal";
 
 // A plan, at full length, with its decision attached.
 //
@@ -46,9 +46,15 @@ export function PlanModal({
   onClose: () => void;
 }) {
   return (
-    <Modal open={open} onClose={onClose} boxClassName="max-w-none w-screen h-[100dvh] max-h-none rounded-none p-5 sm:p-8 overflow-hidden flex flex-col">
+    <Modal
+      open={open}
+      onClose={onClose}
+      boxClassName="max-w-none w-screen h-[100dvh] max-h-none rounded-none p-5 sm:p-8 overflow-hidden flex flex-col"
+    >
       <div className="flex items-baseline gap-2 mb-4 flex-none w-full">
-        <span className="text-2xs tracking-[0.12em] text-error">PLAN — NEEDS YOUR REVIEW</span>
+        <span className="text-2xs tracking-[0.12em] text-error">
+          PLAN — NEEDS YOUR REVIEW
+        </span>
         <span className="flex-1 h-px bg-pink-line" />
       </div>
       {/* min-h-0 or the column refuses to scroll and the dialog grows instead.
@@ -87,7 +93,11 @@ export function PlanModal({
         >
           request changes
         </button>
-        <button type="button" onClick={onClose} className="ml-auto text-xs text-dim2 hover:text-base-content cursor-pointer">
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto text-xs text-dim2 hover:text-base-content cursor-pointer"
+        >
           close
         </button>
       </div>

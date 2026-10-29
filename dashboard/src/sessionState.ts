@@ -1,5 +1,5 @@
-import { relativeTime } from "./relativeTime";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
+import { relativeTime } from "./relativeTime";
 import { sessionLabel } from "./sessionLabel";
 import type { ListSummary } from "./transcript";
 
@@ -13,7 +13,13 @@ import type { ListSummary } from "./transcript";
 // session statuses that meant "dispatched" — all gone with the enum
 // (docs/adr/0048). Live state is derived from the row on every read, so this
 // cannot drift from the transcript the way a cached status could.
-export const LIVE_STATES = new Set(["working", "blocked", "idle", "stalled", "unknown"]);
+export const LIVE_STATES = new Set([
+  "working",
+  "blocked",
+  "idle",
+  "stalled",
+  "unknown",
+]);
 
 // Shared section-membership split — used by both list views so the two never
 // disagree about which bucket a session lands in.
@@ -33,7 +39,11 @@ export const LIVE_STATES = new Set(["working", "blocked", "idle", "stalled", "un
 // there, so it belongs in NEEDS YOU whether or not a pod exists right now. A
 // permission is bound to one live pod's canUseTool promise: with the pod gone
 // its buttons reach nothing, so it belongs in STUCK, shown but not answerable.
-export function bucketSessions(sessions: Session[], needsYouIds: Set<string>, answerableIds: Set<string> = new Set()) {
+export function bucketSessions(
+  sessions: Session[],
+  needsYouIds: Set<string>,
+  answerableIds: Set<string> = new Set(),
+) {
   const out = {
     needsYou: [] as Session[],
     stuck: [] as Session[],
@@ -77,7 +87,10 @@ export function bucketSessions(sessions: Session[], needsYouIds: Set<string>, an
     //    A dead pod holding an unanswered QUESTION belongs here too, and that
     //    is new: since AnswerQuestion warms, its allow/answer form is live
     //    again. Only a stranded PERMISSION drops through to `stuck` now.
-    if (t.archivedAt === undefined && (t.liveState === "blocked" || answerableIds.has(t.id))) {
+    if (
+      t.archivedAt === undefined &&
+      (t.liveState === "blocked" || answerableIds.has(t.id))
+    ) {
       out.needsYou.push(t);
       continue;
     }
@@ -86,7 +99,10 @@ export function bucketSessions(sessions: Session[], needsYouIds: Set<string>, an
     //    question case was claimed above, because that one IS answerable.
     //    Above the fold, because the alternative was the quiet tail — and on
     //    mobile, a collapsed accordion behind a chip.
-    if (t.archivedAt === undefined && (t.liveState === "stalled" || needsYouIds.has(t.id))) {
+    if (
+      t.archivedAt === undefined &&
+      (t.liveState === "stalled" || needsYouIds.has(t.id))
+    ) {
       out.stuck.push(t);
       continue;
     }
@@ -134,13 +150,17 @@ export function bucketSessions(sessions: Session[], needsYouIds: Set<string>, an
   return out;
 }
 
-
 // Mirrors core/internal/sessions/store.go's IsPodPhaseLive — the client-side half
 // of the same "does this session have a live pod right now" check the
 // Warm/Discuss handlers use, so ActionsMenu can show Warm vs Stop without a
 // round trip.
 export function isPodPhaseLive(phase?: string): boolean {
-  return phase === "POD_PHASE_PROVISIONING" || phase === "POD_PHASE_CREATED" || phase === "POD_PHASE_SCHEDULED" || phase === "POD_PHASE_RUNNING";
+  return (
+    phase === "POD_PHASE_PROVISIONING" ||
+    phase === "POD_PHASE_CREATED" ||
+    phase === "POD_PHASE_SCHEDULED" ||
+    phase === "POD_PHASE_RUNNING"
+  );
 }
 
 // ONE badge per session, chosen by precedence.
@@ -160,42 +180,74 @@ export function isPodPhaseLive(phase?: string): boolean {
 // Unchanged by the console rewrite, deliberately: docs/dashboard-spec.md §8
 // item 1 asks for the ranking to be kept and given more visual weight, which is
 // the callers' job, not this function's.
-export function sessionBadge(session: Session): { label: string; className: string; title?: string } | null {
+export function sessionBadge(
+  session: Session,
+): { label: string; className: string; title?: string } | null {
   const phase = session.podPhase?.replace("POD_PHASE_", "");
 
   // 1. Needs a human. Always wins: nothing else about this session matters
   //    until someone clicks, and this is the product's whole job.
   if (session.liveState === "blocked") {
-    return { label: "NEEDS YOU", className: "text-error border-pink-line bg-pink-chip", title: "waiting on your decision" };
+    return {
+      label: "NEEDS YOU",
+      className: "text-error border-pink-line bg-pink-chip",
+      title: "waiting on your decision",
+    };
   }
   // 2. Something is wrong, in order of how wrong.
   if (phase === "CRASHED") {
-    return { label: "CRASHED", className: "text-error border-pink-line bg-pink-chip", title: session.podMessage || session.lastError || undefined };
+    return {
+      label: "CRASHED",
+      className: "text-error border-pink-line bg-pink-chip",
+      title: session.podMessage || session.lastError || undefined,
+    };
   }
   if (session.liveState === "stalled") {
-    return { label: "STALLED", className: "text-warning border-orange-line bg-orange-bg", title: "no response since the last thing sent to the agent" };
+    return {
+      label: "STALLED",
+      className: "text-warning border-orange-line bg-orange-bg",
+      title: "no response since the last thing sent to the agent",
+    };
   }
   // 3. Finished while nobody was looking — the "welcome back" state.
   if (session.liveState === "done") {
-    return { label: "DONE", className: "text-success border-green-line bg-green-bg", title: "finished while you weren't looking — opening it marks it seen" };
+    return {
+      label: "DONE",
+      className: "text-success border-green-line bg-green-bg",
+      title: "finished while you weren't looking — opening it marks it seen",
+    };
   }
   // 4. Healthy and in motion. PROVISIONING keeps its sub-step inline: the
   //    difference between "cloning repo" and no event for 20 minutes is the
   //    exact gap that made a real incident invisible.
   if (phase === "PROVISIONING") {
     return {
-      label: session.podMessage ? `PROVISIONING: ${session.podMessage}` : "PROVISIONING",
+      label: session.podMessage
+        ? `PROVISIONING: ${session.podMessage}`
+        : "PROVISIONING",
       className: "text-info border-info/45 bg-info/10 animate-pulse",
     };
   }
   if (session.liveState === "working") {
-    return { label: "WORKING", className: "text-info border-info/45 bg-info/10", title: `pod ${phase?.toLowerCase() ?? "live"}` };
+    return {
+      label: "WORKING",
+      className: "text-info border-info/45 bg-info/10",
+      title: `pod ${phase?.toLowerCase() ?? "live"}`,
+    };
   }
   if (session.liveState === "unknown") {
-    return { label: "STARTING", className: "text-info border-info/45 bg-info/10", title: "pod is up, the agent hasn't spoken yet" };
+    return {
+      label: "STARTING",
+      className: "text-info border-info/45 bg-info/10",
+      title: "pod is up, the agent hasn't spoken yet",
+    };
   }
   if (session.liveState === "idle") {
-    return { label: "IDLE", className: "text-dim2 border-line bg-transparent", title: "pod live, nothing in flight" };
+    return {
+      label: "IDLE",
+      className: "text-dim2 border-line bg-transparent",
+      title: "pod live, nothing in flight",
+    };
   }
   // 5. No live pod. The five workflow statuses that used to be rendered here
   //    (PROPOSED, QUEUED, FAILED, FAILED (final), CANCELLED, DONE) are gone
@@ -204,17 +256,26 @@ export function sessionBadge(session: Session): { label: string; className: stri
   //    different table with its own view. What is left is genuinely about the
   //    session rather than a workflow position.
   if (session.archivedAt) {
-    return { label: "ARCHIVED", className: "text-dim2 border-line bg-transparent", title: "you marked this finished" };
+    return {
+      label: "ARCHIVED",
+      className: "text-dim2 border-line bg-transparent",
+      title: "you marked this finished",
+    };
   }
   if (session.sweptAt) {
     return {
       label: "SWEPT",
       className: "text-dim2 border-line bg-transparent",
-      title: "working directory reclaimed by the retention GC — readable, not resumable",
+      title:
+        "working directory reclaimed by the retention GC — readable, not resumable",
     };
   }
   if (session.lastError) {
-    return { label: "ERROR", className: "text-warning border-orange-line bg-orange-bg", title: session.lastError };
+    return {
+      label: "ERROR",
+      className: "text-warning border-orange-line bg-orange-bg",
+      title: session.lastError,
+    };
   }
   return null;
 }
@@ -222,9 +283,13 @@ export function sessionBadge(session: Session): { label: string; className: stri
 // What a working row says it is doing. One function for both form factors:
 // the desktop row said "idle" for a session the mobile card called "working",
 // on the same data, from the same bucket.
-export function activityLabel(session: Session, inFlight: ListSummary["inFlight"]): string {
+export function activityLabel(
+  session: Session,
+  inFlight: ListSummary["inFlight"],
+): string {
   if (inFlight) {
-    const elapsed = inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : "";
+    const elapsed =
+      inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : "";
     return `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${elapsed}`;
   }
   return session.liveState === "working" ? "working" : "idle";
@@ -263,9 +328,14 @@ export function compareSessions(a: Session, b: Session, sort: SortKey): number {
     case "repo":
       return a.repo.localeCompare(b.repo) || activeMs(b) - activeMs(a);
     case "title":
-      return sessionLabel(a).localeCompare(sessionLabel(b)) || activeMs(b) - activeMs(a);
+      return (
+        sessionLabel(a).localeCompare(sessionLabel(b)) ||
+        activeMs(b) - activeMs(a)
+      );
     case "status":
-      return restStatus(a).localeCompare(restStatus(b)) || activeMs(b) - activeMs(a);
+      return (
+        restStatus(a).localeCompare(restStatus(b)) || activeMs(b) - activeMs(a)
+      );
     default:
       return activeMs(b) - activeMs(a);
   }
@@ -281,7 +351,9 @@ export const TERMINAL = new Set(["archived", "swept"]);
 // had their own copy of this ternary.
 export function stuckLabel(session: Session): string {
   if (isPodPhaseLive(session.podPhase)) return "stalled";
-  return session.pendingDecisions > 0 ? "pod gone, decision unanswerable" : "stalled";
+  return session.pendingDecisions > 0
+    ? "pod gone, decision unanswerable"
+    : "stalled";
 }
 
 // The notch over a NEEDS YOU card. One function so the desktop row and the

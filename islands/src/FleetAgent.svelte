@@ -10,18 +10,32 @@
 />
 
 <script lang="ts">
-  import { onMount } from "svelte";
-  import type { Thread, Entry } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
   import { Code, ConnectError } from "@connectrpc/connect";
-  import { agentClient, errorText, fleetOrigin, isAlreadyAnswered, isStale, isUnauthenticated } from "./api";
-  import { conversation, decisions } from "./feed";
-  import { threadTitle, withOther } from "./text";
-  import { createRenderer } from "./render";
+  import { onMount } from "svelte";
+  import type {
+    Entry,
+    Thread,
+  } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
+  import {
+    agentClient,
+    errorText,
+    fleetOrigin,
+    isAlreadyAnswered,
+    isStale,
+    isUnauthenticated,
+  } from "./api";
   import { drawDiagrams } from "./diagram";
-  import tokens from "./tokens.css?inline";
+  import { conversation, decisions } from "./feed";
+  import { createRenderer } from "./render";
   import styles from "./styles.css?inline";
+  import { threadTitle, withOther } from "./text";
+  import tokens from "./tokens.css?inline";
 
-  let { definition = "", context = "", thread = "" }: { definition?: string; context?: string; thread?: string } = $props();
+  let {
+    definition = "",
+    context = "",
+    thread = "",
+  }: { definition?: string; context?: string; thread?: string } = $props();
 
   const el = $host();
   const api = agentClient();
@@ -53,14 +67,22 @@
 
   const items = $derived(conversation(entries));
   const open = $derived(decisions(entries));
-  const live = $derived(open.length ? "waiting" : (current?.status?.state ?? "idle"));
+  const live = $derived(
+    open.length ? "waiting" : (current?.status?.state ?? "idle"),
+  );
 
   // One event per change, for the host (§2).
   let lastState = "";
   $effect(() => {
     if (live === lastState) return;
     lastState = live;
-    el.dispatchEvent(new CustomEvent("fleet-status", { detail: { state: live }, bubbles: true, composed: true }));
+    el.dispatchEvent(
+      new CustomEvent("fleet-status", {
+        detail: { state: live },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   });
 
   // With no theme attribute the island follows the host page: its <html>
@@ -73,7 +95,9 @@
     if (t === "dark" || t === "light") return t;
     if (h.classList.contains("dark")) return "dark";
     if (h.classList.contains("light")) return "light";
-    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   }
   function followHost(): () => void {
     const apply = () => {
@@ -82,7 +106,10 @@
     };
     apply();
     const obs = new MutationObserver(apply);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-color-scheme", "class"] });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-color-scheme", "class"],
+    });
     obs.observe(el, { attributes: true, attributeFilter: ["theme"] });
     const mq = matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
@@ -99,7 +126,9 @@
   let content = $state<HTMLElement | undefined>();
   let pinned = true;
   const onScroll = () => {
-    if (scroller) pinned = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+    if (scroller)
+      pinned =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
   };
   // Any growth counts (new entries, a diagram drawn later, a decision card),
   // so watch the content's size rather than the entry count.
@@ -120,7 +149,8 @@
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.dataset.fleetFonts = "";
-    link.href = "https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap";
     document.head.append(link);
   }
 
@@ -183,7 +213,10 @@
     let delay = 1000;
     while (!ctl.signal.aborted && my === gen) {
       try {
-        for await (const res of api.streamTranscript({ threadId, sinceSeq: since }, { signal: ctl.signal })) {
+        for await (const res of api.streamTranscript(
+          { threadId, sinceSeq: since },
+          { signal: ctl.signal },
+        )) {
           if (my !== gen) return;
           reconnecting = false;
           const e = res.entry;
@@ -192,13 +225,21 @@
           entries = [...entries, e];
           // The echo of a message this island sent replaces its pending copy.
           if (e.from === "human" && pending.length) {
-            const i = pending.findIndex((p) => p.seq === e.seq || p.text === e.text);
+            const i = pending.findIndex(
+              (p) => p.seq === e.seq || p.text === e.text,
+            );
             if (i >= 0) pending = pending.filter((_, j) => j !== i);
           }
           since = e.seq + 1n;
           delay = 1000;
           if (e.from === "agent") {
-            el.dispatchEvent(new CustomEvent("fleet-message", { detail: { seq: String(e.seq), type: e.type }, bubbles: true, composed: true }));
+            el.dispatchEvent(
+              new CustomEvent("fleet-message", {
+                detail: { seq: String(e.seq), type: e.type },
+                bubbles: true,
+                composed: true,
+              }),
+            );
           }
         }
       } catch (err) {
@@ -238,7 +279,9 @@
 
   // One action at a time, bound to the thread it was clicked in: a reply for
   // a thread the user has left touches nothing (gen, as in select).
-  async function act(fn: (threadId: string) => Promise<unknown>): Promise<boolean> {
+  async function act(
+    fn: (threadId: string) => Promise<unknown>,
+  ): Promise<boolean> {
     if (busy || !current) return false;
     const my = gen;
     const threadId = current.id;
@@ -257,7 +300,8 @@
       } else {
         error = errorText(err);
         // A refusal may mean the thread became tainted since it was listed.
-        if (ConnectError.from(err).code === Code.PermissionDenied) await refreshCurrent();
+        if (ConnectError.from(err).code === Code.PermissionDenied)
+          await refreshCurrent();
       }
       return false;
     } finally {
@@ -290,13 +334,22 @@
     }
     // An open question takes the text as its answer, as "Other" does in Claude
     // Code: a plain message would only queue behind the question it blocks on.
-    const q = current && !current.tainted ? open.find((d) => d.kind === "question") : undefined;
+    const q =
+      current && !current.tainted
+        ? open.find((d) => d.kind === "question")
+        : undefined;
     if (q?.kind === "question") {
       if (busy) {
         error = "Wait for the last answer to go through.";
         return;
       }
-      const answersJson = JSON.stringify({ answers: withOther(q.questions.map((x) => x.question), answers, text) });
+      const answersJson = JSON.stringify({
+        answers: withOther(
+          q.questions.map((x) => x.question),
+          answers,
+          text,
+        ),
+      });
       if (new TextEncoder().encode(answersJson).length > MAX_MESSAGE) {
         error = "This answer is too long (64 KiB at most).";
         return;
@@ -309,7 +362,8 @@
       pinned = true;
       let seq: bigint | undefined;
       const ok = await act(async (threadId) => {
-        seq = (await api.answerQuestion({ threadId, seq: q.seq, answersJson })).seq;
+        seq = (await api.answerQuestion({ threadId, seq: q.seq, answersJson }))
+          .seq;
       });
       sending = false;
       // They left the thread: nothing here is theirs now. Not gen: a reload
@@ -337,7 +391,11 @@
       let t = current;
       if (!t) {
         // The first line names the thread, so threads tell apart in the list.
-        const res = await api.createThread({ definition, visibility: newVisibility, title: threadTitle(text) });
+        const res = await api.createThread({
+          definition,
+          visibility: newVisibility,
+          title: threadTitle(text),
+        });
         if (!res.thread) throw new Error("no thread");
         t = res.thread;
         threads = [t, ...threads.filter((x) => x.id !== t!.id)];
@@ -358,7 +416,9 @@
         pending = pending.filter((p) => p.key !== key);
         await select(t);
       } else {
-        pending = pending.map((p) => (p.key === key ? { ...p, seq: res.seq } : p));
+        pending = pending.map((p) =>
+          p.key === key ? { ...p, seq: res.seq } : p,
+        );
       }
     } catch (err) {
       if (my !== gen) return;
@@ -369,7 +429,8 @@
       else if (isStale(err)) stale = true;
       else {
         error = errorText(err);
-        if (ConnectError.from(err).code === Code.PermissionDenied) await refreshCurrent();
+        if (ConnectError.from(err).code === Code.PermissionDenied)
+          await refreshCurrent();
       }
     } finally {
       sending = false;
@@ -377,10 +438,21 @@
   }
 
   async function answer(seq: bigint) {
-    if (await act((threadId) => api.answerQuestion({ threadId, seq, answersJson: JSON.stringify({ answers }) }))) answers = {};
+    if (
+      await act((threadId) =>
+        api.answerQuestion({
+          threadId,
+          seq,
+          answersJson: JSON.stringify({ answers }),
+        }),
+      )
+    )
+      answers = {};
   }
-  const permit = (seq: bigint, behavior: "allow" | "deny") => act((threadId) => api.respondToPermission({ threadId, seq, behavior }));
-  const approve = (seq: bigint) => act((threadId) => api.approvePlan({ threadId, seq }));
+  const permit = (seq: bigint, behavior: "allow" | "deny") =>
+    act((threadId) => api.respondToPermission({ threadId, seq, behavior }));
+  const approve = (seq: bigint) =>
+    act((threadId) => api.approvePlan({ threadId, seq }));
 
   // Login runs top-level on the fleet (authentik refuses to be framed). No
   // reliance on window.opener: the island retries when its window regains focus.
@@ -419,7 +491,9 @@
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     const today = new Date().toDateString() === d.toDateString();
-    return today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString([], { day: "numeric", month: "short" });
+    return today
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString([], { day: "numeric", month: "short" });
   };
   const label = (t: Thread) =>
     `${t.visibility === "private" ? "Private · " : ""}${t.title || "Untitled"}${t.createdAt ? ` · ${when(t.createdAt)}` : ""}`;

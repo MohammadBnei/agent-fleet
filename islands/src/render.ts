@@ -16,21 +16,37 @@ const LINK = /^(?:https|mailto):/i;
 const URL_ATTRS = ["href", "xlink:href", "src", "action", "formaction"];
 
 // No <img>: an image loads on render, a zero-click beacon. Images become links.
-const FORBID_TAGS = ["style", "form", "input", "button", "textarea", "select", "iframe", "object", "embed", "img"];
+const FORBID_TAGS = [
+  "style",
+  "form",
+  "input",
+  "button",
+  "textarea",
+  "select",
+  "iframe",
+  "object",
+  "embed",
+  "img",
+];
 
-const escape = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const escapeHtml = (s: string) =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 const marked = new Marked({
   gfm: true,
   renderer: {
     // Raw HTML in markdown is shown as text, never parsed.
-    html: ({ text }) => escape(text),
-    image: ({ href, text }) => `<a href="${escape(href)}">${escape(text || href)}</a>`,
+    html: ({ text }) => escapeHtml(text),
+    image: ({ href, text }) =>
+      `<a href="${escapeHtml(href)}">${escapeHtml(text || href)}</a>`,
     // Mermaid is drawn later, lazily (diagram.ts); here it stays source.
     code({ text, lang }) {
       const cls = lang === "mermaid" ? ' class="mermaid-src"' : "";
-      return `<pre${cls}><code>${escape(text)}</code></pre>`;
+      return `<pre${cls}><code>${escapeHtml(text)}</code></pre>`;
     },
   },
 });
@@ -44,7 +60,8 @@ export type Renderer = {
 export function createRenderer(win: Window & typeof globalThis): Renderer {
   const purify: DOMPurify = createDOMPurify(win);
   // DOMPurify returns its input unchanged when it cannot run. Fail closed.
-  if (!purify.isSupported) throw new Error("DOMPurify unsupported in this window");
+  if (!purify.isSupported)
+    throw new Error("DOMPurify unsupported in this window");
   purify.addHook("afterSanitizeAttributes", (node) => {
     for (const a of URL_ATTRS) {
       const v = node.getAttribute(a);
@@ -62,7 +79,10 @@ export function createRenderer(win: Window & typeof globalThis): Renderer {
   purify.addHook("uponSanitizeElement", (node, data) => {
     if (data.tagName !== "style") return;
     const css = node.textContent ?? "";
-    if (/\\|image-set|@import|@font-face|\bsrc\s*:|expression\(/i.test(css) || /url\(\s*['"]?\s*[^'"#\s]/i.test(css)) {
+    if (
+      /\\|image-set|@import|@font-face|\bsrc\s*:|expression\(/i.test(css) ||
+      /url\(\s*['"]?\s*[^'"#\s]/i.test(css)
+    ) {
       node.parentNode?.removeChild(node);
     }
   });
@@ -82,7 +102,20 @@ export function createRenderer(win: Window & typeof globalThis): Renderer {
         USE_PROFILES: { svg: true, svgFilters: true },
         ADD_TAGS: ["style"],
         ALLOWED_URI_REGEXP: ALLOWED_URI,
-        FORBID_TAGS: ["form", "input", "button", "textarea", "select", "iframe", "object", "embed", "foreignObject", "script", "image", "img"],
+        FORBID_TAGS: [
+          "form",
+          "input",
+          "button",
+          "textarea",
+          "select",
+          "iframe",
+          "object",
+          "embed",
+          "foreignObject",
+          "script",
+          "image",
+          "img",
+        ],
       }),
   };
 }

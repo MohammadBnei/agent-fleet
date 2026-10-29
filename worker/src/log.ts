@@ -25,7 +25,11 @@ function currentLevel(): Level {
 //
 // Explicit `fields` still wins: several call sites already pass a taskId
 // (their own, or another task's), and those must not be clobbered.
-export function log(level: Level, message: string, fields: Record<string, unknown> = {}): void {
+export function log(
+  level: Level,
+  message: string,
+  fields: Record<string, unknown> = {},
+): void {
   if (LEVELS[level] < LEVELS[currentLevel()]) return;
   const sessionId = process.env.SESSION_ID;
   console.log(

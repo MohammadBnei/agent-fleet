@@ -1,13 +1,24 @@
-import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "./gen/agentfleet/v1/transcript_pb";
 
 export type QuestionOption = { label: string; description: string };
-export type Question = { question: string; header: string; options: QuestionOption[]; multiSelect?: boolean };
+export type Question = {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect?: boolean;
+};
 
 // Visual distinction between "agent" and "human" is now a markdown
 // blockquote, not a text label (see Markdown.tsx) — `> ` needs to prefix
 // every line, not just the first, for a multi-line human message to render
 // as one blockquote instead of one quoted line followed by plain text.
-export function asDisplayMarkdown(entry: { from: string; text: string }): string {
+export function asDisplayMarkdown(entry: {
+  from: string;
+  text: string;
+}): string {
   if (entry.from !== "human") return entry.text;
   return entry.text
     .split("\n")
@@ -21,7 +32,9 @@ export function asDisplayMarkdown(entry: { from: string; text: string }): string
 export function parseQuestions(text: string): Question[] | null {
   try {
     const parsed = JSON.parse(text) as { questions?: unknown };
-    return Array.isArray(parsed.questions) ? (parsed.questions as Question[]) : null;
+    return Array.isArray(parsed.questions)
+      ? (parsed.questions as Question[])
+      : null;
   } catch {
     return null;
   }
@@ -30,7 +43,9 @@ export function parseQuestions(text: string): Question[] | null {
 export function parseAnswers(text: string): Record<string, string> | null {
   try {
     const parsed = JSON.parse(text) as { answers?: unknown };
-    return parsed.answers && typeof parsed.answers === "object" ? (parsed.answers as Record<string, string>) : null;
+    return parsed.answers && typeof parsed.answers === "object"
+      ? (parsed.answers as Record<string, string>)
+      : null;
   } catch {
     return null;
   }
@@ -39,20 +54,33 @@ export function parseAnswers(text: string): Record<string, string> | null {
 // The fields the pending-decision helpers read. Both DashboardService's
 // TranscriptEntry and AgentService's Entry (the islands, docs/adr/0068) have
 // them, so one implementation serves both.
-export type EntryLike = { seq: bigint; type: TranscriptEntryType; text: string; replyTo?: bigint };
+export type EntryLike = {
+  seq: bigint;
+  type: TranscriptEntryType;
+  text: string;
+  replyTo?: bigint;
+};
 
 // Only one question is ever pending per session at a time (the agent's tool
 // call blocks on it) — the latest QUESTION entry with no later ANSWER.
-export function findPendingQuestion<E extends EntryLike>(entries: E[]): E | null {
+export function findPendingQuestion<E extends EntryLike>(
+  entries: E[],
+): E | null {
   const idx = entries.findIndex(
     (e, i) =>
       e.type === TranscriptEntryType.QUESTION &&
-      !entries.slice(i + 1).some((later) => later.type === TranscriptEntryType.ANSWER),
+      !entries
+        .slice(i + 1)
+        .some((later) => later.type === TranscriptEntryType.ANSWER),
   );
   return idx >= 0 ? entries[idx] : null;
 }
 
-export type PendingPermission<E extends EntryLike = TranscriptEntry> = { entry: E; tool: string; input: unknown };
+export type PendingPermission<E extends EntryLike = TranscriptEntry> = {
+  entry: E;
+  tool: string;
+  input: unknown;
+};
 
 // A PERMISSION_REQUEST entry is pending until a PERMISSION_RESPONSE entry
 // replies to its own seq (real correlation, not the old "any later
@@ -72,7 +100,9 @@ export type PendingPermission<E extends EntryLike = TranscriptEntry> = { entry: 
 // Multiple can be pending at once now that canUseTool is a generic
 // per-tool-call gate rather than an ExitPlanMode-only special case, so this
 // returns every unresolved one, not just the latest.
-export function findPendingPermissions<E extends EntryLike>(entries: E[]): PendingPermission<E>[] {
+export function findPendingPermissions<E extends EntryLike>(
+  entries: E[],
+): PendingPermission<E>[] {
   const out: PendingPermission<E>[] = [];
   for (const e of entries) {
     if (e.type !== TranscriptEntryType.PERMISSION_REQUEST) continue;
@@ -85,10 +115,14 @@ export function findPendingPermissions<E extends EntryLike>(entries: E[]): Pendi
     if (typeof parsed.tool !== "string") continue;
     const resolved = entries.some(
       (later) =>
-        (later.type === TranscriptEntryType.PERMISSION_RESPONSE && later.replyTo === e.seq) ||
-        ((later.type === TranscriptEntryType.INTERRUPT || later.type === TranscriptEntryType.ABORT) && later.seq > e.seq),
+        (later.type === TranscriptEntryType.PERMISSION_RESPONSE &&
+          later.replyTo === e.seq) ||
+        ((later.type === TranscriptEntryType.INTERRUPT ||
+          later.type === TranscriptEntryType.ABORT) &&
+          later.seq > e.seq),
     );
-    if (!resolved) out.push({ entry: e, tool: parsed.tool, input: parsed.input });
+    if (!resolved)
+      out.push({ entry: e, tool: parsed.tool, input: parsed.input });
   }
   return out;
 }
@@ -104,21 +138,32 @@ export function findPendingPermissions<E extends EntryLike>(entries: E[]): Pendi
 // One pass over entries for the explicit responses, a second bounded by
 // only the still-unmapped requests for the implicit case — not a per-card
 // rescan either way.
-export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<bigint, "allow" | "deny" | "interrupted"> {
+export function resolvedPermissionDecisions(
+  entries: TranscriptEntry[],
+): Map<bigint, "allow" | "deny" | "interrupted"> {
   const out = new Map<bigint, "allow" | "deny" | "interrupted">();
   for (const e of entries) {
-    if (e.type !== TranscriptEntryType.PERMISSION_RESPONSE || e.replyTo === undefined) continue;
+    if (
+      e.type !== TranscriptEntryType.PERMISSION_RESPONSE ||
+      e.replyTo === undefined
+    )
+      continue;
     try {
       const decision = JSON.parse(e.text) as { behavior?: unknown };
-      if (decision.behavior === "allow" || decision.behavior === "deny") out.set(e.replyTo, decision.behavior);
+      if (decision.behavior === "allow" || decision.behavior === "deny")
+        out.set(e.replyTo, decision.behavior);
     } catch {
       // malformed payload — leave unresolved rather than guess
     }
   }
   for (const e of entries) {
-    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST || out.has(e.seq)) continue;
+    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST || out.has(e.seq))
+      continue;
     const interruptedLater = entries.some(
-      (later) => (later.type === TranscriptEntryType.INTERRUPT || later.type === TranscriptEntryType.ABORT) && later.seq > e.seq,
+      (later) =>
+        (later.type === TranscriptEntryType.INTERRUPT ||
+          later.type === TranscriptEntryType.ABORT) &&
+        later.seq > e.seq,
     );
     if (interruptedLater) out.set(e.seq, "interrupted");
   }
@@ -139,7 +184,10 @@ export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<big
 // An optimistic entry is dropped the moment the real one supersedes it, so
 // the server always wins: this only ever fills the gap, it never invents a
 // decision the fleet didn't record.
-export function withOptimistic(real: TranscriptEntry[], optimistic: TranscriptEntry[]): TranscriptEntry[] {
+export function withOptimistic(
+  real: TranscriptEntry[],
+  optimistic: TranscriptEntry[],
+): TranscriptEntry[] {
   if (optimistic.length === 0) return real;
   const kept = optimistic.filter((o) => {
     const answers = o.replyTo;
@@ -151,7 +199,9 @@ export function withOptimistic(real: TranscriptEntry[], optimistic: TranscriptEn
         (e.type === o.type && e.replyTo === answers) ||
         // ...or the agent stopped waiting for the decision altogether, which
         // resolves it just as firmly as an answer does.
-        ((e.type === TranscriptEntryType.INTERRUPT || e.type === TranscriptEntryType.ABORT) && e.seq > answers),
+        ((e.type === TranscriptEntryType.INTERRUPT ||
+          e.type === TranscriptEntryType.ABORT) &&
+          e.seq > answers),
     );
   });
   return kept.length === 0 ? real : [...real, ...kept];
@@ -168,7 +218,11 @@ export function deniedToolUseIds(entries: TranscriptEntry[]): Set<string> {
   const out = new Set<string>();
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST || decisions.get(e.seq) !== "deny") continue;
+    if (
+      e.type !== TranscriptEntryType.PERMISSION_REQUEST ||
+      decisions.get(e.seq) !== "deny"
+    )
+      continue;
     let req: { tool?: unknown; input?: unknown };
     try {
       req = JSON.parse(e.text) as { tool?: unknown; input?: unknown };
@@ -179,7 +233,12 @@ export function deniedToolUseIds(entries: TranscriptEntry[]): Set<string> {
     for (let j = i - 1; j >= 0; j--) {
       if (entries[j].type !== TranscriptEntryType.ASSISTANT) continue;
       const call = parseSdkToolUse(entries[j].text);
-      if (call?.id && call.tool === req.tool && !out.has(call.id) && JSON.stringify(call.input) === input) {
+      if (
+        call?.id &&
+        call.tool === req.tool &&
+        !out.has(call.id) &&
+        JSON.stringify(call.input) === input
+      ) {
         out.add(call.id);
         break;
       }
@@ -191,13 +250,26 @@ export function deniedToolUseIds(entries: TranscriptEntry[]): Set<string> {
 // The human's stated reason for a denial, keyed by the request's own seq.
 // Parsed alongside the decision above but kept separate so that Map's type
 // stays a plain outcome — only the collapsed card needs this.
-export function permissionDenyMessages(entries: TranscriptEntry[]): Map<bigint, string> {
+export function permissionDenyMessages(
+  entries: TranscriptEntry[],
+): Map<bigint, string> {
   const out = new Map<bigint, string>();
   for (const e of entries) {
-    if (e.type !== TranscriptEntryType.PERMISSION_RESPONSE || e.replyTo === undefined) continue;
+    if (
+      e.type !== TranscriptEntryType.PERMISSION_RESPONSE ||
+      e.replyTo === undefined
+    )
+      continue;
     try {
-      const decision = JSON.parse(e.text) as { behavior?: unknown; message?: unknown };
-      if (decision.behavior === "deny" && typeof decision.message === "string" && decision.message.trim()) {
+      const decision = JSON.parse(e.text) as {
+        behavior?: unknown;
+        message?: unknown;
+      };
+      if (
+        decision.behavior === "deny" &&
+        typeof decision.message === "string" &&
+        decision.message.trim()
+      ) {
         out.set(e.replyTo, decision.message);
       }
     } catch {
@@ -207,7 +279,10 @@ export function permissionDenyMessages(entries: TranscriptEntry[]): Map<bigint, 
   return out;
 }
 
-export type ToolCallSummary = { branch?: string; files?: { path: string; added: number; removed: number }[] };
+export type ToolCallSummary = {
+  branch?: string;
+  files?: { path: string; added: number; removed: number }[];
+};
 
 // The sidecar's periodic telemetry push always sends {branch, files[]}
 // (sidecar/internal/telemetry/loop.go), but its local HTTP endpoint
@@ -224,7 +299,9 @@ export function parseToolCallSummary(text: string): ToolCallSummary | null {
 
 // Latest TOOL_CALL entry's summary — the CHANGES panel only ever shows the
 // most recent snapshot, not a running diff across every push.
-export function latestToolCallSummary(entries: TranscriptEntry[]): ToolCallSummary | null {
+export function latestToolCallSummary(
+  entries: TranscriptEntry[],
+): ToolCallSummary | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     if (entries[i].type === TranscriptEntryType.TOOL_CALL) {
       return parseToolCallSummary(entries[i].text);
@@ -311,7 +388,11 @@ export type SdkSignal = {
 export function parseSdkSignal(text: string): SdkSignal | null {
   try {
     const parsed = JSON.parse(text) as SdkSignal;
-    return parsed && typeof parsed === "object" && typeof parsed.sdk === "string" ? parsed : null;
+    return parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.sdk === "string"
+      ? parsed
+      : null;
   } catch {
     return null;
   }
@@ -322,7 +403,8 @@ export function parseSdkSignal(text: string): SdkSignal | null {
 export function parseSdkSystemInfo(text: string): SdkSystemInfo | null {
   try {
     const parsed = JSON.parse(text) as SdkSystemInfo & { sdk?: unknown };
-    if (!parsed || typeof parsed !== "object" || typeof parsed.sdk === "string") return null;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.sdk === "string")
+      return null;
     return parsed;
   } catch {
     return null;
@@ -334,15 +416,21 @@ export function parseSdkSystemInfo(text: string): SdkSystemInfo | null {
 // dashboard's slash-command autocomplete stays a lean name list, not a rich
 // command browser. Same "walk backwards to the latest SYSTEM entry" pattern
 // as latestToolCallSummary/latestTodos below.
-export function latestSlashCommands(entries: TranscriptEntry[]): string[] | null {
+export function latestSlashCommands(
+  entries: TranscriptEntry[],
+): string[] | null {
   const info = latestSystemInfo(entries);
-  return info?.slashCommands && info.slashCommands.length > 0 ? info.slashCommands : null;
+  return info?.slashCommands && info.slashCommands.length > 0
+    ? info.slashCommands
+    : null;
 }
 
 // The most recent session-init payload, skipping signal entries. Stopping
 // at the first SYSTEM entry of any kind (as this used to) silently emptied
 // the command palette the moment any signal followed init.
-export function latestSystemInfo(entries: TranscriptEntry[]): SdkSystemInfo | null {
+export function latestSystemInfo(
+  entries: TranscriptEntry[],
+): SdkSystemInfo | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     if (entries[i].type !== TranscriptEntryType.SYSTEM) continue;
     const info = parseSdkSystemInfo(entries[i].text);
@@ -373,7 +461,11 @@ export function parseSdkToolUse(text: string): SdkToolUse | null {
   }
 }
 
-export type SdkToolResult = { toolUseId?: string; isError?: boolean; content?: unknown };
+export type SdkToolResult = {
+  toolUseId?: string;
+  isError?: boolean;
+  content?: unknown;
+};
 export function parseSdkToolResult(text: string): SdkToolResult | null {
   try {
     return JSON.parse(text) as SdkToolResult;
@@ -388,7 +480,12 @@ export function parseSdkToolResult(text: string): SdkToolResult | null {
 // its output render as two unrelated-looking bubbles with no visible link.
 // `result` is null while the call is still in flight (no matching
 // tool_result has arrived yet).
-export type ToolCallPair = { call: TranscriptEntry; callInfo: SdkToolUse; result: TranscriptEntry | null; resultInfo: SdkToolResult | null };
+export type ToolCallPair = {
+  call: TranscriptEntry;
+  callInfo: SdkToolUse;
+  result: TranscriptEntry | null;
+  resultInfo: SdkToolResult | null;
+};
 
 // Tools whose activity a side panel renders in full, so the feed showing them
 // again as a generic row is a duplicate, not a summary. TodoWrite has had the
@@ -439,7 +536,10 @@ export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
   // One pass to index results by tool_use_id, then one pass over the calls.
   // This used to scan every entry per tool call — quadratic over a
   // transcript that has no upper bound, recomputed on every render.
-  const resultsById = new Map<string, { entry: TranscriptEntry; info: SdkToolResult }>();
+  const resultsById = new Map<
+    string,
+    { entry: TranscriptEntry; info: SdkToolResult }
+  >();
   for (const entry of entries) {
     if (entry.type !== TranscriptEntryType.USER) continue;
     const info = parseSdkToolResult(entry.text);
@@ -465,7 +565,12 @@ export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
     // same data.
     if (callInfo.tool && PANEL_OWNED_TOOLS.has(callInfo.tool)) continue;
     const found = callInfo.id ? resultsById.get(callInfo.id) : undefined;
-    pairs.push({ call: entry, callInfo, result: found?.entry ?? null, resultInfo: found?.info ?? null });
+    pairs.push({
+      call: entry,
+      callInfo,
+      result: found?.entry ?? null,
+      resultInfo: found?.info ?? null,
+    });
   }
   return pairs;
 }
@@ -483,7 +588,11 @@ export function pairedResultSeqs(pairs: ToolCallPair[]): Set<bigint> {
 // already relayed like any other tool_use via logSdkMessage; nothing new to
 // wire up, just read the latest call's full list instead of showing a fake
 // one. `null` before the agent's first TodoWrite call.
-export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed"; activeForm: string };
+export type TodoItem = {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+};
 export function latestTodos(entries: TranscriptEntry[]): TodoItem[] | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
@@ -512,13 +621,17 @@ export function latestTodos(entries: TranscriptEntry[]): TodoItem[] | null {
 // `git diff -- <path>` in the sidecar, which is where ground truth actually is.
 const FILE_EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
 export type FileEdit = { seq: bigint; tool: string; input: unknown };
-export function fileEdits(entries: TranscriptEntry[], path: string): FileEdit[] {
+export function fileEdits(
+  entries: TranscriptEntry[],
+  path: string,
+): FileEdit[] {
   const out: FileEdit[] = [];
   for (const e of entries) {
     if (e.type !== TranscriptEntryType.ASSISTANT) continue;
     const info = parseSdkToolUse(e.text);
     if (!info?.tool || !FILE_EDIT_TOOLS.has(info.tool)) continue;
-    const filePath = (info.input as { file_path?: unknown } | undefined)?.file_path;
+    const filePath = (info.input as { file_path?: unknown } | undefined)
+      ?.file_path;
     if (typeof filePath !== "string" || !samePath(filePath, path)) continue;
     out.push({ seq: e.seq, tool: info.tool, input: info.input });
   }
@@ -569,7 +682,12 @@ export type SubagentRun = {
 // phantom "agent" row per Bash heartbeat and per denied tool. Caught by
 // measuring the rendered panel, not by any unit test — the phantom rows are
 // structurally identical to real ones.
-const TASK_SIGNALS = new Set(["task_started", "task_progress", "task_updated", "task_notification"]);
+const TASK_SIGNALS = new Set([
+  "task_started",
+  "task_progress",
+  "task_updated",
+  "task_notification",
+]);
 
 // Statuses that mean "still working". Anything else that isn't "completed" is
 // read as a failure (same direction as the signal denylist — an unrecognised
@@ -578,7 +696,13 @@ const TASK_SIGNALS = new Set(["task_started", "task_progress", "task_updated", "
 // last one, so the in-progress ones need carving out explicitly: without this
 // one interim patch paints a healthy run red *permanently*, since the
 // tool_result promotion below only ever upgrades a run still marked running.
-const IN_PROGRESS_STATUSES = new Set(["pending", "queued", "started", "running", "in_progress"]);
+const IN_PROGRESS_STATUSES = new Set([
+  "pending",
+  "queued",
+  "started",
+  "running",
+  "in_progress",
+]);
 
 // Correlation, and why it needs two keys: task_started carries BOTH
 // `tool_use_id` (the Agent call) and `task_id` (the SDK's handle), but
@@ -597,18 +721,27 @@ export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
   for (const entry of entries) {
     if (entry.type !== TranscriptEntryType.SYSTEM) continue;
     const sig = parseSdkSignal(entry.text);
-    if (sig && TASK_SIGNALS.has(sig.sdk) && sig.task_id && sig.tool_use_id) byTaskId.set(sig.task_id, sig.tool_use_id);
+    if (sig && TASK_SIGNALS.has(sig.sdk) && sig.task_id && sig.tool_use_id)
+      byTaskId.set(sig.task_id, sig.tool_use_id);
   }
 
   for (const entry of entries) {
     if (entry.type === TranscriptEntryType.ASSISTANT) {
       const info = parseSdkToolUse(entry.text);
       if (info?.tool !== "Agent" || !info.id) continue;
-      const input = (info.input ?? {}) as { subagent_type?: unknown; description?: unknown; prompt?: unknown };
+      const input = (info.input ?? {}) as {
+        subagent_type?: unknown;
+        description?: unknown;
+        prompt?: unknown;
+      };
       runs.set(info.id, {
         toolUseId: info.id,
-        subagentType: typeof input.subagent_type === "string" ? input.subagent_type : "agent",
-        description: typeof input.description === "string" ? input.description : "",
+        subagentType:
+          typeof input.subagent_type === "string"
+            ? input.subagent_type
+            : "agent",
+        description:
+          typeof input.description === "string" ? input.description : "",
         prompt: typeof input.prompt === "string" ? input.prompt : undefined,
         status: "running",
       });
@@ -627,7 +760,8 @@ export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
     const sig = parseSdkSignal(entry.text);
     if (!sig || !TASK_SIGNALS.has(sig.sdk)) continue;
 
-    const id = sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
+    const id =
+      sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
     if (!id) continue;
 
     // An Agent tool_use we have actually seen, or nothing. A task_* signal is
@@ -644,17 +778,25 @@ export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
     if (sig.subagent_type) run.subagentType = sig.subagent_type;
     if (sig.description) run.description = sig.description;
     if (sig.summary) run.summary = sig.summary;
-    const status = sig.patch?.status ?? (sig.sdk === "task_notification" ? sig.status : undefined);
+    const status =
+      sig.patch?.status ??
+      (sig.sdk === "task_notification" ? sig.status : undefined);
     if (status)
       run.status =
-        status === "completed" ? "completed" : IN_PROGRESS_STATUSES.has(status) ? "running" : "failed";
+        status === "completed"
+          ? "completed"
+          : IN_PROGRESS_STATUSES.has(status)
+            ? "running"
+            : "failed";
     runs.set(id, run);
   }
 
   // Only promote to completed from the tool_result — a run the task_* stream
   // already called failed keeps that, since "it returned" and "it worked" are
   // different claims.
-  for (const [id, run] of runs) if (run.status === "running" && finishedCalls.has(id)) run.status = "completed";
+  for (const [id, run] of runs)
+    if (run.status === "running" && finishedCalls.has(id))
+      run.status = "completed";
   return [...runs.values()];
 }
 
@@ -679,7 +821,11 @@ export type BackgroundTask = {
 // (see the note in PANEL_OWNED_SIGNALS explaining why it is not silenced).
 // task_updated carries a terminal status too but only for subagent runs; it is
 // resolved through the same task_id index anyway, so both are read.
-const BACKGROUND_SIGNALS = new Set(["task_started", "task_updated", "task_notification"]);
+const BACKGROUND_SIGNALS = new Set([
+  "task_started",
+  "task_updated",
+  "task_notification",
+]);
 
 // Live monitoring, not an audit log: rows are seeded ONLY from a Bash tool_use
 // carrying `run_in_background: true`. That flag is the agent's own declaration,
@@ -695,7 +841,12 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
   for (const entry of entries) {
     if (entry.type !== TranscriptEntryType.SYSTEM) continue;
     const sig = parseSdkSignal(entry.text);
-    if (sig && BACKGROUND_SIGNALS.has(sig.sdk) && sig.task_id && sig.tool_use_id)
+    if (
+      sig &&
+      BACKGROUND_SIGNALS.has(sig.sdk) &&
+      sig.task_id &&
+      sig.tool_use_id
+    )
       byTaskId.set(sig.task_id, sig.tool_use_id);
   }
 
@@ -703,12 +854,17 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
     if (entry.type === TranscriptEntryType.ASSISTANT) {
       const info = parseSdkToolUse(entry.text);
       if (info?.tool !== "Bash" || !info.id) continue;
-      const input = (info.input ?? {}) as { command?: unknown; run_in_background?: unknown; description?: unknown };
+      const input = (info.input ?? {}) as {
+        command?: unknown;
+        run_in_background?: unknown;
+        description?: unknown;
+      };
       if (input.run_in_background !== true) continue;
       tasks.set(info.id, {
         toolUseId: info.id,
         command: typeof input.command === "string" ? input.command : "",
-        description: typeof input.description === "string" ? input.description : "",
+        description:
+          typeof input.description === "string" ? input.description : "",
         status: "running",
       });
       continue;
@@ -718,7 +874,8 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
     const sig = parseSdkSignal(entry.text);
     if (!sig || !BACKGROUND_SIGNALS.has(sig.sdk)) continue;
 
-    const id = sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
+    const id =
+      sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
     if (!id) continue;
     const task = tasks.get(id);
     // No seeding from a signal, ever. A task_* stream whose Bash call sits
@@ -729,9 +886,16 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
     if (!task) continue;
     if (sig.description) task.description = sig.description;
     if (sig.summary) task.summary = sig.summary;
-    const status = sig.patch?.status ?? (sig.sdk === "task_notification" ? sig.status : undefined);
+    const status =
+      sig.patch?.status ??
+      (sig.sdk === "task_notification" ? sig.status : undefined);
     if (status)
-      task.status = status === "completed" ? "completed" : IN_PROGRESS_STATUSES.has(status) ? "running" : "failed";
+      task.status =
+        status === "completed"
+          ? "completed"
+          : IN_PROGRESS_STATUSES.has(status)
+            ? "running"
+            : "failed";
     tasks.set(id, task);
   }
 
@@ -739,7 +903,10 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
   // a finished command scrolling above a live one buries the only row that
   // still matters. Stable within each group (insertion = launch order).
   const all = [...tasks.values()];
-  return [...all.filter((t) => t.status === "running"), ...all.filter((t) => t.status !== "running")];
+  return [
+    ...all.filter((t) => t.status === "running"),
+    ...all.filter((t) => t.status !== "running"),
+  ];
 }
 
 // `mcp__agent-fleet-sidecar__set_session_meta` → `set_session_meta`. The
@@ -759,7 +926,9 @@ export function shortTool(tool: string | undefined): string {
 export function toolLabel(input: unknown): string {
   if (input && typeof input === "object") {
     const obj = input as Record<string, unknown>;
-    const first = Array.isArray(obj.questions) ? (obj.questions[0] as { question?: unknown } | undefined) : undefined;
+    const first = Array.isArray(obj.questions)
+      ? (obj.questions[0] as { question?: unknown } | undefined)
+      : undefined;
     if (typeof first?.question === "string") return first.question;
     for (const key of ["query", "prompt"]) {
       const value = obj[key];
@@ -775,7 +944,15 @@ export function toolLabel(input: unknown): string {
 export function summarizeToolInput(input: unknown): string {
   if (input && typeof input === "object") {
     const obj = input as Record<string, unknown>;
-    for (const key of ["file_path", "command", "pattern", "path", "description", "url", "plan"]) {
+    for (const key of [
+      "file_path",
+      "command",
+      "pattern",
+      "path",
+      "description",
+      "url",
+      "plan",
+    ]) {
       const value = obj[key];
       // First line only — matters for "plan" (multi-line markdown), harmless
       // for the single-line fields. Without this, ToolCallItem's shortValue
@@ -850,12 +1027,18 @@ export function entryTime(entry: TranscriptEntry): string | null {
 //
 // `prev` can exceed `cur` when a session resumes and the SDK's counters
 // restart, hence the clamp — a negative cost is worse than a flat 0.
-export function resultDelta(cur: SdkResultSummary, prev: SdkResultSummary | null): SdkResultSummary {
+export function resultDelta(
+  cur: SdkResultSummary,
+  prev: SdkResultSummary | null,
+): SdkResultSummary {
   if (!prev) return cur;
   const sub = (a?: number, b?: number) => Math.max(0, (a ?? 0) - (b ?? 0));
   const modelUsage: Record<string, SdkModelUsage> = {};
   for (const [name, usage] of Object.entries(cur.modelUsage ?? {})) {
-    modelUsage[name] = { ...usage, costUSD: sub(usage.costUSD, prev.modelUsage?.[name]?.costUSD) };
+    modelUsage[name] = {
+      ...usage,
+      costUSD: sub(usage.costUSD, prev.modelUsage?.[name]?.costUSD),
+    };
   }
   return {
     ...cur,
@@ -865,7 +1048,9 @@ export function resultDelta(cur: SdkResultSummary, prev: SdkResultSummary | null
   };
 }
 
-export function latestResultSummary(entries: TranscriptEntry[]): SdkResultSummary | null {
+export function latestResultSummary(
+  entries: TranscriptEntry[],
+): SdkResultSummary | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     if (entries[i].type !== TranscriptEntryType.RESULT) continue;
     const parsed = parseSdkResultSummary(entries[i].text);
@@ -874,7 +1059,11 @@ export function latestResultSummary(entries: TranscriptEntry[]): SdkResultSummar
   return null;
 }
 
-export type InFlightTool = { tool: string; summary: string; elapsedSeconds: number | null };
+export type InFlightTool = {
+  tool: string;
+  summary: string;
+  elapsedSeconds: number | null;
+};
 
 // The "⟳ bash · pytest tests/cache · 32s" line on a WORKING row: the newest
 // tool call with no result yet. Elapsed comes from the SDK's own tool_progress
@@ -900,16 +1089,25 @@ export function inFlightTool(entries: TranscriptEntry[]): InFlightTool | null {
       // originating call's id only ever appears on parent_tool_use_id. This
       // matched on tool_use_id alone until now, i.e. never — every in-flight
       // row silently fell through to the wall-clock fallback below.
-      if (sig?.sdk === "tool_progress" && p.callInfo.id && (sig.parent_tool_use_id ?? sig.tool_use_id) === p.callInfo.id) {
+      if (
+        sig?.sdk === "tool_progress" &&
+        p.callInfo.id &&
+        (sig.parent_tool_use_id ?? sig.tool_use_id) === p.callInfo.id
+      ) {
         elapsedSeconds = sig.elapsed_time_seconds ?? null;
         break;
       }
     }
     if (elapsedSeconds === null && p.call.createdAt) {
       const started = new Date(p.call.createdAt).getTime();
-      if (!Number.isNaN(started)) elapsedSeconds = Math.max(0, Math.round((Date.now() - started) / 1000));
+      if (!Number.isNaN(started))
+        elapsedSeconds = Math.max(0, Math.round((Date.now() - started) / 1000));
     }
-    return { tool: shortTool(tool), summary: toolLabel(p.callInfo.input), elapsedSeconds };
+    return {
+      tool: shortTool(tool),
+      summary: toolLabel(p.callInfo.input),
+      elapsedSeconds,
+    };
   }
   return null;
 }
@@ -950,7 +1148,10 @@ export function listSummary(entries: TranscriptEntry[]): ListSummary {
 // tool call is blocked on, or an unanswered question. Both detail views use
 // this to decide whether the decision dock exists at all.
 export function hasPendingDecision(entries: TranscriptEntry[]): boolean {
-  return findPendingPermissions(entries).length > 0 || findPendingQuestion(entries) !== null;
+  return (
+    findPendingPermissions(entries).length > 0 ||
+    findPendingQuestion(entries) !== null
+  );
 }
 
 // Whether a pending decision can still be acted on, given the session's pod.
@@ -973,7 +1174,11 @@ export function decisionAnswerable(
 }
 
 export type Density = "everything" | "narrative" | "decisions";
-export type FeedVisibility = { narrative: boolean; tools: boolean; quiet: boolean };
+export type FeedVisibility = {
+  narrative: boolean;
+  tools: boolean;
+  quiet: boolean;
+};
 
 // The two console mockups deliberately disagree about the third mode, so both
 // mappings live here rather than one being bent to fit the other:
@@ -982,7 +1187,10 @@ export type FeedVisibility = { narrative: boolean; tools: boolean; quiet: boolea
 //                         to scan when you're checking on a run
 // Tier-1 cards (permission/plan/question) and alarms are never gated: they're
 // the reason the screen exists.
-export function feedVisibility(density: Density, isMobile: boolean): FeedVisibility {
+export function feedVisibility(
+  density: Density,
+  isMobile: boolean,
+): FeedVisibility {
   return {
     narrative: density !== "decisions",
     tools: density === "everything" || (isMobile && density === "decisions"),

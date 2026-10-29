@@ -13,14 +13,20 @@ export type Line = { kind: "context" | "add" | "remove"; text: string };
 export function diffLines(before: string, after: string): Line[] {
   // "".split("\n") is [""], not [] — without this a Write (which has no
   // before at all) opens with a phantom removed blank line.
-  if (before === "") return after.split("\n").map((text) => ({ kind: "add", text }));
+  if (before === "")
+    return after.split("\n").map((text) => ({ kind: "add", text }));
   const a = before.split("\n");
   const b = after.split("\n");
   // lcs[i][j] = length of the longest common subsequence of a[i:] and b[j:]
-  const lcs: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  const lcs: number[][] = Array.from({ length: a.length + 1 }, () =>
+    new Array<number>(b.length + 1).fill(0),
+  );
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
-      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      lcs[i][j] =
+        a[i] === b[j]
+          ? lcs[i + 1][j + 1] + 1
+          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
   const out: Line[] = [];
@@ -58,7 +64,13 @@ export function DiffView({ before, after }: { before: string; after: string }) {
                   : "text-dim"
             }`}
           >
-            <span className="select-none opacity-50">{line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "} </span>
+            <span className="select-none opacity-50">
+              {line.kind === "add"
+                ? "+"
+                : line.kind === "remove"
+                  ? "-"
+                  : " "}{" "}
+            </span>
             {line.text || " "}
           </div>
         ))}
@@ -76,17 +88,33 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ToolInputView({ tool, input }: { tool: string; input: unknown }) {
-  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-  const str = (key: string): string | undefined => (typeof obj[key] === "string" ? (obj[key] as string) : undefined);
+export function ToolInputView({
+  tool,
+  input,
+}: {
+  tool: string;
+  input: unknown;
+}) {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<
+    string,
+    unknown
+  >;
+  const str = (key: string): string | undefined =>
+    typeof obj[key] === "string" ? (obj[key] as string) : undefined;
 
   const filePath = str("file_path");
 
-  if (tool === "Edit" && typeof obj.old_string === "string" && typeof obj.new_string === "string") {
+  if (
+    tool === "Edit" &&
+    typeof obj.old_string === "string" &&
+    typeof obj.new_string === "string"
+  ) {
     return (
       <div className="flex flex-col gap-1.5">
         {filePath && <Field label="file" value={filePath} />}
-        {obj.replace_all === true && <Field label="mode" value="replace all occurrences" />}
+        {obj.replace_all === true && (
+          <Field label="mode" value="replace all occurrences" />
+        )}
         <DiffView before={obj.old_string} after={obj.new_string} />
       </div>
     );
@@ -105,11 +133,17 @@ export function ToolInputView({ tool, input }: { tool: string; input: unknown })
   if (tool === "Bash" && typeof obj.command === "string") {
     return (
       <div className="flex flex-col gap-1.5">
-        {str("description") && <div className="text-2xs text-dim">{str("description")}</div>}
+        {str("description") && (
+          <div className="text-2xs text-dim">{str("description")}</div>
+        )}
         <div className="overflow-x-auto rounded-md bg-base-200/40 px-3 py-2.5">
-          <pre className="text-xs font-mono text-base-content w-max min-w-full">{obj.command}</pre>
+          <pre className="text-xs font-mono text-base-content w-max min-w-full">
+            {obj.command}
+          </pre>
         </div>
-        {obj.run_in_background === true && <Field label="mode" value="background" />}
+        {obj.run_in_background === true && (
+          <Field label="mode" value="background" />
+        )}
       </div>
     );
   }
@@ -125,13 +159,29 @@ export function ToolInputView({ tool, input }: { tool: string; input: unknown })
   // Only claim to have rendered the input if nothing else is in it —
   // a partial summary that hides an unshown field is worse than raw JSON
   // on a screen whose whole job is "decide whether to allow this".
-  if (simple.length > 0 && Object.keys(obj).every((k) => ["file_path", "path", "pattern", "url", "query", "description", "limit", "offset"].includes(k))) {
+  if (
+    simple.length > 0 &&
+    Object.keys(obj).every((k) =>
+      [
+        "file_path",
+        "path",
+        "pattern",
+        "url",
+        "query",
+        "description",
+        "limit",
+        "offset",
+      ].includes(k),
+    )
+  ) {
     return (
       <div className="flex flex-col gap-1">
         {simple.map(([label, value]) => (
           <Field key={label} label={label} value={value} />
         ))}
-        {str("description") && <div className="text-2xs text-dim">{str("description")}</div>}
+        {str("description") && (
+          <div className="text-2xs text-dim">{str("description")}</div>
+        )}
       </div>
     );
   }

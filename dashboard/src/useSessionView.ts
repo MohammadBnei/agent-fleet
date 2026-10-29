@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
-import { useAtBottom } from "./useAtBottom";
 import {
   backgroundTasks,
   latestSlashCommands,
+  latestSystemInfo,
   latestTodos,
   latestToolCallSummary,
-  latestSystemInfo,
   subagentRuns,
 } from "./transcript";
+import { useAtBottom } from "./useAtBottom";
 
 // What the desktop SessionDetail and the mobile MobileSessionDetail both do
 // with a loaded session, independent of layout. Each view carried its own copy
@@ -29,8 +29,13 @@ import {
 //   session switches, so it tracks which session it already jumped for.
 // - The optimistic echo of a just-sent message scrolls into view immediately,
 //   not once the real entry comes back over the stream.
-export function useFeedScroll(sessionId: string, entries: TranscriptEntry[], pendingMessage: string | null) {
-  const { ref, atBottom, onScroll, scrollToBottom, anchorPrepend } = useAtBottom<HTMLDivElement>();
+export function useFeedScroll(
+  sessionId: string,
+  entries: TranscriptEntry[],
+  pendingMessage: string | null,
+) {
+  const { ref, atBottom, onScroll, scrollToBottom, anchorPrepend } =
+    useAtBottom<HTMLDivElement>();
   const [hasNew, setHasNew] = useState(false);
 
   const prevLastSeq = useRef<bigint | null>(null);
@@ -87,10 +92,15 @@ export function sessionPanelData(entries: TranscriptEntry[]) {
 // are name-only (the SDK's init message carries no descriptions or argument
 // hints at runtime, docs/adr/0027), shown only while the draft looks like a
 // command and filtered by what is typed so far.
-export function useComposer(entries: TranscriptEntry[], sendDiscuss: (text: string) => void) {
+export function useComposer(
+  entries: TranscriptEntry[],
+  sendDiscuss: (text: string) => void,
+) {
   const [message, setMessage] = useState("");
   const slashCommands = message.startsWith("/")
-    ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
+    ? (latestSlashCommands(entries) ?? []).filter((c) =>
+        c.toLowerCase().startsWith(message.slice(1).toLowerCase()),
+      )
     : [];
   function sendMessage() {
     const text = message.trim();

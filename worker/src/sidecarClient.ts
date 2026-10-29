@@ -28,7 +28,10 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`sidecar ${path} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(
+      `sidecar ${path} failed: ${res.status} ${await res.text()}`,
+    );
   return res.json() as Promise<T>;
 }
 
@@ -51,7 +54,10 @@ export async function appendJournal(
 // Lease-checked by core (docs/adr/0041): the session id is what the next
 // resume reads, so a dead pod setting it would resume the wrong conversation.
 // The sidecar attaches its own lease (docs/adr/0064); the worker sends none.
-export async function saveSessionId(sessionId: string, model: string): Promise<void> {
+export async function saveSessionId(
+  sessionId: string,
+  model: string,
+): Promise<void> {
   await postJSON("/session-id", { sessionId, model });
 }
 
@@ -83,7 +89,8 @@ export async function getSession(): Promise<{
   grants?: string[];
 }> {
   const res = await fetch(`${base()}/task`);
-  if (!res.ok) throw new Error(`sidecar /task failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(`sidecar /task failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
 
@@ -111,8 +118,18 @@ export async function savePermissionMode(mode: string): Promise<void> {
 // `replyTo` correlates this entry to an earlier one — used when the wrapper
 // records a permission it resolved itself, so the entry points at the
 // request it answers exactly like the dashboard's own response entries do.
-export async function pushMessage(from: string, text: string, type?: string, replyTo?: number): Promise<number> {
-  const res = await postJSON<{ seq: number }>("/message", { from, text, type, replyTo });
+export async function pushMessage(
+  from: string,
+  text: string,
+  type?: string,
+  replyTo?: number,
+): Promise<number> {
+  const res = await postJSON<{ seq: number }>("/message", {
+    from,
+    text,
+    type,
+    replyTo,
+  });
   return res.seq;
 }
 
@@ -136,7 +153,14 @@ export type AgentSpec = {
 
 // authorName: who wrote a human entry (docs/adr/0067 §3), set by core from the
 // transcript's author column; empty for console entries.
-export type TranscriptEntry = { seq: number; from: string; text: string; type?: string; replyTo?: number; authorName?: string };
+export type TranscriptEntry = {
+  seq: number;
+  from: string;
+  text: string;
+  type?: string;
+  replyTo?: number;
+  authorName?: string;
+};
 
 const RECONNECT_DELAY_MS = 2000;
 
@@ -214,7 +238,10 @@ export async function streamHumanMessages(
       log("warn", "human-messages stream ended, reconnecting", { nextSeq });
     } catch (err) {
       if (signal.aborted) return;
-      log("warn", "human-messages stream failed, reconnecting", { nextSeq, error: String(err) });
+      log("warn", "human-messages stream failed, reconnecting", {
+        nextSeq,
+        error: String(err),
+      });
     }
     await sleep(RECONNECT_DELAY_MS, signal);
   }
@@ -230,9 +257,15 @@ async function streamOnce(
   onEntry: (entry: TranscriptEntry) => void | Promise<void>,
   signal: AbortSignal,
 ): Promise<void> {
-  const sha = agentSpecSha ? `&agentSpecSha=${encodeURIComponent(agentSpecSha)}` : "";
-  const res = await fetch(`${base()}/human-messages?sinceSeq=${sinceSeq}${sha}`, { signal });
-  if (!res.ok || !res.body) throw new Error(`sidecar human-messages stream failed: ${res.status}`);
+  const sha = agentSpecSha
+    ? `&agentSpecSha=${encodeURIComponent(agentSpecSha)}`
+    : "";
+  const res = await fetch(
+    `${base()}/human-messages?sinceSeq=${sinceSeq}${sha}`,
+    { signal },
+  );
+  if (!res.ok || !res.body)
+    throw new Error(`sidecar human-messages stream failed: ${res.status}`);
 
   const reader = res.body.getReader();
   // Belt-and-suspenders: fetch()'s own `signal` should cancel an in-flight
@@ -252,13 +285,18 @@ async function streamOnce(
       const { done, value } = await reader.read();
       if (done) return;
       buffer += decoder.decode(value, { stream: true });
-      let idx: number;
-      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      for (
+        let idx = buffer.indexOf("\n\n");
+        idx !== -1;
+        idx = buffer.indexOf("\n\n")
+      ) {
         const chunk = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
         const line = chunk.split("\n").find((l) => l.startsWith("data: "));
         if (!line) continue;
-        const entry = JSON.parse(line.slice("data: ".length)) as TranscriptEntry;
+        const entry = JSON.parse(
+          line.slice("data: ".length),
+        ) as TranscriptEntry;
         await onEntry(entry);
         // Don't wait on another read() at all once aborted — that's the
         // exact hang this is guarding against, not just a fallback for it.

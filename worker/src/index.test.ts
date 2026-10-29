@@ -4,7 +4,7 @@
 // independently needs the real ./session.js and ./sidecarClient.js at its own
 // top level; module-mocking either here would leak into that file's import
 // and break it.
-import { test, expect, afterEach } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 
 process.env.SESSION_ID = "session-1";
 process.env.TARGET_REPO = "dream-analyst";
@@ -23,12 +23,24 @@ afterEach(() => {
 // A recorder for what main() pushes to the transcript. It used to record
 // journal writes; main() makes none now (ADR-0055) — knowledge_journal is
 // what a future session on a repo needs to know, not lifecycle bookkeeping.
-function fakeSidecar(pushed: { text: string; type?: string }[], journal: unknown[] = []) {
+function fakeSidecar(
+  pushed: { text: string; type?: string }[],
+  journal: unknown[] = [],
+) {
   return {
-    appendJournal: async (_repo: string, _actor: string, event: string, payload: unknown) => {
+    appendJournal: async (
+      _repo: string,
+      _actor: string,
+      event: string,
+      payload: unknown,
+    ) => {
       journal.push({ event, payload });
     },
-    getSession: async () => ({ description: "test session", permissionMode: "default", model: "claude-opus-4-8" }),
+    getSession: async () => ({
+      description: "test session",
+      permissionMode: "default",
+      model: "claude-opus-4-8",
+    }),
     saveSessionId: async () => {},
     savePermissionMode: async () => {},
     pushMessage: async (_from: string, text: string, type?: string) => {
@@ -134,7 +146,10 @@ test("a sidecar failure while recording the error doesn't crash the process", as
 test("a session ending normally writes no status, no journal entry, and exits zero", async () => {
   const pushed: { text: string; type?: string }[] = [];
   const journal: unknown[] = [];
-  const stopped = async () => ({ aborted: true, summary: "stopped mid-conversation" });
+  const stopped = async () => ({
+    aborted: true,
+    summary: "stopped mid-conversation",
+  });
 
   await main(fakeSidecar(pushed, journal) as never, stopped as never);
 

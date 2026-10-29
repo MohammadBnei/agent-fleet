@@ -51,7 +51,9 @@ export function TextResponseModal({
     <Modal open={open} onClose={onClose} boxClassName="max-w-xl">
       <div className="flex flex-col gap-3">
         <span className="text-2xs tracking-[0.12em] text-dim2">{title}</span>
-        {context && <span className="text-sm text-dim break-words">{context}</span>}
+        {context && (
+          <span className="text-sm text-dim break-words">{context}</span>
+        )}
         <textarea
           autoFocus
           rows={5}
@@ -81,7 +83,9 @@ export function TextResponseModal({
           >
             cancel
           </button>
-          <span className="text-2xs text-dim2 ml-auto">⌘⏎ to {submitLabel}</span>
+          <span className="text-2xs text-dim2 ml-auto">
+            ⌘⏎ to {submitLabel}
+          </span>
         </div>
       </div>
     </Modal>

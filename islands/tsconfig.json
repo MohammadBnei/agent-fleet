@@ -3,18 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "noUnusedLocals": true,
     "skipLibCheck": true,
-    "types": [
-      "bun",
-      "vite/client"
-    ],
+    "types": ["bun", "vite/client"],
     "verbatimModuleSyntax": true,
     "paths": {
       "@bufbuild/protobuf": [
@@ -28,8 +21,5 @@
       ]
     }
   },
-  "include": [
-    "src",
-    "demo"
-  ]
+  "include": ["src", "demo"]
 }

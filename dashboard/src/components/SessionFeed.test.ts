@@ -3,18 +3,31 @@
 // tree inspected — no DOM, no renderer. That covers the two things the walk
 // alone decides: which session-init lines are worth showing, and what each
 // "turn ended" line is charged.
-import { test, expect } from "bun:test";
-import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
-import { feedVisibility, type SdkResultSummary } from "../transcript";
+import { expect, test } from "bun:test";
+import {
+  type TranscriptEntry,
+  TranscriptEntryType,
+} from "../gen/agentfleet/v1/transcript_pb";
+import {
+  feedVisibility,
+  type SdkResultSummary,
+  shortTool,
+} from "../transcript";
 import { LoadOlder, SessionFeed } from "./SessionFeed";
-import { shortTool } from "../transcript";
-import { TranscriptEntryView } from "./TranscriptEntryView";
 import { ToolCallLine } from "./ToolCallLine";
+import { TranscriptEntryView } from "./TranscriptEntryView";
 
 let nextSeq = 0n;
 function entry(type: TranscriptEntryType, text: string): TranscriptEntry {
   nextSeq += 1n;
-  return { $typeName: "agentfleet.v1.TranscriptEntry", sessionId: "t", seq: nextSeq, from: "agent", text, type } as TranscriptEntry;
+  return {
+    $typeName: "agentfleet.v1.TranscriptEntry",
+    sessionId: "t",
+    seq: nextSeq,
+    from: "agent",
+    text,
+    type,
+  } as TranscriptEntry;
 }
 
 const init = (model: string, tools = 33) =>
@@ -28,8 +41,21 @@ const init = (model: string, tools = 33) =>
     }),
   );
 
-const result = (totalCostUsd: number, durationApiMs: number, durationMs: number) =>
-  entry(TranscriptEntryType.RESULT, JSON.stringify({ subtype: "success", numTurns: 1, totalCostUsd, durationApiMs, durationMs }));
+const result = (
+  totalCostUsd: number,
+  durationApiMs: number,
+  durationMs: number,
+) =>
+  entry(
+    TranscriptEntryType.RESULT,
+    JSON.stringify({
+      subtype: "success",
+      numTurns: 1,
+      totalCostUsd,
+      durationApiMs,
+      durationMs,
+    }),
+  );
 
 type Rendered = { entry: TranscriptEntry; result?: SdkResultSummary | null };
 
@@ -46,7 +72,10 @@ function renderedEntryViews(entries: TranscriptEntry[]): Rendered[] {
 
   const found: Rendered[] = [];
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (!node || typeof node !== "object") return;
     const el = node as { type?: unknown; props?: Record<string, unknown> };
     if (el.type === TranscriptEntryView) found.push(el.props as Rendered);
@@ -71,7 +100,10 @@ function renderedText(entries: TranscriptEntry[]): string {
 
   let text = "";
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (typeof node === "string" || typeof node === "number") {
       text += String(node);
       return;
@@ -89,10 +121,15 @@ function renderedText(entries: TranscriptEntry[]): string {
 }
 
 const peerEntry = (text: string) =>
-  ({ ...entry(TranscriptEntryType.DISCUSSION, text), from: "session" }) as TranscriptEntry;
+  ({
+    ...entry(TranscriptEntryType.DISCUSSION, text),
+    from: "session",
+  }) as TranscriptEntry;
 
 test("a peer session's message is attributed to its sender", () => {
-  expect(renderedText([peerEntry("[from session abcdef123456]\n\nwhich schema?")])).toContain("#abcdef");
+  expect(
+    renderedText([peerEntry("[from session abcdef123456]\n\nwhich schema?")]),
+  ).toContain("#abcdef");
 });
 
 test("a peer message with no prefix is still rendered as a peer message", () => {
@@ -108,7 +145,13 @@ test("a peer message with no prefix is still rendered as a peer message", () => 
 // one attribution in the feed a human cannot forge is exactly the one that was
 // forgeable.
 test("a human message that starts with the cross-session literal is not attributed to a session", () => {
-  const human = { ...entry(TranscriptEntryType.DISCUSSION, "[from session deadbeef]\n\nnot me"), from: "human" } as TranscriptEntry;
+  const human = {
+    ...entry(
+      TranscriptEntryType.DISCUSSION,
+      "[from session deadbeef]\n\nnot me",
+    ),
+    from: "human",
+  } as TranscriptEntry;
   expect(renderedText([human])).not.toContain("#deadbe");
 });
 
@@ -117,18 +160,35 @@ test("a human message that starts with the cross-session literal is not attribut
 // between every prompt and its answer — three of them in one unbroken
 // session, in the exchange that prompted this.
 test("an unchanged session-init is not re-announced, a changed one is", () => {
-  const entries = [init("opus"), result(1.0, 100, 10), init("opus"), result(1.1, 200, 20), init("sonnet"), result(0.2, 50, 5)];
+  const entries = [
+    init("opus"),
+    result(1.0, 100, 10),
+    init("opus"),
+    result(1.1, 200, 20),
+    init("sonnet"),
+    result(0.2, 50, 5),
+  ];
 
-  const inits = renderedEntryViews(entries).filter((r) => r.entry.type === TranscriptEntryType.SYSTEM);
+  const inits = renderedEntryViews(entries).filter(
+    (r) => r.entry.type === TranscriptEntryType.SYSTEM,
+  );
   expect(inits.length).toBe(2);
   expect(JSON.parse(inits[0].entry.text).model).toBe("opus");
   expect(JSON.parse(inits[1].entry.text).model).toBe("sonnet");
 });
 
 test("each turn's line is charged its own share, and a changed init resets the baseline", () => {
-  const entries = [init("opus"), result(1.0, 100_000, 10_000), result(1.1, 180_000, 20_000), init("sonnet"), result(0.2, 5_000, 5_000)];
+  const entries = [
+    init("opus"),
+    result(1.0, 100_000, 10_000),
+    result(1.1, 180_000, 20_000),
+    init("sonnet"),
+    result(0.2, 5_000, 5_000),
+  ];
 
-  const results = renderedEntryViews(entries).filter((r) => r.entry.type === TranscriptEntryType.RESULT);
+  const results = renderedEntryViews(entries).filter(
+    (r) => r.entry.type === TranscriptEntryType.RESULT,
+  );
   expect(results.length).toBe(3);
 
   // First of the session: nothing to subtract.
@@ -164,7 +224,10 @@ test("the load-earlier header appears only when older history exists", () => {
   const hasLoadOlder = (tree: unknown): boolean => {
     let found = false;
     const walk = (node: unknown): void => {
-      if (Array.isArray(node)) return node.forEach(walk);
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
       if (!node || typeof node !== "object") return;
       const el = node as { type?: unknown; props?: Record<string, unknown> };
       if (el.type === LoadOlder) found = true;
@@ -174,9 +237,17 @@ test("the load-earlier header appears only when older history exists", () => {
     return found;
   };
 
-  expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: true, onLoadOlder: () => {} }))).toBe(true);
+  expect(
+    hasLoadOlder(
+      SessionFeed({ ...props, hasOlder: true, onLoadOlder: () => {} }),
+    ),
+  ).toBe(true);
   // No older history…
-  expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: false, onLoadOlder: () => {} }))).toBe(false);
+  expect(
+    hasLoadOlder(
+      SessionFeed({ ...props, hasOlder: false, onLoadOlder: () => {} }),
+    ),
+  ).toBe(false);
   // …and no handler to fetch it with (a surface that doesn't paginate).
   expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: true }))).toBe(false);
 });
@@ -187,17 +258,36 @@ test("the load-earlier header appears only when older history exists", () => {
 // for. This list is the thing that rots as the SDK adds subtypes, so it gets a
 // test rather than a comment.
 
-const sig = (payload: Record<string, unknown>) => entry(TranscriptEntryType.SYSTEM, JSON.stringify(payload));
+const sig = (payload: Record<string, unknown>) =>
+  entry(TranscriptEntryType.SYSTEM, JSON.stringify(payload));
 
 test("panel-owned and duplicate signals render nothing in the feed", () => {
   for (const payload of [
-    { sdk: "task_started", task_id: "t", tool_use_id: "toolu_1", prompt: "a very long subagent prompt" },
-    { sdk: "task_progress", task_id: "t", tool_use_id: "toolu_1", last_tool_name: "Read" },
+    {
+      sdk: "task_started",
+      task_id: "t",
+      tool_use_id: "toolu_1",
+      prompt: "a very long subagent prompt",
+    },
+    {
+      sdk: "task_progress",
+      task_id: "t",
+      tool_use_id: "toolu_1",
+      last_tool_name: "Read",
+    },
     { sdk: "task_updated", task_id: "t", patch: { status: "completed" } },
     { sdk: "background_tasks_changed", tasks: [{ task_id: "t" }] },
-    { sdk: "commands_changed", commands: [{ name: "ponytail", description: "…" }] },
+    {
+      sdk: "commands_changed",
+      commands: [{ name: "ponytail", description: "…" }],
+    },
     { sdk: "hook_started", hook_name: "SessionStart:startup" },
-    { sdk: "tool_progress", tool_use_id: "toolu_1-heartbeat-0", parent_tool_use_id: "toolu_1", elapsed_time_seconds: 30 },
+    {
+      sdk: "tool_progress",
+      tool_use_id: "toolu_1-heartbeat-0",
+      parent_tool_use_id: "toolu_1",
+      elapsed_time_seconds: 30,
+    },
   ]) {
     expect(renderedEntryViews([sig(payload)])).toHaveLength(0);
   }
@@ -207,33 +297,58 @@ test("panel-owned and duplicate signals render nothing in the feed", () => {
 // ten of those per stall out-shout the auth failure tier 5 exists for. It must
 // still render, though: it is the answer to "why has this gone quiet".
 test("api_retry renders as a log line, not an alarm bar", () => {
-  const views = renderedEntryViews([sig({ sdk: "api_retry", attempt: 1, max_retries: 10, error_status: 529, error: "overloaded" })]);
+  const views = renderedEntryViews([
+    sig({
+      sdk: "api_retry",
+      attempt: 1,
+      max_retries: 10,
+      error_status: 529,
+      error: "overloaded",
+    }),
+  ]);
   expect(views).toHaveLength(1);
-  expect(renderedText([sig({ sdk: "api_retry", attempt: 1, error: "overloaded" })])).not.toContain("!");
+  expect(
+    renderedText([sig({ sdk: "api_retry", attempt: 1, error: "overloaded" })]),
+  ).not.toContain("!");
 });
 
 test("an unknown subtype still reaches the feed rather than being swallowed", () => {
-  expect(renderedEntryViews([sig({ sdk: "some_subtype_the_sdk_added_next", detail: 1 })])).toHaveLength(1);
+  expect(
+    renderedEntryViews([
+      sig({ sdk: "some_subtype_the_sdk_added_next", detail: 1 }),
+    ]),
+  ).toHaveLength(1);
 });
 
 // A fixed-width flex item does not clip without overflow-hidden, so
 // `mcp__playwright__browser_navigate` drew straight over the summary column
 // beside it. `truncate` supplies it; shortTool makes the visible text fit.
 test("shortTool drops the MCP server prefix and leaves plain tools alone", () => {
-  expect(shortTool("mcp__agent-fleet-sidecar__set_session_meta")).toBe("set_session_meta");
+  expect(shortTool("mcp__agent-fleet-sidecar__set_session_meta")).toBe(
+    "set_session_meta",
+  );
   expect(shortTool("Bash")).toBe("Bash");
   expect(shortTool(undefined)).toBe("tool");
 });
 
 test("a files-changed rule renders once per change in which files are touched, not once per push", () => {
   const push = (files: { path: string; added: number; removed: number }[]) =>
-    entry(TranscriptEntryType.TOOL_CALL, JSON.stringify({ branch: "main", files }));
+    entry(
+      TranscriptEntryType.TOOL_CALL,
+      JSON.stringify({ branch: "main", files }),
+    );
   const tree = SessionFeed({
     entries: [
       push([{ path: "a.ts", added: 1, removed: 0 }]),
       push([{ path: "a.ts", added: 3, removed: 1 }]),
-      push([{ path: "a.ts", added: 2, removed: 0 }, { path: "b.ts", added: 1, removed: 0 }]),
-      push([{ path: "b.ts", added: 1, removed: 0 }, { path: "a.ts", added: 9, removed: 0 }]),
+      push([
+        { path: "a.ts", added: 2, removed: 0 },
+        { path: "b.ts", added: 1, removed: 0 },
+      ]),
+      push([
+        { path: "b.ts", added: 1, removed: 0 },
+        { path: "a.ts", added: 9, removed: 0 },
+      ]),
     ],
     visibility: feedVisibility("everything", false),
     density: "everything",
@@ -245,7 +360,10 @@ test("a files-changed rule renders once per change in which files are touched, n
   });
   let lines = 0;
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (!node || typeof node !== "object") return;
     const el = node as { type?: unknown; props?: Record<string, unknown> };
     if (el.type === ToolCallLine) lines++;
@@ -263,8 +381,21 @@ test("a files-changed rule renders once per change in which files are touched, n
 test("a silenced tool_progress still reaches its tool row as elapsed time", () => {
   const tree = SessionFeed({
     entries: [
-      entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_E", tool: "Bash", input: { command: "go test ./..." } })),
-      sig({ sdk: "tool_progress", tool_use_id: "toolu_E-heartbeat-0", parent_tool_use_id: "toolu_E", tool_name: "Bash", elapsed_time_seconds: 90 }),
+      entry(
+        TranscriptEntryType.ASSISTANT,
+        JSON.stringify({
+          id: "toolu_E",
+          tool: "Bash",
+          input: { command: "go test ./..." },
+        }),
+      ),
+      sig({
+        sdk: "tool_progress",
+        tool_use_id: "toolu_E-heartbeat-0",
+        parent_tool_use_id: "toolu_E",
+        tool_name: "Bash",
+        elapsed_time_seconds: 90,
+      }),
     ],
     visibility: feedVisibility("everything", false),
     density: "everything",
@@ -277,10 +408,14 @@ test("a silenced tool_progress still reaches its tool row as elapsed time", () =
 
   const groups: { elapsedById: Map<string, number> }[] = [];
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (!node || typeof node !== "object") return;
     const el = node as { type?: unknown; props?: Record<string, unknown> };
-    if (el.props?.elapsedById) groups.push(el.props as { elapsedById: Map<string, number> });
+    if (el.props?.elapsedById)
+      groups.push(el.props as { elapsedById: Map<string, number> });
     if (el.props?.children) walk(el.props.children);
   };
   walk(tree);
@@ -292,11 +427,27 @@ test("a silenced tool_progress still reaches its tool row as elapsed time", () =
 // The tool row is told which calls were denied, so it can say "denied"
 // instead of "failed" — matched per call, never by reason text.
 test("a tool row knows which of its calls a human denied", () => {
-  const request = entry(TranscriptEntryType.PERMISSION_REQUEST, JSON.stringify({ tool: "Bash", input: { command: "rm x" } }));
-  const response = { ...entry(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior: "deny", message: " not now " })), replyTo: request.seq } as TranscriptEntry;
+  const request = entry(
+    TranscriptEntryType.PERMISSION_REQUEST,
+    JSON.stringify({ tool: "Bash", input: { command: "rm x" } }),
+  );
+  const response = {
+    ...entry(
+      TranscriptEntryType.PERMISSION_RESPONSE,
+      JSON.stringify({ behavior: "deny", message: " not now " }),
+    ),
+    replyTo: request.seq,
+  } as TranscriptEntry;
   const tree = SessionFeed({
     entries: [
-      entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_D", tool: "Bash", input: { command: "rm x" } })),
+      entry(
+        TranscriptEntryType.ASSISTANT,
+        JSON.stringify({
+          id: "toolu_D",
+          tool: "Bash",
+          input: { command: "rm x" },
+        }),
+      ),
       request,
       response,
     ],
@@ -310,7 +461,10 @@ test("a tool row knows which of its calls a human denied", () => {
   });
   const denied: Set<string>[] = [];
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (!node || typeof node !== "object") return;
     const el = node as { type?: unknown; props?: Record<string, unknown> };
     if (el.props?.deniedIds) denied.push(el.props.deniedIds as Set<string>);
@@ -326,12 +480,38 @@ test("a tool row knows which of its calls a human denied", () => {
 // the instant it launched, so this is the ONLY thing that ever says the
 // command finished. Silencing it wholesale made that invisible.
 test("a subagent's task_notification is silenced but a background command's is not", () => {
-  const agentCall = entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_A", tool: "Agent", input: { subagent_type: "Explore" } }));
-  const forAgent = sig({ sdk: "task_notification", task_id: "t", tool_use_id: "toolu_A", status: "completed", summary: "agent done" });
+  const agentCall = entry(
+    TranscriptEntryType.ASSISTANT,
+    JSON.stringify({
+      id: "toolu_A",
+      tool: "Agent",
+      input: { subagent_type: "Explore" },
+    }),
+  );
+  const forAgent = sig({
+    sdk: "task_notification",
+    task_id: "t",
+    tool_use_id: "toolu_A",
+    status: "completed",
+    summary: "agent done",
+  });
   expect(renderedEntryViews([agentCall, forAgent])).toHaveLength(0);
 
-  const bashCall = entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_B", tool: "Bash", input: { command: "sleep 45", run_in_background: true } }));
-  const forBash = sig({ sdk: "task_notification", task_id: "t", tool_use_id: "toolu_B", status: "completed", summary: "Background command completed (exit code 0)" });
+  const bashCall = entry(
+    TranscriptEntryType.ASSISTANT,
+    JSON.stringify({
+      id: "toolu_B",
+      tool: "Bash",
+      input: { command: "sleep 45", run_in_background: true },
+    }),
+  );
+  const forBash = sig({
+    sdk: "task_notification",
+    task_id: "t",
+    tool_use_id: "toolu_B",
+    status: "completed",
+    summary: "Background command completed (exit code 0)",
+  });
   expect(renderedEntryViews([bashCall, forBash])).toHaveLength(1);
 });
 
@@ -358,7 +538,9 @@ const orphanResult = () =>
 // component (same limitation it already has for TranscriptEntryView), so the
 // rendered STRINGS are asserted in the Playwright spec instead — this pins the
 // routing decision, which is where the bug was.
-function orphanProps(entries: TranscriptEntry[]): { result?: { toolUseId?: string; isError?: boolean } }[] {
+function orphanProps(
+  entries: TranscriptEntry[],
+): { result?: { toolUseId?: string; isError?: boolean } }[] {
   const tree = SessionFeed({
     entries,
     visibility: feedVisibility("everything", false),
@@ -370,7 +552,10 @@ function orphanProps(entries: TranscriptEntry[]): { result?: { toolUseId?: strin
   });
   const found: { result?: { toolUseId?: string; isError?: boolean } }[] = [];
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (!node || typeof node !== "object") return;
     const el = node as { props?: Record<string, unknown> };
     if (el.props && "result" in el.props) found.push(el.props as never);
@@ -409,7 +594,10 @@ test("an orphaned tool_result is hidden when tool rows are", () => {
   });
   let text = "";
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
     if (typeof node === "string") text += node;
     if (!node || typeof node !== "object") return;
     const el = node as { props?: Record<string, unknown> };
@@ -425,8 +613,22 @@ test("an orphaned tool_result is hidden when tool rows are", () => {
 test("a paired tool_result is not also rendered as an orphan", () => {
   expect(
     orphanProps([
-      entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_paired", tool: "Bash", input: { command: "go build ./..." } })),
-      entry(TranscriptEntryType.USER, JSON.stringify({ toolUseId: "toolu_paired", isError: false, content: "ok" })),
+      entry(
+        TranscriptEntryType.ASSISTANT,
+        JSON.stringify({
+          id: "toolu_paired",
+          tool: "Bash",
+          input: { command: "go build ./..." },
+        }),
+      ),
+      entry(
+        TranscriptEntryType.USER,
+        JSON.stringify({
+          toolUseId: "toolu_paired",
+          isError: false,
+          content: "ok",
+        }),
+      ),
     ]),
   ).toHaveLength(0);
 });

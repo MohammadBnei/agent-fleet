@@ -18,14 +18,23 @@ test("island imports stay off DashboardService and the console", () => {
     if (!/\.(ts|svelte)$/.test(f) || f.endsWith(".test.ts")) continue;
     const src = readFileSync(new URL(f, import.meta.url), "utf8");
     for (const [, spec] of src.matchAll(importRe)) {
-      if (spec.includes("dashboard") && !allowed.has(spec)) bad.push(`${f}: ${spec}`);
+      if (spec.includes("dashboard") && !allowed.has(spec))
+        bad.push(`${f}: ${spec}`);
     }
   }
   expect(bad).toEqual([]);
 });
 
 test("dashboard/src/transcript.ts imports nothing but generated messages", () => {
-  const src = readFileSync(new URL("../../dashboard/src/transcript.ts", import.meta.url), "utf8");
+  const src = readFileSync(
+    new URL("../../dashboard/src/transcript.ts", import.meta.url),
+    "utf8",
+  );
   const specs = [...src.matchAll(importRe)].map((m) => m[1]);
-  expect(specs.filter((s) => !s.startsWith("./gen/agentfleet/v1/") || s.includes("dashboard_pb"))).toEqual([]);
+  expect(
+    specs.filter(
+      (s) =>
+        !s.startsWith("./gen/agentfleet/v1/") || s.includes("dashboard_pb"),
+    ),
+  ).toEqual([]);
 });

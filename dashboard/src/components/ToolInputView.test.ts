@@ -1,9 +1,12 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import { diffLines } from "./ToolInputView";
 
 function render(before: string, after: string): string {
   return diffLines(before, after)
-    .map((l) => `${l.kind === "add" ? "+" : l.kind === "remove" ? "-" : " "}${l.text}`)
+    .map(
+      (l) =>
+        `${l.kind === "add" ? "+" : l.kind === "remove" ? "-" : " "}${l.text}`,
+    )
     .join("\n");
 }
 
@@ -26,7 +29,9 @@ test("an empty before makes the whole content an addition", () => {
 });
 
 test("identical input produces no change markers", () => {
-  expect(diffLines("a\nb", "a\nb").every((l) => l.kind === "context")).toBe(true);
+  expect(diffLines("a\nb", "a\nb").every((l) => l.kind === "context")).toBe(
+    true,
+  );
 });
 
 // Moved-block behaviour: LCS keeps the longest run, so the shorter

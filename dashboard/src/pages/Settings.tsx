@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Segmented } from "../components/Segmented";
 import { GrantsPanel } from "../components/GrantsPanel";
 import { PacksPanel } from "../components/PacksPanel";
 import { ReposPanel } from "../components/ReposPanel";
-import type { Theme } from "../useTheme";
-import { useIdentity } from "../useIdentity";
+import { Segmented } from "../components/Segmented";
 import type { FeedWidth } from "../useFeedWidth";
+import { useIdentity } from "../useIdentity";
+import type { Theme } from "../useTheme";
 
 // The ⚙ page. It replaced a popover that held three modal triggers, a theme
 // switch and the sign-out link: a third editor (context packs) made a menu of
@@ -15,7 +15,11 @@ type Section = "packs" | "grants" | "repos" | "appearance" | "account";
 
 const SECTIONS: readonly { value: Section; label: string; hint: string }[] = [
   { value: "packs", label: "Packs", hint: "What agents load at start" },
-  { value: "grants", label: "Grants", hint: "Approvals remembered for a definition" },
+  {
+    value: "grants",
+    label: "Grants",
+    hint: "Approvals remembered for a definition",
+  },
   { value: "repos", label: "Repos", hint: "Repos in the fleet" },
   { value: "appearance", label: "Appearance", hint: "Theme and text width" },
   { value: "account", label: "Account", hint: "Who is signed in" },
@@ -40,7 +44,12 @@ function readSection(): Section {
   return SECTIONS.some((x) => x.value === s) ? (s as Section) : "packs";
 }
 
-export function Settings({ theme, onThemeChange, feedWidth, onFeedWidthChange }: {
+export function Settings({
+  theme,
+  onThemeChange,
+  feedWidth,
+  onFeedWidthChange,
+}: {
   theme: Theme;
   onThemeChange: (t: Theme) => void;
   feedWidth: FeedWidth;
@@ -61,7 +70,9 @@ export function Settings({ theme, onThemeChange, feedWidth, onFeedWidthChange }:
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="mx-auto max-w-4xl flex flex-col md:flex-row gap-6 px-4 py-5">
         <nav className="md:w-48 flex-none">
-          <h2 className="text-2xs tracking-[0.12em] text-dim2 mb-2">SETTINGS</h2>
+          <h2 className="text-2xs tracking-[0.12em] text-dim2 mb-2">
+            SETTINGS
+          </h2>
           {/* Mobile: one picker. Desktop: the list. */}
           <select
             value={section}
@@ -82,7 +93,9 @@ export function Settings({ theme, onThemeChange, feedWidth, onFeedWidthChange }:
                   onClick={() => choose(s.value)}
                   aria-current={section === s.value ? "page" : undefined}
                   className={`w-full text-left px-2 py-1.5 border-l-2 ${
-                    section === s.value ? "border-primary bg-base-content/5 text-base-content" : "border-transparent text-dim hover:text-base-content"
+                    section === s.value
+                      ? "border-primary bg-base-content/5 text-base-content"
+                      : "border-transparent text-dim hover:text-base-content"
                   }`}
                 >
                   <div className="text-sm">{s.label}</div>
@@ -101,12 +114,28 @@ export function Settings({ theme, onThemeChange, feedWidth, onFeedWidthChange }:
             <div className="flex flex-col gap-4 max-w-sm">
               <h3 className="font-semibold text-base">Appearance</h3>
               <div className="flex flex-col gap-1.5">
-                <span className="text-2xs tracking-[0.12em] text-dim2">THEME</span>
-                <Segmented value={theme} options={THEMES} onChange={onThemeChange} grow size="sm" />
+                <span className="text-2xs tracking-[0.12em] text-dim2">
+                  THEME
+                </span>
+                <Segmented
+                  value={theme}
+                  options={THEMES}
+                  onChange={onThemeChange}
+                  grow
+                  size="sm"
+                />
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className="text-2xs tracking-[0.12em] text-dim2">TEXT WIDTH</span>
-                <Segmented value={feedWidth} options={WIDTHS} onChange={onFeedWidthChange} grow size="sm" />
+                <span className="text-2xs tracking-[0.12em] text-dim2">
+                  TEXT WIDTH
+                </span>
+                <Segmented
+                  value={feedWidth}
+                  options={WIDTHS}
+                  onChange={onFeedWidthChange}
+                  grow
+                  size="sm"
+                />
               </div>
             </div>
           )}
@@ -122,14 +151,20 @@ export function Settings({ theme, onThemeChange, feedWidth, onFeedWidthChange }:
               {identity?.email ? (
                 <>
                   <span className="text-sm">
-                    Signed in as <span className="font-medium">{identity.email}</span>
+                    Signed in as{" "}
+                    <span className="font-medium">{identity.email}</span>
                   </span>
-                  <a href="/auth/logout" className="text-xs text-dim underline underline-offset-2 hover:text-base-content self-start">
+                  <a
+                    href="/auth/logout"
+                    className="text-xs text-dim underline underline-offset-2 hover:text-base-content self-start"
+                  >
                     sign out
                   </a>
                 </>
               ) : (
-                <span className="text-sm text-dim">Sign-in is off on this console (local stack).</span>
+                <span className="text-sm text-dim">
+                  Sign-in is off on this console (local stack).
+                </span>
               )}
             </div>
           )}

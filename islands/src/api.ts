@@ -1,4 +1,9 @@
-import { createClient, type Client, type Interceptor, type Transport } from "@connectrpc/connect";
+import {
+  type Client,
+  createClient,
+  type Interceptor,
+  type Transport,
+} from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { AgentService } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
 
@@ -26,10 +31,16 @@ export function agentClient(): AgentClient {
   transport ??= createConnectTransport({
     baseUrl: fleetOrigin,
     // The fleet cookie is same-site for *.bnei.dev hosts (§3).
-    fetch: ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, credentials: "include" })) as typeof fetch,
+    fetch: ((input: RequestInfo | URL, init?: RequestInit) =>
+      fetch(input, { ...init, credentials: "include" })) as typeof fetch,
     interceptors: [csrf],
   });
   return createClient(AgentService, transport);
 }
 
-export { errorText, isAlreadyAnswered, isStale, isUnauthenticated } from "./errors";
+export {
+  errorText,
+  isAlreadyAnswered,
+  isStale,
+  isUnauthenticated,
+} from "./errors";

@@ -42,7 +42,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)),
+        ),
+      )
       // Take over open tabs immediately: a console left open for hours must not
       // keep an old worker (and old shell) alive after a deploy.
       .then(() => self.clients.claim()),
@@ -51,7 +55,7 @@ self.addEventListener("activate", (event) => {
 
 function cacheable(response) {
   // Never store a redirect, an error, or a cross-origin opaque response.
-  return response && response.ok && response.type === "basic";
+  return response?.ok && response.type === "basic";
 }
 
 self.addEventListener("fetch", (event) => {
@@ -97,7 +101,9 @@ self.addEventListener("fetch", (event) => {
           }
           return res;
         })
-        .catch(() => caches.match(SHELL).then((hit) => hit ?? Response.error())),
+        .catch(() =>
+          caches.match(SHELL).then((hit) => hit ?? Response.error()),
+        ),
     );
     return;
   }
