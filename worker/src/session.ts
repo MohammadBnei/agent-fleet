@@ -1,4 +1,4 @@
-import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode, type EffortLevel, type PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query, type SDKUserMessage, type PermissionResult, type PermissionMode, type EffortLevel, type PreToolUseHookInput, type PostToolUseHookInput, type HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
 import type { AgentSpec } from "./sidecarClient.js";
 import { log } from "./log.js";
@@ -84,34 +84,62 @@ const TAINT_UNKNOWN = "Denied: could not check whether this session is tainted (
 // docs/adr/0082 §3's outside reads, by command text: `gh` against issues, PRs,
 // comments or CI, `curl`/`wget`, and `git fetch`/`pull` of a non-default ref.
 // A command counts where a shell would run it: at the start, after a
-// separator, `$(`, a backtick or `sh -c '`, behind env assignments and the
-// usual wrappers (sudo, env, rtk, xargs, timeout …), with or without a path.
-// So `git commit -m "drop curl"` is not a read. An unknown `gh` form, git
-// option, remote or ref is one: over-matching taints a session that read
+// separator or `{`, `$(`, a backtick, a `-c '` / `-lc "` string or `eval`,
+// behind the shell's reserved words (`do`, `then`, `if`, `!` …), env
+// assignments and the usual wrappers with their options (`sudo -u x`, `env
+// -i`, `timeout -s KILL 5`, `watch -n5`, rtk, xargs …), with or without a
+// path. So `git commit -m "drop curl"` is not a read. An unknown `gh` form,
+// git option, remote or ref is one: over-matching taints a session that read
 // nothing outside, the safe direction.
 // ponytail: the command text, not a bash parse, as AUTO_MODE_STILL_ASKS_BASH:
 // a separator inside quotes (`-m "a; curl"`) still counts, and `python -c
-// 'urlopen(…)'`, `$GH pr view` or an unlisted wrapper (`nice curl`) does not.
-// The ceiling is the rule's own: it names commands, not network access.
-const CMD_AT = String.raw`(?:^|[;&|(\x60\n]|\$\(|\s-c\s+['"])\s*(?:(?:\w+=\S*|sudo|env|rtk(?:\s+proxy)?|command|exec|xargs|time|nohup|timeout\s+\S+)\s+)*(?:[^\s;&|]*/)?`;
+// 'urlopen(…)'`, `$GH pr view` or an unlisted wrapper does not. The ceiling is
+// the rule's own: it names commands, not network access.
+const PREFIX_WORD = String.raw`(?:!|do|then|else|elif|if|while|until|time|sudo|env|nice|ionice|stdbuf|watch|nohup|command|exec|xargs|rtk|timeout)`;
+// A wrapper's options, each with at most one argument. An argument is never
+// a command this rule names, another wrapper or an env assignment, so each
+// command has one parse: without that, `sudo -u env -u env …` backtracks
+// exponentially.
+const WRAPPER_OPTS = String.raw`(?:\s+-\S+(?:\s+(?!(?:[^\s;&|]*/)?(?:curl|wget|gh|git|${PREFIX_WORD})(?:\s|$)|\w+=)[^\s;&|-]\S*)?)*`;
+const CMD_AT = String.raw`(?:^|[;&|(\x60\n{]|\$\(|\s-[a-zA-Z]*c\s+['"]|\beval\s+['"]?)\s*(?:(?:\w+=\S*|!|do|then|else|elif|if|while|until|time|sudo|env|nice|ionice|stdbuf|watch|nohup|command|exec|xargs|rtk(?:\s+proxy)?|timeout${WRAPPER_OPTS}\s+\d\S*)${WRAPPER_OPTS}\s+)*(?:[^\s;&|]*/)?`;
 const CURL_WGET = new RegExp(`${CMD_AT}(?:curl|wget)(?=\\s|$|[;&|)])`);
 const GH_CALL = new RegExp(`${CMD_AT}gh\\s+(\\S+)(?:\\s+(\\S+))?`, "g");
 // gh forms that write and print only a URL or a status, never outside text.
 const GH_NO_READ = new Set(["pr create", "pr comment", "pr edit", "pr ready", "issue create", "issue comment", "issue edit", "auth status"]);
 // git's global options before the verb are captured whole and checked below.
-const GIT_SYNC = new RegExp(`${CMD_AT}git((?:\\s+-\\S+(?:\\s+(?!fetch\\b|pull\\b)[^\\s;&|-]\\S*)?)*)\\s+(?:fetch|pull)(?=\\s|$)([^;&|\\n)]*)`, "g");
+const GIT_GLOBALS = String.raw`((?:\s+-\S+(?:\s+(?!fetch\b|pull\b)[^\s;&|-]\S*)?)*)`;
+const GIT_SYNC = new RegExp(`${CMD_AT}git${GIT_GLOBALS}\\s+(?:fetch|pull)(?=\\s|$)([^;&|\\n)]*)`, "g");
+// Verbs that always fetch from outside: another repository, every remote, a
+// submodule's own remote, or a remote's ref list.
+const GIT_REMOTE = new RegExp(`${CMD_AT}git(?:\\s+-\\S+(?:\\s+(?!clone\\b|ls-remote\\b|remote\\b|submodule\\b)[^\\s;&|-]\\S*)?)*\\s+(?:clone|ls-remote|remote\\s+update|submodule\\s+update)(?=\\s|$)`);
 // Global options that cannot point a fetch somewhere else. Anything else
 // (`-c remote.origin.url=…`, `--git-dir`, `-C` into another repository) can.
 const GIT_GLOBAL_INERT = new Set(["--no-pager", "-P"]);
 const GIT_SYNC_FLAGS = new Set(["-q", "--quiet", "-p", "--prune", "--rebase", "-r", "--ff-only", "--no-rebase"]);
+// Every browser call, and every log read: a page, or a line a stranger's
+// request wrote into an app's log, is text the session did not write.
+// ponytail: every Playwright call, the session's own preview on localhost
+// included, since what a page shows (or a click opens) is not the session's
+// to vouch for. A loopback carve-out is the upgrade, if the owner wants it.
+const OUTSIDE_TOOL = /^mcp__playwright__|^mcp__agent-fleet-sidecar__view_logs$/;
+
+// The command as a shell would split it: a backslash-newline joins two
+// lines, and a commit message or PR body written through a heredoc
+// (`-m "$(cat <<'EOF' … EOF)"`, Claude Code's own way) is data, not commands.
+function shellText(command: string): string {
+  return command
+    .replace(/\\\n/g, " ")
+    .replace(/((?:-m|--message|--body|--title|--notes|-b|-t)\s+"?\$\(cat\s+<<-?\s*)(['"]?)(\w+)\2[^\n]*\n[\s\S]*?\n\s*\3[ \t]*(?=\n|$)/g, "$1");
+}
 
 // Whether a call is an outside read. `git fetch`/`pull` is one unless it names
 // at most `origin` and one of `branches` (the clone's origin/HEAD and the
 // branch the session started on); `-C` may only name the worktree.
 export function outsideRead(toolName: string, input: Record<string, unknown>, branches: string[] = [], worktree = WORKTREE_PATH): boolean {
+  if (OUTSIDE_TOOL.test(toolName)) return true;
   if (toolName !== "Bash" || typeof input.command !== "string") return false;
-  const command = input.command;
-  if (CURL_WGET.test(command)) return true;
+  const command = shellText(input.command);
+  if (CURL_WGET.test(command) || GIT_REMOTE.test(command)) return true;
   for (const m of command.matchAll(GH_CALL)) if (!GH_NO_READ.has(`${m[1]} ${m[2] ?? ""}`)) return true;
   for (const m of command.matchAll(GIT_SYNC)) {
     const globals = m[1].split(/\s+/).filter((w) => w !== "");
@@ -119,13 +147,48 @@ export function outsideRead(toolName: string, input: Record<string, unknown>, br
       if (globals[i] === "-C" && (globals[i + 1] === "." || globals[i + 1] === worktree)) i++;
       else if (!GIT_GLOBAL_INERT.has(globals[i])) return true;
     }
-    const words = m[2].split(/\s+/).filter((w) => w !== "" && !GIT_SYNC_FLAGS.has(w));
+    // Redirections (`2>&1`, `>/dev/null`) are not arguments.
+    const words = m[2].replace(/\d*[<>]+\s*\S*/g, " ").split(/\s+/).filter((w) => w !== "" && !GIT_SYNC_FLAGS.has(w));
     if (words.length > 2 || words.some((w) => w.startsWith("-"))) return true;
     if (words[0] !== undefined && words[0] !== "origin") return true;
     if (words[1] !== undefined && !branches.includes(words[1])) return true;
   }
   return false;
 }
+
+// What an outside read may be piped into: filters that show its bytes and
+// run nothing.
+const TEXT_FILTER = new Set(["head", "tail", "jq", "grep", "egrep", "fgrep", "wc", "sort", "uniq", "cut", "tr", "column", "cat"]);
+// A word that can run the text it is given, which makes a quoted string code.
+const RUNS_TEXT = /\b(?:sh|bash|zsh|dash|ksh|fish|eval|source|exec|xargs|env|sudo|python[\d.]*|node|bun|deno|perl|ruby|php|awk|sed)\b/;
+
+// Whether an outside read is the whole command (docs/adr/0082 §3): the call
+// that taints is decided as a clean one, so nothing may run after the
+// outside bytes arrive. No `;`, `&`, `&&`, `||`, newline, `$(`, backtick or
+// process substitution, and a pipe only into TEXT_FILTER. Single-quoted text
+// is data unless something in the command runs text.
+export function readsAlone(command: string): boolean {
+  let c = shellText(command).replace(/\d*>&\d+/g, " ");
+  if (!RUNS_TEXT.test(c)) c = c.replace(/'[^']*'/g, "''");
+  if (/[;&\n\x60]|\$\(|[<>]\(/.test(c)) return false;
+  return c.split("|").slice(1).every((seg) => TEXT_FILTER.has((seg.trim().split(/\s+/)[0] ?? "").replace(/^.*\//, "")));
+}
+
+// What the mark entry quotes: the command, or the tool and its input.
+function readText(toolName: string, input: Record<string, unknown>): string {
+  return toolName === "Bash" ? String(input.command) : `${toolName} ${JSON.stringify(input)}`;
+}
+
+// Whether the SDK sends this outside read to canUseTool: a Bash command that
+// leads with a FLEET_ASK_RULES prefix is an ask in every mode, `auto`
+// included. Anything else (a wrapper in front, an MCP tool in allowedTools)
+// may run without it.
+function reachesCanUseTool(toolName: string, input: Record<string, unknown>): boolean {
+  return toolName === "Bash" && /^\s*(?:gh|curl|wget|git\s+(?:fetch|pull))(?=\s|$)/.test(String(input.command));
+}
+
+export const READ_NOT_ALONE =
+  "Denied: this command makes an outside read (ADR-0082) and does more besides. An outside read taints the session, after which it may only read, so it must run on its own, piped at most into head, tail, grep, jq, wc, sort, uniq, cut, tr, column or cat. Run the read alone; nothing else in this command ran.";
 
 // The branches a fetch or pull may name without being an outside read: the
 // clone's default (origin/HEAD) and the one checked out at start, which is
@@ -1191,8 +1254,12 @@ export async function runSession(): Promise<SessionResult> {
   let tainted = false;
   const syncBranches = syncBranchesOf(WORKTREE_PATH);
   // The outside reads already marked, by tool_use id: the one call that
-  // taints the session is still decided as a clean one.
+  // taints the session is still decided as a clean one (readsAlone keeps it
+  // to that one read).
   const markedReads = new Set<string>();
+  // The outside reads the hook left for canUseTool to mark once it allows
+  // them, so that a read a human denies taints nothing; by tool_use id.
+  const pendingReads = new Map<string, string>();
   async function taintedDeny(toolName: string, toolUseID?: string): Promise<string | undefined> {
     if (T2_TOOLS.has(toolName) || (toolUseID !== undefined && markedReads.has(toolUseID))) return undefined;
     try {
@@ -1218,6 +1285,19 @@ export async function runSession(): Promise<SessionResult> {
     if (toolUseID !== undefined) markedReads.add(toolUseID);
     return undefined;
   }
+
+  // PostToolUse and PostToolUseFailure: see pendingReads.
+  const markLate: HookCallback = async (hookInput, sdkToolUseID) => {
+    const id = sdkToolUseID ?? (hookInput as PostToolUseHookInput).tool_use_id;
+    const read = pendingReads.get(id);
+    pendingReads.delete(id);
+    if (read !== undefined && !markedReads.has(id)) {
+      tainted = true;
+      log("warn", "an outside read ran without canUseTool marking it; marked late", { taskId: SESSION_ID });
+      await markOutsideRead(read, id);
+    }
+    return {};
+  };
 
   // What canUseTool answers for an untainted session: the definition's
   // decision or the fleet's own tools, the fleet's auto, else a human.
@@ -1426,7 +1506,7 @@ export async function runSession(): Promise<SessionResult> {
         // the command (a repo session's updatedInput) is marked here.
         const ran = (result.updatedInput ?? toolInput) as Record<string, unknown>;
         if (!markedReads.has(toolUseID) && outsideRead(toolName, ran, syncBranches)) {
-          const failed = await markOutsideRead(String(ran.command), toolUseID);
+          const failed = await markOutsideRead(readText(toolName, ran), toolUseID);
           if (failed) return { behavior: "deny", message: failed };
         }
         return result;
@@ -1440,17 +1520,24 @@ export async function runSession(): Promise<SessionResult> {
         PreToolUse: [
           {
             hooks: [
-              async (hookInput, toolUseID) => {
-                const { tool_name: toolName, tool_input: toolInput } = hookInput as PreToolUseHookInput;
+              async (hookInput, sdkToolUseID) => {
+                const { tool_name: toolName, tool_input: toolInput, tool_use_id } = hookInput as PreToolUseHookInput;
+                // The SDK types the callback's id as optional; the input always carries it.
+                const toolUseID = sdkToolUseID ?? tool_use_id;
                 const deny = (reason: string) => ({ hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: reason } });
-                const refused = await taintedDeny(toolName);
+                const refused = await taintedDeny(toolName, toolUseID);
                 if (refused) return deny(refused);
-                // Every outside read is marked here, whichever path then
-                // allows it (canUseTool, allowedTools, the SDK's own auto).
-                // One a human then denies still taints: the safe direction.
                 const input = (toolInput ?? {}) as Record<string, unknown>;
-                if (outsideRead(toolName, input, syncBranches)) {
-                  const failed = await markOutsideRead(String(input.command), toolUseID);
+                if (!outsideRead(toolName, input, syncBranches)) return {};
+                if (toolName === "Bash" && !readsAlone(String(input.command))) return deny(READ_NOT_ALONE);
+                // A read that leads with a FLEET_ASK_RULES prefix reaches
+                // canUseTool, which marks it once it is allowed, so one a
+                // human denies (or never answers) taints nothing. Every
+                // other read is marked here, before it runs, whichever path
+                // then allows it (allowedTools, the SDK's own auto).
+                if (reachesCanUseTool(toolName, input)) pendingReads.set(toolUseID, readText(toolName, input));
+                else {
+                  const failed = await markOutsideRead(readText(toolName, input), toolUseID);
                   if (failed) return deny(failed);
                 }
                 return {};
@@ -1458,6 +1545,10 @@ export async function runSession(): Promise<SessionResult> {
             ],
           },
         ],
+        // The backstop for pendingReads: a read that ran without canUseTool
+        // marking it is marked now, late, and latched whatever core says.
+        PostToolUse: [{ hooks: [markLate] }],
+        PostToolUseFailure: [{ hooks: [markLate] }],
       },
       mcpServers: {
         "agent-fleet-sidecar": sidecarMcpServer(),

@@ -14,12 +14,16 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   `auto` the worker answers them for you — only `rm` and `sudo` still reach a
   human (`docs/adr/0053`)
 - **Outside reads taint the session** (`docs/adr/0082`): `gh` against issues,
-  PRs, comments or CI, `curl`/`wget`, and `git fetch`/`pull` naming anything
-  but `origin` and the default branch or the one you started on (so prefer
-  `git pull --rebase origin <that branch>`). So does untrusted input. A
-  tainted session may only `Read`, `Glob` and `Grep` and report to the owner in
-  its reply, for the rest of its life, whatever the mode. `WebFetch` and
-  `WebSearch` are not available
+  PRs, comments or CI, `curl`/`wget`, `git clone`/`ls-remote`/`remote update`/
+  `submodule update`, `git fetch`/`pull` naming anything but `origin` and the
+  default branch or the one you started on (so prefer `git pull --rebase
+  origin <that branch>`), every Playwright browser call, and `view_logs`. So
+  does untrusted input. A tainted session may only `Read`, `Glob` and `Grep`
+  and report to the owner in its reply, for the rest of its life, whatever the
+  mode. Run an outside read on its own (piped at most into `head`, `tail`,
+  `grep`, `jq`, `wc`, `sort`, `uniq`, `cut`, `tr`, `column` or `cat`): one
+  chained to anything else is refused. So do the reads you need last, and push
+  first. `WebFetch` and `WebSearch` are not available
 - Skills: `change-loop` before any non-trivial change (plan, doubt cycle, proof first, review); `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Interrupts common (stop/timeout/crash). Land coherent increments, not half-states

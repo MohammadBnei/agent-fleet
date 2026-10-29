@@ -324,7 +324,13 @@ permission tiers instead of a second, fleet-specific gate on top of them
   an untrusted entry, or an outside read the worker marked through core's
   `Taint`) may only `Read`/`Glob`/`Grep`: `canUseTool` and a `PreToolUse` hook
   deny the rest, whatever the mode, `tools.allow` or a grant says, and core
-  refuses its `PublishEvent`, `PromptSession`, `Expose` and `RequestService`. `canUseTool`'s only remaining job: post a `permission_request`
+  refuses its `PublishEvent`, `PromptSession`, `Expose`, `RequestService`,
+  `AppendJournal`, `GetFileUploadUrl`, `DeleteFile` and `UpdateSessionMeta`.
+  An outside read (by command text, plus every Playwright call and
+  `view_logs`) must be the whole command, or the hook refuses it; one that
+  leads with a `FLEET_ASK_RULES` prefix is marked when `canUseTool` allows it,
+  so a denied ask taints nothing, and every other one in the hook before it
+  runs. `canUseTool`'s only remaining job: post a `permission_request`
   transcript entry and block on the matching `permission_response` —
   generalizing `ExitPlanMode`'s own original ask-and-block-and-resolve
   pattern from one hardcoded case to a `Map<seq, resolver>` so parallel
