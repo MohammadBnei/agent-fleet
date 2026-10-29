@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -338,13 +339,16 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// perfectly healthy. Refusing to start is loud; serving unauthenticated is
 	// not. FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out, so "no
 	// auth" is always something someone wrote down.
-	var authInterceptors, memberInterceptors []connect.Interceptor
+	var authInterceptors []connect.Interceptor
+	memberInterceptors := devInterceptors(cfg.AuthDisabled)
 	gate := func(h http.Handler) http.Handler { return h }
 	// The constant, not NewAgentServiceHandler(nil): the generated constructor
 	// reads method values off its argument and panics on nil.
 	agentPath := "/" + agentfleetv1connect.AgentServiceName + "/"
 	if cfg.AuthDisabled {
 		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
+		slog.Warn("FLEET_AUTH_DISABLED=1: AgentService calls run as the dev identity",
+			"email", devIdentity.Email, "group", auth.RequiredGroup, "dev_origins", cfg.DevOrigins)
 	} else {
 		if err := requireOIDC(cfg); err != nil {
 			return fmt.Errorf("oidc setup (set FLEET_AUTH_DISABLED=1 for a local stack): %w", err)
@@ -412,10 +416,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	alertHandler.SetInactive(repoStore.Inactive)
 	mux.Handle("/webhook/alertmanager", alertHandler)
 	mux.Handle(dashboardPath, dashboardHandler)
-	// With FLEET_AUTH_DISABLED=1 no identity is set, so every AgentService
-	// call is Unauthenticated: the service has no unauthenticated mode.
+	// With FLEET_AUTH_DISABLED=1 the identity is devIdentity (above).
 	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
-		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs)))...)
+		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.DevOrigins...))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
 	// definition threads through agentSvc as client bridge, and a firing
@@ -468,7 +471,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// closed. It also has to sit outside the SPA handler specifically, because
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
-	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), embedOrigins(defs))
+	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), withDev(embedOrigins(defs), cfg.DevOrigins))
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate, cors), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 
 	go func() {
@@ -495,6 +498,32 @@ func originOf(raw string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// devIdentity is every AgentService caller while the gate is off (FLEET_AUTH_DISABLED=1).
+var devIdentity = auth.Identity{Sub: "dev", Email: "dev@localhost", Groups: []string{auth.RequiredGroup}}
+
+// devInterceptors is AgentService's caller identity while the gate is off, and nothing while it is on. AgentService
+// has no anonymous mode, so with the gate off every call runs as one fixed admin; without it the decisions API, the
+// islands and the game could not be exercised on a local stack at all.
+func devInterceptors(authDisabled bool) []connect.Interceptor {
+	if !authDisabled {
+		return nil
+	}
+	return []connect.Interceptor{auth.DevInterceptor(devIdentity)}
+}
+
+// withDev adds the dev origins (set only with the gate off) to the origins CORS answers.
+func withDev(embed func() []string, dev []string) func() []string {
+	if len(dev) == 0 {
+		return embed
+	}
+	return func() []string {
+		if embed == nil {
+			return dev
+		}
+		return append(slices.Clone(dev), embed()...)
+	}
 }
 
 // embedOrigins is nil without a registry: no island is accepted.

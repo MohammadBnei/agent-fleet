@@ -811,7 +811,8 @@ the proxy variables) are theirs and not listed.
 | `OIDC_CLIENT_ID` | none | any (refuses: missing, with the gate on) | OIDC client |
 | `OIDC_CLIENT_SECRET` | none | any (refuses: missing, with the gate on) | secret |
 | `FLEET_SESSION_KEYS` | none | any, at least one non-blank key (refuses: missing, with the gate on) | secret, comma-separated cookie keys |
-| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on |
+| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on. With it, every AgentService call runs as the dev identity (`dev@localhost`, platform-admins) |
+| `FLEET_DEV_ORIGINS` | none | comma-separated `scheme://host[:port]` (refuses: malformed, or set with the gate on) | browser origins AgentService treats as the console's own while the gate is off, with CORS: a local game or the dashboard's vite proxy |
 | `FLEET_VERSION` | none | any | the release reported (`dev` without it) |
 | `CLAUDE_MODEL` | none | any | the operator's model override (`adr/0077`) |
 | `FLEET_PROVISIONER_TOKEN` | none | any | secret: the provisioner's bearer to `CoreService` |

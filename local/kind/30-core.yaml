@@ -59,6 +59,10 @@ spec:
             # this cluster has no authentik.
             - name: FLEET_AUTH_DISABLED
               value: "1"
+            # AgentService runs as the dev identity with the gate off; the
+            # port-forwarded console's origin must be admitted to reach it.
+            - name: FLEET_DEV_ORIGINS
+              value: "http://localhost:8080"
             # docs/adr/0057: the provisioner authenticates to CoreService with
             # this shared value. Unset on both sides, core starts but rejects
             # every pod event. Must equal 40-provisioner.yaml's. A local-only

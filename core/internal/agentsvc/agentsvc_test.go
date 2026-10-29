@@ -208,3 +208,41 @@ func TestOriginFence(t *testing.T) {
 		t.Errorf("admin, island: %v, %v", got, err)
 	}
 }
+
+// With the gate off (FLEET_AUTH_DISABLED=1) every call is the dev identity, and a dev origin passes as the
+// console's own: admin rights, so a local page sees every definition. Any other origin is still refused.
+func TestDevIdentityAndOrigins(t *testing.T) {
+	srv := &Server{definitions: fakeHeads{
+		{Name: "notes", SHA: "a", Effective: &definitions.Spec{Audience: &definitions.Audience{Group: "shared-notes"}}},
+		{Name: "ops", SHA: "c", Effective: &definitions.Spec{Audience: &definitions.Audience{Group: "platform-admins"}}},
+	}}
+	dev := auth.DevInterceptor(auth.Identity{Sub: "dev", Email: "dev@localhost", Groups: []string{auth.RequiredGroup}})
+	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(dev,
+		MemberInterceptor("", nil, "http://127.0.0.1:7410")))
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	hs := httptest.NewServer(mux)
+	t.Cleanup(hs.Close)
+	c := agentfleetv1connect.NewAgentServiceClient(hs.Client(), hs.URL)
+	list := func(origin string) (int, error) {
+		req := connect.NewRequest(&agentfleetv1.AgentServiceListDefinitionsRequest{})
+		if origin != "" {
+			req.Header().Set("Origin", origin)
+		}
+		r, err := c.ListDefinitions(context.Background(), req)
+		if err != nil {
+			return 0, err
+		}
+		return len(r.Msg.GetDefinitions()), nil
+	}
+	for _, o := range []string{"", "http://127.0.0.1:7410"} {
+		if n, err := list(o); err != nil || n != 2 {
+			t.Errorf("dev identity, origin %q: %d definitions, %v; want both, as admin", o, n, err)
+		}
+	}
+	for _, o := range []string{"http://127.0.0.1:7411", "http://localhost:7410", "null"} {
+		if _, err := list(o); connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Errorf("origin %q: %v; want PermissionDenied", o, err)
+		}
+	}
+}

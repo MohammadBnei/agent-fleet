@@ -118,8 +118,10 @@ Same DB env vars as above, still exported in this shell.
 
 ```bash
 # FLEET_AUTH_DISABLED=1: since docs/adr/0056 core refuses to start without OIDC
-# config, and this stack has no authentik.
-(cd core && FLEET_AUTH_DISABLED=1 PROVISIONER_GRPC_ADDR=127.0.0.1:9094 LOG_LEVEL=debug go run ./cmd/core) &
+# config, and this stack has no authentik. AgentService (the decisions store the
+# console's deck reads) then runs every call as the dev identity, and
+# FLEET_DEV_ORIGINS admits the vite dev server's origin, which its proxy forwards.
+(cd core && FLEET_AUTH_DISABLED=1 FLEET_DEV_ORIGINS=http://localhost:5173 PROVISIONER_GRPC_ADDR=127.0.0.1:9094 LOG_LEVEL=debug go run ./cmd/core) &
 CORE_PID=$!
 until curl -sf http://localhost:8080/healthz >/dev/null 2>&1; do sleep 0.5; done
 ```
