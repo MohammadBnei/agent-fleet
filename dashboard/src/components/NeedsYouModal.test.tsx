@@ -93,6 +93,8 @@ test("an open row names its kind, labels the agent's text and badges interrupted
   expect(html).toContain("Permission · waiting on you");
   expect(html).toContain("Agent claim");
   expect(html).toContain("interrupted");
+  // Its close is the interrupted bar's; the sheet adds no withdraw of its own.
+  expect(html).not.toMatch(/>\s*withdraw\s*</i);
 });
 
 // Withdrawing a live unstamped request hangs the old worker that is blocked

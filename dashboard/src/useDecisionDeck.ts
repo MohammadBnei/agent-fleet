@@ -11,7 +11,8 @@ import type { Decision } from "./gen/agentfleet/v1/agent_pb";
 // stream says when something changed, and every message (the baseline
 // included) re-lists, so a dropped message costs nothing but a late list.
 //
-// `available` goes false for good when AgentService refuses the viewer
+// `available` is false until the first list succeeds, and goes false for good
+// when AgentService refuses the viewer
 // (FLEET_AUTH_DISABLED=1 locally, or no grant): App then falls back to the
 // summaries-derived list it has always had.
 export function useDecisionDeck(): {
@@ -21,6 +22,10 @@ export function useDecisionDeck(): {
 } {
   const [open, setOpen] = useState<Decision[]>([]);
   const [available, setAvailable] = useState(true);
+  // Until one list succeeds the store has not shown it works: an older core's
+  // Unimplemented or a 5xx would otherwise read as an empty deck, hiding what
+  // the fallback shows.
+  const [loaded, setLoaded] = useState(false);
   // Lists can overlap (a watch message and a reload). Only the newest one's
   // answer lands, so an older, slower list cannot resurrect an answered row.
   const generation = useRef(0);
@@ -29,7 +34,9 @@ export function useDecisionDeck(): {
     const mine = ++generation.current;
     listOpenDecisions()
       .then((decisions) => {
-        if (mine === generation.current) setOpen(decisions);
+        if (mine !== generation.current) return;
+        setOpen(decisions);
+        setLoaded(true);
       })
       // A failed list keeps the last one: the stream's next message, or the
       // next reload, retries. Blanking the deck on one bad fetch would close
@@ -51,5 +58,5 @@ export function useDecisionDeck(): {
     });
   }, [relist]);
 
-  return { open, available, relist };
+  return { open, available: available && loaded, relist };
 }

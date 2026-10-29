@@ -151,6 +151,10 @@ export default function App() {
     readSessionIdFromUrl,
   );
   const [sessions, setSessions] = useState<Session[]>([]);
+  // The last unfiltered listing. The deck judges a decision against its
+  // session, and the search box filters `sessions`, so judging against those
+  // made the LED count move as you typed.
+  const [fleetSessions, setFleetSessions] = useState<Session[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
@@ -211,6 +215,7 @@ export default function App() {
       .then((res) => {
         pollFailures.current = 0;
         setSessions(res.sessions);
+        if (!debouncedFilter) setFleetSessions(res.sessions);
         setSessionsLoaded(true);
       })
       .catch((err: Error) => {
@@ -453,13 +458,13 @@ export default function App() {
   const items = useMemo<DeckItem[]>(
     () =>
       deck.available
-        ? deckItems(deck.open, sessions)
+        ? deckItems(deck.open, fleetSessions)
         : blockedSessions.map((s) => ({
             key: s.id,
             session: s,
             summary: summaries.get(s.id),
           })),
-    [deck.available, deck.open, sessions, blockedSessions, summaries],
+    [deck.available, deck.open, fleetSessions, blockedSessions, summaries],
   );
   const itemSessionIds = useMemo(
     () => new Set(items.map((i) => i.session.id)),
