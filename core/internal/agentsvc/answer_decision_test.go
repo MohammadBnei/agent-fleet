@@ -136,6 +136,15 @@ func TestAnswerDecision(t *testing.T) {
 	if got, _ := store.Get(ctx, shared); deref(got.PermissionMode, "") != "plan" {
 		t.Errorf("mode after the approval: %s", deref(got.PermissionMode, ""))
 	}
+	// No mode switches nothing: bob, who may not name a mode, cannot get
+	// one (auto is mode.allow's first) by leaving it out.
+	plain := ask(shared, "permission_request", `{"tool":"ExitPlanMode","input":{"plan":"y"}}`)
+	if e, err := answer("bob", &agentfleetv1.AnswerDecisionRequest{DecisionId: plain, Behavior: "allow"}); err != nil || e.Text != `{"behavior":"allow"}` {
+		t.Errorf("bob approving with no mode: %+v, %v", e, err)
+	}
+	if got, _ := store.Get(ctx, shared); deref(got.PermissionMode, "") != "plan" {
+		t.Errorf("mode after a plain approval: %s, want plan", deref(got.PermissionMode, ""))
+	}
 
 	// canSee but not canAnswer: a headless thread takes no answers.
 	headless := thread("shared")

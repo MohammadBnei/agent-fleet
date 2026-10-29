@@ -74,11 +74,12 @@ const bigInput = `{"command":"ls -la","n":12345678901234567890}`
 
 // One path per kind (docs/adr/0082 §5): a question warms then answers; a
 // permission answers without a warm (the stale-close would withdraw it); a
-// plan approval switches the mode first, without a warm either.
+// plan approval switches to the mode it names first, and to none when it
+// names none, without a warm either.
 func TestAnswer_OnePathPerKind(t *testing.T) {
 	f := setup(t)
 	if _, err := f.pool.Exec(f.ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
-		VALUES ('p', 'sha', '{}', '{"mode":{"default":"plan","allow":["plan","default","auto"]}}', true)`); err != nil {
+		VALUES ('p', 'sha', '{}', '{"mode":{"default":"plan","allow":["auto","default","plan"]}}', true)`); err != nil {
 		t.Fatal(err)
 	}
 	thread := func(mode string) string {
@@ -123,10 +124,11 @@ func TestAnswer_OnePathPerKind(t *testing.T) {
 		name, session, chosen string
 		modes                 []string
 	}{
-		{"definition in plan", inPlan, "", []string{"default"}},
-		{"definition already out of plan", inAuto, "", nil},
+		// No mode switches nothing, even with auto first in mode.allow.
+		{"definition in plan, no mode", inPlan, "", nil},
+		{"definition out of plan, no mode", inAuto, "", nil},
 		{"chosen", inPlan, "auto", []string{"auto"}},
-		{"repo session: no mode.allow", repo, "", nil},
+		{"repo session, no mode", repo, "", nil},
 	} {
 		fx = &effects{}
 		pl := f.ask(t, c.session, "permission_request", `{"tool":"ExitPlanMode","input":{"plan":"x"}}`)
@@ -304,11 +306,42 @@ func TestConsumeGrant_OnlyAnswersMint(t *testing.T) {
 		seq, id := request(true)
 		reply(from, seq, `{"behavior":"allow","decisionId":"`+id+`"}`)
 	}
+	// A human allow Answer did not write: no decisionId.
 	seq, _ = request(true)
 	reply("human", seq, `{"behavior":"allow"}`)
+	// A human deny naming its decision: OnAppend clears grantable...
+	denied, deniedID := request(true)
+	reply("human", denied, `{"behavior":"deny","decisionId":"`+deniedID+`"}`)
+	var g bool
+	if err := f.pool.QueryRow(f.ctx, `SELECT grantable FROM decisions WHERE id = $1`, deniedID).Scan(&g); err != nil || g {
+		t.Errorf("a human deny left grantable = %v (%v)", g, err)
+	}
+	// ...and ConsumeGrant refuses a deny even where grantable survived.
+	f.grantable(t, s, denied)
 
 	if id := f.consume(t, s, "Bash", bigInput); id != "" {
 		t.Errorf("granted %s", id)
+	}
+}
+
+// An input with no canon (a lone surrogate escape, which the decoder would
+// read as U+FFFD) stores none, so no grant can be minted for it.
+func TestConsumeGrant_NoCanonNoGrant(t *testing.T) {
+	f := setup(t)
+	s := f.session(t)
+	const lone = `{"command":"echo \ud800"}`
+	p := f.ask(t, s, "permission_request", `{"tool":"Bash","input":`+lone+`}`)
+	if r := f.row(t, s, p); r == nil || r.Canon != "" {
+		t.Fatalf("row: %+v, want no input_canon", r)
+	}
+	f.grantable(t, s, p)
+	if _, err := f.answer(t, &effects{}, s, p, decisions.Reply{Behavior: "allow"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{lone, `{"command":"echo \ufffd"}`, "{\"command\":\"echo \uFFFD\"}"} {
+		if id, _ := f.store.ConsumeGrant(f.ctx, s, "Bash", []byte(in)); id != "" {
+			t.Errorf("%s granted %s", in, id)
+		}
 	}
 }
 

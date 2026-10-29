@@ -83,16 +83,12 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		if err != nil {
 			return 0, err
 		}
-		if a.Behavior == "allow" {
-			// The mode first: the turn the approval releases runs in it.
-			mode, err := s.planExit(ctx, r.SessionID, a.Mode)
-			if err != nil {
+		// A chosen mode first: the turn the approval releases runs in it.
+		// No mode switches nothing, as the console's and the islands' plain
+		// approval always has.
+		if a.Behavior == "allow" && a.Mode != "" {
+			if err := fx.SetMode(ctx, r.SessionID, a.Mode); err != nil {
 				return 0, err
-			}
-			if mode != "" {
-				if err := fx.SetMode(ctx, r.SessionID, mode); err != nil {
-					return 0, err
-				}
 			}
 		}
 		return reply(text, "permission_response")
@@ -123,34 +119,13 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 	return 0, fmt.Errorf("%w: a %s decision is not answered here", ErrInvalid, r.Kind)
 }
 
-// planExit is the mode a plan approval switches to: the chosen one, else,
-// for a definition session still in plan mode, mode.allow's first mode that
-// is not plan. "" switches nothing: a repo session has no mode.allow, and a
-// session out of plan mode (the console switches before it answers) stays in
-// its mode.
-func (s *Store) planExit(ctx context.Context, sessionID, chosen string) (string, error) {
-	if chosen != "" {
-		return chosen, nil
-	}
-	var mode string
-	err := s.pool.QueryRow(ctx, `
-		SELECT COALESCE((SELECT m FROM jsonb_array_elements_text(d.effective -> 'mode' -> 'allow') WITH ORDINALITY a (m, i)
-		                  WHERE m <> 'plan' ORDER BY i LIMIT 1), '')
-		  FROM sessions s
-		  JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
-		 WHERE s.id::text = $1 AND s.permission_mode = 'plan'`, sessionID).Scan(&mode)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("plan exit mode: %w", err)
-	}
-	return mode, nil
-}
-
 // Request is the decision a session's request at seq opened.
 func (s *Store) Request(ctx context.Context, sessionID string, seq int64) (Record, error) {
-	r, err := scan(s.pool.QueryRow(ctx, `SELECT `+cols+` WHERE d.session_id::text = $1 AND d.request_seq = $2`, sessionID, seq))
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return Record{}, ErrNotFound
+	}
+	r, err := scan(s.pool.QueryRow(ctx, `SELECT `+cols+` WHERE d.session_id = $1 AND d.request_seq = $2`, id, seq))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Record{}, ErrNotFound
 	}
@@ -166,11 +141,15 @@ func (s *Store) Request(ctx context.Context, sessionID string, seq int64) (Recor
 // retries of one call, one gets the grant and the other none, never both.
 //
 // A grant is a grantable request a human allowed through Answer: Answer
-// writes the row's own id into its reply, and any reply that is not a
-// human's clears grantable (OnAppend), so the worker cannot mint its own.
+// writes the row's own id into its reply, and any reply but a human's allow
+// clears grantable (OnAppend), so the worker cannot mint its own.
 // It has no TTL (owner, 2026-10-29): it lives until the session is archived,
 // which clears it (sessions.Store.Archive).
 func (s *Store) ConsumeGrant(ctx context.Context, sessionID, tool string, input []byte) (string, error) {
+	session, err := uuid.Parse(sessionID)
+	if err != nil {
+		return "", nil
+	}
 	canon, err := Canon(input)
 	if err != nil {
 		return "", fmt.Errorf("%w: input_json: %v", ErrInvalid, err)
@@ -179,11 +158,12 @@ func (s *Store) ConsumeGrant(ctx context.Context, sessionID, tool string, input 
 	err = s.pool.QueryRow(ctx, `
 		UPDATE decisions SET grant_used_at = now(), version = nextval('decisions_version_seq')
 		 WHERE id = (SELECT id FROM decisions
-		              WHERE session_id::text = $1 AND tool = $2 AND input_canon = $3
-		                AND grantable AND grant_used_at IS NULL AND answer ->> 'decisionId' = id::text
+		              WHERE session_id = $1 AND tool = $2 AND input_canon = $3
+		                AND grantable AND grant_used_at IS NULL
+		                AND answer ->> 'behavior' = 'allow' AND answer ->> 'decisionId' = id::text
 		              ORDER BY request_seq LIMIT 1
 		                FOR UPDATE SKIP LOCKED)
-		RETURNING id::text`, sessionID, tool, canon).Scan(&id)
+		RETURNING id::text`, session, tool, canon).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

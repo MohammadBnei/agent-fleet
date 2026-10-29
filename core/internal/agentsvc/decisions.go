@@ -174,9 +174,8 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 	return connect.NewResponse(&agentfleetv1.ApprovePlanResponse{Seq: n}), nil
 }
 
-// choosesMode: naming the mode a plan leaves into is SetConfig's power, the
-// owner's or an admin's. Approving without one takes mode.allow's first
-// non-plan mode (decisions.Answer), which is the approval itself.
+// choosesMode: naming the mode a plan approval switches to is SetConfig's
+// power, the owner's or an admin's. Approving without one switches nothing.
 func choosesMode(p Principal, t *sessions.Session, mode string) error {
 	if mode != "" && !ownsOrAdmin(p, t) {
 		return connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its mode"))

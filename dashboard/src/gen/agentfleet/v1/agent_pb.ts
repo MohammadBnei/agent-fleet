@@ -1193,8 +1193,7 @@ export type AnswerDecisionRequest = Message<"agentfleet.v1.AnswerDecisionRequest
   message: string;
 
   /**
-   * A plan approved: the mode to leave plan mode into, within mode.allow. Empty takes mode.allow's first mode that
-   * is not plan, when the session is in plan.
+   * A plan approved: the mode to switch to first, within mode.allow. Empty switches nothing.
    *
    * @generated from field: string mode = 5;
    */

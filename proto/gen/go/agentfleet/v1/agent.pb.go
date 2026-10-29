@@ -2662,8 +2662,7 @@ type AnswerDecisionRequest struct {
 	AnswersJson string `protobuf:"bytes,3,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"`
 	// A permission's or plan's message to the agent, at most 10,000 characters.
 	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	// A plan approved: the mode to leave plan mode into, within mode.allow. Empty takes mode.allow's first mode that
-	// is not plan, when the session is in plan.
+	// A plan approved: the mode to switch to first, within mode.allow. Empty switches nothing.
 	Mode string `protobuf:"bytes,5,opt,name=mode,proto3" json:"mode,omitempty"`
 	// A permission allowed (docs/adr/0076 §3): "once" (the default), "session", or "definition" (admins only), and
 	// the rule's form, "exact" or "prefix".
