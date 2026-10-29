@@ -1,9 +1,9 @@
 package errkeys
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -24,6 +24,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/MohammadBnei/ukubi-go/errs/connectkeys"
+	"github.com/MohammadBnei/ukubi-go/errs/connectkeys/wiring"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
@@ -35,59 +40,20 @@ func TestConstructors(t *testing.T) {
 	if ce.Code() != connect.CodeFailedPrecondition || ce.Message() != "DEFINITION_CHANGED: start a new thread" || Of(ce) != KeyDefinitionChanged {
 		t.Errorf("connect: %v %q", ce, Of(ce))
 	}
+	// The wire is errkeys' own: one agentfleet.v1.ErrorKey detail, the bytes of {key}, which islands reads by hand.
+	want, err := proto.Marshal(&agentfleetv1.ErrorKey{Key: string(KeyDefinitionChanged)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := ce.Details(); len(d) != 1 || d[0].Type() != "agentfleet.v1.ErrorKey" || !bytes.Equal(d[0].Bytes(), want) {
+		t.Errorf("connect detail: %v", d)
+	}
 	ge := Status(codes.PermissionDenied, KeyInternal, "nope")
 	if s, _ := status.FromError(ge); s.Code() != codes.PermissionDenied || s.Message() != "nope" || Of(ge) != KeyInternal {
 		t.Errorf("grpc: %v %q", ge, Of(ge))
 	}
 	if Of(errors.New("plain")) != "" || Of(nil) != "" || Of(connect.NewError(connect.CodeInternal, errors.New("x"))) != "" {
 		t.Error("an unkeyed error has a key") // the positive control for Of
-	}
-}
-
-// TestConnectFallback: a raw error and an unkeyed Connect error leave keyed internal with their code and words; a
-// keyed one keeps its key (one detail); nil stays nil.
-func TestConnectFallback(t *testing.T) {
-	raw := withConnectKey(errors.New("send: broken pipe"))
-	if Of(raw) != KeyInternal || connect.CodeOf(raw) != connect.CodeUnknown || !strings.Contains(raw.Error(), "send: broken pipe") {
-		t.Errorf("raw: %v", raw)
-	}
-	bare := withConnectKey(connect.NewError(connect.CodeNotFound, errors.New("gone")))
-	if Of(bare) != KeyInternal || connect.CodeOf(bare) != connect.CodeNotFound {
-		t.Errorf("bare: %v", bare)
-	}
-	own := withConnectKey(Connect(connect.CodeAborted, KeyDefinitionChanged, errors.New("x")))
-	var ce *connect.Error
-	if Of(own) != KeyDefinitionChanged || !errors.As(own, &ce) || len(ce.Details()) != 1 {
-		t.Errorf("own: %v", own)
-	}
-	if withConnectKey(nil) != nil {
-		t.Error("nil became an error")
-	}
-	unary := keyAll{}.WrapUnary(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) { return nil, errors.New("u") })
-	if _, err := unary(context.Background(), nil); Of(err) != KeyInternal {
-		t.Errorf("unary: %v", err)
-	}
-	stream := keyAll{}.WrapStreamingHandler(func(context.Context, connect.StreamingHandlerConn) error { return errors.New("s") })
-	if err := stream(context.Background(), nil); Of(err) != KeyInternal {
-		t.Errorf("stream: %v", err)
-	}
-}
-
-// TestGRPCFallback: the same over gRPC, unary and streaming.
-func TestGRPCFallback(t *testing.T) {
-	unary := UnaryServerInterceptor()
-	if _, err := unary(context.Background(), nil, nil, func(context.Context, any) (any, error) { return nil, status.Error(codes.NotFound, "gone") }); Of(err) != KeyInternal || status.Code(err) != codes.NotFound {
-		t.Errorf("unary: %v", err)
-	}
-	stream := StreamServerInterceptor()
-	if err := stream(nil, nil, nil, func(any, grpc.ServerStream) error { return errors.New("raw") }); Of(err) != KeyInternal || status.Code(err) != codes.Unknown {
-		t.Errorf("stream: %v", err)
-	}
-	if _, err := unary(context.Background(), nil, nil, func(context.Context, any) (any, error) { return nil, Status(codes.Aborted, KeyDefinitionChanged, "x") }); Of(err) != KeyDefinitionChanged {
-		t.Errorf("own: %v", err)
-	}
-	if _, err := unary(context.Background(), nil, nil, func(context.Context, any) (any, error) { return 1, nil }); err != nil {
-		t.Errorf("nil: %v", err)
 	}
 }
 
@@ -121,10 +87,10 @@ func TestWire(t *testing.T) {
 	}
 }
 
-// TestErrKeys: every key a call to Connect or Status names is one of errkeys.go's Key constants, named directly; no
-// Key is written outside errkeys.go (no conversion, no new constant), Connect and Status are only ever called (never
-// taken as a value, so an alias cannot carry a key past this check), and errkeys is never dot-imported. Syntactic,
-// over core's non-test files outside this package.
+// TestErrKeys: every key a call to Connect or Status names is one of errkeys.go's errs.Key constants, named directly;
+// no key is made outside this package (ukubi-go's errs and connectkeys are imported here only: no errs.Key conversion,
+// no second Keys), Connect and Status are only ever called (never taken as a value, so an alias cannot carry a key
+// past this check), and errkeys is never dot-imported. Syntactic, over core's non-test files outside this package.
 func TestErrKeys(t *testing.T) {
 	keys, values := map[string]bool{}, map[string]string{}
 	f, err := parser.ParseFile(token.NewFileSet(), "errkeys.go", nil, 0)
@@ -135,8 +101,8 @@ func TestErrKeys(t *testing.T) {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
 			for _, sp := range g.Specs {
 				vs := sp.(*ast.ValueSpec)
-				if id, ok := vs.Type.(*ast.Ident); !ok || id.Name != "Key" {
-					t.Errorf("errkeys.go: a constant %s that is not a Key", vs.Names[0].Name)
+				if st, ok := vs.Type.(*ast.SelectorExpr); !ok || fmtIdent(st.X) != "errs" || st.Sel.Name != "Key" {
+					t.Errorf("errkeys.go: a constant %s that is not an errs.Key", vs.Names[0].Name)
 					continue
 				}
 				for i, n := range vs.Names {
@@ -168,11 +134,14 @@ func TestErrKeys(t *testing.T) {
 		}
 		name := ""
 		for _, im := range file.Imports {
-			if v, _ := strconv.Unquote(im.Path.Value); v == "github.com/MohammadBnei/agent-fleet/core/internal/errkeys" {
+			switch v, _ := strconv.Unquote(im.Path.Value); v {
+			case "github.com/MohammadBnei/agent-fleet/core/internal/errkeys":
 				name = "errkeys"
 				if im.Name != nil {
 					name = im.Name.Name
 				}
+			case "github.com/MohammadBnei/ukubi-go/errs", "github.com/MohammadBnei/ukubi-go/errs/connectkeys":
+				t.Errorf("%s: imports %s: keys are made in errkeys only", p, v)
 			}
 		}
 		if name == "." {
@@ -205,10 +174,7 @@ func TestErrKeys(t *testing.T) {
 			if !ok || fmtIdent(s.X) != name {
 				return true
 			}
-			switch {
-			case s.Sel.Name == "Key":
-				t.Errorf("%s: errkeys.Key named outside errkeys.go", p)
-			case (s.Sel.Name == "Connect" || s.Sel.Name == "Status") && !called[s]:
+			if (s.Sel.Name == "Connect" || s.Sel.Name == "Status") && !called[s] {
 				t.Errorf("%s: errkeys.%s taken as a value: call it, with its key named", p, s.Sel.Name)
 			}
 			return true
@@ -230,143 +196,18 @@ func fmtIdent(e ast.Expr) string {
 	return ""
 }
 
-// TestWiring: every Connect handler core builds (a generated New…Handler) takes its interceptors through
-// errkeys.WithInterceptors, written at the call, and none through connect.WithInterceptors or WithHandlerOptions;
-// every gRPC server's first options chain errkeys' interceptors first, and no other option adds interceptors.
-// Syntactic, over core's non-test files.
+// TestWiring: every Connect handler core builds takes this package's WithInterceptors first, and every gRPC server
+// opens with its chains (connectkeys/wiring, over core's non-test files).
 func TestWiring(t *testing.T) {
-	handlers, servers := 0, 0
-	err := filepath.WalkDir(filepath.Join("..", ".."), func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
-			return err
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), p, nil, parser.SkipObjectResolution)
-		if err != nil {
-			return err
-		}
-		imp := map[string]string{} // local name → import path
-		for _, im := range file.Imports {
-			v, _ := strconv.Unquote(im.Path.Value)
-			n := v[strings.LastIndex(v, "/")+1:]
-			if im.Name != nil {
-				n = im.Name.Name
-			}
-			imp[n] = v
-		}
-		sel := func(e ast.Expr) (string, string) { // the import path and name e selects, or ""
-			s, ok := e.(*ast.SelectorExpr)
-			if !ok {
-				return "", ""
-			}
-			return imp[fmtIdent(s.X)], s.Sel.Name
-		}
-		calls := func(e ast.Expr, path, name string) bool {
-			c, ok := e.(*ast.CallExpr)
-			if !ok {
-				return false
-			}
-			pp, n := sel(c.Fun)
-			return pp == path && n == name
-		}
-		const ek = "github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
-		chained := map[ast.Expr]bool{}
-		ast.Inspect(file, func(n ast.Node) bool {
-			c, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			path, name := sel(c.Fun)
-			switch {
-			case strings.HasSuffix(path, "connect") && strings.Contains(path, "/proto/gen/") && strings.HasPrefix(name, "New") && strings.HasSuffix(name, "Handler"):
-				handlers++
-				n := 0
-				for _, a := range c.Args[1:] {
-					if calls(a, ek, "WithInterceptors") {
-						n++
-					}
-					if calls(a, "connectrpc.com/connect", "WithInterceptors") || calls(a, "connectrpc.com/connect", "WithHandlerOptions") || c.Ellipsis.IsValid() {
-						t.Errorf("%s: %s: interceptors not through errkeys.WithInterceptors", p, name)
-					}
-				}
-				if n != 1 {
-					t.Errorf("%s: %s with %d errkeys.WithInterceptors, want 1", p, name, n)
-				}
-			case path == "google.golang.org/grpc" && name == "NewServer":
-				servers++
-				if len(c.Args) < 2 || !calls(c.Args[0], "google.golang.org/grpc", "ChainUnaryInterceptor") || !calls(c.Args[1], "google.golang.org/grpc", "ChainStreamInterceptor") ||
-					!calls(c.Args[0].(*ast.CallExpr).Args[0], ek, "UnaryServerInterceptor") || !calls(c.Args[1].(*ast.CallExpr).Args[0], ek, "StreamServerInterceptor") {
-					t.Errorf("%s: grpc.NewServer does not open with errkeys' chains", p)
-				} else {
-					chained[c.Args[0]], chained[c.Args[1]] = true, true
-				}
-			}
-			return true
-		})
-		ast.Inspect(file, func(n ast.Node) bool {
-			c, ok := n.(*ast.CallExpr)
-			if !ok || chained[c] {
-				return true
-			}
-			if path, name := sel(c.Fun); path == "google.golang.org/grpc" && strings.HasSuffix(name, "Interceptor") {
-				t.Errorf("%s: grpc.%s outside the server's opening chains", p, name)
-			}
-			return true
-		})
-		return nil
-	})
+	findings, handlers, servers, err := wiring.Check(filepath.Join("..", ".."), "github.com/MohammadBnei/agent-fleet/core/internal/errkeys")
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, f := range findings {
+		t.Error(f)
+	}
 	if handlers < 3 || servers < 1 {
 		t.Errorf("%d Connect handlers, %d gRPC servers: the check no longer sees them", handlers, servers) // the positive control
-	}
-}
-
-// TestContextCodes: a plain context error keeps the code each protocol sends for it unkeyed (Connect's toWire, gRPC's
-// FromContextError), wrapped or not; any other plain error is Unknown.
-func TestContextCodes(t *testing.T) {
-	for _, c := range []struct {
-		err  error
-		cc   connect.Code
-		gc   codes.Code
-		name string
-	}{
-		{context.Canceled, connect.CodeCanceled, codes.Canceled, "canceled"},
-		{context.DeadlineExceeded, connect.CodeDeadlineExceeded, codes.DeadlineExceeded, "deadline"},
-		{fmt.Errorf("query: %w", context.DeadlineExceeded), connect.CodeDeadlineExceeded, codes.DeadlineExceeded, "wrapped deadline"},
-		{os.ErrDeadlineExceeded, connect.CodeDeadlineExceeded, codes.Unknown, "os deadline"},
-		{errors.New("broken pipe"), connect.CodeUnknown, codes.Unknown, "plain"},
-	} {
-		if got := withConnectKey(c.err); connect.CodeOf(got) != c.cc || Of(got) != KeyInternal || !strings.Contains(got.Error(), c.err.Error()) {
-			t.Errorf("%s: Connect %v", c.name, got)
-		}
-		if got := withStatusKey(c.err); status.Code(got) != c.gc || Of(got) != KeyInternal {
-			t.Errorf("%s: gRPC %v", c.name, got)
-		}
-	}
-}
-
-// TestSentinelUnchanged: keying never changes the handler's error, which may be a shared sentinel: concurrent
-// requests do not race on it (run with -race), and it stays unkeyed with its meta and details.
-func TestSentinelUnchanged(t *testing.T) {
-	sentinel := connect.NewError(connect.CodeNotFound, errors.New("no such thread"))
-	sentinel.Meta().Set("X-Why", "gone")
-	var wg sync.WaitGroup
-	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			got := withConnectKey(sentinel)
-			var ce *connect.Error
-			if Of(got) != KeyInternal || !errors.As(got, &ce) || ce.Code() != connect.CodeNotFound || ce.Message() != "no such thread" ||
-				ce.Meta().Get("X-Why") != "gone" || len(ce.Details()) != 1 {
-				t.Errorf("keyed: %v", got)
-			}
-		}()
-	}
-	wg.Wait()
-	if Of(sentinel) != "" || len(sentinel.Details()) != 0 {
-		t.Errorf("the sentinel was changed: %d details", len(sentinel.Details()))
 	}
 }
 
@@ -396,5 +237,42 @@ func TestOutermost(t *testing.T) {
 	_, err := agentfleetv1connect.NewAgentServiceClient(srv.Client(), srv.URL).ListThreads(context.Background(), connect.NewRequest(&agentfleetv1.ListThreadsRequest{}))
 	if Of(err) != KeyInternal || connect.CodeOf(err) != connect.CodeUnknown || !strings.Contains(err.Error(), "refused") {
 		t.Errorf("an interceptor's refusal: %v key %q", err, Of(err))
+	}
+}
+
+// TestInternalIsConnectkeys: the fallback's key and errkeys' are one wire string, server.internal.
+func TestInternalIsConnectkeys(t *testing.T) {
+	if KeyInternal != "server.internal" {
+		t.Errorf("KeyInternal %q", KeyInternal)
+	}
+	if KeyInternal != connectkeys.KeyInternal {
+		t.Errorf("connectkeys' %q", connectkeys.KeyInternal)
+	}
+}
+
+// TestBareSentinel: a shared sentinel with no meta, as agentsvc's errNoThread is, returned by concurrent requests
+// through the fallback. Meta() makes its map on its first call, a write, so a fallback that reads the sentinel's
+// Meta() races (run with -race; errkeys' own copy did, docs/adr/0081). Every request gets its own keyed copy, and the
+// sentinel stays bare.
+func TestBareSentinel(t *testing.T) {
+	sentinel := connect.NewError(connect.CodeNotFound, errors.New("no such thread"))
+	h := connect.NewUnaryHandler("/test.v1.T/Get", func(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
+		return nil, sentinel
+	}, WithInterceptors())
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			req := httptest.NewRequest(http.MethodPost, "/test.v1.T/Get", strings.NewReader("{}"))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "agentfleet.v1.ErrorKey") {
+				t.Errorf("%d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+	wg.Wait()
+	if Of(sentinel) != "" || len(sentinel.Details()) != 0 {
+		t.Errorf("the sentinel was changed: %d details", len(sentinel.Details()))
 	}
 }
