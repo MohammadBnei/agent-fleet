@@ -140,3 +140,35 @@ test("a request with no interrupt after it shows no interrupted bar", () => {
   const cards = render([stamped("Bash")], { onWithdraw: () => {} });
   expect(cards.find((el) => el.type === InterruptedBar)).toBeUndefined();
 });
+
+// "Request changes" on a stamped plan is a deny carrying the feedback, through
+// RespondToPermission: a plain reply leaves a stamped decision open (the
+// worker records nothing for it), and core delivers the deny as a turn whether
+// the call is still parked or long let go. An old worker's plan keeps today's
+// path, a plain reply, which that worker records as the deny itself.
+test("request changes on a stamped plan denies it with the feedback", () => {
+  const plan = stamped("ExitPlanMode", { plan: "x" });
+  const responded: unknown[] = [];
+  const replied: string[] = [];
+  const card = render([plan], {
+    onRespond: (seq, decision) => responded.push([seq, decision]),
+    onPlanFeedback: (text) => replied.push(text),
+  }).find((el) => el.type === PlanCard);
+  (card!.props.onFeedback as (t: string) => void)("split step two");
+  expect(responded).toEqual([
+    [plan.seq, { behavior: "deny", message: "split step two" }],
+  ]);
+  expect(replied).toEqual([]);
+});
+
+test("request changes on an unstamped plan is still a plain reply", () => {
+  const responded: unknown[] = [];
+  const replied: string[] = [];
+  const card = render([permission("ExitPlanMode", { plan: "x" })], {
+    onRespond: (seq, decision) => responded.push([seq, decision]),
+    onPlanFeedback: (text) => replied.push(text),
+  }).find((el) => el.type === PlanCard);
+  (card!.props.onFeedback as (t: string) => void)("split step two");
+  expect(replied).toEqual(["split step two"]);
+  expect(responded).toEqual([]);
+});

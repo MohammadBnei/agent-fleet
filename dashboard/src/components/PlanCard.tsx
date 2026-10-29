@@ -16,13 +16,15 @@ type SelectionPopover = {
 // ExitPlanMode's canUseTool call posts a real, seq-correlated
 // PERMISSION_REQUEST entry like any other tool (see transcript.ts's
 // findPendingPermissions) — "Approve" here just calls RespondToPermission
-// with an allow decision. "Request changes" reuses the existing
-// sendDiscuss flow: worker/src/session.ts already treats any human reply
-// while a permission request is pending as deny-with-feedback, re-arming
-// the agent to call ExitPlanMode again with a revised plan — and records
-// that denial as a real PERMISSION_RESPONSE, so this card resolves instead
-// of sitting in the dock until someone approves a plan they had just asked
-// to be rewritten.
+// with an allow decision. "Request changes" hands its text to onFeedback,
+// and the caller picks the path by the request's "nb":1 stamp (docs/adr/0082
+// §5). A stamped plan is denied with the feedback as its message through
+// RespondToPermission: that closes the plan, and the worker gives the agent
+// the feedback whether the call is still parked (the tool_result) or long
+// let go (a turn). A plain reply would not do: a new worker records nothing
+// for one, so the plan would sit open in the dock. An old worker's plan
+// keeps the sendDiscuss reply, which that worker treats as deny-with-
+// feedback and records as the PERMISSION_RESPONSE itself.
 //
 // allowAnnotate (desktop only, see call sites) adds plannotator-style
 // passage-level annotation on top of that: select text in the rendered
@@ -58,13 +60,12 @@ export function PlanCard({
   // plan text only ever moved the inner box, and Approve / request changes
   // sat permanently below the fold with no way to drag to them.
   docked?: boolean;
-  // "deny" is what "request changes" resolves to: the wrapper treats a
-  // plain human reply as deny-with-feedback and now records it
-  // (worker/src/session.ts's recordResolution), which is what finally lets
-  // this card stop being pending without an approval. "interrupted" is a
-  // later Kill/Interrupt sweeping it up unanswered. Undefined is a
-  // pre-fix legacy row with no matching response, where "approved" stays
-  // the fallback.
+  // "deny" is what "request changes" resolves to: the deny the dashboard
+  // sends for a stamped plan, or the one an old worker records for a plain
+  // reply. "interrupted" is a later Kill/Interrupt sweeping an old worker's
+  // plan up unanswered (a stamped one stays open). Undefined is a pre-fix
+  // legacy row with no matching response, where "approved" stays the
+  // fallback.
   // "withdrawn" is one closed unanswered from the decision dock.
   decision?: PermissionOutcome;
   // Approving is a mode transition plus an answer, mirroring the CLI's own

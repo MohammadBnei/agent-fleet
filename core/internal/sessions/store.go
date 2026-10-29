@@ -203,7 +203,7 @@ const selectCols = `
 	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
-	     AND COALESCE(d.payload ->> 'nb', '') <> '1') AS blocking_decisions`
+	     AND d.payload -> 'nb' IS DISTINCT FROM '1'::jsonb) AS blocking_decisions`
 
 func scanSession(row pgx.Row) (*Session, error) {
 	var s Session
@@ -642,7 +642,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		       )
 		   AND NOT EXISTS (
 		         SELECT 1 FROM decisions d
-		          WHERE d.session_id = q.session_id AND d.request_seq = q.seq AND d.payload ->> 'nb' = '1'
+		          WHERE d.session_id = q.session_id AND d.request_seq = q.seq AND d.payload -> 'nb' = '1'::jsonb
 		       )
 		ON CONFLICT DO NOTHING
 	`, id); err != nil {
@@ -654,7 +654,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	if _, err := tx.Exec(ctx, `
 		UPDATE decisions SET state = 'withdrawn', version = nextval('decisions_version_seq')
 		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
-		   AND COALESCE(payload ->> 'nb', '') <> '1'
+		   AND payload -> 'nb' IS DISTINCT FROM '1'::jsonb
 	`, id); err != nil {
 		return "", fmt.Errorf("reserve slot: withdraw stale decisions: %w", err)
 	}
@@ -1071,7 +1071,7 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 		  AND NOT EXISTS (
 		    SELECT 1 FROM decisions d
 		     WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
-		       AND COALESCE(d.payload ->> 'nb', '') <> '1'
+		       AND d.payload -> 'nb' IS DISTINCT FROM '1'::jsonb
 		  )
 	`, livePhases)
 	if err != nil {

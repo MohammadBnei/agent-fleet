@@ -1,0 +1,2 @@
+-- No-op: a data repair. Reopening a swept session's decisions would offer
+-- answers that reach no session, so there is nothing to put back.

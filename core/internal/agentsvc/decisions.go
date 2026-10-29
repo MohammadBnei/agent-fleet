@@ -244,9 +244,15 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 // withdraw is AnswerDecision's "withdraw", the quick close of a decision
 // whose turn has ended (docs/adr/0082 §5): state withdrawn, nothing appended,
 // nothing warmed, so the session hears nothing. The owner's or an admin's,
-// as Stop is: closing takes power away.
+// as Stop is: closing takes power away. A permission or a plan only: a
+// question outlives its turn, its answer a message whenever it comes. A
+// client withdraws only while still registered for the thread, as it
+// configures one.
 func (s *Server) withdraw(ctx context.Context, p Principal, r decisions.Record) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
-	if !p.Admin() && (r.Owner == nil || *r.Owner != p.owner()) {
+	if r.Kind != decisions.Permission && r.Kind != decisions.Plan {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a %s decision is not withdrawn; answer it", r.Kind))
+	}
+	if !p.Admin() && (r.Owner == nil || *r.Owner != p.owner() || !s.stillRegistered(p, &sessions.Session{DefinitionName: r.Definition})) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner withdraws its decisions"))
 	}
 	if err := s.decisions.Withdraw(ctx, r.ID); err != nil {

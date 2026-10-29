@@ -9,8 +9,9 @@ import { client } from "./connectClient";
 //
 // It used to say "only rm and sudo still come to you", which is what the ADR
 // summary says and not what the code does. In auto, worker/src/session.ts's
-// autoModeStillAsksCommand asks for rm/sudo, ExitPlanMode asks only while the
-// session is in plan mode (docs/adr/0082 §5), and everything else in
+// autoModeStillAsksCommand asks for rm/sudo, ExitPlanMode asks in every mode,
+// auto included (the one exception is the retry a late plan approval asks
+// for, docs/adr/0082 §5), and everything else in
 // FLEET_ASK_RULES — git push, gh, kubectl, curl, wget, env — is answered by
 // the worker in auto. Naming them matters: "every result is a PR, and
 // approving it is the review" stops being true the moment git push is

@@ -56,6 +56,10 @@ export function DecisionDock({
   // (approvePlan.ts).
   onApprovePlan: (seq: bigint, mode?: "auto") => void;
   onAnswer: (seq: bigint, answers: Record<string, string>) => void;
+  // "Request changes" on an old worker's (unstamped) plan: a plain reply,
+  // which that worker records as the deny. A stamped plan is denied with the
+  // feedback through onRespond instead (docs/adr/0082 §5): a new worker
+  // records nothing for a reply, so the plan would stay open.
   onPlanFeedback: (text: string) => void;
   // AnswerDecision "withdraw" (docs/adr/0082 §5): closes an interrupted
   // request unanswered, with no warm and no message.
@@ -138,7 +142,14 @@ export function DecisionDock({
             docked
             busy={seqBusy}
             onApprove={(mode) => onApprovePlan(permission.entry.seq, mode)}
-            onFeedback={onPlanFeedback}
+            onFeedback={(text) =>
+              permission.stamped
+                ? onRespond(permission.entry.seq, {
+                    behavior: "deny",
+                    message: text,
+                  })
+                : onPlanFeedback(text)
+            }
             edgeClassName={edge}
           />
         ) : (

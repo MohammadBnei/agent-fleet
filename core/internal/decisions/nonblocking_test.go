@@ -72,20 +72,24 @@ func TestOnAppend_StampedPermissionIsGrantable(t *testing.T) {
 func TestAnswer_StampedWarmsThenAppends(t *testing.T) {
 	f := setup(t)
 	s := f.session(t)
+	// A stamped plan's answer says it is one, so the worker needs no
+	// heuristic to tell it from a permission's; an older worker's answers
+	// stay as they were.
 	for _, c := range []struct {
 		text  string
 		reply decisions.Reply
 		warm  bool
+		want  string
 	}{
-		{`{"tool":"Bash","input":{"command":"ls"},"nb":1}`, decisions.Reply{Behavior: "deny", Message: "no"}, true},
-		{`{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`, decisions.Reply{Behavior: "allow"}, true},
-		{`{"tool":"Bash","input":{"command":"ls"}}`, decisions.Reply{Behavior: "allow"}, false},
-		{`{"tool":"ExitPlanMode","input":{"plan":"p"}}`, decisions.Reply{Behavior: "allow"}, false},
+		{`{"tool":"Bash","input":{"command":"ls"},"nb":1}`, decisions.Reply{Behavior: "deny", Message: "no"}, true, `{"behavior":"deny","message":"no"}`},
+		{`{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`, decisions.Reply{Behavior: "allow"}, true, `{"behavior":"allow","kind":"plan"}`},
+		{`{"tool":"Bash","input":{"command":"ls"}}`, decisions.Reply{Behavior: "allow"}, false, `{"behavior":"allow"}`},
+		{`{"tool":"ExitPlanMode","input":{"plan":"p"}}`, decisions.Reply{Behavior: "allow"}, false, `{"behavior":"allow"}`},
 	} {
 		fx := &effects{tr: f.tr}
 		seq := f.ask(t, s, "permission_request", c.text)
-		if _, err := f.answer(t, fx, s, seq, c.reply); err != nil {
-			t.Fatal(err)
+		if text, err := f.answer(t, fx, s, seq, c.reply); err != nil || text != c.want {
+			t.Fatalf("%s: answer %s (%v), want %s", c.text, text, err, c.want)
 		}
 		if got := slices.Equal(fx.warms, []string{s}); got != c.warm {
 			t.Errorf("%s: warms %v, want warmed %v", c.text, fx.warms, c.warm)
@@ -107,10 +111,11 @@ func TestReserveSlot_LeavesStampedRequestsOpen(t *testing.T) {
 	oldPlan := f.ask(t, id, "permission_request", `{"tool":"ExitPlanMode","input":{}}`)
 	nb := f.ask(t, id, "permission_request", `{"tool":"Bash","input":{},"nb":1}`)
 	nbPlan := f.ask(t, id, "permission_request", `{"tool":"ExitPlanMode","input":{},"nb":1}`)
+	str := f.ask(t, id, "permission_request", `{"tool":"Bash","input":{},"nb":"1"}`) // a string is no stamp
 	if _, err := f.sessions.ReserveSlot(f.ctx, id, sessions.Caps{MaxLive: 5}); err != nil {
 		t.Fatal(err)
 	}
-	for seq, want := range map[int64]string{old: "withdrawn", oldPlan: "withdrawn", nb: "open", nbPlan: "open"} {
+	for seq, want := range map[int64]string{old: "withdrawn", oldPlan: "withdrawn", nb: "open", nbPlan: "open", str: "withdrawn"} {
 		if r := f.row(t, id, seq); r.State != want {
 			t.Errorf("seq %d after warm: %s, want %s", seq, r.State, want)
 		}
@@ -127,8 +132,8 @@ func TestReserveSlot_LeavesStampedRequestsOpen(t *testing.T) {
 		}
 		replies = append(replies, n)
 	}
-	if !slices.Equal(replies, []int64{old, oldPlan}) {
-		t.Errorf("stale replies to %v, want only the older worker's %v", replies, []int64{old, oldPlan})
+	if !slices.Equal(replies, []int64{old, oldPlan, str}) {
+		t.Errorf("stale replies to %v, want only the older worker's %v", replies, []int64{old, oldPlan, str})
 	}
 }
 
@@ -157,11 +162,12 @@ func TestIdleSweep_StampedDoesNotHoldThePod(t *testing.T) {
 	old := idle(`{"tool":"Bash","input":{}}`)
 	nb := idle(`{"tool":"Bash","input":{},"nb":1}`)
 	nbPlan := idle(`{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`)
+	str := idle(`{"tool":"Bash","input":{},"nb":"1"}`)
 	ids, err := f.sessions.ListIdleSessionIDs(f.ctx, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(ids, old) || !slices.Contains(ids, nb) || !slices.Contains(ids, nbPlan) {
+	if slices.Contains(ids, old) || slices.Contains(ids, str) || !slices.Contains(ids, nb) || !slices.Contains(ids, nbPlan) {
 		t.Errorf("swept %v: the older worker's pod must stay, the stamped ones may go", ids)
 	}
 }
@@ -263,6 +269,7 @@ func TestOpenRequestAndPlans(t *testing.T) {
 	s := f.session(t)
 	f.ask(t, s, "permission_request", `{"tool":"Bash","input":{"command":"ls"}}`) // unstamped: never matched
 	seq := f.ask(t, s, "permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`)
+	f.ask(t, s, "permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":"1"}`) // the number 1 only: never matched
 	canon, _ := decisions.Canon([]byte(`{"command":"ls"}`))
 	if got, ok, err := f.store.OpenRequest(f.ctx, s, "Bash", canon); err != nil || !ok || got != seq {
 		t.Errorf("OpenRequest = %d, %v, %v; want %d", got, ok, err, seq)
@@ -291,11 +298,15 @@ func TestBlockingDecisions_CountsUnstampedOnly(t *testing.T) {
 	f.ask(t, id, "permission_request", `{"tool":"ExitPlanMode","input":{},"nb":1}`)
 	f.ask(t, id, "question", `{"questions":[]}`)
 	f.ask(t, id, "permission_request", `{"tool":"Bash","input":{}}`)
+	str := f.ask(t, id, "permission_request", `{"tool":"Bash","input":{},"nb":"1"}`) // the number 1 only
 	s, err := f.sessions.Get(f.ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.PendingDecisions != 4 || s.BlockingDecisions != 1 {
-		t.Errorf("pending %d, blocking %d: want 4, 1", s.PendingDecisions, s.BlockingDecisions)
+	if s.PendingDecisions != 5 || s.BlockingDecisions != 2 {
+		t.Errorf("pending %d, blocking %d: want 5, 2", s.PendingDecisions, s.BlockingDecisions)
+	}
+	if r, err := f.store.Request(f.ctx, id, str); err != nil || r.NonBlocking {
+		t.Errorf(`"nb":"1" read as NonBlocking %v (%v), want false`, r.NonBlocking, err)
 	}
 }

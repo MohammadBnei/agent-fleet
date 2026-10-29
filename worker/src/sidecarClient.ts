@@ -88,7 +88,7 @@ export async function getSession(): Promise<{
   definitionSha?: string;
   grants?: string[];
   // docs/adr/0082 §5: how long the gate waits on a decision before answering
-  // "pending". 0 or absent (an older sidecar) is the worker's own 45 s.
+  // "pending". 0 or absent (an older core or sidecar) keeps the gate blocking.
   decisionWaitMs?: number;
 }> {
   const res = await fetch(`${base()}/task`);

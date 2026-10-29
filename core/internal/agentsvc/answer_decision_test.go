@@ -203,7 +203,25 @@ func TestAnswerDecision(t *testing.T) {
 	if err := withdraw("alice", w); code(err) != connect.CodeAlreadyExists {
 		t.Errorf("withdrawn twice: %v", err)
 	}
-	if err := withdraw("root", ask(shared, "question", `{"questions":[{"question":"why?"}]}`)); err != nil {
-		t.Errorf("an admin withdrawing: %v", err)
+	// Only a permission or a plan withdraws: a question outlives its turn,
+	// and its answer is a message whenever it comes.
+	if err := withdraw("root", ask(shared, "question", `{"questions":[{"question":"why?"}]}`)); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("an admin withdrawing a question: %v", err)
+	}
+	if err := withdraw("root", ask(shared, "permission_request", `{"tool":"ExitPlanMode","input":{"plan":"z"}}`)); err != nil {
+		t.Errorf("an admin withdrawing a plan: %v", err)
+	}
+	// A client acts on its thread only while still registered for it
+	// (docs/adr/0066 §5): testClients lists nobody here.
+	botThread, err := store.Create(ctx, sessions.CreateParams{Repo: "notes", DefinitionName: "d", DefinitionSHA: "sha1", Owner: "client:bot", Visibility: "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	botReq := ask(botThread, "permission_request", bash)
+	if _, err := s.AnswerDecision(withPrincipal(ctx, Principal{Client: "bot"}), connect.NewRequest(&agentfleetv1.AnswerDecisionRequest{DecisionId: botReq, Behavior: "withdraw"})); code(err) != connect.CodePermissionDenied {
+		t.Errorf("a de-listed client withdrawing: %v", err)
+	}
+	if d, _ := decs.Get(ctx, botReq); d.State != decisions.Open {
+		t.Errorf("after a refused withdraw: %s", d.State)
 	}
 }

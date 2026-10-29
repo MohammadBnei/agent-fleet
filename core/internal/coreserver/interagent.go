@@ -106,6 +106,13 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// A session with an open decision is promptable (docs/adr/0082 §5):
 	// nothing blocks, its decision waits on the owner whatever else arrives,
 	// and the entry below can never answer it (see the next comment).
+	// Except an older worker's: its unstamped permission or plan holds the
+	// canUseTool promise, so that session really is waiting on a human, and
+	// delivering here would push a turn past the outstanding decision and
+	// invite the caller to believe it had answered it (docs/adr/0029).
+	if t.BlockingDecisions > 0 {
+		return nil, fmt.Errorf("session %s is blocked waiting on a human decision — it cannot be prompted by an agent", target)
+	}
 	// The "unapproved proposal" guard that used to sit here is gone with the
 	// status: a proposal is now a row in a different table with no pod path,
 	// so a session reachable by this call has already been opened by a human

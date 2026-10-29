@@ -191,3 +191,23 @@ func TestPromptSession_ReachesASessionWithAnOpenDecision(t *testing.T) {
 		t.Errorf("prompting a session with an open decision: %v", err)
 	}
 }
+
+// An older worker's unstamped permission holds its canUseTool promise, so
+// that session really is blocked on a human and prompt_agent keeps
+// refusing it (docs/adr/0082 §5). "nb":"1", a string, is no stamp.
+func TestPromptSession_RefusesAnOlderWorkersBlockedSession(t *testing.T) {
+	for _, req := range []string{`{"tool":"Bash","input":{}}`, `{"tool":"Bash","input":{},"nb":"1"}`} {
+		ctx, srv, store, target, _ := nbServer(t)
+		caller, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SetPodPhase(ctx, target, "POD_PHASE_RUNNING", ""); err != nil {
+			t.Fatal(err)
+		}
+		srv.ask(t, ctx, target, req)
+		if _, err := srv.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{CallerSessionId: caller, TargetSessionId: target, Text: "hi"}); err == nil {
+			t.Errorf("%s: prompting a blocked older worker was accepted", req)
+		}
+	}
+}

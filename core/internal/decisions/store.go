@@ -58,7 +58,7 @@ const cols = `
 	d.id::text, d.kind, d.session_id::text, d.request_seq, d.state, d.ask,
 	COALESCE(d.payload::text, ''), COALESCE(d.tool, ''), COALESCE(d.answer::text, ''),
 	COALESCE(d.answered_by, ''), d.answered_at, d.version, d.created_at, d.grantable,
-	COALESCE(d.payload ->> 'nb' = '1', false),
+	COALESCE(d.payload -> 'nb' = '1'::jsonb, false),
 	d.state = 'open' AND EXISTS (SELECT 1 FROM transcript t
 	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
 	                                AND t.type IN ('interrupt', 'abort')),
@@ -118,7 +118,8 @@ type Cursor struct {
 	ID        string
 }
 
-// List is decisions on sessions that are not archived, newest first.
+// List is decisions on sessions neither archived nor swept, newest first: a
+// swept session cannot be resumed, so nothing it asked can be acted on.
 func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	before := Cursor{CreatedAt: time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC), ID: "ffffffff-ffff-ffff-ffff-ffffffffffff"}
 	if f.Before != nil {
@@ -132,7 +133,7 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 		f.States = []string{}
 	}
 	out, err := collect(s.pool.Query(ctx, `SELECT `+cols+`
-		WHERE s.archived_at IS NULL
+		WHERE s.archived_at IS NULL AND s.swept_at IS NULL
 		  AND ($1 OR (s.definition_name IS NOT NULL AND (s.owner = $2 OR ($3 AND s.visibility = 'shared'))))
 		  AND (cardinality($4::text[]) = 0 OR d.state = ANY($4))
 		  AND (cardinality($5::text[]) = 0 OR d.kind = ANY($5))

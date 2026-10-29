@@ -42,8 +42,10 @@ type Effects interface {
 
 // response is a permission_response's text. decisionID marks a one-time
 // grant (ConsumeGrant): never "grant", which every worker reads as a standing
-// rule (docs/adr/0076 §3).
-func response(behavior, message, decisionID string) (string, error) {
+// rule (docs/adr/0076 §3). kind "plan" marks a non-blocking worker's plan
+// answer, so the worker tells it from a permission's without guessing; an
+// older worker's answers carry none and stay as they were.
+func response(behavior, message, decisionID, kind string) (string, error) {
 	if behavior != "allow" && behavior != "deny" {
 		return "", fmt.Errorf(`%w: behavior must be "allow" or "deny"`, ErrInvalid)
 	}
@@ -51,7 +53,8 @@ func response(behavior, message, decisionID string) (string, error) {
 		Behavior   string `json:"behavior"`
 		Message    string `json:"message,omitempty"`
 		DecisionID string `json:"decisionId,omitempty"`
-	}{behavior, message, decisionID})
+		Kind       string `json:"kind,omitempty"`
+	}{behavior, message, decisionID, kind})
 	return string(b), err
 }
 
@@ -85,7 +88,11 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		}
 		return reply(a.Answers, "answer")
 	case Plan:
-		text, err := response(a.Behavior, a.Message, "")
+		kind := ""
+		if r.NonBlocking {
+			kind = string(Plan)
+		}
+		text, err := response(a.Behavior, a.Message, "", kind)
 		if err != nil {
 			return 0, err
 		}
@@ -110,7 +117,7 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		if r.Grantable && a.Behavior == "allow" {
 			id = r.ID
 		}
-		text, err := response(a.Behavior, a.Message, id)
+		text, err := response(a.Behavior, a.Message, id, "")
 		if err != nil {
 			return 0, err
 		}
@@ -163,7 +170,7 @@ func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, canon string) 
 	err = s.pool.QueryRow(ctx, `
 		SELECT request_seq FROM decisions
 		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
-		   AND tool = $2 AND input_canon = $3 AND payload ->> 'nb' = '1'
+		   AND tool = $2 AND input_canon = $3 AND payload -> 'nb' = '1'::jsonb
 		 ORDER BY request_seq DESC LIMIT 1`, session, tool, canon).Scan(&seq)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, nil

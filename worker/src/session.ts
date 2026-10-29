@@ -662,12 +662,11 @@ export const SIDECAR_MCP_TIMEOUT_MS = 90_000;
 
 // How long canUseTool holds a call on a human before answering "pending"
 // (docs/adr/0082 §5: nothing blocks). core's DECISION_WAIT_MS, sent through
-// GET /task; 0 or absent (an older core or sidecar) is the default.
-export const DEFAULT_DECISION_WAIT_MS = 45_000;
+// GET /task. 0 or absent is an older core or sidecar, which answers none of
+// the new behaviour: the gate then blocks until answered, unstamped, exactly
+// as before.
 export function decisionWaitMs(fromSession: number | undefined): number {
-  return fromSession && fromSession > 0
-    ? fromSession
-    : DEFAULT_DECISION_WAIT_MS;
+  return fromSession && fromSession > 0 ? fromSession : 0;
 }
 
 // The stamp (docs/adr/0082 §5): core gives only a request carrying it the new
@@ -1258,14 +1257,14 @@ export async function runSession(): Promise<SessionResult> {
       resolve: (result: PermissionResult) => void;
       input: Record<string, unknown>;
       tool: string;
-      timer: ReturnType<typeof setTimeout>;
+      timer: ReturnType<typeof setTimeout> | undefined;
       unlisten: () => void;
     }
   >();
   // Requests this pod let go of without an answer (timed out, aborted, denied
   // by a chat message or an interrupt), seq -> the call. The decision stays
   // open: its answer arrives later as a message, and a retry of the same call
-  // gets the same seq back from core, which is refused at once.
+  // gets the same seq back from core, which parks again on it.
   const released = new Map<
     number,
     { tool: string; input: Record<string, unknown> }
@@ -1280,6 +1279,10 @@ export async function runSession(): Promise<SessionResult> {
   // hold (input unknown): that retry asks again.
   let planRetry: Record<string, unknown> | undefined;
   const waitMs = decisionWaitMs(session.decisionWaitMs);
+  // Off (an older core or sidecar): no stamp, no timer, no grant, and the
+  // blocking gate's own resolutions (a mode switch allows, a chat reply
+  // records its deny).
+  const nonBlocking = waitMs > 0;
 
   // Takes a parked call out of the map before anything else happens to it, so
   // a timer, an abort and an answer can never resolve one call twice.
@@ -1349,19 +1352,39 @@ export async function runSession(): Promise<SessionResult> {
       );
   }
 
-  // resolveOnePendingAllow used to live here: a permission-mode switch allowed
-  // the parked plan (or the oldest parked call). Gone with docs/adr/0082 §5:
-  // a plan approval is its own permission_response, and core switches the
-  // mode before appending it, so a mode switch answers nothing.
+  // The blocking gate only (an older core): a permission-mode switch allows
+  // the parked plan, else the oldest parked call, never one the new mode would
+  // itself still ask about (docs/adr/0052, 0053). Non-blocking, a plan approval
+  // is its own permission_response, and core switches the mode before
+  // appending it, so a mode switch answers nothing (docs/adr/0082 §5).
+  function resolveOnePendingAllow(mode: PermissionMode): void {
+    const entries = [...pendingPermissions]
+      .sort(([a], [b]) => a - b)
+      .filter(
+        ([, p]) =>
+          !(mode === "auto" && autoModeStillAsksCommand(p.tool, p.input)),
+      );
+    const target =
+      entries.find(([, p]) => p.tool === "ExitPlanMode") ?? entries[0];
+    if (!target) return;
+    const [seq, pending] = target;
+    claim(seq);
+    pending.resolve({ behavior: "allow", updatedInput: pending.input });
+    recordResolution(seq, {
+      behavior: "allow",
+      message: "Allowed by a permission-mode change.",
+    });
+  }
 
   // Denies every parked call. None of them is answered: each decision stays
   // open, and its answer arrives later as a message. `interrupt` is the SDK's
   // stop-this-turn flag. `record` closes the decisions too, for `/clear`
-  // alone: the conversation they belonged to is gone.
+  // alone: the conversation they belonged to is gone. The blocking gate (an
+  // older core) records every deny that is not an interrupt, as it always did.
   function resolveAllPendingDeny(
     message: string,
     interrupt = false,
-    record = false,
+    record = !nonBlocking && !interrupt,
   ): void {
     for (const seq of [...pendingPermissions.keys()]) {
       release(seq, {
@@ -1619,6 +1642,7 @@ export async function runSession(): Promise<SessionResult> {
         // exact call once (docs/adr/0082 §5), after an earlier ask of it timed
         // out. A plan is never a grant.
         if (
+          nonBlocking &&
           toolName !== "ExitPlanMode" &&
           (await spendGrant(toolName, toolInput as Record<string, unknown>))
         )
@@ -1630,7 +1654,7 @@ export async function runSession(): Promise<SessionResult> {
               tool: toolName,
               input: toolInput,
               ...(noGrant ? { noGrant: true } : {}),
-              ...NON_BLOCKING_STAMP,
+              ...(nonBlocking ? NON_BLOCKING_STAMP : {}),
             }),
             "permission_request",
           )
@@ -1648,26 +1672,31 @@ export async function runSession(): Promise<SessionResult> {
               "Could not reach the dashboard to request permission — try again.",
           };
         }
-        // core answers an identical open request with its existing seq. One
-        // this pod already holds or let go of is still waiting on a human.
-        if (pendingPermissions.has(seq) || released.has(seq)) {
+        // core answers an identical open request with its existing seq. A twin
+        // of one still parked here is refused at once. One this pod let go of
+        // parks again on that seq for one more wait, so a retry loop runs at
+        // most once per wait, and an answer meanwhile runs it as usual.
+        if (pendingPermissions.has(seq)) {
           return {
             behavior: "deny",
             message: `Duplicate of pending request seq ${seq}. Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
           };
         }
+        released.delete(seq);
         const signal = options?.signal;
         return new Promise<PermissionResult>((resolve) => {
           // A timeout records nothing: the decision stays open for a human,
           // and the text never quotes the input back.
-          const timer = setTimeout(
-            () =>
-              release(seq, {
-                behavior: "deny",
-                message: `Pending (request seq ${seq}). Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
-              }),
-            waitMs,
-          );
+          const timer = nonBlocking
+            ? setTimeout(
+                () =>
+                  release(seq, {
+                    behavior: "deny",
+                    message: `Pending (request seq ${seq}). Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
+                  }),
+                waitMs,
+              )
+            : undefined;
           const onAbort = () =>
             release(seq, {
               behavior: "deny",
@@ -1902,10 +1931,10 @@ export async function runSession(): Promise<SessionResult> {
           if (typeof entry.replyTo !== "number") return;
           let decision: {
             behavior?: "allow" | "deny";
-            updatedInput?: Record<string, unknown>;
             message?: string;
             grant?: string;
             decisionId?: string;
+            kind?: string;
           } = {};
           try {
             decision = JSON.parse(entry.text);
@@ -1953,35 +1982,27 @@ export async function runSession(): Promise<SessionResult> {
               );
               return;
             }
-            // A definition session's answer is {behavior, message} only
-            // (docs/adr/0067 §4): the call runs as the agent asked for it, so a
-            // human cannot rewrite it into a call nobody was asked about.
+            // The call runs as the agent asked for it (docs/adr/0067 §4): an
+            // answer cannot rewrite it into a call nobody was asked about.
             pending.resolve(
               decision.behavior === "allow"
-                ? {
-                    behavior: "allow",
-                    updatedInput: spec
-                      ? pending.input
-                      : (decision.updatedInput ?? pending.input),
-                  }
+                ? { behavior: "allow", updatedInput: pending.input }
                 : { behavior: "deny", message: reason },
             );
             return;
           }
           // Not parked: this pod (or an earlier one) let the call go, and the
-          // answer is a message (docs/adr/0082 §5). One whose retry already
-          // spent its grant here has nothing left to say.
+          // answer is a message (docs/adr/0082 §5). An older core's late
+          // answer was never delivered, and still is not. One whose retry
+          // already spent its grant here has nothing left to say.
+          if (!nonBlocking) return;
           if (decisionId && spentDecisions.has(decisionId)) return;
           const call = released.get(seq);
           released.delete(seq);
-          const tool = call?.tool;
           if (decision.behavior === "allow") {
-            // ponytail: an answer carries no tool, so a plan is told apart by
-            // what this pod remembers, else by "no grant id while in plan
-            // mode" (a plan is never a grant; a permission allow carries one).
-            // Upgrade path: core puts the decision's kind in the response.
-            const plan =
-              !decisionId && (tool === undefined || tool === "ExitPlanMode");
+            // core marks a plan's answer "kind":"plan"; anything else is a
+            // permission.
+            const plan = decision.kind === "plan";
             if (plan && currentMode === "plan") {
               await approvePlanLate(seq, call?.input);
               return;
@@ -2051,6 +2072,9 @@ export async function runSession(): Promise<SessionResult> {
             return;
           }
           currentMode = mode;
+          // A definition session's mode change approves nothing (docs/adr/0067
+          // §4): a parked call is still answered only by a permission_response.
+          if (!nonBlocking && !spec) resolveOnePendingAllow(mode);
           return;
         }
         // `/clear` (and its CLI aliases) must NOT reach the SDK.

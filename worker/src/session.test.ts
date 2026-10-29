@@ -31,7 +31,9 @@ let nextSeq = 1;
 let sessionAgentSpec: Record<string, unknown> | null = null;
 // The agentSpecSha the worker passed when it opened the human-message feed.
 let streamedSpecSha: string | undefined;
-// GET /task's decisionWaitMs (docs/adr/0082 §5); undefined = an older sidecar.
+// GET /task's decisionWaitMs (docs/adr/0082 §5); 0 or undefined = an older
+// core or sidecar, which keeps the blocking gate. Every test runs against a
+// new core (60 s) unless it says otherwise.
 let sessionDecisionWaitMs: number | undefined;
 // POST /grant/consume: what each call answers, and every call it got. A
 // promise lets a test hold the answer back (the claim-first race).
@@ -156,6 +158,7 @@ function respondToPermission(
     behavior: "allow" | "deny";
     updatedInput?: unknown;
     message?: string;
+    kind?: "plan";
   },
 ): void {
   pushHuman(JSON.stringify(decision), "permission_response", seq);
@@ -396,7 +399,6 @@ const {
   denyReason,
   ANSWER_NO_REASK,
   SIDECAR_MCP_TIMEOUT_MS,
-  DEFAULT_DECISION_WAIT_MS,
   decisionWaitMs,
   matchesToolRule,
   definitionDecision,
@@ -430,7 +432,7 @@ beforeEach(() => {
   preInitMessages = [];
   sessionAgentSpec = null;
   streamedSpecSha = undefined;
-  sessionDecisionWaitMs = undefined;
+  sessionDecisionWaitMs = 60_000;
   consumeGrantAnswer = async () => ({ granted: false, decisionId: "" });
   consumeGrantCalls.length = 0;
   forcedRequestSeq = null;
@@ -2907,13 +2909,78 @@ describe("non-blocking decisions", () => {
   const turns = () => consumedInputs.map((m) => m.message.content);
   const requestSeq = (tool: string) => findPermissionRequest(tool)!.seq;
 
-  test("decisionWaitMs: 0 or absent is 45 s, anything positive is kept", () => {
-    expect(DEFAULT_DECISION_WAIT_MS).toBe(45_000);
-    expect(decisionWaitMs(undefined)).toBe(45_000);
-    expect(decisionWaitMs(0)).toBe(45_000);
-    expect(decisionWaitMs(-5)).toBe(45_000);
+  test("decisionWaitMs: 0 or absent is an older core (0, blocking), anything positive is kept", () => {
+    expect(decisionWaitMs(undefined)).toBe(0);
+    expect(decisionWaitMs(0)).toBe(0);
+    expect(decisionWaitMs(-5)).toBe(0);
     expect(decisionWaitMs(120_000)).toBe(120_000);
   });
+
+  for (const wait of [0, undefined])
+    test(`an older core (decisionWaitMs ${wait}): unstamped, no grant spend, parked until answered`, async () => {
+      sessionDecisionWaitMs = wait;
+      consumeGrantAnswer = async () => ({ granted: true, decisionId: "d-1" });
+      const promise = runSession();
+      await Bun.sleep(20);
+
+      let resolved: unknown = null;
+      const call = capturedCanUseTool!("Bash", { command: "gh pr list" }).then(
+        (r) => (resolved = r),
+      );
+      await Bun.sleep(100);
+      expect(resolved).toBeNull();
+      expect(consumeGrantCalls).toEqual([]);
+      const req = findPermissionRequest("Bash")!;
+      expect(JSON.parse(req.text)).toEqual({
+        tool: "Bash",
+        input: { command: "gh pr list" },
+      });
+
+      respondToPermission(req.seq, { behavior: "allow" });
+      expect(await call).toEqual({
+        behavior: "allow",
+        updatedInput: { command: "gh pr list" },
+      });
+
+      pushHuman("", "abort");
+      await promise;
+    }, 10000);
+
+  test("an older core: a mode switch allows the parked plan, a chat reply records its deny, a late answer is ignored", async () => {
+    sessionDecisionWaitMs = 0;
+    sessionPermissionMode = "plan";
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    const plan = capturedCanUseTool!("ExitPlanMode", { plan: "p" });
+    await Bun.sleep(10);
+    pushHuman("default", "permission_mode");
+    expect((await plan).behavior).toBe("allow");
+    const planSeq = requestSeq("ExitPlanMode");
+    expect(
+      pushedMessages.find(
+        (m) => m.type === "permission_response" && m.replyTo === planSeq,
+      ),
+    ).toBeDefined();
+
+    const write = capturedCanUseTool!("Write", { file_path: "x" });
+    await Bun.sleep(10);
+    pushHuman("hold on", "discussion");
+    expect((await write).behavior).toBe("deny");
+    const writeSeq = requestSeq("Write");
+    expect(
+      pushedMessages.find(
+        (m) => m.type === "permission_response" && m.replyTo === writeSeq,
+      ),
+    ).toBeDefined();
+
+    respondToPermission(writeSeq, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(turns().some((t) => t.includes(`seq ${writeSeq}`))).toBe(false);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
 
   test("a call nobody answers in time is denied as pending, records nothing, never quotes the input", async () => {
     sessionDecisionWaitMs = 30;
@@ -2934,7 +3001,7 @@ describe("non-blocking decisions", () => {
     await promise;
   }, 10000);
 
-  test("core's seq for a call already parked or timed out here is denied at once", async () => {
+  test("a retry of a call that timed out here parks again on its seq for one wait", async () => {
     sessionDecisionWaitMs = 30;
     const promise = runSession();
     await Bun.sleep(20);
@@ -2945,9 +3012,84 @@ describe("non-blocking decisions", () => {
     forcedRequestSeq = seq;
     const started = Date.now();
     const retry = await capturedCanUseTool!("Bash", { command: "make" });
-    expect(Date.now() - started).toBeLessThan(25);
-    expect(retry.behavior).toBe("deny");
-    expect(retry.message).toContain(`Duplicate of pending request seq ${seq}`);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(25);
+    expect(retry).toEqual({ behavior: "deny", message: PENDING(seq) });
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("an answer arriving while a retry is parked again runs it through the grant spend", async () => {
+    sessionDecisionWaitMs = 40;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    await capturedCanUseTool!("Bash", { command: "make" });
+    const seq = requestSeq("Bash");
+    forcedRequestSeq = seq;
+    const retry = capturedCanUseTool!("Bash", { command: "make" });
+    await Bun.sleep(10);
+    consumeGrantAnswer = async () => ({ granted: true, decisionId: "d-3" });
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-3" }),
+      "permission_response",
+      seq,
+    );
+    expect(await retry).toEqual({
+      behavior: "allow",
+      updatedInput: { command: "make" },
+    });
+    await Bun.sleep(20);
+    expect(turns().some((t) => t.includes(`seq ${seq}`))).toBe(false);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("an allow without kind is a permission, even in plan mode for a seq this pod never held", async () => {
+    sessionPermissionMode = "plan";
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    respondToPermission(77, { behavior: "allow" });
+    await Bun.sleep(20);
+    expect(setPermissionModeCalls).toEqual([]);
+    expect(turns()).toContain("Approved: retry request seq 77 once.");
+
+    respondToPermission(78, { behavior: "allow", kind: "plan" });
+    await Bun.sleep(20);
+    expect(setPermissionModeCalls).toEqual(["default"]);
+    expect(
+      turns().some((t) => t.startsWith("Plan approved (request seq 78)")),
+    ).toBe(true);
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
+  test("a late plan approval outside plan mode, after an allowed EnterPlanMode: the retry runs, no second card", async () => {
+    sessionPermissionMode = "auto";
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("start");
+    await Bun.sleep(20);
+
+    expect((await capturedCanUseTool!("EnterPlanMode", {})).behavior).toBe(
+      "allow",
+    );
+    await capturedCanUseTool!("ExitPlanMode", { plan: "p" });
+    const seq = requestSeq("ExitPlanMode");
+    respondToPermission(seq, { behavior: "allow", kind: "plan" });
+    await Bun.sleep(20);
+    expect(setPermissionModeCalls).toEqual([]);
+    expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
+    expect(
+      (await capturedCanUseTool!("ExitPlanMode", { plan: "p" })).behavior,
+    ).toBe("allow");
+    expect(
+      pushedMessages.filter((m) => m.type === "permission_request"),
+    ).toHaveLength(1);
 
     pushHuman("", "abort");
     await promise;
@@ -3126,7 +3268,7 @@ describe("non-blocking decisions", () => {
     // A plan is never a one-time grant.
     expect(consumeGrantCalls).toEqual([]);
 
-    respondToPermission(seq, { behavior: "allow" });
+    respondToPermission(seq, { behavior: "allow", kind: "plan" });
     await Bun.sleep(20);
     expect(setPermissionModeCalls).toEqual(["default"]);
     expect(savedPermissionModes).toContain("default");
@@ -3153,7 +3295,7 @@ describe("non-blocking decisions", () => {
     // core appends the named mode first, then the allow.
     pushHuman("auto", "permission_mode");
     await Bun.sleep(20);
-    respondToPermission(seq, { behavior: "allow" });
+    respondToPermission(seq, { behavior: "allow", kind: "plan" });
     await Bun.sleep(20);
     expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
 
@@ -3186,7 +3328,7 @@ describe("non-blocking decisions", () => {
     const seq = requestSeq("ExitPlanMode");
     pushHuman("auto", "permission_mode");
     await Bun.sleep(20);
-    respondToPermission(seq, { behavior: "allow" });
+    respondToPermission(seq, { behavior: "allow", kind: "plan" });
     await Bun.sleep(20);
     expect(turns()).toContain(`Approved: retry request seq ${seq} once.`);
 
@@ -3205,7 +3347,7 @@ describe("non-blocking decisions", () => {
     const seqB = pushedMessages
       .filter((m) => m.type === "permission_request")
       .at(-1)!.seq;
-    respondToPermission(seqB, { behavior: "allow" });
+    respondToPermission(seqB, { behavior: "allow", kind: "plan" });
     await Bun.sleep(20);
     expect(turns()).toContain(`Approved: retry request seq ${seqB} once.`);
     pushHuman("plan", "permission_mode");
@@ -3227,7 +3369,10 @@ describe("non-blocking decisions", () => {
     await Bun.sleep(20);
 
     await capturedCanUseTool!("ExitPlanMode", { plan: "p" });
-    respondToPermission(requestSeq("ExitPlanMode"), { behavior: "allow" });
+    respondToPermission(requestSeq("ExitPlanMode"), {
+      behavior: "allow",
+      kind: "plan",
+    });
     await Bun.sleep(20);
     expect(setPermissionModeCalls).toEqual(["default"]);
     expect(savedPermissionModes).toContain("auto");
