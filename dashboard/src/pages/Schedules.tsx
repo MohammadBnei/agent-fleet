@@ -1,5 +1,6 @@
 import { relativeTime } from "../relativeTime";
 import { useCallback, useEffect, useState } from "react";
+import { agentErrorText } from "../agentErrors";
 import { client } from "../connectClient";
 import { activeRepos } from "../repoFilter";
 import type { Schedule, Proposal, Repo } from "../gen/agentfleet/v1/dashboard_pb";
@@ -461,7 +462,8 @@ export function Schedules({
     setError(null);
     fn()
       .then(() => reloadSessions())
-      .catch((err: Error) => setError(err.message))
+      // Opening a proposal is AgentService's Open: its refusals arrive keyed.
+      .catch((err: unknown) => setError(agentErrorText(err)))
       .finally(() => setBusy(false));
   };
 

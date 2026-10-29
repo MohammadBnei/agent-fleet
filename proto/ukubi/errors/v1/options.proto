@@ -1,0 +1,42 @@
+// Vendored, unchanged below this header, from github.com/MohammadBnei/ukubi-go v0.2.0 (53703b0),
+// proto/ukubi/errors/v1/options.proto: ukubi-go publishes no buf module to depend on. Go imports ukubi-go's
+// generated package (go_package below), so buf.gen.yaml generates no Go for this file; protoc-gen-es generates
+// its TS, which agent_pb.ts imports. Update it only by copying a newer tag's file, with the core go.mod bump.
+
+syntax = "proto3";
+
+package ukubi.errors.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/MohammadBnei/ukubi-go/proto/gen/go/ukubi/errors/v1;errorsv1";
+
+// A service declares its error keys in its own proto file: one enum, one value per key, each value carrying the key's
+// wire string through (key); its zero value carries none. Each RPC lists the keys it may return through (keys). The
+// wire is still ErrorKey.key, a string; the enum is the declaration, so buf breaking refuses an enum value that is
+// renamed or removed. It does not compare option values: never change a value's wire string, add a new value instead.
+// connectkeys.CheckDeclared holds the enum, the RPCs' lists and the app's Go registry to each other in a test.
+//
+//   enum AppErrorKey {
+//     APP_ERROR_KEY_UNSPECIFIED = 0;
+//     APP_ERROR_KEY_THREAD_CAP = 1 [(ukubi.errors.v1.key) = "app.thread_cap"];
+//   }
+//   rpc Open(OpenRequest) returns (OpenResponse) {
+//     option (ukubi.errors.v1.keys) = "app.thread_cap";
+//   }
+//
+// Extension numbers: ukubi's options take numbers from 50000-99999, the range protobuf leaves to an organization's own
+// use, never registered globally. Two extensions of one options message must not share a number in one binary, so
+// each ukubi package takes a block of 100, away from 50000-50999 where examples and other in-house options cluster:
+// ukubi.errors.v1 has 51000-51099. Never renumber or retype one; a new option takes the block's next free number.
+
+extend google.protobuf.EnumValueOptions {
+  // key is the wire string of the key this enum value declares, e.g. "app.thread_cap".
+  string key = 51000;
+}
+
+extend google.protobuf.MethodOptions {
+  // keys are the wire strings of the keys an RPC may return, each declared by a value of its service's key enum.
+  // connectkeys.KeyInternal ("server.internal"), which the fallback gives any RPC, need not be listed.
+  repeated string keys = 51001;
+}

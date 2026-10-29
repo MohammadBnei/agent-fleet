@@ -12,6 +12,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -86,7 +87,7 @@ func TestOpen(t *testing.T) {
 	if _, err := open(bot, "k0b", "hi", true, false, "stranger"); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("actor outside actors.allow: %v", err)
 	}
-	if _, err := open(other, "k0c", "hi", true, false, "MohammadBnei"); code(err) != connect.CodeNotFound {
+	if _, err := open(other, "k0c", "hi", true, false, "MohammadBnei"); code(err) != connect.CodeNotFound || errkeys.Of(err) != errkeys.KeyDefinitionUnavailable {
 		t.Fatalf("client that may not open d: %v", err)
 	}
 	first, err := open(bot, "k1", "review this", true, false, "MohammadBnei")

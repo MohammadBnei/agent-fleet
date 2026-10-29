@@ -193,20 +193,20 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		if n >= maxOpenThreads {
-			return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("you have %d open threads; close one first", n))
+			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("you have %d open threads; close one first", n))
 		}
 	}
 	h, err := s.definitions.Resolve(req.Msg.GetDefinition())
 	switch {
 	case errors.Is(err, definitions.ErrUnknown):
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, err)
 	case errors.Is(err, definitions.ErrInvalid):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	case err != nil:
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	if !mayUse(p, h.Effective) {
-		return nil, connect.NewError(connect.CodeNotFound, definitions.ErrUnknown)
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
 	if !allows(h.Effective.Interaction, "ask") || !allows(h.Effective.Lifecycle, "resident") {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this definition takes no interactive threads"))

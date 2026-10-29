@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -102,7 +103,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	}
 	head, ok := s.usable(p, m.GetDefinition())
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, definitions.ErrUnknown)
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
 	if !allows(head.Effective.Interaction, m.GetInteraction()) || !allows(head.Effective.Lifecycle, m.GetLifecycle()) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this definition does not take that interaction or lifecycle"))
@@ -175,7 +176,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		if n, err := s.sessions.OpenThreads(ctx, owner); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		} else if n >= maxClientThreads {
-			return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this client has %d open threads; close some first", n))
+			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("this client has %d open threads; close some first", n))
 		}
 		if t, err = s.dash.CreateThread(ctx, head, m.GetThreadKey(), sessions.CreateParams{
 			Owner: owner, Visibility: m.GetVisibility(), Interaction: m.GetInteraction(), Lifecycle: m.GetLifecycle(),

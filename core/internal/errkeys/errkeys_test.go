@@ -27,8 +27,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/MohammadBnei/ukubi-go/errs"
 	"github.com/MohammadBnei/ukubi-go/errs/connectkeys"
 	"github.com/MohammadBnei/ukubi-go/errs/connectkeys/wiring"
+	errorsv1 "github.com/MohammadBnei/ukubi-go/proto/gen/go/ukubi/errors/v1"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
@@ -92,32 +94,13 @@ func TestWire(t *testing.T) {
 // no second Keys), Connect and Status are only ever called (never taken as a value, so an alias cannot carry a key
 // past this check), and errkeys is never dot-imported. Syntactic, over core's non-test files outside this package.
 func TestErrKeys(t *testing.T) {
-	keys, values := map[string]bool{}, map[string]string{}
-	f, err := parser.ParseFile(token.NewFileSet(), "errkeys.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, d := range f.Decls {
-		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
-			for _, sp := range g.Specs {
-				vs := sp.(*ast.ValueSpec)
-				if st, ok := vs.Type.(*ast.SelectorExpr); !ok || fmtIdent(st.X) != "errs" || st.Sel.Name != "Key" {
-					t.Errorf("errkeys.go: a constant %s that is not an errs.Key", vs.Names[0].Name)
-					continue
-				}
-				for i, n := range vs.Names {
-					v := vs.Values[i].(*ast.BasicLit).Value
-					if other, dup := values[v]; dup {
-						t.Errorf("errkeys.go: %s and %s are both %s", other, n.Name, v)
-					}
-					keys[n.Name], values[v] = true, n.Name
-				}
-			}
-		}
+	keys := map[string]bool{}
+	for name := range registry(t) {
+		keys[name] = true
 	}
 	self, _ := filepath.Abs(".")
 	checked := 0
-	err = filepath.WalkDir(filepath.Join("..", ".."), func(p string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(filepath.Join("..", ".."), func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return err
 		}
@@ -186,6 +169,62 @@ func TestErrKeys(t *testing.T) {
 	}
 	if len(keys) < 2 || checked < 1 {
 		t.Errorf("%d keys, %d calls checked: the check no longer sees them", len(keys), checked) // the positive control
+	}
+}
+
+// registry is errkeys.go's constants, name to wire string: each an errs.Key, no wire string twice.
+func registry(t *testing.T) map[string]string {
+	t.Helper()
+	keys, names := map[string]string{}, map[string]string{}
+	f, err := parser.ParseFile(token.NewFileSet(), "errkeys.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range f.Decls {
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
+			for _, sp := range g.Specs {
+				vs := sp.(*ast.ValueSpec)
+				if st, ok := vs.Type.(*ast.SelectorExpr); !ok || fmtIdent(st.X) != "errs" || st.Sel.Name != "Key" {
+					t.Errorf("errkeys.go: a constant %s that is not an errs.Key", vs.Names[0].Name)
+					continue
+				}
+				for i, n := range vs.Names {
+					v, err := strconv.Unquote(vs.Values[i].(*ast.BasicLit).Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if other, dup := names[v]; dup {
+						t.Errorf("errkeys.go: %s and %s are both %q", other, n.Name, v)
+					}
+					keys[n.Name], names[v] = v, n.Name
+				}
+			}
+		}
+	}
+	return keys
+}
+
+// TestDeclared: the registry and agent.proto's AgentErrorKey are one set of keys, each RPC's (ukubi.errors.v1.keys)
+// among them (connectkeys.CheckDeclared). Each value's wire string is "agent." and its name after the prefix in lower
+// case: the islands and the dashboard map the generated enum's names, which protoc-gen-es strips of the prefix.
+func TestDeclared(t *testing.T) {
+	var reg []errs.Key
+	for _, v := range registry(t) {
+		reg = append(reg, errs.Key(v))
+	}
+	if err := connectkeys.CheckDeclared(reg, agentfleetv1.File_agentfleet_v1_agent_proto.Services().ByName("AgentService")); err != nil {
+		t.Error(err)
+	}
+	vals := agentfleetv1.AgentErrorKey(0).Descriptor().Values()
+	for i := 1; i < vals.Len(); i++ {
+		v := vals.Get(i)
+		want := "agent." + strings.ToLower(strings.TrimPrefix(string(v.Name()), "AGENT_ERROR_KEY_"))
+		if got := proto.GetExtension(v.Options(), errorsv1.E_Key).(string); got != want {
+			t.Errorf("%s: wire string %q, want %q", v.Name(), got, want)
+		}
+	}
+	if vals.Len() < 2 {
+		t.Error("AgentErrorKey declares no key: the check no longer sees them") // the positive control
 	}
 }
 

@@ -1,10 +1,21 @@
 # ADR-0081 — Error keys are declared in each service's proto; an error is traced by its trace id
 
 - **Status:** Accepted (2026-10-28)
-- **Built:** §5 step 1: core requires `ukubi-go` v0.1.0 and `core/internal/errkeys` is
-  its wrapper (one `connectkeys.Keys`, template `agentfleet.v1.ErrorKey`, the registry
-  constants); the `Meta()` race is gone and `connectkeys/wiring` is `TestWiring`.
-  **Not yet built:** §1–§4 and the rest of §5 (they wait on `ukubi-go` v0.2.0).
+- **Built:** §5 steps 1–3 but the parse removal: core requires `ukubi-go` v0.2.0 and
+  `core/internal/errkeys` is its wrapper (one `connectkeys.Keys`, template
+  `agentfleet.v1.ErrorKey`, the registry constants); the `Meta()` race is gone and
+  `connectkeys/wiring` is `TestWiring`. §1–§3: `agent.proto` declares `AgentErrorKey`
+  (`agent.definition_changed`, `agent.thread_cap`, `agent.definition_unavailable`) and
+  each RPC's `(ukubi.errors.v1.keys)`, from `proto/ukubi/errors/v1/options.proto`
+  vendored from v0.2.0; `TestDeclared` runs `connectkeys.CheckDeclared` over
+  AgentService. The islands' `errors.ts` and the dashboard's `agentErrors.ts` map the
+  keys to text, typed on the generated enum's names. Three keys, not about 12: §2's test
+  leaves only these with an islands or dashboard reader for whom the code is ambiguous
+  (the owner-only, client-only and origin refusals reach neither, and every `Aborted`
+  means retry). The taint refusals get no key and stay an unkeyed `PermissionDenied`:
+  [ADR-0082](0082-decision-cards.md) §3 removes taint.
+  **Not yet built:** the `rawMessage.includes("DEFINITION_CHANGED")` removal (§5 step 3),
+  §4 and §5 steps 4–5.
 - **Date:** 2026-10-28
 - **Related:** [ADR-0066](0066-agent-service.md) (AgentService),
   [ADR-0067](0067-shared-and-private-sessions.md) (who may do what in a thread),

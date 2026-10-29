@@ -1,4 +1,10 @@
 version: v2
+# ukubi/ is ukubi-go's options.proto, vendored (its header says why): an import here, never a target, so no Go
+# plugin writes a second copy of a package ukubi-go already generates. protoc-gen-es includes it as an import.
+inputs:
+  - directory: .
+    exclude_paths:
+      - ukubi
 plugins:
   - local: protoc-gen-go
     out: gen/go
@@ -17,6 +23,8 @@ plugins:
   - local: ../dashboard/node_modules/.bin/protoc-gen-es
     out: ../dashboard/src/gen
     opt: target=ts
+    # agent_pb.ts imports ukubi/errors/v1/options_pb.ts; TS has no ukubi-go package to import it from.
+    include_imports: true
   # A protoc-gen-ts_proto block used to generate worker/src/gen. Deleted in
   # docs/adr/0048: nothing in worker/src ever imported it. The worker speaks
   # to its own pod's sidecar over plain HTTP/JSON on localhost and never

@@ -58,3 +58,15 @@ test("the error key's bytes", () => {
   expect(errorKey(raw([0x0a]))).toBe(""); // no length
   expect(errorKey(raw([0x08, 0x01]))).toBe(""); // a varint field: not this shape
 });
+
+// A code that means several things reads by its key (docs/adr/0081 §2); unkeyed, or a key with no text, the code's.
+test("keyed refusals", () => {
+  expect(errorText(keyed("you have 50 open threads; close one first", Code.ResourceExhausted, "agent.thread_cap"))).toContain("too many open threads");
+  expect(errorText(keyed("unknown definition", Code.NotFound, "agent.definition_unavailable"))).toBe("This agent is not available to you.");
+  // unkeyed: the code's words, which name no cause
+  expect(errorText(keyed("you cannot post to this thread", Code.PermissionDenied, "server.internal"))).toBe("You cannot do that in this thread.");
+  expect(errorText(keyed("at capacity", Code.ResourceExhausted, "server.internal"))).toContain("busy");
+  // a key a newer core added, and a name that is no key: the code's words
+  expect(errorText(keyed("gone", Code.NotFound, "agent.something_new"))).toBe("This thread is no longer available.");
+  expect(errorText(keyed("gone", Code.NotFound, "agent.constructor"))).toBe("This thread is no longer available.");
+});

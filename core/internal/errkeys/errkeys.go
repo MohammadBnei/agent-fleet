@@ -9,10 +9,11 @@
 //
 // A specific key is not coming to every site (docs/adr/0081 §2). A site gets one only when a client must act on the
 // error or show text for it and the code alone does not say what happened; every other site stays KeyInternal with
-// its specific code, and where it came from is answered by its trace id, not its key. The keys move into each
-// service's proto (ADR-0081 §1). The detail and the fallback are ukubi-go's errs/connectkeys (§5), with
-// agentfleet.v1.ErrorKey its one template; this package is core's wrapper of it: the registry, and the wiring
-// connectkeys/wiring checks (TestWiring).
+// its specific code, and where it came from is answered by its trace id, not its key. A service declares its keys in
+// its proto (§1): AgentService's are agent.proto's AgentErrorKey, each RPC listing its own, and the constants below
+// are the Go registry of them (TestDeclared holds the two to each other). The detail and the fallback are ukubi-go's
+// errs/connectkeys (§5), with agentfleet.v1.ErrorKey its one template; this package is core's wrapper of it: the
+// registry, and the wiring connectkeys/wiring checks (TestWiring).
 package errkeys
 
 import (
@@ -32,6 +33,10 @@ const (
 	KeyInternal errs.Key = "server.internal"
 	// KeyDefinitionChanged: the thread's agent definition changed since it opened (docs/adr/0066); start a new one.
 	KeyDefinitionChanged errs.Key = "agent.definition_changed"
+	// KeyThreadCap: the owner's open threads are at the cap; close one first.
+	KeyThreadCap errs.Key = "agent.thread_cap"
+	// KeyDefinitionUnavailable: the definition does not exist or is not the caller's to use.
+	KeyDefinitionUnavailable errs.Key = "agent.definition_unavailable"
 )
 
 // keys is the one detail template, agentfleet.v1.ErrorKey (docs/adr/0081 §5): the wire is what errkeys sent.

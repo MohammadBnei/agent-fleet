@@ -12,6 +12,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -63,7 +64,7 @@ func TestThreads_Visibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alice shared: %v", err)
 	}
-	if _, err := create(eve, "shared"); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := create(eve, "shared"); connect.CodeOf(err) != connect.CodeNotFound || errkeys.Of(err) != errkeys.KeyDefinitionUnavailable {
 		t.Fatalf("eve outside the audience: %v", err)
 	}
 	if _, err := create(alice, "public"); connect.CodeOf(err) != connect.CodeInvalidArgument {
