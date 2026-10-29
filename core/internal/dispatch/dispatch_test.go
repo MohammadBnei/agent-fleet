@@ -470,17 +470,26 @@ func TestProposals(t *testing.T) {
 	agents.err["owner"] = connect.NewError(connect.CodeFailedPrecondition, agentsvc.ErrNeedsWake)
 	agents.err["observer"] = connect.NewError(connect.CodeFailedPrecondition, errors.New("this definition does not take that interaction or lifecycle"))
 
-	first := pr("s1", "dev.bnei.github.pull_request.opened", "human", "stranger", false)
+	// An untrusted hand-off on a thread nobody has open: a proposal.
+	hop := func(id string) *bridgev1.CloudEvent {
+		return &bridgev1.CloudEvent{Seq: 1, Id: id, Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
+			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"please"}`)}
+	}
+	first, second := hop("s1"), hop("s2")
 	if err := d.Handle(ctx, first); err != nil {
 		t.Fatal(err)
 	}
-	// A comment: the owner's proposal takes it; the observer's other
-	// FailedPrecondition is a nack, not a proposal.
-	second := pr("s2", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
-	if err := d.Handle(ctx, second); err == nil || !strings.Contains(err.Error(), "observer") {
+	// A later one folds into it.
+	if err := d.Handle(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	// A comment: unaddressed, it never reaches the proposal; the observer's
+	// other FailedPrecondition is a nack, not a proposal.
+	third := pr("s3", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
+	if err := d.Handle(ctx, third); err == nil || !strings.Contains(err.Error(), "observer") {
 		t.Fatalf("observer's error: %v", err)
 	}
-	if err := d.Handle(ctx, second); err == nil {
+	if err := d.Handle(ctx, third); err == nil {
 		t.Fatal("the observer's failure was forgotten")
 	}
 	open, err := props.ListOpen(ctx)
@@ -495,8 +504,8 @@ func TestProposals(t *testing.T) {
 		!p.Event.Tainted || p.Event.CausationID != Causation(first) || p.Repo != "notes" {
 		t.Fatalf("proposal %+v %+v", p, p.Event)
 	}
-	if strings.Count(p.Body, "[bridge event "+Causation(second)+"]") != 1 || !strings.Contains(p.Body, "> please") ||
-		!strings.HasSuffix(p.Title, proposals.UntrustedSuffix) {
+	if strings.Count(p.Body, "[bridge event "+Causation(second)+"]") != 1 || strings.Contains(p.Body, Causation(third)) ||
+		!strings.Contains(p.Body, "> please") || !strings.HasSuffix(p.Title, proposals.UntrustedSuffix) {
 		t.Fatalf("title %q body:\n%s", p.Title, p.Body)
 	}
 
@@ -518,7 +527,7 @@ func TestProposals(t *testing.T) {
 	// Over capacity is a proposal too, and a closed PR retires it.
 	agents.err["owner"] = connect.NewError(connect.CodeResourceExhausted, errors.New("full"))
 	agents.err["observer"] = nil
-	cap := pr("t1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	cap := mention("t1")
 	cap.Subject = "github/MohammadBnei/notes/pr/8"
 	if err := d.Handle(ctx, cap); err != nil {
 		t.Fatal(err)
@@ -536,6 +545,64 @@ func TestProposals(t *testing.T) {
 	}
 	if open, _ = props.ListOpen(ctx); len(open) != 1 {
 		t.Fatalf("a closed PR's proposal stayed: %d", len(open))
+	}
+}
+
+// docs/adr/0082 §1: agents receive only what is addressed to them. A GitHub
+// event that addresses no definition, from T0 or anyone, on a subject with
+// no open thread is acked and dropped: no proposal, no thread. On an open
+// thread it is context. A hand-off and an alert keep their proposal paths.
+func TestUnaddressedWithoutThreadIsDropped(t *testing.T) {
+	d, agents, _, props := setup(t)
+	ctx := context.Background()
+	needsWake := connect.NewError(connect.CodeFailedPrecondition, agentsvc.ErrNeedsWake)
+	agents.err["owner"], agents.err["observer"] = needsWake, needsWake
+	outcome := func(e *bridgev1.CloudEvent, def string) string {
+		var o *string
+		if err := d.pool.QueryRow(ctx, `SELECT outcome FROM dispatch_decisions WHERE source = $1 AND event_id = $2 AND definition = $3`,
+			e.GetSource(), e.GetId(), def).Scan(&o); err != nil || o == nil {
+			return fmt.Sprint(err)
+		}
+		return *o
+	}
+	push := pr("d1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	stranger := pr("d2", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
+	t0 := pr("d3", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)
+	for _, e := range []*bridgev1.CloudEvent{push, stranger, t0} {
+		if err := d.Handle(ctx, e); err != nil {
+			t.Fatalf("%s: %v", e.GetId(), err)
+		}
+		if got := outcome(e, "owner"); got != "skipped" {
+			t.Errorf("%s: outcome %s", e.GetId(), got)
+		}
+	}
+	if open, _ := props.ListOpen(ctx); len(open) != 0 {
+		t.Fatalf("unaddressed GitHub events filed %d proposals", len(open))
+	}
+
+	// An open thread takes it as context.
+	agents.err["owner"] = nil
+	agents.opens = nil
+	again := pr("d4", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	if err := d.Handle(ctx, again); err != nil || len(agents.opens) != 1 || agents.opens[0].GetWake() || outcome(again, "owner") != "delivered" {
+		t.Fatalf("open thread: %v %+v", err, agents.opens)
+	}
+
+	// Not GitHub chatter: an untrusted hand-off still files a proposal, and
+	// an alert still goes to the alert handler.
+	agents.err["owner"] = needsWake
+	hand := &bridgev1.CloudEvent{Seq: 1, Id: "d5", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"x"}`)}
+	if err := d.Handle(ctx, hand); err != nil {
+		t.Fatal(err)
+	}
+	if open, _ := props.ListOpen(ctx); len(open) != 1 || outcome(hand, "owner") != "proposal" {
+		t.Fatalf("hand-off: %d proposals, outcome %s", len(open), outcome(hand, "owner"))
+	}
+	al := d.alerts.(*fakeAlerts)
+	if err := d.Handle(ctx, &bridgev1.CloudEvent{Id: "d6", Source: "alertmanager", Type: typeAlertFiring, Subject: "alert/fp", Actor: "machine",
+		Data: []byte(`{"fingerprint":"fp"}`)}); err != nil || al.filed != 1 {
+		t.Fatalf("alert: %v filed=%d", err, al.filed)
 	}
 }
 

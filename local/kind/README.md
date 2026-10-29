@@ -93,7 +93,8 @@ Pushes go to the forge, not GitHub: every `https://github.com/` is rewritten.
 The forge records each push with the session id as its user; offline nothing
 confines a push to its repo and branch. Repos are rows in the `repos` table:
 with no `FLEET_REPO_OVERRIDES` (as in `30-core.yaml`) core's GitHub sync is
-off, and the skill adds the game's repo by hand.
+off, and the skill adds the game's repo by hand. Those rows have an empty `full_name`, so the dispatcher's
+foreign-repo check never matches them and no bridge event wakes a thread on this stack (ADR-0082 §2).
 
 ## Image staleness caveat
 

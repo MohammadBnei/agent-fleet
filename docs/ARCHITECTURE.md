@@ -437,8 +437,9 @@ is the reason.
   a thread (`adr/0082` §1-2): the owner's label naming the definition, an
   `@<definition>` the owner wrote outside quotes and code, in one of the
   repos core syncs, or a fleet hand-off. What `owns` or `subscribes` matches
-  without one is context on an open thread, a proposal otherwise. The fleet
-  bot's own GitHub events are acked and dropped. Delivery and retry are the
+  without one is context on an open thread; a GitHub event with no open
+  thread is acked and dropped, never a proposal. The fleet bot's own GitHub
+  events are acked and dropped. Delivery and retry are the
   bridge's: core acks or nacks, and holds no queue. A definition granted
   `publish_event` hands work on through `CoreService.PublishEvent`
   (`dispatch/publish.go`; depth, per-session budget and per-thread wake

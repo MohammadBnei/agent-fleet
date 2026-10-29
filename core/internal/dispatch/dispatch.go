@@ -667,6 +667,11 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	switch {
 	case err == nil:
 		return d.finish(ctx, e, h.Name, "delivered")
+	case errors.Is(err, agentsvc.ErrNeedsWake) && strings.HasPrefix(e.GetType(), "dev.bnei.github."):
+		// No open thread and no address: GitHub chatter nobody asked an
+		// agent about, from T0 or anyone. Never a thread, never a proposal
+		// (docs/adr/0082 §1); a hand-off keeps its proposal below.
+		return d.finish(ctx, e, h.Name, "skipped")
 	case errors.Is(err, agentsvc.ErrNeedsWake), connect.CodeOf(err) == connect.CodeResourceExhausted,
 		connect.CodeOf(err) == connect.CodePermissionDenied:
 		// No thread and not waking, no slot, or a stored wake whose actor
