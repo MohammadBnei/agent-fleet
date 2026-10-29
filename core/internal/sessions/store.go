@@ -362,6 +362,45 @@ func (s *Store) Tainted(ctx context.Context, list []Session) error {
 	return rows.Err()
 }
 
+// IsTainted is Tainted for one session.
+func (s *Store) IsTainted(ctx context.Context, id string) (bool, error) {
+	one := []Session{{ID: id}}
+	err := s.Tainted(ctx, one)
+	return one[0].Tainted, err
+}
+
+// maxOutsideRead bounds the command an outside-read entry quotes.
+const maxOutsideRead = 1000
+
+// MarkOutsideRead records that the session is running an outside read
+// (docs/adr/0082 §3) as an untrusted entry, which taints it. Taint is only
+// ever whether such an entry exists and the transcript is append-only, so
+// nothing un-taints a session. The key is fresh each time, never one a caller
+// could have written first: a SendMessage holding a fixed key would turn this
+// insert into a no-op, which is an untaint.
+func (s *Store) MarkOutsideRead(ctx context.Context, id, command string) error {
+	if len(command) > maxOutsideRead {
+		command = command[:maxOutsideRead] + "…"
+	}
+	text := "This session ran an outside read, so it is tainted and may only read from now on (docs/adr/0082): " + command
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("mark outside read: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The transcript's own per-session lock (transcript.PostgresStore).
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, id); err != nil {
+		return fmt.Errorf("mark outside read: lock: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, untrusted)
+		SELECT $1, COALESCE(MAX(seq), -1) + 1, 'agent', $2, 'system', 'outside-read-' || gen_random_uuid(), true
+		  FROM transcript WHERE session_id = $1`, id, text); err != nil {
+		return fmt.Errorf("mark outside read: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
 // Answered reports whether the prompt at seq already has its reply.
 func (s *Store) Answered(ctx context.Context, id string, seq int64) (bool, error) {
 	var ok bool

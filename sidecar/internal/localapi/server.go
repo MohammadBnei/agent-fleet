@@ -49,6 +49,7 @@ func New(core *coreclient.Client) http.Handler {
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
 	mux.HandleFunc("GET /task", taskHandler(core))
 	mux.HandleFunc("POST /permission-mode", permissionModeHandler(core))
+	mux.HandleFunc("POST /taint", taintHandler(core))
 	return mux
 }
 
@@ -434,5 +435,27 @@ func permissionModeHandler(core *coreclient.Client) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
+// taintHandler is the worker's taint gate (docs/adr/0082 §4): {"outsideRead":
+// "<command>"} marks an outside read first, and either way the answer is
+// whether this session is tainted. Anything in the worker container can call
+// it, which is fine: the most a caller can do is taint its own session.
+func taintHandler(core *coreclient.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			OutsideRead string `json:"outsideRead"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		tainted, err := core.Taint(r.Context(), body.OutsideRead)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"tainted": tainted})
 	}
 }

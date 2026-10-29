@@ -42,6 +42,9 @@ func (s *Server) PublishEvent(ctx context.Context, req *agentfleetv1.PublishEven
 	if spec == nil || !slices.Contains(spec.GetSidecarTools(), "publish_event") {
 		return nil, status.Error(codes.PermissionDenied, "this definition does not grant publish_event")
 	}
+	if err := s.refuseTainted(ctx, req.GetSessionId()); err != nil {
+		return nil, err
+	}
 	id, trusted, hops, err := s.publish(ctx, req.GetSessionId(), *t.DefinitionName, req.GetType(), req.GetSubject(), req.GetText(), req.GetIdempotencyKey())
 	switch {
 	case errors.Is(err, events.ErrPublishRefused):

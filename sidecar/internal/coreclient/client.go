@@ -441,6 +441,17 @@ func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key strin
 	return res, nil
 }
 
+// Taint marks an outside read this session is about to run, when read is
+// set, and reports whether the session is tainted (docs/adr/0082 §4). Always
+// this pod's own session: the lease binds it.
+func (c *Client) Taint(ctx context.Context, read string) (bool, error) {
+	res, err := c.rpc.Taint(ctx, &agentfleetv1.TaintRequest{SessionId: c.taskID, OutsideRead: read})
+	if err != nil {
+		return false, fmt.Errorf("Taint: %w", err)
+	}
+	return res.GetTainted(), nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the

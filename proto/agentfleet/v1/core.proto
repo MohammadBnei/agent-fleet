@@ -424,6 +424,20 @@ message PublishEventResponse {
   int32 hops = 3;
 }
 
+// docs/adr/0082 §3–§4. With outside_read set, core first records that outside
+// read (the command the worker is about to let run) as an untrusted entry,
+// which taints the session. Either way it answers whether the session is
+// tainted, i.e. holds an untrusted entry. Nothing here can clear taint: the
+// transcript is append-only, so taint only ever grows within a session.
+message TaintRequest {
+  string session_id = 1;
+  string outside_read = 2;
+}
+
+message TaintResponse {
+  bool tainted = 1;
+}
+
 // HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
 // here. Both are deleted in docs/adr/0048.
 //
@@ -679,5 +693,9 @@ service CoreService {
   // Publishes an event to the bridge as the calling definition session
   // (docs/adr/0078 §8). Only for a definition granting publish_event.
   rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+
+  // The worker's taint gate (docs/adr/0082 §4): read on every tool call it
+  // gates, and how it marks an outside read.
+  rpc Taint(TaintRequest) returns (TaintResponse);
 }
 

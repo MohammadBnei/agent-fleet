@@ -107,6 +107,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/PublishEvent": func(r any) string {
 		return r.(*agentfleetv1.PublishEventRequest).GetSessionId()
 	},
+	"/agentfleet.v1.CoreService/Taint": func(r any) string {
+		return r.(*agentfleetv1.TaintRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -155,6 +158,9 @@ var definitionMethods = map[string]bool{
 	// Granted per definition: the handler checks the pinned spec's
 	// sidecarTools for publish_event (docs/adr/0078 §8).
 	"/agentfleet.v1.CoreService/PublishEvent": true,
+	// The worker's taint gate (docs/adr/0082 §4); a definition is what it
+	// mostly guards.
+	"/agentfleet.v1.CoreService/Taint": true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents

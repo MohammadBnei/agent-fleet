@@ -367,6 +367,9 @@ func (s *Server) reuseOrAppendQuestion(ctx context.Context, sessionID, questions
 // the component the lifecycle rule names.
 
 func (s *Server) Expose(ctx context.Context, req *agentfleetv1.ExposeRequest) (*agentfleetv1.ExposeResponse, error) {
+	if err := s.refuseTainted(ctx, req.GetSessionId()); err != nil {
+		return nil, err
+	}
 	url, err := s.provisioner.ExposeSession(ctx, req.GetSessionId(), req.GetPort())
 	if err != nil {
 		return nil, fmt.Errorf("Expose: %w", err)
@@ -385,6 +388,9 @@ func (s *Server) Unexpose(ctx context.Context, req *agentfleetv1.UnexposeRequest
 // on the wire. Shared instances are keyed by repo, so a pod that could name
 // its own repo could reach another repo's database.
 func (s *Server) RequestService(ctx context.Context, req *agentfleetv1.RequestServiceRequest) (*agentfleetv1.RequestServiceResponse, error) {
+	if err := s.refuseTainted(ctx, req.GetSessionId()); err != nil {
+		return nil, err
+	}
 	t, err := s.sessions.Get(ctx, req.GetSessionId())
 	if err != nil {
 		return nil, fmt.Errorf("RequestService: get session: %w", err)

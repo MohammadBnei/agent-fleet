@@ -98,6 +98,8 @@ const (
 	// CoreServicePublishEventProcedure is the fully-qualified name of the CoreService's PublishEvent
 	// RPC.
 	CoreServicePublishEventProcedure = "/agentfleet.v1.CoreService/PublishEvent"
+	// CoreServiceTaintProcedure is the fully-qualified name of the CoreService's Taint RPC.
+	CoreServiceTaintProcedure = "/agentfleet.v1.CoreService/Taint"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -180,6 +182,9 @@ type CoreServiceClient interface {
 	// Publishes an event to the bridge as the calling definition session
 	// (docs/adr/0078 §8). Only for a definition granting publish_event.
 	PublishEvent(context.Context, *connect.Request[v1.PublishEventRequest]) (*connect.Response[v1.PublishEventResponse], error)
+	// The worker's taint gate (docs/adr/0082 §4): read on every tool call it
+	// gates, and how it marks an outside read.
+	Taint(context.Context, *connect.Request[v1.TaintRequest]) (*connect.Response[v1.TaintResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -337,6 +342,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("PublishEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		taint: connect.NewClient[v1.TaintRequest, v1.TaintResponse](
+			httpClient,
+			baseURL+CoreServiceTaintProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("Taint")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -366,6 +377,7 @@ type coreServiceClient struct {
 	promptSession       *connect.Client[v1.PromptSessionRequest, v1.PromptSessionResponse]
 	waitForSessionState *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
 	publishEvent        *connect.Client[v1.PublishEventRequest, v1.PublishEventResponse]
+	taint               *connect.Client[v1.TaintRequest, v1.TaintResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -488,6 +500,11 @@ func (c *coreServiceClient) PublishEvent(ctx context.Context, req *connect.Reque
 	return c.publishEvent.CallUnary(ctx, req)
 }
 
+// Taint calls agentfleet.v1.CoreService.Taint.
+func (c *coreServiceClient) Taint(ctx context.Context, req *connect.Request[v1.TaintRequest]) (*connect.Response[v1.TaintResponse], error) {
+	return c.taint.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -568,6 +585,9 @@ type CoreServiceHandler interface {
 	// Publishes an event to the bridge as the calling definition session
 	// (docs/adr/0078 §8). Only for a definition granting publish_event.
 	PublishEvent(context.Context, *connect.Request[v1.PublishEventRequest]) (*connect.Response[v1.PublishEventResponse], error)
+	// The worker's taint gate (docs/adr/0082 §4): read on every tool call it
+	// gates, and how it marks an outside read.
+	Taint(context.Context, *connect.Request[v1.TaintRequest]) (*connect.Response[v1.TaintResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -721,6 +741,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("PublishEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceTaintHandler := connect.NewUnaryHandler(
+		CoreServiceTaintProcedure,
+		svc.Taint,
+		connect.WithSchema(coreServiceMethods.ByName("Taint")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -771,6 +797,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceWaitForSessionStateHandler.ServeHTTP(w, r)
 		case CoreServicePublishEventProcedure:
 			coreServicePublishEventHandler.ServeHTTP(w, r)
+		case CoreServiceTaintProcedure:
+			coreServiceTaintHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -874,4 +902,8 @@ func (UnimplementedCoreServiceHandler) WaitForSessionState(context.Context, *con
 
 func (UnimplementedCoreServiceHandler) PublishEvent(context.Context, *connect.Request[v1.PublishEventRequest]) (*connect.Response[v1.PublishEventResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.PublishEvent is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) Taint(context.Context, *connect.Request[v1.TaintRequest]) (*connect.Response[v1.TaintResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.Taint is not implemented"))
 }

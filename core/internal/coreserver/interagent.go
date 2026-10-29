@@ -93,6 +93,9 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	if req.GetDepth() >= maxPromptDepth {
 		return nil, fmt.Errorf("prompt relay depth %d reached the limit of %d — refusing to relay further", req.GetDepth(), maxPromptDepth)
 	}
+	if err := s.refuseTainted(ctx, caller); err != nil {
+		return nil, err
+	}
 
 	t, state, err := s.liveStateOf(ctx, target)
 	if err != nil {

@@ -43,6 +43,7 @@ const (
 	CoreService_PromptSession_FullMethodName       = "/agentfleet.v1.CoreService/PromptSession"
 	CoreService_WaitForSessionState_FullMethodName = "/agentfleet.v1.CoreService/WaitForSessionState"
 	CoreService_PublishEvent_FullMethodName        = "/agentfleet.v1.CoreService/PublishEvent"
+	CoreService_Taint_FullMethodName               = "/agentfleet.v1.CoreService/Taint"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -127,6 +128,9 @@ type CoreServiceClient interface {
 	// Publishes an event to the bridge as the calling definition session
 	// (docs/adr/0078 §8). Only for a definition granting publish_event.
 	PublishEvent(ctx context.Context, in *PublishEventRequest, opts ...grpc.CallOption) (*PublishEventResponse, error)
+	// The worker's taint gate (docs/adr/0082 §4): read on every tool call it
+	// gates, and how it marks an outside read.
+	Taint(ctx context.Context, in *TaintRequest, opts ...grpc.CallOption) (*TaintResponse, error)
 }
 
 type coreServiceClient struct {
@@ -389,6 +393,16 @@ func (c *coreServiceClient) PublishEvent(ctx context.Context, in *PublishEventRe
 	return out, nil
 }
 
+func (c *coreServiceClient) Taint(ctx context.Context, in *TaintRequest, opts ...grpc.CallOption) (*TaintResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaintResponse)
+	err := c.cc.Invoke(ctx, CoreService_Taint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -471,6 +485,9 @@ type CoreServiceServer interface {
 	// Publishes an event to the bridge as the calling definition session
 	// (docs/adr/0078 §8). Only for a definition granting publish_event.
 	PublishEvent(context.Context, *PublishEventRequest) (*PublishEventResponse, error)
+	// The worker's taint gate (docs/adr/0082 §4): read on every tool call it
+	// gates, and how it marks an outside read.
+	Taint(context.Context, *TaintRequest) (*TaintResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -552,6 +569,9 @@ func (UnimplementedCoreServiceServer) WaitForSessionState(context.Context, *Wait
 }
 func (UnimplementedCoreServiceServer) PublishEvent(context.Context, *PublishEventRequest) (*PublishEventResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
+}
+func (UnimplementedCoreServiceServer) Taint(context.Context, *TaintRequest) (*TaintResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Taint not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -988,6 +1008,24 @@ func _CoreService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_Taint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaintRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).Taint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_Taint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).Taint(ctx, req.(*TaintRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1082,6 +1120,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PublishEvent",
 			Handler:    _CoreService_PublishEvent_Handler,
+		},
+		{
+			MethodName: "Taint",
+			Handler:    _CoreService_Taint_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
