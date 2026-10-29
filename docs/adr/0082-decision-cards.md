@@ -1,6 +1,6 @@
 # ADR-0082 — Decision cards: only an explicit address wakes an agent, and the owner decides on cards
 
-- **Status:** Accepted (owner-approved 2026-10-28; taint dropped and the deck made one feed by the owner 2026-10-29)
+- **Status:** Accepted (owner-approved 2026-10-28; taint dropped and every decision made one non-blocking kind by the owner 2026-10-29)
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
   (no proposal; alerts and hand-offs keep theirs). Until the bridge's slice (§12) delivers `labeled` events, a T0 label is
@@ -61,8 +61,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - What bounds a stranger's words: they never start work (§1, §2), a card option carries only its bound effect
      (§6), and the default branch moves only through the merge right (§9) or an owner card.
 4. **An agent drafts a card when the choice is the owner's**: a stranger's PR, a step outside its mandate, a
-   decision with real options. It uses a `draft_card` sidecar tool. A session's live asks (question, permission, plan approval) stay what they
-   are (ADR-0029) and reach the deck as projected entries (§5).
+   decision with real options. It uses a `draft_card` sidecar tool. A card is one kind of decision (§5): the others are a session's question,
+   permission request and plan approval, and none of them blocks (§5).
 5. **The card** is a durable question entry in the proposals inbox, never a `permission_request`, so it never pins a
    pod.
 
@@ -81,19 +81,31 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    Lengths are bounded in the proto, so every surface can rely on them: `ask` 280, `label` 80, `outside_inputs.text`
    2,000 (longer is cut, and the card says so, with the source's url).
 
-   **API** (`AgentService`): `ListCards` filters by state (any set of the four), `subject.repo`, newest first, paged;
-   answered, expired and stale cards stay listable as history. `GetCard`; `AnswerCard {card_id, option_id |
-   own_text}`; `WatchCards`, a stream that sends each changed card id and a list version, so surfaces never poll.
+   **API** (`AgentService`): `ListDecisions` filters by state (any set of the four), `subject.repo`, newest first, paged;
+   answered, expired and stale cards stay listable as history. `GetDecision`; `AnswerDecision {card_id, option_id |
+   own_text}`; `WatchDecisions`, a stream that sends each changed card id and a list version, so surfaces never poll.
 
-   **One feed (owner, 2026-10-29):** "The decision deck is a global sink between agent and human." Every
-   agent-to-human decision reaches the same surface. `ListCards` and `WatchCards` carry `kind` (`card` | `ask`):
-   - An `ask` is a session's pending question, permission request or plan approval, projected by core from the
-     transcript at read time. It is not stored as a card, keeps its pod pinned, and is answered as today
-     (`RespondToPermission`, `AnswerQuestion`, `ApprovePlan`), bound to its seq. `AnswerCard` refuses an ask.
-   - It carries the card's common fields where they apply (`id` = session and seq, `state`, `writer`, `subject`,
-     `ask` text) plus `session` and `seq`. Its `state` is `open` until the transcript holds its reply, then it leaves
-     the open list; it has no `expires_at`.
-   - The LED and any badge count the open entries of this one feed, so nothing is counted twice.
+   **One decision, never blocking (owner, 2026-10-29).** "The decision deck is a global sink between agent and
+   human." To the owner every kind is the same: a direction the work waits on, possibly until he has time.
+   - **One interface.** In core, `Decision` is one Go interface that the four kinds implement: `question`,
+     `permission`, `plan` (approval) and `card`. There is one store, one deck, one LED count (open decisions),
+     and one API: the methods above are `ListDecisions`, `GetDecision`, `AnswerDecision` and `WatchDecisions`,
+     filtering by `kind` as well. The fields in the table are the common shape; `options` and `pinned` apply only
+     where they mean something (a question's choices are its options).
+   - **Nothing blocks.** The asking side waits `DECISION_WAIT` (default 45 s, configurable up to 10 min), then
+     gets "pending, decision <id>" and carries on with what does not need the answer, or ends its turn. This is the
+     question pattern of ADR-0050 and ADR-0058, made general. A parked session holds no pod.
+   - **An answer is a message.** Whenever it comes, core appends it to the session (warm then append), which
+     wakes a parked session. A question's answer is its text or choice. A plan approval moves the session out of
+     plan mode. A permission approval records a one-time grant bound to the session and the exact tool input:
+     the agent retries, and the gate lets that one call through, once. A denial arrives as a message too.
+   - **A card's answer runs its bound effect** (§6) instead of reaching a session.
+   - **Nothing goes stale behind the owner's back.** The warm-time closing of unanswered requests goes. A decision
+     closes when answered, withdrawn (its session archived, or the agent withdraws it), stale (§6, pinned state
+     moved) or, for a card only, at `expires_at`.
+   - **Waits over 45 s:** the worker's gate waits on a plain timer. An MCP tool's wait (`AskUserQuestion`) is
+     bounded by the agent's MCP client deadline (60 s today, see `blockingWaitMs`), so a longer `DECISION_WAIT`
+     needs that deadline raised to match; the build verifies it live before the default moves.
 
    Rendering: plain text, every href shown, bidi and zero-width characters stripped, lengths bounded, agent text
    labelled "agent claim" and set apart from what core filled, the recommendation marked but never pre-selected. On a
@@ -105,7 +117,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      text is T0.
    - Core re-checks the pinned state when the owner answers and again at hand-off. On a mismatch the card goes stale
      and must be re-drafted.
-   - Error keys (ADR-0081): `card.stale`, `card.expired`, `card.fresh_auth_required`.
+   - Error keys (ADR-0081): `decision.stale`, `decision.expired`, `decision.fresh_auth_required`.
 7. **Answering.**
    - Only `Admin()` answers: in the console, in an island, or in another of our app surfaces (the mountain 3D game),
      provided the answer call goes from the browser straight to core under core's own OIDC session, never through
@@ -115,7 +127,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      the session is older than 10 minutes.
    - A surface with its own UI (the game) calls the card methods cross-origin with credentials. Core's CORS lists
      only configured origins (`https://game.bnei.dev`; `http://127.0.0.1:7410` only in a local `--dev` core). Sign-in
-     is a top-level redirect to core with a return URL limited to those origins. `card.fresh_auth_required` carries
+     is a top-level redirect to core with a return URL limited to those origins. `decision.fresh_auth_required` carries
      that sign-in URL.
    - Since that surface draws its own confirm step, a script injected into it could answer for the owner. So an
      irreversible effect answered from such a surface always passes core's own top-level confirmation page, whatever
@@ -125,8 +137,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - At most one open card per subject; later inputs fold into it (`FoldEvent`).
    - A daily card budget per definition, with a digest card for the overflow. Cards count toward the thread's wake cap
      (`MaxAgentWakes`).
-   - "Close threads" and ADR-0072 executor approvals become cards. Plan approval stays a session ask, shown in
-     the one feed.
+   - "Close threads" and ADR-0072 executor approvals become cards.
 9. **Merge right.**
    - Approval by a fleet review agent lets the writer agent merge exactly that head. The approval is a core record (a
      `PublishEvent` such as `review.approved` pinned to `head_sha`), not a GitHub review: every agent shares the bot
@@ -181,7 +192,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 Slice 1 is built. Slices, in order:
 
 1. The address-only gate, and dropping the bot's events and unaddressed GitHub events on subjects with no open thread.
-2. The card store, the `AnswerCard` API, `draft_card`, the one feed (asks projected) and the console UI.
+2. The `Decision` interface and store, the API, `draft_card`, non-blocking permission and plan decisions with
+   one-time grants, `DECISION_WAIT`, and the console UI.
 3. Removing core's taint.
 4. The bridge's events and trust facts.
 5. The merge right: the `agent-review` status and the rulesets.

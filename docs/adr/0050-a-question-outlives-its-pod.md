@@ -1,6 +1,6 @@
 # ADR-0050: A blocking question outlives its pod; its answer is delivered on warm
 
-**Status:** Accepted — amended by [ADR-0058](0058-an-answer-wakes-the-session.md) (its delivery half, built there)
+**Status:** Accepted — amended by [ADR-0058](0058-an-answer-wakes-the-session.md) (its delivery half, built there); generalised by [ADR-0082](0082-decision-cards.md) §5 to every decision, with a configurable wait
 **Date:** 2026-08-15
 
 ## Context
