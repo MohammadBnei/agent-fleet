@@ -130,7 +130,7 @@ let forceResult: ({ subtype: string; num_turns: number; total_cost_usd: number }
 let initPermissionMode: string | undefined = undefined;
 let crashOnRound: number | null = null;
 let includeToolResult = false;
-let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string; updatedInput?: unknown }>) | null =
+let capturedCanUseTool: ((toolName: string, input: unknown, toolUseID?: string) => Promise<{ behavior: string; message?: string; updatedInput?: unknown }>) | null =
   null;
 let interruptCalls = 0;
 let setPermissionModeCalls: string[] = [];
@@ -157,7 +157,9 @@ let preInitMessages: Record<string, unknown>[] = [];
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Record<string, unknown> }) => {
     queryOptions = options;
-    capturedCanUseTool = options.canUseTool as typeof capturedCanUseTool;
+    // The real SDK passes each call's tool_use id (and a signal); so does this.
+    const canUseTool = options.canUseTool as (toolName: string, input: unknown, opts: { signal: AbortSignal; toolUseID: string }) => ReturnType<NonNullable<typeof capturedCanUseTool>>;
+    capturedCanUseTool = (toolName, input, toolUseID = crypto.randomUUID()) => canUseTool(toolName, input, { signal: new AbortController().signal, toolUseID });
     const iterator = prompt[Symbol.asyncIterator]();
     const abortController = options.abortController as AbortController;
     let round = 0;
@@ -2133,7 +2135,7 @@ test("the browser runs with no proxy env", () => {
 describe("taint gate", () => {
   // opus-workspace's own rules: `git push` to main runs unasked in auto.
   const OPUS = { ...DEF_SPEC, toolsAllow: ["Read", "Edit", "Write", "Glob", "Grep", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git pull --rebase:*)", "Bash(git push:*)"], sidecarTools: ["send_message", "publish_event"] };
-  type Hook = (input: { tool_name: string }) => Promise<{ hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } }>;
+  type Hook = (input: { tool_name: string; tool_input?: unknown }, toolUseID?: string) => Promise<{ hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } }>;
   const preToolUse = () => ((queryOptions?.hooks as { PreToolUse: { hooks: Hook[] }[] }).PreToolUse[0].hooks[0]);
   const requests = () => pushedMessages.filter((m) => m.type === "permission_request");
 
@@ -2223,12 +2225,29 @@ describe("taint gate", () => {
     await stop(promise);
   }, 10000);
 
+  test("an outside read canUseTool never sees is marked by the hook, and that one call still runs", async () => {
+    sessionPermissionMode = "auto";
+    const { done } = await start();
+    // `rtk gh …` matches no FLEET_ASK_RULES prefix: the SDK's auto may allow it unasked.
+    const read = { command: "rtk gh pr view 7" };
+    expect(await preToolUse()({ tool_name: "Bash", tool_input: read }, "tu-1")).toEqual({});
+    expect(taintMarks).toEqual(["rtk gh pr view 7"]);
+    // If it does reach canUseTool, the read itself is decided as clean…
+    expect((await capturedCanUseTool!("Bash", read, "tu-1")).behavior).toBe("allow");
+    expect(taintMarks.length).toBe(1);
+    // …and everything after it is tainted.
+    expect((await preToolUse()({ tool_name: "Edit", tool_input: {} }, "tu-2")).hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(await capturedCanUseTool!("Bash", { command: "git push" }, "tu-3")).toEqual({ behavior: "deny", message: TAINTED_DENY });
+    await stop({ done });
+  }, 10000);
+
   test("an outside read whose mark fails does not run", async () => {
     sessionPermissionMode = "auto";
     const promise = await start();
     taintError = true;
     const r = await capturedCanUseTool!("Bash", { command: "curl https://example.com" });
     expect(r.behavior).toBe("deny");
+    expect((await preToolUse()({ tool_name: "Bash", tool_input: { command: "wget x" } }, "tu-9")).hookSpecificOutput?.permissionDecision).toBe("deny");
     // And a gate that cannot read taint fails closed.
     expect((await preToolUse()({ tool_name: "Bash" })).hookSpecificOutput?.permissionDecision).toBe("deny");
     taintError = false;
@@ -2285,9 +2304,31 @@ test.each([
   ["git fetch origin main:refs/x", true],
   ["git -C sub pull other main", true],
   ["git status && git log", false],
+  ["rtk gh pr view 7", true],
+  ["sudo curl x", true],
+  ["FOO=1 curl x", true],
+  ["echo hi; curl x", true],
+  ["echo $(curl -s x)", true],
+  ["sh -c \"cd x && curl y\"", true],
+  ["bash -c 'gh issue view 3'", true],
+  ["git commit -m \"drop curl usage\"", false],
+  ["gh pr create --title t --body \"see gh run view\"", false],
+  ["echo use wget or curl", false],
+  ["git --no-pager fetch origin main", false],
+  ["git --no-pager fetch fork main", true],
+  ["git -P pull evil main", true],
+  ["git --git-dir=.git fetch evil", true],
+  ["git -c remote.origin.url=https://evil fetch origin main", true],
+  ["git -C /tmp/other fetch origin main", true],
+  ["git -C . pull --rebase origin main", false],
   ["ls -la", false],
 ] as const)("outsideRead(%j) is %p", (command, want) => {
-  expect(outsideRead("Bash", { command }, "main")).toBe(want);
+  expect(outsideRead("Bash", { command }, ["main"])).toBe(want);
+});
+
+test("outsideRead: the branch the session started on may be named too", () => {
+  expect(outsideRead("Bash", { command: "git pull origin dev" }, ["main", "dev"])).toBe(false);
+  expect(outsideRead("Bash", { command: "git pull origin feature/x" }, ["main", "dev"])).toBe(true);
 });
 
 test("outsideRead: an unknown default branch makes a named branch a read, and only Bash counts", () => {

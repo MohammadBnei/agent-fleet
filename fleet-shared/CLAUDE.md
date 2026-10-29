@@ -14,8 +14,9 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   `auto` the worker answers them for you — only `rm` and `sudo` still reach a
   human (`docs/adr/0053`)
 - **Outside reads taint the session** (`docs/adr/0082`): `gh` against issues,
-  PRs, comments or CI, `curl`/`wget`, and `git fetch`/`pull` of anything but
-  `origin` and the default branch. So does untrusted input delivered to it. A
+  PRs, comments or CI, `curl`/`wget`, and `git fetch`/`pull` naming anything
+  but `origin` and the default branch or the one you started on (so prefer
+  `git pull --rebase origin <that branch>`). So does untrusted input. A
   tainted session may only `Read`, `Glob` and `Grep` and report to the owner in
   its reply, for the rest of its life, whatever the mode. `WebFetch` and
   `WebSearch` are not available

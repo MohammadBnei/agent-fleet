@@ -83,44 +83,65 @@ const TAINT_UNKNOWN = "Denied: could not check whether this session is tainted (
 
 // docs/adr/0082 §3's outside reads, by command text: `gh` against issues, PRs,
 // comments or CI, `curl`/`wget`, and `git fetch`/`pull` of a non-default ref.
-// Over-matching taints a session that read nothing outside, the safe
-// direction, so an unknown `gh` form, flag or ref counts as a read.
+// A command counts where a shell would run it: at the start, after a
+// separator, `$(`, a backtick or `sh -c '`, behind env assignments and the
+// usual wrappers (sudo, env, rtk, xargs, timeout …), with or without a path.
+// So `git commit -m "drop curl"` is not a read. An unknown `gh` form, git
+// option, remote or ref is one: over-matching taints a session that read
+// nothing outside, the safe direction.
 // ponytail: the command text, not a bash parse, as AUTO_MODE_STILL_ASKS_BASH:
-// `echo "curl"` taints, and `python -c 'urlopen(…)'` or `$GH pr view` does
-// not. The ceiling is the rule's own: it names commands, not network access.
-const SHELL_HEAD = String.raw`(?:^|[\s;&|('"\x60/])`;
-const CURL_WGET = new RegExp(`${SHELL_HEAD}(?:curl|wget)(?=\\s|$)`);
-const GH_CALL = new RegExp(`${SHELL_HEAD}gh\\s+(\\S+)(?:\\s+(\\S+))?`, "g");
+// a separator inside quotes (`-m "a; curl"`) still counts, and `python -c
+// 'urlopen(…)'`, `$GH pr view` or an unlisted wrapper (`nice curl`) does not.
+// The ceiling is the rule's own: it names commands, not network access.
+const CMD_AT = String.raw`(?:^|[;&|(\x60\n]|\$\(|\s-c\s+['"])\s*(?:(?:\w+=\S*|sudo|env|rtk(?:\s+proxy)?|command|exec|xargs|time|nohup|timeout\s+\S+)\s+)*(?:[^\s;&|]*/)?`;
+const CURL_WGET = new RegExp(`${CMD_AT}(?:curl|wget)(?=\\s|$|[;&|)])`);
+const GH_CALL = new RegExp(`${CMD_AT}gh\\s+(\\S+)(?:\\s+(\\S+))?`, "g");
 // gh forms that write and print only a URL or a status, never outside text.
 const GH_NO_READ = new Set(["pr create", "pr comment", "pr edit", "pr ready", "issue create", "issue comment", "issue edit", "auth status"]);
-const GIT_SYNC = new RegExp(`${SHELL_HEAD}git(?:\\s+-[Cc]\\s+\\S+)*\\s+(?:fetch|pull)(?=\\s|$)([^;&|\\n)]*)`, "g");
+// git's global options before the verb are captured whole and checked below.
+const GIT_SYNC = new RegExp(`${CMD_AT}git((?:\\s+-\\S+(?:\\s+(?!fetch\\b|pull\\b)[^\\s;&|-]\\S*)?)*)\\s+(?:fetch|pull)(?=\\s|$)([^;&|\\n)]*)`, "g");
+// Global options that cannot point a fetch somewhere else. Anything else
+// (`-c remote.origin.url=…`, `--git-dir`, `-C` into another repository) can.
+const GIT_GLOBAL_INERT = new Set(["--no-pager", "-P"]);
 const GIT_SYNC_FLAGS = new Set(["-q", "--quiet", "-p", "--prune", "--rebase", "-r", "--ff-only", "--no-rebase"]);
 
 // Whether a call is an outside read. `git fetch`/`pull` is one unless it names
-// at most `origin` and the default branch (`defaultBranch`, the clone's
-// origin/HEAD; unknown, only a bare or `origin`-only form is not a read).
-export function outsideRead(toolName: string, input: Record<string, unknown>, defaultBranch?: string): boolean {
+// at most `origin` and one of `branches` (the clone's origin/HEAD and the
+// branch the session started on); `-C` may only name the worktree.
+export function outsideRead(toolName: string, input: Record<string, unknown>, branches: string[] = [], worktree = WORKTREE_PATH): boolean {
   if (toolName !== "Bash" || typeof input.command !== "string") return false;
   const command = input.command;
   if (CURL_WGET.test(command)) return true;
   for (const m of command.matchAll(GH_CALL)) if (!GH_NO_READ.has(`${m[1]} ${m[2] ?? ""}`)) return true;
   for (const m of command.matchAll(GIT_SYNC)) {
-    const words = m[1].split(/\s+/).filter((w) => w !== "" && !GIT_SYNC_FLAGS.has(w));
+    const globals = m[1].split(/\s+/).filter((w) => w !== "");
+    for (let i = 0; i < globals.length; i++) {
+      if (globals[i] === "-C" && (globals[i + 1] === "." || globals[i + 1] === worktree)) i++;
+      else if (!GIT_GLOBAL_INERT.has(globals[i])) return true;
+    }
+    const words = m[2].split(/\s+/).filter((w) => w !== "" && !GIT_SYNC_FLAGS.has(w));
     if (words.length > 2 || words.some((w) => w.startsWith("-"))) return true;
     if (words[0] !== undefined && words[0] !== "origin") return true;
-    if (words[1] !== undefined && words[1] !== defaultBranch) return true;
+    if (words[1] !== undefined && !branches.includes(words[1])) return true;
   }
   return false;
 }
 
-// The clone's default branch, from origin/HEAD, or undefined.
-function defaultBranchOf(worktree: string): string | undefined {
-  try {
-    const p = Bun.spawnSync(["git", "-C", worktree, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-    return p.exitCode === 0 ? p.stdout.toString().trim().replace(/^origin\//, "") || undefined : undefined;
-  } catch {
-    return undefined;
+// The branches a fetch or pull may name without being an outside read: the
+// clone's default (origin/HEAD) and the one checked out at start, which is
+// the base the fleet chose (or, on a resume, the session's own branch).
+function syncBranchesOf(worktree: string): string[] {
+  const out: string[] = [];
+  for (const args of [["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], ["symbolic-ref", "--short", "HEAD"]]) {
+    try {
+      const p = Bun.spawnSync(["git", "-C", worktree, ...args]);
+      const b = p.exitCode === 0 ? p.stdout.toString().trim().replace(/^origin\//, "") : "";
+      if (b) out.push(b);
+    } catch {
+      // Not a repository (a test, a definition without a clone yet).
+    }
   }
+  return out;
 }
 
 // The fleet's own tools. Reaching one of these is never a question for a
@@ -1168,21 +1189,39 @@ export async function runSession(): Promise<SessionResult> {
   // every call it gates, since taint can arrive mid-session; once seen it is
   // latched, since nothing clears it. Read/Glob/Grep need no read at all.
   let tainted = false;
-  const defaultBranch = defaultBranchOf(WORKTREE_PATH);
-  async function taintedDeny(toolName: string): Promise<string | undefined> {
-    if (T2_TOOLS.has(toolName)) return undefined;
+  const syncBranches = syncBranchesOf(WORKTREE_PATH);
+  // The outside reads already marked, by tool_use id: the one call that
+  // taints the session is still decided as a clean one.
+  const markedReads = new Set<string>();
+  async function taintedDeny(toolName: string, toolUseID?: string): Promise<string | undefined> {
+    if (T2_TOOLS.has(toolName) || (toolUseID !== undefined && markedReads.has(toolUseID))) return undefined;
     try {
-      tainted ||= await sidecar.taint();
+      // Never assigned false: a check in flight while another call latched
+      // the taint must not clear it.
+      if (!tainted && (await sidecar.taint())) tainted = true;
     } catch (err) {
       log("warn", "taint check failed", { taskId: SESSION_ID, toolName, error: String(err) });
       return TAINT_UNKNOWN;
     }
     return tainted ? TAINTED_DENY : undefined;
   }
+  // An outside read taints as it runs (docs/adr/0082 §3): marked in core
+  // before it may run, and refused when the mark cannot be recorded.
+  async function markOutsideRead(command: string, toolUseID?: string): Promise<string | undefined> {
+    try {
+      await sidecar.taint(command);
+    } catch (err) {
+      log("warn", "marking an outside read failed", { taskId: SESSION_ID, error: String(err) });
+      return "Denied: could not record this outside read in core, so it did not run (ADR-0082). Try again.";
+    }
+    tainted = true;
+    if (toolUseID !== undefined) markedReads.add(toolUseID);
+    return undefined;
+  }
 
   // What canUseTool answers for an untainted session: the definition's
   // decision or the fleet's own tools, the fleet's auto, else a human.
-  async function decideTool(toolName: string, toolInput: Record<string, unknown>): Promise<PermissionResult> {
+  async function decideTool(toolName: string, toolInput: Record<string, unknown>, toolUseID: string): Promise<PermissionResult> {
     let noGrant = false;
     if (spec) {
       // Only the sidecar tools this definition lists are the fleet's own,
@@ -1234,7 +1273,7 @@ export async function runSession(): Promise<SessionResult> {
     // An ask can wait minutes, and taint can arrive meanwhile: an approval
     // that lands on a session tainted since it asked is a deny.
     if (answer.behavior === "allow") {
-      const refused = await taintedDeny(toolName);
+      const refused = await taintedDeny(toolName, toolUseID);
       if (refused) return { behavior: "deny", message: refused };
     }
     return answer;
@@ -1376,25 +1415,19 @@ export async function runSession(): Promise<SessionResult> {
       // The two short-circuits at the top are not a classification of what is
       // dangerous — they are the two answers the fleet has already made and
       // will not re-ask a human for. Everything else still blocks.
-      canUseTool: async (toolName, toolInput) => {
+      canUseTool: async (toolName, toolInput, { toolUseID }) => {
         // The taint gate first: tools.allow, grants and the mode come after
         // it, and a tainted session raises no permission request.
-        const refused = await taintedDeny(toolName);
+        const refused = await taintedDeny(toolName, toolUseID);
         if (refused) return { behavior: "deny", message: refused };
-        const result = await decideTool(toolName, toolInput);
+        const result = await decideTool(toolName, toolInput, toolUseID);
         if (result.behavior !== "allow") return result;
-        // An outside read taints as it runs (docs/adr/0082 §3): marked in core
-        // before it is allowed, from the input that will actually run, and
-        // refused when the mark cannot be recorded.
+        // The hook marked the call as the agent wrote it; a human's edit of
+        // the command (a repo session's updatedInput) is marked here.
         const ran = (result.updatedInput ?? toolInput) as Record<string, unknown>;
-        if (outsideRead(toolName, ran, defaultBranch)) {
-          try {
-            await sidecar.taint(String(ran.command));
-            tainted = true;
-          } catch (err) {
-            log("warn", "marking an outside read failed", { taskId: SESSION_ID, toolName, error: String(err) });
-            return { behavior: "deny", message: "Denied: could not record this outside read in core, so it did not run (ADR-0082). Try again." };
-          }
+        if (!markedReads.has(toolUseID) && outsideRead(toolName, ran, syncBranches)) {
+          const failed = await markOutsideRead(String(ran.command), toolUseID);
+          if (failed) return { behavior: "deny", message: failed };
         }
         return result;
       },
@@ -1407,9 +1440,20 @@ export async function runSession(): Promise<SessionResult> {
         PreToolUse: [
           {
             hooks: [
-              async (hookInput) => {
-                const refused = await taintedDeny((hookInput as PreToolUseHookInput).tool_name);
-                return refused ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: refused } } : {};
+              async (hookInput, toolUseID) => {
+                const { tool_name: toolName, tool_input: toolInput } = hookInput as PreToolUseHookInput;
+                const deny = (reason: string) => ({ hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: reason } });
+                const refused = await taintedDeny(toolName);
+                if (refused) return deny(refused);
+                // Every outside read is marked here, whichever path then
+                // allows it (canUseTool, allowedTools, the SDK's own auto).
+                // One a human then denies still taints: the safe direction.
+                const input = (toolInput ?? {}) as Record<string, unknown>;
+                if (outsideRead(toolName, input, syncBranches)) {
+                  const failed = await markOutsideRead(String(input.command), toolUseID);
+                  if (failed) return deny(failed);
+                }
+                return {};
               },
             ],
           },

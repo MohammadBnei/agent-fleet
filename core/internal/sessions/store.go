@@ -332,9 +332,7 @@ func (s *Store) ListThreads(ctx context.Context, definitions []string, owner str
 // Tainted sets each session's Tainted: an untrusted entry is in its
 // transcript (docs/adr/0067 §3).
 //
-// ponytail: no index on transcript.untrusted, so this reads each session's
-// transcript through its primary key. Fine at today's size; a partial index
-// ON transcript (session_id) WHERE untrusted is the upgrade.
+// transcript_untrusted_idx (000024) serves it.
 func (s *Store) Tainted(ctx context.Context, list []Session) error {
 	if len(list) == 0 {
 		return nil
@@ -362,11 +360,15 @@ func (s *Store) Tainted(ctx context.Context, list []Session) error {
 	return rows.Err()
 }
 
-// IsTainted is Tainted for one session.
+// IsTainted is Tainted for one session, on the worker's per-call path
+// (transcript_untrusted_idx).
 func (s *Store) IsTainted(ctx context.Context, id string) (bool, error) {
-	one := []Session{{ID: id}}
-	err := s.Tainted(ctx, one)
-	return one[0].Tainted, err
+	var tainted bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM transcript WHERE session_id = $1 AND untrusted)`, id).Scan(&tainted)
+	if err != nil {
+		return false, fmt.Errorf("is tainted: %w", err)
+	}
+	return tainted, nil
 }
 
 // maxOutsideRead bounds the command an outside-read entry quotes.
