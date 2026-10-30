@@ -298,6 +298,8 @@ func requestFor(method string) any {
 		return &agentfleetv1.PublishEventRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/ConsumeGrant":
 		return &agentfleetv1.ConsumeGrantRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/DraftCard":
+		return &agentfleetv1.DraftCardRequest{SessionId: "s1"}
 	}
 	return nil // unbound methods: the request names no caller
 }
@@ -353,9 +355,11 @@ func TestAuth_DefinitionLeaseOnlyReachesItsAllowlist(t *testing.T) {
 			t.Errorf("%s: a repo-session lease is unchanged, got %v", full, err)
 		}
 	}
-	// The provisioner token never publishes as a session.
-	if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), "/agentfleet.v1.CoreService/PublishEvent", &agentfleetv1.PublishEventRequest{SessionId: "s1"}); codeOf(err) != codes.PermissionDenied {
-		t.Errorf("provisioner PublishEvent: %v", err)
+	// The provisioner token never publishes or drafts as a session.
+	for _, m := range []string{"/agentfleet.v1.CoreService/PublishEvent", "/agentfleet.v1.CoreService/DraftCard"} {
+		if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), m, requestFor(m)); codeOf(err) != codes.PermissionDenied {
+			t.Errorf("provisioner %s: %v", m, err)
+		}
 	}
 	// The provisioner never reaches the table.
 	if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), "/agentfleet.v1.CoreService/Expose", &agentfleetv1.ExposeRequest{SessionId: "s1"}); err != nil {

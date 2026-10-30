@@ -15,6 +15,8 @@ const keyText: Record<Keyed, string> = {
     "This agent's client has too many open threads. Close some, then try again.",
   DEFINITION_UNAVAILABLE:
     "The bridge may not open this agent's threads: the definition and the client must list each other.",
+  DECISION_EXPIRED: "This card expired; nothing was done.",
+  DECISION_STALE: "This card was replaced by a newer one.",
 };
 
 // agentErrorText is the key's text, or the error's own message for a key with none (server.internal, a key a newer

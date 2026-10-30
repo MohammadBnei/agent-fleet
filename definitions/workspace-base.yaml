@@ -11,7 +11,7 @@ spec:
   tools:
     allow: [Read, Edit, Write, Glob, Grep]
     deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
-  sidecarTools: [AskUserQuestion, send_message, set_session_meta]
+  sidecarTools: [AskUserQuestion, send_message, set_session_meta, draft_card]
   interaction: { allow: [ask] }
   lifecycle: { allow: [resident] }
   resources: { cpu: "1", memory: 2Gi }

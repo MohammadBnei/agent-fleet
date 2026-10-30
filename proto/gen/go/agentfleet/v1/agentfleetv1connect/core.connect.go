@@ -101,6 +101,8 @@ const (
 	// CoreServiceConsumeGrantProcedure is the fully-qualified name of the CoreService's ConsumeGrant
 	// RPC.
 	CoreServiceConsumeGrantProcedure = "/agentfleet.v1.CoreService/ConsumeGrant"
+	// CoreServiceDraftCardProcedure is the fully-qualified name of the CoreService's DraftCard RPC.
+	CoreServiceDraftCardProcedure = "/agentfleet.v1.CoreService/DraftCard"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -186,6 +188,9 @@ type CoreServiceClient interface {
 	// Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
 	// for this tool and this exact input. Each grant lets one call through, once.
 	ConsumeGrant(context.Context, *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error)
+	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
+	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
+	DraftCard(context.Context, *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -349,6 +354,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("ConsumeGrant")),
 			connect.WithClientOptions(opts...),
 		),
+		draftCard: connect.NewClient[v1.DraftCardRequest, v1.DraftCardResponse](
+			httpClient,
+			baseURL+CoreServiceDraftCardProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("DraftCard")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -379,6 +390,7 @@ type coreServiceClient struct {
 	waitForSessionState *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
 	publishEvent        *connect.Client[v1.PublishEventRequest, v1.PublishEventResponse]
 	consumeGrant        *connect.Client[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse]
+	draftCard           *connect.Client[v1.DraftCardRequest, v1.DraftCardResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -506,6 +518,11 @@ func (c *coreServiceClient) ConsumeGrant(ctx context.Context, req *connect.Reque
 	return c.consumeGrant.CallUnary(ctx, req)
 }
 
+// DraftCard calls agentfleet.v1.CoreService.DraftCard.
+func (c *coreServiceClient) DraftCard(ctx context.Context, req *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error) {
+	return c.draftCard.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -589,6 +606,9 @@ type CoreServiceHandler interface {
 	// Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
 	// for this tool and this exact input. Each grant lets one call through, once.
 	ConsumeGrant(context.Context, *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error)
+	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
+	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
+	DraftCard(context.Context, *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -748,6 +768,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("ConsumeGrant")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceDraftCardHandler := connect.NewUnaryHandler(
+		CoreServiceDraftCardProcedure,
+		svc.DraftCard,
+		connect.WithSchema(coreServiceMethods.ByName("DraftCard")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -800,6 +826,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServicePublishEventHandler.ServeHTTP(w, r)
 		case CoreServiceConsumeGrantProcedure:
 			coreServiceConsumeGrantHandler.ServeHTTP(w, r)
+		case CoreServiceDraftCardProcedure:
+			coreServiceDraftCardHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -907,4 +935,8 @@ func (UnimplementedCoreServiceHandler) PublishEvent(context.Context, *connect.Re
 
 func (UnimplementedCoreServiceHandler) ConsumeGrant(context.Context, *connect.Request[v1.ConsumeGrantRequest]) (*connect.Response[v1.ConsumeGrantResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ConsumeGrant is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) DraftCard(context.Context, *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.DraftCard is not implemented"))
 }

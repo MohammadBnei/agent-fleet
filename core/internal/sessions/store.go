@@ -374,6 +374,23 @@ func (s *Store) Answered(ctx context.Context, id string, seq int64) (bool, error
 	return ok, err
 }
 
+// ThreadRef names an open client thread by what its thread lock is made of.
+type ThreadRef struct{ ID, Owner, Definition, ThreadKey string }
+
+// OpenOnThreadKey is every open session whose thread key is key, matched
+// case-insensitively, whatever its invoker: what a card's close_threads
+// closes (docs/adr/0082). GitHub's owner/name are case-insensitive, and a
+// card's subject is built lowercased.
+func (s *Store) OpenOnThreadKey(ctx context.Context, key string) ([]ThreadRef, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, COALESCE(owner, ''), COALESCE(definition_name, ''), thread_key FROM sessions
+		 WHERE lower(thread_key) = lower($1) AND archived_at IS NULL ORDER BY created_at`, key)
+	if err != nil {
+		return nil, fmt.Errorf("open on thread key: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[ThreadRef])
+}
+
 // OpenThreads counts owner's open sessions, for CreateThread's cap.
 func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
 	var n int

@@ -960,7 +960,9 @@ func (s *Server) answer(ctx context.Context, sessionID string, seq int64, wantTy
 		return 0, connect.NewError(connect.CodeUnavailable, errors.New("decisions are not configured"))
 	}
 	r, err := s.decisions.Request(ctx, sessionID, seq)
-	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind == decisions.Question) != (wantType == "question")) {
+	// A card is answered by id only (AnswerDecision): it is no question,
+	// and read as a permission here it would take a behavior.
+	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind == decisions.Card || (r.Kind == decisions.Question) != (wantType == "question"))) {
 		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not a %s", seq, wantType))
 	}
 	if err != nil {
@@ -1751,6 +1753,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	case "interrupt":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
+	case "card":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

@@ -19,8 +19,10 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	bridgev1 "github.com/MohammadBnei/ukubi-bridge/proto/gen/go/bridge/v1"
 )
@@ -317,6 +319,95 @@ func TestWakeGate(t *testing.T) {
 	agents.closes = nil
 	if err := d.Handle(ctx, sync("agent", bot, false, "closed")); err != nil || len(agents.closes) != 1 {
 		t.Fatalf("the bot's close: %v %v", err, agents.closes)
+	}
+}
+
+// docs/adr/0082 §10: the fleet's close of a PR it did not merge into the
+// default branch closes nothing; it asks the owner with a card in the oldest
+// open thread on it, once per event. A fleet merge and a human close close.
+func TestFleetCloseWithoutMergeDraftsACard(t *testing.T) {
+	d, agents, _, props := setup(t)
+	ctx := context.Background()
+	d.SetCards(decisions.NewStore(d.pool), transcript.NewPostgresStore(d.pool, decisions.OnAppend))
+	if _, err := d.pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('owner', 'sha', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	thread := func(key string, archived bool) string {
+		var id string
+		if err := d.pool.QueryRow(ctx, `
+			INSERT INTO sessions (repo, definition_name, definition_sha, owner, invoker, thread_key, visibility, archived_at)
+			VALUES ('notes', 'owner', 'sha', 'client:bridge', 'bridge', $1, 'shared', CASE WHEN $2 THEN now() END) RETURNING id`,
+			key, archived).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	thread("github/MohammadBnei/notes/pr/7", true)
+	writer := thread("github/mohammadbnei/notes/pr/7", false)
+	thread("github/MohammadBnei/notes/pr/7", false)
+
+	// A proposal nobody opened, which the close retires either way.
+	agents.err["owner"] = connect.NewError(connect.CodeFailedPrecondition, agentsvc.ErrNeedsWake)
+	if err := d.Handle(ctx, &bridgev1.CloudEvent{Seq: 1, Id: "h", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"please"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	delete(agents.err, "owner")
+
+	closed := func(id, actor, data string) *bridgev1.CloudEvent {
+		e := pr(id, typePRClosed, actor, "ukubi-fleet[bot]", false)
+		e.Data = []byte(data)
+		return e
+	}
+	cards := func() (open, all int) {
+		t.Helper()
+		if err := d.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state = 'open'), count(*) FROM decisions
+			WHERE kind = 'card' AND session_id = $1 AND subject = 'github/mohammadbnei/notes/pr/7'`, writer).Scan(&open, &all); err != nil {
+			t.Fatal(err)
+		}
+		return open, all
+	}
+	notMerged := `{"pull_request":{"merged":false,"base":{"ref":"main"}},"repository":{"default_branch":"main"}}`
+	for _, c := range []struct {
+		name      string
+		e         *bridgev1.CloudEvent
+		closes    int
+		open, all int
+	}{
+		{"closed unmerged", closed("c1", "agent", notMerged), 0, 1, 1},
+		{"its redelivery", closed("c1", "agent", notMerged), 0, 1, 1},
+		{"merged into another branch", closed("c2", "agent", `{"pull_request":{"merged":true,"base":{"ref":"dev"}},"repository":{"default_branch":"main"}}`), 0, 1, 2},
+		{"no merge fields", closed("c3", "agent", `{}`), 0, 1, 3},
+		{"merged into the default branch", closed("c4", "agent", `{"pull_request":{"merged":true,"base":{"ref":"main"}},"repository":{"default_branch":"main"}}`), 1, 1, 3},
+		{"a human's close", closed("c5", "human", notMerged), 1, 1, 3},
+		{"a replay", func() *bridgev1.CloudEvent { e := closed("c6", "agent", notMerged); e.Replayed = true; return e }(), 0, 1, 3},
+	} {
+		agents.closes = nil
+		if err := d.Handle(ctx, c.e); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if open, all := cards(); len(agents.closes) != c.closes || open != c.open || all != c.all {
+			t.Errorf("%s: %d closes, %d open of %d cards; want %d, %d of %d", c.name, len(agents.closes), open, all, c.closes, c.open, c.all)
+		}
+	}
+	if open, _ := props.ListOpen(ctx); len(open) != 0 {
+		t.Errorf("%d proposals left open", len(open))
+	}
+	var ask, by string
+	if err := d.pool.QueryRow(ctx, `SELECT ask, payload ->> 'draftedBy' FROM decisions WHERE kind = 'card' ORDER BY created_at LIMIT 1`).Scan(&ask, &by); err != nil ||
+		ask != "The fleet closed MohammadBnei/notes#7 without merging it into the default branch. Close its threads?" || by != "core" {
+		t.Errorf("card %q by %q: %v", ask, by, err)
+	}
+
+	// No open thread on the PR: nothing to ask about.
+	e := closed("c7", "agent", notMerged)
+	e.Subject = "github/MohammadBnei/notes/pr/8"
+	if err := d.Handle(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := d.pool.QueryRow(ctx, `SELECT count(*) FROM decisions WHERE kind = 'card'`).Scan(&n); err != nil || n != 3 {
+		t.Errorf("%d cards after a close with no thread, want 3: %v", n, err)
 	}
 }
 

@@ -14,6 +14,7 @@ import { relativeTime } from "../relativeTime";
 import { sessionLabel } from "../sessionLabel";
 import { blockedForLabel, shortId } from "../sessionState";
 import { ActionButton } from "./ActionButton";
+import { CardBody } from "./CardBody";
 import { DecisionInline } from "./DecisionInline";
 import { InlineError } from "./InlineError";
 import { Modal } from "./Modal";
@@ -40,6 +41,7 @@ const KIND: Record<DecisionKind, string> = {
   [DecisionKind.QUESTION]: "Question",
   [DecisionKind.PERMISSION]: "Permission",
   [DecisionKind.PLAN]: "Plan",
+  [DecisionKind.CARD]: "Card",
 };
 const STATE: Record<DecisionState, string> = {
   [DecisionState.UNSPECIFIED]: "unknown",
@@ -92,6 +94,16 @@ export function NeedsYouModal({
   history?: Decision[];
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
+  // A card answered but not delivered (CardBody onNotDelivered). Held here,
+  // not in the row: the answered card leaves the deck on the next list, and
+  // the owner must still learn the writer never got it.
+  // A list, so a second not-delivered answer does not erase the first.
+  const [notices, setNotices] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open) setNotices([]);
+  }, [open]);
+  const notice = notices.length > 0;
+  const addNotice = (text: string) => setNotices((n) => [...n, text]);
 
   // Answering the last decision closes the sheet. It used to stay up saying
   // "Nothing waiting any more." — the job was done and the human still had to
@@ -101,10 +113,18 @@ export function NeedsYouModal({
   // and says so.
   const lastCount = useRef(items.length);
   useEffect(() => {
-    if (open && tab === "open" && lastCount.current > 0 && items.length === 0)
+    // Not while a not-delivered notice is up: closing would take it away
+    // before it is read.
+    if (
+      open &&
+      tab === "open" &&
+      !notice &&
+      lastCount.current > 0 &&
+      items.length === 0
+    )
       onClose();
     lastCount.current = items.length;
-  }, [open, tab, items.length, onClose]);
+  }, [open, tab, notice, items.length, onClose]);
 
   // Nothing at all while closed. Every other Modal in the app renders its
   // children regardless, which is harmless for a form — but this one mirrors
@@ -138,6 +158,14 @@ export function NeedsYouModal({
           </button>
         </form>
       </div>
+      {notices.map((text, i) => (
+        <div key={`${i}-${text}`} className="mb-3 flex-none">
+          <InlineError
+            message={text}
+            onDismiss={() => setNotices((n) => n.filter((_, j) => j !== i))}
+          />
+        </div>
+      ))}
       {/* min-h-0 or the column refuses to scroll and the sheet grows instead. */}
       <div className="flex flex-col gap-4 overflow-y-auto min-h-0">
         {tab === "history" ? (
@@ -159,6 +187,7 @@ export function NeedsYouModal({
               item={item}
               onOpenSession={onOpenSession}
               reload={reload}
+              onNotDelivered={addNotice}
             />
           ))
         )}
@@ -171,10 +200,12 @@ function OpenRow({
   item,
   onOpenSession,
   reload,
+  onNotDelivered,
 }: {
   item: DeckItem;
   onOpenSession: (id: string) => void;
   reload: () => void;
+  onNotDelivered: (text: string) => void;
 }) {
   const { session: s, summary, decision: d } = item;
   const age = d
@@ -225,12 +256,20 @@ function OpenRow({
         </span>
       </div>
       <div className="px-3.5 pt-0.5 text-2xs text-dim2">#{shortId(s.id)}</div>
-      <DecisionInline
-        session={s}
-        summary={summary}
-        reload={reload}
-        claimLabel
-      />
+      {d?.kind === DecisionKind.CARD ? (
+        <CardBody
+          decision={d}
+          reload={reload}
+          onNotDelivered={onNotDelivered}
+        />
+      ) : (
+        <DecisionInline
+          session={s}
+          summary={summary}
+          reload={reload}
+          claimLabel
+        />
+      )}
     </div>
   );
 }

@@ -322,6 +322,10 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	case "interrupt":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
+	case "card":
+		// Only core writes a card (SendMessage refuses it); the case is here so
+		// the read path's string round-trips.
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
@@ -357,6 +361,8 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "permission_response"
 	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT:
 		return "interrupt"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD:
+		return "card"
 	default:
 		return ""
 	}

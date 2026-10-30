@@ -16,8 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -157,6 +157,11 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	// same reason transcript keeps these as two methods rather than one
 	// that takes a meaningless zero.
 	typ := protoTypeToString(req.GetType())
+	// A card is core's to write (DraftCard): one appended here would skip
+	// the draft's validation, its budget and its grant.
+	if typ == "card" {
+		return nil, status.Error(codes.InvalidArgument, "a card is drafted with DraftCard, not sent")
+	}
 	if typ == "permission_request" && req.ReplyToSeq == nil {
 		if seq, ok, err := s.askOnce(ctx, req.GetSessionId(), req.GetText()); err != nil {
 			return nil, fmt.Errorf("SendMessage: %w", err)
@@ -173,6 +178,11 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	}
 	if errors.Is(err, transcript.ErrAlreadyAnswered) {
 		return nil, status.Error(codes.AlreadyExists, err.Error())
+	}
+	// A card is answered by its owner only (the decisions hook refuses the
+	// append); an agent's reply to one is a forged choice.
+	if errors.Is(err, decisions.ErrNotOwner) {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
@@ -920,6 +930,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	case "interrupt":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
+	case "card":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
@@ -955,6 +967,8 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "permission_response"
 	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT:
 		return "interrupt"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD:
+		return "card"
 	default:
 		return ""
 	}

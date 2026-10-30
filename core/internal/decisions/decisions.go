@@ -1,8 +1,8 @@
 // Package decisions is docs/adr/0082 §5's one store of decisions: every
 // direction the work waits on the owner for, whatever its kind. A session's
 // question, permission request and plan approval are projected here from the
-// transcript, in the append's own transaction (OnAppend); a card is the fourth
-// kind and arrives with draft_card in a later slice.
+// transcript, in the append's own transaction (OnAppend); a card, the fourth
+// kind, is a CARD entry core writes for draft_card (Store.Draft).
 package decisions
 
 import (
@@ -27,10 +27,14 @@ const (
 	Question   Kind = "question"
 	Permission Kind = "permission"
 	Plan       Kind = "plan"
+	// Card is a decision card (docs/adr/0082 §5): a CARD transcript entry
+	// core writes (Store.Draft), its payload the protojson of an
+	// agentfleetv1.Card.
+	Card Kind = "card"
 )
 
 // The states a decision moves through. Expired and stale are a card's
-// (docs/adr/0082 §5-6); nothing sets them yet.
+// (docs/adr/0082 §5-6): ExpireCards and a newer card on its subject.
 const (
 	Open      = "open"
 	Answered  = "answered"
@@ -227,8 +231,14 @@ func clip(s string, n int) string {
 // that allow keeps it so: a session authors only as agent or worker
 // (coreserver auth.go), so it cannot answer itself into a grant, and a deny
 // is never one.
+//
+// A card is its own branch (onCard), and only a human answers one, while it
+// is open and unexpired (cardReply).
 func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry) error {
 	if e.ReplyTo != nil {
+		if err := cardReply(ctx, tx, sessionID, e); err != nil {
+			return err
+		}
 		var reply struct {
 			Behavior string `json:"behavior"`
 		}
@@ -251,6 +261,9 @@ func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Ent
 			sessionID, *e.ReplyTo, state, asJSON(e.Text), by, e.From == "human" && reply.Behavior == "allow"); err != nil {
 			return err
 		}
+	}
+	if e.Type == string(Card) {
+		return onCard(ctx, tx, sessionID, e)
 	}
 	d := read(e.Type, e.Text)
 	if d == nil {

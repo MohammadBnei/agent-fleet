@@ -390,6 +390,20 @@ permission tiers instead of a second, fleet-specific gate on top of them
   archived session's decisions are withdrawn; an interrupt does not withdraw
   (the decision reads `interrupted`), and `AnswerDecision`'s `withdraw` closes
   one with nothing sent.
+- **Cards** ([`adr/0082`](adr/0082-decision-cards.md) §5-6). When the choice
+  is the owner's, a definition granted `draft_card` calls
+  `CoreService.DraftCard`: an ask, a subject (a PR, issue, alert or repo) and
+  two or three options, each bound to one effect core runs (`handoff` or
+  `close_threads`). Core writes the `card` entry; `SendMessage` refuses one.
+  The decisions hook (`core/internal/decisions/card.go`) checks it again,
+  keeps one open card per subject (the older one turns `stale`), expires it
+  after 7 days with no action, and refuses an agent's card past 10 a day per
+  definition (`core.card_budget`). Only an admin answers a card, in the deck,
+  with one option or their own words; nothing is pre-selected and an
+  irreversible option takes a second click. A handoff warms the writer and
+  appends the answer as a message; a writer that cannot resume gets the
+  answer recorded and "not delivered". `close_threads` appends, then
+  archives every open thread on the subject.
 - **Definition sessions decide differently** ([`adr/0076`](adr/0076-definition-sessions-run-in-auto.md),
   [`adr/0067`](adr/0067-shared-and-private-sessions.md) §4). Their `auto` is the
   fleet's: the worker runs the SDK in `default`, so every call that is not
@@ -453,7 +467,11 @@ is the reason.
   repos core syncs, or a fleet hand-off. What `owns` or `subscribes` matches
   without one is context on an open thread; a GitHub event with no open
   thread is acked and dropped, never a proposal. The fleet bot's own GitHub
-  events are acked and dropped. Delivery and retry are the
+  events are acked and dropped, with one exception: the bot's close of a PR it
+  did not merge into the repository's default branch closes nothing and drafts
+  core's card ("Close its threads?") in the oldest open thread on the PR, once
+  per event. A person's close and a merge into the default branch close the
+  PR's threads at once. Delivery and retry are the
   bridge's: core acks or nacks, and holds no queue. A definition granted
   `publish_event` hands work on through `CoreService.PublishEvent`
   (`dispatch/publish.go`; depth, per-session budget and per-thread wake

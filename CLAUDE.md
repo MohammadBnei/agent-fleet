@@ -183,7 +183,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   passes only `definitionMethods` (`adr/0064`: no `Expose`, peers, journal, files, Loki).
   `PublishEvent` goes the other way: only a definition whose pinned spec grants
   `publish_event` may call it, never with the provisioner token (`adr/0078` §8), and
-  nobody can `PromptSession` into one. Every lease caller authors `SendMessage` as
+  nobody can `PromptSession` into one. `DraftCard` is the same: only a definition whose
+  pinned spec grants `draft_card`, and `SendMessage` refuses a `card` entry (`adr/0082` §6). Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.

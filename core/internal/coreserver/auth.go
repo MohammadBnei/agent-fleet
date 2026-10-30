@@ -110,6 +110,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/ConsumeGrant": func(r any) string {
 		return r.(*agentfleetv1.ConsumeGrantRequest).GetSessionId()
 	},
+	"/agentfleet.v1.CoreService/DraftCard": func(r any) string {
+		return r.(*agentfleetv1.DraftCardRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -161,6 +164,9 @@ var definitionMethods = map[string]bool{
 	// A human's one-time approval of this session's own call
 	// (docs/adr/0082 §5).
 	"/agentfleet.v1.CoreService/ConsumeGrant": true,
+	// Granted per definition, as PublishEvent: the handler checks the
+	// pinned spec's sidecarTools for draft_card (docs/adr/0082 §6).
+	"/agentfleet.v1.CoreService/DraftCard": true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents
@@ -174,10 +180,12 @@ var provisionerMethods = map[string]bool{
 // sessionOnlyMethods are never callable with the provisioner token: they
 // carry a session's own authority outward (PublishEvent inherits the
 // session's trust, docs/adr/0078 §8; ConsumeGrant spends a human's approval
-// given to that session), which no component may borrow.
+// given to that session; DraftCard spends its definition's card budget),
+// which no component may borrow.
 var sessionOnlyMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/PublishEvent": true,
 	"/agentfleet.v1.CoreService/ConsumeGrant": true,
+	"/agentfleet.v1.CoreService/DraftCard":    true,
 }
 
 var (

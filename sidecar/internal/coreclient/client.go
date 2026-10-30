@@ -452,6 +452,18 @@ func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key strin
 	return res, nil
 }
 
+// DraftCard drafts a decision card as this session (docs/adr/0082 slice 2).
+// Core fills the writer, the subject url, expires_at and the option ids; the
+// session id is this pod's, overwriting whatever the caller set.
+func (c *Client) DraftCard(ctx context.Context, req *agentfleetv1.DraftCardRequest) (*agentfleetv1.DraftCardResponse, error) {
+	req.SessionId = c.taskID
+	res, err := c.rpc.DraftCard(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("DraftCard: %w", err)
+	}
+	return res, nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the

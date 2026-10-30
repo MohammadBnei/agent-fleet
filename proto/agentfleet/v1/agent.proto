@@ -21,6 +21,10 @@ enum AgentErrorKey {
   // The definition does not exist or is not the caller's to use (one answer for both, docs/adr/0066 §4). Not a
   // missing thread, also NotFound.
   AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE = 3 [(ukubi.errors.v1.key) = "agent.definition_unavailable"];
+  // The card is past its expiry: nothing was done.
+  AGENT_ERROR_KEY_DECISION_EXPIRED = 4 [(ukubi.errors.v1.key) = "agent.decision_expired"];
+  // The card was replaced by a newer one on the same subject: nothing was done.
+  AGENT_ERROR_KEY_DECISION_STALE = 5 [(ukubi.errors.v1.key) = "agent.decision_stale"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients
@@ -56,7 +60,10 @@ service AgentService {
   rpc GetDecision(GetDecisionRequest) returns (GetDecisionResponse);
   // Answers one open decision by id. An admin in the console answers any decision it can see; anyone else, on the
   // threads canAnswer allows (docs/adr/0067 §2).
-  rpc AnswerDecision(AnswerDecisionRequest) returns (AnswerDecisionResponse);
+  rpc AnswerDecision(AnswerDecisionRequest) returns (AnswerDecisionResponse) {
+    option (ukubi.errors.v1.keys) = "agent.decision_expired";
+    option (ukubi.errors.v1.keys) = "agent.decision_stale";
+  }
   // Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
   // the client reconnects with since_version and re-reads the ids it holds.
   rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
@@ -294,7 +301,7 @@ message WaitForResultResponse {
   Status error = 5;
 }
 
-// A decision's kind (docs/adr/0082 §5). A card, the fourth kind, comes with draft_card in a later slice.
+// A decision's kind (docs/adr/0082 §5).
 enum DecisionKind {
   DECISION_KIND_UNSPECIFIED = 0;
   // AskUserQuestion.
@@ -303,6 +310,9 @@ enum DecisionKind {
   DECISION_KIND_PERMISSION = 2;
   // ExitPlanMode's permission request: approving the plan.
   DECISION_KIND_PLAN = 3;
+  // A card an agent drafted with draft_card, or core drafted itself: an admin answers it with an option or, when
+  // the card allows it, their own words.
+  DECISION_KIND_CARD = 4;
 }
 
 enum DecisionState {
@@ -342,6 +352,8 @@ message Decision {
   // An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
   // the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.
   bool interrupted = 15;
+  // A card's, set only for DECISION_KIND_CARD.
+  Card card = 16;
 }
 
 message ListDecisionsRequest {
@@ -385,11 +397,19 @@ message AnswerDecisionRequest {
   // the rule's form, "exact" or "prefix".
   string scope = 6;
   string rule_form = 7;
+  // A card (admins only): exactly one of these. option_id is one of the card's option ids; own_text, the owner's
+  // own words at most 2,000 bytes, only where the card allows write_own.
+  string option_id = 8;
+  string own_text = 9;
 }
 
 message AnswerDecisionResponse {
   // The answer's seq in the thread's transcript.
   int64 seq = 1;
+  // A card's handoff or own text: false when the answer is recorded but the writer cannot resume to read it (its
+  // definition changed or its session is gone), not_delivered_reason saying why. Every other answer: true.
+  bool delivered = 2;
+  string not_delivered_reason = 3;
 }
 
 message WatchDecisionsRequest {

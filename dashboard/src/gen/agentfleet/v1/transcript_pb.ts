@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/transcript.proto.
  */
 export const file_agentfleet_v1_transcript: GenFile = /*@__PURE__*/
-  fileDesc("Ch5hZ2VudGZsZWV0L3YxL3RyYW5zY3JpcHQucHJvdG8SDWFnZW50ZmxlZXQudjEizQEKD1RyYW5zY3JpcHRFbnRyeRISCgpzZXNzaW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSMAoEdHlwZRgFIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIVCghyZXBseV90bxgGIAEoA0gAiAEBEhIKCmNyZWF0ZWRfYXQYByABKAkSEwoLYXV0aG9yX25hbWUYCCABKAlCCwoJX3JlcGx5X3RvIpkBChxBcHBlbmRUcmFuc2NyaXB0RW50cnlSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEZnJvbRgCIAEoCRIMCgR0ZXh0GAMgASgJEjAKBHR5cGUYBCABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIrUBChpSZWFkVHJhbnNjcmlwdFNpbmNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAxISCgp0aW1lb3V0X21zGAMgASgFEhIKBWxpbWl0GAQgASgFSACIAQESFwoKYmVmb3JlX3NlcRgFIAEoA0gBiAEBEhYKDmFnZW50X3NwZWNfc2hhGAYgASgJQggKBl9saW1pdEINCgtfYmVmb3JlX3NlcSJgChtSZWFkVHJhbnNjcmlwdFNpbmNlUmVzcG9uc2USLwoHZW50cmllcxgBIAMoCzIeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5EhAKCG5leHRfc2VxGAIgASgDKscEChNUcmFuc2NyaXB0RW50cnlUeXBlEiUKIVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9VTlNQRUNJRklFRBAAEiQKIFRSQU5TQ1JJUFRfRU5UUllfVFlQRV9ESVNDVVNTSU9OEAESIQodVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FQUFJPVkUQAhIfChtUUkFOU0NSSVBUX0VOVFJZX1RZUEVfQUJPUlQQAxIiCh5UUkFOU0NSSVBUX0VOVFJZX1RZUEVfUVVFU1RJT04QBBIgChxUUkFOU0NSSVBUX0VOVFJZX1RZUEVfQU5TV0VSEAUSIwofVFJBTlNDUklQVF9FTlRSWV9UWVBFX1RPT0xfQ0FMTBAGEiAKHFRSQU5TQ1JJUFRfRU5UUllfVFlQRV9TWVNURU0QBxIjCh9UUkFOU0NSSVBUX0VOVFJZX1RZUEVfQVNTSVNUQU5UEAgSHgoaVFJBTlNDUklQVF9FTlRSWV9UWVBFX1VTRVIQCRIgChxUUkFOU0NSSVBUX0VOVFJZX1RZUEVfUkVTVUxUEAoSKQolVFJBTlNDUklQVF9FTlRSWV9UWVBFX1BFUk1JU1NJT05fTU9ERRALEiwKKFRSQU5TQ1JJUFRfRU5UUllfVFlQRV9QRVJNSVNTSU9OX1JFUVVFU1QQDBItCilUUkFOU0NSSVBUX0VOVFJZX1RZUEVfUEVSTUlTU0lPTl9SRVNQT05TRRANEiMKH1RSQU5TQ1JJUFRfRU5UUllfVFlQRV9JTlRFUlJVUFQQDkJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
+  fileDesc("Ch5hZ2VudGZsZWV0L3YxL3RyYW5zY3JpcHQucHJvdG8SDWFnZW50ZmxlZXQudjEizQEKD1RyYW5zY3JpcHRFbnRyeRISCgpzZXNzaW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSMAoEdHlwZRgFIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIVCghyZXBseV90bxgGIAEoA0gAiAEBEhIKCmNyZWF0ZWRfYXQYByABKAkSEwoLYXV0aG9yX25hbWUYCCABKAlCCwoJX3JlcGx5X3RvIpkBChxBcHBlbmRUcmFuc2NyaXB0RW50cnlSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEZnJvbRgCIAEoCRIMCgR0ZXh0GAMgASgJEjAKBHR5cGUYBCABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIrUBChpSZWFkVHJhbnNjcmlwdFNpbmNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAxISCgp0aW1lb3V0X21zGAMgASgFEhIKBWxpbWl0GAQgASgFSACIAQESFwoKYmVmb3JlX3NlcRgFIAEoA0gBiAEBEhYKDmFnZW50X3NwZWNfc2hhGAYgASgJQggKBl9saW1pdEINCgtfYmVmb3JlX3NlcSJgChtSZWFkVHJhbnNjcmlwdFNpbmNlUmVzcG9uc2USLwoHZW50cmllcxgBIAMoCzIeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5EhAKCG5leHRfc2VxGAIgASgDIkYKC0NhcmRTdWJqZWN0EgwKBHJlcG8YASABKAkSDAoEa2luZBgCIAEoCRIOCgZudW1iZXIYAyABKAMSCwoDdXJsGAQgASgJIhoKCkNhcmRFZmZlY3QSDAoEdmVyYhgBIAEoCSJ7CgpDYXJkT3B0aW9uEgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEikKBmVmZmVjdBgDIAEoCzIZLmFnZW50ZmxlZXQudjEuQ2FyZEVmZmVjdBISCgpyZXZlcnNpYmxlGAQgASgJEhMKC3JlY29tbWVuZGVkGAUgASgIIsIBCgRDYXJkEgsKA2FzaxgBIAEoCRIrCgdzdWJqZWN0GAIgASgLMhouYWdlbnRmbGVldC52MS5DYXJkU3ViamVjdBIqCgdvcHRpb25zGAMgAygLMhkuYWdlbnRmbGVldC52MS5DYXJkT3B0aW9uEhEKCXdyaXRlX293bhgEIAEoCBISCgpleHBpcmVzX2F0GAUgASgJEhkKEXdyaXRlcl9kZWZpbml0aW9uGAYgASgJEhIKCmRyYWZ0ZWRfYnkYByABKAkq5wQKE1RyYW5zY3JpcHRFbnRyeVR5cGUSJQohVFJBTlNDUklQVF9FTlRSWV9UWVBFX1VOU1BFQ0lGSUVEEAASJAogVFJBTlNDUklQVF9FTlRSWV9UWVBFX0RJU0NVU1NJT04QARIhCh1UUkFOU0NSSVBUX0VOVFJZX1RZUEVfQVBQUk9WRRACEh8KG1RSQU5TQ1JJUFRfRU5UUllfVFlQRV9BQk9SVBADEiIKHlRSQU5TQ1JJUFRfRU5UUllfVFlQRV9RVUVTVElPThAEEiAKHFRSQU5TQ1JJUFRfRU5UUllfVFlQRV9BTlNXRVIQBRIjCh9UUkFOU0NSSVBUX0VOVFJZX1RZUEVfVE9PTF9DQUxMEAYSIAocVFJBTlNDUklQVF9FTlRSWV9UWVBFX1NZU1RFTRAHEiMKH1RSQU5TQ1JJUFRfRU5UUllfVFlQRV9BU1NJU1RBTlQQCBIeChpUUkFOU0NSSVBUX0VOVFJZX1RZUEVfVVNFUhAJEiAKHFRSQU5TQ1JJUFRfRU5UUllfVFlQRV9SRVNVTFQQChIpCiVUUkFOU0NSSVBUX0VOVFJZX1RZUEVfUEVSTUlTU0lPTl9NT0RFEAsSLAooVFJBTlNDUklQVF9FTlRSWV9UWVBFX1BFUk1JU1NJT05fUkVRVUVTVBAMEi0KKVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9QRVJNSVNTSU9OX1JFU1BPTlNFEA0SIwofVFJBTlNDUklQVF9FTlRSWV9UWVBFX0lOVEVSUlVQVBAOEh4KGlRSQU5TQ1JJUFRfRU5UUllfVFlQRV9DQVJEEA9CTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
 
 /**
  * @generated from message agentfleet.v1.TranscriptEntry
@@ -202,6 +202,178 @@ export const ReadTranscriptSinceResponseSchema: GenMessage<ReadTranscriptSinceRe
   messageDesc(file_agentfleet_v1_transcript, 3);
 
 /**
+ * The GitHub subject a card is about (docs/adr/0082 §5).
+ *
+ * @generated from message agentfleet.v1.CardSubject
+ */
+export type CardSubject = Message<"agentfleet.v1.CardSubject"> & {
+  /**
+   * owner/name.
+   *
+   * @generated from field: string repo = 1;
+   */
+  repo: string;
+
+  /**
+   * "pr", "issue", "alert" or "repo".
+   *
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * Required for pr, issue and alert; 0 for repo.
+   *
+   * @generated from field: int64 number = 3;
+   */
+  number: bigint;
+
+  /**
+   * Filled by core from the rest; empty for an alert.
+   *
+   * @generated from field: string url = 4;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.CardSubject.
+ * Use `create(CardSubjectSchema)` to create a new message.
+ */
+export const CardSubjectSchema: GenMessage<CardSubject> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_transcript, 4);
+
+/**
+ * What answering with an option does. Nothing writes to GitHub.
+ *
+ * @generated from message agentfleet.v1.CardEffect
+ */
+export type CardEffect = Message<"agentfleet.v1.CardEffect"> & {
+  /**
+   * "handoff" sends the owner's choice to the writer's thread; "close_threads"
+   * closes every thread on the subject (pr or issue only, reversible "no").
+   *
+   * @generated from field: string verb = 1;
+   */
+  verb: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.CardEffect.
+ * Use `create(CardEffectSchema)` to create a new message.
+ */
+export const CardEffectSchema: GenMessage<CardEffect> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_transcript, 5);
+
+/**
+ * @generated from message agentfleet.v1.CardOption
+ */
+export type CardOption = Message<"agentfleet.v1.CardOption"> & {
+  /**
+   * Assigned by core: "1", "2", "3" in order.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * 1..80 characters, an agent claim.
+   *
+   * @generated from field: string label = 2;
+   */
+  label: string;
+
+  /**
+   * @generated from field: agentfleet.v1.CardEffect effect = 3;
+   */
+  effect?: CardEffect | undefined;
+
+  /**
+   * "yes", "partial" or "no".
+   *
+   * @generated from field: string reversible = 4;
+   */
+  reversible: string;
+
+  /**
+   * At most one option of a card.
+   *
+   * @generated from field: bool recommended = 5;
+   */
+  recommended: boolean;
+};
+
+/**
+ * Describes the message agentfleet.v1.CardOption.
+ * Use `create(CardOptionSchema)` to create a new message.
+ */
+export const CardOptionSchema: GenMessage<CardOption> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_transcript, 6);
+
+/**
+ * A decision card: an agent's (or core's) question to the owner with two or
+ * three fixed options. The console never pre-selects one.
+ *
+ * @generated from message agentfleet.v1.Card
+ */
+export type Card = Message<"agentfleet.v1.Card"> & {
+  /**
+   * 1..280 characters, an agent claim.
+   *
+   * @generated from field: string ask = 1;
+   */
+  ask: string;
+
+  /**
+   * @generated from field: agentfleet.v1.CardSubject subject = 2;
+   */
+  subject?: CardSubject | undefined;
+
+  /**
+   * Two or three.
+   *
+   * @generated from field: repeated agentfleet.v1.CardOption options = 3;
+   */
+  options: CardOption[];
+
+  /**
+   * The owner may answer in their own words instead (at most 2,000 bytes).
+   *
+   * @generated from field: bool write_own = 4;
+   */
+  writeOwn: boolean;
+
+  /**
+   * RFC3339; core sets it 7 days after drafting. Past it the card is expired:
+   * no action.
+   *
+   * @generated from field: string expires_at = 5;
+   */
+  expiresAt: string;
+
+  /**
+   * The definition of the session that drafted it.
+   *
+   * @generated from field: string writer_definition = 6;
+   */
+  writerDefinition: string;
+
+  /**
+   * "agent" or "core".
+   *
+   * @generated from field: string drafted_by = 7;
+   */
+  draftedBy: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.Card.
+ * Use `create(CardSchema)` to create a new message.
+ */
+export const CardSchema: GenMessage<Card> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_transcript, 7);
+
+/**
  * @generated from enum agentfleet.v1.TranscriptEntryType
  */
 export enum TranscriptEntryType {
@@ -316,6 +488,16 @@ export enum TranscriptEntryType {
    * @generated from enum value: TRANSCRIPT_ENTRY_TYPE_INTERRUPT = 14;
    */
   INTERRUPT = 14,
+
+  /**
+   * A decision card (docs/adr/0082 §5): `text` is the protojson of a Card.
+   * Written only by core (decisions.Store.Draft, from CoreService.DraftCard
+   * or dispatch's own cards), never through SendMessage. The owner's choice
+   * comes back as an ANSWER replying to it.
+   *
+   * @generated from enum value: TRANSCRIPT_ENTRY_TYPE_CARD = 15;
+   */
+  CARD = 15,
 }
 
 /**

@@ -48,6 +48,33 @@ type AskUserQuestionArgs struct {
 	Questions []AskUserQuestionQuestion `json:"questions" jsonschema_description:"1-4 questions to ask the human"`
 }
 
+// The draft_card schema states core's limits in its descriptions so the agent
+// can meet them; core enforces them (decisions.Draft), the schema does not.
+type DraftCardSubject struct {
+	Repo   string `json:"repo" jsonschema_description:"owner/name of the repository the choice is about"`
+	Kind   string `json:"kind" jsonschema:"enum=pr,enum=issue,enum=alert,enum=repo" jsonschema_description:"What the choice is about: pr, issue, alert or repo"`
+	Number int64  `json:"number,omitempty" jsonschema_description:"The pr, issue or alert number; required for those kinds, omitted for repo"`
+}
+
+type DraftCardEffect struct {
+	Verb string `json:"verb" jsonschema:"enum=handoff,enum=close_threads" jsonschema_description:"handoff: the owner's choice comes back to you as a message. close_threads: core closes every thread on the subject; pr or issue only, and only with reversible no"`
+}
+
+type DraftCardOption struct {
+	Label       string          `json:"label" jsonschema_description:"What this option does, 1-80 characters"`
+	Effect      DraftCardEffect `json:"effect"`
+	Reversible  string          `json:"reversible" jsonschema:"enum=yes,enum=partial,enum=no" jsonschema_description:"Whether this option can be undone: yes, partial or no"`
+	Recommended bool            `json:"recommended,omitempty" jsonschema_description:"Your recommendation; at most one option. The owner sees it as an agent claim and nothing is pre-selected"`
+}
+
+type DraftCardArgs struct {
+	Subject        DraftCardSubject  `json:"subject"`
+	Ask            string            `json:"ask" jsonschema_description:"The choice put to the owner, 1-280 characters"`
+	Options        []DraftCardOption `json:"options" jsonschema_description:"2-3 mutually exclusive options"`
+	WriteOwn       bool              `json:"writeOwn,omitempty" jsonschema_description:"Let the owner answer in their own words instead, up to 2,000 bytes"`
+	IdempotencyKey string            `json:"idempotencyKey,omitempty" jsonschema_description:"Optional: a retry with the same key drafts nothing new"`
+}
+
 // blockingWaitMs is how long core holds any blocking tool call open —
 // AskUserQuestion, wait_for_messages, wait_for_agent — before returning what
 // it has. Deliberately NOT a tool argument on any of them.
@@ -183,6 +210,13 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 		mcp.WithString("text", mcp.Required(), mcp.Description("What the receiving agent needs to know and do")),
 		mcp.WithString("idempotencyKey", mcp.Description("Optional: a retry with the same key publishes nothing new")),
 	), publishEventHandler(core))
+
+	// docs/adr/0082 slice 2. Registered in every sidecar like publish_event;
+	// core refuses it unless the session's definition grants draft_card.
+	s.AddTool(mcp.NewTool("draft_card",
+		mcp.WithDescription("Put a choice to the owner as a decision card, when the choice is the owner's to make and has real options. It does not wait: it returns the card's id and you carry on or end your turn. The owner's choice arrives later as a new message. A card expires after 7 days with nothing done; a new card on the same subject replaces the open one. At most 10 new cards a day per definition; past that core refuses with core.card_budget. Only for definitions that grant it."),
+		mcp.WithInputSchema[DraftCardArgs](),
+	), draftCardHandler(core))
 
 	// Inter-agent coordination (docs/adr/0041). Registered statically for
 	// the same reason run_command is: a resumed session must have them from
@@ -388,6 +422,39 @@ func publishEventHandler(core EventPublisher) server.ToolHandlerFunc {
 		b, _ := json.Marshal(map[string]any{"id": res.GetId(), "trusted": res.GetTrusted(), "hops": res.GetHops()})
 		return mcp.NewToolResultText(string(b)), nil
 	}
+}
+
+// CardDrafter is draft_card's slice of *coreclient.Client.
+type CardDrafter interface {
+	DraftCard(ctx context.Context, req *agentfleetv1.DraftCardRequest) (*agentfleetv1.DraftCardResponse, error)
+}
+
+func draftCardHandler(core CardDrafter) server.ToolHandlerFunc {
+	return mcp.NewTypedToolHandler(func(ctx context.Context, _ mcp.CallToolRequest, args DraftCardArgs) (*mcp.CallToolResult, error) {
+		opts := make([]*agentfleetv1.CardOption, len(args.Options))
+		for i, o := range args.Options {
+			opts[i] = &agentfleetv1.CardOption{
+				Label: o.Label, Effect: &agentfleetv1.CardEffect{Verb: o.Effect.Verb},
+				Reversible: o.Reversible, Recommended: o.Recommended,
+			}
+		}
+		res, err := core.DraftCard(ctx, &agentfleetv1.DraftCardRequest{
+			Ask:            args.Ask,
+			Subject:        &agentfleetv1.CardSubject{Repo: args.Subject.Repo, Kind: args.Subject.Kind, Number: args.Subject.Number},
+			Options:        opts,
+			WriteOwn:       args.WriteOwn,
+			IdempotencyKey: args.IdempotencyKey,
+		})
+		if err != nil {
+			// Core's message carries the reason, and for the budget its key
+			// ("core.card_budget: ..."), so the agent reads it as-is.
+			slog.Error("mcp draft_card", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		slog.Info("mcp draft_card", "decision", res.GetDecisionId())
+		b, _ := json.Marshal(map[string]string{"decisionId": res.GetDecisionId(), "expiresAt": res.GetExpiresAt(), "status": "open"})
+		return mcp.NewToolResultText(string(b)), nil
+	})
 }
 
 // maxJournalBytes caps journal_search's result the way maxLogsBytes caps

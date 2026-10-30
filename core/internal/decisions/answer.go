@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
+	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
 // ErrInvalid: the reply does not fit its decision.
@@ -27,6 +32,8 @@ type Reply struct {
 	// A permission allowed: docs/adr/0076 §3's remembered rule. "" and
 	// "once" remember nothing.
 	Scope, RuleForm string
+	// A card: exactly one of an option's id or the owner's own words.
+	OptionID, OwnText string
 }
 
 // Effects is what an answer does outside the decisions table. The console
@@ -68,7 +75,17 @@ func response(behavior, message, decisionID, kind string) (string, error) {
 // older worker's permission or plan does not warm: it is bound to its pod's
 // canUseTool promise, and the warm's ReserveSlot withdraws exactly those
 // requests, so warming would close the decision being answered.
+//
+// A card answers with an option or the owner's own words (answerCard).
 func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r Record, a Reply) (int64, error) {
+	if r.Kind == Card {
+		switch {
+		case r.State == Stale:
+			return 0, ErrStale
+		case r.State == Expired, r.State == Open && r.ExpiresAt != nil && !time.Now().Before(*r.ExpiresAt):
+			return 0, ErrExpired
+		}
+	}
 	if r.State != Open {
 		return 0, transcript.ErrAlreadyAnswered
 	}
@@ -138,8 +155,74 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 			undo()
 		}
 		return n, err
+	case Card:
+		return answerCard(ctx, r, a, reply, warm)
 	}
 	return 0, fmt.Errorf("%w: a %s decision is not answered here", ErrInvalid, r.Kind)
+}
+
+// cardAnswer is a card's answer text, a question's {"answers": {ask: ...}}
+// that the worker already renders as a turn (worker formatAnswerTurn), plus
+// which card and option it answers for the console's history.
+type cardAnswer struct {
+	Card     string            `json:"card"`
+	OptionID string            `json:"optionId,omitempty"`
+	OwnText  bool              `json:"ownText,omitempty"`
+	Answers  map[string]string `json:"answers"`
+}
+
+// answerCard is docs/adr/0082 §5's card answer: exactly one of an option or
+// the owner's own words (only on a write_own card). A handoff or own words
+// warm the writer, then append, as a question does. A close_threads option
+// only appends: AgentService closes the subject's threads after it, so the
+// answer lands before the archive withdraws what is open there.
+//
+// A writer that cannot resume (FailedPrecondition from the warm: swept, or
+// its definition moved on) still gets the answer recorded, and Answer
+// returns its seq with ErrNotDelivered. No slot (any other warm error) is
+// that error, and the card stays open.
+func answerCard(ctx context.Context, r Record, a Reply, reply func(text, typ string) (int64, error), warm func() error) (int64, error) {
+	if (a.OptionID == "") == (a.OwnText == "") {
+		return 0, fmt.Errorf("%w: a card is answered with one option or the owner's own words", ErrInvalid)
+	}
+	var c agentfleetv1.Card
+	if err := protojson.Unmarshal([]byte(r.Payload), &c); err != nil {
+		return 0, fmt.Errorf("card %s: %w", r.ID, err)
+	}
+	ans := cardAnswer{Card: r.ID}
+	handoff := true
+	if a.OwnText != "" {
+		if !c.GetWriteOwn() {
+			return 0, fmt.Errorf("%w: this card takes no answer of your own", ErrInvalid)
+		}
+		ans.OwnText, ans.Answers = true, map[string]string{c.GetAsk(): a.OwnText}
+	} else {
+		i := slices.IndexFunc(c.GetOptions(), func(o *agentfleetv1.CardOption) bool { return o.GetId() == a.OptionID })
+		if i < 0 {
+			return 0, fmt.Errorf("%w: card %s has no option %q", ErrInvalid, r.ID, a.OptionID)
+		}
+		o := c.GetOptions()[i]
+		handoff = o.GetEffect().GetVerb() == "handoff"
+		ans.OptionID = o.GetId()
+		ans.Answers = map[string]string{c.GetAsk(): fmt.Sprintf("owner chose option %s of card %s: %s (agent claim, owner-chosen)", o.GetId(), r.ID, o.GetLabel())}
+	}
+	text, err := json.Marshal(ans)
+	if err != nil {
+		return 0, err
+	}
+	var undelivered error
+	if handoff {
+		if err := warm(); connect.CodeOf(err) == connect.CodeFailedPrecondition {
+			undelivered = fmt.Errorf("%w: %v", ErrNotDelivered, err)
+		} else if err != nil {
+			return 0, err
+		}
+	}
+	n, err := reply(string(text), "answer")
+	if err != nil {
+		return 0, err
+	}
+	return n, undelivered
 }
 
 // Withdraw closes an open decision unanswered (AnswerDecision's "withdraw"):

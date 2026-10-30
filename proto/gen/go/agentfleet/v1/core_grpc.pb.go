@@ -44,6 +44,7 @@ const (
 	CoreService_WaitForSessionState_FullMethodName = "/agentfleet.v1.CoreService/WaitForSessionState"
 	CoreService_PublishEvent_FullMethodName        = "/agentfleet.v1.CoreService/PublishEvent"
 	CoreService_ConsumeGrant_FullMethodName        = "/agentfleet.v1.CoreService/ConsumeGrant"
+	CoreService_DraftCard_FullMethodName           = "/agentfleet.v1.CoreService/DraftCard"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -131,6 +132,9 @@ type CoreServiceClient interface {
 	// Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
 	// for this tool and this exact input. Each grant lets one call through, once.
 	ConsumeGrant(ctx context.Context, in *ConsumeGrantRequest, opts ...grpc.CallOption) (*ConsumeGrantResponse, error)
+	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
+	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
+	DraftCard(ctx context.Context, in *DraftCardRequest, opts ...grpc.CallOption) (*DraftCardResponse, error)
 }
 
 type coreServiceClient struct {
@@ -403,6 +407,16 @@ func (c *coreServiceClient) ConsumeGrant(ctx context.Context, in *ConsumeGrantRe
 	return out, nil
 }
 
+func (c *coreServiceClient) DraftCard(ctx context.Context, in *DraftCardRequest, opts ...grpc.CallOption) (*DraftCardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DraftCardResponse)
+	err := c.cc.Invoke(ctx, CoreService_DraftCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -488,6 +502,9 @@ type CoreServiceServer interface {
 	// Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
 	// for this tool and this exact input. Each grant lets one call through, once.
 	ConsumeGrant(context.Context, *ConsumeGrantRequest) (*ConsumeGrantResponse, error)
+	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
+	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
+	DraftCard(context.Context, *DraftCardRequest) (*DraftCardResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -572,6 +589,9 @@ func (UnimplementedCoreServiceServer) PublishEvent(context.Context, *PublishEven
 }
 func (UnimplementedCoreServiceServer) ConsumeGrant(context.Context, *ConsumeGrantRequest) (*ConsumeGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConsumeGrant not implemented")
+}
+func (UnimplementedCoreServiceServer) DraftCard(context.Context, *DraftCardRequest) (*DraftCardResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DraftCard not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1026,6 +1046,24 @@ func _CoreService_ConsumeGrant_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_DraftCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DraftCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).DraftCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_DraftCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).DraftCard(ctx, req.(*DraftCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1124,6 +1162,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConsumeGrant",
 			Handler:    _CoreService_ConsumeGrant_Handler,
+		},
+		{
+			MethodName: "DraftCard",
+			Handler:    _CoreService_DraftCard_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

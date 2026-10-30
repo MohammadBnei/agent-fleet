@@ -13,6 +13,7 @@ import {
   feedVisibility,
   fileEdits,
   findPendingPermissions,
+  findPendingQuestion,
   hasPendingDecision,
   inFlightTool,
   latestSlashCommands,
@@ -975,4 +976,60 @@ test("running background tasks sort above finished ones", () => {
     bgCall("toolu_b", "second"),
   ]);
   expect(tasks.map((t) => t.command)).toEqual(["second", "first"]);
+});
+
+// A card's answer is an ANSWER replying to the card's seq (core's handoff), so
+// it lands in a thread that may still hold an open AskUserQuestion. Matching
+// is by reply_to now, not position: only an answer to the question itself (or
+// an old one with no reply_to) closes it.
+test("findPendingQuestion matches answers by reply_to, and the newest open question wins", () => {
+  const q = (text = "which?") =>
+    full(
+      TranscriptEntryType.QUESTION,
+      JSON.stringify({ questions: [{ question: text }] }),
+    );
+  const answer = (replyTo?: bigint) =>
+    full(TranscriptEntryType.ANSWER, "{}", { from: "human", replyTo });
+  const cardEntry = () =>
+    full(TranscriptEntryType.CARD, "{}", { from: "system" });
+
+  const cases: [string, () => [TranscriptEntry[], TranscriptEntry | null]][] = [
+    [
+      "a card answer leaves an earlier question open",
+      () => {
+        const asked = q();
+        const c = cardEntry();
+        return [[asked, c, answer(c.seq)], asked];
+      },
+    ],
+    [
+      "the question's own answer closes it",
+      () => {
+        const asked = q();
+        return [[asked, answer(asked.seq)], null];
+      },
+    ],
+    [
+      "an answer without reply_to still closes it",
+      () => {
+        const asked = q();
+        return [[asked, answer()], null];
+      },
+    ],
+    [
+      "the newest unmatched question wins",
+      () => {
+        const first = q("first?");
+        const second = q("second?");
+        return [[first, second], second];
+      },
+    ],
+  ];
+  for (const [name, build] of cases) {
+    const [entries, want] = build();
+    expect([name, findPendingQuestion(entries)?.seq]).toEqual([
+      name,
+      want?.seq,
+    ]);
+  }
 });
