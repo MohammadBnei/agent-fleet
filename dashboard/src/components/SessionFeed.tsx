@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cardChoiceLine } from "../decisions";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import {
   type TranscriptEntry,
   TranscriptEntryType,
@@ -33,6 +34,7 @@ import {
   summarizeToolInput,
   type ToolCallPair,
 } from "../transcript";
+import { CardBody } from "./CardBody";
 import { Collapse } from "./Collapse";
 import { ToolCallDetailModal } from "./DetailModal";
 import { Markdown } from "./Markdown";
@@ -321,12 +323,15 @@ export function SessionFeed({
   // echo) but not yet an entry. "Nothing in this session yet." directly above
   // it read as the send having been lost.
   hasPendingMessage = false,
-  onOpenDecisions,
+  openCards = [],
+  onCardAnswered = () => {},
 }: {
   hasPendingMessage?: boolean;
-  // Opens the decisions sheet, where a card is answered (the header badge's
-  // setDecisionsOpen). Omitted, an open card shows no way there.
-  onOpenDecisions?: () => void;
+  // The store's open decisions (the deck's list). A card among them is
+  // answered right here as well as in the sheet: the game links a decision to
+  // its session (?session=<id>), so the session is where the owner lands.
+  openCards?: Decision[];
+  onCardAnswered?: () => void;
   entries: TranscriptEntry[];
   visibility: FeedVisibility;
   density: Density;
@@ -570,10 +575,9 @@ export function SessionFeed({
       continue;
     }
 
-    // A card is answered from the deck, not here (NeedsYouModal CardBody), so
-    // the feed only says it was asked and, once it was, what the owner chose:
-    // the ANSWER that replies to its seq, never one merely after it.
-    // ponytail: one line, no options or effects; the deck shows those.
+    // A card the store still holds open is answered here with the deck's own
+    // CardBody; otherwise the feed says it was asked and, once it was, what the
+    // owner chose: the ANSWER that replies to its seq, never one merely after it.
     if (entry.type === TranscriptEntryType.CARD) {
       // protojson Card: camelCase, the fields cardChoiceLine reads.
       let card: {
@@ -609,20 +613,22 @@ export function SessionFeed({
         >
           <span className="text-xs text-error tracking-[0.05em]">Card</span>{" "}
           <span className="text-text2">{ask}</span>
-          {/* No "open" line without an answer: the feed cannot tell an open
-              card from an expired or stale one; only the store can. */}
+          {/* Open only if the store says so: the feed alone cannot tell an
+              open card from an expired or stale one. */}
           {answerEntry ? (
             <div className="text-xs text-dim2">{answer}</div>
           ) : (
-            onOpenDecisions && (
-              <button
-                type="button"
-                onClick={onOpenDecisions}
-                className="block text-xs text-dim hover:text-primary cursor-pointer"
-              >
-                answer in decisions
-              </button>
-            )
+            (() => {
+              const open = openCards.find(
+                (d) =>
+                  d.threadId === entry.sessionId && d.requestSeq === entry.seq,
+              );
+              return open ? (
+                <div className="border border-pink-line mt-1">
+                  <CardBody decision={open} reload={onCardAnswered} />
+                </div>
+              ) : null;
+            })()
           )}
         </div>,
       );

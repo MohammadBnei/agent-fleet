@@ -754,13 +754,20 @@ export default function App() {
           <Observability onSelectSession={selectSession} />
         ) : selectedId ? (
           isDesktop ? (
-            <SessionDetail sessionId={selectedId} sessions={sessions} />
+            <SessionDetail
+              sessionId={selectedId}
+              sessions={sessions}
+              openCards={deck.open}
+              onCardAnswered={deck.relist}
+            />
           ) : (
             <MobileSessionDetail
               sessionId={selectedId}
               sessions={sessions}
               onBack={clearSelection}
               onDelete={() => deleteSession(selectedId)}
+              openCards={deck.open}
+              onCardAnswered={deck.relist}
             />
           )
         ) : isDesktop ? (

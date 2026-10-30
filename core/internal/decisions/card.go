@@ -35,6 +35,13 @@ var (
 	ErrNotDelivered = errors.New("not delivered: the writer cannot resume")
 )
 
+// NotDelivered is the ErrNotDelivered Answer returns, with the warm's own words
+// (swept, definition changed) as Reason, so a caller need not parse them back out.
+type NotDelivered struct{ Reason string }
+
+func (e *NotDelivered) Error() string { return ErrNotDelivered.Error() + ": " + e.Reason }
+func (e *NotDelivered) Unwrap() error { return ErrNotDelivered }
+
 // Tunables; tests shrink them.
 var (
 	// CardTTL: an unanswered card turns expired, no action, after this.

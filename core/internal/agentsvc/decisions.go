@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -270,11 +269,9 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 	// warm's own words (swept, definition gone or changed) as the reason.
 	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, decisions.Reply{By: p.author(), OptionID: m.GetOptionId(), OwnText: m.GetOwnText()})
 	res := &agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}
-	if errors.Is(err, decisions.ErrNotDelivered) {
+	if nd := new(decisions.NotDelivered); errors.As(err, &nd) {
 		slog.Info("agentsvc: card answered, not delivered", "decisionId", r.ID, "error", err)
-		reason := strings.TrimPrefix(err.Error(), decisions.ErrNotDelivered.Error()+": ")
-		reason = strings.TrimPrefix(reason, connect.CodeFailedPrecondition.String()+": ")
-		res.Delivered, res.NotDeliveredReason, err = false, reason, nil
+		res.Delivered, res.NotDeliveredReason, err = false, nd.Reason, nil
 	}
 	if err != nil {
 		return nil, cardAnswerErr(err)

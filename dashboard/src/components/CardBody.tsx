@@ -68,8 +68,9 @@ export function CardBody({
   reload: () => void;
   // The answer was recorded but the writer cannot resume (its definition
   // moved on, or its session was swept). The deck drops the row on the next
-  // list, so the parent keeps the notice where it outlives the row.
-  onNotDelivered: (text: string) => void;
+  // list, so the parent keeps the notice where it outlives the row. Omitted
+  // (the session feed), the card shows the notice in place of its options.
+  onNotDelivered?: (text: string) => void;
   // Tests pass a fake; production omits it.
   api?: AnswerApi;
 }) {
@@ -77,7 +78,7 @@ export function CardBody({
   const [armed, setArmed] = useState<string | null>(null);
   const [ownText, setOwnText] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (!card) return null;
 
@@ -94,9 +95,11 @@ export function CardBody({
     api
       .answerDecision({ decisionId: d.id, ...choice })
       .then((res) => {
-        if (!res.delivered)
-          onNotDelivered(notDeliveredText(card, res.notDeliveredReason));
-        setSent(true);
+        const notice = res.delivered
+          ? "sent — the card is answered"
+          : notDeliveredText(card, res.notDeliveredReason);
+        if (!res.delivered) onNotDelivered?.(notice);
+        setSent(notice);
         reload();
       })
       // A busy fleet (no slot to wake the writer) comes back here as an
@@ -116,8 +119,14 @@ export function CardBody({
 
   if (sent)
     return (
-      <div className="px-4 pt-1 pb-4 text-sm text-dim">
-        sent — the card is answered
+      // Focusable and focused: the pressed button is gone, and focus must not
+      // fall to the page behind the sheet.
+      <div
+        ref={(el) => el?.focus()}
+        tabIndex={-1}
+        className="px-4 pt-1 pb-4 text-sm text-dim outline-none"
+      >
+        {sent}
       </div>
     );
 
@@ -152,8 +161,9 @@ export function CardBody({
             key={o.id}
             busy={busy === o.id}
             disabled={busy !== null}
+            keepFocus
             onClick={() => pick(o)}
-            className={`text-left cursor-pointer border px-3 py-2 disabled:opacity-50 ${
+            className={`text-left cursor-pointer border px-3 py-2 disabled:opacity-50 aria-disabled:opacity-50 ${
               armed === o.id
                 ? "border-error text-error"
                 : "border-acc-line hover:border-primary"
@@ -194,8 +204,9 @@ export function CardBody({
           <ActionButton
             busy={busy === "own"}
             disabled={busy !== null || ownText.trim() === ""}
+            keepFocus
             onClick={() => send("own", { ownText: ownText.trim() })}
-            className="self-start cursor-pointer border border-acc-line hover:border-primary px-4 py-1.5 text-sm disabled:opacity-50"
+            className="self-start cursor-pointer border border-acc-line hover:border-primary px-4 py-1.5 text-sm disabled:opacity-50 aria-disabled:opacity-50"
           >
             Send
           </ActionButton>

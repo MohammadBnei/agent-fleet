@@ -16,17 +16,29 @@ import type { ButtonHTMLAttributes } from "react";
 // finger. The label stays in the accessible tree either way — dropping it
 // while busy would rename "Interrupt" to "working…" for a screen reader
 // mid-action, which is exactly when knowing which button you hit matters.
+//
+// `keepFocus` marks the button aria-disabled instead of disabled, and ignores
+// clicks while off: a disabled button drops keyboard focus to the page, which
+// inside a dialog throws the reader out of it (the card options).
 export function ActionButton({
   busy = false,
   disabled = false,
+  keepFocus = false,
   children,
+  onClick,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { busy?: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  busy?: boolean;
+  keepFocus?: boolean;
+}) {
+  const off = busy || disabled;
   return (
     <button
       type="button"
-      disabled={busy || disabled}
+      disabled={keepFocus ? undefined : off}
+      aria-disabled={keepFocus && off ? true : undefined}
       aria-busy={busy || undefined}
+      onClick={keepFocus && off ? undefined : onClick}
       {...rest}
     >
       {busy ? (

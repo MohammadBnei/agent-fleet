@@ -209,18 +209,32 @@ func TestOnAppend_SupersedeAndBudget(t *testing.T) {
 	}
 	f.draft(t, card(e, "acme/web", 4))
 
-	decisions.CardBudget = 100
-	var wg sync.WaitGroup
-	errs := make([]error, 8)
-	for i := range errs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[i] = f.store.Draft(f.ctx, f.tr, card(e, "acme/api", 9))
-		}()
+	// Concurrent drafts from different sessions of one definition: the
+	// per-session transcript lock does not serialize them, only the cards
+	// lock does. One subject keeps one open card, and the budget admits
+	// exactly what is left of it.
+	sessions := make([]string, 8)
+	for i := range sessions {
+		if err := f.pool.QueryRow(f.ctx, `INSERT INTO sessions (repo, definition_name, definition_sha, owner) VALUES ('notes', 'e', 'sha', 'u1') RETURNING id`).Scan(&sessions[i]); err != nil {
+			t.Fatal(err)
+		}
 	}
-	wg.Wait()
-	for _, err := range errs {
+	race := func(subject func(i int) (string, int64)) []error {
+		var wg sync.WaitGroup
+		errs := make([]error, len(sessions))
+		for i, sid := range sessions {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				repo, n := subject(i)
+				_, errs[i] = f.store.Draft(f.ctx, f.tr, card(sid, repo, n))
+			}()
+		}
+		wg.Wait()
+		return errs
+	}
+	decisions.CardBudget = 100
+	for _, err := range race(func(int) (string, int64) { return "acme/api", 9 }) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -228,6 +242,23 @@ func TestOnAppend_SupersedeAndBudget(t *testing.T) {
 	var open int
 	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM decisions WHERE subject = 'github/acme/api/pr/9' AND state = 'open'`).Scan(&open); err != nil || open != 1 {
 		t.Errorf("open cards on one subject after concurrent drafts: %d, %v", open, err)
+	}
+	var used int
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM decisions d JOIN sessions s ON s.id = d.session_id WHERE d.kind = 'card' AND s.definition_name = 'e'`).Scan(&used); err != nil {
+		t.Fatal(err)
+	}
+	decisions.CardBudget = used + 3
+	ok := 0
+	for _, err := range race(func(i int) (string, int64) { return "acme/api", int64(100 + i) }) {
+		switch {
+		case err == nil:
+			ok++
+		case !errors.Is(err, decisions.ErrCardBudget):
+			t.Fatal(err)
+		}
+	}
+	if ok != 3 {
+		t.Errorf("concurrent drafts admitted over a budget with 3 left: %d", ok)
 	}
 }
 

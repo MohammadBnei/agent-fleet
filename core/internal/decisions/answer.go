@@ -213,7 +213,11 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(text, typ str
 	var undelivered error
 	if handoff {
 		if err := warm(); connect.CodeOf(err) == connect.CodeFailedPrecondition {
-			undelivered = fmt.Errorf("%w: %v", ErrNotDelivered, err)
+			reason := err.Error()
+			if ce := new(connect.Error); errors.As(err, &ce) {
+				reason = ce.Message()
+			}
+			undelivered = &NotDelivered{Reason: reason}
 		} else if err != nil {
 			return 0, err
 		}
