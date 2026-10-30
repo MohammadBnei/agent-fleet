@@ -1,5 +1,16 @@
 # Changelog
 
+# [7.1.0](https://github.com/MohammadBnei/agent-fleet/compare/7.0.0...7.1.0) (2026-10-30)
+
+### Features
+
+* **core:** a dev identity for AgentService while the gate is off ([#355](https://github.com/MohammadBnei/agent-fleet/issues/355)) ([38b8285](https://github.com/MohammadBnei/agent-fleet/commit/38b8285a61e950d701ba7981e58e9da1069bb572))
+* **core:** AnswerDecision and one-time grants (ADR-0082 slice 2, PR 2) ([#351](https://github.com/MohammadBnei/agent-fleet/issues/351)) ([8c4fbbd](https://github.com/MohammadBnei/agent-fleet/commit/8c4fbbdfbcb50e2c5c2a03710409543d37ade2e0))
+* **core:** the decisions store and read API (ADR-0082 slice 2, PR 1) ([#349](https://github.com/MohammadBnei/agent-fleet/issues/349)) ([c9437a3](https://github.com/MohammadBnei/agent-fleet/commit/c9437a3d16fdf08c8223ac4a4e878cc4aab10128))
+* **dashboard:** the decision deck reads the decisions store (ADR-0082 slice 2, PR 4) ([#353](https://github.com/MohammadBnei/agent-fleet/issues/353)) ([04b4c2a](https://github.com/MohammadBnei/agent-fleet/commit/04b4c2a96a6f711e1f4afab41994f9a2c4e866f1))
+* nothing blocks, a decision waits DECISION_WAIT then parks (ADR-0082 slice 2, PR 3) ([#352](https://github.com/MohammadBnei/agent-fleet/issues/352)) ([0e88b0b](https://github.com/MohammadBnei/agent-fleet/commit/0e88b0be7c791584458a3b5b8f1f0e966b11eae6))
+* **packs:** agents title their own session ([#354](https://github.com/MohammadBnei/agent-fleet/issues/354)) ([7c73105](https://github.com/MohammadBnei/agent-fleet/commit/7c731051fb54b913072bde8f539388d35d137e2d))
+
 # [7.0.0](https://github.com/MohammadBnei/agent-fleet/compare/6.26.1...7.0.0) (2026-10-29)
 
 * feat(dispatch)!: only an explicit address wakes; the bot's own events are dropped (ADR-0082 slice 1) (#344) ([9596716](https://github.com/MohammadBnei/agent-fleet/commit/95967160b79a216524b64a7e4ae0d33f02e43035)), closes [#344](https://github.com/MohammadBnei/agent-fleet/issues/344)
