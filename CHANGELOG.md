@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.2.0](https://github.com/MohammadBnei/agent-fleet/compare/7.1.0...7.2.0) (2026-10-31)
+
+### Features
+
+* decision cards: draft_card, hand-off and close-threads effects (ADR-0082 slice 2, PR 5) ([#356](https://github.com/MohammadBnei/agent-fleet/issues/356)) ([d3b03b3](https://github.com/MohammadBnei/agent-fleet/commit/d3b03b39689f234fd2d3d31f97c31570e74ebb9a))
+
 # [7.1.0](https://github.com/MohammadBnei/agent-fleet/compare/7.0.0...7.1.0) (2026-10-30)
 
 ### Features
