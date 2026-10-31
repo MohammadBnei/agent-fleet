@@ -17,6 +17,7 @@ import {
   TodosPanel,
 } from "../components/SessionPanels";
 import { client } from "../connectClient";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { sessionLabel } from "../sessionLabel";
 import { isPodPhaseLive, sessionBadge, shortId } from "../sessionState";
@@ -55,8 +56,13 @@ export function MobileSessionDetail({
   sessions,
   onBack,
   onDelete,
+  openCards,
+  onCardAnswered,
 }: {
   sessionId: string;
+  // App's open decisions, so a card is answerable where the session is read.
+  openCards?: Decision[];
+  onCardAnswered?: () => void;
   // App's polled list, same as the desktop view takes — see useSessionDetail.
   sessions: Session[];
   onBack: () => void;
@@ -242,6 +248,8 @@ export function MobileSessionDetail({
           onApprovePlan={approvePlanDecision}
           onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
+          openCards={openCards}
+          onCardAnswered={onCardAnswered}
         />
         {pendingMessage && (
           <div className="flex gap-2.5 items-baseline opacity-60">

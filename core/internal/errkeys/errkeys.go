@@ -10,8 +10,8 @@
 // A specific key is not coming to every site (docs/adr/0081 §2). A site gets one only when a client must act on the
 // error or show text for it and the code alone does not say what happened; every other site stays KeyInternal with
 // its specific code, and where it came from is answered by its trace id, not its key. A service declares its keys in
-// its proto (§1): AgentService's are agent.proto's AgentErrorKey, each RPC listing its own, and the constants below
-// are the Go registry of them (TestDeclared holds the two to each other). The detail and the fallback are ukubi-go's
+// its proto (§1): AgentService's are agent.proto's AgentErrorKey, CoreService's core.proto's CoreErrorKey, each RPC
+// listing its own, and the constants below are the Go registry of them (TestDeclared holds the two to each other). The detail and the fallback are ukubi-go's
 // errs/connectkeys (§5), with agentfleet.v1.ErrorKey its one template; this package is core's wrapper of it: the
 // registry, and the wiring connectkeys/wiring checks (TestWiring).
 package errkeys
@@ -37,6 +37,12 @@ const (
 	KeyThreadCap errs.Key = "agent.thread_cap"
 	// KeyDefinitionUnavailable: the definition does not exist or is not the caller's to use.
 	KeyDefinitionUnavailable errs.Key = "agent.definition_unavailable"
+	// KeyDecisionExpired: the card is past its expiry; nothing was done.
+	KeyDecisionExpired errs.Key = "agent.decision_expired"
+	// KeyDecisionStale: a newer card on the same subject replaced it; nothing was done.
+	KeyDecisionStale errs.Key = "agent.decision_stale"
+	// KeyCardBudget: the definition drafted its 10 cards of the last 24 hours (CoreService.DraftCard).
+	KeyCardBudget errs.Key = "core.card_budget"
 )
 
 // keys is the one detail template, agentfleet.v1.ErrorKey (docs/adr/0081 §5): the wire is what errkeys sent.

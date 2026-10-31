@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,10 +30,12 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	bridgev1 "github.com/MohammadBnei/ukubi-bridge/proto/gen/go/bridge/v1"
 )
@@ -120,6 +123,10 @@ type Dispatcher struct {
 	defs   Definitions
 	props  Proposals
 	alerts Alerts // nil: alerts are acked and dropped (no alert repo configured)
+	// cards drafts the "close threads" card into tr; nil closes a fleet
+	// close's threads as before (SetCards).
+	cards *decisions.Store
+	tr    transcript.Store
 
 	lastNote string // the last "not configured" reason logged
 }
@@ -127,6 +134,10 @@ type Dispatcher struct {
 func New(pool *pgxpool.Pool, bridge Bridge, agents Agents, defs Definitions, props Proposals, alerts Alerts) *Dispatcher {
 	return &Dispatcher{pool: pool, bridge: bridge, agents: agents, defs: defs, props: props, alerts: alerts}
 }
+
+// SetCards turns the fleet bot's close of a PR it did not merge into the
+// default branch into a card for the owner (closeCard) instead of a close.
+func (d *Dispatcher) SetCards(c *decisions.Store, tr transcript.Store) { d.cards, d.tr = c, tr }
 
 // Run holds the subscription until ctx ends. Not being configured (no
 // password file) is one Info line per reason and a retry every BackoffMax; a
@@ -277,10 +288,14 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 	// actor=agent, BRIDGE_AGENT_LOGINS) are never delivered: no self-echo,
 	// no synchronize or reopened of its own (docs/adr/0082 §1). Its close
 	// still closes the thread, which delivers nothing: a fleet merge closes
-	// them (§10).
+	// them (§10). Any other close by the fleet asks the owner first.
 	if botEvent(e) && e.GetType() != typePRClosed {
 		slog.Debug("dispatch: the fleet bot's own event, dropped", "type", e.GetType(), "subject", e.GetSubject())
 		return nil
+	}
+	if repo, n, ok := prOf(e.GetSubject()); ok && d.cards != nil && e.GetType() == typePRClosed && botEvent(e) &&
+		!e.GetReplayed() && !mergedIntoDefault(e) {
+		return d.closeCard(ctx, e, repo, n)
 	}
 	targets := d.route(e)
 	if len(targets) == 0 {
@@ -699,6 +714,72 @@ func (d *Dispatcher) close(ctx, actx context.Context, e *bridgev1.CloudEvent, h 
 		return err
 	}
 	return d.finish(ctx, e, h.Name, "closed")
+}
+
+// closeCard is docs/adr/0082 §10's "close threads" card: the fleet closed a
+// PR without merging it into the default branch, so its threads stay open
+// and the owner decides, in the oldest open thread on it. No thread, no
+// card. A proposal for it nobody opened is retired as a close retires it.
+// The transcript key makes a redelivery draft nothing new.
+func (d *Dispatcher) closeCard(ctx context.Context, e *bridgev1.CloudEvent, repo string, n int64) error {
+	var writer string
+	err := d.pool.QueryRow(ctx, `
+		SELECT id::text FROM sessions
+		 WHERE invoker = $1 AND lower(thread_key) = lower($2) AND archived_at IS NULL
+		 ORDER BY created_at, id LIMIT 1`, Client, e.GetSubject()).Scan(&writer)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if writer != "" {
+		if _, err := d.cards.Draft(ctx, d.tr, decisions.Draft{
+			SessionID: writer, From: "system", IdempotencyKey: "card:" + Causation(e),
+			Ask:     fmt.Sprintf("The fleet closed %s#%d without merging it into the default branch. Close its threads?", repo, n),
+			Subject: &agentfleetv1.CardSubject{Repo: repo, Kind: "pr", Number: n},
+			Options: []*agentfleetv1.CardOption{
+				{Label: "Close the threads", Effect: &agentfleetv1.CardEffect{Verb: "close_threads"}, Reversible: "no"},
+				{Label: "Keep them open", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}, Reversible: "yes"},
+			},
+		}); err != nil {
+			return err
+		}
+	}
+	for _, h := range d.route(e) {
+		if _, err := d.props.DismissUnopened(ctx, h.Effective.Workspace.Repo, proposalKey(h.Name, e.GetSubject())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// mergedIntoDefault: the closed PR was merged into its repository's default
+// branch. A field the payload lacks counts as not merged, the side that asks
+// the owner.
+func mergedIntoDefault(e *bridgev1.CloudEvent) bool {
+	var p struct {
+		PullRequest struct {
+			Merged bool `json:"merged"`
+			Base   struct {
+				Ref string `json:"ref"`
+			} `json:"base"`
+		} `json:"pull_request"`
+		Repository struct {
+			DefaultBranch string `json:"default_branch"`
+		} `json:"repository"`
+	}
+	if json.Unmarshal(e.GetData(), &p) != nil {
+		return false
+	}
+	return p.PullRequest.Merged && p.PullRequest.Base.Ref != "" && p.PullRequest.Base.Ref == p.Repository.DefaultBranch
+}
+
+// prOf reads a PR subject, github/<owner>/<repo>/pr/<n>.
+func prOf(subject string) (repo string, n int64, ok bool) {
+	parts := strings.Split(subject, "/")
+	if len(parts) != 5 || parts[0] != "github" || parts[3] != "pr" {
+		return "", 0, false
+	}
+	n, err := strconv.ParseInt(parts[4], 10, 64)
+	return parts[1] + "/" + parts[2], n, err == nil && n > 0
 }
 
 func proposalKey(def, thread string) string { return "event:" + def + ":" + thread }

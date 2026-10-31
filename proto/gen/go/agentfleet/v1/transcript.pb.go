@@ -68,6 +68,11 @@ const (
 	// which ends the whole session/pod. `text` is a free-text reason, same
 	// convention ABORT already uses.
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT TranscriptEntryType = 14
+	// A decision card (docs/adr/0082 §5): `text` is the protojson of a Card.
+	// Written only by core (decisions.Store.Draft, from CoreService.DraftCard
+	// or dispatch's own cards), never through SendMessage. The owner's choice
+	// comes back as an ANSWER replying to it.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD TranscriptEntryType = 15
 )
 
 // Enum value maps for TranscriptEntryType.
@@ -88,6 +93,7 @@ var (
 		12: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST",
 		13: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE",
 		14: "TRANSCRIPT_ENTRY_TYPE_INTERRUPT",
+		15: "TRANSCRIPT_ENTRY_TYPE_CARD",
 	}
 	TranscriptEntryType_value = map[string]int32{
 		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED":         0,
@@ -105,6 +111,7 @@ var (
 		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST":  12,
 		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE": 13,
 		"TRANSCRIPT_ENTRY_TYPE_INTERRUPT":           14,
+		"TRANSCRIPT_ENTRY_TYPE_CARD":                15,
 	}
 )
 
@@ -473,6 +480,307 @@ func (x *ReadTranscriptSinceResponse) GetNextSeq() int64 {
 	return 0
 }
 
+// The GitHub subject a card is about (docs/adr/0082 §5).
+type CardSubject struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// owner/name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	// "pr", "issue", "alert" or "repo".
+	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Required for pr, issue and alert; 0 for repo.
+	Number int64 `protobuf:"varint,3,opt,name=number,proto3" json:"number,omitempty"`
+	// Filled by core from the rest; empty for an alert.
+	Url           string `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CardSubject) Reset() {
+	*x = CardSubject{}
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CardSubject) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardSubject) ProtoMessage() {}
+
+func (x *CardSubject) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardSubject.ProtoReflect.Descriptor instead.
+func (*CardSubject) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CardSubject) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *CardSubject) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CardSubject) GetNumber() int64 {
+	if x != nil {
+		return x.Number
+	}
+	return 0
+}
+
+func (x *CardSubject) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+// What answering with an option does. Nothing writes to GitHub.
+type CardEffect struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "handoff" sends the owner's choice to the writer's thread; "close_threads"
+	// closes every thread on the subject (pr or issue only, reversible "no").
+	Verb          string `protobuf:"bytes,1,opt,name=verb,proto3" json:"verb,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CardEffect) Reset() {
+	*x = CardEffect{}
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CardEffect) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardEffect) ProtoMessage() {}
+
+func (x *CardEffect) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardEffect.ProtoReflect.Descriptor instead.
+func (*CardEffect) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CardEffect) GetVerb() string {
+	if x != nil {
+		return x.Verb
+	}
+	return ""
+}
+
+type CardOption struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Assigned by core: "1", "2", "3" in order.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 1..80 characters, an agent claim.
+	Label  string      `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	Effect *CardEffect `protobuf:"bytes,3,opt,name=effect,proto3" json:"effect,omitempty"`
+	// "yes", "partial" or "no".
+	Reversible string `protobuf:"bytes,4,opt,name=reversible,proto3" json:"reversible,omitempty"`
+	// At most one option of a card.
+	Recommended   bool `protobuf:"varint,5,opt,name=recommended,proto3" json:"recommended,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CardOption) Reset() {
+	*x = CardOption{}
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CardOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardOption) ProtoMessage() {}
+
+func (x *CardOption) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardOption.ProtoReflect.Descriptor instead.
+func (*CardOption) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CardOption) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CardOption) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *CardOption) GetEffect() *CardEffect {
+	if x != nil {
+		return x.Effect
+	}
+	return nil
+}
+
+func (x *CardOption) GetReversible() string {
+	if x != nil {
+		return x.Reversible
+	}
+	return ""
+}
+
+func (x *CardOption) GetRecommended() bool {
+	if x != nil {
+		return x.Recommended
+	}
+	return false
+}
+
+// A decision card: an agent's (or core's) question to the owner with two or
+// three fixed options. The console never pre-selects one.
+type Card struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 1..280 characters, an agent claim.
+	Ask     string       `protobuf:"bytes,1,opt,name=ask,proto3" json:"ask,omitempty"`
+	Subject *CardSubject `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	// Two or three.
+	Options []*CardOption `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty"`
+	// The owner may answer in their own words instead (at most 2,000 bytes).
+	WriteOwn bool `protobuf:"varint,4,opt,name=write_own,json=writeOwn,proto3" json:"write_own,omitempty"`
+	// RFC3339; core sets it 7 days after drafting. Past it the card is expired:
+	// no action.
+	ExpiresAt string `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// The definition of the session that drafted it.
+	WriterDefinition string `protobuf:"bytes,6,opt,name=writer_definition,json=writerDefinition,proto3" json:"writer_definition,omitempty"`
+	// "agent" or "core".
+	DraftedBy     string `protobuf:"bytes,7,opt,name=drafted_by,json=draftedBy,proto3" json:"drafted_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Card) Reset() {
+	*x = Card{}
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Card) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Card) ProtoMessage() {}
+
+func (x *Card) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_transcript_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Card.ProtoReflect.Descriptor instead.
+func (*Card) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Card) GetAsk() string {
+	if x != nil {
+		return x.Ask
+	}
+	return ""
+}
+
+func (x *Card) GetSubject() *CardSubject {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *Card) GetOptions() []*CardOption {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *Card) GetWriteOwn() bool {
+	if x != nil {
+		return x.WriteOwn
+	}
+	return false
+}
+
+func (x *Card) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *Card) GetWriterDefinition() string {
+	if x != nil {
+		return x.WriterDefinition
+	}
+	return ""
+}
+
+func (x *Card) GetDraftedBy() string {
+	if x != nil {
+		return x.DraftedBy
+	}
+	return ""
+}
+
 var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
@@ -512,7 +820,34 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\v_before_seq\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xc7\x04\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq\"_\n" +
+	"\vCardSubject\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
+	"\x06number\x18\x03 \x01(\x03R\x06number\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\" \n" +
+	"\n" +
+	"CardEffect\x12\x12\n" +
+	"\x04verb\x18\x01 \x01(\tR\x04verb\"\xa7\x01\n" +
+	"\n" +
+	"CardOption\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x121\n" +
+	"\x06effect\x18\x03 \x01(\v2\x19.agentfleet.v1.CardEffectR\x06effect\x12\x1e\n" +
+	"\n" +
+	"reversible\x18\x04 \x01(\tR\n" +
+	"reversible\x12 \n" +
+	"\vrecommended\x18\x05 \x01(\bR\vrecommended\"\x8b\x02\n" +
+	"\x04Card\x12\x10\n" +
+	"\x03ask\x18\x01 \x01(\tR\x03ask\x124\n" +
+	"\asubject\x18\x02 \x01(\v2\x1a.agentfleet.v1.CardSubjectR\asubject\x123\n" +
+	"\aoptions\x18\x03 \x03(\v2\x19.agentfleet.v1.CardOptionR\aoptions\x12\x1b\n" +
+	"\twrite_own\x18\x04 \x01(\bR\bwriteOwn\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\tR\texpiresAt\x12+\n" +
+	"\x11writer_definition\x18\x06 \x01(\tR\x10writerDefinition\x12\x1d\n" +
+	"\n" +
+	"drafted_by\x18\a \x01(\tR\tdraftedBy*\xe7\x04\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
@@ -529,7 +864,8 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"%TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE\x10\v\x12,\n" +
 	"(TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST\x10\f\x12-\n" +
 	")TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE\x10\r\x12#\n" +
-	"\x1fTRANSCRIPT_ENTRY_TYPE_INTERRUPT\x10\x0eBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x1fTRANSCRIPT_ENTRY_TYPE_INTERRUPT\x10\x0e\x12\x1e\n" +
+	"\x1aTRANSCRIPT_ENTRY_TYPE_CARD\x10\x0fBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once
@@ -544,23 +880,30 @@ func file_agentfleet_v1_transcript_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_transcript_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_transcript_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_agentfleet_v1_transcript_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_agentfleet_v1_transcript_proto_goTypes = []any{
 	(TranscriptEntryType)(0),             // 0: agentfleet.v1.TranscriptEntryType
 	(*TranscriptEntry)(nil),              // 1: agentfleet.v1.TranscriptEntry
 	(*AppendTranscriptEntryRequest)(nil), // 2: agentfleet.v1.AppendTranscriptEntryRequest
 	(*ReadTranscriptSinceRequest)(nil),   // 3: agentfleet.v1.ReadTranscriptSinceRequest
 	(*ReadTranscriptSinceResponse)(nil),  // 4: agentfleet.v1.ReadTranscriptSinceResponse
+	(*CardSubject)(nil),                  // 5: agentfleet.v1.CardSubject
+	(*CardEffect)(nil),                   // 6: agentfleet.v1.CardEffect
+	(*CardOption)(nil),                   // 7: agentfleet.v1.CardOption
+	(*Card)(nil),                         // 8: agentfleet.v1.Card
 }
 var file_agentfleet_v1_transcript_proto_depIdxs = []int32{
 	0, // 0: agentfleet.v1.TranscriptEntry.type:type_name -> agentfleet.v1.TranscriptEntryType
 	0, // 1: agentfleet.v1.AppendTranscriptEntryRequest.type:type_name -> agentfleet.v1.TranscriptEntryType
 	1, // 2: agentfleet.v1.ReadTranscriptSinceResponse.entries:type_name -> agentfleet.v1.TranscriptEntry
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 3: agentfleet.v1.CardOption.effect:type_name -> agentfleet.v1.CardEffect
+	5, // 4: agentfleet.v1.Card.subject:type_name -> agentfleet.v1.CardSubject
+	7, // 5: agentfleet.v1.Card.options:type_name -> agentfleet.v1.CardOption
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_transcript_proto_init() }
@@ -576,7 +919,7 @@ func file_agentfleet_v1_transcript_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_transcript_proto_rawDesc), len(file_agentfleet_v1_transcript_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

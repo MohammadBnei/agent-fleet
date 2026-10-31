@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -29,6 +30,7 @@ var kindToProto = map[decisions.Kind]agentfleetv1.DecisionKind{
 	decisions.Question:   agentfleetv1.DecisionKind_DECISION_KIND_QUESTION,
 	decisions.Permission: agentfleetv1.DecisionKind_DECISION_KIND_PERMISSION,
 	decisions.Plan:       agentfleetv1.DecisionKind_DECISION_KIND_PLAN,
+	decisions.Card:       agentfleetv1.DecisionKind_DECISION_KIND_CARD,
 }
 
 var stateToProto = map[string]agentfleetv1.DecisionState{
@@ -40,7 +42,9 @@ var stateToProto = map[string]agentfleetv1.DecisionState{
 }
 
 func (s *Server) visible(p Principal, r decisions.Record) bool {
-	if r.Archived {
+	// A closed card outlives its archived writer, as decisions.Store.List
+	// keeps it: close_threads archives the writer, and History still shows it.
+	if r.Archived && (r.Kind != decisions.Card || r.State == decisions.Open) {
 		return false
 	}
 	if p.Admin() {
@@ -59,8 +63,27 @@ func decisionToProto(r decisions.Record) *agentfleetv1.Decision {
 		RequestSeq: r.RequestSeq, Ask: r.Ask, PayloadJson: r.Payload, Tool: r.Tool,
 		AnswerJson: r.Answer, AnsweredBy: r.AnsweredBy, AnsweredAt: timeOrEmpty(r.AnsweredAt),
 		CreatedAt: transcript.RFC3339OrEmpty(r.CreatedAt), Version: r.Version, SubjectRepo: r.SubjectRepo,
-		Interrupted: r.Interrupted,
+		Interrupted: r.Interrupted, Card: cardOf(r),
 	}
+}
+
+// cardOf is a card's payload, the protojson Card the decisions hook built,
+// with what the row knows better: who wrote it and when it expires. nil for
+// any other kind, and for a payload that does not parse (the deck still
+// shows the row, by its ask).
+func cardOf(r decisions.Record) *agentfleetv1.Card {
+	if r.Kind != decisions.Card {
+		return nil
+	}
+	c := &agentfleetv1.Card{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(r.Payload), c); err != nil {
+		return nil
+	}
+	if r.Definition != nil {
+		c.WriterDefinition = *r.Definition
+	}
+	c.ExpiresAt = timeOrEmpty(r.ExpiresAt)
+	return c
 }
 
 const (

@@ -62,18 +62,30 @@ export type EntryLike = {
 };
 
 // Only one question is ever pending per session at a time (the agent's tool
-// call blocks on it) — the latest QUESTION entry with no later ANSWER.
+// call blocks on it) — the latest QUESTION entry with no later ANSWER to it.
+// An ANSWER with a replyTo belongs to that seq alone: a card's answer
+// (replyTo = the card's seq) lands in the same thread and must not close a
+// question asked before it. One without (an older writer) still answers
+// whatever question came before it, as it always has.
+// A backwards loop, not findLastIndex: the islands build at ES2022.
+export function answersQuestion(answer: EntryLike, question: EntryLike) {
+  return (
+    answer.type === TranscriptEntryType.ANSWER &&
+    (answer.replyTo === undefined || answer.replyTo === question.seq)
+  );
+}
+
 export function findPendingQuestion<E extends EntryLike>(
   entries: E[],
 ): E | null {
-  const idx = entries.findIndex(
-    (e, i) =>
-      e.type === TranscriptEntryType.QUESTION &&
-      !entries
-        .slice(i + 1)
-        .some((later) => later.type === TranscriptEntryType.ANSWER),
-  );
-  return idx >= 0 ? entries[idx] : null;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type !== TranscriptEntryType.QUESTION) continue;
+    return entries.slice(i + 1).some((later) => answersQuestion(later, e))
+      ? null
+      : e;
+  }
+  return null;
 }
 
 export type PendingPermission<E extends EntryLike = TranscriptEntry> = {

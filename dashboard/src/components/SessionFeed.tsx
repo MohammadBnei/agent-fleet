@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { cardChoiceLine } from "../decisions";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import {
   type TranscriptEntry,
   TranscriptEntryType,
 } from "../gen/agentfleet/v1/transcript_pb";
 import { shortId } from "../sessionState";
 import {
+  answersQuestion,
   asDisplayMarkdown,
   buildToolCallPairs,
   type Density,
@@ -31,6 +34,7 @@ import {
   summarizeToolInput,
   type ToolCallPair,
 } from "../transcript";
+import { CardBody } from "./CardBody";
 import { Collapse } from "./Collapse";
 import { ToolCallDetailModal } from "./DetailModal";
 import { Markdown } from "./Markdown";
@@ -319,8 +323,15 @@ export function SessionFeed({
   // echo) but not yet an entry. "Nothing in this session yet." directly above
   // it read as the send having been lost.
   hasPendingMessage = false,
+  openCards = [],
+  onCardAnswered = () => {},
 }: {
   hasPendingMessage?: boolean;
+  // The store's open decisions (the deck's list). A card among them is
+  // answered right here as well as in the sheet: the game links a decision to
+  // its session (?session=<id>), so the session is where the owner lands.
+  openCards?: Decision[];
+  onCardAnswered?: () => void;
   entries: TranscriptEntry[];
   visibility: FeedVisibility;
   density: Density;
@@ -547,7 +558,7 @@ export function SessionFeed({
     if (entry.type === TranscriptEntryType.QUESTION) {
       const answerEntry = entries
         .slice(idx + 1)
-        .find((e) => e.type === TranscriptEntryType.ANSWER);
+        .find((e) => answersQuestion(e, entry));
       if (!answerEntry && dockPendingDecision) continue;
       flush();
       out.push(
@@ -559,6 +570,66 @@ export function SessionFeed({
             compact={compact}
             onSubmit={(answers) => onAnswer(entry.seq, answers)}
           />
+        </div>,
+      );
+      continue;
+    }
+
+    // A card the store still holds open is answered here with the deck's own
+    // CardBody; otherwise the feed says it was asked and, once it was, what the
+    // owner chose: the ANSWER that replies to its seq, never one merely after it.
+    if (entry.type === TranscriptEntryType.CARD) {
+      // protojson Card: camelCase, the fields cardChoiceLine reads.
+      let card: {
+        ask?: unknown;
+        options?: Parameters<typeof cardChoiceLine>[0];
+      } = {};
+      try {
+        card = JSON.parse(entry.text) ?? {};
+      } catch {}
+      const ask = String(card.ask ?? "");
+      const answerEntry = entries
+        .slice(idx + 1)
+        .find(
+          (e) =>
+            e.type === TranscriptEntryType.ANSWER && e.replyTo === entry.seq,
+        );
+      // The label from the card's own options, as History shows it; the
+      // answers text is core's message to the writer (option id, card UUID),
+      // kept only for an answer whose option the card no longer names.
+      let answer = "";
+      if (answerEntry) {
+        answer = cardChoiceLine(card.options ?? [], answerEntry.text);
+        const raw = Object.values(parseAnswers(answerEntry.text) ?? {});
+        if (answer === "answered" && raw.length > 0)
+          answer = `answered: ${raw.join(", ")}`;
+      }
+      flush();
+      out.push(
+        <div
+          key={key}
+          id={`entry-${key}`}
+          className={`text-sm min-w-0 break-words ${compact ? "pl-4" : "pl-[18px]"}`}
+        >
+          <span className="text-xs text-error tracking-[0.05em]">Card</span>{" "}
+          <span className="text-text2">{ask}</span>
+          {/* Open only if the store says so: the feed alone cannot tell an
+              open card from an expired or stale one. */}
+          {answerEntry ? (
+            <div className="text-xs text-dim2">{answer}</div>
+          ) : (
+            (() => {
+              const open = openCards.find(
+                (d) =>
+                  d.threadId === entry.sessionId && d.requestSeq === entry.seq,
+              );
+              return open ? (
+                <div className="border border-pink-line mt-1">
+                  <CardBody decision={open} reload={onCardAnswered} />
+                </div>
+              ) : null;
+            })()
+          )}
         </div>,
       );
       continue;

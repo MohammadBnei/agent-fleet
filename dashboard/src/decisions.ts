@@ -156,6 +156,16 @@ function summaryOf(d: Decision): ListSummary {
   return sum;
 }
 
+// A session the list does not hold, named by its id.
+function stubSession(d: Decision): Session {
+  return {
+    $typeName: "agentfleet.v1.Session",
+    id: d.threadId,
+    repo: d.subjectRepo,
+    title: `#${shortId(d.threadId)}`,
+  } as Session;
+}
+
 // The open decisions a human can act on, newest first. A question and a
 // stamped request are durable (transcript.ts decisionAnswerable); an unstamped
 // one is bound to its live pod, so it needs a known session with one, and an
@@ -166,6 +176,15 @@ export function deckItems(open: Decision[], sessions: Session[]): DeckItem[] {
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const out: DeckItem[] = [];
   for (const d of open) {
+    // A card is durable by construction: it never pins a pod, and its answer
+    // is core's message to the writer (docs/adr/0082). No transcript summary
+    // either; CardBody reads the Decision itself.
+    if (d.kind === DecisionKind.CARD) {
+      const known = byId.get(d.threadId);
+      if (known?.archivedAt !== undefined) continue;
+      out.push({ key: d.id, session: known ?? stubSession(d), decision: d });
+      continue;
+    }
     const sum = summaryOf(d);
     const durable = summaryAnswerable(sum);
     const known = byId.get(d.threadId);
@@ -186,15 +205,12 @@ export function deckItems(open: Decision[], sessions: Session[]): DeckItem[] {
     )
       continue;
     if (!durable && d.interrupted) continue;
-    const session =
-      known ??
-      ({
-        $typeName: "agentfleet.v1.Session",
-        id: d.threadId,
-        repo: d.subjectRepo,
-        title: `#${shortId(d.threadId)}`,
-      } as Session);
-    out.push({ key: d.id, session, summary: sum, decision: d });
+    out.push({
+      key: d.id,
+      session: known ?? stubSession(d),
+      summary: sum,
+      decision: d,
+    });
   }
   return out.sort(
     (a, b) =>
@@ -215,6 +231,7 @@ export function answerLine(d: Decision): string {
     case DecisionState.OPEN:
       return "open";
   }
+  if (d.kind === DecisionKind.CARD) return cardAnswerLine(d);
   if (d.kind === DecisionKind.QUESTION) {
     const answers = parseAnswers(d.answerJson);
     return answers ? Object.values(answers).join(", ") : "answered";
@@ -235,4 +252,39 @@ export function answerLine(d: Decision): string {
     return msg ? `denied: ${msg}` : "denied";
   }
   return "answered";
+}
+
+// A card's answer_json is {card, optionId | ownText, answers}. The label comes
+// from the card itself, not the answers text, which is core's message to the
+// writer rather than words for a History row.
+function cardAnswerLine(d: Decision): string {
+  return cardChoiceLine(d.card?.options ?? [], d.answerJson);
+}
+
+// The owner's choice on a card in a few words, from the card's options and
+// its answer_json. Shared by History and the session feed, which only has
+// the card entry's JSON (protojson Card) rather than a Decision.
+export function cardChoiceLine(
+  options: readonly {
+    id?: string;
+    label?: string;
+    effect?: { verb?: string };
+  }[],
+  answerJson: string,
+): string {
+  let reply: { optionId?: unknown; ownText?: unknown };
+  try {
+    reply = JSON.parse(answerJson) ?? {};
+  } catch {
+    reply = {};
+  }
+  if (reply.ownText === true) {
+    const text = Object.values(parseAnswers(answerJson) ?? {})[0];
+    return text ? `wrote: ${text}` : "wrote their own";
+  }
+  const option = options.find((o) => o.id === reply.optionId);
+  if (!option) return "answered";
+  const closed =
+    option.effect?.verb === "close_threads" ? " · threads closed" : "";
+  return `chose: ${option.label}${closed}`;
 }

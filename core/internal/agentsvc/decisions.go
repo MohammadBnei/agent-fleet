@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -74,6 +77,10 @@ func (s *Server) answerAt(ctx context.Context, p Principal, t *sessions.Session,
 	}
 	if err != nil {
 		return 0, connect.NewError(connect.CodeInternal, err)
+	}
+	// A card is answered by id only (AnswerDecision), and an admin's only.
+	if r.Kind == decisions.Card {
+		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is a card: use AnswerDecision", seq))
 	}
 	return s.answer(ctx, p, r, a)
 }
@@ -208,6 +215,9 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 	if m.GetBehavior() == "withdraw" {
 		return s.withdraw(ctx, p, r)
 	}
+	if r.Kind == decisions.Card {
+		return s.answerCard(ctx, p, r, m)
+	}
 	if err := validMessage(m.GetMessage()); err != nil {
 		return nil, err
 	}
@@ -238,7 +248,114 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n}), nil
+	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}), nil
+}
+
+// answerCard is AnswerDecision for a card (docs/adr/0082 §6): an admin's
+// only, with exactly one of an option or the owner's own words. A
+// close_threads option closes the subject's threads after the answer lands:
+// archiving withdraws a thread's open decisions, and the card is one of them
+// when its writer is on the subject.
+func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record, m *agentfleetv1.AnswerDecisionRequest) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
+	if !p.Admin() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin answers a card"))
+	}
+	// decisions.answerCard refuses anything but exactly one of option_id or
+	// own_text (ErrInvalid, InvalidArgument via cardAnswerErr).
+	if err := validMessage(m.GetOwnText()); err != nil {
+		return nil, err
+	}
+	// The owner's choice can stand while its writer cannot resume to read it
+	// (decisions.ErrNotDelivered): the answer, with "not delivered" and the
+	// warm's own words (swept, definition gone or changed) as the reason.
+	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, decisions.Reply{By: p.author(), OptionID: m.GetOptionId(), OwnText: m.GetOwnText()})
+	res := &agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}
+	if nd := new(decisions.NotDelivered); errors.As(err, &nd) {
+		slog.Info("agentsvc: card answered, not delivered", "decisionId", r.ID, "error", err)
+		res.Delivered, res.NotDeliveredReason, err = false, nd.Reason, nil
+	}
+	if err != nil {
+		return nil, cardAnswerErr(err)
+	}
+	if closesThreads(r, m.GetOptionId()) {
+		if err := s.closeThreads(ctx, r.Subject); err != nil {
+			return nil, err
+		}
+	}
+	return connect.NewResponse(res), nil
+}
+
+// cardAnswerErr: an expired or stale card is keyed, so the console says
+// which and that nothing was done; a reply not a human's is refused.
+func cardAnswerErr(err error) error {
+	switch {
+	case errors.Is(err, decisions.ErrExpired):
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionExpired, err)
+	case errors.Is(err, decisions.ErrStale):
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, err)
+	case errors.Is(err, decisions.ErrNotOwner):
+		return connect.NewError(connect.CodePermissionDenied, err)
+	}
+	return dashboard.AnswerErr("agentsvc answer card", err)
+}
+
+// closesThreads: the chosen option's effect is close_threads.
+func closesThreads(r decisions.Record, optionID string) bool {
+	c := cardOf(r)
+	for _, o := range c.GetOptions() {
+		if o.GetId() == optionID {
+			return o.GetEffect().GetVerb() == "close_threads"
+		}
+	}
+	return false
+}
+
+// closeThreads archives every open thread on subject, each under its
+// thread lock as CloseThread does, so an Open on that thread does not race
+// the close. The answer already stands: a thread that does not close is
+// named in the error, and the others still close.
+func (s *Server) closeThreads(ctx context.Context, subject string) error {
+	refs, err := s.sessions.OpenOnThreadKey(ctx, subject)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	var failed []error
+	for _, t := range refs {
+		if err := s.closeThread(ctx, t); err != nil {
+			failed = append(failed, fmt.Errorf("thread %s: %w", t.ID, err))
+		}
+	}
+	if len(failed) > 0 {
+		return connect.NewError(connect.CodeAborted, fmt.Errorf("the card is answered, but some threads did not close: %w", errors.Join(failed...)))
+	}
+	return nil
+}
+
+// closeBusyFor bounds the wait for a thread an Open or another close holds:
+// the card is already answered, so giving up at once would leave the thread
+// open for good, as dispatch's retryBusy around CloseThread avoids too.
+var closeBusyFor = 10 * time.Second
+
+func (s *Server) closeThread(ctx context.Context, t sessions.ThreadRef) error {
+	deadline := time.Now().Add(closeBusyFor)
+	lock, err := s.sessions.TryLock(ctx, threadLock(t.Owner, t.Definition, t.ThreadKey))
+	for errors.Is(err, sessions.ErrBusy) && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(200 * time.Millisecond):
+		}
+		lock, err = s.sessions.TryLock(ctx, threadLock(t.Owner, t.Definition, t.ThreadKey))
+	}
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	_, err = s.dash.ArchiveSession(ctx, connect.NewRequest(&agentfleetv1.ArchiveSessionRequest{SessionId: t.ID}))
+	if connect.CodeOf(err) == connect.CodeNotFound {
+		return nil // gone since the read
+	}
+	return err
 }
 
 // withdraw is AnswerDecision's "withdraw", the quick close of a decision

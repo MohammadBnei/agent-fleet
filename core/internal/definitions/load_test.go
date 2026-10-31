@@ -107,6 +107,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"resources null", map[string]string{"resources": "~"}, "spec.resources: null"},
 		{"tools empty allow", map[string]string{"tools": "{ allow: [] }"}, "tools.allow must not be empty"},
 		{"sidecar tool outside ceiling", map[string]string{"sidecarTools": "[expose]"}, "expose"},
+		{"draft_card in ceiling", map[string]string{"sidecarTools": "[AskUserQuestion, draft_card]"}, ""},
 		{"thinking ultra", map[string]string{"thinking": "{ default: ultra }"}, "thinking.default"},
 		{"thinking xhigh", map[string]string{"thinking": "{ default: xhigh }"}, ""},
 		{"model outside ceiling", map[string]string{"model": "{ default: gpt-5, allow: [gpt-5] }"}, "gpt-5"},

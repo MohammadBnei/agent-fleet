@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   answerLine,
+  cardChoiceLine,
   deckItems,
   listDecisionHistory,
   listOpenDecisions,
@@ -279,4 +280,171 @@ test("listDecisionHistory pages the closed states by token", async () => {
       DecisionState.STALE,
     ].sort(),
   );
+});
+
+// A card as decisionToProto sends it: the Card message on Decision.card. Its
+// payload_json is the same Card's protojson, which nothing here reads.
+const card = (over: Partial<Decision> = {}) =>
+  decision({
+    id: "c1",
+    kind: DecisionKind.CARD,
+    requestSeq: 12n,
+    ask: "PR #7 was closed by the fleet without a merge. Close its threads?",
+    card: {
+      $typeName: "agentfleet.v1.Card",
+      ask: "PR #7 was closed by the fleet without a merge. Close its threads?",
+      subject: {
+        $typeName: "agentfleet.v1.CardSubject",
+        repo: "o/r",
+        kind: "pr",
+        number: 7n,
+        url: "https://github.com/o/r/pull/7",
+      },
+      options: [
+        {
+          $typeName: "agentfleet.v1.CardOption",
+          id: "1",
+          label: "Close the threads",
+          effect: {
+            $typeName: "agentfleet.v1.CardEffect",
+            verb: "close_threads",
+          },
+          reversible: "no",
+          recommended: false,
+        },
+        {
+          $typeName: "agentfleet.v1.CardOption",
+          id: "2",
+          label: "Keep them open",
+          effect: { $typeName: "agentfleet.v1.CardEffect", verb: "handoff" },
+          reversible: "yes",
+          recommended: false,
+        },
+      ],
+      writeOwn: true,
+      expiresAt: "2026-11-05T10:00:00Z",
+      writerDefinition: "fleet",
+      draftedBy: "core",
+    },
+    ...over,
+  });
+
+// A card never blocks a pod: core warms the writer to hand the answer over,
+// so a dead pod or a session the list does not hold still shows it. Only an
+// archived session keeps it out, the same rule as every other kind.
+test("deckItems keeps a card on any session but an archived one", () => {
+  const cases: [string, Decision, boolean][] = [
+    ["card, live session", card(), true],
+    ["card, dead pod", card({ threadId: "s-dead" }), true],
+    ["card, unknown session", card({ threadId: "s-gone" }), true],
+    ["card, archived session", card({ threadId: "s-arch" }), false],
+  ];
+  for (const [name, d, kept] of cases)
+    expect([name, deckItems([d], sessions).length]).toEqual([
+      name,
+      kept ? 1 : 0,
+    ]);
+});
+
+// A card is not a transcript question or request, so it gets no summary to
+// answer through DecisionInline; CardBody reads the decision itself.
+test("a card item carries its decision and no summary", () => {
+  const [item] = deckItems([card()], sessions);
+  expect(item.key).toBe("c1");
+  expect(item.session).toBe(live);
+  expect(item.decision?.id).toBe("c1");
+  expect(item.summary).toBeUndefined();
+
+  const [stub] = deckItems(
+    [card({ threadId: "s-gone", subjectRepo: "o/other" })],
+    sessions,
+  );
+  expect(stub.session.id).toBe("s-gone");
+  expect(stub.session.repo).toBe("o/other");
+  expect(stub.summary).toBeUndefined();
+});
+
+test("answerLine says which option a card's owner chose, or what they wrote", () => {
+  const answered = (answerJson: unknown) =>
+    card({
+      state: DecisionState.ANSWERED,
+      answeredBy: "human",
+      answerJson: JSON.stringify(answerJson),
+    });
+  const ask = card().ask;
+  const cases: [string, Decision, string][] = [
+    [
+      "handoff option",
+      answered({
+        card: "c1",
+        optionId: "2",
+        answers: {
+          [ask]:
+            "owner chose option 2 of card c1: Keep them open (agent claim, owner-chosen)",
+        },
+      }),
+      "chose: Keep them open",
+    ],
+    [
+      "close_threads option",
+      answered({
+        card: "c1",
+        optionId: "1",
+        answers: {
+          [ask]:
+            "owner chose option 1 of card c1: Close the threads (agent claim, owner-chosen)",
+        },
+      }),
+      "chose: Close the threads · threads closed",
+    ],
+    [
+      "own text",
+      answered({
+        card: "c1",
+        ownText: true,
+        answers: { [ask]: "leave PR 7 alone, I will look" },
+      }),
+      "wrote: leave PR 7 alone, I will look",
+    ],
+  ];
+  for (const [name, d, line] of cases)
+    expect([name, answerLine(d)]).toEqual([name, line]);
+  // A closed card that was never answered says its state, as any kind does.
+  expect(answerLine(card({ state: DecisionState.EXPIRED }))).toBe("expired");
+  expect(answerLine(card({ state: DecisionState.STALE }))).toBe("stale");
+});
+
+// The session feed has only the card entry's protojson, not a Decision, and
+// must show the same words as History, never core's message to the writer.
+test("cardChoiceLine reads a card entry's options, as History does", () => {
+  const options = [
+    { id: "3", label: "Delete the test", effect: { verb: "handoff" } },
+  ];
+  const raw = (answerJson: unknown) => JSON.stringify(answerJson);
+  const cases: [string, string, string][] = [
+    [
+      "option",
+      raw({
+        card: "c1",
+        optionId: "3",
+        answers: {
+          q: "owner chose option 3 of card c1: Delete the test (agent claim, owner-chosen)",
+        },
+      }),
+      "chose: Delete the test",
+    ],
+    [
+      "own text",
+      raw({ card: "c1", ownText: true, answers: { q: "skip it" } }),
+      "wrote: skip it",
+    ],
+    [
+      "unknown option",
+      raw({ card: "c1", optionId: "9", answers: {} }),
+      "answered",
+    ],
+    ["not json", "{", "answered"],
+  ];
+  for (const [name, answerJson, line] of cases)
+    expect([name, cardChoiceLine(options, answerJson)]).toEqual([name, line]);
 });

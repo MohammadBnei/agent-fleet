@@ -40,6 +40,10 @@ const (
 	// The definition does not exist or is not the caller's to use (one answer for both, docs/adr/0066 §4). Not a
 	// missing thread, also NotFound.
 	AgentErrorKey_AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE AgentErrorKey = 3
+	// The card is past its expiry: nothing was done.
+	AgentErrorKey_AGENT_ERROR_KEY_DECISION_EXPIRED AgentErrorKey = 4
+	// The card was replaced by a newer one on the same subject: nothing was done.
+	AgentErrorKey_AGENT_ERROR_KEY_DECISION_STALE AgentErrorKey = 5
 )
 
 // Enum value maps for AgentErrorKey.
@@ -49,12 +53,16 @@ var (
 		1: "AGENT_ERROR_KEY_DEFINITION_CHANGED",
 		2: "AGENT_ERROR_KEY_THREAD_CAP",
 		3: "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
+		4: "AGENT_ERROR_KEY_DECISION_EXPIRED",
+		5: "AGENT_ERROR_KEY_DECISION_STALE",
 	}
 	AgentErrorKey_value = map[string]int32{
 		"AGENT_ERROR_KEY_UNSPECIFIED":            0,
 		"AGENT_ERROR_KEY_DEFINITION_CHANGED":     1,
 		"AGENT_ERROR_KEY_THREAD_CAP":             2,
 		"AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE": 3,
+		"AGENT_ERROR_KEY_DECISION_EXPIRED":       4,
+		"AGENT_ERROR_KEY_DECISION_STALE":         5,
 	}
 )
 
@@ -85,7 +93,7 @@ func (AgentErrorKey) EnumDescriptor() ([]byte, []int) {
 	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{0}
 }
 
-// A decision's kind (docs/adr/0082 §5). A card, the fourth kind, comes with draft_card in a later slice.
+// A decision's kind (docs/adr/0082 §5).
 type DecisionKind int32
 
 const (
@@ -96,6 +104,9 @@ const (
 	DecisionKind_DECISION_KIND_PERMISSION DecisionKind = 2
 	// ExitPlanMode's permission request: approving the plan.
 	DecisionKind_DECISION_KIND_PLAN DecisionKind = 3
+	// A card an agent drafted with draft_card, or core drafted itself: an admin answers it with an option or, when
+	// the card allows it, their own words.
+	DecisionKind_DECISION_KIND_CARD DecisionKind = 4
 )
 
 // Enum value maps for DecisionKind.
@@ -105,12 +116,14 @@ var (
 		1: "DECISION_KIND_QUESTION",
 		2: "DECISION_KIND_PERMISSION",
 		3: "DECISION_KIND_PLAN",
+		4: "DECISION_KIND_CARD",
 	}
 	DecisionKind_value = map[string]int32{
 		"DECISION_KIND_UNSPECIFIED": 0,
 		"DECISION_KIND_QUESTION":    1,
 		"DECISION_KIND_PERMISSION":  2,
 		"DECISION_KIND_PLAN":        3,
+		"DECISION_KIND_CARD":        4,
 	}
 )
 
@@ -2295,7 +2308,9 @@ type Decision struct {
 	SubjectRepo string `protobuf:"bytes,14,opt,name=subject_repo,json=subjectRepo,proto3" json:"subject_repo,omitempty"`
 	// An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
 	// the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.
-	Interrupted   bool `protobuf:"varint,15,opt,name=interrupted,proto3" json:"interrupted,omitempty"`
+	Interrupted bool `protobuf:"varint,15,opt,name=interrupted,proto3" json:"interrupted,omitempty"`
+	// A card's, set only for DECISION_KIND_CARD.
+	Card          *Card `protobuf:"bytes,16,opt,name=card,proto3" json:"card,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2433,6 +2448,13 @@ func (x *Decision) GetInterrupted() bool {
 		return x.Interrupted
 	}
 	return false
+}
+
+func (x *Decision) GetCard() *Card {
+	if x != nil {
+		return x.Card
+	}
+	return nil
 }
 
 type ListDecisionsRequest struct {
@@ -2677,8 +2699,12 @@ type AnswerDecisionRequest struct {
 	Mode string `protobuf:"bytes,5,opt,name=mode,proto3" json:"mode,omitempty"`
 	// A permission allowed (docs/adr/0076 §3): "once" (the default), "session", or "definition" (admins only), and
 	// the rule's form, "exact" or "prefix".
-	Scope         string `protobuf:"bytes,6,opt,name=scope,proto3" json:"scope,omitempty"`
-	RuleForm      string `protobuf:"bytes,7,opt,name=rule_form,json=ruleForm,proto3" json:"rule_form,omitempty"`
+	Scope    string `protobuf:"bytes,6,opt,name=scope,proto3" json:"scope,omitempty"`
+	RuleForm string `protobuf:"bytes,7,opt,name=rule_form,json=ruleForm,proto3" json:"rule_form,omitempty"`
+	// A card (admins only): exactly one of these. option_id is one of the card's option ids; own_text, the owner's
+	// own words at most 2,000 bytes, only where the card allows write_own.
+	OptionId      string `protobuf:"bytes,8,opt,name=option_id,json=optionId,proto3" json:"option_id,omitempty"`
+	OwnText       string `protobuf:"bytes,9,opt,name=own_text,json=ownText,proto3" json:"own_text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2762,12 +2788,30 @@ func (x *AnswerDecisionRequest) GetRuleForm() string {
 	return ""
 }
 
+func (x *AnswerDecisionRequest) GetOptionId() string {
+	if x != nil {
+		return x.OptionId
+	}
+	return ""
+}
+
+func (x *AnswerDecisionRequest) GetOwnText() string {
+	if x != nil {
+		return x.OwnText
+	}
+	return ""
+}
+
 type AnswerDecisionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The answer's seq in the thread's transcript.
-	Seq           int64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Seq int64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	// A card's handoff or own text: false when the answer is recorded but the writer cannot resume to read it (its
+	// definition changed or its session is gone), not_delivered_reason saying why. Every other answer: true.
+	Delivered          bool   `protobuf:"varint,2,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	NotDeliveredReason string `protobuf:"bytes,3,opt,name=not_delivered_reason,json=notDeliveredReason,proto3" json:"not_delivered_reason,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AnswerDecisionResponse) Reset() {
@@ -2805,6 +2849,20 @@ func (x *AnswerDecisionResponse) GetSeq() int64 {
 		return x.Seq
 	}
 	return 0
+}
+
+func (x *AnswerDecisionResponse) GetDelivered() bool {
+	if x != nil {
+		return x.Delivered
+	}
+	return false
+}
+
+func (x *AnswerDecisionResponse) GetNotDeliveredReason() string {
+	if x != nil {
+		return x.NotDeliveredReason
+	}
+	return ""
 }
 
 type WatchDecisionsRequest struct {
@@ -3068,7 +3126,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\vresult_text\x18\x03 \x01(\tR\n" +
 	"resultText\x12\x18\n" +
 	"\asubtype\x18\x04 \x01(\tR\asubtype\x12+\n" +
-	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error\"\xe7\x03\n" +
+	"\x05error\x18\x05 \x01(\v2\x15.agentfleet.v1.StatusR\x05error\"\x90\x04\n" +
 	"\bDecision\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1b.agentfleet.v1.DecisionKindR\x04kind\x122\n" +
@@ -3090,7 +3148,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"created_at\x18\f \x01(\tR\tcreatedAt\x12\x18\n" +
 	"\aversion\x18\r \x01(\x03R\aversion\x12!\n" +
 	"\fsubject_repo\x18\x0e \x01(\tR\vsubjectRepo\x12 \n" +
-	"\vinterrupted\x18\x0f \x01(\bR\vinterrupted\"\xfb\x01\n" +
+	"\vinterrupted\x18\x0f \x01(\bR\vinterrupted\x12'\n" +
+	"\x04card\x18\x10 \x01(\v2\x13.agentfleet.v1.CardR\x04card\"\xfb\x01\n" +
 	"\x14ListDecisionsRequest\x124\n" +
 	"\x06states\x18\x01 \x03(\x0e2\x1c.agentfleet.v1.DecisionStateR\x06states\x121\n" +
 	"\x05kinds\x18\x02 \x03(\x0e2\x1b.agentfleet.v1.DecisionKindR\x05kinds\x12!\n" +
@@ -3105,7 +3164,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x12GetDecisionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
 	"\x13GetDecisionResponse\x123\n" +
-	"\bdecision\x18\x01 \x01(\v2\x17.agentfleet.v1.DecisionR\bdecision\"\xd8\x01\n" +
+	"\bdecision\x18\x01 \x01(\v2\x17.agentfleet.v1.DecisionR\bdecision\"\x90\x02\n" +
 	"\x15AnswerDecisionRequest\x12\x1f\n" +
 	"\vdecision_id\x18\x01 \x01(\tR\n" +
 	"decisionId\x12\x1a\n" +
@@ -3114,32 +3173,39 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12\x12\n" +
 	"\x04mode\x18\x05 \x01(\tR\x04mode\x12\x14\n" +
 	"\x05scope\x18\x06 \x01(\tR\x05scope\x12\x1b\n" +
-	"\trule_form\x18\a \x01(\tR\bruleForm\"*\n" +
+	"\trule_form\x18\a \x01(\tR\bruleForm\x12\x1b\n" +
+	"\toption_id\x18\b \x01(\tR\boptionId\x12\x19\n" +
+	"\bown_text\x18\t \x01(\tR\aownText\"z\n" +
 	"\x16AnswerDecisionResponse\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x03R\x03seq\"<\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x1c\n" +
+	"\tdelivered\x18\x02 \x01(\bR\tdelivered\x120\n" +
+	"\x14not_delivered_reason\x18\x03 \x01(\tR\x12notDeliveredReason\"<\n" +
 	"\x15WatchDecisionsRequest\x12#\n" +
 	"\rsince_version\x18\x01 \x01(\x03R\fsinceVersion\"S\n" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1f\n" +
 	"\vchanged_ids\x18\x02 \x03(\tR\n" +
-	"changedIds*\xfa\x01\n" +
+	"changedIds*\xfa\x02\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
 	"\x1aAGENT_ERROR_KEY_THREAD_CAP\x10\x02\x1a\x14\xc2\xf3\x18\x10agent.thread_cap\x12L\n" +
-	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x03\x1a \xc2\xf3\x18\x1cagent.definition_unavailable*\x7f\n" +
+	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x03\x1a \xc2\xf3\x18\x1cagent.definition_unavailable\x12@\n" +
+	" AGENT_ERROR_KEY_DECISION_EXPIRED\x10\x04\x1a\x1a\xc2\xf3\x18\x16agent.decision_expired\x12<\n" +
+	"\x1eAGENT_ERROR_KEY_DECISION_STALE\x10\x05\x1a\x18\xc2\xf3\x18\x14agent.decision_stale*\x97\x01\n" +
 	"\fDecisionKind\x12\x1d\n" +
 	"\x19DECISION_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DECISION_KIND_QUESTION\x10\x01\x12\x1c\n" +
 	"\x18DECISION_KIND_PERMISSION\x10\x02\x12\x16\n" +
-	"\x12DECISION_KIND_PLAN\x10\x03*\xb9\x01\n" +
+	"\x12DECISION_KIND_PLAN\x10\x03\x12\x16\n" +
+	"\x12DECISION_KIND_CARD\x10\x04*\xb9\x01\n" +
 	"\rDecisionState\x12\x1e\n" +
 	"\x1aDECISION_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DECISION_STATE_OPEN\x10\x01\x12\x1b\n" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\x85\x10\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\xba\x10\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
@@ -3151,8 +3217,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\x12T\n" +
 	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\x12Z\n" +
 	"\rListDecisions\x12#.agentfleet.v1.ListDecisionsRequest\x1a$.agentfleet.v1.ListDecisionsResponse\x12T\n" +
-	"\vGetDecision\x12!.agentfleet.v1.GetDecisionRequest\x1a\".agentfleet.v1.GetDecisionResponse\x12]\n" +
-	"\x0eAnswerDecision\x12$.agentfleet.v1.AnswerDecisionRequest\x1a%.agentfleet.v1.AnswerDecisionResponse\x12_\n" +
+	"\vGetDecision\x12!.agentfleet.v1.GetDecisionRequest\x1a\".agentfleet.v1.GetDecisionResponse\x12\x91\x01\n" +
+	"\x0eAnswerDecision\x12$.agentfleet.v1.AnswerDecisionRequest\x1a%.agentfleet.v1.AnswerDecisionResponse\"2\xca\xf3\x18\x16agent.decision_expired\xca\xf3\x18\x14agent.decision_stale\x12_\n" +
 	"\x0eWatchDecisions\x12$.agentfleet.v1.WatchDecisionsRequest\x1a%.agentfleet.v1.WatchDecisionsResponse0\x01\x12N\n" +
 	"\tSetConfig\x12\x1f.agentfleet.v1.SetConfigRequest\x1a .agentfleet.v1.SetConfigResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +
@@ -3226,6 +3292,7 @@ var file_agentfleet_v1_agent_proto_goTypes = []any{
 	(*WatchDecisionsRequest)(nil),                   // 46: agentfleet.v1.WatchDecisionsRequest
 	(*WatchDecisionsResponse)(nil),                  // 47: agentfleet.v1.WatchDecisionsResponse
 	(TranscriptEntryType)(0),                        // 48: agentfleet.v1.TranscriptEntryType
+	(*Card)(nil),                                    // 49: agentfleet.v1.Card
 }
 var file_agentfleet_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: agentfleet.v1.AgentServiceListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinitionInfo
@@ -3239,55 +3306,56 @@ var file_agentfleet_v1_agent_proto_depIdxs = []int32{
 	7,  // 8: agentfleet.v1.WaitForResultResponse.error:type_name -> agentfleet.v1.Status
 	1,  // 9: agentfleet.v1.Decision.kind:type_name -> agentfleet.v1.DecisionKind
 	2,  // 10: agentfleet.v1.Decision.state:type_name -> agentfleet.v1.DecisionState
-	2,  // 11: agentfleet.v1.ListDecisionsRequest.states:type_name -> agentfleet.v1.DecisionState
-	1,  // 12: agentfleet.v1.ListDecisionsRequest.kinds:type_name -> agentfleet.v1.DecisionKind
-	39, // 13: agentfleet.v1.ListDecisionsResponse.decisions:type_name -> agentfleet.v1.Decision
-	39, // 14: agentfleet.v1.GetDecisionResponse.decision:type_name -> agentfleet.v1.Decision
-	4,  // 15: agentfleet.v1.AgentService.ListDefinitions:input_type -> agentfleet.v1.AgentServiceListDefinitionsRequest
-	9,  // 16: agentfleet.v1.AgentService.ListThreads:input_type -> agentfleet.v1.ListThreadsRequest
-	11, // 17: agentfleet.v1.AgentService.CreateThread:input_type -> agentfleet.v1.CreateThreadRequest
-	13, // 18: agentfleet.v1.AgentService.PostMessage:input_type -> agentfleet.v1.AgentServicePostMessageRequest
-	15, // 19: agentfleet.v1.AgentService.GetTranscript:input_type -> agentfleet.v1.AgentServiceGetTranscriptRequest
-	17, // 20: agentfleet.v1.AgentService.StreamTranscript:input_type -> agentfleet.v1.AgentServiceStreamTranscriptRequest
-	19, // 21: agentfleet.v1.AgentService.RespondToPermission:input_type -> agentfleet.v1.AgentServiceRespondToPermissionRequest
-	21, // 22: agentfleet.v1.AgentService.AnswerQuestion:input_type -> agentfleet.v1.AgentServiceAnswerQuestionRequest
-	23, // 23: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
-	40, // 24: agentfleet.v1.AgentService.ListDecisions:input_type -> agentfleet.v1.ListDecisionsRequest
-	42, // 25: agentfleet.v1.AgentService.GetDecision:input_type -> agentfleet.v1.GetDecisionRequest
-	44, // 26: agentfleet.v1.AgentService.AnswerDecision:input_type -> agentfleet.v1.AnswerDecisionRequest
-	46, // 27: agentfleet.v1.AgentService.WatchDecisions:input_type -> agentfleet.v1.WatchDecisionsRequest
-	25, // 28: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
-	27, // 29: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
-	29, // 30: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
-	31, // 31: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
-	33, // 32: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
-	35, // 33: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
-	37, // 34: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
-	5,  // 35: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
-	10, // 36: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
-	12, // 37: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
-	14, // 38: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
-	16, // 39: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
-	18, // 40: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
-	20, // 41: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
-	22, // 42: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
-	24, // 43: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
-	41, // 44: agentfleet.v1.AgentService.ListDecisions:output_type -> agentfleet.v1.ListDecisionsResponse
-	43, // 45: agentfleet.v1.AgentService.GetDecision:output_type -> agentfleet.v1.GetDecisionResponse
-	45, // 46: agentfleet.v1.AgentService.AnswerDecision:output_type -> agentfleet.v1.AnswerDecisionResponse
-	47, // 47: agentfleet.v1.AgentService.WatchDecisions:output_type -> agentfleet.v1.WatchDecisionsResponse
-	26, // 48: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
-	28, // 49: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
-	30, // 50: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
-	32, // 51: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
-	34, // 52: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
-	36, // 53: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
-	38, // 54: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
-	35, // [35:55] is the sub-list for method output_type
-	15, // [15:35] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	49, // 11: agentfleet.v1.Decision.card:type_name -> agentfleet.v1.Card
+	2,  // 12: agentfleet.v1.ListDecisionsRequest.states:type_name -> agentfleet.v1.DecisionState
+	1,  // 13: agentfleet.v1.ListDecisionsRequest.kinds:type_name -> agentfleet.v1.DecisionKind
+	39, // 14: agentfleet.v1.ListDecisionsResponse.decisions:type_name -> agentfleet.v1.Decision
+	39, // 15: agentfleet.v1.GetDecisionResponse.decision:type_name -> agentfleet.v1.Decision
+	4,  // 16: agentfleet.v1.AgentService.ListDefinitions:input_type -> agentfleet.v1.AgentServiceListDefinitionsRequest
+	9,  // 17: agentfleet.v1.AgentService.ListThreads:input_type -> agentfleet.v1.ListThreadsRequest
+	11, // 18: agentfleet.v1.AgentService.CreateThread:input_type -> agentfleet.v1.CreateThreadRequest
+	13, // 19: agentfleet.v1.AgentService.PostMessage:input_type -> agentfleet.v1.AgentServicePostMessageRequest
+	15, // 20: agentfleet.v1.AgentService.GetTranscript:input_type -> agentfleet.v1.AgentServiceGetTranscriptRequest
+	17, // 21: agentfleet.v1.AgentService.StreamTranscript:input_type -> agentfleet.v1.AgentServiceStreamTranscriptRequest
+	19, // 22: agentfleet.v1.AgentService.RespondToPermission:input_type -> agentfleet.v1.AgentServiceRespondToPermissionRequest
+	21, // 23: agentfleet.v1.AgentService.AnswerQuestion:input_type -> agentfleet.v1.AgentServiceAnswerQuestionRequest
+	23, // 24: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
+	40, // 25: agentfleet.v1.AgentService.ListDecisions:input_type -> agentfleet.v1.ListDecisionsRequest
+	42, // 26: agentfleet.v1.AgentService.GetDecision:input_type -> agentfleet.v1.GetDecisionRequest
+	44, // 27: agentfleet.v1.AgentService.AnswerDecision:input_type -> agentfleet.v1.AnswerDecisionRequest
+	46, // 28: agentfleet.v1.AgentService.WatchDecisions:input_type -> agentfleet.v1.WatchDecisionsRequest
+	25, // 29: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
+	27, // 30: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
+	29, // 31: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
+	31, // 32: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
+	33, // 33: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
+	35, // 34: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
+	37, // 35: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
+	5,  // 36: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
+	10, // 37: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
+	12, // 38: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
+	14, // 39: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
+	16, // 40: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
+	18, // 41: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
+	20, // 42: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
+	22, // 43: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
+	24, // 44: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
+	41, // 45: agentfleet.v1.AgentService.ListDecisions:output_type -> agentfleet.v1.ListDecisionsResponse
+	43, // 46: agentfleet.v1.AgentService.GetDecision:output_type -> agentfleet.v1.GetDecisionResponse
+	45, // 47: agentfleet.v1.AgentService.AnswerDecision:output_type -> agentfleet.v1.AnswerDecisionResponse
+	47, // 48: agentfleet.v1.AgentService.WatchDecisions:output_type -> agentfleet.v1.WatchDecisionsResponse
+	26, // 49: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
+	28, // 50: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
+	30, // 51: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
+	32, // 52: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
+	34, // 53: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
+	36, // 54: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
+	38, // 55: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
+	36, // [36:56] is the sub-list for method output_type
+	16, // [16:36] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_agent_proto_init() }

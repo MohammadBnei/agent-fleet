@@ -5,6 +5,16 @@ option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet
 import "agentfleet/v1/transcript.proto";
 import "agentfleet/v1/provisioner.proto";
 import "agentfleet/v1/files.proto";
+import "ukubi/errors/v1/options.proto";
+
+// CoreErrorKey is CoreService's error keys (docs/adr/0081 §1-2), as AgentErrorKey is AgentService's: each value's
+// wire string is "core." and its name after the prefix in lower case. Never rename or remove a value, nor change its
+// wire string: add a new value.
+enum CoreErrorKey {
+  CORE_ERROR_KEY_UNSPECIFIED = 0;
+  // The definition drafted its 10 cards of the last 24 hours: the card was not drafted.
+  CORE_ERROR_KEY_CARD_BUDGET = 1 [(ukubi.errors.v1.key) = "core.card_budget"];
+}
 
 // core is the gRPC server here — its first (see docs/adr/0020's Context:
 // "nothing under fleet-core/ hosts one today"). Two kinds of clients:
@@ -439,6 +449,26 @@ message PublishEventRequest {
   string idempotency_key = 5;
 }
 
+// DraftCardRequest is the card as the agent says it; core fills the option ids, the subject url, expires_at, the
+// writer and drafted_by.
+message DraftCardRequest {
+  string session_id = 1;
+  // 1..280 characters.
+  string ask = 2;
+  CardSubject subject = 3;
+  // Two or three.
+  repeated CardOption options = 4;
+  bool write_own = 5;
+  // Optional: a retry with the same key drafts nothing new.
+  string idempotency_key = 6;
+}
+
+message DraftCardResponse {
+  string decision_id = 1;
+  // RFC3339.
+  string expires_at = 2;
+}
+
 message PublishEventResponse {
   string id = 1;
   bool trusted = 2;
@@ -704,5 +734,11 @@ service CoreService {
   // Spends a one-time grant (docs/adr/0082 §5): a human's allow of a grantable permission request of this session,
   // for this tool and this exact input. Each grant lets one call through, once.
   rpc ConsumeGrant(ConsumeGrantRequest) returns (ConsumeGrantResponse);
+
+  // Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
+  // granting draft_card. It does not wait: the owner's choice arrives later as a message.
+  rpc DraftCard(DraftCardRequest) returns (DraftCardResponse) {
+    option (ukubi.errors.v1.keys) = "core.card_budget";
+  }
 }
 

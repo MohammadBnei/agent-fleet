@@ -55,6 +55,11 @@ enum TranscriptEntryType {
   // which ends the whole session/pod. `text` is a free-text reason, same
   // convention ABORT already uses.
   TRANSCRIPT_ENTRY_TYPE_INTERRUPT = 14;
+  // A decision card (docs/adr/0082 §5): `text` is the protojson of a Card.
+  // Written only by core (decisions.Store.Draft, from CoreService.DraftCard
+  // or dispatch's own cards), never through SendMessage. The owner's choice
+  // comes back as an ANSWER replying to it.
+  TRANSCRIPT_ENTRY_TYPE_CARD = 15;
 }
 
 message TranscriptEntry {
@@ -114,4 +119,54 @@ message ReadTranscriptSinceRequest {
 message ReadTranscriptSinceResponse {
   repeated TranscriptEntry entries = 1;
   int64 next_seq = 2;
+}
+
+// The GitHub subject a card is about (docs/adr/0082 §5).
+message CardSubject {
+  // owner/name.
+  string repo = 1;
+  // "pr", "issue", "alert" or "repo".
+  string kind = 2;
+  // Required for pr, issue and alert; 0 for repo.
+  int64 number = 3;
+  // Filled by core from the rest; empty for an alert.
+  string url = 4;
+}
+
+// What answering with an option does. Nothing writes to GitHub.
+message CardEffect {
+  // "handoff" sends the owner's choice to the writer's thread; "close_threads"
+  // closes every thread on the subject (pr or issue only, reversible "no").
+  string verb = 1;
+}
+
+message CardOption {
+  // Assigned by core: "1", "2", "3" in order.
+  string id = 1;
+  // 1..80 characters, an agent claim.
+  string label = 2;
+  CardEffect effect = 3;
+  // "yes", "partial" or "no".
+  string reversible = 4;
+  // At most one option of a card.
+  bool recommended = 5;
+}
+
+// A decision card: an agent's (or core's) question to the owner with two or
+// three fixed options. The console never pre-selects one.
+message Card {
+  // 1..280 characters, an agent claim.
+  string ask = 1;
+  CardSubject subject = 2;
+  // Two or three.
+  repeated CardOption options = 3;
+  // The owner may answer in their own words instead (at most 2,000 bytes).
+  bool write_own = 4;
+  // RFC3339; core sets it 7 days after drafting. Past it the card is expired:
+  // no action.
+  string expires_at = 5;
+  // The definition of the session that drafted it.
+  string writer_definition = 6;
+  // "agent" or "core".
+  string drafted_by = 7;
 }

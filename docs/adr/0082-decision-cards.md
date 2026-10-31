@@ -22,7 +22,17 @@
   liveness, and `prompt_agent` reaches a session with an open decision. The retention sweep withdraws a swept
   session's decisions and unused grants; an interrupt or abort withdraws nothing, but marks an open decision
   `interrupted` (read time), and `AnswerDecision`'s `withdraw` (owner or admin) closes one, appending nothing.
-  `draft_card` and cards are not built yet
+  Slice 2's fourth PR, cards: `CoreService.DraftCard` (the sidecar's `draft_card`, granted per definition like
+  `publish_event`) appends a `card` entry that only core writes (`SendMessage` refuses one), and the decisions hook
+  (migration 000025) checks it again, takes who drafted it, the definition and a 7-day expiry from the session, keeps
+  one open card per subject (an older one turns stale) and refuses an agent's eleventh card in 24 hours per definition
+  (`core.card_budget`; core's own cards are exempt). Only a human answers a card, an admin through `AnswerDecision`
+  with one option or, where the card allows, their own words; an expired or stale card refuses the answer
+  (`agent.decision_expired`/`agent.decision_stale`) and does nothing. A handoff warms the writer, then appends the
+  answer; a writer that cannot resume gets the answer recorded and "not delivered". `close_threads` (irreversible,
+  PR or issue only) appends, then archives every open thread on the subject. The fleet's close of a PR it did not
+  merge into the default branch closes nothing: it drafts core's card in the oldest open thread on the PR. The
+  console shows a card in the deck, nothing pre-selected, and an irreversible option takes a second click
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),

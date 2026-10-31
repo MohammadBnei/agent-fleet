@@ -155,7 +155,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	var vaultBusy atomic.Bool
 	repoOverrides := &repos.Overrides{Path: cfg.RepoOverridesPath}
 	var repoSyncBusy atomic.Bool
+	decisionStore := decisions.NewStore(pool)
 	sessionLoop.SetOnTick(func(ctx context.Context) {
+		// Before the sync, which returns early on failure: an expired card
+		// must not wait on a healthy registry.
+		if _, err := decisionStore.ExpireCards(ctx); err != nil {
+			slog.Error("decisions: expire cards failed", "error", err)
+		}
 		if cfg.RepoOverridesPath != "" && repoSyncBusy.CompareAndSwap(false, true) {
 			go func() {
 				defer repoSyncBusy.Store(false)
@@ -290,7 +296,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	dashboardSvc.SetPacks(packStore)
 	grantStore := grants.NewStore(pool)
 	dashboardSvc.SetGrants(grantStore)
-	decisionStore := decisions.NewStore(pool)
 	dashboardSvc.SetDecisions(decisionStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
@@ -429,6 +434,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			alerts = alertHandler
 		}
 		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
+		dispatcher.SetCards(decisionStore, activityStore)
 		dashboardSvc.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, sub string) (string, error) {
 			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
 		})

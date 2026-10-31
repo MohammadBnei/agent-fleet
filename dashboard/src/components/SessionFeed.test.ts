@@ -4,6 +4,7 @@
 // alone decides: which session-init lines are worth showing, and what each
 // "turn ended" line is charged.
 import { expect, test } from "bun:test";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import {
   type TranscriptEntry,
   TranscriptEntryType,
@@ -13,6 +14,7 @@ import {
   type SdkResultSummary,
   shortTool,
 } from "../transcript";
+import { CardBody } from "./CardBody";
 import { PlanCard } from "./PlanCard";
 import { LoadOlder, SessionFeed } from "./SessionFeed";
 import { ToolCallLine } from "./ToolCallLine";
@@ -680,4 +682,51 @@ test("an inline plan's request changes: deny when stamped, reply when not", () =
       expect(responded).toEqual([]);
     }
   }
+});
+
+// A card the store still holds open is answered in the session itself (the
+// game links a decision to ?session=<id>): the feed renders the deck's
+// CardBody for it, and only for the decision on that very seq.
+test("an open card renders its CardBody in the feed, a closed one does not", () => {
+  const cardEntry = entry(
+    TranscriptEntryType.CARD,
+    JSON.stringify({ ask: "Merge it?", options: [] }),
+  );
+  const open = {
+    $typeName: "agentfleet.v1.Decision",
+    id: "d1",
+    threadId: "t",
+    requestSeq: cardEntry.seq,
+  } as unknown as Decision;
+  const bodies = (openCards: Decision[]) => {
+    const tree = SessionFeed({
+      entries: [cardEntry],
+      visibility: feedVisibility("everything", false),
+      density: "everything",
+      busyKey: null,
+      onRespond: () => {},
+      onAnswer: () => {},
+      onPlanFeedback: () => {},
+      openCards,
+    });
+    const found: unknown[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (!node || typeof node !== "object") return;
+      const el = node as { type?: unknown; props?: Record<string, unknown> };
+      if (el.type === CardBody) found.push(el.props?.decision);
+      if (el.props?.children) walk(el.props.children);
+    };
+    walk(tree);
+    return found;
+  };
+  expect(bodies([open])).toEqual([open]);
+  expect(bodies([])).toEqual([]);
+  expect(
+    bodies([{ ...open, requestSeq: cardEntry.seq + 1n } as Decision]),
+  ).toEqual([]);
+  expect(bodies([{ ...open, threadId: "other" } as Decision])).toEqual([]);
 });

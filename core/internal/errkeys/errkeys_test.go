@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/MohammadBnei/ukubi-go/errs"
@@ -204,27 +205,38 @@ func registry(t *testing.T) map[string]string {
 	return keys
 }
 
-// TestDeclared: the registry and agent.proto's AgentErrorKey are one set of keys, each RPC's (ukubi.errors.v1.keys)
-// among them (connectkeys.CheckDeclared). Each value's wire string is "agent." and its name after the prefix in lower
-// case: the islands and the dashboard map the generated enum's names, which protoc-gen-es strips of the prefix.
+// TestDeclared: the registry and the services' key enums, agent.proto's AgentErrorKey and core.proto's CoreErrorKey,
+// are one set of keys, each RPC's (ukubi.errors.v1.keys) among them (connectkeys.CheckDeclared). Each value's wire
+// string is its service's prefix, "agent." or "core.", and its name after the enum's prefix in lower case: the islands
+// and the dashboard map the generated enum's names, which protoc-gen-es strips of the prefix.
 func TestDeclared(t *testing.T) {
 	var reg []errs.Key
 	for _, v := range registry(t) {
 		reg = append(reg, errs.Key(v))
 	}
-	if err := connectkeys.CheckDeclared(reg, agentfleetv1.File_agentfleet_v1_agent_proto.Services().ByName("AgentService")); err != nil {
+	if err := connectkeys.CheckDeclared(reg,
+		agentfleetv1.File_agentfleet_v1_agent_proto.Services().ByName("AgentService"),
+		agentfleetv1.File_agentfleet_v1_core_proto.Services().ByName("CoreService")); err != nil {
 		t.Error(err)
 	}
-	vals := agentfleetv1.AgentErrorKey(0).Descriptor().Values()
-	for i := 1; i < vals.Len(); i++ {
-		v := vals.Get(i)
-		want := "agent." + strings.ToLower(strings.TrimPrefix(string(v.Name()), "AGENT_ERROR_KEY_"))
-		if got := proto.GetExtension(v.Options(), errorsv1.E_Key).(string); got != want {
-			t.Errorf("%s: wire string %q, want %q", v.Name(), got, want)
+	for _, tc := range []struct {
+		enum         protoreflect.EnumDescriptor
+		prefix, wire string
+	}{
+		{agentfleetv1.AgentErrorKey(0).Descriptor(), "AGENT_ERROR_KEY_", "agent."},
+		{agentfleetv1.CoreErrorKey(0).Descriptor(), "CORE_ERROR_KEY_", "core."},
+	} {
+		vals := tc.enum.Values()
+		for i := 1; i < vals.Len(); i++ {
+			v := vals.Get(i)
+			want := tc.wire + strings.ToLower(strings.TrimPrefix(string(v.Name()), tc.prefix))
+			if got := proto.GetExtension(v.Options(), errorsv1.E_Key).(string); got != want {
+				t.Errorf("%s: wire string %q, want %q", v.Name(), got, want)
+			}
 		}
-	}
-	if vals.Len() < 2 {
-		t.Error("AgentErrorKey declares no key: the check no longer sees them") // the positive control
+		if vals.Len() < 2 {
+			t.Errorf("%s declares no key: the check no longer sees them", tc.enum.Name()) // the positive control
+		}
 	}
 }
 

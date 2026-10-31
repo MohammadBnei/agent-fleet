@@ -41,9 +41,15 @@ type Record struct {
 	NonBlocking bool
 	// Interrupted: open, and an interrupt or abort entry came after the
 	// request (derived at read time). The turn that asked has ended.
+	// Never a card's: it waits on the owner, not on the turn that drafted it.
 	Interrupted bool
-	// owner/name, from a thread keyed github/<owner>/<name>/...; "" otherwise.
+	// owner/name, from a card's subject or a thread keyed
+	// github/<owner>/<name>/...; "" otherwise. A card's is lowercase.
 	SubjectRepo string
+	// A card's: its subject in thread-key form (github/<owner>/<name>/<kind>/<n>,
+	// or github/<owner>/<name> for a repo), and when it expires.
+	Subject   string
+	ExpiresAt *time.Time
 
 	// The session's, for the caller's visibility check.
 	Owner, Visibility, Definition *string
@@ -59,10 +65,11 @@ const cols = `
 	COALESCE(d.payload::text, ''), COALESCE(d.tool, ''), COALESCE(d.answer::text, ''),
 	COALESCE(d.answered_by, ''), d.answered_at, d.version, d.created_at, d.grantable,
 	COALESCE(d.payload -> 'nb' = '1'::jsonb, false),
-	d.state = 'open' AND EXISTS (SELECT 1 FROM transcript t
+	d.state = 'open' AND d.kind <> 'card' AND EXISTS (SELECT 1 FROM transcript t
 	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
 	                                AND t.type IN ('interrupt', 'abort')),
-	COALESCE(substring(s.thread_key from '^github/([^/]+/[^/]+)'), ''),
+	COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^github/([^/]+/[^/]+)'), ''),
+	COALESCE(d.subject, ''), d.expires_at,
 	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL
 	FROM decisions d JOIN sessions s ON s.id = d.session_id`
 
@@ -71,7 +78,7 @@ func scan(row pgx.Row) (Record, error) {
 	var kind string
 	err := row.Scan(&r.ID, &kind, &r.SessionID, &r.RequestSeq, &r.State, &r.Ask,
 		&r.Payload, &r.Tool, &r.Answer, &r.AnsweredBy, &r.AnsweredAt, &r.Version, &r.CreatedAt, &r.Grantable,
-		&r.NonBlocking, &r.Interrupted, &r.SubjectRepo, &r.Owner, &r.Visibility, &r.Definition, &r.Archived)
+		&r.NonBlocking, &r.Interrupted, &r.SubjectRepo, &r.Subject, &r.ExpiresAt, &r.Owner, &r.Visibility, &r.Definition, &r.Archived)
 	r.Kind = Kind(kind)
 	return r, err
 }
@@ -98,8 +105,9 @@ func collect(rows pgx.Rows, err error) ([]Record, error) {
 // anyone else reads definition sessions only, their own and (Shared) the
 // shared ones, as sessions.ListThreads does. The caller still checks each row.
 type Filter struct {
-	States      []string
-	Kinds       []Kind
+	States []string
+	Kinds  []Kind
+	// Compared ignoring case: GitHub's names are.
 	SubjectRepo string
 	SessionID   string
 
@@ -119,7 +127,9 @@ type Cursor struct {
 }
 
 // List is decisions on sessions neither archived nor swept, newest first: a
-// swept session cannot be resumed, so nothing it asked can be acted on.
+// swept session cannot be resumed, so nothing it asked can be acted on. A
+// closed card stays whatever its session became: answering close_threads
+// archives the card's own writer, and the owner keeps the record of it.
 func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	before := Cursor{CreatedAt: time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC), ID: "ffffffff-ffff-ffff-ffff-ffffffffffff"}
 	if f.Before != nil {
@@ -133,11 +143,11 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 		f.States = []string{}
 	}
 	out, err := collect(s.pool.Query(ctx, `SELECT `+cols+`
-		WHERE s.archived_at IS NULL AND s.swept_at IS NULL
+		WHERE (s.archived_at IS NULL AND s.swept_at IS NULL OR d.kind = 'card' AND d.state <> 'open')
 		  AND ($1 OR (s.definition_name IS NOT NULL AND (s.owner = $2 OR ($3 AND s.visibility = 'shared'))))
 		  AND (cardinality($4::text[]) = 0 OR d.state = ANY($4))
 		  AND (cardinality($5::text[]) = 0 OR d.kind = ANY($5))
-		  AND ($6 = '' OR COALESCE(substring(s.thread_key from '^github/([^/]+/[^/]+)'), '') = $6)
+		  AND ($6 = '' OR lower(COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^github/([^/]+/[^/]+)'), '')) = lower($6))
 		  AND ($7 = '' OR d.session_id::text = $7)
 		  AND (d.created_at, d.id) < ($8, $9::uuid)
 		ORDER BY d.created_at DESC, d.id DESC

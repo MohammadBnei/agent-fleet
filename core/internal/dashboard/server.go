@@ -960,7 +960,9 @@ func (s *Server) answer(ctx context.Context, sessionID string, seq int64, wantTy
 		return 0, connect.NewError(connect.CodeUnavailable, errors.New("decisions are not configured"))
 	}
 	r, err := s.decisions.Request(ctx, sessionID, seq)
-	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind == decisions.Question) != (wantType == "question")) {
+	// A card is answered by id only (AnswerDecision): it is no question,
+	// and read as a permission here it would take a behavior.
+	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind == decisions.Card || (r.Kind == decisions.Question) != (wantType == "question"))) {
 		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not a %s", seq, wantType))
 	}
 	if err != nil {
@@ -1175,8 +1177,8 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// so there is nothing to resume into — booting a pod would hand the agent
 	// an empty directory and a resume id pointing at a deleted transcript.
 	if t.SweptAt != nil {
-		return "", connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed"))
+		return "", connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(
+			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed")))
 	}
 
 	repoCfg, err := s.repos.Get(ctx, t.Repo)
@@ -1217,7 +1219,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		case errors.Is(err, sessions.ErrDefinitionInvalid):
 			return "", connect.NewError(connect.CodeFailedPrecondition, err)
 		case errors.Is(err, sessions.ErrNotFound):
-			return "", connect.NewError(connect.CodeFailedPrecondition, errors.New("session is archived"))
+			return "", connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(errors.New("session is archived")))
 		}
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
@@ -1369,15 +1371,15 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	head, err := s.definitions.Resolve(name)
 	switch {
 	case errors.Is(err, definitions.ErrUnknown):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(fmt.Errorf("definition %q is no longer defined; start a new session", name)))
 	case errors.Is(err, definitions.ErrInvalid):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
 	case err != nil:
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	if head.SHA != pinned {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(
+			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA)))
 	}
 	if repoCfg.ClusterAccess {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
@@ -1751,6 +1753,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	case "interrupt":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
+	case "card":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
