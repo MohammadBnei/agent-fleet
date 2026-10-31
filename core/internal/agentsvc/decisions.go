@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -247,7 +248,7 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n}), nil
+	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}), nil
 }
 
 // answerCard is AnswerDecision for a card (docs/adr/0082 §6): an admin's
@@ -330,8 +331,22 @@ func (s *Server) closeThreads(ctx context.Context, subject string) error {
 	return nil
 }
 
+// closeBusyFor bounds the wait for a thread an Open or another close holds:
+// the card is already answered, so giving up at once would leave the thread
+// open for good, as dispatch's retryBusy around CloseThread avoids too.
+var closeBusyFor = 10 * time.Second
+
 func (s *Server) closeThread(ctx context.Context, t sessions.ThreadRef) error {
+	deadline := time.Now().Add(closeBusyFor)
 	lock, err := s.sessions.TryLock(ctx, threadLock(t.Owner, t.Definition, t.ThreadKey))
+	for errors.Is(err, sessions.ErrBusy) && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(200 * time.Millisecond):
+		}
+		lock, err = s.sessions.TryLock(ctx, threadLock(t.Owner, t.Definition, t.ThreadKey))
+	}
 	if err != nil {
 		return err
 	}

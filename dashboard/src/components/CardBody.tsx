@@ -54,6 +54,9 @@ export function notDeliveredText(
 
 // A click on o arms it, rather than sending, when o is irreversible and is
 // not the option already armed: the second click on the same button sends.
+export const OWN_TEXT_MAX_BYTES = 2000;
+export const ownBytes = (s: string) => new TextEncoder().encode(s).length;
+
 export function pickArms(o: CardOption, armed: string | null): boolean {
   return o.reversible === "no" && armed !== o.id;
 }
@@ -83,6 +86,9 @@ export function CardBody({
   if (!card) return null;
 
   const subject = subjectText(card.subject);
+  // The server's bound is 2,000 bytes, not characters: an accent or a CJK
+  // character is more than one.
+  const ownTooLong = ownBytes(ownText.trim()) > OWN_TEXT_MAX_BYTES;
   const expires = relativeTime(card.expiresAt, { future: true });
 
   // `which` is the busy key: an option id, or "own" for the textarea.
@@ -195,7 +201,6 @@ export function CardBody({
           <textarea
             value={ownText}
             onChange={(e) => setOwnText(e.target.value)}
-            maxLength={2000}
             rows={3}
             placeholder="Or write your own answer"
             aria-label="Write your own answer"
@@ -203,13 +208,18 @@ export function CardBody({
           />
           <ActionButton
             busy={busy === "own"}
-            disabled={busy !== null || ownText.trim() === ""}
+            disabled={busy !== null || ownText.trim() === "" || ownTooLong}
             keepFocus
             onClick={() => send("own", { ownText: ownText.trim() })}
             className="self-start cursor-pointer border border-acc-line hover:border-primary px-4 py-1.5 text-sm disabled:opacity-50 aria-disabled:opacity-50"
           >
             Send
           </ActionButton>
+          {ownTooLong && (
+            <span className="text-xs text-error">
+              Too long: at most 2,000 bytes.
+            </span>
+          )}
         </div>
       )}
     </div>

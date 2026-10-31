@@ -6,7 +6,13 @@ import {
   DecisionState,
 } from "../gen/agentfleet/v1/agent_pb";
 import type { Card, CardOption } from "../gen/agentfleet/v1/transcript_pb";
-import { CardBody, notDeliveredText, pickArms } from "./CardBody";
+import {
+  CardBody,
+  notDeliveredText,
+  OWN_TEXT_MAX_BYTES,
+  ownBytes,
+  pickArms,
+} from "./CardBody";
 
 // renderToStaticMarkup rather than a DOM, as NeedsYouModal.test.tsx: these
 // check what a card shows before anyone touches it. Nothing is sent here.
@@ -183,4 +189,10 @@ test("the not-delivered notice names the card's subject and says the reason once
     expect([name, got]).toEqual([name, text]);
     expect(got.split(reason || "cannot resume").length).toBe(2);
   }
+});
+
+// The own-text bound is the server's 2,000 bytes, not characters.
+test("own text is measured in bytes", () => {
+  expect(ownBytes("a".repeat(2000))).toBe(2000);
+  expect(ownBytes("é".repeat(1001)) > OWN_TEXT_MAX_BYTES).toBe(true);
 });

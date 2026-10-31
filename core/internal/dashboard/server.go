@@ -1177,8 +1177,8 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// so there is nothing to resume into — booting a pod would hand the agent
 	// an empty directory and a resume id pointing at a deleted transcript.
 	if t.SweptAt != nil {
-		return "", connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed"))
+		return "", connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(
+			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed")))
 	}
 
 	repoCfg, err := s.repos.Get(ctx, t.Repo)
@@ -1219,7 +1219,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		case errors.Is(err, sessions.ErrDefinitionInvalid):
 			return "", connect.NewError(connect.CodeFailedPrecondition, err)
 		case errors.Is(err, sessions.ErrNotFound):
-			return "", connect.NewError(connect.CodeFailedPrecondition, errors.New("session is archived"))
+			return "", connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(errors.New("session is archived")))
 		}
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
@@ -1371,15 +1371,15 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	head, err := s.definitions.Resolve(name)
 	switch {
 	case errors.Is(err, definitions.ErrUnknown):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(fmt.Errorf("definition %q is no longer defined; start a new session", name)))
 	case errors.Is(err, definitions.ErrInvalid):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
 	case err != nil:
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	if head.SHA != pinned {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(
+			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA)))
 	}
 	if repoCfg.ClusterAccess {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))

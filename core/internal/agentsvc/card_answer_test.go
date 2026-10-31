@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -111,7 +112,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 	// A writer that cannot resume: recorded, not delivered.
 	writer2 := thread("github/o/r/pr/2")
 	card2 := draft(writer2, 2, keep, closeAll)
-	dash.warmErr = connect.NewError(connect.CodeFailedPrecondition, errors.New("definition changed"))
+	dash.warmErr = connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(errors.New("definition changed")))
 	res, err = answer("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: card2, OwnText: "leave it"})
 	if err != nil || res.GetDelivered() || res.GetNotDeliveredReason() != "definition changed" || state(card2) != decisions.Answered {
 		t.Errorf("undeliverable: %v %v %s", res, err, state(card2))
@@ -129,6 +130,13 @@ func TestAnswerDecision_Card(t *testing.T) {
 	// close_threads: every open thread on the subject, any case, any invoker.
 	other := thread("github/O/R/pr/3")
 	elsewhere := thread("github/o/r/pr/4")
+	// An Open holding one thread's lock for a moment: the close waits for it
+	// rather than leaving that thread open behind an answered card.
+	held, err := store.TryLock(ctx, threadLock("client:bridge", "d", "github/O/R/pr/3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { time.Sleep(500 * time.Millisecond); held.Release() }()
 	if _, err := answer("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: newer, OptionId: "1"}); err != nil {
 		t.Fatalf("close_threads: %v", err)
 	}

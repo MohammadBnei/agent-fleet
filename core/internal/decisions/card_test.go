@@ -294,6 +294,9 @@ func (f fixture) entry(t *testing.T, session string, seq int64) transcript.Entry
 
 func TestAnswer_Card(t *testing.T) {
 	f := setup(t)
+	// More cards than a day's budget are drafted below; the budget is not what this tests.
+	defer func(n int) { decisions.CardBudget = n }(decisions.CardBudget)
+	decisions.CardBudget = 100
 	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
 	answers := func(text string) map[string]any {
 		var v map[string]any
@@ -363,7 +366,7 @@ func TestAnswer_Card(t *testing.T) {
 
 	// A writer that cannot resume: recorded, not delivered. No slot: an
 	// error, and the card stays open.
-	gone := &warmer{err: connect.NewError(connect.CodeFailedPrecondition, errors.New("swept"))}
+	gone := &warmer{err: connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(errors.New("swept")))}
 	r = f.draft(t, card(s, "acme/web", 4))
 	n, err = f.answerCard(t, gone, r.ID, decisions.Reply{OptionID: "1"})
 	if !errors.Is(err, decisions.ErrNotDelivered) || n == 0 {
@@ -372,13 +375,19 @@ func TestAnswer_Card(t *testing.T) {
 	if got, _ := f.store.Get(f.ctx, r.ID); got.State != decisions.Answered {
 		t.Errorf("undeliverable card is %s, want answered", got.State)
 	}
-	busy := &warmer{err: connect.NewError(connect.CodeResourceExhausted, errors.New("at capacity"))}
-	r = f.draft(t, card(s, "acme/web", 5))
-	if _, err := f.answerCard(t, busy, r.ID, decisions.Reply{OptionID: "1"}); connect.CodeOf(err) != connect.CodeResourceExhausted {
-		t.Errorf("at capacity: %v", err)
-	}
-	if got, _ := f.store.Get(f.ctx, r.ID); got.State != decisions.Open {
-		t.Errorf("a busy answer left the card %s", got.State)
+	// Any other refusal can clear (a definition momentarily invalid, a
+	// provisioner mid-rollout, no slot): an error, and the card stays open.
+	for _, w := range []*warmer{
+		{err: connect.NewError(connect.CodeResourceExhausted, errors.New("at capacity"))},
+		{err: connect.NewError(connect.CodeFailedPrecondition, errors.New("definition d has no valid version"))},
+	} {
+		r = f.draft(t, card(s, "acme/web", 5))
+		if _, err := f.answerCard(t, w, r.ID, decisions.Reply{OptionID: "1"}); err == nil || errors.Is(err, decisions.ErrNotDelivered) {
+			t.Errorf("%v: %v, want the warm's error", w.err, err)
+		}
+		if got, _ := f.store.Get(f.ctx, r.ID); got.State != decisions.Open {
+			t.Errorf("%v left the card %s", w.err, got.State)
+		}
 	}
 
 	// Stale, expired, or past expiry before the sweep: nothing is appended.
@@ -417,9 +426,12 @@ func TestAnswer_Card(t *testing.T) {
 
 	// Only a human answers: the agent's or worker's reply is refused, not a withdraw.
 	r = f.draft(t, card(s, "acme/web", 8))
+	// Every reply type: the guard is on reply_to, not on the type.
 	for _, from := range []string{"agent", "worker", "system"} {
-		if _, err := f.tr.AppendReply(f.ctx, s, from, `{}`, "answer", "", r.RequestSeq); !errors.Is(err, decisions.ErrNotOwner) {
-			t.Errorf("%s's reply: %v, want ErrNotOwner", from, err)
+		for _, typ := range []string{"answer", "permission_response", "discussion"} {
+			if _, err := f.tr.AppendReply(f.ctx, s, from, `{}`, typ, "", r.RequestSeq); !errors.Is(err, decisions.ErrNotOwner) {
+				t.Errorf("%s's %s reply: %v, want ErrNotOwner", from, typ, err)
+			}
 		}
 	}
 

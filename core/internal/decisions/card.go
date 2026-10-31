@@ -35,6 +35,20 @@ var (
 	ErrNotDelivered = errors.New("not delivered: the writer cannot resume")
 )
 
+// ErrCannotResume marks a warm refusal that no retry or operator can undo:
+// the session is swept or archived, or its definition is gone or changed.
+// Only that makes a card's hand-off "not delivered"; every other refusal (a
+// definition momentarily invalid, a provisioner mid-rollout) leaves the card
+// open to answer again.
+var ErrCannotResume = errors.New("the session cannot resume")
+
+// CannotResume marks err as ErrCannotResume, keeping its words.
+func CannotResume(err error) error { return cannotResume{err} }
+
+type cannotResume struct{ error }
+
+func (c cannotResume) Unwrap() []error { return []error{c.error, ErrCannotResume} }
+
 // NotDelivered is the ErrNotDelivered Answer returns, with the warm's own words
 // (swept, definition changed) as Reason, so a caller need not parse them back out.
 type NotDelivered struct{ Reason string }
