@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 )
 
@@ -112,19 +113,19 @@ var errOrigin = errors.New("calls from this origin are not accepted")
 func (m memberAuth) principal(ctx context.Context, procedure string, h http.Header) (context.Context, error) {
 	id, ok := auth.FromContext(ctx)
 	if !ok || id.Sub == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errNoPrincipal)
+		return nil, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errNoPrincipal)
 	}
 	p := Principal{Member: &id}
 	if o := h.Get("Origin"); o != "" && o != m.fleet && !slices.Contains(m.dev, o) {
 		if m.embed == nil || !slices.Contains(m.embed(), o) {
-			slog.Warn("agentsvc: refused origin", "email", id.Email, "origin", o, "procedure", procedure)
-			return nil, connect.NewError(connect.CodePermissionDenied, errOrigin)
+			slog.WarnContext(ctx, "agentsvc: refused origin", "email", id.Email, "origin", o, "procedure", procedure)
+			return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errOrigin)
 		}
 		p.Origin = o
 	}
 	if !allowed(procedure, p) {
-		slog.Warn("agentsvc: refused member call", "email", id.Email, "procedure", procedure)
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not available to members"))
+		slog.WarnContext(ctx, "agentsvc: refused member call", "email", id.Email, "procedure", procedure)
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("not available to members"))
 	}
 	return withPrincipal(ctx, p), nil
 }

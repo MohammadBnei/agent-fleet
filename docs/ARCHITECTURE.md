@@ -705,6 +705,31 @@ which proxies PromQL through `core` (Prometheus has no IngressRoute, so the
 browser cannot reach it directly) and renders the live topology from
 `sessions.pod_phase` — so `core` still holds zero cluster RBAC.
 
+**Traces** (core, [`adr/0081`](adr/0081-error-keys-in-proto-errors-traced.md) §4 as
+amended). Core mints a span on every Connect call (DashboardService, AgentService on
+8080 and on the 9091 clients socket) and every `CoreService` call on 9090, with or
+without a trace backend; it exports them over OTLP/HTTP only when
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set (§7), and flushes them last on shutdown. A
+caller's `traceparent` starts a new trace linked to it, never a child: every surface is
+treated as public. `/healthz`, `/metrics`, `/auth/*`, the alert webhook, the SPA and
+`/islands/` are not traced. Every traced Connect response carries a `Trace-Id` header
+(a stream's in its headers, no trailer), every `CoreService` response a `trace-id`
+trailer, and the console shows the id under an error's text. The access-log lines
+(`dashboard rpc`, `core grpc`, INFO; a `core grpc` line per stream too) carry
+`trace_id`, `span_id`, `code` (Connect's words, `ok` on success), `key` (the wire's:
+the error's own or `server.internal`) and `source`, the `file:line` that built a Connect
+error through `errkeys.Connect` (`""` for a gRPC error, a kept sentinel, or one Connect
+raised itself). Every log line goes through ukubi-go's `telemetry.NewLogger`, so any
+line logged with a request's context has its ids. In the Connect chain the access log
+sits just outside CSRF, so a CSRF or auth refusal is logged and carries its id.
+
+Gaps, by design: nothing answering before the Connect interceptors has a span or a
+`Trace-Id`: the HTTP gate's plain 401/403 (`internal/auth`), and the errors Connect
+raises itself (an undecodable body, a request over `ReadMaxBytes` on 9091, an unknown
+procedure, a bad content type). An island on another origin cannot read `Trace-Id`
+yet (no `Access-Control-Expose-Headers`). No context crosses a pod: the sidecar's,
+provisioner's and executor's traces, when they have an endpoint, are their own.
+
 ### Which build is running
 
 `core` and `provisioner` report the release from their `FLEET_VERSION` env,
@@ -842,6 +867,7 @@ the proxy variables) are theirs and not listed.
 | `STT_TOKEN_FLEET` | none | any | secret; unset disables dictation |
 | `LOKI_URL` | in-cluster Loki | absolute http(s) URL | log queries |
 | `PROMETHEUS_URL` | in-cluster Prometheus | absolute http(s) URL | the Observability page |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | none (ids minted, nothing exported) | absolute http(s) URL, the OTLP/HTTP traces URL in full (refuses: malformed) | where spans are exported (`adr/0081` §4); the SDK's other `OTEL_*` variables are its own |
 | `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | absolute http(s) URL | files, signed into the presigned URLs: must be browser-reachable |
 | `GARAGE_FILES_BUCKET` | `agent-fleet-files` | any | bucket |
 | `AGENTFLEET_FILES_S3_ACCESS_KEY` | none | any | secret |
@@ -882,6 +908,12 @@ tuning: a *malformed* `FLEET_GIT_URL_REWRITE` refuses the start (dropped, a
 kind worker would push to the real github.com through the vault); set against
 the production vault it warns and is dropped, which is production's behaviour.
 
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (read raw, `adr/0081`) is the OTLP/HTTP
+traces URL, `/v1/traces` included: set, `ProvisionerService` gets one span per
+call, exported there; unset, nothing is traced. A malformed value (not an
+http(s) URL with a host) refuses the start, after the token's and the
+rewrite's refusals.
+
 #### SSH access
 
 There is none; `kubectl exec` into the session's pod reaches the same
@@ -892,7 +924,10 @@ filesystem (`adr/0048` §6).
 `sidecar/internal/config/config.go`, from the env the provisioner sets in
 `provisioner/internal/k8s/pod.go`. It holds the session's `LEASE_ID`, which
 authenticates every `CoreService` call; missing it, the sidecar refuses to
-start.
+start. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (read raw, `adr/0081`), set, spans
+the MCP and local-api listeners (not health) and exports there; unset, nothing
+is traced; malformed, the sidecar refuses to start. The provisioner does not
+pass it into pods yet, so in practice the sidecar runs untraced.
 
 ### `executor/` (thot-executor and the `kubectl` shim, `adr/0037`)
 
@@ -900,6 +935,9 @@ start.
 the `kubectl` shim in a cluster-access pod. `THOT_AUTH_TOKEN` is the bearer both
 share; the executor refuses to start on one that is empty, blank or shorter than 32
 bytes (`newGRPCServer`), the shim exits 2 without `EXECUTOR_ADDR`.
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (read raw, `adr/0081`), set, gives
+`ExecutorService` one span per call, exported there; unset, nothing is traced;
+malformed, the executor refuses to start, after the token's refusal.
 
 ### `worker/` (per worker pod, injected by the provisioner at pod creation)
 

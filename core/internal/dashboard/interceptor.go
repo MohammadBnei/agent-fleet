@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"os"
 	"time"
 
 	"connectrpc.com/connect"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 )
 
 // dashboardHeader is required on every dashboard call, unary and
@@ -31,7 +35,7 @@ func NewCSRFInterceptor() connect.Interceptor {
 func (csrfInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		if req.Header().Get(dashboardHeader) == "" {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("missing required header"))
+			return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("missing required header"))
 		}
 		return next(ctx, req)
 	}
@@ -44,7 +48,7 @@ func (csrfInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) con
 func (csrfInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
 		if conn.RequestHeader().Get(dashboardHeader) == "" {
-			return connect.NewError(connect.CodePermissionDenied, errors.New("missing required header"))
+			return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("missing required header"))
 		}
 		return next(ctx, conn)
 	}
@@ -54,6 +58,11 @@ func (csrfInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) c
 // non-nil) — the dashboard surface had zero request-level logging until this
 // was added, which is exactly what let a dashboard-created task silently
 // fail to even reach the tasks table with no trace anywhere in core's logs.
+//
+// It also answers every call with a Trace-Id response header (docs/adr/0081 §4), so the console can show the id
+// beside an error and the line here is found by it. It sits inside otelconnect (the span exists) and outside CSRF,
+// so a refused call carries both; the header is set before next, as connect-go sends a unary call's handler headers
+// with its error too. A stream gets it in its headers only: no trailer, the console reads the header.
 type accessLogInterceptor struct{}
 
 func NewAccessLogInterceptor() connect.Interceptor {
@@ -63,12 +72,11 @@ func NewAccessLogInterceptor() connect.Interceptor {
 func (accessLogInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		start := time.Now()
-		resp, err := next(ctx, req)
-		attrs := []any{"procedure", req.Spec().Procedure, "duration_ms", time.Since(start).Milliseconds()}
-		if err != nil {
-			attrs = append(attrs, "error", err.Error())
+		if info, ok := connect.CallInfoForHandlerContext(ctx); ok {
+			setTraceID(ctx, info.ResponseHeader())
 		}
-		slog.Info("dashboard rpc", attrs...)
+		resp, err := next(ctx, req)
+		logRPC(ctx, req.Spec().Procedure, start, err)
 		return resp, err
 	}
 }
@@ -80,12 +88,45 @@ func (accessLogInterceptor) WrapStreamingClient(next connect.StreamingClientFunc
 func (accessLogInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
 		start := time.Now()
+		setTraceID(ctx, conn.ResponseHeader())
 		err := next(ctx, conn)
-		attrs := []any{"procedure", conn.Spec().Procedure, "duration_ms", time.Since(start).Milliseconds()}
-		if err != nil {
-			attrs = append(attrs, "error", err.Error())
-		}
-		slog.Info("dashboard rpc", attrs...)
+		logRPC(ctx, conn.Spec().Procedure, start, err)
 		return err
 	}
+}
+
+const traceIDHeader = "Trace-Id"
+
+func setTraceID(ctx context.Context, h http.Header) {
+	if id := errkeys.TraceID(ctx); id != "" {
+		h.Set(traceIDHeader, id)
+	}
+}
+
+// logRPC is the one line: InfoContext, so the logger adds trace_id and span_id. code and key are what the wire carries
+// (wireCode, errkeys.WireKey). source is where an errkeys.Connect error was built ("" for one built otherwise).
+func logRPC(ctx context.Context, procedure string, start time.Time, err error) {
+	attrs := []any{"procedure", procedure, "duration_ms", time.Since(start).Milliseconds()}
+	code, key := "ok", ""
+	if err != nil {
+		code, key = wireCode(err).String(), string(errkeys.WireKey(err))
+		attrs = append(attrs, "error", err.Error())
+	}
+	attrs = append(attrs, "code", code, "key", key, "source", errkeys.LocationOf(err))
+	slog.InfoContext(ctx, "dashboard rpc", attrs...)
+}
+
+// wireCode is the code Connect sends for err: a Connect error's own, else a context error's, else Unknown (connect-go's
+// wrapIfContextError, and the fallback's plainCode). connect.CodeOf says Unknown for a bare ctx.Err().
+func wireCode(err error) connect.Code {
+	var ce *connect.Error
+	switch {
+	case errors.As(err, &ce):
+		return ce.Code()
+	case errors.Is(err, context.Canceled):
+		return connect.CodeCanceled
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded):
+		return connect.CodeDeadlineExceeded
+	}
+	return connect.CodeUnknown
 }

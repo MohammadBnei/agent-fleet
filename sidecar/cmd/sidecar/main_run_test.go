@@ -64,6 +64,7 @@ func TestMain_Refusals(t *testing.T) {
 		{"session only", []string{"SESSION_ID=s1"}, []string{`"LEASE_ID is required: without it every CoreService call is rejected","sessionId":"s1"`}, "SESSION_ID is required"},
 		{"bad level warns first", []string{"LOG_LEVEL=bogus"}, []string{`"invalid LOG_LEVEL, defaulting to info","value":"bogus"`, `"SESSION_ID is required"`}, ""},
 		{"a vault proxy without a token", []string{"SESSION_ID=s1", "LEASE_ID=l1", "FLEET_VAULT_PROXY=http://v:1"}, []string{`"egress router","sessionId":"s1","error":"egress: FLEET_VAULT_PROXY is not a proxy URL with a token"`}, ""},
+		{"a malformed traces endpoint", []string{"SESSION_ID=s1", "LEASE_ID=l1", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=otel:4318"}, []string{`"refusing to start","sessionId":"s1","error":"telemetry: the traces endpoint`}, "core client"},
 		{"an egress port that is no port", []string{"SESSION_ID=s1", "LEASE_ID=l1", "FLEET_VAULT_PROXY=http://t:p@v:1", "EGRESS_PORT=x"}, []string{`"egress router listen"`, "unknown port"}, ""},
 	} {
 		code, out := runMain(t, c.env...)

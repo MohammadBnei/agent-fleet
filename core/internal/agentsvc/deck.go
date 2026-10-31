@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -103,7 +104,7 @@ func parsePageToken(tok string) (*decisions.Cursor, error) {
 	us, id, ok := strings.Cut(tok, "_")
 	n, err := strconv.ParseInt(us, 10, 64)
 	if !ok || err != nil || uuid.Validate(id) != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("page_token is not one this service issued"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("page_token is not one this service issued"))
 	}
 	return &decisions.Cursor{CreatedAt: time.UnixMicro(n), ID: id}, nil
 }
@@ -146,11 +147,11 @@ func (s *Server) ListDecisions(ctx context.Context, req *connect.Request[agentfl
 	}
 	// A filter naming only unknown values matches nothing, not everything.
 	if len(f.States) < len(m.GetStates()) || len(f.Kinds) < len(m.GetKinds()) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown decision state or kind"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("unknown decision state or kind"))
 	}
 	rows, err := s.decisions.List(ctx, f)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := &agentfleetv1.ListDecisionsResponse{}
 	if len(rows) > size {
@@ -180,7 +181,7 @@ func (s *Server) GetDecision(ctx context.Context, req *connect.Request[agentflee
 		return nil, errNoDecision
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.GetDecisionResponse{Decision: decisionToProto(r)}), nil
 }
@@ -209,7 +210,7 @@ func (s *Server) WatchDecisions(ctx context.Context, req *connect.Request[agentf
 		return stream.Send(msg)
 	})
 	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
+		return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return nil
 }

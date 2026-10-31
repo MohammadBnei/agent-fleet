@@ -24,6 +24,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
+	"github.com/MohammadBnei/ukubi-go/telemetry"
 )
 
 // version is the release this binary runs as: FLEET_VERSION, which deploy
@@ -48,13 +49,13 @@ func main() {
 	// log.ts already used). Level is LOG_LEVEL-configurable (debug/info/
 	// warn/error).
 	level, warning := resolveLogLevel(cfg.LogLevel)
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(telemetry.NewLoggerAt(os.Stdout, level))
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
 	// Whatever LOG_LEVEL is: LOG_LEVEL=error must not hide that a value was
 	// ignored. Same stdout, same JSON, a handler of its own at warn.
-	warnLog := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	warnLog := telemetry.NewLoggerAt(os.Stdout, slog.LevelWarn)
 	for _, w := range cfg.Warnings {
 		warnLog.Warn(w)
 	}
@@ -63,7 +64,12 @@ func main() {
 	// First, before any side effect: an unauthenticated ProvisionerService
 	// can create and expose pods for anyone on the pod network
 	// (docs/adr/0069), so no token means no provisioner.
-	grpcSrv, err := grpcserver.NewGRPCServer(cfg.CoreProvisionerToken)
+	//
+	// Opt-in OTLP export (docs/adr/0081): inert without the variable. Built
+	// first because the server takes its option, refused last: a nil Tracing
+	// gives no option.
+	tr, trErr := telemetry.New(cfg.TracesEndpoint, "agent-fleet-provisioner")
+	grpcSrv, err := grpcserver.NewGRPCServer(cfg.CoreProvisionerToken, tr.ServerOption())
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
@@ -73,6 +79,10 @@ func main() {
 	// required key, the core token, is refused above.)
 	if cfgErr != nil {
 		slog.Error("refusing to start", "error", cfgErr)
+		os.Exit(1)
+	}
+	if trErr != nil {
+		slog.Error("refusing to start", "error", trErr)
 		os.Exit(1)
 	}
 
@@ -212,6 +222,10 @@ func main() {
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
 	grpcSrv.GracefulStop()
+	// After the server: its last calls' spans are in the batch.
+	if err := tr.Shutdown(); err != nil {
+		slog.Warn("traces", "err", err)
+	}
 }
 
 // startReconcile runs the reconcile loop on the configured tick, with the

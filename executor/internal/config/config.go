@@ -32,6 +32,11 @@ type Executor struct {
 	// AuthToken is the bearer every call must present (THOT_AUTH_TOKEN, read
 	// raw). Empty, blank or short refuses to start.
 	AuthToken string
+	// TracesEndpoint is the OTLP/HTTP traces URL, /v1/traces included
+	// (OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, read raw). Empty exports nothing;
+	// a malformed one refuses the start, in cmd/executor where telemetry.New
+	// checks it.
+	TracesEndpoint string
 }
 
 // Shim is what the kubectl shim runs with, in a thot session pod.
@@ -57,9 +62,10 @@ func LoadExecutor(getenv func(string) string) Executor {
 		return fallback
 	}
 	return Executor{
-		GRPCPort:  port("GRPC_PORT", "9090"),
-		HTTPPort:  port("HTTP_PORT", "8080"),
-		AuthToken: getenv("THOT_AUTH_TOKEN"),
+		GRPCPort:       port("GRPC_PORT", "9090"),
+		HTTPPort:       port("HTTP_PORT", "8080"),
+		AuthToken:      getenv("THOT_AUTH_TOKEN"),
+		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
 	}
 }
 

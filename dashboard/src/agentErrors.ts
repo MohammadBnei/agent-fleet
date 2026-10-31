@@ -20,12 +20,28 @@ const keyText: Record<Keyed, string> = {
 };
 
 // agentErrorText is the key's text, or the error's own message for a key with none (server.internal, a key a newer
-// core added) and for an error without one.
+// core added) and for an error without one, with the response's trace id as errorText adds it: every caller puts it
+// in an error box, so the id is added here once rather than at each catch.
 export function agentErrorText(err: unknown): string {
   const e = ConnectError.from(err);
   const key = e.findDetails(ErrorKeySchema)[0]?.key ?? "";
   const name = key.startsWith("agent.")
     ? key.slice("agent.".length).toUpperCase()
     : "";
-  return Object.hasOwn(keyText, name) ? keyText[name as Keyed] : e.message;
+  return errorText(
+    e,
+    Object.hasOwn(keyText, name) ? keyText[name as Keyed] : e.message,
+  );
+}
+
+// errorText is what an error box shows: a ConnectError's message with the trace id core put on the response
+// (its Trace-Id header), so a reported failure can be found in the logs; any other error's message as it was.
+// base replaces the message, so a keyed refusal shows agentErrorText's text and still carries the id.
+export function errorText(
+  err: unknown,
+  base: string = (err as Error).message,
+): string {
+  if (!(err instanceof ConnectError)) return base;
+  const id = err.metadata.get("trace-id");
+  return id ? `${base}\n\nTrace ID: ${id}` : base;
 }

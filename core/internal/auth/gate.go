@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 )
 
 type ctxKey struct{}
@@ -236,14 +238,14 @@ func (c connectAuth) authorize(h http.Header) (Identity, error) {
 	req := http.Request{Header: h}
 	cookie, err := req.Cookie(SessionCookieName)
 	if err != nil {
-		return Identity{}, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
+		return Identity{}, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errUnauthenticated)
 	}
 	id, ok := c.signer.Verify(cookie.Value)
 	if !ok {
-		return Identity{}, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
+		return Identity{}, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errUnauthenticated)
 	}
 	if c.allow == nil || !c.allow(id) {
-		return id, connect.NewError(connect.CodePermissionDenied, errForbidden)
+		return id, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errForbidden)
 	}
 	return id, nil
 }

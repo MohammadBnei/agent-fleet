@@ -51,11 +51,11 @@ func (s *Server) thread(ctx context.Context, p Principal, id string) (*sessions.
 		return nil, definitions.Head{}, errNoThread
 	}
 	if err != nil {
-		return nil, definitions.Head{}, connect.NewError(connect.CodeInternal, err)
+		return nil, definitions.Head{}, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	one := []sessions.Session{*t}
 	if err := s.sessions.Tainted(ctx, one); err != nil {
-		return nil, definitions.Head{}, connect.NewError(connect.CodeInternal, err)
+		return nil, definitions.Head{}, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	t = &one[0]
 	h, _ := s.definitions.Resolve(*t.DefinitionName)
@@ -157,7 +157,7 @@ func (s *Server) ListThreads(ctx context.Context, req *connect.Request[agentflee
 		err = s.sessions.Tainted(ctx, list)
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	for i := range list {
 		// The store's filter is "own or shared"; canSee adds the audience
@@ -180,17 +180,17 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 	}
 	vis := req.Msg.GetVisibility()
 	if vis != "shared" && vis != "private" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(`visibility must be "shared" or "private"`))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New(`visibility must be "shared" or "private"`))
 	}
 	if len(req.Msg.GetTitle()) > maxTitle {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("title is over %d bytes", maxTitle))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("title is over %d bytes", maxTitle))
 	}
 	// Creating provisions nothing, so the warm-time caps never see a member
 	// who only creates; this bounds the rows instead.
 	if !p.Admin() {
 		n, err := s.sessions.OpenThreads(ctx, p.owner())
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
 		if n >= maxOpenThreads {
 			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("you have %d open threads; close one first", n))
@@ -201,15 +201,15 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 	case errors.Is(err, definitions.ErrUnknown):
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, err)
 	case errors.Is(err, definitions.ErrInvalid):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 	case err != nil:
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, err)
 	}
 	if !mayUse(p, h.Effective) {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
 	if !allows(h.Effective.Interaction, "ask") || !allows(h.Effective.Lifecycle, "resident") {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("this definition takes no interactive threads"))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition takes no interactive threads"))
 	}
 	t, err := s.dash.CreateThread(ctx, h, req.Msg.GetTitle(), sessions.CreateParams{
 		Owner: p.owner(), Visibility: vis, Interaction: "ask", Lifecycle: "resident",
@@ -232,14 +232,14 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 		return nil, err
 	}
 	if req.Msg.GetText() == "" || len(req.Msg.GetText()) > maxText {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("text is required and at most %d bytes", maxText))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("text is required and at most %d bytes", maxText))
 	}
 	t, h, err := s.thread(ctx, p, req.Msg.GetThreadId())
 	if err != nil {
 		return nil, err
 	}
 	if !canAnswer(p, t) {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("you cannot post to this thread"))
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("you cannot post to this thread"))
 	}
 	if h.SHA == "" || deref(t.DefinitionSHA, "") != h.SHA {
 		// The words' prefix stays one release for islands that still read it (mountain plan/15 §4: the key is the API).
@@ -250,7 +250,7 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	}
 	seq, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), req.Msg.GetText(), "discussion", uuid.NewString(), nil)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.AgentServicePostMessageResponse{Seq: seq}), nil
 }
@@ -286,7 +286,7 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 	}
 	entries, next, err := s.transcr.ReadSince(ctx, t.ID, req.Msg.GetSinceSeq(), limit)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := &agentfleetv1.AgentServiceGetTranscriptResponse{NextSeq: next}
 	for _, e := range entries {
@@ -319,7 +319,7 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 	// a member must not be able to stop everyone else's live view.
 	head, err := s.transcr.LatestSeq(ctx, t.ID)
 	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
+		return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	wake, cancel := s.hub.Subscribe(t.ID, head)
 	defer cancel()
@@ -328,7 +328,7 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 	for {
 		entries, next, err := s.transcr.ReadSince(ctx, t.ID, cursor, streamPage)
 		if err != nil {
-			return connect.NewError(connect.CodeInternal, err)
+			return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
 		for _, e := range entries {
 			if err := stream.Send(&agentfleetv1.AgentServiceStreamTranscriptResponse{Entry: entryToProto(p, e)}); err != nil {

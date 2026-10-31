@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -11,8 +12,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,23 +100,8 @@ func TestErrKeys(t *testing.T) {
 	for name := range registry(t) {
 		keys[name] = true
 	}
-	self, _ := filepath.Abs(".")
 	checked := 0
-	err := filepath.WalkDir(filepath.Join("..", ".."), func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
-			return err
-		}
-		if dir, _ := filepath.Abs(filepath.Dir(p)); dir == self {
-			return nil
-		}
-		src, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), p, src, parser.SkipObjectResolution)
-		if err != nil {
-			return err
-		}
+	walkCore(t, func(p string, file *ast.File) {
 		name := ""
 		for _, im := range file.Imports {
 			switch v, _ := strconv.Unquote(im.Path.Value); v {
@@ -130,10 +116,10 @@ func TestErrKeys(t *testing.T) {
 		}
 		if name == "." {
 			t.Errorf("%s: errkeys dot-imported", p)
-			return nil
+			return
 		}
 		if name == "" {
-			return nil
+			return
 		}
 		called := map[*ast.SelectorExpr]bool{}
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -163,11 +149,7 @@ func TestErrKeys(t *testing.T) {
 			}
 			return true
 		})
-		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if len(keys) < 2 || checked < 1 {
 		t.Errorf("%d keys, %d calls checked: the check no longer sees them", len(keys), checked) // the positive control
 	}
@@ -325,5 +307,138 @@ func TestBareSentinel(t *testing.T) {
 	wg.Wait()
 	if Of(sentinel) != "" || len(sentinel.Details()) != 0 {
 		t.Errorf("the sentinel was changed: %d details", len(sentinel.Details()))
+	}
+}
+
+// bareNewError is where core keeps connect.NewError, file to the declaration holding it: shared sentinels, built
+// once at init (a location there names no request's return), and helpers that map an error for their callers (the
+// location would name the helper, not the caller). Everywhere else errkeys.Connect builds it, so its access log line
+// carries a source.
+var bareNewError = map[string][]string{
+	"internal/agentsvc/deck.go":    {"errNoDecision"},
+	"internal/agentsvc/threads.go": {"errNoThread"},
+	"internal/dashboard/server.go": {"AnswerErr", "errInactive"},
+	"internal/dashboard/grants.go": {"grantErr"},
+}
+
+// TestNoBareNewError: core's non-test, non-generated files outside this package call connect.NewError only in
+// bareNewError's declarations, and each of those still does (the positive control: a renamed one fails here, not
+// silently). Syntactic, as TestErrKeys.
+func TestNoBareNewError(t *testing.T) {
+	seen := map[string]int{}
+	walkCore(t, func(rel string, file *ast.File) {
+		if ast.IsGenerated(file) {
+			return
+		}
+		name := ""
+		for _, im := range file.Imports {
+			if v, _ := strconv.Unquote(im.Path.Value); v == "connectrpc.com/connect" {
+				name = "connect"
+				if im.Name != nil {
+					name = im.Name.Name
+				}
+			}
+		}
+		if name == "" {
+			return
+		}
+		for _, decl := range file.Decls {
+			ast.Inspect(decl, func(n ast.Node) bool {
+				s, ok := n.(*ast.SelectorExpr)
+				if !ok || s.Sel.Name != "NewError" || fmtIdent(s.X) != name {
+					return true
+				}
+				if where := declName(decl); slices.Contains(bareNewError[rel], where) {
+					seen[rel+" "+where]++
+				} else {
+					t.Errorf("%s: connect.NewError in %s: build it with errkeys.Connect (or add a sentinel or mapping helper to bareNewError)", rel, where)
+				}
+				return true
+			})
+		}
+	})
+	for f, decls := range bareNewError {
+		for _, d := range decls {
+			if seen[f+" "+d] == 0 {
+				t.Errorf("%s: %s no longer calls connect.NewError: the check no longer sees it, drop it from bareNewError", f, d)
+			}
+		}
+	}
+}
+
+// walkCore parses each of core's non-test files outside this package and hands it to fn, with its path from core/.
+func walkCore(t *testing.T, fn func(rel string, file *ast.File)) {
+	t.Helper()
+	root := filepath.Join("..", "..")
+	self, _ := filepath.Abs(".")
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return err
+		}
+		if dir, _ := filepath.Abs(filepath.Dir(p)); dir == self {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), p, nil, parser.SkipObjectResolution|parser.ParseComments)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		fn(filepath.ToSlash(rel), file)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// declName is a top-level declaration's name: a func's, or a var's first.
+func declName(d ast.Decl) string {
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		return d.Name.Name
+	case *ast.GenDecl:
+		for _, sp := range d.Specs {
+			if vs, ok := sp.(*ast.ValueSpec); ok {
+				return vs.Names[0].Name
+			}
+		}
+	}
+	return ""
+}
+
+// TestRewriteWire: errkeys.Connect with KeyInternal, which replaced core's connect.NewError sites, sends the bytes the
+// fallback sent for connect.NewError (status, body: code, message, the one KeyInternal detail), and its error still
+// matches its cause with errors.Is.
+func TestRewriteWire(t *testing.T) {
+	cause := errors.New("no such row")
+	for _, tc := range []struct {
+		name string
+		code connect.Code
+		err  error
+	}{
+		{"plain", connect.CodeNotFound, cause},
+		{"wrapped", connect.CodeInternal, fmt.Errorf("loading: %w", cause)},
+		{"connect inside", connect.CodeUnavailable, connect.NewError(connect.CodeAborted, cause)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serve := func(err error) (int, string) {
+				h := connect.NewUnaryHandler("/test.v1.T/Get", func(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
+					return nil, err
+				}, WithInterceptors())
+				req := httptest.NewRequest(http.MethodPost, "/test.v1.T/Get", strings.NewReader("{}"))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				return rec.Code, rec.Body.String()
+			}
+			ce := Connect(tc.code, KeyInternal, tc.err)
+			wantCode, wantBody := serve(connect.NewError(tc.code, tc.err))
+			if code, body := serve(ce); code != wantCode || body != wantBody {
+				t.Errorf("got %d %s, want %d %s", code, body, wantCode, wantBody)
+			}
+			if !errors.Is(ce, cause) || LocationOf(ce) == "" {
+				t.Errorf("errors.Is %v, location %q", errors.Is(ce, cause), LocationOf(ce))
+			}
+		})
 	}
 }

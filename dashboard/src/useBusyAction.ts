@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { errorText } from "./agentErrors";
 
 // "Run one RPC, remember which button fired it, surface the failure" — the
 // contract every action surface in the console wants, written twice before
@@ -26,7 +27,7 @@ export function useBusyAction() {
         await action();
         return true;
       } catch (err) {
-        setError((err as Error).message);
+        setError(errorText(err));
         return false;
       } finally {
         setBusyKey(null);

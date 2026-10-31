@@ -31,6 +31,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/executor/internal/config"
 	"github.com/MohammadBnei/agent-fleet/executor/internal/kubectl"
+	"github.com/MohammadBnei/ukubi-go/telemetry"
 )
 
 type server struct {
@@ -82,7 +83,10 @@ const minTokenLen = 32
 // provisioner/internal/grpcserver/auth.go (NewGRPCServer). They are separate
 // go.work modules with no shared package, so a fix to one must be made in the
 // other; factor it out if a third gRPC server needs it (ADR-0072).
-func newGRPCServer(token string) (*grpc.Server, error) {
+//
+// opts are added after the interceptors: main passes its tracing's
+// ServerOption.
+func newGRPCServer(token string, opts ...grpc.ServerOption) (*grpc.Server, error) {
 	if len(strings.TrimSpace(token)) < minTokenLen {
 		return nil, fmt.Errorf("THOT_AUTH_TOKEN is unset or shorter than %d bytes: refusing to serve ExecutorService", minTokenLen)
 	}
@@ -95,7 +99,7 @@ func newGRPCServer(token string) (*grpc.Server, error) {
 		}
 		return nil
 	}
-	return grpc.NewServer(
+	return grpc.NewServer(append([]grpc.ServerOption{
 		grpc.UnaryInterceptor(func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 			if err := check(ctx); err != nil {
 				return nil, err
@@ -108,19 +112,27 @@ func newGRPCServer(token string) (*grpc.Server, error) {
 			}
 			return handler(srv, ss)
 		}),
-	), nil
+	}, opts...)...), nil
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	slog.SetDefault(telemetry.NewLogger(os.Stdout))
 
 	// The environment is read here and nowhere else (internal/config).
 	cfg := config.ExecutorFromProcess()
 	grpcPort := cfg.GRPCPort
 	httpPort := cfg.HTTPPort
-	grpcServer, err := newGRPCServer(cfg.AuthToken)
+	// Opt-in OTLP export (docs/adr/0081): inert without the variable. Built
+	// first because the server takes its option, refused after the token: a
+	// nil Tracing gives no option.
+	tr, trErr := telemetry.New(cfg.TracesEndpoint, "thot-executor")
+	grpcServer, err := newGRPCServer(cfg.AuthToken, tr.ServerOption())
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
+		os.Exit(1)
+	}
+	if trErr != nil {
+		slog.Error("refusing to start", "error", trErr)
 		os.Exit(1)
 	}
 
@@ -137,6 +149,13 @@ func main() {
 		slog.Info("executor gRPC listening", "port", grpcPort)
 		if err := grpcServer.Serve(lis); err != nil {
 			slog.Error("grpc server exited", "error", err)
+		}
+	}()
+	// Deferred before GracefulStop, so it runs after: the last calls' spans
+	// are in the batch.
+	defer func() {
+		if err := tr.Shutdown(); err != nil {
+			slog.Warn("traces", "err", err)
 		}
 	}()
 	defer grpcServer.GracefulStop()

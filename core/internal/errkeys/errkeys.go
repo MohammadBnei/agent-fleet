@@ -17,7 +17,10 @@
 package errkeys
 
 import (
+	"context"
+
 	"connectrpc.com/connect"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -48,9 +51,9 @@ const (
 // keys is the one detail template, agentfleet.v1.ErrorKey (docs/adr/0081 §5): the wire is what errkeys sent.
 var keys = connectkeys.New(&agentfleetv1.ErrorKey{})
 
-// Connect is Connect's error for code with err's words, keyed.
+// Connect is Connect's error for code with err's words, keyed, recording the file:line that called it (LocationOf).
 func Connect(code connect.Code, key errs.Key, err error) *connect.Error {
-	return keys.Connect(code, key, err)
+	return keys.Connect(code, key, locate(err))
 }
 
 // Status is gRPC's error for code with msg, keyed.
@@ -58,6 +61,23 @@ func Status(code codes.Code, key errs.Key, msg string) error { return keys.Statu
 
 // Of is the key an error carries, Connect's or gRPC's, or "" without one.
 func Of(err error) errs.Key { return keys.Of(err) }
+
+// WireKey is the key err goes out with: its own, or KeyInternal, which the fallback gives one without; "" for nil.
+// Both access logs log it, so the line says what the client was told.
+func WireKey(err error) errs.Key {
+	if k := Of(err); k != "" || err == nil {
+		return k
+	}
+	return KeyInternal
+}
+
+// TraceID is ctx's trace id, or "" outside a span: what both access logs answer a call with (docs/adr/0081 §4).
+func TraceID(ctx context.Context) string {
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		return sc.TraceID().String()
+	}
+	return ""
+}
 
 // WithInterceptors is a Connect handler's interceptors, ics, behind the fallback: outermost, it keys an error the
 // handler or any of ics returns without one as KeyInternal, keeping its code and words, on a copy of it. Every handler

@@ -189,6 +189,11 @@ type Config struct {
 	// own default.
 	ClaudeModel string
 	MaxTurns    string
+	// TracesEndpoint is the OTLP/HTTP traces URL, /v1/traces included
+	// (OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, read raw). Empty exports nothing;
+	// a malformed one refuses the start, in cmd/provisioner where telemetry.New
+	// checks it.
+	TracesEndpoint string
 }
 
 // FromProcess is the provisioner's configuration from its environment: the
@@ -265,6 +270,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Version:                   getenv("FLEET_VERSION"),
 		ClaudeModel:               getenv("CLAUDE_MODEL"),
 		MaxTurns:                  getenv("MAX_TURNS"),
+		TracesEndpoint:            getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
 	}
 	var errs []error
 	if err := c.rewriteMalformed(); err != nil {

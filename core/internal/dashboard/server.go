@@ -27,6 +27,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -119,8 +120,8 @@ func (s *Server) ListSessions(ctx context.Context, req *connect.Request[agentfle
 	}
 	list, err := s.sessions.List(ctx, limit, req.Msg.GetQuery())
 	if err != nil {
-		slog.Error("dashboard ListTasks", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard ListTasks", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := make([]*agentfleetv1.Session, len(list))
 	for i, t := range list {
@@ -136,11 +137,11 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 	// The nil check stays as a belt-and-braces guard against a nil-with-no-error
 	// return, which would otherwise panic one line down.
 	if errors.Is(err, sessions.ErrNotFound) || (err == nil && t == nil) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("session not found"))
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, errors.New("session not found"))
 	}
 	if err != nil {
-		slog.Error("dashboard GetSession", "sessionId", req.Msg.GetId(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard GetSession", "sessionId", req.Msg.GetId(), "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.GetSessionResponse{Session: SessionToProto(*t)}), nil
 }
@@ -184,19 +185,19 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		repo, model, mode = head.Effective.Workspace.Repo, defaultModelOf(head.Effective), head.Effective.Mode.Default
 	} else if name := msg.GetDefinition(); name != "" {
 		if repo != "" || model != "" || mode != "" || effort != "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model, mode and effort from the definition"))
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("definition sessions take repo, model, mode and effort from the definition"))
 		}
 		if s.definitions == nil {
-			return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+			return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, errors.New("defined agents are not configured"))
 		}
 		h, err := s.definitions.Resolve(name)
 		switch {
 		case errors.Is(err, definitions.ErrUnknown):
-			return nil, connect.NewError(connect.CodeNotFound, err)
+			return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 		case errors.Is(err, definitions.ErrInvalid):
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 		case err != nil:
-			return nil, connect.NewError(connect.CodeUnavailable, err)
+			return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, err)
 		}
 		head = &h
 		repo, model, mode = h.Effective.Workspace.Repo, defaultModelOf(h.Effective), h.Effective.Mode.Default
@@ -205,12 +206,13 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 	repoCfg, err := s.startableRepo(ctx, repo)
 	switch {
 	case connect.CodeOf(err) == connect.CodeNotFound && head != nil:
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal,
 			fmt.Errorf("definition %q targets repo %q, which is not onboarded (add it under manage repos)", head.Name, repo))
+
 	case err != nil:
 		return nil, err
 	case head != nil && repoCfg.ClusterAccess:
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("definition sessions never run on a cluster-access repo"))
 	}
 
 	// A definition with no model.default stays NULL (docs/adr/0077): its
@@ -219,11 +221,11 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 	case model == "" && head == nil:
 		model = s.fallbackModel()
 	case model != "" && !isValidModel(model):
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid model %q", model))
 	}
 	// Reaches the SDK verbatim as `effort`, like mode via launchMode.
 	if effort != "" && !slices.Contains(definitions.EffortLevels, effort) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid effort %q", effort))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid effort %q", effort))
 	}
 
 	// Same allowlist SetPermissionMode uses, for the same reason: the value
@@ -231,7 +233,7 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 	// unvalidated string here would reach the SDK verbatim. Empty is allowed
 	// and means the column default — "auto" since docs/adr/0061.
 	if mode != "" && !validPermissionModes[mode] {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid permission mode %q", mode))
 	}
 
 	params := sessions.CreateParams{
@@ -256,15 +258,15 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 	}
 	id, err := s.sessions.Create(ctx, params)
 	if err != nil {
-		slog.Error("dashboard CreateSession", "repo", repo, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard CreateSession", "repo", repo, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	sess, err := s.sessions.Get(ctx, id)
 	if err != nil {
-		slog.Error("dashboard CreateSession", "sessionId", id, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard CreateSession", "sessionId", id, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo, "definition", params.DefinitionName, "sha", params.DefinitionSHA)
+	slog.InfoContext(ctx, "dashboard CreateSession", "sessionId", id, "repo", repo, "definition", params.DefinitionName, "sha", params.DefinitionSHA)
 	return sess, nil
 }
 
@@ -298,25 +300,25 @@ func (s *Server) ArchiveSession(ctx context.Context, req *connect.Request[agentf
 	id := req.Msg.GetSessionId()
 	if err := s.sessions.Archive(ctx, id); err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
+			return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// Best-effort, logged not propagated: the archive itself has committed,
 	// and a teardown hiccup should not fail it. The reconcile loop notices a
 	// pod whose session is archived on its next pass anyway.
 	if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-		slog.Warn("dashboard ArchiveSession: worker teardown failed", "sessionId", id, "error", err)
+		slog.WarnContext(ctx, "dashboard ArchiveSession: worker teardown failed", "sessionId", id, "error", err)
 	}
 	// Same revocation as sessions.Loop.tearDown: an archived session is never
 	// warmed again, so its lease would otherwise stay valid forever. This is
 	// the second of exactly two teardown paths — if a third appears, it needs
 	// this too.
 	if err := s.sessions.ClearLease(ctx, id); err != nil {
-		slog.Warn("dashboard ArchiveSession: clearing lease failed", "sessionId", id, "error", err)
+		slog.WarnContext(ctx, "dashboard ArchiveSession: clearing lease failed", "sessionId", id, "error", err)
 	}
 	if err := s.proposals.DismissForSession(ctx, id); err != nil {
-		slog.Warn("dashboard ArchiveSession: proposal dismiss failed", "sessionId", id, "error", err)
+		slog.WarnContext(ctx, "dashboard ArchiveSession: proposal dismiss failed", "sessionId", id, "error", err)
 	}
 	return connect.NewResponse(&agentfleetv1.ArchiveSessionResponse{}), nil
 }
@@ -324,7 +326,7 @@ func (s *Server) ArchiveSession(ctx context.Context, req *connect.Request[agentf
 func (s *Server) ListProposals(ctx context.Context, _ *connect.Request[agentfleetv1.ListProposalsRequest]) (*connect.Response[agentfleetv1.ListProposalsResponse], error) {
 	list, err := s.proposals.ListOpen(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := make([]*agentfleetv1.Proposal, 0, len(list))
 	for _, p := range list {
@@ -349,10 +351,10 @@ func (s *Server) ListProposals(ctx context.Context, _ *connect.Request[agentflee
 func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agentfleetv1.OpenFromProposalRequest]) (*connect.Response[agentfleetv1.OpenFromProposalResponse], error) {
 	p, err := s.proposals.Get(ctx, req.Msg.GetProposalId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if p == nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such proposal"))
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, errors.New("no such proposal"))
 	}
 	if p.Event != nil {
 		return s.openEventProposal(ctx, p)
@@ -371,7 +373,7 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// That was a deliberate call, ADR records the prompt-injection trade-off.
 	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: s.fallbackModel()})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if err := s.proposals.Open(ctx, p.ID, id); err != nil {
 		if errors.Is(err, proposals.ErrNotOpen) {
@@ -379,11 +381,11 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 			// rather than leaving an orphan behind — it has no pod and no
 			// transcript, so this is a clean rollback.
 			if delErr := s.sessions.Delete(ctx, id); delErr != nil {
-				slog.Warn("dashboard OpenFromProposal: rollback failed", "sessionId", id, "error", delErr)
+				slog.WarnContext(ctx, "dashboard OpenFromProposal: rollback failed", "sessionId", id, "error", delErr)
 			}
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("proposal is already opened or dismissed"))
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 
 	// The proposal's body IS the instruction, so it has to be sent as a real
@@ -405,21 +407,21 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 		// its body, so the session left behind has no pod, no transcript and
 		// no record of what it was for. The likely trigger is the ordinary
 		// one, ErrAtCapacity.
-		slog.Error("dashboard OpenFromProposal: warm failed", "sessionId", id, "proposalId", p.ID, "error", err)
+		slog.ErrorContext(ctx, "dashboard OpenFromProposal: warm failed", "sessionId", id, "proposalId", p.ID, "error", err)
 		s.rollbackOpen(ctx, p.ID, id)
 		return nil, err
 	}
 	if _, err := s.transcr.Append(ctx, id, "human", p.Body, "discussion", uuid.NewString()); err != nil {
-		slog.Error("dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
+		slog.ErrorContext(ctx, "dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
 		s.rollbackOpen(ctx, p.ID, id)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 
 	sess, err := s.sessions.Get(ctx, id)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	slog.Info("dashboard OpenFromProposal", "proposalId", p.ID, "sessionId", id, "repo", p.Repo)
+	slog.InfoContext(ctx, "dashboard OpenFromProposal", "proposalId", p.ID, "sessionId", id, "repo", p.Repo)
 	return connect.NewResponse(&agentfleetv1.OpenFromProposalResponse{Session: SessionToProto(*sess)}), nil
 }
 
@@ -433,10 +435,10 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 // Open's own, against the definition's repo.
 func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (*connect.Response[agentfleetv1.OpenFromProposalResponse], error) {
 	if p.SessionID != nil || p.DismissedAt != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("proposal is already opened or dismissed"))
 	}
 	if s.openEvent == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("event proposals need the defined-agents registry"))
+		return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, errors.New("event proposals need the defined-agents registry"))
 	}
 	id, _ := auth.FromContext(ctx)
 	sub := id.Sub
@@ -444,14 +446,14 @@ func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (
 		sub = id.Email // a cookie minted before Sub existed
 	}
 	if sub == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("no identity on the request: an event proposal is opened as its admin"))
+		return nil, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errors.New("no identity on the request: an event proposal is opened as its admin"))
 	}
 	var threadID string
 	var err error
 	for attempt := 0; ; attempt++ {
 		threadID, err = s.openEvent(ctx, p, sub)
 		if err != nil {
-			slog.Error("dashboard OpenFromProposal: open event thread", "proposalId", p.ID, "error", err)
+			slog.ErrorContext(ctx, "dashboard OpenFromProposal: open event thread", "proposalId", p.ID, "error", err)
 			return nil, err
 		}
 		err = s.proposals.OpenIfBody(ctx, p.ID, threadID, p.Body)
@@ -459,7 +461,7 @@ func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (
 			break
 		}
 		if p, err = s.proposals.Get(ctx, p.ID); err != nil || p == nil {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reread proposal: %v", err))
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("reread proposal: %v", err))
 		}
 		if p.SessionID != nil || p.DismissedAt != nil {
 			err = proposals.ErrNotOpen
@@ -468,17 +470,17 @@ func (s *Server) openEventProposal(ctx context.Context, p *proposals.Proposal) (
 	}
 	switch {
 	case errors.Is(err, proposals.ErrNotOpen):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("proposal is already opened or dismissed"))
 	case errors.Is(err, proposals.ErrBodyChanged):
-		return nil, connect.NewError(connect.CodeAborted, errors.New("events keep arriving on this thread; open it again"))
+		return nil, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, errors.New("events keep arriving on this thread; open it again"))
 	case err != nil:
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	sess, err := s.sessions.Get(ctx, threadID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	slog.Info("dashboard OpenFromProposal: event thread", "proposalId", p.ID, "sessionId", threadID, "definition", p.Event.Definition)
+	slog.InfoContext(ctx, "dashboard OpenFromProposal: event thread", "proposalId", p.ID, "sessionId", threadID, "definition", p.Event.Definition)
 	return connect.NewResponse(&agentfleetv1.OpenFromProposalResponse{Session: SessionToProto(*sess)}), nil
 }
 
@@ -495,22 +497,22 @@ func (s *Server) rollbackOpen(ctx context.Context, proposalID, sessionID string)
 	// still occupies (ReserveSlot counts rows), which is how the fleet ends up
 	// over MAX_LIVE_SESSIONS with no way to see why.
 	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-		slog.Warn("dashboard OpenFromProposal: rollback teardown failed", "sessionId", sessionID, "error", err)
+		slog.WarnContext(ctx, "dashboard OpenFromProposal: rollback teardown failed", "sessionId", sessionID, "error", err)
 	}
 	if err := s.sessions.Delete(ctx, sessionID); err != nil {
-		slog.Warn("dashboard OpenFromProposal: rollback delete failed", "sessionId", sessionID, "error", err)
+		slog.WarnContext(ctx, "dashboard OpenFromProposal: rollback delete failed", "sessionId", sessionID, "error", err)
 	}
 	if err := s.proposals.Unclaim(ctx, proposalID, sessionID); err != nil {
-		slog.Warn("dashboard OpenFromProposal: rollback unclaim failed", "proposalId", proposalID, "error", err)
+		slog.WarnContext(ctx, "dashboard OpenFromProposal: rollback unclaim failed", "proposalId", proposalID, "error", err)
 	}
 }
 
 func (s *Server) DismissProposal(ctx context.Context, req *connect.Request[agentfleetv1.DismissProposalRequest]) (*connect.Response[agentfleetv1.DismissProposalResponse], error) {
 	if err := s.proposals.Dismiss(ctx, req.Msg.GetProposalId()); err != nil {
 		if errors.Is(err, proposals.ErrNotOpen) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.DismissProposalResponse{}), nil
 }
@@ -631,15 +633,15 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 	if req.Msg.Limit != nil && req.Msg.BeforeSeq == nil {
 		var err error
 		if latest, err = s.transcr.LatestSeq(ctx, sessionID); err != nil {
-			slog.Error("dashboard GetTranscript latestSeq", "sessionId", sessionID, "error", err)
-			return nil, connect.NewError(connect.CodeInternal, err)
+			slog.ErrorContext(ctx, "dashboard GetTranscript latestSeq", "sessionId", sessionID, "error", err)
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
 	}
 	since, page := transcriptWindow(req.Msg.GetSinceSeq(), latest, req.Msg.GetLimit(), req.Msg.BeforeSeq)
 	entries, next, err := s.transcr.ReadSince(ctx, sessionID, since, page)
 	if err != nil {
-		slog.Error("dashboard GetTranscript", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard GetTranscript", "sessionId", sessionID, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if b := req.Msg.BeforeSeq; b != nil {
 		// A gap in seq would let the page run past the window's own edge and
@@ -726,7 +728,7 @@ func (s *Server) SetPacks(p *packs.Store) { s.packs = p }
 func (s *Server) GetFileDiff(ctx context.Context, req *connect.Request[agentfleetv1.GetFileDiffRequest]) (*connect.Response[agentfleetv1.GetFileDiffResponse], error) {
 	sessionID, path := req.Msg.GetSessionId(), req.Msg.GetPath()
 	if sessionID == "" || path == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("session_id and path are required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("session_id and path are required"))
 	}
 	reply := func(st agentfleetv1.GetFileDiffResponse_Status, diff string) *connect.Response[agentfleetv1.GetFileDiffResponse] {
 		return connect.NewResponse(&agentfleetv1.GetFileDiffResponse{Status: st, Diff: diff})
@@ -751,9 +753,9 @@ func (s *Server) GetFileDiff(ctx context.Context, req *connect.Request[agentflee
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
+			return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// No pod, no working tree, and no amount of polling will produce one.
 	// Saying so is the whole point: the console's old copy claimed the change
@@ -763,7 +765,7 @@ func (s *Server) GetFileDiff(ctx context.Context, req *connect.Request[agentflee
 		return reply(agentfleetv1.GetFileDiffResponse_STATUS_NO_POD, ""), nil
 	}
 	if !s.fileDiffs.Want(sessionID, path) {
-		return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("too many diffs pending for this session"))
+		return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyInternal, errors.New("too many diffs pending for this session"))
 	}
 	return reply(agentfleetv1.GetFileDiffResponse_STATUS_PENDING, ""), nil
 }
@@ -791,12 +793,12 @@ func (s *Server) StopSession(ctx context.Context, req *connect.Request[agentflee
 		reason = req.Msg.GetReason()
 	}
 	if _, err := s.transcr.Append(ctx, sessionID, "human", reason, "abort", uuid.NewString()); err != nil {
-		slog.Error("dashboard Kill", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard Kill", "sessionId", sessionID, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if err := s.sessions.MarkStopRequested(ctx, sessionID); err != nil {
-		slog.Error("dashboard Kill: mark stop requested", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard Kill: mark stop requested", "sessionId", sessionID, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.StopSessionResponse{}), nil
 }
@@ -809,8 +811,8 @@ func (s *Server) StopSession(ctx context.Context, req *connect.Request[agentflee
 func (s *Server) Interrupt(ctx context.Context, req *connect.Request[agentfleetv1.InterruptRequest]) (*connect.Response[agentfleetv1.InterruptResponse], error) {
 	sessionID := req.Msg.GetSessionId()
 	if _, err := s.transcr.Append(ctx, sessionID, "human", "interrupted by human", "interrupt", uuid.NewString()); err != nil {
-		slog.Error("dashboard Interrupt", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard Interrupt", "sessionId", sessionID, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.InterruptResponse{}), nil
 }
@@ -850,7 +852,7 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 	sessionID := req.Msg.GetSessionId()
 	mode := req.Msg.GetMode()
 	if !validPermissionModes[mode] {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid permission mode %q", mode))
 	}
 	// Persist first: the store's write carries the definition guard (a
 	// definition only narrows, for admins too: docs/adr/0062), and the append
@@ -860,18 +862,18 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 		case errors.Is(err, sessions.ErrModeNotAllowed):
 			// InvalidArgument, where the pod's CoreService call gets
 			// PermissionDenied: see coreserver's SetPermissionMode.
-			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, err)
 		case errors.Is(err, sessions.ErrDefinitionInvalid):
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 		case errors.Is(err, sessions.ErrNotFound):
-			return nil, connect.NewError(connect.CodeNotFound, err)
+			return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 		}
-		slog.Error("dashboard SetPermissionMode: persist", "sessionId", sessionID, "mode", mode, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard SetPermissionMode: persist", "sessionId", sessionID, "mode", mode, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if _, err := s.transcr.Append(ctx, sessionID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
-		slog.Error("dashboard SetPermissionMode", "sessionId", sessionID, "mode", mode, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard SetPermissionMode", "sessionId", sessionID, "mode", mode, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{}), nil
 }
@@ -932,7 +934,7 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 		Message  string `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(req.Msg.GetDecisionJson()), &d); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("decision_json must be a JSON object"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("decision_json must be a JSON object"))
 	}
 	seq, err := s.answer(ctx, req.Msg.GetSessionId(), req.Msg.GetSeq(), "permission_request", decisions.Reply{
 		Behavior: d.Behavior, Message: d.Message, Scope: req.Msg.GetScope(), RuleForm: req.Msg.GetRuleForm(),
@@ -957,34 +959,34 @@ func (s *Server) SetMode(ctx context.Context, sessionID, mode string) error {
 // question (wantType "question") or a permission or plan request.
 func (s *Server) answer(ctx context.Context, sessionID string, seq int64, wantType string, a decisions.Reply) (int64, error) {
 	if s.decisions == nil {
-		return 0, connect.NewError(connect.CodeUnavailable, errors.New("decisions are not configured"))
+		return 0, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, errors.New("decisions are not configured"))
 	}
 	r, err := s.decisions.Request(ctx, sessionID, seq)
 	// A card is answered by id only (AnswerDecision): it is no question,
 	// and read as a permission here it would take a behavior.
 	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind == decisions.Card || (r.Kind == decisions.Question) != (wantType == "question"))) {
-		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not a %s", seq, wantType))
+		return 0, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("seq %d is not a %s", seq, wantType))
 	}
 	if err != nil {
-		return 0, connect.NewError(connect.CodeInternal, err)
+		return 0, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	n, err := s.decisions.Answer(ctx, s, s.transcr, r, a)
 	if err != nil {
-		return 0, AnswerErr("answer", err)
+		return 0, AnswerErr(ctx, "answer", err)
 	}
 	return n, nil
 }
 
 // AnswerErr is decisions.Answer's error for the wire. A connect error (a
 // warm's, a mode switch's) passes through.
-func AnswerErr(op string, err error) error {
+func AnswerErr(ctx context.Context, op string, err error) error {
 	switch {
 	case errors.Is(err, transcript.ErrAlreadyAnswered):
 		return connect.NewError(connect.CodeAlreadyExists, err)
 	case errors.Is(err, decisions.ErrInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	return grantErr(op, err)
+	return grantErr(ctx, op, err)
 }
 
 // Discuss appends a human-authored free-text message from the dashboard —
@@ -1009,18 +1011,18 @@ func AnswerErr(op string, err error) error {
 // every dashboard user a credential for the GPU. Proxying keeps the token here.
 func (s *Server) Transcribe(ctx context.Context, req *connect.Request[agentfleetv1.TranscribeRequest]) (*connect.Response[agentfleetv1.TranscribeResponse], error) {
 	if s.stt == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("speech-to-text is not configured"))
+		return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, errors.New("speech-to-text is not configured"))
 	}
 
 	streamID := req.Msg.GetStreamId()
 	if streamID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("stream_id is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("stream_id is required"))
 	}
 	audio := req.Msg.GetAudio()
 	// Empty audio is only meaningful as a close: it tells the service to flush
 	// the encoder's buffered tail and release the recognizer.
 	if len(audio) == 0 && !req.Msg.GetLast() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("audio is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("audio is required"))
 	}
 
 	// The identity half of the session id. An empty one would collapse every
@@ -1029,7 +1031,7 @@ func (s *Server) Transcribe(ctx context.Context, req *connect.Request[agentfleet
 	// producing a shared stream.
 	identity, ok := auth.FromContext(ctx)
 	if !ok || identity.Email == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("no identity on the request"))
+		return nil, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errors.New("no identity on the request"))
 	}
 
 	text, err := s.stt.Transcribe(ctx, s.stt.SessionID(identity.Email, streamID), audio, req.Msg.GetLast(), req.Msg.GetLanguage())
@@ -1037,9 +1039,9 @@ func (s *Server) Transcribe(ctx context.Context, req *connect.Request[agentfleet
 		if sttclient.Unavailable(err) {
 			// The GPU is busy, or its node is down. Both are states ADR-0044
 			// accepts; neither is a bug in this console.
-			return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("speech-to-text unavailable: %w", err))
+			return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, fmt.Errorf("speech-to-text unavailable: %w", err))
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.TranscribeResponse{Text: text}), nil
 }
@@ -1048,7 +1050,7 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	sessionID := req.Msg.GetSessionId()
 	text := req.Msg.GetText()
 	if text == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("text is required"))
 	}
 	// Warm BEFORE appending, never after — see WarmIfIdle. This ordering is
 	// also the whole mechanism by which a first message boots a session
@@ -1058,7 +1060,7 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	}
 	seq, err := s.transcr.Append(ctx, sessionID, "human", text, "discussion", uuid.NewString())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.AppendResponse{Seq: seq}), nil
 }
@@ -1075,7 +1077,7 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 // failing the caller over, and the next open will record it anyway.
 func (s *Server) MarkSeen(ctx context.Context, req *connect.Request[agentfleetv1.MarkSeenRequest]) (*connect.Response[agentfleetv1.MarkSeenResponse], error) {
 	if err := s.sessions.MarkSeen(ctx, req.Msg.GetSessionId()); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.MarkSeenResponse{}), nil
 }
@@ -1090,14 +1092,14 @@ func (s *Server) WarmSession(ctx context.Context, req *connect.Request[agentflee
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
+			return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// An explicit click deserves an explicit answer, where PostMessage's
 	// shared path treats the same condition as a silent no-op.
 	if sessions.IsPodPhaseLive(t.PodPhase) {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session already has a live pod"))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("session already has a live pod"))
 	}
 	podName, err := s.WarmIfIdle(ctx, sessionID)
 	if err != nil {
@@ -1166,9 +1168,9 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
-			return "", connect.NewError(connect.CodeNotFound, err)
+			return "", errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 		}
-		return "", connect.NewError(connect.CodeInternal, err)
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return "", nil
@@ -1177,16 +1179,17 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// so there is nothing to resume into — booting a pod would hand the agent
 	// an empty directory and a resume id pointing at a deleted transcript.
 	if t.SweptAt != nil {
-		return "", connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(
+		return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, decisions.CannotResume(
 			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed")))
+
 	}
 
 	repoCfg, err := s.repos.Get(ctx, t.Repo)
 	if err != nil {
-		return "", connect.NewError(connect.CodeInternal, err)
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if repoCfg == nil {
-		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
 	// docs/adr/0064: a definition session gets its profile, the provisioner's
 	// default image and no tool keys. repos.image is ignored: the profile's
@@ -1203,7 +1206,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// Rendered before the lease, so a failed read leaves nothing to undo.
 	genome, rendered, err := s.renderGenome(ctx, t)
 	if err != nil {
-		return "", connect.NewError(connect.CodeInternal, err)
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 
 	// The cap check and the lease mint happen together, under an advisory
@@ -1215,13 +1218,13 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		// message is passed through as-is.
 		switch {
 		case errors.Is(err, sessions.ErrAtCapacity):
-			return "", connect.NewError(connect.CodeResourceExhausted, err)
+			return "", errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyInternal, err)
 		case errors.Is(err, sessions.ErrDefinitionInvalid):
-			return "", connect.NewError(connect.CodeFailedPrecondition, err)
+			return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 		case errors.Is(err, sessions.ErrNotFound):
-			return "", connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(errors.New("session is archived")))
+			return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, decisions.CannotResume(errors.New("session is archived")))
 		}
-		return "", connect.NewError(connect.CodeInternal, err)
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 
 	resumeAgentSessionID := ""
@@ -1233,7 +1236,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// exists would land below it and never be delivered.
 	resumeFromSeq, err := s.transcr.LatestSeq(ctx, sessionID)
 	if err != nil {
-		return "", connect.NewError(connect.CodeInternal, err)
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// Both from repoCfg, which is the row already read above. This used to
 	// re-fetch the same repo through a toolKeysFor helper — two reads of one
@@ -1254,7 +1257,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		}
 		return "", s.refuseDefinitionPod(ctx, sessionID, code, fmt.Sprintf("definition pod create failed (%v)", err))
 	case err != nil:
-		return "", connect.NewError(connect.CodeInternal, err)
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	case profile != nil && !pod.DefinitionProfileApplied:
 		// The create reached a provisioner that dropped the profile (an older
 		// one, or an older replica in a rollout overlap): the ORDINARY pod.
@@ -1268,14 +1271,14 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	case s.packs != nil && !pod.GenomeApplied:
 		// A repo session still works without them; the next warm on a
 		// current provisioner gets them.
-		slog.Warn("dashboard warm: provisioner did not apply the context packs", "sessionId", sessionID)
+		slog.WarnContext(ctx, "dashboard warm: provisioner did not apply the context packs", "sessionId", sessionID)
 	}
 	s.recordRendered(ctx, sessionID, rendered, pod.GenomeApplied)
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
 	// would trade a working session for a cosmetic one.
 	if err := s.sessions.SetPodImages(ctx, sessionID, pod.WorkerImage, pod.SidecarImage, pod.FleetVersion); err != nil {
-		slog.Warn("dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
+		slog.WarnContext(ctx, "dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
 	}
 	return pod.PodName, nil
 }
@@ -1294,7 +1297,7 @@ func (s *Server) renderGenome(ctx context.Context, t *sessions.Session) ([]*agen
 	if err != nil {
 		return nil, nil, fmt.Errorf("render context packs: %w", err)
 	}
-	slog.Info("dashboard warm: context packs", "sessionId", t.ID, "kind", kind, "target", name, "versions", r.Versions, "skipped", r.Skipped)
+	slog.InfoContext(ctx, "dashboard warm: context packs", "sessionId", t.ID, "kind", kind, "target", name, "versions", r.Versions, "skipped", r.Skipped)
 	out := make([]*agentfleetv1.GenomeFile, 0, len(r.Files))
 	for _, f := range r.Files {
 		out = append(out, &agentfleetv1.GenomeFile{Path: f.Path, Body: f.Body})
@@ -1317,7 +1320,7 @@ func (s *Server) recordRendered(ctx context.Context, sessionID string, r *packs.
 		_, err = s.transcr.Append(ctx, sessionID, "fleet", string(body), "system", "")
 	}
 	if err != nil {
-		slog.Warn("dashboard warm: recording the rendered context", "sessionId", sessionID, "error", err)
+		slog.WarnContext(ctx, "dashboard warm: recording the rendered context", "sessionId", sessionID, "error", err)
 	}
 }
 
@@ -1338,21 +1341,21 @@ func (s *Server) refuseDefinitionPod(ctx context.Context, sessionID string, code
 	msg := why + " (docs/adr/0064); the pod was torn down"
 	clearErr := s.sessions.ClearLease(ctx, sessionID)
 	if clearErr != nil {
-		slog.Error("dashboard warm: revoking an unconfirmed definition pod's lease", "sessionId", sessionID, "error", clearErr)
+		slog.ErrorContext(ctx, "dashboard warm: revoking an unconfirmed definition pod's lease", "sessionId", sessionID, "error", clearErr)
 	}
 	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
 		// The phase stays live: CRASHED would hide a pod that may still run,
 		// and reconcile bumps it back while the Job exists anyway. With the
 		// lease cleared the pod can report no activity, so the startup-stall
 		// sweep retries the teardown. With both failed nothing does: logged.
-		slog.Error("dashboard warm: tearing down an unconfirmed definition pod", "sessionId", sessionID, "error", err, "leaseRevoked", clearErr == nil)
-		return connect.NewError(code, fmt.Errorf("%s (docs/adr/0064), and its teardown failed: %w", why, errors.Join(err, clearErr)))
+		slog.ErrorContext(ctx, "dashboard warm: tearing down an unconfirmed definition pod", "sessionId", sessionID, "error", err, "leaseRevoked", clearErr == nil)
+		return errkeys.Connect(code, errkeys.KeyInternal, fmt.Errorf("%s (docs/adr/0064), and its teardown failed: %w", why, errors.Join(err, clearErr)))
 	}
 	// Gone: the phase gate revokes a lease ClearLease missed.
 	if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), msg); err != nil {
-		slog.Error("dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
+		slog.ErrorContext(ctx, "dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
 	}
-	return connect.NewError(code, errors.New(msg))
+	return errkeys.Connect(code, errkeys.KeyInternal, errors.New(msg))
 }
 
 // definitionWarmable refuses to warm a definition session unless its pinned
@@ -1366,39 +1369,41 @@ func (s *Server) refuseDefinitionPod(ctx context.Context, sessionID string, code
 func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, repoCfg *repos.Repo) (*agentfleetv1.DefinitionPodProfile, error) {
 	name, pinned := *t.DefinitionName, *t.DefinitionSHA
 	if s.definitions == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+		return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, errors.New("defined agents are not configured"))
 	}
 	head, err := s.definitions.Resolve(name)
 	switch {
 	case errors.Is(err, definitions.ErrUnknown):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(fmt.Errorf("definition %q is no longer defined; start a new session", name)))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, decisions.CannotResume(fmt.Errorf("definition %q is no longer defined; start a new session", name)))
 	case errors.Is(err, definitions.ErrInvalid):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("definition %q has no valid version: %w", name, err))
 	case err != nil:
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, err)
 	}
 	if head.SHA != pinned {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, decisions.CannotResume(
 			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA)))
+
 	}
 	if repoCfg.ClusterAccess {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("definition sessions never run on a cluster-access repo"))
 	}
 	eff := head.Effective
 	if eff == nil || eff.Git == nil || eff.Git.Identity == nil || eff.Credentials == nil || eff.Limits == nil {
 		// The validator requires all three on every launchable spec.
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q has no git identity, credentials or limits", name))
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("definition %q has no git identity, credentials or limits", name))
 	}
 	// docs/adr/0065 §6: before a pod gets a push credential, the repo it clones
 	// from and pushes to is the one its credentials name. Exact and
 	// case-sensitive, like the vault's own prefix match.
 	if r := definitions.GitHubRepo(eff.Credentials); r != "" && repoCfg.URL != "https://github.com/"+r && repoCfg.URL != "https://github.com/"+r+".git" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal,
 			fmt.Errorf("repo %s url %q does not match definition %q's credentials (https://github.com/%s.git)", repoCfg.Name, repoCfg.URL, name, r))
+
 	}
 	timeout, err := time.ParseDuration(eff.Limits.Timeout)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q limits.timeout: %w", name, err))
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("definition %q limits.timeout: %w", name, err))
 	}
 	id := eff.Git.Identity
 	return &agentfleetv1.DefinitionPodProfile{
@@ -1417,16 +1422,16 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 func (s *Server) DeleteSession(ctx context.Context, req *connect.Request[agentfleetv1.DeleteSessionRequest]) (*connect.Response[agentfleetv1.DeleteSessionResponse], error) {
 	sessionID := req.Msg.GetSessionId()
 	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-		slog.Error("dashboard DeleteTask: worker teardown", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard DeleteTask: worker teardown", "sessionId", sessionID, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// A second teardown call for the session's e2e sandbox used to follow.
 	// There is no sandbox (docs/adr/0048 §6) — one pod, one teardown.
 	if err := s.sessions.Delete(ctx, sessionID); err != nil {
-		slog.Error("dashboard DeleteSession", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard DeleteSession", "sessionId", sessionID, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	slog.Info("dashboard DeleteTask", "sessionId", sessionID)
+	slog.InfoContext(ctx, "dashboard DeleteTask", "sessionId", sessionID)
 	return connect.NewResponse(&agentfleetv1.DeleteSessionResponse{}), nil
 }
 
@@ -1446,8 +1451,8 @@ func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleet
 	}
 	entries, err := s.journal.List(ctx, req.Msg.GetRepo(), req.Msg.GetSinceId(), limit)
 	if err != nil {
-		slog.Error("dashboard GetJournal", "repo", req.Msg.GetRepo(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard GetJournal", "repo", req.Msg.GetRepo(), "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := make([]*agentfleetv1.JournalEntry, len(entries))
 	nextID := req.Msg.GetSinceId()
@@ -1465,8 +1470,8 @@ func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleet
 func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.ListReposRequest]) (*connect.Response[agentfleetv1.ListReposResponse], error) {
 	list, err := s.repos.List(ctx)
 	if err != nil {
-		slog.Error("dashboard ListRepos", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard ListRepos", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := make([]*agentfleetv1.Repo, len(list))
 	for i, r := range list {
@@ -1490,7 +1495,7 @@ func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.
 func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1.SyncRepoRequest]) (*connect.Response[agentfleetv1.SyncRepoResponse], error) {
 	name := req.Msg.GetName()
 	if name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("name is required"))
 	}
 	r, err := s.startableRepo(ctx, name)
 	if err != nil {
@@ -1504,10 +1509,10 @@ func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1
 		// entire diagnostic the operator gets. Safe to surface here: repo URLs
 		// hold no credential (auth is gh's credential helper) and this surface
 		// is OIDC admin-only.
-		slog.Error("dashboard SyncRepo", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard SyncRepo", "name", name, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	slog.Info("dashboard SyncRepo", "name", name, "cloned", resp.GetCloned(), "advanced", resp.GetCommitsAdvanced())
+	slog.InfoContext(ctx, "dashboard SyncRepo", "name", name, "cloned", resp.GetCloned(), "advanced", resp.GetCommitsAdvanced())
 	return connect.NewResponse(&agentfleetv1.SyncRepoResponse{
 		Cloned:          resp.GetCloned(),
 		Head:            resp.GetHead(),
@@ -1538,14 +1543,14 @@ func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 func (s *Server) startableRepo(ctx context.Context, name string) (*repos.Repo, error) {
 	r, err := s.repos.Get(ctx, name)
 	if err != nil {
-		slog.Error("dashboard repo lookup", "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard repo lookup", "name", name, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// repos.Store.Get reports "no such repo" as (nil, nil), not
 	// pgx.ErrNoRows. Checking for the sentinel here compiles, passes every
 	// test with a repo that exists, and panics on the first typo'd name.
 	if r == nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, fmt.Errorf("unknown repo %q", name))
 	}
 	if !r.Active {
 		return nil, errInactive(name)
@@ -1563,10 +1568,10 @@ func (s *Server) SetReposActive(ctx context.Context, req *connect.Request[agentf
 	names, active := req.Msg.GetNames(), req.Msg.GetActive()
 	n, err := s.repos.SetActive(ctx, names, active)
 	if err != nil {
-		slog.Error("dashboard SetReposActive", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard SetReposActive", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	slog.Info("dashboard SetReposActive", "by", who(ctx), "active", active, "requested", len(names), "updated", n)
+	slog.InfoContext(ctx, "dashboard SetReposActive", "by", who(ctx), "active", active, "requested", len(names), "updated", n)
 	return connect.NewResponse(&agentfleetv1.SetReposActiveResponse{Updated: int32(n)}), nil
 }
 
@@ -1592,8 +1597,8 @@ func (s *Server) SetReposActive(ctx context.Context, req *connect.Request[agentf
 func (s *Server) ListFiles(ctx context.Context, _ *connect.Request[agentfleetv1.ListFilesRequest]) (*connect.Response[agentfleetv1.ListFilesResponse], error) {
 	files, err := s.files.List(ctx)
 	if err != nil {
-		slog.Error("dashboard ListFiles", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard ListFiles", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := make([]*agentfleetv1.FileMetadata, len(files))
 	for i, f := range files {
@@ -1610,8 +1615,8 @@ func (s *Server) ListFiles(ctx context.Context, _ *connect.Request[agentfleetv1.
 func (s *Server) GetFileUploadUrl(ctx context.Context, req *connect.Request[agentfleetv1.GetFileUploadUrlRequest]) (*connect.Response[agentfleetv1.GetFileUploadUrlResponse], error) {
 	url, key, expiresAt, err := s.files.PresignUpload(ctx, req.Msg.GetFilename(), req.Msg.GetContentType())
 	if err != nil {
-		slog.Error("dashboard GetFileUploadUrl", "filename", req.Msg.GetFilename(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard GetFileUploadUrl", "filename", req.Msg.GetFilename(), "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.GetFileUploadUrlResponse{UploadUrl: url, Key: key, ExpiresAt: expiresAt.Format(time.RFC3339)}), nil
 }
@@ -1619,16 +1624,16 @@ func (s *Server) GetFileUploadUrl(ctx context.Context, req *connect.Request[agen
 func (s *Server) GetFileDownloadUrl(ctx context.Context, req *connect.Request[agentfleetv1.GetFileDownloadUrlRequest]) (*connect.Response[agentfleetv1.GetFileDownloadUrlResponse], error) {
 	url, expiresAt, err := s.files.PresignDownload(ctx, req.Msg.GetKey())
 	if err != nil {
-		slog.Error("dashboard GetFileDownloadUrl", "key", req.Msg.GetKey(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard GetFileDownloadUrl", "key", req.Msg.GetKey(), "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.GetFileDownloadUrlResponse{DownloadUrl: url, ExpiresAt: expiresAt.Format(time.RFC3339)}), nil
 }
 
 func (s *Server) DeleteFile(ctx context.Context, req *connect.Request[agentfleetv1.DeleteFileRequest]) (*connect.Response[agentfleetv1.DeleteFileResponse], error) {
 	if err := s.files.Delete(ctx, req.Msg.GetKey()); err != nil {
-		slog.Error("dashboard DeleteFile", "key", req.Msg.GetKey(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard DeleteFile", "key", req.Msg.GetKey(), "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.DeleteFileResponse{}), nil
 }
@@ -1778,15 +1783,15 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 	if raw := req.Msg.GetStartTime(); raw != "" {
 		var err error
 		if start, err = time.Parse(time.RFC3339, raw); err != nil {
-			slog.Error("dashboard QueryLogs: invalid start_time", "start_time", raw, "error", err)
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid start_time: %w", err))
+			slog.ErrorContext(ctx, "dashboard QueryLogs: invalid start_time", "start_time", raw, "error", err)
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid start_time: %w", err))
 		}
 	}
 	if raw := req.Msg.GetEndTime(); raw != "" {
 		var err error
 		if end, err = time.Parse(time.RFC3339, raw); err != nil {
-			slog.Error("dashboard QueryLogs: invalid end_time", "end_time", raw, "error", err)
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid end_time: %w", err))
+			slog.ErrorContext(ctx, "dashboard QueryLogs: invalid end_time", "end_time", raw, "error", err)
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid end_time: %w", err))
 		}
 	}
 
@@ -1817,8 +1822,8 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 		Limit:     limit,
 	})
 	if err != nil {
-		slog.Error("dashboard QueryLogs: Loki query failed", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("query Loki: %w", err))
+		slog.ErrorContext(ctx, "dashboard QueryLogs: Loki query failed", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("query Loki: %w", err))
 	}
 
 	// Convert to proto
@@ -1835,7 +1840,7 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 		}
 	}
 
-	slog.Info("dashboard QueryLogs", "component", req.Msg.GetComponent(), "count", len(entries))
+	slog.InfoContext(ctx, "dashboard QueryLogs", "component", req.Msg.GetComponent(), "count", len(entries))
 	return connect.NewResponse(&agentfleetv1.QueryLogsResponse{
 		Entries:    protoEntries,
 		TotalCount: int32(len(entries)),

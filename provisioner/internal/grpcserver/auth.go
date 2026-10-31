@@ -45,7 +45,9 @@ const MinTokenLen = 32
 // (newGRPCServer). They are separate go.work modules with no shared package,
 // so a fix to one must be made in the other; factor it out if a third gRPC
 // server needs it.
-func NewGRPCServer(token string) (*grpc.Server, error) {
+//
+// opts are added after the chains: main passes its tracing's ServerOption.
+func NewGRPCServer(token string, opts ...grpc.ServerOption) (*grpc.Server, error) {
 	if len(strings.TrimSpace(token)) < MinTokenLen {
 		return nil, fmt.Errorf("FLEET_CORE_PROVISIONER_TOKEN is unset or shorter than %d bytes: refusing to serve ProvisionerService", MinTokenLen)
 	}
@@ -64,7 +66,7 @@ func NewGRPCServer(token string) (*grpc.Server, error) {
 		slog.Warn("provisioner grpc: rejected unauthenticated call", "method", method, "peer", addr)
 		return status.Error(codes.Unauthenticated, "missing or invalid bearer token")
 	}
-	return grpc.NewServer(
+	return grpc.NewServer(append([]grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(AccessLogInterceptor, metrics.UnaryInterceptor,
 			func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 				if err := check(ctx, info.FullMethod); err != nil {
@@ -78,5 +80,5 @@ func NewGRPCServer(token string) (*grpc.Server, error) {
 			}
 			return handler(srv, ss)
 		}),
-	), nil
+	}, opts...)...), nil
 }

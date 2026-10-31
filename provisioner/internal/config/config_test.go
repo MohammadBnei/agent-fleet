@@ -137,6 +137,7 @@ func TestLoad(t *testing.T) {
 		"AGENT_VAULT_API_ADDR": "http://vault-local:1", "AGENT_VAULT_PROXY_ADDR": "vault-local:2", "AGENT_VAULT_SECRETS_DIR": "/v",
 		"GITHUB_APP_DIR": "/app", "FLEET_GITHUB_ACCOUNTS": "1,2", "FLEET_GIT_AUTHOR_NAME": "me", "FLEET_GIT_AUTHOR_EMAIL": "me@x",
 		"FLEET_GIT_URL_REWRITE": "http://forge.local/", "FLEET_VERSION": "v1.2.3", "CLAUDE_MODEL": "m", "MAX_TURNS": "9",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces",
 	}
 	c, err := Load(func(k string) string { return env[k] })
 	if err != nil {
@@ -150,7 +151,7 @@ func TestLoad(t *testing.T) {
 		PostgresImage: "pg:1", RedisImage: "rd:1", SharedInstancePVCSize: "9Gi", SharedInstanceIdleTimeout: 6 * time.Millisecond,
 		AgentVaultAPI: "http://vault-local:1", AgentVaultProxy: "vault-local:2", AgentVaultSecretsDir: "/v", GitHubAppDir: "/app",
 		GitHubAccounts: "1,2", GitAuthorName: "me", GitAuthorEmail: "me@x", GitURLRewrite: "http://forge.local/",
-		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9",
+		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9", TracesEndpoint: "http://otel:4318/v1/traces",
 	}
 	if !reflect.DeepEqual(c, want) { // Warnings is nil too: every value here is good
 		t.Errorf("set:\n got %+v\nwant %+v", c, want)
