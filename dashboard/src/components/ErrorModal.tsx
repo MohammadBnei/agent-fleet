@@ -1,3 +1,4 @@
+import { ErrorMessage } from "./ErrorMessage";
 import { Modal } from "./Modal";
 
 // Shared error surface — instead of a persistent inline `alert alert-error`
@@ -16,7 +17,9 @@ export function ErrorModal({
       <h3 className="font-semibold text-base text-error mb-2">
         Something went wrong
       </h3>
-      <p className="text-sm whitespace-pre-wrap">{message}</p>
+      <div className="text-sm whitespace-pre-wrap">
+        {message && <ErrorMessage message={message} />}
+      </div>
       <div className="modal-action">
         <button type="button" className="btn btn-sm" onClick={onClose}>
           Close

@@ -45,7 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 // refusals: per variable, values that are bad and values that must load. A bad value of a required key refuses the start
-// (required: OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL, while the console gate is on); a bad value of any other key warns and takes the
+// (required: OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL, while the console gate is on; OTEL_EXPORTER_OTLP_TRACES_ENDPOINT always); a bad value of any other key warns and takes the
 // default. Every key Load validates is here (TestRefusalsCoverEveryRule).
 var refusals = []struct {
 	key  string
@@ -77,6 +77,7 @@ var refusals = []struct {
 	{"BRIDGE_AUTH_HOST", []string{"https://authentik.bnei.dev", "authentik.bnei.dev/", "a b", "user@host", ":443", "authentik.bnei.dev:99999", "authentik.bnei.dev:0", "authentik.bnei.dev:x"}, []string{"authentik.bnei.dev", "authentik.bnei.dev:443"}},
 	{"PROVISIONER_GRPC_ADDR", []string{"provisioner", "provisioner:", ":9090", "provisioner:abc", "provisioner:0", "provisioner:70000", "http://provisioner:9090", "a b:9090", "a/b:9090"}, []string{"127.0.0.1:9094", "provisioner.agent-fleet.svc.cluster.local:9090", "[::1]:9090"}},
 	{"STT_ADDR", []string{"stt", "stt:x", ":1", "a b:9090"}, []string{"ukubi-stt:9090"}},
+	{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", []string{"tempo:4318", "grpc://tempo:4317", "http://", "not a url"}, []string{"http://tempo.monitoring.svc.cluster.local:4318/v1/traces"}},
 }
 
 // defaultsFor is the Config Load builds from base alone: what a warned value must be replaced by (Warnings and
@@ -89,7 +90,7 @@ func defaultsFor(t *testing.T, base map[string]string) Config {
 }
 
 // required is the keys Load refuses on (the rest of refusals warns).
-var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true, "FLEET_DEV_ORIGINS": true}
+var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true, "FLEET_DEV_ORIGINS": true, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": true}
 
 // TestLoadRefusals: a bad value of a required key refuses the start; a bad value of any other key loads with one
 // warning naming it and the Config of the same environment without it. Every good value loads with no warning (the

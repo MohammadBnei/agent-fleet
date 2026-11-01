@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 )
 
 // minTokenBytes: a shorter token disables its client (docs/adr/0066 §3).
@@ -73,12 +74,12 @@ func (c *clientAuth) tokens(cl definitions.Client) []string {
 func (c *clientAuth) principal(ctx context.Context, procedure string, h http.Header) (context.Context, error) {
 	name := c.match(h)
 	if name == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errBadToken)
+		return nil, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errBadToken)
 	}
 	p := Principal{Client: name}
 	if !allowed(procedure, p) {
-		slog.Warn("agentsvc: refused client call", "client", name, "procedure", procedure)
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not available to clients"))
+		slog.WarnContext(ctx, "agentsvc: refused client call", "client", name, "procedure", procedure)
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("not available to clients"))
 	}
 	return withPrincipal(ctx, p), nil
 }

@@ -54,6 +54,11 @@ type Config struct {
 	// EgressPort is the loopback port of the router (EGRESS_PORT), used only
 	// when VaultProxy is set.
 	EgressPort string
+	// TracesEndpoint is the OTLP/HTTP traces URL, /v1/traces included
+	// (OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, read raw). Empty exports nothing;
+	// a malformed one refuses the start, in cmd/sidecar where telemetry.New
+	// checks it.
+	TracesEndpoint string
 }
 
 // FromProcess is the sidecar's configuration from its environment: the one call
@@ -74,17 +79,18 @@ func Load(getenv func(string) string) (Config, error) {
 		return fallback
 	}
 	c := Config{
-		LogLevel:     env("LOG_LEVEL", "info"),
-		SessionID:    getenv("SESSION_ID"),
-		LeaseID:      getenv("LEASE_ID"),
-		CoreGRPCAddr: env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
-		WorktreePath: env("WORKTREE_PATH", "/workspace"),
-		MCPPort:      env("MCP_PORT", "9090"),
-		LocalAPIPort: env("LOCAL_API_PORT", "9091"),
-		HealthPort:   env("HEALTH_PORT", "9092"),
-		VaultProxy:   getenv("FLEET_VAULT_PROXY"),
-		VaultHosts:   getenv("FLEET_VAULT_HOSTS"),
-		EgressPort:   env("EGRESS_PORT", "9093"),
+		LogLevel:       env("LOG_LEVEL", "info"),
+		SessionID:      getenv("SESSION_ID"),
+		LeaseID:        getenv("LEASE_ID"),
+		CoreGRPCAddr:   env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
+		WorktreePath:   env("WORKTREE_PATH", "/workspace"),
+		MCPPort:        env("MCP_PORT", "9090"),
+		LocalAPIPort:   env("LOCAL_API_PORT", "9091"),
+		HealthPort:     env("HEALTH_PORT", "9092"),
+		VaultProxy:     getenv("FLEET_VAULT_PROXY"),
+		VaultHosts:     getenv("FLEET_VAULT_HOSTS"),
+		EgressPort:     env("EGRESS_PORT", "9093"),
+		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
 	}
 	var errs []error
 	if c.SessionID == "" {

@@ -20,6 +20,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/MohammadBnei/ukubi-go/telemetry"
+
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
@@ -56,6 +58,18 @@ import (
 )
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
+	// Spans on every Connect and gRPC call, always (docs/adr/0081 §4, amended): ids for the logs and the Trace-Id
+	// header with or without a backend, exported only to OTEL_EXPORTER_OTLP_TRACES_ENDPOINT. The first defer, so it
+	// runs last: the servers below have drained their calls before the spans are flushed.
+	tr, err := newTracing(cfg.TracesEndpoint)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tr.Shutdown(); err != nil {
+			slog.Warn("traces", "err", err)
+		}
+	}()
 	// The pools' rule (MAX_DEFINITION_SESSIONS < MAX_IN_FLIGHT_TASKS, ...) is config.Load's.
 	store := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	sessionStore := sessions.NewStore(pool)
@@ -233,8 +247,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	grpcAuth := coreserver.NewAuthenticator(sessionStore, cfg.ProvisionerToken)
 	grpcServer := grpc.NewServer(
 		// errkeys first: every error a CoreService handler or interceptor returns leaves keyed (mountain plan/15 §4).
+		// The span is the StatsHandler's, so every interceptor already runs inside it.
 		grpc.ChainUnaryInterceptor(errkeys.UnaryServerInterceptor(), coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(errkeys.StreamServerInterceptor(), grpcAuth.StreamInterceptor),
+		grpc.ChainStreamInterceptor(errkeys.StreamServerInterceptor(), coreserver.StreamAccessLogInterceptor, grpcAuth.StreamInterceptor),
+		tr.ServerOption(),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
 	// docs/adr/0078 §8: a definition session hands work on through the
@@ -396,11 +412,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// stops an unauthenticated one. Only AgentService answers CORS, and only
 	// for the embed origins (auth.CORS, docs/adr/0068).
 	// errkeys.WithInterceptors on every Connect handler: what a handler or an inner interceptor returns leaves keyed.
-	interceptors := []connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
-	interceptors = append(interceptors, authInterceptors...)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		errkeys.WithInterceptors(interceptors...),
+		errkeys.WithInterceptors(connectInterceptors(tr, true, authInterceptors...)...),
 	)
 	// docs/adr/0037: an alert becomes a thot session — but only after a human
 	// opens the proposal it files (docs/adr/0048). Registered even when the
@@ -422,7 +436,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux.Handle("/webhook/alertmanager", alertHandler)
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 the identity is devIdentity (above).
-	memberInterceptors = append([]connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()},
+	memberInterceptors = connectInterceptors(tr, true,
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.DevOrigins...))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
@@ -456,7 +470,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	}
 	clientMux := http.NewServeMux()
 	_, clientHandler := agentfleetv1connect.NewAgentServiceHandler(agentSvc, errkeys.WithInterceptors(
-		dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor(), agentsvc.ClientInterceptor(clientList, cfg.TokenEnv)), connect.WithReadMaxBytes(1<<20))
+		connectInterceptors(tr, false, agentsvc.ClientInterceptor(clientList, cfg.TokenEnv))...), connect.WithReadMaxBytes(1<<20))
 	clientMux.Handle(agentPath, clientHandler)
 	clientServer := &http.Server{Addr: ":" + cfg.ClientPort, Handler: clientMux, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {
@@ -495,6 +509,26 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	case err := <-errCh:
 		return err
 	}
+}
+
+// newTracing is core's tracing: exported to endpoint, or ids only without one (telemetry.New("") would mint none).
+func newTracing(endpoint string) (*telemetry.Tracing, error) {
+	if endpoint == "" {
+		return telemetry.WithExporter(nil, "agent-fleet-core"), nil
+	}
+	return telemetry.New(endpoint, "agent-fleet-core")
+}
+
+// connectInterceptors is a Connect handler's chain inside errkeys' fallback, outside in: the call's span
+// (otelconnect: the access log needs it for trace_id and Trace-Id), the access log, CSRF for a surface the console
+// calls (not :9091: no browser reaches it), metrics, then the surface's own gates. The access log sits outside CSRF so
+// a refused call is logged and carries its Trace-Id too.
+func connectInterceptors(tr *telemetry.Tracing, csrf bool, gates ...connect.Interceptor) []connect.Interceptor {
+	ics := append(tr.Interceptors(), dashboard.NewAccessLogInterceptor())
+	if csrf {
+		ics = append(ics, dashboard.NewCSRFInterceptor())
+	}
+	return append(append(ics, metrics.NewConnectInterceptor()), gates...)
 }
 
 // originOf is a URL's scheme://host, the form a browser's Origin header takes.

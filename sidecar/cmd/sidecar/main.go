@@ -17,6 +17,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
+	uktel "github.com/MohammadBnei/ukubi-go/telemetry"
 )
 
 func main() {
@@ -26,7 +27,7 @@ func main() {
 	// SESSION_ID is checked before LEASE_ID.
 	cfg, cfgErr := config.FromProcess()
 	level, warning := resolveLogLevel(cfg.LogLevel)
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(uktel.NewLoggerAt(os.Stdout, level))
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
@@ -64,6 +65,14 @@ func main() {
 	// above only keep their old places and words. Unreachable today.
 	if cfgErr != nil {
 		slog.Error("refusing to start", "error", cfgErr)
+		os.Exit(1)
+	}
+	// Opt-in OTLP export (docs/adr/0081): inert without the variable, a
+	// malformed one refuses. The provisioner does not pass it into worker pods
+	// yet, so in practice this is off.
+	tr, err := uktel.New(cfg.TracesEndpoint, "agent-fleet-sidecar")
+	if err != nil {
+		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
 	}
 
@@ -117,7 +126,7 @@ func main() {
 	// direct-dial decision is not reversed — it is moot: there is no second pod
 	// to dial. The sidecar's outbound connections are the one to core it always
 	// had and, in a repo pod, the egress router's tunnels.
-	mcpServer, localAPIServer, healthServer := servers(core, mcpPort, localAPIPort, healthPort)
+	mcpServer, localAPIServer, healthServer := servers(tr, core, mcpPort, localAPIPort, healthPort)
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)
@@ -144,6 +153,10 @@ func main() {
 	_ = mcpServer.Shutdown(shutdownCtx)
 	_ = localAPIServer.Shutdown(shutdownCtx)
 	_ = healthServer.Shutdown(shutdownCtx)
+	// After the servers: their last requests' spans are in the batch.
+	if err := tr.Shutdown(); err != nil {
+		slog.Warn("traces", "err", err)
+	}
 }
 
 // servers builds the sidecar's three listeners. Split out of main purely so
@@ -161,9 +174,12 @@ func main() {
 //
 // health is the one exception, and the reason /readyz lives on its own mux:
 // kubelet dials the StartupProbe at the pod IP. See k8s.SidecarHealthPort.
-func servers(core *coreclient.Client, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
-	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
-		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
+//
+// tr spans the two agent-facing listeners, outside the access log so its line
+// carries the trace id. Not health: a probe every few seconds is noise.
+func servers(tr *uktel.Tracing, core *coreclient.Client, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
+	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: tr.Handler("sidecar mcp", withAccessLog("sidecar mcp", mcpserver.New(core))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
+		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: tr.Handler("sidecar local api", withAccessLog("sidecar local api", localapi.New(core))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 }
 
@@ -174,7 +190,7 @@ func withAccessLog(name string, h http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		h.ServeHTTP(sw, r)
-		slog.Info(name, "method", r.Method, "path", r.URL.Path, "status", sw.status, "duration_ms", time.Since(start).Milliseconds())
+		slog.InfoContext(r.Context(), name, "method", r.Method, "path", r.URL.Path, "status", sw.status, "duration_ms", time.Since(start).Milliseconds())
 	})
 }
 

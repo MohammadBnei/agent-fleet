@@ -1,5 +1,6 @@
 import { Code, type ConnectError } from "@connectrpc/connect";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorText } from "./agentErrors";
 import { approvePlan } from "./approvePlan";
 import type { Grant, GrantPreview } from "./components/PermissionCard";
 import { client, subscribeTranscript } from "./connectClient";
@@ -200,7 +201,7 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       setEntries((prev) => [...res.entries, ...prev]);
       setHasOlder(res.entries.length >= PAGE);
     } catch (err) {
-      setActionError((err as Error).message);
+      setActionError(errorText(err));
     } finally {
       setLoadingOlder(false);
     }

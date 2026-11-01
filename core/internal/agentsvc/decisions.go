@@ -35,10 +35,10 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 	}
 	entries, _, err := s.transcr.ReadSince(ctx, t.ID, seq, 1)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if len(entries) == 0 || entries[0].Seq != seq || entries[0].Type != wantType {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not a %s in this thread", seq, wantType))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("seq %d is not a %s in this thread", seq, wantType))
 	}
 	if wantType == "permission_request" {
 		var req struct {
@@ -47,9 +47,9 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 		_ = json.Unmarshal([]byte(entries[0].Text), &req)
 		if (req.Tool == "ExitPlanMode") != plan {
 			if plan {
-				return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not a plan", seq))
+				return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("seq %d is not a plan", seq))
 			}
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is a plan: use ApprovePlan", seq))
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("seq %d is a plan: use ApprovePlan", seq))
 		}
 	}
 	return t, nil
@@ -59,12 +59,12 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 // is still registered, on a thread that takes answers.
 func (s *Server) mayAnswer(p Principal, t *sessions.Session) error {
 	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
-		return connect.NewError(connect.CodePermissionDenied, errors.New("you cannot answer in this thread"))
+		return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("you cannot answer in this thread"))
 	}
 	// docs/adr/0070: a headless thread has nobody to answer, and its worker
 	// asks nothing.
 	if deref(t.Interaction, "ask") == "deny" {
-		return connect.NewError(connect.CodeFailedPrecondition, errors.New("this thread takes no answers"))
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this thread takes no answers"))
 	}
 	return nil
 }
@@ -73,14 +73,14 @@ func (s *Server) mayAnswer(p Principal, t *sessions.Session) error {
 func (s *Server) answerAt(ctx context.Context, p Principal, t *sessions.Session, seq int64, a decisions.Reply) (int64, error) {
 	r, err := s.decisions.Request(ctx, t.ID, seq)
 	if errors.Is(err, decisions.ErrNotFound) {
-		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is not an open request", seq))
+		return 0, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("seq %d is not an open request", seq))
 	}
 	if err != nil {
-		return 0, connect.NewError(connect.CodeInternal, err)
+		return 0, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// A card is answered by id only (AnswerDecision), and an admin's only.
 	if r.Kind == decisions.Card {
-		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("seq %d is a card: use AnswerDecision", seq))
+		return 0, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("seq %d is a card: use AnswerDecision", seq))
 	}
 	return s.answer(ctx, p, r, a)
 }
@@ -89,14 +89,14 @@ func (s *Server) answer(ctx context.Context, p Principal, r decisions.Record, a 
 	a.By = p.author()
 	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, a)
 	if err != nil {
-		return 0, dashboard.AnswerErr("agentsvc answer", err)
+		return 0, dashboard.AnswerErr(ctx, "agentsvc answer", err)
 	}
 	return n, nil
 }
 
 func validMessage(m string) error {
 	if len(m) > maxTitle*10 {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("message is too long"))
+		return errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("message is too long"))
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func validMessage(m string) error {
 func validAnswers(answersJSON string) error {
 	var answers map[string]any
 	if len(answersJSON) > maxText || json.Unmarshal([]byte(answersJSON), &answers) != nil || answers == nil {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("answers_json must be a JSON object"))
+		return errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("answers_json must be a JSON object"))
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 	}
 	b := req.Msg.GetBehavior()
 	if b != "allow" && b != "deny" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(`behavior must be "allow" or "deny"`))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New(`behavior must be "allow" or "deny"`))
 	}
 	if err := validMessage(req.Msg.GetMessage()); err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (s *Server) ApprovePlan(ctx context.Context, req *connect.Request[agentflee
 // power, the owner's or an admin's. Approving without one switches nothing.
 func choosesMode(p Principal, t *sessions.Session, mode string) error {
 	if mode != "" && !ownsOrAdmin(p, t) {
-		return connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its mode"))
+		return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only the thread's owner changes its mode"))
 	}
 	return nil
 }
@@ -210,7 +210,7 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 		return nil, errNoDecision
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	if m.GetBehavior() == "withdraw" {
 		return s.withdraw(ctx, p, r)
@@ -238,7 +238,7 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 			return nil, err
 		}
 		if m.GetScope() == grants.ScopeDefinition {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin remembers an approval for the whole definition"))
+			return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only an admin remembers an approval for the whole definition"))
 		}
 	}
 	n, err := s.answer(ctx, p, r, decisions.Reply{
@@ -258,7 +258,7 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 // when its writer is on the subject.
 func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record, m *agentfleetv1.AnswerDecisionRequest) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
 	if !p.Admin() {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only an admin answers a card"))
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only an admin answers a card"))
 	}
 	// decisions.answerCard refuses anything but exactly one of option_id or
 	// own_text (ErrInvalid, InvalidArgument via cardAnswerErr).
@@ -271,11 +271,11 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, decisions.Reply{By: p.author(), OptionID: m.GetOptionId(), OwnText: m.GetOwnText()})
 	res := &agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}
 	if nd := new(decisions.NotDelivered); errors.As(err, &nd) {
-		slog.Info("agentsvc: card answered, not delivered", "decisionId", r.ID, "error", err)
+		slog.InfoContext(ctx, "agentsvc: card answered, not delivered", "decisionId", r.ID, "error", err)
 		res.Delivered, res.NotDeliveredReason, err = false, nd.Reason, nil
 	}
 	if err != nil {
-		return nil, cardAnswerErr(err)
+		return nil, cardAnswerErr(ctx, err)
 	}
 	if closesThreads(r, m.GetOptionId()) {
 		if err := s.closeThreads(ctx, r.Subject); err != nil {
@@ -287,16 +287,16 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 
 // cardAnswerErr: an expired or stale card is keyed, so the console says
 // which and that nothing was done; a reply not a human's is refused.
-func cardAnswerErr(err error) error {
+func cardAnswerErr(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, decisions.ErrExpired):
 		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionExpired, err)
 	case errors.Is(err, decisions.ErrStale):
 		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, err)
 	case errors.Is(err, decisions.ErrNotOwner):
-		return connect.NewError(connect.CodePermissionDenied, err)
+		return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, err)
 	}
-	return dashboard.AnswerErr("agentsvc answer card", err)
+	return dashboard.AnswerErr(ctx, "agentsvc answer card", err)
 }
 
 // closesThreads: the chosen option's effect is close_threads.
@@ -317,7 +317,7 @@ func closesThreads(r decisions.Record, optionID string) bool {
 func (s *Server) closeThreads(ctx context.Context, subject string) error {
 	refs, err := s.sessions.OpenOnThreadKey(ctx, subject)
 	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
+		return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	var failed []error
 	for _, t := range refs {
@@ -326,7 +326,7 @@ func (s *Server) closeThreads(ctx context.Context, subject string) error {
 		}
 	}
 	if len(failed) > 0 {
-		return connect.NewError(connect.CodeAborted, fmt.Errorf("the card is answered, but some threads did not close: %w", errors.Join(failed...)))
+		return errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, fmt.Errorf("the card is answered, but some threads did not close: %w", errors.Join(failed...)))
 	}
 	return nil
 }
@@ -367,13 +367,13 @@ func (s *Server) closeThread(ctx context.Context, t sessions.ThreadRef) error {
 // configures one.
 func (s *Server) withdraw(ctx context.Context, p Principal, r decisions.Record) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
 	if r.Kind != decisions.Permission && r.Kind != decisions.Plan {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a %s decision is not withdrawn; answer it", r.Kind))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("a %s decision is not withdrawn; answer it", r.Kind))
 	}
 	if !p.Admin() && (r.Owner == nil || *r.Owner != p.owner() || !s.stillRegistered(p, &sessions.Session{DefinitionName: r.Definition})) {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner withdraws its decisions"))
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only the thread's owner withdraws its decisions"))
 	}
 	if err := s.decisions.Withdraw(ctx, r.ID); err != nil {
-		return nil, dashboard.AnswerErr("agentsvc withdraw", err)
+		return nil, dashboard.AnswerErr(ctx, "agentsvc withdraw", err)
 	}
 	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{}), nil
 }
@@ -414,10 +414,10 @@ func (s *Server) SetConfig(ctx context.Context, req *connect.Request[agentfleetv
 		return nil, err
 	}
 	if !ownsOrAdmin(p, t) || !s.stillRegistered(p, t) {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner changes its config"))
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only the thread's owner changes its config"))
 	}
 	if req.Msg.GetModel() != "" {
-		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("changing a thread's model is not supported yet"))
+		return nil, errkeys.Connect(connect.CodeUnimplemented, errkeys.KeyInternal, errors.New("changing a thread's model is not supported yet"))
 	}
 	if m := req.Msg.GetMode(); m != "" {
 		if err := s.setMode(ctx, t, m); err != nil {
@@ -439,7 +439,7 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 	}
 	// Not ownsOrAdmin: stopping a tainted thread only takes power away.
 	if !p.Admin() && (t.Owner == nil || *t.Owner != p.owner()) {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("only the thread's owner stops it"))
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only the thread's owner stops it"))
 	}
 	reason := "stopped by " + p.author().Name
 	if _, err := s.dash.StopSession(ctx, connect.NewRequest(&agentfleetv1.StopSessionRequest{SessionId: t.ID, Reason: &reason})); err != nil {

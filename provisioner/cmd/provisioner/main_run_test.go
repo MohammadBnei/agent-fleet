@@ -56,6 +56,8 @@ func TestMain_Refusals(t *testing.T) {
 		{"bad level warns, then refuses", []string{"LOG_LEVEL=bogus"}, []string{`"invalid LOG_LEVEL, defaulting to info","value":"bogus"`, `"provisioner starting"`, "refusing to start"}},
 		{"a bad optional value is warned about and does not hide the token's refusal", []string{"RECONCILE_INTERVAL_MS=0"},
 			[]string{`"level":"WARN"`, `RECONCILE_INTERVAL_MS must be`, `"provisioner starting"`, "FLEET_CORE_PROVISIONER_TOKEN is unset"}},
+		{"a malformed traces endpoint is refused after the token", []string{"FLEET_CORE_PROVISIONER_TOKEN=" + token, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=otel:4318"},
+			[]string{`"provisioner starting"`, `"refusing to start","error":"telemetry: the traces endpoint`}},
 		{"the token is refused before the rewrite", []string{"FLEET_GIT_URL_REWRITE=ftp://x"}, []string{`"provisioner starting"`, "FLEET_CORE_PROVISIONER_TOKEN is unset"}},
 	} {
 		code, out := runMain(t, c.env...)

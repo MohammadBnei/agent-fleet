@@ -11,6 +11,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 )
 
@@ -22,8 +23,8 @@ import (
 func (s *Server) ListSchedules(ctx context.Context, _ *connect.Request[agentfleetv1.ListSchedulesRequest]) (*connect.Response[agentfleetv1.ListSchedulesResponse], error) {
 	list, err := s.schedules.List(ctx)
 	if err != nil {
-		slog.Error("dashboard ListSchedules", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard ListSchedules", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	out := make([]*agentfleetv1.Schedule, 0, len(list))
 	for _, sc := range list {
@@ -44,14 +45,14 @@ func (s *Server) CreateSchedule(ctx context.Context, req *connect.Request[agentf
 
 	sc, err := s.schedules.Create(ctx, in, runAt)
 	if err != nil {
-		return nil, scheduleErr("CreateSchedule", err)
+		return nil, scheduleErr(ctx, "CreateSchedule", err)
 	}
 	return connect.NewResponse(&agentfleetv1.CreateScheduleResponse{Schedule: scheduleToProto(sc)}), nil
 }
 
 func (s *Server) UpdateSchedule(ctx context.Context, req *connect.Request[agentfleetv1.UpdateScheduleRequest]) (*connect.Response[agentfleetv1.UpdateScheduleResponse], error) {
 	if req.Msg.GetId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("id is required"))
 	}
 	in, runAt, err := scheduleFromProto(req.Msg.GetId(), req.Msg.GetName(), req.Msg.GetRepo(), req.Msg.GetPrompt(),
 		req.Msg.GetCron(), req.Msg.GetIntervalSeconds(), req.Msg.GetEnabled(), req.Msg.GetRunAt())
@@ -63,7 +64,7 @@ func (s *Server) UpdateSchedule(ctx context.Context, req *connect.Request[agentf
 	if s.repos.Inactive(ctx, in.Repo) {
 		cur, err := s.scheduleRepo(ctx, in.ID)
 		if err != nil {
-			return nil, scheduleErr("UpdateSchedule", err)
+			return nil, scheduleErr(ctx, "UpdateSchedule", err)
 		}
 		if cur != in.Repo {
 			return nil, errInactive(in.Repo)
@@ -72,28 +73,28 @@ func (s *Server) UpdateSchedule(ctx context.Context, req *connect.Request[agentf
 
 	sc, err := s.schedules.Update(ctx, in, runAt)
 	if err != nil {
-		return nil, scheduleErr("UpdateSchedule", err)
+		return nil, scheduleErr(ctx, "UpdateSchedule", err)
 	}
 	return connect.NewResponse(&agentfleetv1.UpdateScheduleResponse{Schedule: scheduleToProto(sc)}), nil
 }
 
 func (s *Server) RunScheduleNow(ctx context.Context, req *connect.Request[agentfleetv1.RunScheduleNowRequest]) (*connect.Response[agentfleetv1.RunScheduleNowResponse], error) {
 	if req.Msg.GetId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("id is required"))
 	}
 	sc, err := s.schedules.RunNow(ctx, req.Msg.GetId())
 	if err != nil {
-		return nil, scheduleErr("RunScheduleNow", err)
+		return nil, scheduleErr(ctx, "RunScheduleNow", err)
 	}
 	return connect.NewResponse(&agentfleetv1.RunScheduleNowResponse{Schedule: scheduleToProto(sc)}), nil
 }
 
 func (s *Server) DeleteSchedule(ctx context.Context, req *connect.Request[agentfleetv1.DeleteScheduleRequest]) (*connect.Response[agentfleetv1.DeleteScheduleResponse], error) {
 	if req.Msg.GetId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("id is required"))
 	}
 	if err := s.schedules.Delete(ctx, req.Msg.GetId()); err != nil {
-		return nil, scheduleErr("DeleteSchedule", err)
+		return nil, scheduleErr(ctx, "DeleteSchedule", err)
 	}
 	return connect.NewResponse(&agentfleetv1.DeleteScheduleResponse{}), nil
 }
@@ -103,21 +104,24 @@ func (s *Server) DeleteSchedule(ctx context.Context, req *connect.Request[agentf
 // where a bad cadence's only symptom is a last_status nobody reads.
 func scheduleFromProto(id, name, repo, prompt, cron string, interval int32, enabled bool, runAt string) (schedules.Schedule, time.Time, error) {
 	if name == "" || prompt == "" || repo == "" {
-		return schedules.Schedule{}, time.Time{}, connect.NewError(connect.CodeInvalidArgument,
+		return schedules.Schedule{}, time.Time{}, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal,
 			errors.New("name, repo and prompt are required"))
+
 	}
 	if cron != "" && interval != 0 {
-		return schedules.Schedule{}, time.Time{}, connect.NewError(connect.CodeInvalidArgument,
+		return schedules.Schedule{}, time.Time{}, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal,
 			errors.New("set a cron expression or an interval, not both"))
+
 	}
 	// Mirrors the column CHECK rather than trusting the DB error, so the user
 	// gets a real message instead of a raw constraint violation.
 	if interval != 0 && interval < 60 {
-		return schedules.Schedule{}, time.Time{}, connect.NewError(connect.CodeInvalidArgument,
+		return schedules.Schedule{}, time.Time{}, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal,
 			errors.New("interval_seconds must be at least 60"))
+
 	}
 	if err := schedules.ValidateCron(cron, time.Now()); err != nil {
-		return schedules.Schedule{}, time.Time{}, connect.NewError(connect.CodeInvalidArgument, err)
+		return schedules.Schedule{}, time.Time{}, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, err)
 	}
 
 	sc := schedules.Schedule{ID: id, Name: name, Repo: repo, Prompt: prompt, Cron: cron, Enabled: enabled}
@@ -131,22 +135,23 @@ func scheduleFromProto(id, name, repo, prompt, cron string, interval int32, enab
 	if sc.OneShot() {
 		var err error
 		if when, err = time.Parse(time.RFC3339, runAt); err != nil {
-			return schedules.Schedule{}, time.Time{}, connect.NewError(connect.CodeInvalidArgument,
+			return schedules.Schedule{}, time.Time{}, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal,
 				errors.New("a schedule with no cron and no interval needs run_at as an RFC3339 time"))
+
 		}
 	}
 	return sc, when, nil
 }
 
-func scheduleErr(op string, err error) error {
+func scheduleErr(ctx context.Context, op string, err error) error {
 	switch {
 	case errors.Is(err, schedules.ErrExists):
-		return connect.NewError(connect.CodeAlreadyExists, err)
+		return errkeys.Connect(connect.CodeAlreadyExists, errkeys.KeyInternal, err)
 	case errors.Is(err, pgx.ErrNoRows):
-		return connect.NewError(connect.CodeNotFound, err)
+		return errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 	}
-	slog.Error("dashboard "+op, "error", err)
-	return connect.NewError(connect.CodeInternal, err)
+	slog.ErrorContext(ctx, "dashboard "+op, "error", err)
+	return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 }
 
 func scheduleToProto(sc schedules.Schedule) *agentfleetv1.Schedule {

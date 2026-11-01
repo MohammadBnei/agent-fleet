@@ -14,8 +14,18 @@
   (the owner-only, client-only and origin refusals reach neither, and every `Aborted`
   means retry). The taint refusals get no key and stay an unkeyed `PermissionDenied`:
   [ADR-0082](0082-decision-cards.md) §3 removes taint.
-  **Not yet built:** the `rawMessage.includes("DEFINITION_CHANGED")` removal (§5 step 3),
-  §4 and §5 steps 4–5.
+  §4 (§5 step 4, 2026-10-31): core mints a span on every Connect call (DashboardService,
+  AgentService on 8080 and 9091) and every `CoreService` call, through `ukubi-go`
+  telemetry (`Interceptors`, `ServerOption`, `WithExporter(nil)` when no endpoint is set),
+  and exports them only to `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. Every Connect response
+  carries a `Trace-Id` header, every `CoreService` response a `trace-id` trailer; the
+  existing access-log lines (`dashboard rpc`, `core grpc`, INFO, words unchanged) gain
+  `trace_id`, `code`, `key` and `source`, the `file:line` that `errkeys.Connect` recorded
+  (core's `connect.NewError` sites now build through it; gRPC errors have no source).
+  All logs go through `telemetry.NewLogger`. The console's error text appends the trace id.
+  Gaps: ARCHITECTURE.md §5 Observability.
+  **Not yet built:** the `rawMessage.includes("DEFINITION_CHANGED")` removal (§5 step 3)
+  and §5 step 5.
 - **Date:** 2026-10-28
 - **Related:** [ADR-0066](0066-agent-service.md) (AgentService),
   [ADR-0067](0067-shared-and-private-sessions.md) (who may do what in a thread),
@@ -112,6 +122,12 @@ run time.
   `source` (`file:line`). Loki can already search that by trace id; a trace backend
   is deferred.
 - This is track 4's part (§5 step 4).
+- **§4 amended 2026-10-31 (owner): core always mints spans; export only with
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.** The ukubi Code Standard §7 has an app without
+  an endpoint trace nothing; core keeps the ids without a backend, so the trace id on a
+  response and on its log line exists from day one. No new log line: the access-log
+  line already written per call carries the fields, at its own level, so no new ERROR
+  series feeds the Loki alerts.
 
 ### 5. Order
 

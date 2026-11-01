@@ -54,10 +54,10 @@ func TestCardAnswerErr(t *testing.T) {
 	}{
 		{fmt.Errorf("append: %w", decisions.ErrExpired), connect.CodeFailedPrecondition, string(errkeys.KeyDecisionExpired)},
 		{fmt.Errorf("append: %w", decisions.ErrStale), connect.CodeFailedPrecondition, string(errkeys.KeyDecisionStale)},
-		{decisions.ErrNotOwner, connect.CodePermissionDenied, ""},
+		{decisions.ErrNotOwner, connect.CodePermissionDenied, string(errkeys.KeyInternal)},
 		{fmt.Errorf("%w: no option 9", decisions.ErrInvalid), connect.CodeInvalidArgument, ""},
 	} {
-		err := cardAnswerErr(tc.err)
+		err := cardAnswerErr(context.Background(), tc.err)
 		if connect.CodeOf(err) != tc.code || string(errkeys.Of(err)) != tc.key {
 			t.Errorf("%v: got %v key %q", tc.err, err, errkeys.Of(err))
 		}

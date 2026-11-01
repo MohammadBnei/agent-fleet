@@ -11,7 +11,7 @@ func getenv(env map[string]string) func(string) string {
 
 // TestLoadExecutor: each field comes from its own variable; the ports default when unset (or blank: getenv cannot tell), the token is read raw.
 func TestLoadExecutor(t *testing.T) {
-	if c := LoadExecutor(getenv(map[string]string{"GRPC_PORT": "1", "HTTP_PORT": "2", "THOT_AUTH_TOKEN": " tok "})); c != (Executor{GRPCPort: "1", HTTPPort: "2", AuthToken: " tok "}) {
+	if c := LoadExecutor(getenv(map[string]string{"GRPC_PORT": "1", "HTTP_PORT": "2", "THOT_AUTH_TOKEN": " tok ", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces"})); c != (Executor{GRPCPort: "1", HTTPPort: "2", AuthToken: " tok ", TracesEndpoint: "http://otel:4318/v1/traces"}) {
 		t.Errorf("set: %+v", c)
 	}
 	// Through getenv a blank variable and an unset one are the same "", so there is one case.

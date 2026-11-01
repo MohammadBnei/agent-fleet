@@ -9,6 +9,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -65,7 +66,7 @@ func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessio
 func principal(ctx context.Context) (Principal, error) {
 	p, ok := FromContext(ctx)
 	if !ok {
-		return Principal{}, connect.NewError(connect.CodeUnauthenticated, errNoPrincipal)
+		return Principal{}, errkeys.Connect(connect.CodeUnauthenticated, errkeys.KeyInternal, errNoPrincipal)
 	}
 	return p, nil
 }

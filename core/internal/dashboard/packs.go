@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -17,22 +18,22 @@ import (
 
 func (s *Server) packsStore() (*packs.Store, error) {
 	if s.packs == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("context packs are not configured"))
+		return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, errors.New("context packs are not configured"))
 	}
 	return s.packs, nil
 }
 
-func packErr(op string, err error) error {
+func packErr(ctx context.Context, op string, err error) error {
 	switch {
 	case errors.Is(err, packs.ErrExists):
-		return connect.NewError(connect.CodeAlreadyExists, err)
+		return errkeys.Connect(connect.CodeAlreadyExists, errkeys.KeyInternal, err)
 	case errors.Is(err, packs.ErrNotFound):
-		return connect.NewError(connect.CodeNotFound, err)
+		return errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, err)
 	case errors.Is(err, packs.ErrInvalid):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, err)
 	}
-	slog.Error("dashboard "+op, "error", err)
-	return connect.NewError(connect.CodeInternal, err)
+	slog.ErrorContext(ctx, "dashboard "+op, "error", err)
+	return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 }
 
 // who is the audit name for created_by / attached_by.
@@ -50,7 +51,7 @@ func (s *Server) ListPacks(ctx context.Context, _ *connect.Request[agentfleetv1.
 	}
 	list, err := ps.List(ctx)
 	if err != nil {
-		return nil, packErr("ListPacks", err)
+		return nil, packErr(ctx, "ListPacks", err)
 	}
 	out := &agentfleetv1.ListPacksResponse{}
 	for _, p := range list {
@@ -73,7 +74,7 @@ func (s *Server) CreatePack(ctx context.Context, req *connect.Request[agentfleet
 	}
 	// ponytail: one owner group until the editor role's ADR scopes them.
 	if err := ps.Create(ctx, req.Msg.GetName(), "platform-admins"); err != nil {
-		return nil, packErr("CreatePack", err)
+		return nil, packErr(ctx, "CreatePack", err)
 	}
 	return connect.NewResponse(&agentfleetv1.CreatePackResponse{}), nil
 }
@@ -89,7 +90,7 @@ func (s *Server) SavePackVersion(ctx context.Context, req *connect.Request[agent
 	}
 	n, err := ps.SaveVersion(ctx, v, who(ctx))
 	if err != nil {
-		return nil, packErr("SavePackVersion", err)
+		return nil, packErr(ctx, "SavePackVersion", err)
 	}
 	return connect.NewResponse(&agentfleetv1.SavePackVersionResponse{Version: int32(n)}), nil
 }
@@ -100,7 +101,7 @@ func (s *Server) DeletePack(ctx context.Context, req *connect.Request[agentfleet
 		return nil, err
 	}
 	if err := ps.Delete(ctx, req.Msg.GetName()); err != nil {
-		return nil, packErr("DeletePack", err)
+		return nil, packErr(ctx, "DeletePack", err)
 	}
 	return connect.NewResponse(&agentfleetv1.DeletePackResponse{}), nil
 }
@@ -112,7 +113,7 @@ func (s *Server) AttachPack(ctx context.Context, req *connect.Request[agentfleet
 	}
 	a := req.Msg.GetAttachment()
 	if err := ps.Attach(ctx, a.GetKind(), a.GetTarget(), req.Msg.GetName(), who(ctx)); err != nil {
-		return nil, packErr("AttachPack", err)
+		return nil, packErr(ctx, "AttachPack", err)
 	}
 	return connect.NewResponse(&agentfleetv1.AttachPackResponse{}), nil
 }
@@ -124,7 +125,7 @@ func (s *Server) DetachPack(ctx context.Context, req *connect.Request[agentfleet
 	}
 	a := req.Msg.GetAttachment()
 	if err := ps.Detach(ctx, a.GetKind(), a.GetTarget(), req.Msg.GetName()); err != nil {
-		return nil, packErr("DetachPack", err)
+		return nil, packErr(ctx, "DetachPack", err)
 	}
 	return connect.NewResponse(&agentfleetv1.DetachPackResponse{}), nil
 }

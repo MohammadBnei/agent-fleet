@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "./agentErrors";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorModal } from "./components/ErrorModal";
 import { LogDrawer } from "./components/LogDrawer";
@@ -220,7 +221,7 @@ export default function App() {
       })
       .catch((err: Error) => {
         if (++pollFailures.current >= 2) {
-          setSessionsError(err.message);
+          setSessionsError(errorText(err));
           setSessionsLoaded(true);
         }
       });
@@ -417,7 +418,7 @@ export default function App() {
         loadSessions();
         if (id === selectedId) clearSelection();
       })
-      .catch((err: Error) => setSessionsError(err.message));
+      .catch((err: Error) => setSessionsError(errorText(err)));
   }
 
   // retryTask used to live here, wired to a "retry" button on every crashed

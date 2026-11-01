@@ -14,10 +14,11 @@ func TestLoad(t *testing.T) {
 	c, err := Load(getenv(map[string]string{
 		"LOG_LEVEL": "debug", "SESSION_ID": "s1", "LEASE_ID": "l1", "CORE_GRPC_ADDR": "core:1", "WORKTREE_PATH": "/wt",
 		"MCP_PORT": "2", "LOCAL_API_PORT": "3", "HEALTH_PORT": "4", "FLEET_VAULT_PROXY": "http://t:p@v:5", "FLEET_VAULT_HOSTS": "a.test,b.test",
-		"EGRESS_PORT": "6",
+		"EGRESS_PORT": "6", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces",
 	}))
 	want := Config{LogLevel: "debug", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "core:1", WorktreePath: "/wt", MCPPort: "2",
-		LocalAPIPort: "3", HealthPort: "4", VaultProxy: "http://t:p@v:5", VaultHosts: "a.test,b.test", EgressPort: "6"}
+		LocalAPIPort: "3", HealthPort: "4", VaultProxy: "http://t:p@v:5", VaultHosts: "a.test,b.test", EgressPort: "6",
+		TracesEndpoint: "http://otel:4318/v1/traces"}
 	if err != nil || c != want {
 		t.Errorf("set: %+v, %v\nwant %+v", c, err, want)
 	}

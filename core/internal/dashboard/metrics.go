@@ -15,6 +15,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
@@ -33,10 +34,10 @@ const maxMetricsRange = 7 * 24 * time.Hour
 func (s *Server) QueryMetrics(ctx context.Context, req *connect.Request[agentfleetv1.QueryMetricsRequest]) (*connect.Response[agentfleetv1.QueryMetricsResponse], error) {
 	query := strings.TrimSpace(req.Msg.GetQuery())
 	if query == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("query is required"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("query is required"))
 	}
 	if s.prom == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("prometheus not configured"))
+		return nil, errkeys.Connect(connect.CodeUnimplemented, errkeys.KeyInternal, errors.New("prometheus not configured"))
 	}
 
 	startStr, endStr := req.Msg.GetStartTime(), req.Msg.GetEndTime()
@@ -45,38 +46,38 @@ func (s *Server) QueryMetrics(ctx context.Context, req *connect.Request[agentfle
 	if startStr == "" && endStr == "" {
 		data, err := s.prom.Query(ctx, query)
 		if err != nil {
-			slog.Error("dashboard QueryMetrics: instant query failed", "query", query, "error", err)
-			return nil, connect.NewError(connect.CodeInternal, err)
+			slog.ErrorContext(ctx, "dashboard QueryMetrics: instant query failed", "query", query, "error", err)
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
 		return connect.NewResponse(&agentfleetv1.QueryMetricsResponse{ResultJson: string(data)}), nil
 	}
 
 	start, err := time.Parse(time.RFC3339, startStr)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid start_time: %w", err))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid start_time: %w", err))
 	}
 	end, err := time.Parse(time.RFC3339, endStr)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid end_time: %w", err))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid end_time: %w", err))
 	}
 	if !end.After(start) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("end_time must be after start_time"))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("end_time must be after start_time"))
 	}
 	if end.Sub(start) > maxMetricsRange {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("range exceeds %s of retention", maxMetricsRange))
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("range exceeds %s of retention", maxMetricsRange))
 	}
 
 	var step time.Duration
 	if raw := req.Msg.GetStep(); raw != "" {
 		if step, err = time.ParseDuration(raw); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid step: %w", err))
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid step: %w", err))
 		}
 	}
 
 	data, err := s.prom.QueryRange(ctx, query, start, end, step)
 	if err != nil {
-		slog.Error("dashboard QueryMetrics: range query failed", "query", query, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard QueryMetrics: range query failed", "query", query, "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.QueryMetricsResponse{ResultJson: string(data)}), nil
 }
@@ -96,8 +97,8 @@ func (s *Server) QueryMetrics(ctx context.Context, req *connect.Request[agentfle
 func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentfleetv1.GetFleetTopologyRequest]) (*connect.Response[agentfleetv1.GetFleetTopologyResponse], error) {
 	all, err := s.sessions.List(ctx, defaultListLimit, "")
 	if err != nil {
-		slog.Error("dashboard GetFleetTopology: list tasks failed", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "dashboard GetFleetTopology: list tasks failed", "error", err)
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 
 	live := make([]sessions.Session, 0, len(all))
@@ -161,7 +162,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 	// come from Postgres and are still true.
 	if s.e2e != nil {
 		if v, worker, sidecar, err := s.e2e.GetVersion(ctx); err != nil {
-			slog.Warn("dashboard GetFleetTopology: provisioner version unavailable", "error", err)
+			slog.WarnContext(ctx, "dashboard GetFleetTopology: provisioner version unavailable", "error", err)
 		} else {
 			provisionerNode.Version = v
 			resp.WorkerImage, resp.SidecarImage = worker, sidecar
@@ -169,7 +170,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 	}
 
 	if err := s.annotateRates(ctx, nodes, edges); err != nil {
-		slog.Warn("dashboard GetFleetTopology: metrics unavailable", "error", err)
+		slog.WarnContext(ctx, "dashboard GetFleetTopology: metrics unavailable", "error", err)
 		resp.MetricsError = err.Error()
 	}
 	return connect.NewResponse(resp), nil

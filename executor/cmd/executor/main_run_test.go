@@ -52,6 +52,7 @@ func TestMain_Refusals(t *testing.T) {
 		{"no token", nil, "THOT_AUTH_TOKEN is unset or shorter than 32 bytes"},
 		{"short token", []string{"THOT_AUTH_TOKEN=" + strings.Repeat("t", 31)}, "THOT_AUTH_TOKEN is unset or shorter than 32 bytes"},
 		{"blank token", []string{"THOT_AUTH_TOKEN=" + strings.Repeat(" ", 40)}, "THOT_AUTH_TOKEN is unset or shorter than 32 bytes"},
+		{"a malformed traces endpoint", []string{"THOT_AUTH_TOKEN=" + strings.Repeat("t", 32), "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=otel:4318"}, `"refusing to start","error":"telemetry: the traces endpoint`},
 		{"a port that is no port", []string{"THOT_AUTH_TOKEN=" + strings.Repeat("t", 32), "GRPC_PORT=x"}, `"listen","error":"listen tcp: lookup tcp/x: unknown port"`},
 	} {
 		code, out := runMain(t, c.env...)

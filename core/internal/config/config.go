@@ -62,6 +62,10 @@ type Config struct {
 	// gitops/platform/values/prometheus/values.yaml.
 	PrometheusURL       string
 	ProvisionerGRPCAddr string
+	// TracesEndpoint is the OTLP/HTTP traces URL spans are exported to (docs/adr/0081 §4); unset, core still mints
+	// spans and trace ids and exports nothing. A malformed one refuses the start: a typo would drop every trace
+	// silently.
+	TracesEndpoint string
 
 	// STTAddr / STTToken reach ukubi-stt, the GPU speech-to-text service
 	// (infra-bootstrap ADR-0044). Both empty disables dictation, which is a
@@ -322,6 +326,7 @@ func Load(getenv func(string) string) (Config, error) {
 	c.DevOrigins = l.devOrigins("FLEET_DEV_ORIGINS", c.AuthDisabled)
 	c.OIDCIssuerURL = l.urlWith("OIDC_ISSUER_URL", "", l.requiredIf(!c.AuthDisabled))
 	c.DashboardPublicURL = l.urlWith("DASHBOARD_PUBLIC_URL", "", l.requiredIf(!c.AuthDisabled))
+	c.TracesEndpoint = l.urlWith("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", l.refuse)
 	// The three pools are one rule, checked on the values in use (a count that did not parse is its default).
 	c.MaxInFlight = l.count("MAX_IN_FLIGHT_TASKS", 5)
 	c.MaxDefinitionSessions = l.count("MAX_DEFINITION_SESSIONS", 0)

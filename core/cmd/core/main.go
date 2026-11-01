@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/MohammadBnei/ukubi-go/telemetry"
+
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/db"
 )
@@ -27,7 +29,7 @@ func main() {
 	if err != nil {
 		// A refusal to start (mountain plan/15 §5): every problem in the one error, before anything is opened. The
 		// logger is the JSON one at its default level, because LOG_LEVEL is one of the values that may be the problem.
-		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+		slog.SetDefault(telemetry.NewLogger(os.Stdout))
 		// The optional problems found alongside are logged first: a refusal returns no Config to carry them.
 		var refusal *config.RefusalError
 		if errors.As(err, &refusal) {
@@ -43,9 +45,10 @@ func main() {
 	// JSON, not slog's default TextHandler — Loki/LogQL queries against
 	// this fleet expect structured logs (same convention the TS services'
 	// log.ts already used). Level is LOG_LEVEL-configurable (debug/info/
-	// warn/error).
+	// warn/error). telemetry's logger adds trace_id and span_id to a line
+	// logged with a request's context (docs/adr/0081 §4).
 	level, warning := resolveLogLevel(cfg.LogLevel)
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(telemetry.NewLoggerAt(os.Stdout, level))
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
@@ -73,7 +76,7 @@ func main() {
 // the LOG_LEVEL one: LOG_LEVEL=error must not hide that a value was replaced by its default (LOG_LEVEL may itself be
 // one of them). A value with userinfo in it was redacted when the problem was written.
 func logConfigWarnings(problems []string) {
-	l := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	l := telemetry.NewLogger(os.Stdout)
 	for _, p := range problems {
 		l.Warn("invalid configuration value, using the default", "problem", p)
 	}
