@@ -3,7 +3,7 @@ module github.com/MohammadBnei/agent-fleet/sidecar
 go 1.27.1
 
 require (
-	github.com/MohammadBnei/ukubi-go v0.3.1-0.20261031220018-b64cda33a101
+	github.com/MohammadBnei/ukubi-go v0.4.0
 	github.com/mark3labs/mcp-go v1.3.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12

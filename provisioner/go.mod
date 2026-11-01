@@ -3,7 +3,7 @@ module github.com/MohammadBnei/agent-fleet/provisioner
 go 1.27.1
 
 require (
-	github.com/MohammadBnei/ukubi-go v0.3.1-0.20261031220018-b64cda33a101
+	github.com/MohammadBnei/ukubi-go v0.4.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/testcontainers/testcontainers-go v0.44.0
