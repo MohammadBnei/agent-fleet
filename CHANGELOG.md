@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.3.0](https://github.com/MohammadBnei/agent-fleet/compare/7.2.0...7.3.0) (2026-11-01)
+
+### Features
+
+* trace every core call and show its trace id on errors ([#357](https://github.com/MohammadBnei/agent-fleet/issues/357)) ([eec3c05](https://github.com/MohammadBnei/agent-fleet/commit/eec3c05a0d44ecc50e0db09b92bafa65be664f5e))
+
 # [7.2.0](https://github.com/MohammadBnei/agent-fleet/compare/7.1.0...7.2.0) (2026-10-31)
 
 ### Features
