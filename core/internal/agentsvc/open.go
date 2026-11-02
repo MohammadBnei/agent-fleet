@@ -135,17 +135,21 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 
 	// Every field that decides trust is part of the request's identity, so a
 	// retry cannot quietly turn a non-waking message into a waking one.
-	// ponytail: "false" holds the slot of the deprecated tainted flag, so claims
-	// stored before taint went (docs/adr/0082 §3) keep their hash.
-	sha := requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), "false",
-		m.GetActor(), m.GetCausationId(), m.GetVisibility(), m.GetInteraction(), m.GetLifecycle())
+	// The fifth slot was the tainted flag, gone (docs/adr/0082 §3). A claim
+	// stored before holds either value, so either matches.
+	// ponytail: drop wasTainted once no claim predates 000026.
+	hash := func(tainted string) string {
+		return requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), tainted,
+			m.GetActor(), m.GetCausationId(), m.GetVisibility(), m.GetInteraction(), m.GetLifecycle())
+	}
+	sha, wasTainted := hash("false"), hash("true")
 	claim, err := s.sessions.ClaimRequest(ctx, owner, key, sha)
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	// Step 3 before step 2: a different request on a used key is refused,
 	// never answered with the earlier request's result.
-	if claim.RequestSHA != sha {
+	if claim.RequestSHA != sha && claim.RequestSHA != wasTainted {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this idempotency_key was used for a different request"))
 	}
 	// Step 2: done is final, even when its session row was later deleted.

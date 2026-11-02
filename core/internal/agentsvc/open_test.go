@@ -120,6 +120,15 @@ func TestOpen(t *testing.T) {
 	if len(entries) != 3 || entries[0].ContextOnly || !entries[1].ContextOnly || entries[2].ContextOnly || entries[0].AuthorName != "client:bot" {
 		t.Fatalf("entries: %+v", entries)
 	}
+	// A claim stored before taint went, with the old flag set, still matches
+	// its redelivery (docs/adr/0082 §3).
+	old := requestSHA("d", "pr-1", "a stranger's comment", "false", "true", "", "", "private", "ask", "resident")
+	if _, err := pool.Exec(ctx, `INSERT INTO client_requests (invoker, idempotency_key, request_sha) VALUES ('client:bot', 'k2t', $1)`, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open(bot, "k2t", "a stranger's comment", false, ""); err != nil {
+		t.Fatalf("pre-deploy tainted claim: %v", err)
+	}
 	// The thread is the client's, and only its.
 	if _, err := s.GetTranscript(other, connect.NewRequest(&agentfleetv1.AgentServiceGetTranscriptRequest{ThreadId: first.GetThreadId()})); code(err) != connect.CodeNotFound {
 		t.Errorf("another client reads it: %v", err)
