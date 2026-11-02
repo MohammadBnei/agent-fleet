@@ -130,7 +130,7 @@ func TestOpenFromProposal_EventFoldedDuringOpen(t *testing.T) {
 	s.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, _ string) (string, error) {
 		bodies = append(bodies, p.Body)
 		if len(bodies) == 1 {
-			if _, err := propStore.FoldEvent(ctx, "notes", "event:d:t", "[e2]", "[e2] second", false); err != nil {
+			if _, err := propStore.FoldEvent(ctx, "notes", "event:d:t", "[e2]", "[e2] second"); err != nil {
 				return "", err
 			}
 		}

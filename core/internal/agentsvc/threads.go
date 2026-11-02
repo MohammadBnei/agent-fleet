@@ -53,11 +53,6 @@ func (s *Server) thread(ctx context.Context, p Principal, id string) (*sessions.
 	if err != nil {
 		return nil, definitions.Head{}, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	one := []sessions.Session{*t}
-	if err := s.sessions.Tainted(ctx, one); err != nil {
-		return nil, definitions.Head{}, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
-	}
-	t = &one[0]
 	h, _ := s.definitions.Resolve(*t.DefinitionName)
 	if !canSee(p, t, h) {
 		return nil, definitions.Head{}, errNoThread
@@ -82,14 +77,10 @@ func canSee(p Principal, t *sessions.Session, h definitions.Head) bool {
 }
 
 // canAnswer is who may post into or answer a thread they can see
-// (docs/adr/0067 §2): never another member's or a client's private thread,
-// and a tainted thread is admins' only.
+// (docs/adr/0067 §2): never another member's or a client's private thread.
 func canAnswer(p Principal, t *sessions.Session) bool {
 	if p.Admin() {
 		return true
-	}
-	if t.Tainted {
-		return false
 	}
 	if t.Owner != nil && *t.Owner == p.owner() {
 		return true
@@ -122,7 +113,6 @@ func threadToProto(p Principal, t *sessions.Session) *agentfleetv1.Thread {
 		Lifecycle:    deref(t.Lifecycle, "resident"),
 		Model:        deref(t.Model, ""),
 		Mode:         deref(t.PermissionMode, ""),
-		Tainted:      t.Tainted,
 		CreatedAt:    transcript.RFC3339OrEmpty(t.CreatedAt),
 		LastActiveAt: timeOrEmpty(t.LastActiveAt),
 		Status:       status(t),
@@ -153,9 +143,6 @@ func (s *Server) ListThreads(ctx context.Context, req *connect.Request[agentflee
 	// A client sees only its own threads, so other owners' shared rows never
 	// take its slots in the query's limit.
 	list, err := s.sessions.ListThreads(ctx, names, p.owner(), p.Member != nil, p.Admin())
-	if err == nil {
-		err = s.sessions.Tainted(ctx, list)
-	}
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
@@ -266,7 +253,7 @@ func entryToProto(p Principal, e transcript.Entry) *agentfleetv1.Entry {
 	return &agentfleetv1.Entry{
 		Seq: e.Seq, Type: dashboard.ProtoType(e.Type), From: e.From, Text: e.Text, ReplyTo: e.ReplyTo,
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt), AuthorName: e.AuthorName,
-		ContextOnly: e.ContextOnly, Untrusted: e.Untrusted,
+		ContextOnly: e.ContextOnly,
 		Mine: e.AuthorSub != "" && e.AuthorSub == p.author().Sub,
 	}
 }

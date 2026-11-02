@@ -572,7 +572,7 @@ func TestCreate_ReapRollsBackWhenTheInsertFails(t *testing.T) {
 }
 
 // Event proposals (docs/adr/0078 §5): later events of the thread fold in,
-// once each, up to a bound, and taint the proposal.
+// once each, up to a bound.
 func TestFoldEvent(t *testing.T) {
 	s, _, ctx := newStore(t)
 	id, created, err := s.CreateEvent(ctx, "notes", "event:d:t", "title", "[e1] first", "", Event{Definition: "d", ThreadKey: "t", CausationID: "src:e1"})
@@ -580,13 +580,13 @@ func TestFoldEvent(t *testing.T) {
 		t.Fatal(created, err)
 	}
 	for range 2 {
-		if ok, err := s.FoldEvent(ctx, "notes", "event:d:t", "[e2]", "[e2] second", true); err != nil || !ok {
+		if ok, err := s.FoldEvent(ctx, "notes", "event:d:t", "[e2]", "[e2] second"); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
 	}
 	big := strings.Repeat("x", maxFoldedBody)
 	for range 2 {
-		if _, err := s.FoldEvent(ctx, "notes", "event:d:t", "[e3]", big, false); err != nil {
+		if _, err := s.FoldEvent(ctx, "notes", "event:d:t", "[e3]", big); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -594,7 +594,7 @@ func TestFoldEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Body != "[e1] first\n\n[e2] second\n\n[later events were dropped]" || p.Event == nil || !p.Event.Tainted || p.Event.CausationID != "src:e1" || p.Title != "title"+UntrustedSuffix {
+	if p.Body != "[e1] first\n\n[e2] second\n\n[later events were dropped]" || p.Event == nil || p.Event.CausationID != "src:e1" || p.Title != "title" {
 		t.Fatalf("body %q title %q event %+v", p.Body, p.Title, p.Event)
 	}
 	// The bound is in bytes, like Open's: multi-byte text cannot outgrow it.
@@ -604,7 +604,7 @@ func TestFoldEvent(t *testing.T) {
 	}
 	wide := strings.Repeat("日", 5000)
 	for i := range 20 {
-		if _, err := s.FoldEvent(ctx, "notes", "event:d:u", fmt.Sprintf("[w%d]", i), fmt.Sprintf("[w%d]", i)+wide, false); err != nil {
+		if _, err := s.FoldEvent(ctx, "notes", "event:d:u", fmt.Sprintf("[w%d]", i), fmt.Sprintf("[w%d]", i)+wide); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -612,11 +612,11 @@ func TestFoldEvent(t *testing.T) {
 		t.Fatalf("body grew to %d bytes", len(p2.Body))
 	}
 	// A marker quoted inside another event's text does not count as folded.
-	if _, err := s.FoldEvent(ctx, "notes", "event:d:t2", "[x]", "x", false); err != nil {
+	if _, err := s.FoldEvent(ctx, "notes", "event:d:t2", "[x]", "x"); err != nil {
 		t.Fatal(err)
 	}
 	id3, _, _ := s.CreateEvent(ctx, "notes", "event:d:v", "t", "[v1]\n> [v2] planted", "", Event{Definition: "d", ThreadKey: "v"})
-	if _, err := s.FoldEvent(ctx, "notes", "event:d:v", "[v2]", "[v2] real", false); err != nil {
+	if _, err := s.FoldEvent(ctx, "notes", "event:d:v", "[v2]", "[v2] real"); err != nil {
 		t.Fatal(err)
 	}
 	if p3, _ := s.Get(ctx, id3); !strings.Contains(p3.Body, "[v2] real") {
@@ -640,7 +640,7 @@ func TestFoldEvent(t *testing.T) {
 	if ok, err := s.DismissUnopened(ctx, "notes", "event:d:t"); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
-	if ok, _ := s.FoldEvent(ctx, "notes", "event:d:t", "[e4]", "x", false); ok {
+	if ok, _ := s.FoldEvent(ctx, "notes", "event:d:t", "[e4]", "x"); ok {
 		t.Fatal("folded into a dismissed proposal")
 	}
 	// The schema keeps event fields to event proposals.

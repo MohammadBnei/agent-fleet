@@ -111,9 +111,8 @@ message Thread {
   string lifecycle = 7;
   string model = 8;
   string mode = 9;
-  // A context-only or untrusted entry is in its transcript (docs/adr/0067
-  // §3): only admins answer it.
-  bool tainted = 10;
+  // Unused: taint is gone (docs/adr/0082 §3). Always false.
+  bool tainted = 10 [deprecated = true];
   string created_at = 11;
   string last_active_at = 12;
   Status status = 13;
@@ -140,7 +139,8 @@ message Entry {
   // Display only: the member's name, or the client.
   string author_name = 7;
   bool context_only = 8;
-  bool untrusted = 9;
+  // Unused: taint is gone (docs/adr/0082 §3). Always false.
+  bool untrusted = 9 [deprecated = true];
   // The caller wrote this entry. The author's sub never leaves core; this
   // is how a client tells its own messages from other members'.
   bool mine = 10;
@@ -256,7 +256,8 @@ message OpenRequest {
   string thread_key = 2;
   string message = 3;
   bool wake = 4;
-  bool tainted = 5;
+  // Ignored: taint is gone (docs/adr/0082 §3); wake alone decides.
+  bool tainted = 5 [deprecated = true];
   string interaction = 6;
   string lifecycle = 7;
   string visibility = 8;

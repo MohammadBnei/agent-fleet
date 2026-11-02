@@ -106,7 +106,7 @@ type Definitions interface {
 // Proposals is proposals.Store.
 type Proposals interface {
 	CreateEvent(ctx context.Context, repo, dedupKey, title, body, payloadJSON string, ev proposals.Event) (string, bool, error)
-	FoldEvent(ctx context.Context, repo, dedupKey, marker, text string, tainted bool) (bool, error)
+	FoldEvent(ctx context.Context, repo, dedupKey, marker, text string) (bool, error)
 	DismissUnopened(ctx context.Context, repo, dedupKey string) (bool, error)
 }
 
@@ -547,8 +547,8 @@ func nameByte(c byte) bool {
 }
 
 type decision struct {
-	wake, tainted bool
-	outcome       *string
+	wake    bool
+	outcome *string
 }
 
 // decide returns the stored gate decision for (event, definition), computing
@@ -556,8 +556,8 @@ type decision struct {
 // (the client's actors, whether the thread waits on a person) move on.
 func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def string) (decision, error) {
 	var dec decision
-	err := d.pool.QueryRow(ctx, `SELECT wake, tainted, outcome FROM dispatch_decisions WHERE source = $1 AND event_id = $2 AND definition = $3`,
-		e.GetSource(), e.GetId(), def).Scan(&dec.wake, &dec.tainted, &dec.outcome)
+	err := d.pool.QueryRow(ctx, `SELECT wake, outcome FROM dispatch_decisions WHERE source = $1 AND event_id = $2 AND definition = $3`,
+		e.GetSource(), e.GetId(), def).Scan(&dec.wake, &dec.outcome)
 	if err == nil {
 		return dec, nil
 	}
@@ -568,15 +568,12 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 	if err != nil {
 		return dec, err
 	}
-	// A waking message holds only the addresser's bytes plus references
-	// (Render), so it is not tainted even on an unowned subject; otherwise
-	// Open would append it context-only to an existing thread.
 	err = d.pool.QueryRow(ctx, `
-		INSERT INTO dispatch_decisions (source, event_id, definition, wake, tainted, thread, hops, by_agent)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO dispatch_decisions (source, event_id, definition, wake, thread, hops, by_agent)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (source, event_id, definition) DO UPDATE SET source = dispatch_decisions.source
-		RETURNING wake, tainted, outcome`, e.GetSource(), e.GetId(), def, wake, !e.GetTrusted() && !wake,
-		e.GetSubject(), e.GetHops(), e.GetActor() == "agent").Scan(&dec.wake, &dec.tainted, &dec.outcome)
+		RETURNING wake, outcome`, e.GetSource(), e.GetId(), def, wake,
+		e.GetSubject(), e.GetHops(), e.GetActor() == "agent").Scan(&dec.wake, &dec.outcome)
 	return dec, err
 }
 
@@ -595,7 +592,7 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 	switch {
 	case e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:"):
 		if !e.GetTrusted() {
-			return false, nil // Publish's trust bit; removed with core's taint (docs/adr/0082 rollout 3)
+			return false, nil // Publish found no bridge event behind the session: a hand-off wakes only with a cause
 		}
 		// PublishEvent's hops end at a GitHub round-trip (an agent's push
 		// comes back as a fresh event), so its wakes are capped per thread.
@@ -670,7 +667,7 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	msg := Render(e, dec.wake)
 	req := &agentfleetv1.OpenRequest{
 		Definition: h.Name, ThreadKey: e.GetSubject(), Message: msg,
-		Wake: dec.wake, Tainted: dec.tainted,
+		Wake: dec.wake,
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: e.GetSource() + ":" + e.GetId() + ":" + h.Name,
 		Actor:          e.GetActorLogin(), CausationId: Causation(e),
@@ -692,7 +689,7 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 		// No thread and not waking, no slot, or a stored wake whose actor
 		// left actors.allow since: a person decides. Acked either way,
 		// since the bridge delivers head-of-line.
-		if err := d.propose(ctx, e, h, msg, dec.tainted); err != nil {
+		if err := d.propose(ctx, e, h, msg); err != nil {
 			return err
 		}
 		return d.finish(ctx, e, h.Name, "proposal")
@@ -808,23 +805,20 @@ func retryBusy(ctx context.Context, f func() error) error {
 // propose files the event as a proposal for the definition's thread, one per
 // thread while it stands: a later event folds into it, so nothing is lost
 // while it waits, and opening it delivers them all.
-func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head, text string, tainted bool) error {
+func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head, text string) error {
 	repo, key := h.Effective.Workspace.Repo, proposalKey(h.Name, e.GetSubject())
 	title := truncate(fmt.Sprintf("%s: %s on %s", h.Name, oneLine(strings.TrimPrefix(e.GetType(), "dev.bnei.")), oneLine(e.GetSubject())), 100)
-	if tainted {
-		title += proposals.UntrustedSuffix // FoldEvent adds it when a later event taints the proposal
-	}
 	payload, _ := json.Marshal(map[string]any{
 		"seq": e.GetSeq(), "source": e.GetSource(), "id": e.GetId(), "type": e.GetType(), "subject": e.GetSubject(),
 		"actor": e.GetActor(), "actor_login": e.GetActorLogin(), "trusted": e.GetTrusted(),
 	})
 	_, created, err := d.props.CreateEvent(ctx, repo, key, title, text, string(payload), proposals.Event{
-		Definition: h.Name, ThreadKey: e.GetSubject(), CausationID: Causation(e), Tainted: tainted,
+		Definition: h.Name, ThreadKey: e.GetSubject(), CausationID: Causation(e),
 	})
 	if err != nil || created {
 		return err
 	}
-	folded, err := d.props.FoldEvent(ctx, repo, key, marker(e), text, tainted)
+	folded, err := d.props.FoldEvent(ctx, repo, key, marker(e), text)
 	if err != nil {
 		return err
 	}
@@ -990,7 +984,7 @@ func truncate(s string, n int) string {
 
 // OpenProposal opens an event proposal as the admin who clicked it
 // (docs/adr/0078 §5): the definition's thread, through the bridge client's
-// Open, waking, with the proposal's taint and causation. The key carries the
+// Open, waking, with the proposal's causation. The key carries the
 // body's hash and the admin, both part of the request: a retry after more
 // events folded in, or another admin's click after a failed attempt, is a new
 // request rather than a refused one. The dashboard marks the proposal opened
@@ -1001,7 +995,7 @@ func OpenProposal(ctx context.Context, agents Agents, p *proposals.Proposal, adm
 	}
 	sum := sha256.Sum256([]byte(p.Body + "\x00" + adminSub))
 	res, err := agents.OpenAsAdmin(ctx, Client, adminSub, &agentfleetv1.OpenRequest{
-		Definition: p.Event.Definition, ThreadKey: p.Event.ThreadKey, Message: truncate(p.Body, maxMessage), Tainted: p.Event.Tainted,
+		Definition: p.Event.Definition, ThreadKey: p.Event.ThreadKey, Message: truncate(p.Body, maxMessage),
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: "proposal:" + p.ID + ":" + hex.EncodeToString(sum[:8]), CausationId: p.Event.CausationID,
 	})

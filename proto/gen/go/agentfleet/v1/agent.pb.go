@@ -385,8 +385,9 @@ type Thread struct {
 	Lifecycle string `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
 	Model     string `protobuf:"bytes,8,opt,name=model,proto3" json:"model,omitempty"`
 	Mode      string `protobuf:"bytes,9,opt,name=mode,proto3" json:"mode,omitempty"`
-	// A context-only or untrusted entry is in its transcript (docs/adr/0067
-	// §3): only admins answer it.
+	// Unused: taint is gone (docs/adr/0082 §3). Always false.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 	Tainted       bool    `protobuf:"varint,10,opt,name=tainted,proto3" json:"tainted,omitempty"`
 	CreatedAt     string  `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	LastActiveAt  string  `protobuf:"bytes,12,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`
@@ -488,6 +489,7 @@ func (x *Thread) GetMode() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 func (x *Thread) GetTainted() bool {
 	if x != nil {
 		return x.Tainted
@@ -592,7 +594,10 @@ type Entry struct {
 	// Display only: the member's name, or the client.
 	AuthorName  string `protobuf:"bytes,7,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
 	ContextOnly bool   `protobuf:"varint,8,opt,name=context_only,json=contextOnly,proto3" json:"context_only,omitempty"`
-	Untrusted   bool   `protobuf:"varint,9,opt,name=untrusted,proto3" json:"untrusted,omitempty"`
+	// Unused: taint is gone (docs/adr/0082 §3). Always false.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
+	Untrusted bool `protobuf:"varint,9,opt,name=untrusted,proto3" json:"untrusted,omitempty"`
 	// The caller wrote this entry. The author's sub never leaves core; this
 	// is how a client tells its own messages from other members'.
 	Mine          bool `protobuf:"varint,10,opt,name=mine,proto3" json:"mine,omitempty"`
@@ -686,6 +691,7 @@ func (x *Entry) GetContextOnly() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 func (x *Entry) GetUntrusted() bool {
 	if x != nil {
 		return x.Untrusted
@@ -1786,18 +1792,21 @@ func (x *GetStatusResponse) GetStatus() *Status {
 }
 
 type OpenRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Definition     string                 `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
-	ThreadKey      string                 `protobuf:"bytes,2,opt,name=thread_key,json=threadKey,proto3" json:"thread_key,omitempty"`
-	Message        string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	Wake           bool                   `protobuf:"varint,4,opt,name=wake,proto3" json:"wake,omitempty"`
-	Tainted        bool                   `protobuf:"varint,5,opt,name=tainted,proto3" json:"tainted,omitempty"`
-	Interaction    string                 `protobuf:"bytes,6,opt,name=interaction,proto3" json:"interaction,omitempty"`
-	Lifecycle      string                 `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
-	Visibility     string                 `protobuf:"bytes,8,opt,name=visibility,proto3" json:"visibility,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Actor          string                 `protobuf:"bytes,10,opt,name=actor,proto3" json:"actor,omitempty"`
-	CausationId    string                 `protobuf:"bytes,11,opt,name=causation_id,json=causationId,proto3" json:"causation_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Definition string                 `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
+	ThreadKey  string                 `protobuf:"bytes,2,opt,name=thread_key,json=threadKey,proto3" json:"thread_key,omitempty"`
+	Message    string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Wake       bool                   `protobuf:"varint,4,opt,name=wake,proto3" json:"wake,omitempty"`
+	// Ignored: taint is gone (docs/adr/0082 §3); wake alone decides.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
+	Tainted        bool   `protobuf:"varint,5,opt,name=tainted,proto3" json:"tainted,omitempty"`
+	Interaction    string `protobuf:"bytes,6,opt,name=interaction,proto3" json:"interaction,omitempty"`
+	Lifecycle      string `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
+	Visibility     string `protobuf:"bytes,8,opt,name=visibility,proto3" json:"visibility,omitempty"`
+	IdempotencyKey string `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Actor          string `protobuf:"bytes,10,opt,name=actor,proto3" json:"actor,omitempty"`
+	CausationId    string `protobuf:"bytes,11,opt,name=causation_id,json=causationId,proto3" json:"causation_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1860,6 +1869,7 @@ func (x *OpenRequest) GetWake() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 func (x *OpenRequest) GetTainted() bool {
 	if x != nil {
 		return x.Tainted
@@ -2977,7 +2987,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x0flifecycle_allow\x18\x05 \x03(\tR\x0elifecycleAllow\"$\n" +
 	"\"AgentServiceListDefinitionsRequest\"k\n" +
 	"#AgentServiceListDefinitionsResponse\x12D\n" +
-	"\vdefinitions\x18\x01 \x03(\v2\".agentfleet.v1.AgentDefinitionInfoR\vdefinitions\"\xfa\x02\n" +
+	"\vdefinitions\x18\x01 \x03(\v2\".agentfleet.v1.AgentDefinitionInfoR\vdefinitions\"\xfe\x02\n" +
 	"\x06Thread\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1e\n" +
 	"\n" +
@@ -2991,9 +3001,9 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\vinteraction\x18\x06 \x01(\tR\vinteraction\x12\x1c\n" +
 	"\tlifecycle\x18\a \x01(\tR\tlifecycle\x12\x14\n" +
 	"\x05model\x18\b \x01(\tR\x05model\x12\x12\n" +
-	"\x04mode\x18\t \x01(\tR\x04mode\x12\x18\n" +
+	"\x04mode\x18\t \x01(\tR\x04mode\x12\x1c\n" +
 	"\atainted\x18\n" +
-	" \x01(\bR\atainted\x12\x1d\n" +
+	" \x01(\bB\x02\x18\x01R\atainted\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\v \x01(\tR\tcreatedAt\x12$\n" +
 	"\x0elast_active_at\x18\f \x01(\tR\flastActiveAt\x12-\n" +
@@ -3001,7 +3011,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x06Status\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xbb\x02\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xbf\x02\n" +
 	"\x05Entry\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x126\n" +
 	"\x04type\x18\x02 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12\x12\n" +
@@ -3012,8 +3022,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"created_at\x18\x06 \x01(\tR\tcreatedAt\x12\x1f\n" +
 	"\vauthor_name\x18\a \x01(\tR\n" +
 	"authorName\x12!\n" +
-	"\fcontext_only\x18\b \x01(\bR\vcontextOnly\x12\x1c\n" +
-	"\tuntrusted\x18\t \x01(\bR\tuntrusted\x12\x12\n" +
+	"\fcontext_only\x18\b \x01(\bR\vcontextOnly\x12 \n" +
+	"\tuntrusted\x18\t \x01(\bB\x02\x18\x01R\tuntrusted\x12\x12\n" +
 	"\x04mine\x18\n" +
 	" \x01(\bR\x04mineB\v\n" +
 	"\t_reply_to\"4\n" +
@@ -3080,7 +3090,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x10GetStatusRequest\x12\x1b\n" +
 	"\tthread_id\x18\x01 \x01(\tR\bthreadId\"B\n" +
 	"\x11GetStatusResponse\x12-\n" +
-	"\x06status\x18\x01 \x01(\v2\x15.agentfleet.v1.StatusR\x06status\"\xd6\x02\n" +
+	"\x06status\x18\x01 \x01(\v2\x15.agentfleet.v1.StatusR\x06status\"\xda\x02\n" +
 	"\vOpenRequest\x12\x1e\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\tR\n" +
@@ -3088,8 +3098,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"thread_key\x18\x02 \x01(\tR\tthreadKey\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x12\n" +
-	"\x04wake\x18\x04 \x01(\bR\x04wake\x12\x18\n" +
-	"\atainted\x18\x05 \x01(\bR\atainted\x12 \n" +
+	"\x04wake\x18\x04 \x01(\bR\x04wake\x12\x1c\n" +
+	"\atainted\x18\x05 \x01(\bB\x02\x18\x01R\atainted\x12 \n" +
 	"\vinteraction\x18\x06 \x01(\tR\vinteraction\x12\x1c\n" +
 	"\tlifecycle\x18\a \x01(\tR\tlifecycle\x12\x1e\n" +
 	"\n" +

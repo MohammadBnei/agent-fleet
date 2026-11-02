@@ -131,13 +131,15 @@ func TestThreads_Visibility(t *testing.T) {
 	if err := post(bob, priv); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("bob posts to alice's private: %v", err)
 	}
-	// A tainted shared thread is admins' only.
-	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
-		VALUES ($1, 0, 'human', 'event', 'discussion', 'e1', true, true)`, shared); err != nil {
+	// A stranger's words in a shared thread change nothing: members still
+	// answer it (docs/adr/0082 §3).
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only)
+		VALUES ($1, 0, 'human', 'event', 'discussion', 'e1', true)`, shared); err != nil {
 		t.Fatal(err)
 	}
-	if err := post(bob, shared); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("bob posts to tainted shared: %v", err)
+	// Past authorization, the post reaches the warm, which this server lacks.
+	if err := post(bob, shared); connect.CodeOf(err) == connect.CodePermissionDenied || connect.CodeOf(err) == connect.CodeNotFound {
+		t.Errorf("bob posts to a shared thread holding a stranger's entry: %v", err)
 	}
 	// The definition moved on: the thread is not silently carried over.
 	s.definitions = fakeHeads{{Name: "d", SHA: "sha2", Effective: spec}}

@@ -1,6 +1,6 @@
 # ADR-0076 — Definition sessions run in `auto`, and their allow list grows by remembered approvals
 
-- **Status:** Accepted (2026-10-22)
+- **Status:** Accepted (2026-10-22); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3.
 - **Built:** §1 (the fleet's `auto` runs the SDK in `default`, `sdkMode` in
   `worker/src/session.ts`), §2 (`definitionDecision`), §3's grants: `session_grants`/
   `definition_grants` (migration 000015), core-rendered rules (`core/internal/grants`), scope and

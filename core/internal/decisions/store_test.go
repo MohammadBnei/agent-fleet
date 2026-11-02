@@ -629,3 +629,29 @@ func TestWatch(t *testing.T) {
 		t.Errorf("resume from %d: %+v", base.version, again)
 	}
 }
+
+// 000026 drops taint (docs/adr/0082 §3): up strips a tainted proposal's title
+// suffix, and down restores the columns with a context-only entry in place.
+func TestDropTaintMigration(t *testing.T) {
+	f := setup(t)
+	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only)
+		VALUES ($1, 900, 'human', 'a comment', 'discussion', 'ctx', true)`, s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(f.ctx, migration(t, "000026_drop_taint.down.sql")); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	var id string
+	if err := f.pool.QueryRow(f.ctx, `INSERT INTO proposals (repo, source, title, body, definition_name, thread_key, tainted)
+		VALUES ('web', 'event', 'owner: handoff on x (untrusted)', 'b', 'owner', 'x', true) RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(f.ctx, migration(t, "000026_drop_taint.up.sql")); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	var title string
+	if err := f.pool.QueryRow(f.ctx, `SELECT title FROM proposals WHERE id = $1`, id).Scan(&title); err != nil || title != "owner: handoff on x" {
+		t.Errorf("title after up: %q, %v", title, err)
+	}
+}

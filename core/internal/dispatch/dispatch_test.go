@@ -164,7 +164,7 @@ func TestRouteAndGate(t *testing.T) {
 		t.Fatalf("routed to %v", defsOf(agents.opens))
 	}
 	o := agents.opens[0]
-	if !o.GetWake() || o.GetTainted() || o.GetIdempotencyKey() != "github.com/MohammadBnei/notes:c1:owner" ||
+	if !o.GetWake() || o.GetIdempotencyKey() != "github.com/MohammadBnei/notes:c1:owner" ||
 		o.GetThreadKey() != "github/MohammadBnei/notes/pr/7" || o.GetCausationId() != "github.com/MohammadBnei/notes:c1" ||
 		o.GetVisibility() != "shared" || o.GetActor() != "MohammadBnei" || !strings.Contains(o.GetMessage(), "@owner looks good") {
 		t.Fatalf("open %+v", o)
@@ -192,9 +192,6 @@ func TestRouteAndGate(t *testing.T) {
 		}
 		if len(agents.opens) == 0 || agents.opens[0].GetWake() {
 			t.Fatalf("%s/%s woke: %+v", e.GetActor(), e.GetActorLogin(), agents.opens)
-		}
-		if agents.opens[0].GetTainted() != !e.GetTrusted() {
-			t.Fatalf("%s: tainted=%v", e.GetId(), agents.opens[0].GetTainted())
 		}
 	}
 	// A trusted hand-off through PublishEvent wakes.
@@ -431,8 +428,8 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 		}
 		o := agents.opens[0]
 		m := o.GetMessage()
-		if o.GetDefinition() != "owner" || !o.GetWake() || o.GetTainted() || strings.Contains(m, "STRANGER") || !strings.Contains(m, "https://x/7") {
-			t.Errorf("%s: wake=%v tainted=%v message:\n%s", e.GetType(), o.GetWake(), o.GetTainted(), m)
+		if o.GetDefinition() != "owner" || !o.GetWake() || strings.Contains(m, "STRANGER") || !strings.Contains(m, "https://x/7") {
+			t.Errorf("%s: wake=%v message:\n%s", e.GetType(), o.GetWake(), m)
 		}
 		if e.GetId() != "ul" && !strings.Contains(m, "> @owner T0 asks") {
 			t.Errorf("%s: T0's words are missing:\n%s", e.GetType(), m)
@@ -477,7 +474,7 @@ func TestBlockedThreadGetsContext(t *testing.T) {
 	if err := d.Handle(ctx, mention("c1")); err != nil {
 		t.Fatal(err)
 	}
-	if len(agents.opens) != 2 || agents.opens[0].GetWake() || agents.opens[0].GetTainted() {
+	if len(agents.opens) != 2 || agents.opens[0].GetWake() {
 		t.Fatalf("a thread waiting on a person was woken: %+v", agents.opens)
 	}
 }
@@ -592,11 +589,11 @@ func TestProposals(t *testing.T) {
 	}
 	p := open[0]
 	if p.Source != "event" || p.Event == nil || p.Event.Definition != "owner" || p.Event.ThreadKey != first.GetSubject() ||
-		!p.Event.Tainted || p.Event.CausationID != Causation(first) || p.Repo != "notes" {
+		p.Event.CausationID != Causation(first) || p.Repo != "notes" {
 		t.Fatalf("proposal %+v %+v", p, p.Event)
 	}
 	if strings.Count(p.Body, "[bridge event "+Causation(second)+"]") != 1 || strings.Contains(p.Body, Causation(third)) ||
-		!strings.Contains(p.Body, "> please") || !strings.HasSuffix(p.Title, proposals.UntrustedSuffix) {
+		!strings.Contains(p.Body, "> please") || strings.Contains(p.Title, "untrusted") {
 		t.Fatalf("title %q body:\n%s", p.Title, p.Body)
 	}
 
@@ -606,7 +603,7 @@ func TestProposals(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := agents.opens[len(agents.opens)-1]
-	if last.GetDefinition() != "owner" || last.GetMessage() != p.Body || !last.GetTainted() || last.GetActor() != "admin:sub-1" ||
+	if last.GetDefinition() != "owner" || last.GetMessage() != p.Body || last.GetActor() != "admin:sub-1" ||
 		!strings.HasPrefix(last.GetIdempotencyKey(), "proposal:"+p.ID+":") {
 		t.Fatalf("admin open %+v", last)
 	}

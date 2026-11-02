@@ -33,6 +33,9 @@
   PR or issue only) appends, then archives every open thread on the subject. The fleet's close of a PR it did not
   merge into the default branch closes nothing: it drafts core's card in the oldest open thread on the PR. The
   console shows a card in the deck, nothing pre-selected, and an irreversible option takes a second click
+- **Built (slice 3):** taint removed end to end, as §3 now reads: no gate and no label; migration 000026; the
+  `Thread.tainted`, `Entry.untrusted` and `OpenRequest.tainted` fields deprecated and unused; `Open`'s request hash
+  keeps the old flag's slot as `"false"`, so claims made before keep matching.
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
@@ -82,10 +85,15 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 3. **No taint (owner, 2026-10-29).** What a session reads changes nothing about what it may do or whom it may wake.
    - Sessions keep today's tools and modes: `auto` answers everything but `rm`/`sudo` (ADR-0053); `gh`, `curl`,
      `wget`, `git fetch`, `WebFetch`, `WebSearch` and the browser stay available.
-   - An entry keeps its author and tier as a label, for the reader and for a card's `outside_inputs`, never as a
-     gate.
-   - Core's taint goes: `Open`'s `Untrusted`, `sessions.Store.Tainted`, `Publish`'s trust bit (a fleet hand-off
-     wakes), the island's admin-only tainted thread (ADR-0067 §3) and ADR-0072's tainted-step warning.
+   - An entry keeps its author and actor, which say who wrote it. No trust label is kept (owner, 2026-11-02: "not
+     truly securing anything but will be really annoying"): migration 000026 drops `transcript.untrusted`,
+     `proposals.tainted` and `dispatch_decisions.tainted`, and a proposal's title loses its " (untrusted)" suffix.
+   - Core's taint goes: `Open`'s `tainted` (deprecated on the wire, ignored: `wake` alone decides),
+     `sessions.Store.Tainted` and `Thread.tainted`, `Entry.untrusted`, the island's admin-only tainted thread
+     (ADR-0067 §3) and ADR-0072's tainted-step warning.
+   - `Publish`'s trust is the cause's (owner, 2026-11-02): a hand-off is trusted, and may wake, when a bridge event
+     caused the session, whatever the session has read since. A session nothing caused (one a person opened)
+     publishes untrusted, and its hand-off files a proposal instead of waking.
    - What bounds a stranger's words: they never start work (§1, §2), a card option carries only its bound effect
      (§6), and the default branch moves only through the merge right (§9) or an owner card.
 4. **An agent drafts a card when the choice is the owner's**: a stranger's PR, a step outside its mandate, a

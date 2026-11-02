@@ -1,6 +1,6 @@
 # ADR-0066 — AgentService: one API for members and registered clients
 
-- **Status:** Accepted (2026-10-22) — §1 amended by [ADR-0068](0068-islands.md) (CORS for island origins); §4 amended by [ADR-0076](0076-definition-sessions-run-in-auto.md) (`scope`, `rule_form`)
+- **Status:** Accepted (2026-10-22) — §1 amended by [ADR-0068](0068-islands.md) (CORS for island origins); §4 amended by [ADR-0076](0076-definition-sessions-run-in-auto.md) (`scope`, `rule_form`); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3.
 - **Built:** both listeners (`:8080` members, `:9091` clients with a bearer per registration),
   the fail-closed authz table (`core/internal/agentsvc/authz.go`), definitions, threads,
   messages, transcript, decisions, `SetConfig` (mode), `Stop`, `GetStatus`, and `Open`/

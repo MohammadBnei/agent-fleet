@@ -42,7 +42,7 @@ func (n *noWarm) WarmIfIdle(_ context.Context, id string) (string, error) {
 }
 
 // docs/adr/0066 §6-7 over real Postgres: claims, retries, wake and actors,
-// context-only follow-ups, taint, and CloseThread.
+// context-only follow-ups, and CloseThread.
 func TestOpen(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -70,9 +70,9 @@ func TestOpen(t *testing.T) {
 	bot := withPrincipal(ctx, Principal{Client: "bot"})
 	other := withPrincipal(ctx, Principal{Client: "other"})
 
-	open := func(c context.Context, key, msg string, wake, tainted bool, actor string) (*agentfleetv1.OpenResponse, error) {
+	open := func(c context.Context, key, msg string, wake bool, actor string) (*agentfleetv1.OpenResponse, error) {
 		r, err := s.Open(c, connect.NewRequest(&agentfleetv1.OpenRequest{
-			Definition: "d", ThreadKey: "pr-1", Message: msg, Wake: wake, Tainted: tainted,
+			Definition: "d", ThreadKey: "pr-1", Message: msg, Wake: wake,
 			Interaction: "ask", Lifecycle: "resident", Visibility: "private", IdempotencyKey: key, Actor: actor,
 		}))
 		if err != nil {
@@ -82,16 +82,16 @@ func TestOpen(t *testing.T) {
 	}
 	code := connect.CodeOf
 
-	if _, err := open(bot, "k0", "hi", false, false, ""); code(err) != connect.CodeFailedPrecondition {
+	if _, err := open(bot, "k0", "hi", false, ""); code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("no thread and no wake: %v", err)
 	}
-	if _, err := open(bot, "k0b", "hi", true, false, "stranger"); code(err) != connect.CodePermissionDenied {
+	if _, err := open(bot, "k0b", "hi", true, "stranger"); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("actor outside actors.allow: %v", err)
 	}
-	if _, err := open(other, "k0c", "hi", true, false, "MohammadBnei"); code(err) != connect.CodeNotFound || errkeys.Of(err) != errkeys.KeyDefinitionUnavailable {
+	if _, err := open(other, "k0c", "hi", true, "MohammadBnei"); code(err) != connect.CodeNotFound || errkeys.Of(err) != errkeys.KeyDefinitionUnavailable {
 		t.Fatalf("client that may not open d: %v", err)
 	}
-	first, err := open(bot, "k1", "review this", true, false, "MohammadBnei")
+	first, err := open(bot, "k1", "review this", true, "MohammadBnei")
 	if err != nil {
 		t.Fatalf("first open: %v", err)
 	}
@@ -99,25 +99,35 @@ func TestOpen(t *testing.T) {
 		t.Fatalf("warms after a waking open: %v", dash.warms)
 	}
 	// A retry of a delivered request starts nothing and answers the same.
-	again, err := open(bot, "k1", "review this", true, false, "MohammadBnei")
+	again, err := open(bot, "k1", "review this", true, "MohammadBnei")
 	if err != nil || again.GetThreadId() != first.GetThreadId() || again.GetSeq() != first.GetSeq() || len(dash.warms) != 1 {
 		t.Fatalf("retry: %v %v warms=%v", again, err, dash.warms)
 	}
-	if _, err := open(bot, "k1", "something else", true, false, "MohammadBnei"); code(err) != connect.CodeFailedPrecondition {
+	if _, err := open(bot, "k1", "something else", true, "MohammadBnei"); code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("same key, different request: %v", err)
 	}
 	// A non-waking follow-up lands context-only on the same thread.
-	follow, err := open(bot, "k2", "a comment", false, false, "")
+	follow, err := open(bot, "k2", "a comment", false, "")
 	if err != nil || follow.GetThreadId() != first.GetThreadId() || len(dash.warms) != 1 {
 		t.Fatalf("follow-up: %v %v", follow, err)
 	}
-	// A tainted follow-up never wakes, whatever wake says.
-	if _, err := open(bot, "k3", "from a fork", true, true, "MohammadBnei"); err != nil || len(dash.warms) != 1 {
-		t.Fatalf("tainted follow-up: %v warms=%v", err, dash.warms)
+	// A waking follow-up wakes, whoever's words it carries: wake alone decides
+	// (docs/adr/0082 §3).
+	if _, err := open(bot, "k3", "from a fork", true, "MohammadBnei"); err != nil || len(dash.warms) != 2 {
+		t.Fatalf("waking follow-up: %v warms=%v", err, dash.warms)
 	}
 	entries, _, _ := transcr.ReadSince(ctx, first.GetThreadId(), 0, 10)
-	if len(entries) != 3 || entries[0].ContextOnly || !entries[1].ContextOnly || !entries[2].ContextOnly || !entries[2].Untrusted || entries[0].AuthorName != "client:bot" {
+	if len(entries) != 3 || entries[0].ContextOnly || !entries[1].ContextOnly || entries[2].ContextOnly || entries[0].AuthorName != "client:bot" {
 		t.Fatalf("entries: %+v", entries)
+	}
+	// A claim stored before taint went, with the old flag set, still matches
+	// its redelivery (docs/adr/0082 §3).
+	old := requestSHA("d", "pr-1", "a stranger's comment", "false", "true", "", "", "private", "ask", "resident")
+	if _, err := pool.Exec(ctx, `INSERT INTO client_requests (invoker, idempotency_key, request_sha) VALUES ('client:bot', 'k2t', $1)`, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open(bot, "k2t", "a stranger's comment", false, ""); err != nil {
+		t.Fatalf("pre-deploy tainted claim: %v", err)
 	}
 	// The thread is the client's, and only its.
 	if _, err := s.GetTranscript(other, connect.NewRequest(&agentfleetv1.AgentServiceGetTranscriptRequest{ThreadId: first.GetThreadId()})); code(err) != connect.CodeNotFound {
@@ -128,18 +138,12 @@ func TestOpen(t *testing.T) {
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared", IdempotencyKey: "k4", Actor: "MohammadBnei"})); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("visibility change on resume: %v", err)
 	}
-	// The definition moved on. A tainted waking message neither ends the
-	// thread nor opens a new one: it lands context-only on the old thread.
+	// The definition moved on: a waking Open replaces the thread.
 	s.definitions = fakeHeads{{Name: "d", SHA: "sha2", Effective: spec}}
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha2', '{}', '{}', true)`); err != nil {
 		t.Fatal(err)
 	}
-	warms := len(dash.warms)
-	if r, err := open(bot, "k4b", "untrusted push", true, true, "MohammadBnei"); err != nil || r.GetThreadId() != first.GetThreadId() || len(dash.warms) != warms {
-		t.Fatalf("tainted wake on a stale thread: %v %v warms=%v", r, err, dash.warms)
-	}
-	// A trusted waking Open replaces it.
-	next, err := open(bot, "k5", "new push", true, false, "MohammadBnei")
+	next, err := open(bot, "k5", "new push", true, "MohammadBnei")
 	if err != nil || next.GetThreadId() == first.GetThreadId() {
 		t.Fatalf("replace: %v %v", next, err)
 	}
@@ -157,7 +161,7 @@ func TestOpen(t *testing.T) {
 	if _, err := pool.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, first.GetThreadId()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := open(bot, "k1", "review this", true, false, "MohammadBnei"); code(err) != connect.CodeFailedPrecondition {
+	if _, err := open(bot, "k1", "review this", true, "MohammadBnei"); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("done claim, deleted session: %v", err)
 	}
 	// A busy key answers Aborted at once.
@@ -165,7 +169,7 @@ func TestOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := open(bot, "k9", "x", true, false, "MohammadBnei"); code(err) != connect.CodeAborted {
+	if _, err := open(bot, "k9", "x", true, "MohammadBnei"); code(err) != connect.CodeAborted {
 		t.Errorf("busy key: %v", err)
 	}
 	lock.Release()
@@ -303,19 +307,17 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 		t.Fatal("OpenAsAdmin through a network client")
 	}
 
-	// An admin opening a tainted proposal onto an existing thread wakes it,
-	// still marked untrusted: the click is the gate.
+	// An admin opening a proposal onto an existing thread wakes it: the
+	// click is the gate.
 	dash.warmErr = nil
 	warms := len(dash.warms)
-	tm := req("proposal:p3", false)
-	tm.Tainted = true
-	r3, err := s.OpenAsAdmin(ctx, "bridge", "admin-sub", tm)
+	r3, err := s.OpenAsAdmin(ctx, "bridge", "admin-sub", req("proposal:p3", false))
 	if err != nil || r3.GetThreadId() != res.GetThreadId() || len(dash.warms) != warms+1 {
-		t.Fatalf("tainted admin open: %v warms=%v", err, dash.warms)
+		t.Fatalf("admin open: %v warms=%v", err, dash.warms)
 	}
 	entries, _, _ = transcr.ReadSince(ctx, res.GetThreadId(), 0, 10)
-	if last := entries[len(entries)-1]; last.ContextOnly || !last.Untrusted {
-		t.Fatalf("tainted admin open landed %+v", last)
+	if last := entries[len(entries)-1]; last.ContextOnly {
+		t.Fatalf("admin open landed %+v", last)
 	}
 
 	// A fresh thread whose warm fails for any reason is archived, so later

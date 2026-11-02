@@ -49,12 +49,11 @@ type Proposal struct {
 }
 
 // Event is what an event proposal carries so that opening it opens the
-// definition's thread with the event's causation and taint.
+// definition's thread with the event's causation.
 type Event struct {
 	Definition  string
 	ThreadKey   string
 	CausationID string
-	Tainted     bool
 }
 
 // ErrNotOpen is returned by Open and Dismiss when the proposal is already
@@ -226,16 +225,15 @@ func (s *Store) create(ctx context.Context, repo, source, dedupKey, title, body,
 	}
 
 	var def, thread, causation *string
-	tainted := false
 	if ev != nil {
-		def, thread, causation, tainted = &ev.Definition, &ev.ThreadKey, &ev.CausationID, ev.Tainted
+		def, thread, causation = &ev.Definition, &ev.ThreadKey, &ev.CausationID
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO proposals (repo, source, dedup_key, title, body, payload, definition_name, thread_key, causation_id, tainted)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO proposals (repo, source, dedup_key, title, body, payload, definition_name, thread_key, causation_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT DO NOTHING
 		RETURNING id
-	`, repo, source, keyPtr, title, body, payloadJSON, def, thread, causation, tainted).Scan(&id)
+	`, repo, source, keyPtr, title, body, payloadJSON, def, thread, causation).Scan(&id)
 	if err == pgx.ErrNoRows {
 		// The partial unique index rejected it: one is already standing.
 		//
@@ -293,7 +291,7 @@ func (s *Store) StandingFor(ctx context.Context, repo, dedupKey string) (string,
 func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at,
-		       definition_name, thread_key, COALESCE(causation_id, ''), tainted, dismissed_at
+		       definition_name, thread_key, COALESCE(causation_id, ''), dismissed_at
 		FROM proposals
 		WHERE session_id IS NULL AND dismissed_at IS NULL
 		ORDER BY created_at DESC
@@ -322,7 +320,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Proposal, error) {
 	var p Proposal
 	row := s.pool.QueryRow(ctx, `
 		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at,
-		       definition_name, thread_key, COALESCE(causation_id, ''), tainted, dismissed_at
+		       definition_name, thread_key, COALESCE(causation_id, ''), dismissed_at
 		FROM proposals WHERE id = $1
 	`, id)
 	err := scanProposal(row, &p)
@@ -483,13 +481,12 @@ func (s *Store) DismissStanding(ctx context.Context, repo, dedupKey string) erro
 func scanProposal(row pgx.Row, p *Proposal) error {
 	var def, thread *string
 	var causation string
-	var tainted bool
 	if err := row.Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.Payload, &p.SessionID, &p.CreatedAt,
-		&def, &thread, &causation, &tainted, &p.DismissedAt); err != nil {
+		&def, &thread, &causation, &p.DismissedAt); err != nil {
 		return err
 	}
 	if def != nil && thread != nil {
-		p.Event = &Event{Definition: *def, ThreadKey: *thread, CausationID: causation, Tainted: tainted}
+		p.Event = &Event{Definition: *def, ThreadKey: *thread, CausationID: causation}
 	}
 	return nil
 }
@@ -498,32 +495,25 @@ func scanProposal(row pgx.Row, p *Proposal) error {
 // to: its body is the opening message, which AgentService caps at 64 KiB.
 const maxFoldedBody = 60 << 10
 
-// UntrustedSuffix marks an event proposal's title once any of its events is
-// untrusted, so the inbox shows it before the body is opened.
-const UntrustedSuffix = " (untrusted)"
-
 // FoldEvent appends a later event of the same thread to the standing,
 // unopened event proposal holding (repo, dedupKey), so it is not lost while
 // the proposal waits (docs/adr/0078 §5). marker names the event and starts
 // its text; a body that already holds it at the start of a paragraph is left
 // alone, so a redelivery folds nothing twice (quoted text is indented, so a
 // comment cannot plant one). Past maxFoldedBody bytes the event is dropped
-// with one note. A tainted event taints the proposal and its title. It
-// reports whether a proposal was there to fold into.
-func (s *Store) FoldEvent(ctx context.Context, repo, dedupKey, marker, text string, tainted bool) (bool, error) {
+// with one note. It reports whether a proposal was there to fold into.
+func (s *Store) FoldEvent(ctx context.Context, repo, dedupKey, marker, text string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE proposals SET
 		       body = CASE
 		         WHEN position(E'\n\n' || $3 in E'\n\n' || body) > 0 THEN body
-		         WHEN octet_length(body) + octet_length($4) + 2 <= $6 THEN body || E'\n\n' || $4
+		         WHEN octet_length(body) + octet_length($4) + 2 <= $5 THEN body || E'\n\n' || $4
 		         WHEN position(E'\n\n[later events were dropped]' in body) > 0 THEN body
 		         ELSE body || E'\n\n[later events were dropped]'
-		       END,
-		       title = CASE WHEN $5 AND NOT tainted THEN title || $7 ELSE title END,
-		       tainted = tainted OR $5
+		       END
 		 WHERE repo = $1 AND dedup_key = $2 AND source = 'event'
 		   AND session_id IS NULL AND dismissed_at IS NULL
-	`, repo, dedupKey, marker, text, tainted, maxFoldedBody, UntrustedSuffix)
+	`, repo, dedupKey, marker, text, maxFoldedBody)
 	if err != nil {
 		slog.Error("proposals FoldEvent", "repo", repo, "dedupKey", dedupKey, "error", err)
 		return false, fmt.Errorf("fold event into proposal: %w", err)
