@@ -154,7 +154,7 @@ func Publish(ctx context.Context, pool *pgxpool.Pool, pub Publisher, sessionID, 
 	data, _ := json.Marshal(map[string]string{"text": text, "definition": definition})
 	err = pub.Publish(ctx, &bridgev1.CloudEvent{
 		Id: id, Type: typ, Subject: subject, Time: timestamppb.Now(), Data: data,
-		Actor: "agent", ActorLogin: "agent:" + definition, Trusted: trusted,
+		Actor: "agent", ActorLogin: "agent:" + definition, ActorTrusted: trusted,
 		Hops: hops, CausationId: causation,
 	})
 	if err != nil {

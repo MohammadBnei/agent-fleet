@@ -3,8 +3,7 @@
 - **Status:** Accepted (owner-approved 2026-10-28; taint dropped and every decision made one non-blocking kind by the owner 2026-10-29)
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
-  (no proposal; alerts and hand-offs keep theirs). Until the bridge's slice (§12) delivers `labeled` events, a T0 label is
-  accepted but never arrives, and an unowned subject is read from today's single `trusted` bit. Slice 2's first PR:
+  (no proposal; alerts and hand-offs keep theirs). Slice 2's first PR:
   the `decisions` store (`core/internal/decisions`, migration 000023), written from each transcript append's own
   transaction, and the read API (`ListDecisions`, `GetDecision`, `WatchDecisions`; an admin sees every open
   session's decisions). Slice 2's second PR: `decisions.Answer`, one path per kind, behind `AnswerDecision` and the
@@ -36,6 +35,13 @@
 - **Built (slice 3):** taint removed end to end, as §3 now reads: no gate and no label; migration 000026; the
   `Thread.tainted`, `Entry.untrusted` and `OpenRequest.tainted` fields deprecated and unused; `Open`'s request hash
   keeps the old flag's slot as `"false"`, so claims made before keep matching.
+- **Built (slice 4):** §12 in ukubi-bridge #19: `actor_trusted` and `thread_owned` replace `trusted` (field 10
+  removed), the bus carries `pull_request.labeled`, `issues.opened` and `issues.labeled`, and the bridge's log upgrades
+  itself (a trusted event gets both facts, an untrusted one neither, so a retained event renders as before). Core reads
+  `actor_trusted` for an agent hand-off's wake and the actor line, and `thread_owned` for whether a waking message
+  carries the subject's title. Only core (privileged) sets `actor_trusted` on Publish; nobody sets `thread_owned`. The
+  head repo is only in `pull_request` and `pull_request_review` payloads, so a comment on a fork PR can read owned; its
+  one consumer, the title, is the author's own text either way. The webhook needs Issues and Pull requests events.
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),

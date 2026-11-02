@@ -279,7 +279,7 @@ func (a *Announcer) check(ctx context.Context, id string, names []string) error 
 	e := &bridgev1.CloudEvent{
 		Id: fmt.Sprintf("%s:%d:%s", id, st.position, edge), Type: typ, Subject: "fleet/client/" + *st.invoker + "/" + id,
 		Time: timestamppb.New(a.now()), Data: data,
-		Actor: "machine", ActorLogin: "core", Trusted: false,
+		Actor: "machine", ActorLogin: "core",
 	}
 	pctx, cancel := context.WithTimeout(ctx, PublishTimeout)
 	defer cancel()

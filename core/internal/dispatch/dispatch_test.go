@@ -108,7 +108,7 @@ func head(name string, o *definitions.Owns, s *definitions.Subscribes, invokers 
 
 func pr(id, typ, actor, login string, trusted bool) *bridgev1.CloudEvent {
 	return &bridgev1.CloudEvent{Seq: 1, Id: id, Source: "github.com/MohammadBnei/notes", Type: typ,
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: actor, ActorLogin: login, Trusted: trusted,
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: actor, ActorLogin: login, ActorTrusted: trusted, ThreadOwned: trusted,
 		Data: []byte(`{"pull_request":{"title":"Fix it","html_url":"https://x/7","body":"please"},"comment":{"body":"looks good","html_url":"https://x/7#c"},"issue":{"title":"Fix it"}}`)}
 }
 
@@ -197,7 +197,7 @@ func TestRouteAndGate(t *testing.T) {
 	// A trusted hand-off through PublishEvent wakes.
 	agents.opens = nil
 	hand := &bridgev1.CloudEvent{Seq: 2, Id: "h1", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Trusted: true, Data: []byte(`{"ask":"onboard"}`)}
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"ask":"onboard"}`)}
 	if err := d.Handle(ctx, hand); err != nil || len(agents.opens) != 1 || !agents.opens[0].GetWake() {
 		t.Fatalf("hand-off: %v %+v", err, agents.opens)
 	}
@@ -247,7 +247,7 @@ func TestWakeGate(t *testing.T) {
 	published := comment(t0, true, "@owner please")
 	published.Source = "client/someone" // a non-privileged client's own Publish
 	hop := &bridgev1.CloudEvent{Seq: 2, Id: "hop", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Trusted: true, Data: []byte(`{"text":"onboard"}`)}
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"text":"onboard"}`)}
 	sync := func(actor, login string, trusted bool, action string) *bridgev1.CloudEvent {
 		return ev("dev.bnei.github.pull_request."+action, actor, login, trusted, map[string]any{"pull_request": map[string]any{"title": "Fix it", "body": "@owner"}})
 	}
@@ -419,6 +419,7 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 		pr("ur", "dev.bnei.github.pull_request_review.submitted", "human", "MohammadBnei", false),
 		pr("ul", "dev.bnei.github.pull_request.labeled", "human", "MohammadBnei", false),
 	} {
+		e.ActorTrusted = true // T0 acts, on a thread that is not ours (thread_owned false)
 		e.Data = []byte(`{"issue":{"title":"STRANGER title"},"pull_request":{"title":"STRANGER title","body":"STRANGER body","html_url":"https://x/7"},` +
 			`"comment":{"body":"@owner T0 asks","html_url":"https://x/7#c"},"review":{"state":"commented","body":"@owner T0 asks","html_url":"https://x/7#r"},` +
 			`"label":{"name":"owner"},"sender":{"login":"MohammadBnei"}}`)
@@ -431,9 +432,28 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 		if o.GetDefinition() != "owner" || !o.GetWake() || strings.Contains(m, "STRANGER") || !strings.Contains(m, "https://x/7") {
 			t.Errorf("%s: wake=%v message:\n%s", e.GetType(), o.GetWake(), m)
 		}
+		if !strings.Contains(m, "(human, trusted)") {
+			t.Errorf("%s: the owner's actor line is not trusted:\n%s", e.GetType(), m)
+		}
 		if e.GetId() != "ul" && !strings.Contains(m, "> @owner T0 asks") {
 			t.Errorf("%s: T0's words are missing:\n%s", e.GetType(), m)
 		}
+	}
+	// The owner opening a PR on a thread not (yet) ours: opened is the
+	// author's own action, so its title is the owner's words and stays.
+	agents.opens = nil
+	op := pr("uop", "dev.bnei.github.pull_request.opened", "human", "MohammadBnei", false)
+	op.ActorTrusted = true
+	op.Data = []byte(`{"pull_request":{"title":"OPENER title","body":"@owner please","html_url":"https://x/7"}}`)
+	if err := d.Handle(ctx, op); err != nil || !agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "OPENER title") {
+		t.Fatalf("opened: %v %+v", err, agents.opens)
+	}
+	// On a thread that is ours, the waking message carries its title.
+	agents.opens = nil
+	own := pr("uo", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)
+	own.Data = []byte(`{"issue":{"title":"OWN title"},"comment":{"body":"@owner T0 asks","html_url":"https://x/7#c"}}`)
+	if err := d.Handle(ctx, own); err != nil || !agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "OWN title") {
+		t.Fatalf("owned thread: %v %+v", err, agents.opens)
 	}
 	// Not waking, the same comment is context, with the subject's title.
 	agents.opens = nil

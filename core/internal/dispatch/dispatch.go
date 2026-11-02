@@ -591,7 +591,7 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 	}
 	switch {
 	case e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:"):
-		if !e.GetTrusted() {
+		if !e.GetActorTrusted() {
 			return false, nil // Publish found no bridge event behind the session: a hand-off wakes only with a cause
 		}
 		// PublishEvent's hops end at a GitHub round-trip (an agent's push
@@ -608,7 +608,7 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 			return false, nil
 		}
 	case e.GetActor() == "human" && strings.HasPrefix(e.GetSource(), "github.com/") && addresses(e, def):
-		// The bridge's trusted bit is not asked: T0 addressing a stranger's
+		// Neither of the bridge's trust facts is asked: T0 addressing a stranger's
 		// or a fork's PR wakes too (docs/adr/0082 §2), with only T0's bytes.
 		// A foreign repo (T3) never wakes: the App is public, so anyone may
 		// install it; ours are the repos core syncs (docs/adr/0075 §3-4).
@@ -810,7 +810,7 @@ func (d *Dispatcher) propose(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	title := truncate(fmt.Sprintf("%s: %s on %s", h.Name, oneLine(strings.TrimPrefix(e.GetType(), "dev.bnei.")), oneLine(e.GetSubject())), 100)
 	payload, _ := json.Marshal(map[string]any{
 		"seq": e.GetSeq(), "source": e.GetSource(), "id": e.GetId(), "type": e.GetType(), "subject": e.GetSubject(),
-		"actor": e.GetActor(), "actor_login": e.GetActorLogin(), "trusted": e.GetTrusted(),
+		"actor": e.GetActor(), "actor_login": e.GetActorLogin(), "actor_trusted": e.GetActorTrusted(), "thread_owned": e.GetThreadOwned(),
 	})
 	_, created, err := d.props.CreateEvent(ctx, repo, key, title, text, string(payload), proposals.Event{
 		Definition: h.Name, ThreadKey: e.GetSubject(), CausationID: Causation(e),
@@ -853,7 +853,7 @@ const (
 func Render(e *bridgev1.CloudEvent, wake bool) string {
 	var b strings.Builder
 	trust := "trusted"
-	if !e.GetTrusted() {
+	if !e.GetActorTrusted() {
 		trust = "untrusted"
 	}
 	fmt.Fprintf(&b, "%s\ntype: %s\nsubject: %s\nactor: %s (%s, %s)\n", marker(e), oneLine(e.GetType()), oneLine(e.GetSubject()),
@@ -907,8 +907,10 @@ func Render(e *bridgev1.CloudEvent, wake bool) string {
 	// The kind, not what the payload happens to carry: a comment's payload
 	// holds its issue, a review's its PR.
 	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), "dev.bnei.github."), ".")
-	// The subject's title is its author's; on opened that is the actor.
-	subjectText := !wake || e.GetTrusted() || action == "opened"
+	// The subject's title is its author's: in a waking message only when the
+	// thread is ours (thread_owned), or on opened, where the author is the
+	// actor (docs/adr/0082 §2, §12).
+	subjectText := !wake || e.GetThreadOwned() || action == "opened"
 	label := func() {
 		if action == "labeled" && gh.Label != nil {
 			line("label", gh.Label.Name)
