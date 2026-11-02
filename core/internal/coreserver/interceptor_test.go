@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
@@ -110,10 +111,16 @@ func TestAccessLogTraces(t *testing.T) {
 			if got != c.code {
 				t.Fatalf("client got %s (%v), want %s", got, err, c.code)
 			}
-			if err := tr.Flush(); err != nil {
-				t.Fatal(err)
+			// otelgrpc ends the server span on the stats handler's End, which can
+			// come after the client has its reply: wait for it, so it never lands
+			// in the next case.
+			var spans tracetest.SpanStubs
+			for deadline := time.Now().Add(2 * time.Second); len(spans) == 0 && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+				if err := tr.Flush(); err != nil {
+					t.Fatal(err)
+				}
+				spans = exp.GetSpans()
 			}
-			spans := exp.GetSpans()
 			if len(spans) != 1 {
 				t.Fatalf("%d spans, want 1", len(spans))
 			}
