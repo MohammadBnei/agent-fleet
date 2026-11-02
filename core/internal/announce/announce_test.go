@@ -85,7 +85,7 @@ func TestEdgesForOptedInClientsOnly(t *testing.T) {
 		t.Fatalf("published %d events, want only the game thread's", len(pub.events))
 	}
 	w := pub.events[0]
-	if w.Type != TypeWaiting || w.Subject != "fleet/client/game/"+game || w.Actor != "machine" || w.ActorLogin != "core" || w.Trusted {
+	if w.Type != TypeWaiting || w.Subject != "fleet/client/game/"+game || w.Actor != "machine" || w.ActorLogin != "core" || w.ActorTrusted || w.ThreadOwned {
 		t.Fatalf("waiting event %+v", w)
 	}
 	var data struct {

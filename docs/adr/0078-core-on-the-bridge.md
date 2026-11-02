@@ -80,7 +80,7 @@ in several ways:
      - `reasons` lists `question`, `permission` and `plan`.
      - `position` is the transcript `seq` of the entry that changed the count. It is durable and grows per session.
      - Never the definition, the opener, a prompt, a tool input or any transcript text.
-   - **Envelope:** `actor=machine`, `actor_login=core`, `trusted=false`, no `owner`, no `causation_id`. The CloudEvent
+   - **Envelope:** `actor=machine`, `actor_login=core`, neither trust fact (`actor_trusted`, `thread_owned`; ADR-0082 §12), no `owner`, no `causation_id`. The CloudEvent
      id is `<thread id>:<position>:<edge>` (`waiting` or `resumed`): a session archived while waiting resumes at the
      position of its wait, and the bridge dedups on the id.
    - **They are hints.** Core keeps per session the last edge it published (`session_announcements`), written only
