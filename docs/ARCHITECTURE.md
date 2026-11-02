@@ -504,8 +504,8 @@ is the reason.
 - **AgentService** ([`adr/0066`](adr/0066-agent-service.md),
   [`0067`](adr/0067-shared-and-private-sessions.md), `core/internal/agentsvc`):
   members on `:8080` and registered clients on `:9091` drive definition
-  sessions as threads — shared or private, with recorded authorship and
-  taint. `Invoke`/`WaitForResult` are in the proto but not built
+  sessions as threads — shared or private, with recorded authorship
+  (no taint: [`adr/0082`](adr/0082-decision-cards.md) §3). `Invoke`/`WaitForResult` are in the proto but not built
   ([`adr/0070`](adr/0070-headless-invoke.md)). Pool: `MAX_EXTERNAL_SESSIONS`.
 - **Islands** ([`adr/0068`](adr/0068-islands.md), `islands/`,
   `core/internal/islands`): `<fleet-agent>`, a Svelte custom element served

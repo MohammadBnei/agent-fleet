@@ -197,16 +197,14 @@ func TestDecisions(t *testing.T) {
 		t.Errorf("GetStatus: %v, %v", r, err)
 	}
 
-	// A tainted thread is configured by admins only, owner included.
-	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only, untrusted)
-		VALUES ($1, 1000, 'human', 'event', 'discussion', 'taint', true, true)`, shared); err != nil {
+	// A stranger's words in the thread change nothing: its owner still
+	// configures it (docs/adr/0082 §3).
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only)
+		VALUES ($1, 1000, 'human', 'event', 'discussion', 'stranger', true)`, shared); err != nil {
 		t.Fatal(err)
 	}
-	if err := setConfig(alice, "auto", ""); code(err) != connect.CodePermissionDenied {
-		t.Errorf("owner SetConfig on tainted: %v", err)
-	}
-	if err := setConfig(as("root", auth.RequiredGroup), "auto", ""); err != nil {
-		t.Errorf("admin SetConfig on tainted: %v", err)
+	if err := setConfig(alice, "auto", ""); err != nil {
+		t.Errorf("owner SetConfig after a stranger's entry: %v", err)
 	}
 
 	// A headless thread takes no answers.

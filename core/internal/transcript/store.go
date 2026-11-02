@@ -43,7 +43,6 @@ type Entry struct {
 	// AuthorSub is read back for "is this mine" only, and never serialized.
 	AuthorSub   string `json:"-"`
 	ContextOnly bool   `json:"contextOnly,omitempty"`
-	Untrusted   bool   `json:"untrusted,omitempty"`
 }
 
 // Author is who wrote an AgentService entry: a member's sub and display name,

@@ -1,6 +1,6 @@
 # ADR-0070 — Headless invoke: any session can ask, one structured result
 
-- **Status:** Accepted (2026-10-25)
+- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3.
 - **Date:** 2026-10-20, amended 2026-10-25 (the owner's rule: "absolutely
   any session, headless or not, must be able to ask a question")
 - **Built:** the proto (`Invoke`, `WaitForResult`) and their authz rows only.

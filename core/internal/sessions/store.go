@@ -129,10 +129,6 @@ type Session struct {
 	Invoker     *string `json:"invoker,omitempty"`
 	Interaction *string `json:"interaction,omitempty"`
 	Lifecycle   *string `json:"lifecycle,omitempty"`
-	// Tainted is derived (docs/adr/0067 §3): an untrusted entry is in the
-	// transcript. Never stored, and filled only by Tainted below, not on every
-	// read: the console's list must not pay for it.
-	Tainted   bool      `json:"tainted"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -330,39 +326,6 @@ func (s *Store) ListThreads(ctx context.Context, definitions []string, owner str
 		out = append(out, *t)
 	}
 	return out, rows.Err()
-}
-
-// Tainted sets each session's Tainted: an untrusted entry is in its
-// transcript (docs/adr/0067 §3).
-//
-// ponytail: no index on transcript.untrusted, so this reads each session's
-// transcript through its primary key. Fine at today's size; a partial index
-// ON transcript (session_id) WHERE untrusted is the upgrade.
-func (s *Store) Tainted(ctx context.Context, list []Session) error {
-	if len(list) == 0 {
-		return nil
-	}
-	ids := make([]string, len(list))
-	for i := range list {
-		ids[i] = list[i].ID
-	}
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT session_id::text FROM transcript WHERE session_id = ANY($1::uuid[]) AND untrusted`, ids)
-	if err != nil {
-		return fmt.Errorf("tainted: %w", err)
-	}
-	defer rows.Close()
-	tainted := map[string]bool{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return fmt.Errorf("tainted: %w", err)
-		}
-		tainted[id] = true
-	}
-	for i := range list {
-		list[i].Tainted = tainted[list[i].ID]
-	}
-	return rows.Err()
 }
 
 // Answered reports whether the prompt at seq already has its reply.

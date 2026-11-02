@@ -318,7 +318,7 @@
         if (current) await select(current);
       } else {
         error = errorText(err);
-        // A refusal may mean the thread became tainted since it was listed.
+        // A refusal may mean the thread changed since it was listed.
         if (ConnectError.from(err).code === Code.PermissionDenied)
           await refreshCurrent();
       }
@@ -353,10 +353,7 @@
     }
     // An open question takes the text as its answer, as "Other" does in Claude
     // Code: a plain message would only queue behind the question it blocks on.
-    const q =
-      current && !current.tainted
-        ? open.find((d) => d.kind === "question")
-        : undefined;
+    const q = current ? open.find((d) => d.kind === "question") : undefined;
     if (q?.kind === "question") {
       if (busy) {
         error = "Wait for the last answer to go through.";
@@ -605,10 +602,7 @@
       <p class="muted">Write below to start a {newVisibility} thread{context ? ` about ${context}` : ""}.</p>
     {/if}
 
-    {#if current?.tainted && open.length}
-      <p class="muted">This thread holds untrusted input, so only an admin can answer it, from the console.</p>
-    {/if}
-    {#each current && !current.tainted ? open : [] as d (d.seq)}
+    {#each current ? open : [] as d (d.seq)}
       <div class="decision chamfer-md" role="group" aria-label="Needs you">
         {#if d.kind === "question"}
           {#each d.questions as q (q.question)}
@@ -644,9 +638,9 @@
     <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
       <textarea
         aria-label="Message"
-        placeholder={current?.tainted ? "Only an admin can write in this thread" : open.some((d) => d.kind === "question") ? "Pick an answer, or type your own" : "Reply to the agent"}
+        placeholder={open.some((d) => d.kind === "question") ? "Pick an answer, or type your own" : "Reply to the agent"}
         rows="1"
-        disabled={current?.tainted || stale}
+        disabled={stale}
         bind:this={composer}
         bind:value={draft}
         onkeydown={(e) => {
@@ -654,7 +648,7 @@
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
         }}
       ></textarea>
-      <button class="send" type="submit" aria-label="Send" title="Send (Enter)" disabled={current?.tainted || stale || !draft.trim()}>
+      <button class="send" type="submit" aria-label="Send" title="Send (Enter)" disabled={stale || !draft.trim()}>
         <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter" /></svg>
       </button>
     </form>

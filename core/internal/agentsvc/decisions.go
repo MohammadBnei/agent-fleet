@@ -378,8 +378,7 @@ func (s *Server) withdraw(ctx context.Context, p Principal, r decisions.Record) 
 	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{}), nil
 }
 
-// ownsOrAdmin is who configures a thread. A tainted thread is admins' only
-// for configuration too: its mode decides what untrusted input may drive.
+// ownsOrAdmin is who configures a thread.
 // stillRegistered: a client acts on its threads only while the definition
 // and the client still list each other (docs/adr/0066 §5), so de-listing a
 // client revokes it without a restart. Reading and stopping stay open.
@@ -392,7 +391,7 @@ func (s *Server) stillRegistered(p Principal, t *sessions.Session) bool {
 }
 
 func ownsOrAdmin(p Principal, t *sessions.Session) bool {
-	return p.Admin() || (!t.Tainted && t.Owner != nil && *t.Owner == p.owner())
+	return p.Admin() || (t.Owner != nil && *t.Owner == p.owner())
 }
 
 // setMode goes through the console's SetPermissionMode, which checks the
@@ -437,7 +436,6 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 	if err != nil {
 		return nil, err
 	}
-	// Not ownsOrAdmin: stopping a tainted thread only takes power away.
 	if !p.Admin() && (t.Owner == nil || *t.Owner != p.owner()) {
 		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only the thread's owner stops it"))
 	}

@@ -134,8 +134,10 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	defer lock.Release()
 
 	// Every field that decides trust is part of the request's identity, so a
-	// retry cannot quietly turn a tainted or non-waking message into another.
-	sha := requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), fmt.Sprint(m.GetTainted()),
+	// retry cannot quietly turn a non-waking message into a waking one.
+	// ponytail: "false" holds the slot of the deprecated tainted flag, so claims
+	// stored before taint went (docs/adr/0082 §3) keep their hash.
+	sha := requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), "false",
 		m.GetActor(), m.GetCausationId(), m.GetVisibility(), m.GetInteraction(), m.GetLifecycle())
 	claim, err := s.sessions.ClaimRequest(ctx, owner, key, sha)
 	if err != nil {
@@ -189,11 +191,9 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 
-	// A tainted follow-up on an existing thread never wakes (§6); only an
-	// opening message can be tainted and wake. An admin opening a proposal
-	// is the human gate itself (docs/adr/0078 §5), so it wakes either way,
-	// still marked untrusted.
-	contextOnly := !m.GetWake() || (m.GetTainted() && !fresh && !adminActor)
+	// wake alone decides: the dispatcher's address-only gate is what keeps a
+	// stranger from starting work (docs/adr/0082 §1-§3).
+	contextOnly := !m.GetWake()
 	text := m.GetMessage()
 	if predecessor != "" {
 		text = fmt.Sprintf("[continues thread %s, which can no longer run]\n%s", predecessor, text)
@@ -216,7 +216,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	seq, err := s.sessions.AppendClaimed(ctx, owner, key, sessions.ClaimedEntry{
 		SessionID: t.ID, Text: text, AuthorSub: owner, AuthorName: owner,
 		Actor: m.GetActor(), CausationID: m.GetCausationId(),
-		ContextOnly: contextOnly, Untrusted: contextOnly || m.GetTainted(),
+		ContextOnly: contextOnly,
 	})
 	if errors.Is(err, sessions.ErrArchived) {
 		// Closed under us: the claim stays pending, and the retry resolves
@@ -256,10 +256,9 @@ func (s *Server) resolveThread(ctx context.Context, p Principal, head definition
 	if deref(t.Interaction, "ask") != m.GetInteraction() || deref(t.Lifecycle, "resident") != m.GetLifecycle() || deref(t.Visibility, "") != m.GetVisibility() {
 		return nil, "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this thread was opened with a different interaction, lifecycle or visibility"))
 	}
-	// Only a trusted waking message replaces a thread: a tainted one on an
-	// existing thread is context-only (§6), and must neither end the thread
-	// nor open a new one.
-	if m.GetWake() && !m.GetTainted() && (deref(t.DefinitionSHA, "") != head.SHA || t.SweptAt != nil) {
+	// Only a waking message replaces a thread; context must neither end the
+	// thread nor open a new one.
+	if m.GetWake() && (deref(t.DefinitionSHA, "") != head.SHA || t.SweptAt != nil) {
 		if _, err := s.dash.ArchiveSession(ctx, connect.NewRequest(&agentfleetv1.ArchiveSessionRequest{SessionId: t.ID})); err != nil {
 			return nil, "", err
 		}

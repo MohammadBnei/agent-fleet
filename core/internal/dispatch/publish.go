@@ -68,8 +68,9 @@ type PublishResult struct {
 // session is a definition session granting publish_event; this sets what the
 // agent cannot: the actor, the causation (the bridge event behind the
 // session's latest waking entry written by the dispatcher), hops (one more
-// than that event's) and trust (that event's, and false once the session is
-// tainted, or when no bridge event caused it).
+// than that event's) and trust: true when a bridge event caused the session,
+// whatever it has read since (docs/adr/0082 §3, owner 2026-11-02: a hand-off
+// wakes only with a cause).
 func Publish(ctx context.Context, pool *pgxpool.Pool, pub Publisher, sessionID, definition, typ, subject, text, key string) (PublishResult, error) {
 	switch {
 	case len(typ) > 200 || !typeRe.MatchString(typ):
@@ -99,29 +100,20 @@ func Publish(ctx context.Context, pool *pgxpool.Pool, pub Publisher, sessionID, 
 	// Causation is <source>:<id>; no source the bridge sets holds a ':'.
 	if source, id, ok := strings.Cut(causation, ":"); ok {
 		var causeHops int32
-		var causeTainted bool
 		err := pool.QueryRow(ctx, `
-			SELECT hops, tainted FROM dispatch_decisions WHERE source = $1 AND event_id = $2 AND definition = $3`,
-			source, id, definition).Scan(&causeHops, &causeTainted)
+			SELECT hops FROM dispatch_decisions WHERE source = $1 AND event_id = $2 AND definition = $3`,
+			source, id, definition).Scan(&causeHops)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			// Pruned, or never this definition's: nothing vouches for it.
 		case err != nil:
 			return PublishResult{}, err
 		default:
-			hops, trusted = causeHops+1, !causeTainted
+			hops, trusted = causeHops+1, true
 		}
 	}
 	if hops > MaxDepth {
 		return PublishResult{}, fmt.Errorf("%w: this event would be %d hops from a person, above %d", ErrPublishRefused, hops, MaxDepth)
-	}
-	if trusted {
-		var tainted bool
-		if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM transcript WHERE session_id = $1 AND (context_only OR untrusted))`,
-			sessionID).Scan(&tainted); err != nil {
-			return PublishResult{}, err
-		}
-		trusted = !tainted
 	}
 
 	// The request's identity, and the budget. A key names one request: the

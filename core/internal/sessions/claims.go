@@ -150,7 +150,6 @@ type ClaimedEntry struct {
 	Actor       string
 	CausationID string
 	ContextOnly bool
-	Untrusted   bool
 }
 
 // AppendClaimed appends e with the claim's key as its transcript
@@ -179,12 +178,12 @@ func (s *Store) AppendClaimed(ctx context.Context, invoker, key string, e Claime
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key,
-			                        author_sub, author_name, actor, causation_id, context_only, untrusted)
+			                        author_sub, author_name, actor, causation_id, context_only)
 			SELECT $1, COALESCE(MAX(seq), -1) + 1, 'human', $2, 'discussion', $3,
-			       NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8, $9
+			       NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8
 			  FROM transcript WHERE session_id = $1
 			RETURNING seq`,
-			e.SessionID, e.Text, key, e.AuthorSub, e.AuthorName, e.Actor, e.CausationID, e.ContextOnly, e.Untrusted).Scan(&seq)
+			e.SessionID, e.Text, key, e.AuthorSub, e.AuthorName, e.Actor, e.CausationID, e.ContextOnly).Scan(&seq)
 	}
 	if err != nil {
 		return 0, fmt.Errorf("append claimed: %w", err)
