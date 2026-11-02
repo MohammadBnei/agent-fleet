@@ -1,5 +1,12 @@
 # Changelog
 
+# [7.4.0](https://github.com/MohammadBnei/agent-fleet/compare/7.3.0...7.4.0) (2026-11-02)
+
+### Features
+
+* **dispatch:** read the bridge's two trust facts (ADR-0082 slice 4) ([#359](https://github.com/MohammadBnei/agent-fleet/issues/359)) ([feab901](https://github.com/MohammadBnei/agent-fleet/commit/feab901634e518ebb66f9678686278e5b3eb2e8a)), closes [#19](https://github.com/MohammadBnei/agent-fleet/issues/19)
+* remove taint end to end (ADR-0082 slice 3) ([#358](https://github.com/MohammadBnei/agent-fleet/issues/358)) ([c0314f6](https://github.com/MohammadBnei/agent-fleet/commit/c0314f67f815cd09bfdba30cebdee43588fe8b93))
+
 # [7.3.0](https://github.com/MohammadBnei/agent-fleet/compare/7.2.0...7.3.0) (2026-11-01)
 
 ### Features
