@@ -432,9 +432,21 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 		if o.GetDefinition() != "owner" || !o.GetWake() || strings.Contains(m, "STRANGER") || !strings.Contains(m, "https://x/7") {
 			t.Errorf("%s: wake=%v message:\n%s", e.GetType(), o.GetWake(), m)
 		}
+		if !strings.Contains(m, "(human, trusted)") {
+			t.Errorf("%s: the owner's actor line is not trusted:\n%s", e.GetType(), m)
+		}
 		if e.GetId() != "ul" && !strings.Contains(m, "> @owner T0 asks") {
 			t.Errorf("%s: T0's words are missing:\n%s", e.GetType(), m)
 		}
+	}
+	// The owner opening a PR on a thread not (yet) ours: opened is the
+	// author's own action, so its title is the owner's words and stays.
+	agents.opens = nil
+	op := pr("uop", "dev.bnei.github.pull_request.opened", "human", "MohammadBnei", false)
+	op.ActorTrusted = true
+	op.Data = []byte(`{"pull_request":{"title":"OPENER title","body":"@owner please","html_url":"https://x/7"}}`)
+	if err := d.Handle(ctx, op); err != nil || !agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "OPENER title") {
+		t.Fatalf("opened: %v %+v", err, agents.opens)
 	}
 	// On a thread that is ours, the waking message carries its title.
 	agents.opens = nil

@@ -608,7 +608,7 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 			return false, nil
 		}
 	case e.GetActor() == "human" && strings.HasPrefix(e.GetSource(), "github.com/") && addresses(e, def):
-		// The bridge's trusted bit is not asked: T0 addressing a stranger's
+		// Neither of the bridge's trust facts is asked: T0 addressing a stranger's
 		// or a fork's PR wakes too (docs/adr/0082 §2), with only T0's bytes.
 		// A foreign repo (T3) never wakes: the App is public, so anyone may
 		// install it; ours are the repos core syncs (docs/adr/0075 §3-4).
