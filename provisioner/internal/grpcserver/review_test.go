@@ -87,6 +87,10 @@ func TestPostReview_Codes(t *testing.T) {
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("GitHub 422: %v", err)
 	}
+	s.SetGitHub(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, &github.StatusError{Status: 429} }})
+	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.Unavailable {
+		t.Errorf("GitHub rate limit: %v", err)
+	}
 	s.SetGitHub(nil)
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("no App: %v", err)

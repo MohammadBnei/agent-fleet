@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -785,11 +786,11 @@ func (s *Server) PostReview(ctx context.Context, req *agentfleetv1.PostReviewReq
 		r.Comments = append(r.Comments, github.ReviewComment{Path: c.GetPath(), Line: c.GetLine(), Body: c.GetBody()})
 	}
 	p, err := s.gh.PostReview(ctx, r)
-	// A 4xx will answer the same next time (a moved head, a refused review):
+	// A 4xx but 429 will answer the same next time (a moved head, a refused review):
 	// FailedPrecondition, so the agent does not retry it. Unavailable is for
 	// GitHub or the network failing.
 	var se *github.StatusError
-	if errors.Is(err, github.ErrNotOpen) || errors.Is(err, github.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 {
+	if errors.Is(err, github.ErrNotOpen) || errors.Is(err, github.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	if err != nil {
