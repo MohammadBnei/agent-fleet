@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.5.0](https://github.com/MohammadBnei/agent-fleet/compare/7.4.0...7.5.0) (2026-11-03)
+
+### Features
+
+* agent reviewer posts GitHub reviews (ADR-0082 slice 5) ([#360](https://github.com/MohammadBnei/agent-fleet/issues/360)) ([4ff9377](https://github.com/MohammadBnei/agent-fleet/commit/4ff9377b5085294bb89b9173d658bf461f954c4b))
+
 # [7.4.0](https://github.com/MohammadBnei/agent-fleet/compare/7.3.0...7.4.0) (2026-11-02)
 
 ### Features
