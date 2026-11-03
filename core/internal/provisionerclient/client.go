@@ -169,6 +169,17 @@ func (c *Client) ProvisionService(ctx context.Context, sessionID, repo, kind str
 	return resp.GetDsn(), nil
 }
 
+// PostReview posts a review and its agent-review status on a PR
+// (docs/adr/0082 slice 5). The caller has checked the session may review that
+// PR; the provisioner holds the GitHub credential and decides the event.
+// The error is the provisioner's status, unwrapped, so its code reaches the
+// agent.
+func (c *Client) PostReview(ctx context.Context, req *agentfleetv1.PostReviewRequest) (*agentfleetv1.PostReviewResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	return c.rpc.PostReview(ctx, req)
+}
+
 // SyncRepoCache refreshes one repo's clone cache without creating a pod —
 // the dashboard's manual sync button (docs/adr/0028's repos table gained no
 // column for this; the button reports its own outcome).

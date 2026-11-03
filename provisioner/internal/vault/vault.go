@@ -32,6 +32,10 @@ const TokenKey = "AGENT_VAULT_TOKEN"
 // the provisioner's own prefix: a definition may never name one.
 const gitUsernameKey = "FLEET_VAULT_GIT_USERNAME"
 
+// readOnlyKey marks a vault whose GitHub key was minted read-only. Kept in the
+// vault, not in memory, so a flip after a restart still revokes.
+const readOnlyKey = "FLEET_VAULT_READ_ONLY"
+
 // revokeBudget bounds every revoke: best-effort, the token's TTL bounds a miss.
 const revokeBudget = 3 * time.Second
 
@@ -64,13 +68,15 @@ func New(api, proxy, secretsDir string) *Client {
 // Forge mints repo-scoped credentials. GitHub's App is the one
 // implementation; Forgejo is the planned second (docs/adr/0075 §2).
 type Forge interface {
-	Token(ctx context.Context, owner, repo string) (string, error)
+	Token(ctx context.Context, owner, repo string, readOnly bool) (string, error)
 }
 
-// Spec is one vault's desired state (a definition's credentials).
+// Spec is one vault's desired state (a definition's credentials). ReadOnly
+// (git.mode none) mints its GitHub key read-only.
 type Spec struct {
 	Name     string
 	Services []Service
+	ReadOnly bool
 }
 
 type Service struct {
@@ -265,8 +271,9 @@ func (c *Client) Lock(name string) (unlock func()) {
 // narrower spec (an older pin) loses access instead of gaining it
 // (docs/adr/0065 §3); widened reports it, so the caller ends those pods.
 // Widened compares (host, auth) pairs, not service names: render names by
-// position, so dropping or reordering a path is a narrowing. The caller holds
-// Lock(s.Name).
+// position, so dropping or reordering a path is a narrowing. A ReadOnly flip
+// either way counts as a widening too, revoked before the new key is written.
+// The caller holds Lock(s.Name).
 func (c *Client) Reconcile(ctx context.Context, s Spec) (widened bool, err error) {
 	if err := checkSpec(s); err != nil {
 		return false, err
@@ -280,9 +287,20 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	// Every value is gathered before the first write. A forge error with no
 	// mounted file to fall back on returns here, so it can never narrow the
 	// services the way a missing key does (docs/adr/0075 §5).
+	if s.ReadOnly {
+		// Only a mint is read-only: every other source of the GitHub key is
+		// the mounted file, a writable PAT.
+		if _, _, ok := specRepo(s); c.Forge == nil || !ok {
+			return fmt.Errorf("vault %s: read-only needs a GitHub App and one GitHub repo", s.Name)
+		}
+	}
 	if c.Forge != nil {
 		if owner, repo, ok := specRepo(s); ok {
-			v, err := c.Forge.Token(ctx, owner, repo)
+			v, err := c.Forge.Token(ctx, owner, repo, s.ReadOnly)
+			if err != nil && s.ReadOnly {
+				// The mounted file is a writable PAT: never a read-only key.
+				return fmt.Errorf("vault %s: mint read-only %s/%s: %w", s.Name, owner, repo, err)
+			}
 			if err != nil {
 				file, ferr := c.readSecret(GitHubKey(s.Name))
 				if ferr != nil || file == "" {
@@ -322,7 +340,7 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 			desired = append(desired, svc)
 		}
 	}
-	if err := c.apply(ctx, s.Name, desired, values, "deny", widened); err != nil {
+	if err := c.apply(ctx, s.Name, desired, values, "deny", s.ReadOnly, widened); err != nil {
 		return err
 	}
 	return missingErr(s.Name, missing)
@@ -364,19 +382,22 @@ func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (wid
 		{Name: "github-api", Host: OwnerHosts[2] + ":443", Auth: auth{Type: "bearer", Token: gh}},
 	}
 	values := map[string]string{gitUsernameKey: "x-access-token", gh: ghToken, oauthKey: oauth}
-	err = c.apply(ctx, name, desired, values, "passthrough", &widened)
+	err = c.apply(ctx, name, desired, values, "passthrough", false, &widened)
 	return widened, err
 }
 
 // apply writes one vault: created if absent (its policy set at once: a new
 // vault starts in passthrough), credentials, services, policy, then stale
-// keys. values holds every key desired names.
-func (c *Client) apply(ctx context.Context, name string, desired []service, values map[string]string, policy string, widened *bool) error {
+// keys. values holds every key desired names. readOnly keeps readOnlyKey.
+func (c *Client) apply(ctx context.Context, name string, desired []service, values map[string]string, policy string, readOnly bool, widened *bool) error {
 	want := map[string]string{}
 	for _, svc := range desired {
 		for _, k := range svc.Auth.keys() {
 			want[k] = values[k]
 		}
+	}
+	if readOnly {
+		want[readOnlyKey] = "true"
 	}
 	sort.Slice(desired, func(i, j int) bool { return desired[i].Name < desired[j].Name })
 
@@ -384,6 +405,7 @@ func (c *Client) apply(ctx context.Context, name string, desired []service, valu
 		Services []service `json:"services"`
 	}
 	err := c.do(ctx, http.MethodGet, "/v1/vaults/"+name+"/services", nil, &current)
+	existed := err == nil
 	switch {
 	case isStatus(err, http.StatusNotFound) && len(desired) == 0:
 		return nil
@@ -403,6 +425,14 @@ func (c *Client) apply(ctx context.Context, name string, desired []service, valu
 	}
 	if err := c.do(ctx, http.MethodGet, "/v1/credentials?vault="+url.QueryEscape(name), nil, &listed); err != nil {
 		return fmt.Errorf("vault %s: credentials: %w", name, err)
+	}
+	// A read_only flip: the key about to be written has other permissions than
+	// the one live sessions were pinned to. A new vault has no sessions.
+	if existed && slices.Contains(listed.Keys, readOnlyKey) != readOnly {
+		if _, err := c.revokeWhere(ctx, name, func(string) bool { return true }); err != nil {
+			return fmt.Errorf("vault %s: read_only changed, so revoking its sessions first: %w", name, err)
+		}
+		*widened = true
 	}
 	c.mu.Lock()
 	memo := c.set[name]
@@ -435,7 +465,7 @@ func (c *Client) apply(ctx context.Context, name string, desired []service, valu
 	if !slices.Equal(current.Services, desired) {
 		if slices.ContainsFunc(desired, func(d service) bool {
 			return !slices.ContainsFunc(current.Services, func(c service) bool { return c.Host == d.Host && c.Auth == d.Auth })
-		}) {
+		}) && !*widened {
 			if _, err := c.revokeWhere(ctx, name, func(string) bool { return true }); err != nil {
 				return fmt.Errorf("vault %s: widening, so revoking its sessions first: %w", name, err)
 			}

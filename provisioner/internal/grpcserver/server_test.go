@@ -99,8 +99,18 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 
 // fakeApp stands in for the App ukubi-fleet: one owner, a fixed token.
 type fakeApp struct {
-	token string
-	err   error
+	token  string
+	err    error
+	posted []github.Review
+	post   func(github.Review) (github.Posted, error)
+}
+
+func (f *fakeApp) PostReview(_ context.Context, r github.Review) (github.Posted, error) {
+	f.posted = append(f.posted, r)
+	if f.post == nil {
+		return github.Posted{}, nil
+	}
+	return f.post(r)
 }
 
 func (f *fakeApp) ListRepos(context.Context) ([]github.Repo, error) { return nil, nil }

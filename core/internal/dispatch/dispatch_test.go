@@ -125,7 +125,7 @@ func setup(t *testing.T) (*Dispatcher, *fakeAgents, *fakeDefs, *proposals.Store)
 			head("other-repo", &definitions.Owns{Repos: []string{"blog"}}, nil, Client),
 		},
 		clients: []definitions.Client{{Name: Client, Spec: definitions.ClientSpec{
-			Actors: definitions.AllowList{Allow: []string{"MohammadBnei", "agent:reviewer"}}, Definitions: []string{"owner", "observer", "unlisted", "components", "other-repo"},
+			Actors: definitions.AllowList{Allow: []string{"MohammadBnei", "agent:reviewer", "agent:owner"}}, Definitions: []string{"owner", "observer", "unlisted", "components", "other-repo"},
 		}}},
 	}
 	props := proposals.NewStore(pool)
@@ -194,10 +194,10 @@ func TestRouteAndGate(t *testing.T) {
 			t.Fatalf("%s/%s woke: %+v", e.GetActor(), e.GetActorLogin(), agents.opens)
 		}
 	}
-	// A trusted hand-off through PublishEvent wakes.
+	// A trusted hand-off through PublishEvent addressing @owner wakes.
 	agents.opens = nil
 	hand := &bridgev1.CloudEvent{Seq: 2, Id: "h1", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"ask":"onboard"}`)}
+		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"text":"@owner onboard"}`)}
 	if err := d.Handle(ctx, hand); err != nil || len(agents.opens) != 1 || !agents.opens[0].GetWake() {
 		t.Fatalf("hand-off: %v %+v", err, agents.opens)
 	}
@@ -246,8 +246,11 @@ func TestWakeGate(t *testing.T) {
 	foreign.Source, foreign.Subject = "github.com/evil/notes", "github/evil/notes/pr/1"
 	published := comment(t0, true, "@owner please")
 	published.Source = "client/someone" // a non-privileged client's own Publish
-	hop := &bridgev1.CloudEvent{Seq: 2, Id: "hop", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"text":"onboard"}`)}
+	hop := func(id, login, text string) *bridgev1.CloudEvent {
+		data, _ := json.Marshal(map[string]string{"text": text})
+		return &bridgev1.CloudEvent{Seq: 2, Id: id, Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
+			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: login, ActorTrusted: true, Data: data}
+	}
 	sync := func(actor, login string, trusted bool, action string) *bridgev1.CloudEvent {
 		return ev("dev.bnei.github.pull_request."+action, actor, login, trusted, map[string]any{"pull_request": map[string]any{"title": "Fix it", "body": "@owner"}})
 	}
@@ -284,7 +287,10 @@ func TestWakeGate(t *testing.T) {
 		{"the bot's comment is dropped", comment(bot, false, "@owner done"), nil},
 		{"the bot's push is dropped", sync("agent", bot, false, "synchronize"), nil},
 		{"the bot's reopen is dropped", sync("agent", bot, false, "reopened"), nil},
-		{"a PublishEvent hop wakes", hop, map[string]bool{"owner": true}},
+		{"a PublishEvent hop addressing @owner wakes", hop("hop1", "agent:reviewer", "@owner onboard"), map[string]bool{"owner": true}},
+		{"an untargeted hop is context", hop("hop2", "agent:reviewer", "onboard"), map[string]bool{"owner": false}},
+		{"a hop addressing another is context", hop("hop3", "agent:reviewer", "@reviewer onboard"), map[string]bool{"owner": false}},
+		{"a hop never wakes its publisher", hop("hop4", "agent:owner", "@owner note to self"), map[string]bool{"owner": false}},
 		{"a T0 label naming the definition wakes", label(t0, "owner"), map[string]bool{"owner": true}},
 		{"a T0 label naming nobody", label(t0, "bug"), map[string]bool{"owner": false}},
 		{"a stranger's label", label("stranger", "owner"), map[string]bool{"owner": false}},

@@ -121,6 +121,7 @@ func main() {
 	// docs/adr/0075 §9: the provisioner's own clone/fetch uses the App's
 	// read-only installation tokens, and nothing else: the bot PAT is gone.
 	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
+	app.Trusted = cfg.TrustedLogins
 	gitMgr.GitEnv = app.GitEnv
 
 	// Fill the shared PVC's Playwright browser cache, which every worker pod

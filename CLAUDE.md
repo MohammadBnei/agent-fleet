@@ -184,12 +184,16 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `PublishEvent` goes the other way: only a definition whose pinned spec grants
   `publish_event` may call it, never with the provisioner token (`adr/0078` §8), and
   nobody can `PromptSession` into one. `DraftCard` is the same: only a definition whose
-  pinned spec grants `draft_card`, and `SendMessage` refuses a `card` entry (`adr/0082` §6). Every lease caller authors `SendMessage` as
+  pinned spec grants `draft_card`, and `SendMessage` refuses a `card` entry (`adr/0082` §6). `SubmitReview` too:
+  only `submit_review`, only on the session's own `github/<owner>/<repo>/pr/<n>` thread, and core
+  hands it to the provisioner's `PostReview`, which posts the review and the `agent-review` status
+  (`adr/0082` §9). Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.
 - Every result = PR. Exceptions (`adr/0065`): a definition in `git.mode: push` pushes to its
-  `git.branch`; one in pr mode holds no push credential (PRs through the tool surface in P4).
+  `git.branch`; one in pr mode holds no push credential (PRs through the tool surface in P4); one
+  in `git.mode: none` (a reviewer) holds a read-only token and writes only through `submit_review`.
 - One PVC per session — never a shared writable checkout across concurrent sessions.
   Fleet creates no branches either: agent runs its own `git checkout -b` (`adr/0048` §5).
 - Git commit identity is config, not code (`adr/0075` §8): repo pods commit as

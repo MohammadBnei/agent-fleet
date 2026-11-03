@@ -382,7 +382,9 @@ func TestCreateWorkerPod_DefinitionRefusedWithoutEgressLock(t *testing.T) {
 
 type rotatingForge struct{ token string }
 
-func (f *rotatingForge) Token(context.Context, string, string) (string, error) { return f.token, nil }
+func (f *rotatingForge) Token(context.Context, string, string, bool) (string, error) {
+	return f.token, nil
+}
 
 // docs/adr/0075 §5: the provisioner pushes re-minted tokens on its own, so a
 // stalled core never lets a vault's GitHub token expire.

@@ -35,6 +35,9 @@ type App struct {
 	// public, so anyone can install it; every other installation is ignored.
 	Accounts map[int64]bool
 	HTTP     *http.Client
+	// Trusted are the logins whose PRs a review may formally approve or
+	// request changes on (PROVISIONER_TRUSTED_LOGINS), besides the App's own.
+	Trusted []string
 
 	now   func() time.Time
 	mu    sync.Mutex
@@ -84,6 +87,10 @@ const refreshBefore = 30 * time.Minute
 // open PRs on its one repo. Never workflows (docs/adr/0075).
 var definitionPermissions = map[string]string{"contents": "write", "pull_requests": "write", "metadata": "read"}
 
+// readOnlyPermissions is a git.mode none definition's token (the reviewer,
+// ADR-0082 slice 5): fetch and read PRs, nothing written.
+var readOnlyPermissions = map[string]string{"contents": "read", "pull_requests": "read", "metadata": "read"}
+
 // repoPodPermissions is what a repo pod's owner-wide token may do
 // (docs/adr/0075 §7): the definition set plus issues, and read on CI state so
 // `gh pr checks` and `gh run view` work. Never workflows.
@@ -113,16 +120,21 @@ func (a *App) Configured() bool {
 	return true
 }
 
-// Token returns an installation token for owner/repo, minting one when none
+// Token returns an installation token for owner/repo (read-only when
+// readOnly, else definitionPermissions), minting one when none
 // is cached or the cached one has less than refreshBefore left. A failed
 // re-mint returns the last token while it is still valid; an expired one is
 // an error, never passed on as if it worked.
 //
 // ponytail: one lock across the mint's network calls, so a slow GitHub
 // serialises every vault's mint (10s timeouts). Per-repo locks if warms stall.
-func (a *App) Token(ctx context.Context, owner, repo string) (string, error) {
-	return a.cached(ctx, strings.ToLower(owner+"/"+repo), func(ctx context.Context) (token, error) {
-		return a.mint(ctx, owner, repo)
+func (a *App) Token(ctx context.Context, owner, repo string, readOnly bool) (string, error) {
+	key, perms := strings.ToLower(owner+"/"+repo), definitionPermissions
+	if readOnly {
+		key, perms = "ro:"+key, readOnlyPermissions
+	}
+	return a.cached(ctx, key, func(ctx context.Context) (token, error) {
+		return a.mint(ctx, owner, repo, perms)
 	})
 }
 
@@ -332,7 +344,7 @@ func (a *App) GitEnv(ctx context.Context) ([]string, error) {
 	return env, nil
 }
 
-func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
+func (a *App) mint(ctx context.Context, owner, repo string, perms map[string]string) (token, error) {
 	jwt, err := a.jwt()
 	if err != nil {
 		return token{}, err
@@ -341,7 +353,7 @@ func (a *App) mint(ctx context.Context, owner, repo string) (token, error) {
 	if err != nil {
 		return token{}, err
 	}
-	return a.accessToken(ctx, jwt, id, map[string]any{"repositories": []string{repo}, "permissions": definitionPermissions})
+	return a.accessToken(ctx, jwt, id, map[string]any{"repositories": []string{repo}, "permissions": perms})
 }
 
 func (a *App) accessToken(ctx context.Context, jwt string, id int64, body map[string]any) (token, error) {

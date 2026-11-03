@@ -42,6 +42,12 @@
   carries the subject's title. Only core (privileged) sets `actor_trusted` on Publish; nobody sets `thread_owned`. The
   head repo is only in `pull_request` and `pull_request_review` payloads, so a comment on a fork PR can read owned; its
   one consumer, the title, is the author's own text either way. The webhook needs Issues and Pull requests events.
+- **Built (slice 5):** the agent reviewer, §9 and §11 as amended: `agent-reviewer` addresses a definition
+  `agent-reviewer-<x>` whose credentials name the event's repo; a hand-off wakes only a definition its text @mentions,
+  never its publisher; `actors.allow` takes `agent:<definition>`; `git.mode: none` with `VaultSpec.read_only` (a
+  read-only token); the sidecar's `submit_review` → `CoreService.SubmitReview` → `ProvisionerService.PostReview`,
+  which posts the review and the `agent-review` status. First reviewer: `definitions/agent-reviewer-agent-fleet.yaml`,
+  opened by the `bridge` client. Rulesets requiring `agent-review` are not set yet.
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
@@ -181,11 +187,23 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      (`MaxAgentWakes`).
    - "Close threads" and ADR-0072 executor approvals become cards.
 9. **Merge right.**
-   - Approval by a fleet review agent lets the writer agent merge exactly that head. The approval is a core record (a
-     `PublishEvent` such as `review.approved` pinned to `head_sha`), not a GitHub review: every agent shares the bot
-     identity, and GitHub refuses self-approval.
-   - On approval core posts an `agent-review` commit status; each repo's ruleset requires it on the default branch. A
-     push after approval voids it.
+   - Approval by a fleet review agent lets the writer agent merge exactly that head. **Amended (slice 5, owner
+     2026-11-03):** the approval is a GitHub review plus an `agent-review` commit status on `head_sha`, both posted by
+     the provisioner (`PostReview`), not a core record: core keeps nothing about it. The reviewer's `submit_review`
+     reaches core's `SubmitReview`, which checks the grant, the thread and that the repo is the one the reviewer's
+     credentials name, and holds no GitHub credential. The provisioner refuses a closed PR and a head that moved past
+     the reviewed SHA.
+   - The review is `APPROVE` or `REQUEST_CHANGES` only on a same-repo PR the owner opened; on the bot's own PR
+     (GitHub refuses self-approval), a fork's or a stranger's it is posted as `COMMENT`. Its body starts with the
+     verdict either way. On an owned PR (the owner's or the bot's, same repo) the status is `success` for approve and
+     `failure` for changes, so a fleet-written PR gets its merge right from the status; a comment posts none. A fork's
+     or a stranger's PR gets no status at all: its code ran in the reviewer (tests run anyway, owner 2026-11-03), so
+     its verdict is text, never a green check. A fork's or a stranger's PR still merges only through an
+     owner card (below). Each repo's ruleset
+     requires `agent-review` on the default branch (not yet set). A push after approval voids it: the status is on the
+     old SHA.
+   - The reviewer runs read-only (`git.mode: none`), and a writer learns the verdict through a hand-off that
+     @mentions it.
    - A stranger's PR merges only through an owner card.
    - So the default branch holds only content written and approved by fleet agents, or chosen by the owner.
 10. **Closing** (kept from ADR-0079): a human close closes the threads; a fleet merge into the default branch closes
@@ -194,8 +212,9 @@ write. It was heavy, automatic by default, and still rested on matching bot even
 11. **Dropped from ADR-0079:** the provenance ledger, `ForgeWrite` as a trust mechanism, echo matching and the intent
     wait.
     - **Kept, narrowed (owner, 2026-10-29):** a GitHub write path through the provisioner, which holds the App key,
-      for exactly two callers: running a chosen card's bound effect and posting the `agent-review` commit status.
-      The provisioner mints a token per repository with only the permission that write needs. Core still holds no
+      for exactly two callers: running a chosen card's bound effect, and `PostReview` (slice 5), which posts an agent's
+      GitHub review and its `agent-review` commit status. The provisioner mints a token per repository with only the
+      permission that write needs (a review: pull requests and statuses write, metadata read). Core still holds no
       GitHub credential, and the path records nothing about trust.
 12. **Bridge side** (a dependency on `ukubi-bridge`; not changed here; amends bridge ADR-0060 §6):
     - deliver `pull_request.labeled`, `issues.opened` and `issues.labeled`;

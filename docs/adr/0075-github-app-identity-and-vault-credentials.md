@@ -85,7 +85,12 @@ ids and a permission subset, and last one hour. Sessions last up to 12h.
    - Agent Vault resolves the credential on each request, inside tunnels
      that are already open, so a live session picks up the new token.
 6. **Definition pods** get a one-repo token (contents and pull requests
-   write, metadata read) in their own vault, with the egress lock. Nothing
+   write, metadata read) in their own vault, with the egress lock. (ADR-0082
+   slice 5: a `git.mode: none` definition's vault is `read_only` and gets
+   `readOnlyPermissions`, contents, pull requests and metadata read; flipping
+   it either way revokes its live sessions like a widening. The review it
+   submits is posted by the provisioner with a separate one-repo token,
+   pull requests and statuses write, metadata read.) Nothing
    else changes.
 7. **Repo pods take the vault half of the definition profile (amends 0064).**
    - **Vaults.** One vault per installation owner, prefix `owner-`,

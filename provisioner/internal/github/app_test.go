@@ -163,7 +163,7 @@ func newApp(t *testing.T, pkcs8 bool) (*App, *fakeGitHub) {
 func TestApp_MintsOneRepoTokenFromTheAllowlistedInstallation(t *testing.T) {
 	for _, pkcs8 := range []bool{false, true} {
 		a, f := newApp(t, pkcs8)
-		tok, err := a.Token(context.Background(), "mohammadbnei", "notes")
+		tok, err := a.Token(context.Background(), "mohammadbnei", "notes", false)
 		if err != nil || tok == "" {
 			t.Fatalf("pkcs8=%v: %q %v", pkcs8, tok, err)
 		}
@@ -183,7 +183,7 @@ func TestApp_MintsOneRepoTokenFromTheAllowlistedInstallation(t *testing.T) {
 
 func TestApp_RefusesAnInstallationByANonAllowlistedAccount(t *testing.T) {
 	a, f := newApp(t, false)
-	if _, err := a.Token(context.Background(), "MohammadBnei", "squatted"); err == nil {
+	if _, err := a.Token(context.Background(), "MohammadBnei", "squatted", false); err == nil {
 		t.Fatal("want an error: the repo's installation is by a foreign account id")
 	}
 	if len(f.mints) != 0 {
@@ -194,13 +194,13 @@ func TestApp_RefusesAnInstallationByANonAllowlistedAccount(t *testing.T) {
 func TestApp_ReusesUntilThirtyMinutesRemain(t *testing.T) {
 	a, f := newApp(t, false)
 	ctx := context.Background()
-	t1, _ := a.Token(ctx, "opus-tech-hq", "workspace")
-	t2, _ := a.Token(ctx, "opus-tech-hq", "workspace")
+	t1, _ := a.Token(ctx, "opus-tech-hq", "workspace", false)
+	t2, _ := a.Token(ctx, "opus-tech-hq", "workspace", false)
 	if t1 != t2 || len(f.mints) != 1 {
 		t.Fatalf("a fresh token was re-minted: %d mints", len(f.mints))
 	}
 	a.now = func() time.Time { return time.Now().Add(31 * time.Minute) }
-	t3, _ := a.Token(ctx, "opus-tech-hq", "workspace")
+	t3, _ := a.Token(ctx, "opus-tech-hq", "workspace", false)
 	if t3 == t1 || len(f.mints) != 2 {
 		t.Fatalf("a token with <30m left was served: %d mints", len(f.mints))
 	}
@@ -211,18 +211,18 @@ func TestApp_ReusesUntilThirtyMinutesRemain(t *testing.T) {
 func TestApp_FailedRemintServesTheLastToken(t *testing.T) {
 	a, f := newApp(t, false)
 	ctx := context.Background()
-	t1, _ := a.Token(ctx, "opus-tech-hq", "workspace")
+	t1, _ := a.Token(ctx, "opus-tech-hq", "workspace", false)
 	f.fail = true
 	a.now = func() time.Time { return time.Now().Add(45 * time.Minute) } // <30m left, still valid
-	t2, err := a.Token(ctx, "opus-tech-hq", "workspace")
+	t2, err := a.Token(ctx, "opus-tech-hq", "workspace", false)
 	if err != nil || t2 != t1 {
 		t.Fatalf("got %q %v, want the last token", t2, err)
 	}
 	a.now = func() time.Time { return time.Now().Add(2 * time.Hour) } // expired
-	if _, err := a.Token(ctx, "opus-tech-hq", "workspace"); err == nil {
+	if _, err := a.Token(ctx, "opus-tech-hq", "workspace", false); err == nil {
 		t.Fatal("an expired token was served as valid")
 	}
-	if _, err := a.Token(ctx, "opus-tech-hq", "other"); err == nil {
+	if _, err := a.Token(ctx, "opus-tech-hq", "other", false); err == nil {
 		t.Fatal("no token yet and the mint fails: want an error")
 	}
 }

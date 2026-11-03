@@ -33,7 +33,7 @@ func TestRepoDefinitions(t *testing.T) {
 			t.Errorf("%s: effective mode %+v, want default auto from workspace-base", r.Name, r.Effective.Mode)
 		}
 	}
-	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes"} {
+	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes", "agent-reviewer-agent-fleet"} {
 		if !seen[want] {
 			t.Errorf("%s must be a valid, launchable definition", want)
 		}

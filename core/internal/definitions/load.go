@@ -46,7 +46,7 @@ var (
 	// SDK 0.3.301 EffortLevel.
 	EffortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
-	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card"}
+	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review"}
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
 	interactions   = []string{"ask", "deny"}
 	lifecycles     = []string{"resident", "single-shot"}
@@ -381,8 +381,12 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 		errs = append(errs, errors.New("actors.allow must not be empty"))
 	}
 	for _, a := range s.Actors.Allow {
+		// agent:<definition> is a hand-off's publisher (docs/adr/0082 slice 5).
+		if n, ok := strings.CutPrefix(a, "agent:"); ok && nameRe.MatchString(n) {
+			continue
+		}
 		if !loginRe.MatchString(a) {
-			errs = append(errs, fmt.Errorf("actors.allow: %q is not a GitHub login", a))
+			errs = append(errs, fmt.Errorf("actors.allow: %q is not a GitHub login or agent:<definition>", a))
 		}
 	}
 	for _, d := range s.Definitions {
@@ -501,7 +505,8 @@ func validate(name string, s *Spec) error {
 		}
 	}
 	// docs/adr/0065: after P3 a definition pod's model credential is the
-	// vault's, a push credential exists only in push mode, and every GitHub
+	// vault's, a GitHub credential exists only in push mode or read-only in
+	// none mode (docs/adr/0082 slice 5: the vault mints read scopes), and every GitHub
 	// path names the one repo the warm binds repos.url to.
 	if !s.Abstract {
 		if need(s.Credentials != nil, "credentials") && !slices.ContainsFunc(s.Credentials.Services, func(x Service) bool { return x.Host == "api.anthropic.com" }) {
@@ -518,8 +523,8 @@ func validate(name string, s *Spec) error {
 			}
 		}
 		if s.Git != nil {
-			if gh && s.Git.Mode != "push" {
-				bad("credentials: github.com / api.github.com services need git.mode push (a pr-mode pod holds no push credential)")
+			if gh && s.Git.Mode == "pr" {
+				bad("credentials: github.com / api.github.com services need git.mode push or none (a pr-mode pod holds no GitHub credential)")
 			}
 			if s.Git.Mode == "push" && !git {
 				bad("git.mode push needs a github.com credentials service")
@@ -536,8 +541,8 @@ func validate(name string, s *Spec) error {
 	}
 	if need(s.Git != nil, "git") {
 		g := s.Git
-		if g.Mode != "pr" && g.Mode != "push" {
-			bad(`git.mode %q: want "pr" or "push"`, g.Mode)
+		if g.Mode != "pr" && g.Mode != "push" && g.Mode != "none" {
+			bad(`git.mode %q: want "pr", "push" or "none"`, g.Mode)
 		}
 		if g.Mode == "push" && g.Branch == "" {
 			bad("git.branch is required when git.mode is push")

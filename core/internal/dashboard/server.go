@@ -1408,7 +1408,7 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	id := eff.Git.Identity
 	return &agentfleetv1.DefinitionPodProfile{
 		Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email,
-		Vault: definitions.VaultSpec(eff.Credentials), TimeoutSeconds: int64(timeout.Seconds()),
+		Vault: definitions.VaultSpec(eff), TimeoutSeconds: int64(timeout.Seconds()),
 	}, nil
 }
 

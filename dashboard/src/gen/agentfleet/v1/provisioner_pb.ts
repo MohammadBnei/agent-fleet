@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIvECChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRIXCgtkZXNjcmlwdGlvbhgFIAEoCUICGAESEAoIbGVhc2VfaWQYBiABKAkSGQoRcmVzdW1lX3Nlc3Npb25faWQYByABKAkSFwoPcmVzdW1lX2Zyb21fc2VxGAggASgDEhEKCXRvb2xfa2V5cxgKIAMoCRINCgVpbWFnZRgMIAEoCRI3CgpkZWZpbml0aW9uGA0gASgLMiMuYWdlbnRmbGVldC52MS5EZWZpbml0aW9uUG9kUHJvZmlsZRIpCgZnZW5vbWUYDiADKAsyGS5hZ2VudGZsZWV0LnYxLkdlbm9tZUZpbGVKBAgJEApKBAgLEAxSCGd1aWRhbmNlUhNzZXJ2aWNlX2luZ3JlZGllbnRzIigKCkdlbm9tZUZpbGUSDAoEcGF0aBgBIAEoCRIMCgRib2R5GAIgASgJIpkBChREZWZpbml0aW9uUG9kUHJvZmlsZRIMCgRuYW1lGAEgASgJEhcKD2dpdF9hdXRob3JfbmFtZRgCIAEoCRIYChBnaXRfYXV0aG9yX2VtYWlsGAMgASgJEicKBXZhdWx0GAQgASgLMhguYWdlbnRmbGVldC52MS5WYXVsdFNwZWMSFwoPdGltZW91dF9zZWNvbmRzGAUgASgDIkgKCVZhdWx0U3BlYxIMCgRuYW1lGAEgASgJEi0KCHNlcnZpY2VzGAIgAygLMhsuYWdlbnRmbGVldC52MS5WYXVsdFNlcnZpY2UiOwoMVmF1bHRTZXJ2aWNlEgwKBGhvc3QYASABKAkSDQoFcGF0aHMYAiADKAkSDgoGc2VjcmV0GAMgASgJIsgBChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCRIiChpkZWZpbml0aW9uX3Byb2ZpbGVfYXBwbGllZBgEIAEoCBIbChN2YXVsdF90b2tlbl9hcHBsaWVkGAUgASgIEhYKDmdlbm9tZV9hcHBsaWVkGAYgASgIEhUKDWZsZWV0X3ZlcnNpb24YByABKAkiQgoWUmVjb25jaWxlVmF1bHRzUmVxdWVzdBIoCgZ2YXVsdHMYASADKAsyGC5hZ2VudGZsZWV0LnYxLlZhdWx0U3BlYyJbChdSZWNvbmNpbGVWYXVsdHNSZXNwb25zZRIrCgdyZXN1bHRzGAEgAygLMhouYWdlbnRmbGVldC52MS5WYXVsdFJlc3VsdBITCgtwcnVuZV9lcnJvchgCIAEoCSIqCgtWYXVsdFJlc3VsdBIMCgRuYW1lGAEgASgJEg0KBWVycm9yGAIgASgJIhMKEUdldFZlcnNpb25SZXF1ZXN0IlIKEkdldFZlcnNpb25SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhQKDHdvcmtlcl9pbWFnZRgCIAEoCRIVCg1zaWRlY2FyX2ltYWdlGAMgASgJIhwKGkxpc3REZWZpbml0aW9uRmlsZXNSZXF1ZXN0Ii8KDkRlZmluaXRpb25GaWxlEgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoDCJYChtMaXN0RGVmaW5pdGlvbkZpbGVzUmVzcG9uc2USLAoFZmlsZXMYASADKAsyHS5hZ2VudGZsZWV0LnYxLkRlZmluaXRpb25GaWxlEgsKA3NoYRgCIAEoCSIYChZMaXN0R2l0SHViUmVwb3NSZXF1ZXN0ImQKCkdpdEh1YlJlcG8SCgoCaWQYASABKAMSEQoJZnVsbF9uYW1lGAIgASgJEgwKBG5hbWUYAyABKAkSEQoJY2xvbmVfdXJsGAQgASgJEhYKDmRlZmF1bHRfYnJhbmNoGAUgASgJIkMKF0xpc3RHaXRIdWJSZXBvc1Jlc3BvbnNlEigKBXJlcG9zGAEgAygLMhkuYWdlbnRmbGVldC52MS5HaXRIdWJSZXBvIlYKFlRlYXJEb3duU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIoCgRraW5kGAIgASgOMhouYWdlbnRmbGVldC52MS5TZXNzaW9uS2luZCIsChdUZWFyRG93blNlc3Npb25SZXNwb25zZRIRCgl0b3JuX2Rvd24YASABKAgiFwoVTGlzdFdvcmtlclBvZHNSZXF1ZXN0IkQKDUxpdmVXb3JrZXJQb2QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIQCghwb2RfbmFtZRgCIAEoCRINCgVwaGFzZRgDIAEoCSJEChZMaXN0V29ya2VyUG9kc1Jlc3BvbnNlEioKBHBvZHMYASADKAsyHC5hZ2VudGZsZWV0LnYxLkxpdmVXb3JrZXJQb2QiOAoURXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRwb3J0GAIgASgFIiQKFUV4cG9zZVNlc3Npb25SZXNwb25zZRILCgN1cmwYASABKAkiLAoWVW5leHBvc2VTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhkKF1VuZXhwb3NlU2Vzc2lvblJlc3BvbnNlIkkKF1Byb3Zpc2lvblNlcnZpY2VSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIMCgRraW5kGAMgASgJIicKGFByb3Zpc2lvblNlcnZpY2VSZXNwb25zZRILCgNkc24YASABKAkiKQoTU3dlZXBTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhYKFFN3ZWVwU2Vzc2lvblJlc3BvbnNlIjYKFFN5bmNSZXBvQ2FjaGVSZXF1ZXN0EgwKBHJlcG8YASABKAkSEAoIcmVwb191cmwYAiABKAkiegoVU3luY1JlcG9DYWNoZVJlc3BvbnNlEg4KBmNsb25lZBgBIAEoCBIMCgRoZWFkGAIgASgJEhgKEGNvbW1pdHNfYWR2YW5jZWQYAyABKAUSEwoLZHVyYXRpb25fbXMYBCABKAMSFAoMaGVhZF9jaGFuZ2VkGAUgASgIKlwKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQASIECAIQAioQU0VTU0lPTl9LSU5EX0UyRTKUCQoSUHJvdmlzaW9uZXJTZXJ2aWNlEmAKD0NyZWF0ZVdvcmtlclBvZBIlLmFnZW50ZmxlZXQudjEuQ3JlYXRlV29ya2VyUG9kUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USYAoPVGVhckRvd25TZXNzaW9uEiUuYWdlbnRmbGVldC52MS5UZWFyRG93blNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5UZWFyRG93blNlc3Npb25SZXNwb25zZRJdCg5MaXN0V29ya2VyUG9kcxIkLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5MaXN0V29ya2VyUG9kc1Jlc3BvbnNlElEKCkdldFZlcnNpb24SIC5hZ2VudGZsZWV0LnYxLkdldFZlcnNpb25SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVzcG9uc2USWgoNRXhwb3NlU2Vzc2lvbhIjLmFnZW50ZmxlZXQudjEuRXhwb3NlU2Vzc2lvblJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXNwb25zZRJgCg9VbmV4cG9zZVNlc3Npb24SJS5hZ2VudGZsZWV0LnYxLlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlVuZXhwb3NlU2Vzc2lvblJlc3BvbnNlEmMKEFByb3Zpc2lvblNlcnZpY2USJi5hZ2VudGZsZWV0LnYxLlByb3Zpc2lvblNlcnZpY2VSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USWgoNU3luY1JlcG9DYWNoZRIjLmFnZW50ZmxlZXQudjEuU3luY1JlcG9DYWNoZVJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlN5bmNSZXBvQ2FjaGVSZXNwb25zZRJXCgxTd2VlcFNlc3Npb24SIi5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlc3BvbnNlEmwKE0xpc3REZWZpbml0aW9uRmlsZXMSKS5hZ2VudGZsZWV0LnYxLkxpc3REZWZpbml0aW9uRmlsZXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5MaXN0RGVmaW5pdGlvbkZpbGVzUmVzcG9uc2USYAoPUmVjb25jaWxlVmF1bHRzEiUuYWdlbnRmbGVldC52MS5SZWNvbmNpbGVWYXVsdHNSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5SZWNvbmNpbGVWYXVsdHNSZXNwb25zZRJgCg9MaXN0R2l0SHViUmVwb3MSJS5hZ2VudGZsZWV0LnYxLkxpc3RHaXRIdWJSZXBvc1JlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkxpc3RHaXRIdWJSZXBvc1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIvECChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRIXCgtkZXNjcmlwdGlvbhgFIAEoCUICGAESEAoIbGVhc2VfaWQYBiABKAkSGQoRcmVzdW1lX3Nlc3Npb25faWQYByABKAkSFwoPcmVzdW1lX2Zyb21fc2VxGAggASgDEhEKCXRvb2xfa2V5cxgKIAMoCRINCgVpbWFnZRgMIAEoCRI3CgpkZWZpbml0aW9uGA0gASgLMiMuYWdlbnRmbGVldC52MS5EZWZpbml0aW9uUG9kUHJvZmlsZRIpCgZnZW5vbWUYDiADKAsyGS5hZ2VudGZsZWV0LnYxLkdlbm9tZUZpbGVKBAgJEApKBAgLEAxSCGd1aWRhbmNlUhNzZXJ2aWNlX2luZ3JlZGllbnRzIigKCkdlbm9tZUZpbGUSDAoEcGF0aBgBIAEoCRIMCgRib2R5GAIgASgJIpkBChREZWZpbml0aW9uUG9kUHJvZmlsZRIMCgRuYW1lGAEgASgJEhcKD2dpdF9hdXRob3JfbmFtZRgCIAEoCRIYChBnaXRfYXV0aG9yX2VtYWlsGAMgASgJEicKBXZhdWx0GAQgASgLMhguYWdlbnRmbGVldC52MS5WYXVsdFNwZWMSFwoPdGltZW91dF9zZWNvbmRzGAUgASgDIlsKCVZhdWx0U3BlYxIMCgRuYW1lGAEgASgJEi0KCHNlcnZpY2VzGAIgAygLMhsuYWdlbnRmbGVldC52MS5WYXVsdFNlcnZpY2USEQoJcmVhZF9vbmx5GAMgASgIIjsKDFZhdWx0U2VydmljZRIMCgRob3N0GAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBnNlY3JldBgDIAEoCSLIAQoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkSFAoMd29ya2VyX2ltYWdlGAIgASgJEhUKDXNpZGVjYXJfaW1hZ2UYAyABKAkSIgoaZGVmaW5pdGlvbl9wcm9maWxlX2FwcGxpZWQYBCABKAgSGwoTdmF1bHRfdG9rZW5fYXBwbGllZBgFIAEoCBIWCg5nZW5vbWVfYXBwbGllZBgGIAEoCBIVCg1mbGVldF92ZXJzaW9uGAcgASgJIkIKFlJlY29uY2lsZVZhdWx0c1JlcXVlc3QSKAoGdmF1bHRzGAEgAygLMhguYWdlbnRmbGVldC52MS5WYXVsdFNwZWMiWwoXUmVjb25jaWxlVmF1bHRzUmVzcG9uc2USKwoHcmVzdWx0cxgBIAMoCzIaLmFnZW50ZmxlZXQudjEuVmF1bHRSZXN1bHQSEwoLcHJ1bmVfZXJyb3IYAiABKAkiKgoLVmF1bHRSZXN1bHQSDAoEbmFtZRgBIAEoCRINCgVlcnJvchgCIAEoCSITChFHZXRWZXJzaW9uUmVxdWVzdCJSChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSIcChpMaXN0RGVmaW5pdGlvbkZpbGVzUmVxdWVzdCIvCg5EZWZpbml0aW9uRmlsZRIMCgRwYXRoGAEgASgJEg8KB2NvbnRlbnQYAiABKAwiWAobTGlzdERlZmluaXRpb25GaWxlc1Jlc3BvbnNlEiwKBWZpbGVzGAEgAygLMh0uYWdlbnRmbGVldC52MS5EZWZpbml0aW9uRmlsZRILCgNzaGEYAiABKAkiGAoWTGlzdEdpdEh1YlJlcG9zUmVxdWVzdCJkCgpHaXRIdWJSZXBvEgoKAmlkGAEgASgDEhEKCWZ1bGxfbmFtZRgCIAEoCRIMCgRuYW1lGAMgASgJEhEKCWNsb25lX3VybBgEIAEoCRIWCg5kZWZhdWx0X2JyYW5jaBgFIAEoCSJDChdMaXN0R2l0SHViUmVwb3NSZXNwb25zZRIoCgVyZXBvcxgBIAMoCzIZLmFnZW50ZmxlZXQudjEuR2l0SHViUmVwbyJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIjkKDVJldmlld0NvbW1lbnQSDAoEcGF0aBgBIAEoCRIMCgRsaW5lGAIgASgFEgwKBGJvZHkYAyABKAkijgEKEVBvc3RSZXZpZXdSZXF1ZXN0EgwKBHJlcG8YASABKAkSCgoCcHIYAiABKAMSEAoIaGVhZF9zaGEYAyABKAkSDwoHdmVyZGljdBgEIAEoCRIMCgRib2R5GAUgASgJEi4KCGNvbW1lbnRzGAYgAygLMhwuYWdlbnRmbGVldC52MS5SZXZpZXdDb21tZW50Ik0KElBvc3RSZXZpZXdSZXNwb25zZRISCgpyZXZpZXdfdXJsGAEgASgJEg0KBWV2ZW50GAIgASgJEhQKDHN0YXR1c19zdGF0ZRgDIAEoCSIpChNTd2VlcFNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiFgoUU3dlZXBTZXNzaW9uUmVzcG9uc2UiNgoUU3luY1JlcG9DYWNoZVJlcXVlc3QSDAoEcmVwbxgBIAEoCRIQCghyZXBvX3VybBgCIAEoCSJ6ChVTeW5jUmVwb0NhY2hlUmVzcG9uc2USDgoGY2xvbmVkGAEgASgIEgwKBGhlYWQYAiABKAkSGAoQY29tbWl0c19hZHZhbmNlZBgDIAEoBRITCgtkdXJhdGlvbl9tcxgEIAEoAxIUCgxoZWFkX2NoYW5nZWQYBSABKAgqXAoLU2Vzc2lvbktpbmQSHAoYU0VTU0lPTl9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTU0VTU0lPTl9LSU5EX1dPUktFUhABIgQIAhACKhBTRVNTSU9OX0tJTkRfRTJFMucJChJQcm92aXNpb25lclNlcnZpY2USYAoPQ3JlYXRlV29ya2VyUG9kEiUuYWdlbnRmbGVldC52MS5DcmVhdGVXb3JrZXJQb2RSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5DcmVhdGVXb3JrZXJQb2RSZXNwb25zZRJgCg9UZWFyRG93blNlc3Npb24SJS5hZ2VudGZsZWV0LnYxLlRlYXJEb3duU2Vzc2lvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlRlYXJEb3duU2Vzc2lvblJlc3BvbnNlEl0KDkxpc3RXb3JrZXJQb2RzEiQuYWdlbnRmbGVldC52MS5MaXN0V29ya2VyUG9kc1JlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVzcG9uc2USUQoKR2V0VmVyc2lvbhIgLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkdldFZlcnNpb25SZXNwb25zZRJaCg1FeHBvc2VTZXNzaW9uEiMuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuRXhwb3NlU2Vzc2lvblJlc3BvbnNlEmAKD1VuZXhwb3NlU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVW5leHBvc2VTZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVW5leHBvc2VTZXNzaW9uUmVzcG9uc2USYwoQUHJvdmlzaW9uU2VydmljZRImLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLlByb3Zpc2lvblNlcnZpY2VSZXNwb25zZRJaCg1TeW5jUmVwb0NhY2hlEiMuYWdlbnRmbGVldC52MS5TeW5jUmVwb0NhY2hlUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuU3luY1JlcG9DYWNoZVJlc3BvbnNlElcKDFN3ZWVwU2Vzc2lvbhIiLmFnZW50ZmxlZXQudjEuU3dlZXBTZXNzaW9uUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuU3dlZXBTZXNzaW9uUmVzcG9uc2USbAoTTGlzdERlZmluaXRpb25GaWxlcxIpLmFnZW50ZmxlZXQudjEuTGlzdERlZmluaXRpb25GaWxlc1JlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLkxpc3REZWZpbml0aW9uRmlsZXNSZXNwb25zZRJgCg9SZWNvbmNpbGVWYXVsdHMSJS5hZ2VudGZsZWV0LnYxLlJlY29uY2lsZVZhdWx0c1JlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlJlY29uY2lsZVZhdWx0c1Jlc3BvbnNlEmAKD0xpc3RHaXRIdWJSZXBvcxIlLmFnZW50ZmxlZXQudjEuTGlzdEdpdEh1YlJlcG9zUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuTGlzdEdpdEh1YlJlcG9zUmVzcG9uc2USUQoKUG9zdFJldmlldxIgLmFnZW50ZmxlZXQudjEuUG9zdFJldmlld1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLlBvc3RSZXZpZXdSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
 
 /**
  * Fetches the repo's clone cache and creates the session's pod, synchronously,
@@ -240,6 +240,14 @@ export type VaultSpec = Message<"agentfleet.v1.VaultSpec"> & {
    * @generated from field: repeated agentfleet.v1.VaultService services = 2;
    */
   services: VaultService[];
+
+  /**
+   * git.mode none (docs/adr/0082 slice 5): the vault mints read-only GitHub
+   * permissions {contents, pull_requests, metadata: read}.
+   *
+   * @generated from field: bool read_only = 3;
+   */
+  readOnly: boolean;
 };
 
 /**
@@ -882,6 +890,115 @@ export const ProvisionServiceResponseSchema: GenMessage<ProvisionServiceResponse
   messageDesc(file_agentfleet_v1_provisioner, 27);
 
 /**
+ * One inline review comment, on the PR head's version of the file.
+ *
+ * @generated from message agentfleet.v1.ReviewComment
+ */
+export type ReviewComment = Message<"agentfleet.v1.ReviewComment"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: int32 line = 2;
+   */
+  line: number;
+
+  /**
+   * @generated from field: string body = 3;
+   */
+  body: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ReviewComment.
+ * Use `create(ReviewCommentSchema)` to create a new message.
+ */
+export const ReviewCommentSchema: GenMessage<ReviewComment> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 28);
+
+/**
+ * @generated from message agentfleet.v1.PostReviewRequest
+ */
+export type PostReviewRequest = Message<"agentfleet.v1.PostReviewRequest"> & {
+  /**
+   * owner/name.
+   *
+   * @generated from field: string repo = 1;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: int64 pr = 2;
+   */
+  pr: bigint;
+
+  /**
+   * 40 hex; the review's commit_id and the status's commit.
+   *
+   * @generated from field: string head_sha = 3;
+   */
+  headSha: string;
+
+  /**
+   * "approve" | "changes" | "comment". The provisioner downgrades approve and
+   * changes to a COMMENT on a PR it does not count as owned.
+   *
+   * @generated from field: string verdict = 4;
+   */
+  verdict: string;
+
+  /**
+   * @generated from field: string body = 5;
+   */
+  body: string;
+
+  /**
+   * @generated from field: repeated agentfleet.v1.ReviewComment comments = 6;
+   */
+  comments: ReviewComment[];
+};
+
+/**
+ * Describes the message agentfleet.v1.PostReviewRequest.
+ * Use `create(PostReviewRequestSchema)` to create a new message.
+ */
+export const PostReviewRequestSchema: GenMessage<PostReviewRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 29);
+
+/**
+ * @generated from message agentfleet.v1.PostReviewResponse
+ */
+export type PostReviewResponse = Message<"agentfleet.v1.PostReviewResponse"> & {
+  /**
+   * @generated from field: string review_url = 1;
+   */
+  reviewUrl: string;
+
+  /**
+   * The event GitHub got: APPROVE | REQUEST_CHANGES | COMMENT.
+   *
+   * @generated from field: string event = 2;
+   */
+  event: string;
+
+  /**
+   * The agent-review status posted: "success" | "failure", "" when none.
+   *
+   * @generated from field: string status_state = 3;
+   */
+  statusState: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.PostReviewResponse.
+ * Use `create(PostReviewResponseSchema)` to create a new message.
+ */
+export const PostReviewResponseSchema: GenMessage<PostReviewResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 30);
+
+/**
  * @generated from message agentfleet.v1.SweepSessionRequest
  */
 export type SweepSessionRequest = Message<"agentfleet.v1.SweepSessionRequest"> & {
@@ -896,7 +1013,7 @@ export type SweepSessionRequest = Message<"agentfleet.v1.SweepSessionRequest"> &
  * Use `create(SweepSessionRequestSchema)` to create a new message.
  */
 export const SweepSessionRequestSchema: GenMessage<SweepSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 28);
+  messageDesc(file_agentfleet_v1_provisioner, 31);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionResponse
@@ -909,7 +1026,7 @@ export type SweepSessionResponse = Message<"agentfleet.v1.SweepSessionResponse">
  * Use `create(SweepSessionResponseSchema)` to create a new message.
  */
 export const SweepSessionResponseSchema: GenMessage<SweepSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 29);
+  messageDesc(file_agentfleet_v1_provisioner, 32);
 
 /**
  * @generated from message agentfleet.v1.SyncRepoCacheRequest
@@ -931,7 +1048,7 @@ export type SyncRepoCacheRequest = Message<"agentfleet.v1.SyncRepoCacheRequest">
  * Use `create(SyncRepoCacheRequestSchema)` to create a new message.
  */
 export const SyncRepoCacheRequestSchema: GenMessage<SyncRepoCacheRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 30);
+  messageDesc(file_agentfleet_v1_provisioner, 33);
 
 /**
  * No error field: gRPC already carries one, and git.Manager.run puts git's
@@ -991,7 +1108,7 @@ export type SyncRepoCacheResponse = Message<"agentfleet.v1.SyncRepoCacheResponse
  * Use `create(SyncRepoCacheResponseSchema)` to create a new message.
  */
 export const SyncRepoCacheResponseSchema: GenMessage<SyncRepoCacheResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 31);
+  messageDesc(file_agentfleet_v1_provisioner, 34);
 
 /**
  * Which kind of pod an operation targets.
@@ -1153,6 +1270,18 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof ListGitHubReposRequestSchema;
     output: typeof ListGitHubReposResponseSchema;
+  },
+  /**
+   * Posts a reviewer definition's review and its agent-review commit status
+   * (docs/adr/0082 §9): core holds no GitHub credential, so it relays
+   * CoreService.SubmitReview here once it has authorized the session.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.PostReview
+   */
+  postReview: {
+    methodKind: "unary";
+    input: typeof PostReviewRequestSchema;
+    output: typeof PostReviewResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_provisioner, 0);

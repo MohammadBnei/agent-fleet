@@ -404,6 +404,21 @@ permission tiers instead of a second, fleet-specific gate on top of them
   appends the answer as a message; a writer that cannot resume gets the
   answer recorded and "not delivered". `close_threads` appends, then
   archives every open thread on the subject.
+- **Agent reviews** ([`adr/0082`](adr/0082-decision-cards.md) §9, slice 5).
+  A per-repo reviewer (`agent-reviewer-<repo>`, first
+  `definitions/agent-reviewer-agent-fleet.yaml`) wakes when the owner writes
+  `@agent-reviewer` on a PR of the repo its credentials name. It runs in
+  `git.mode: none`: its vault mints a read-only token (contents, pull requests,
+  metadata read), so it fetches `pull/<n>/head` and pushes nothing. Its
+  `submit_review` tool calls `CoreService.SubmitReview`, which checks the
+  grant, the session's thread (`github/<owner>/<repo>/pr/<n>`) and the head
+  SHA, and hands the review to `ProvisionerService.PostReview`: the
+  provisioner posts the GitHub review and, for approve or changes on an
+  owned PR, the `agent-review` commit status, with a token minted for that
+  one repo. Only a
+  same-repo PR the owner opened gets a formal approval or change request; the
+  bot's own, a fork's or a stranger's gets a comment. A hand-off wakes another definition only when its text
+  @mentions it, and never wakes the definition that published it.
 - **Definition sessions decide differently** ([`adr/0076`](adr/0076-definition-sessions-run-in-auto.md),
   [`adr/0067`](adr/0067-shared-and-private-sessions.md) §4). Their `auto` is the
   fleet's: the worker runs the SDK in `default`, so every call that is not
@@ -477,7 +492,8 @@ is the reason.
   (`dispatch/publish.go`; depth, per-session budget and per-thread wake
   caps). `core/internal/announce` publishes `session.waiting`/`resumed`
   for clients with `announceSessions`. `definitions/clients/bridge.yaml`
-  lists no definition yet, so no event opens anything.
+  opens one definition, `agent-reviewer-agent-fleet`, and lists its
+  `agent:` login so its hand-offs may wake.
 - **Repos come from GitHub** ([`adr/0074`](adr/0074-fleet-repos-come-from-github.md),
   amended by `adr/0075` §4): core projects the GitHub App `ukubi-fleet`'s
   allowlisted installations into `repos` (`core/internal/repos/sync.go`, via
