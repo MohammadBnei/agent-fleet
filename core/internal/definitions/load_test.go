@@ -77,6 +77,7 @@ func errText(err error) string {
 // in a child of a valid parent must still fail.
 func TestLoad_ChildRules(t *testing.T) {
 	const push = "{ mode: push, branch: main, identity: { name: a, email: a@b.c } }"
+	const none = "{ mode: none, identity: { name: a, email: a@b.c } }"
 	cases := []struct {
 		name string
 		kv   map[string]string
@@ -108,6 +109,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"tools empty allow", map[string]string{"tools": "{ allow: [] }"}, "tools.allow must not be empty"},
 		{"sidecar tool outside ceiling", map[string]string{"sidecarTools": "[expose]"}, "expose"},
 		{"draft_card in ceiling", map[string]string{"sidecarTools": "[AskUserQuestion, draft_card]"}, ""},
+		{"submit_review in ceiling", map[string]string{"sidecarTools": "[AskUserQuestion, submit_review]"}, ""},
 		{"thinking ultra", map[string]string{"thinking": "{ default: ultra }"}, "thinking.default"},
 		{"thinking xhigh", map[string]string{"thinking": "{ default: xhigh }"}, ""},
 		{"model outside ceiling", map[string]string{"model": "{ default: gpt-5, allow: [gpt-5] }"}, "gpt-5"},
@@ -153,6 +155,9 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
 		{"api.github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
 		{"push without github", map[string]string{"git": push}, "git.mode push needs a github.com"},
+		// A read-only reviewer: GitHub credentials, but the vault mints read scopes.
+		{"github in none mode", map[string]string{"git": none, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		{"none without github ok", map[string]string{"git": none}, ""},
 		{"two repos", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/x.git/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
 		{"two repos-owners", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/reposx/y/*", "/reposz/y/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
 		{"api on another repo", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/x/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
@@ -388,6 +393,9 @@ func TestLoad_Clients(t *testing.T) {
 		{"bad tokenRef", clientWith("cee", "secret-value", ""), invoked, "tokenRef", ""},
 		{"empty actors", clientWith("cee", "", "[]"), invoked, "actors.allow", ""},
 		{"bad actor", clientWith("cee", "", "[not a login]"), invoked, "actors.allow", ""},
+		{"agent actor", clientWith("cee", "", "[moha, agent:agent-reviewer-x]"), invoked, "", ""},
+		{"agent actor bad name", clientWith("cee", "", "[agent:Bad_Name]"), invoked, "actors.allow", ""},
+		{"agent actor empty name", clientWith("cee", "", "[\"agent:\"]"), invoked, "actors.allow", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

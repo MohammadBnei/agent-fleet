@@ -436,16 +436,18 @@ func (r *Registry) Vaults() []*agentfleetv1.VaultSpec {
 	out := []*agentfleetv1.VaultSpec{}
 	for _, h := range r.heads {
 		if h.Effective != nil && h.Effective.Credentials != nil {
-			out = append(out, VaultSpec(h.Effective.Credentials))
+			out = append(out, VaultSpec(h.Effective))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
 	return out
 }
 
-// VaultSpec is a definition's credentials on the provisioner wire.
-func VaultSpec(c *Credentials) *agentfleetv1.VaultSpec {
-	v := &agentfleetv1.VaultSpec{Name: c.Vault}
+// VaultSpec is a valid effective spec's credentials on the provisioner wire.
+// git.mode none makes the vault mint read-only GitHub scopes.
+func VaultSpec(s *Spec) *agentfleetv1.VaultSpec {
+	c := s.Credentials
+	v := &agentfleetv1.VaultSpec{Name: c.Vault, ReadOnly: s.Git != nil && s.Git.Mode == "none"}
 	for _, s := range c.Services {
 		v.Services = append(v.Services, &agentfleetv1.VaultService{Host: s.Host, Paths: s.Paths, Secret: s.Secret})
 	}

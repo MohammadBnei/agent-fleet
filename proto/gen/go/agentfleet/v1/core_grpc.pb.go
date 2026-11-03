@@ -45,6 +45,7 @@ const (
 	CoreService_PublishEvent_FullMethodName        = "/agentfleet.v1.CoreService/PublishEvent"
 	CoreService_ConsumeGrant_FullMethodName        = "/agentfleet.v1.CoreService/ConsumeGrant"
 	CoreService_DraftCard_FullMethodName           = "/agentfleet.v1.CoreService/DraftCard"
+	CoreService_SubmitReview_FullMethodName        = "/agentfleet.v1.CoreService/SubmitReview"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -135,6 +136,9 @@ type CoreServiceClient interface {
 	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
 	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
 	DraftCard(ctx context.Context, in *DraftCardRequest, opts ...grpc.CallOption) (*DraftCardResponse, error)
+	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
+	// submit_review.
+	SubmitReview(ctx context.Context, in *SubmitReviewRequest, opts ...grpc.CallOption) (*SubmitReviewResponse, error)
 }
 
 type coreServiceClient struct {
@@ -417,6 +421,16 @@ func (c *coreServiceClient) DraftCard(ctx context.Context, in *DraftCardRequest,
 	return out, nil
 }
 
+func (c *coreServiceClient) SubmitReview(ctx context.Context, in *SubmitReviewRequest, opts ...grpc.CallOption) (*SubmitReviewResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitReviewResponse)
+	err := c.cc.Invoke(ctx, CoreService_SubmitReview_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -505,6 +519,9 @@ type CoreServiceServer interface {
 	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
 	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
 	DraftCard(context.Context, *DraftCardRequest) (*DraftCardResponse, error)
+	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
+	// submit_review.
+	SubmitReview(context.Context, *SubmitReviewRequest) (*SubmitReviewResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -592,6 +609,9 @@ func (UnimplementedCoreServiceServer) ConsumeGrant(context.Context, *ConsumeGran
 }
 func (UnimplementedCoreServiceServer) DraftCard(context.Context, *DraftCardRequest) (*DraftCardResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DraftCard not implemented")
+}
+func (UnimplementedCoreServiceServer) SubmitReview(context.Context, *SubmitReviewRequest) (*SubmitReviewResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitReview not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1064,6 +1084,24 @@ func _CoreService_DraftCard_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_SubmitReview_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitReviewRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SubmitReview(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SubmitReview_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SubmitReview(ctx, req.(*SubmitReviewRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1166,6 +1204,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DraftCard",
 			Handler:    _CoreService_DraftCard_Handler,
+		},
+		{
+			MethodName: "SubmitReview",
+			Handler:    _CoreService_SubmitReview_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

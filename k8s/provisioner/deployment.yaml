@@ -125,6 +125,10 @@ spec:
         # installation is ignored.
         - name: FLEET_GITHUB_ACCOUNTS
           value: "43962695,344349211"
+        # docs/adr/0082 §9: whose same-repo PRs an agent review may formally
+        # approve or request changes on. Anyone else's gets a COMMENT.
+        - name: PROVISIONER_TRUSTED_LOGINS
+          value: MohammadBnei
         # client-go's rest.InClusterConfig() natively trusts the projected
         # ServiceAccount CA — no TLS workaround needed for a Go binary
         # (unlike the old TS e2e-provisioner, see docs/adr/0013).

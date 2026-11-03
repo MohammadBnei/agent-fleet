@@ -464,6 +464,18 @@ func (c *Client) DraftCard(ctx context.Context, req *agentfleetv1.DraftCardReque
 	return res, nil
 }
 
+// SubmitReview posts a PR review as this session (docs/adr/0082 slice 5).
+// Core checks the grant and the thread; the provisioner posts it. The
+// session id is this pod's, overwriting whatever the caller set.
+func (c *Client) SubmitReview(ctx context.Context, req *agentfleetv1.SubmitReviewRequest) (*agentfleetv1.SubmitReviewResponse, error) {
+	req.SessionId = c.taskID
+	res, err := c.rpc.SubmitReview(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("SubmitReview: %w", err)
+	}
+	return res, nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the

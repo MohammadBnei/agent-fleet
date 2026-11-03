@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -77,6 +78,8 @@ type GitHub interface {
 	OwnerToken(ctx context.Context, owner string) (string, error)
 	// Owners are the allowlisted installations' logins.
 	Owners(ctx context.Context) ([]string, error)
+	// PostReview posts an agent review and its agent-review status.
+	PostReview(ctx context.Context, r github.Review) (github.Posted, error)
 }
 
 // SetGitHub wires the App (docs/adr/0074, 0075). Unset, ListGitHubRepos and
@@ -528,7 +531,7 @@ func (s *Server) endWidened(ctx context.Context, name string, widened bool, err 
 }
 
 func vaultSpec(v *agentfleetv1.VaultSpec) vault.Spec {
-	out := vault.Spec{Name: v.GetName()}
+	out := vault.Spec{Name: v.GetName(), ReadOnly: v.GetReadOnly()}
 	for _, svc := range v.GetServices() {
 		out.Services = append(out.Services, vault.Service{Host: svc.GetHost(), Paths: svc.GetPaths(), Secret: svc.GetSecret()})
 	}
@@ -752,6 +755,49 @@ func (s *Server) ListDefinitionFiles(ctx context.Context, _ *agentfleetv1.ListDe
 		out.Files = append(out.Files, &agentfleetv1.DefinitionFile{Path: p, Content: b})
 	}
 	return out, nil
+}
+
+var (
+	reviewRepoRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	headSHARe    = regexp.MustCompile(`^[0-9a-f]{40}$`)
+)
+
+// PostReview posts a reviewer definition's review with the App (ADR-0082
+// slice 5). core has checked the caller, its thread and the body; the shape
+// is re-checked here, the trust boundary. Which event GitHub gets is the
+// App's call (github.App.PostReview), not the request's.
+func (s *Server) PostReview(ctx context.Context, req *agentfleetv1.PostReviewRequest) (*agentfleetv1.PostReviewResponse, error) {
+	owner, repo, _ := strings.Cut(req.GetRepo(), "/")
+	switch v := req.GetVerdict(); {
+	case !reviewRepoRe.MatchString(req.GetRepo()) || strings.Trim(owner, ".") == "" || strings.Trim(repo, ".") == "":
+		return nil, status.Errorf(codes.InvalidArgument, "repo %q is not owner/name", req.GetRepo())
+	case req.GetPr() <= 0:
+		return nil, status.Error(codes.InvalidArgument, "pr must be positive")
+	case !headSHARe.MatchString(req.GetHeadSha()):
+		return nil, status.Error(codes.InvalidArgument, "head_sha must be 40 lowercase hex")
+	case v != "approve" && v != "changes" && v != "comment":
+		return nil, status.Errorf(codes.InvalidArgument, "verdict %q is not approve, changes or comment", v)
+	}
+	if s.gh == nil {
+		return nil, status.Error(codes.FailedPrecondition, "no GitHub App: reviews cannot be posted")
+	}
+	r := github.Review{Owner: owner, Repo: repo, PR: req.GetPr(), HeadSHA: req.GetHeadSha(), Verdict: req.GetVerdict(), Body: req.GetBody()}
+	for _, c := range req.GetComments() {
+		r.Comments = append(r.Comments, github.ReviewComment{Path: c.GetPath(), Line: c.GetLine(), Body: c.GetBody()})
+	}
+	p, err := s.gh.PostReview(ctx, r)
+	// A 4xx but 429 will answer the same next time (a moved head, a refused review):
+	// FailedPrecondition, so the agent does not retry it. Unavailable is for
+	// GitHub or the network failing.
+	var se *github.StatusError
+	if errors.Is(err, github.ErrNotOpen) || errors.Is(err, github.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	slog.Info("grpcserver PostReview", "repo", req.GetRepo(), "pr", req.GetPr(), "verdict", req.GetVerdict(), "event", p.Event, "status", p.Status, "url", p.URL)
+	return &agentfleetv1.PostReviewResponse{ReviewUrl: p.URL, Event: p.Event, StatusState: p.Status}, nil
 }
 
 // ListGitHubRepos is core's repos sync source (docs/adr/0074, amended by

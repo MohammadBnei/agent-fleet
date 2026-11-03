@@ -461,14 +461,83 @@ func TestReconcile_AcceptsOwnerStartingRepos(t *testing.T) {
 }
 
 type fakeForge struct {
-	token string
-	err   error
-	asked []string
+	token    string
+	err      error
+	asked    []string
+	readOnly []bool
 }
 
-func (f *fakeForge) Token(_ context.Context, owner, repo string) (string, error) {
+func (f *fakeForge) Token(_ context.Context, owner, repo string, readOnly bool) (string, error) {
 	f.asked = append(f.asked, owner+"/"+repo)
+	f.readOnly = append(f.readOnly, readOnly)
 	return f.token, f.err
+}
+
+// A read-only spec asks the forge for a read-only token (slice 5, the
+// reviewer), and a mint failure never falls back to the mounted file: that
+// one can write.
+func TestReconcile_ReadOnlyMintsReadOnlyAndNeverFallsBack(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ff := &fakeForge{token: "ghs-ro"}
+	c.Forge = ff
+	ro := notesSpec()
+	ro.ReadOnly = true
+	if _, err := c.Reconcile(context.Background(), ro); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(ff.readOnly, []bool{true}) {
+		t.Errorf("forge asked readOnly=%v, want [true]", ff.readOnly)
+	}
+	if v, _ := f.Get("dev-notes"); v.Creds["GH_DEV_NOTES"] != "ghs-ro" {
+		t.Errorf("GH_DEV_NOTES = %q", v.Creds["GH_DEV_NOTES"])
+	}
+	c.Forge = &fakeForge{err: errors.New("github down")}
+	if _, err := c.Reconcile(context.Background(), ro); err == nil {
+		t.Fatal("a read-only vault fell back to the mounted (writable) file")
+	}
+	c.Forge = nil // no App at all: the mounted file is still never read
+	if _, err := c.Reconcile(context.Background(), ro); err == nil {
+		t.Fatal("a read-only vault without an App took the mounted (writable) file")
+	}
+}
+
+// Flipping read_only either way revokes every session, like a widening: a pod
+// pinned read-only must not inherit a write token, and the reverse is a
+// change too (plan item 4). Unchanged, it stays a no-op.
+func TestReconcile_ReadOnlyChangeRevokesEitherWay(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	c.Forge = &fakeForge{token: "ghs-x"}
+	ctx := context.Background()
+	rw, ro := notesSpec(), notesSpec()
+	ro.ReadOnly = true
+	if _, err := c.Reconcile(ctx, rw); err != nil {
+		t.Fatal(err)
+	}
+	for i, s := range []vault.Spec{ro, rw, ro} {
+		f.AddSession("dev-notes", "pin.1")
+		f.ResetLog()
+		widened, err := c.Reconcile(ctx, s)
+		if err != nil || !widened {
+			t.Fatalf("flip %d to readOnly=%v: widened=%v err=%v", i, s.ReadOnly, widened, err)
+		}
+		if v, _ := f.Get("dev-notes"); len(v.Sessions) != 0 {
+			t.Errorf("flip %d kept %d sessions", i, len(v.Sessions))
+		}
+		// The revoke lands before the new token is written.
+		calls := f.Calls()
+		del := slices.IndexFunc(calls, func(l string) bool { return strings.HasPrefix(l, "DELETE /v1/sessions/") })
+		set := slices.Index(calls, "POST /v1/credentials")
+		if del < 0 || (set >= 0 && del > set) {
+			t.Errorf("flip %d: revoke at %d, credentials at %d: %v", i, del, set, calls)
+		}
+	}
+	f.AddSession("dev-notes", "pin.2")
+	if widened, err := c.Reconcile(ctx, ro); err != nil || widened {
+		t.Fatalf("unchanged read-only: widened=%v err=%v", widened, err)
+	}
+	if v, _ := f.Get("dev-notes"); len(v.Sessions) != 1 {
+		t.Errorf("an unchanged reconcile revoked")
+	}
 }
 
 // docs/adr/0075 §5: with a forge, a vault's GitHub key is the minted token for

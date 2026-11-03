@@ -138,6 +138,9 @@ message DefinitionPodProfile {
 message VaultSpec {
   string name = 1;
   repeated VaultService services = 2;
+  // git.mode none (docs/adr/0082 slice 5): the vault mints read-only GitHub
+  // permissions {contents, pull_requests, metadata: read}.
+  bool read_only = 3;
 }
 
 message VaultService {
@@ -393,6 +396,39 @@ service ProvisionerService {
   // core's repos sync source (docs/adr/0074): accepts allowlisted
   // invitations, then lists every repo the bot can reach.
   rpc ListGitHubRepos(ListGitHubReposRequest) returns (ListGitHubReposResponse);
+
+  // Posts a reviewer definition's review and its agent-review commit status
+  // (docs/adr/0082 §9): core holds no GitHub credential, so it relays
+  // CoreService.SubmitReview here once it has authorized the session.
+  rpc PostReview(PostReviewRequest) returns (PostReviewResponse);
+}
+
+// One inline review comment, on the PR head's version of the file.
+message ReviewComment {
+  string path = 1;
+  int32 line = 2;
+  string body = 3;
+}
+
+message PostReviewRequest {
+  // owner/name.
+  string repo = 1;
+  int64 pr = 2;
+  // 40 hex; the review's commit_id and the status's commit.
+  string head_sha = 3;
+  // "approve" | "changes" | "comment". The provisioner downgrades approve and
+  // changes to a COMMENT on a PR it does not count as owned.
+  string verdict = 4;
+  string body = 5;
+  repeated ReviewComment comments = 6;
+}
+
+message PostReviewResponse {
+  string review_url = 1;
+  // The event GitHub got: APPROVE | REQUEST_CHANGES | COMMENT.
+  string event = 2;
+  // The agent-review status posted: "success" | "failure", "" when none.
+  string status_state = 3;
 }
 
 message SweepSessionRequest {

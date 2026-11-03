@@ -103,6 +103,9 @@ const (
 	CoreServiceConsumeGrantProcedure = "/agentfleet.v1.CoreService/ConsumeGrant"
 	// CoreServiceDraftCardProcedure is the fully-qualified name of the CoreService's DraftCard RPC.
 	CoreServiceDraftCardProcedure = "/agentfleet.v1.CoreService/DraftCard"
+	// CoreServiceSubmitReviewProcedure is the fully-qualified name of the CoreService's SubmitReview
+	// RPC.
+	CoreServiceSubmitReviewProcedure = "/agentfleet.v1.CoreService/SubmitReview"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -191,6 +194,9 @@ type CoreServiceClient interface {
 	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
 	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
 	DraftCard(context.Context, *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error)
+	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
+	// submit_review.
+	SubmitReview(context.Context, *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -360,6 +366,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("DraftCard")),
 			connect.WithClientOptions(opts...),
 		),
+		submitReview: connect.NewClient[v1.SubmitReviewRequest, v1.SubmitReviewResponse](
+			httpClient,
+			baseURL+CoreServiceSubmitReviewProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("SubmitReview")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -391,6 +403,7 @@ type coreServiceClient struct {
 	publishEvent        *connect.Client[v1.PublishEventRequest, v1.PublishEventResponse]
 	consumeGrant        *connect.Client[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse]
 	draftCard           *connect.Client[v1.DraftCardRequest, v1.DraftCardResponse]
+	submitReview        *connect.Client[v1.SubmitReviewRequest, v1.SubmitReviewResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -523,6 +536,11 @@ func (c *coreServiceClient) DraftCard(ctx context.Context, req *connect.Request[
 	return c.draftCard.CallUnary(ctx, req)
 }
 
+// SubmitReview calls agentfleet.v1.CoreService.SubmitReview.
+func (c *coreServiceClient) SubmitReview(ctx context.Context, req *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error) {
+	return c.submitReview.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -609,6 +627,9 @@ type CoreServiceHandler interface {
 	// Drafts a decision card in the calling definition session's thread (docs/adr/0082 §5). Only for a definition
 	// granting draft_card. It does not wait: the owner's choice arrives later as a message.
 	DraftCard(context.Context, *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error)
+	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
+	// submit_review.
+	SubmitReview(context.Context, *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -774,6 +795,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("DraftCard")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceSubmitReviewHandler := connect.NewUnaryHandler(
+		CoreServiceSubmitReviewProcedure,
+		svc.SubmitReview,
+		connect.WithSchema(coreServiceMethods.ByName("SubmitReview")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -828,6 +855,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceConsumeGrantHandler.ServeHTTP(w, r)
 		case CoreServiceDraftCardProcedure:
 			coreServiceDraftCardHandler.ServeHTTP(w, r)
+		case CoreServiceSubmitReviewProcedure:
+			coreServiceSubmitReviewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -939,4 +968,8 @@ func (UnimplementedCoreServiceHandler) ConsumeGrant(context.Context, *connect.Re
 
 func (UnimplementedCoreServiceHandler) DraftCard(context.Context, *connect.Request[v1.DraftCardRequest]) (*connect.Response[v1.DraftCardResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.DraftCard is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) SubmitReview(context.Context, *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SubmitReview is not implemented"))
 }

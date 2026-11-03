@@ -2,9 +2,12 @@ package definitions
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
 // Last-known-good is bounded: past staleAfter a create fails closed rather
@@ -39,5 +42,26 @@ func TestEmbedOrigins(t *testing.T) {
 	r.lastGood = time.Now().Add(-staleAfter - time.Second)
 	if got := r.EmbedOrigins(); len(got) != 0 {
 		t.Fatalf("stale: %v", got)
+	}
+}
+
+// git.mode none is the read-only reviewer (plan item 4): the vault spec says
+// so, on both wires (Vaults and the pod profile share VaultSpec).
+func TestVaultSpec_ReadOnly(t *testing.T) {
+	spec := func(mode string) *Spec {
+		return &Spec{Git: &Git{Mode: mode}, Credentials: &Credentials{Vault: mode, Services: []Service{{Host: "github.com", Paths: []string{"/o/r/*"}, Secret: "S"}}}}
+	}
+	r := &Registry{synced: true, lastGood: time.Now(), heads: map[string]Head{
+		"none": {Name: "none", SHA: "s1", Effective: spec("none")},
+		"push": {Name: "push", SHA: "s2", Effective: spec("push")},
+	}}
+	got := r.Vaults()
+	i := slices.IndexFunc(got, func(v *agentfleetv1.VaultSpec) bool { return v.GetName() == "none" })
+	j := slices.IndexFunc(got, func(v *agentfleetv1.VaultSpec) bool { return v.GetName() == "push" })
+	if i < 0 || j < 0 || !got[i].GetReadOnly() || got[j].GetReadOnly() {
+		t.Fatalf("Vaults = %v", got)
+	}
+	if v := VaultSpec(spec("none")); !v.GetReadOnly() || len(v.GetServices()) != 1 {
+		t.Fatalf("VaultSpec = %v", v)
 	}
 }

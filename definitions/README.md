@@ -9,6 +9,15 @@ Definitions go live at the next **release tag**, not on merge: the provisioner
 reads this directory at its own version (`FLEET_DEFINITIONS_REF` overrides it,
 for kind and dev).
 
+## Reviewers (`docs/adr/0082` §9)
+
+`agent-reviewer-<repo>.yaml` is a repo's PR reviewer: `@agent-reviewer` on a PR
+of the repo its `credentials` name wakes it. It runs in `git.mode: none`, so its
+`github.com` key (`GH_` + the vault name, minted by the provisioner) is
+read-only, and it posts only through `submit_review`. The `bridge` client must
+list it in `definitions`, and its `agent:<name>` in `actors.allow` for its
+hand-offs to wake the writer they @mention.
+
 ## Credentials and onboarding (`docs/adr/0065`)
 
 Every launchable definition names its vault and services in `credentials`; the

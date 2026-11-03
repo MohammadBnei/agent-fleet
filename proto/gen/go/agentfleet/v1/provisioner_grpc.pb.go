@@ -31,6 +31,7 @@ const (
 	ProvisionerService_ListDefinitionFiles_FullMethodName = "/agentfleet.v1.ProvisionerService/ListDefinitionFiles"
 	ProvisionerService_ReconcileVaults_FullMethodName     = "/agentfleet.v1.ProvisionerService/ReconcileVaults"
 	ProvisionerService_ListGitHubRepos_FullMethodName     = "/agentfleet.v1.ProvisionerService/ListGitHubRepos"
+	ProvisionerService_PostReview_FullMethodName          = "/agentfleet.v1.ProvisionerService/PostReview"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
@@ -73,6 +74,10 @@ type ProvisionerServiceClient interface {
 	// core's repos sync source (docs/adr/0074): accepts allowlisted
 	// invitations, then lists every repo the bot can reach.
 	ListGitHubRepos(ctx context.Context, in *ListGitHubReposRequest, opts ...grpc.CallOption) (*ListGitHubReposResponse, error)
+	// Posts a reviewer definition's review and its agent-review commit status
+	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
+	// CoreService.SubmitReview here once it has authorized the session.
+	PostReview(ctx context.Context, in *PostReviewRequest, opts ...grpc.CallOption) (*PostReviewResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -203,6 +208,16 @@ func (c *provisionerServiceClient) ListGitHubRepos(ctx context.Context, in *List
 	return out, nil
 }
 
+func (c *provisionerServiceClient) PostReview(ctx context.Context, in *PostReviewRequest, opts ...grpc.CallOption) (*PostReviewResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PostReviewResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_PostReview_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvisionerServiceServer is the server API for ProvisionerService service.
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
@@ -243,6 +258,10 @@ type ProvisionerServiceServer interface {
 	// core's repos sync source (docs/adr/0074): accepts allowlisted
 	// invitations, then lists every repo the bot can reach.
 	ListGitHubRepos(context.Context, *ListGitHubReposRequest) (*ListGitHubReposResponse, error)
+	// Posts a reviewer definition's review and its agent-review commit status
+	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
+	// CoreService.SubmitReview here once it has authorized the session.
+	PostReview(context.Context, *PostReviewRequest) (*PostReviewResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -288,6 +307,9 @@ func (UnimplementedProvisionerServiceServer) ReconcileVaults(context.Context, *R
 }
 func (UnimplementedProvisionerServiceServer) ListGitHubRepos(context.Context, *ListGitHubReposRequest) (*ListGitHubReposResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListGitHubRepos not implemented")
+}
+func (UnimplementedProvisionerServiceServer) PostReview(context.Context, *PostReviewRequest) (*PostReviewResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostReview not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -526,6 +548,24 @@ func _ProvisionerService_ListGitHubRepos_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_PostReview_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PostReviewRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).PostReview(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_PostReview_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).PostReview(ctx, req.(*PostReviewRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvisionerService_ServiceDesc is the grpc.ServiceDesc for ProvisionerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -580,6 +620,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListGitHubRepos",
 			Handler:    _ProvisionerService_ListGitHubRepos_Handler,
+		},
+		{
+			MethodName: "PostReview",
+			Handler:    _ProvisionerService_PostReview_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

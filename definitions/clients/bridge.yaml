@@ -2,11 +2,13 @@
 # ADR-0060). Its dispatcher runs inside core and calls AgentService
 # in-process, so it has no tokenRef (docs/adr/0066 §3): no bearer on :9091
 # ever matches it, and its wake rights cannot be reached from the network.
-# `definitions` is empty, so this opens nothing until a definition lists
-# `bridge` in its invokers (two-sided agreement).
+# A definition opens only when it is listed here and lists `bridge` in its
+# invokers (two-sided agreement).
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentClient
 metadata: { name: bridge }
 spec:
-  actors: { allow: [MohammadBnei] } # GitHub logins (the event's actor_login)
-  definitions: []
+  # GitHub logins (the event's actor_login), and agent:<definition> for a
+  # definition whose PublishEvent hand-offs may wake (docs/adr/0082 slice 5).
+  actors: { allow: [MohammadBnei, "agent:agent-reviewer-agent-fleet"] }
+  definitions: [agent-reviewer-agent-fleet]

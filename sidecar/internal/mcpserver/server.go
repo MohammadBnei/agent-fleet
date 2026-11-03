@@ -75,6 +75,23 @@ type DraftCardArgs struct {
 	IdempotencyKey string            `json:"idempotencyKey,omitempty" jsonschema_description:"Optional: a retry with the same key drafts nothing new"`
 }
 
+// submit_review's schema, like draft_card's, states core's limits for the
+// agent; core and the provisioner enforce them (docs/adr/0082 slice 5).
+type SubmitReviewComment struct {
+	Path string `json:"path" jsonschema_description:"File path in the PR, relative to the repo root"`
+	Line int32  `json:"line" jsonschema_description:"Line number on the PR's head side; it must be a line the diff shows"`
+	Body string `json:"body" jsonschema_description:"The comment on that line"`
+}
+
+type SubmitReviewArgs struct {
+	Repo     string                `json:"repo" jsonschema_description:"owner/name of the PR's repository"`
+	PR       int64                 `json:"pr" jsonschema_description:"The pull request number; it must be the PR this session's thread is about"`
+	HeadSha  string                `json:"headSha" jsonschema_description:"The full 40-hex commit sha of the PR head you reviewed"`
+	Verdict  string                `json:"verdict" jsonschema:"enum=approve,enum=changes,enum=comment" jsonschema_description:"approve, changes (request changes) or comment"`
+	Body     string                `json:"body" jsonschema_description:"The review summary, at most 60,000 characters"`
+	Comments []SubmitReviewComment `json:"comments,omitempty" jsonschema_description:"Optional inline comments, each on a line inside the diff"`
+}
+
 // blockingWaitMs is how long core holds any blocking tool call open —
 // AskUserQuestion, wait_for_messages, wait_for_agent — before returning what
 // it has. Deliberately NOT a tool argument on any of them.
@@ -217,6 +234,13 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 		mcp.WithDescription("Put a choice to the owner as a decision card, when the choice is the owner's to make and has real options. It does not wait: it returns the card's id and you carry on or end your turn. The owner's choice arrives later as a new message. A card expires after 7 days with nothing done; a new card on the same subject replaces the open one. At most 10 new cards a day per definition; past that core refuses with core.card_budget. Only for definitions that grant it."),
 		mcp.WithInputSchema[DraftCardArgs](),
 	), draftCardHandler(core))
+
+	// docs/adr/0082 slice 5. Registered in every sidecar like draft_card;
+	// core refuses it unless the session's definition grants submit_review.
+	s.AddTool(mcp.NewTool("submit_review",
+		mcp.WithDescription("Post your review of the pull request this session is about, as a GitHub review on the PR head you reviewed. Submit one review per PR head: once it is posted you are done, so end the session. Decide the verdict first (approve, changes or comment) and write the body to support it. Inline comments must target lines that appear in the PR's diff; if GitHub refuses them, the review is posted with them folded into the body. On a PR the owner did not write, or from a fork, the review posts as a comment whatever the verdict. Only for definitions that grant it."),
+		mcp.WithInputSchema[SubmitReviewArgs](),
+	), submitReviewHandler(core))
 
 	// Inter-agent coordination (docs/adr/0041). Registered statically for
 	// the same reason run_command is: a resumed session must have them from
@@ -453,6 +477,31 @@ func draftCardHandler(core CardDrafter) server.ToolHandlerFunc {
 		}
 		slog.Info("mcp draft_card", "decision", res.GetDecisionId())
 		b, _ := json.Marshal(map[string]string{"decisionId": res.GetDecisionId(), "expiresAt": res.GetExpiresAt(), "status": "open"})
+		return mcp.NewToolResultText(string(b)), nil
+	})
+}
+
+// Reviewer is submit_review's slice of *coreclient.Client.
+type Reviewer interface {
+	SubmitReview(ctx context.Context, req *agentfleetv1.SubmitReviewRequest) (*agentfleetv1.SubmitReviewResponse, error)
+}
+
+func submitReviewHandler(core Reviewer) server.ToolHandlerFunc {
+	return mcp.NewTypedToolHandler(func(ctx context.Context, _ mcp.CallToolRequest, args SubmitReviewArgs) (*mcp.CallToolResult, error) {
+		comments := make([]*agentfleetv1.ReviewComment, len(args.Comments))
+		for i, c := range args.Comments {
+			comments[i] = &agentfleetv1.ReviewComment{Path: c.Path, Line: c.Line, Body: c.Body}
+		}
+		res, err := core.SubmitReview(ctx, &agentfleetv1.SubmitReviewRequest{
+			Repo: args.Repo, Pr: args.PR, HeadSha: args.HeadSha,
+			Verdict: args.Verdict, Body: args.Body, Comments: comments,
+		})
+		if err != nil {
+			slog.Error("mcp submit_review", "repo", args.Repo, "pr", args.PR, "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		slog.Info("mcp submit_review", "repo", args.Repo, "pr", args.PR, "event", res.GetEvent())
+		b, _ := json.Marshal(map[string]string{"reviewUrl": res.GetReviewUrl(), "event": res.GetEvent()})
 		return mcp.NewToolResultText(string(b)), nil
 	})
 }

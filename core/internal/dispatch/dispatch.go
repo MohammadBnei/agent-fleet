@@ -406,11 +406,42 @@ func botEvent(e *bridgev1.CloudEvent) bool {
 	return e.GetActor() == "agent" && strings.HasPrefix(e.GetSource(), "github.com/")
 }
 
-// addresses: the event's own text addresses def. A label naming it, added
-// by the event's actor (the sender), or @def in what the actor wrote: a
-// comment, a review, or the body of the PR or issue they opened. Not the
+// reviewerAlias addresses every per-repo reviewer, agent-reviewer-<x>, on
+// its own repo: the GitHub repo its credentials name (docs/adr/0082 slice 5).
+const reviewerAlias = "agent-reviewer"
+
+// names are what address h on subject: its name, and the reviewer alias
+// when h is that repo's reviewer.
+func names(h definitions.Head, subject string) []string {
+	out := []string{h.Name}
+	if strings.HasPrefix(h.Name, reviewerAlias+"-") && h.Effective != nil {
+		if full, _ := repoOf(subject); full != "" && strings.EqualFold(definitions.GitHubRepo(h.Effective.Credentials), full) {
+			out = append(out, reviewerAlias)
+		}
+	}
+	return out
+}
+
+func mentionsAny(text string, names []string) bool {
+	return slices.ContainsFunc(names, func(n string) bool { return mentions(text, n) })
+}
+
+// handsOff: a PublishEvent hand-off targets h. Its text (Publish's "text")
+// @mentions one of h's names, and h did not publish it: an agent never wakes
+// itself, and an untargeted hand-off is context.
+func handsOff(e *bridgev1.CloudEvent, h definitions.Head) bool {
+	var p struct {
+		Text string `json:"text"`
+	}
+	return e.GetActorLogin() != "agent:"+h.Name && json.Unmarshal(e.GetData(), &p) == nil &&
+		mentionsAny(p.Text, names(h, e.GetSubject()))
+}
+
+// addresses: the event's own text addresses one of names. A label naming it,
+// added by the event's actor (the sender), or @name in what the actor wrote:
+// a comment, a review, or the body of the PR or issue they opened. Not the
 // issue's or PR's body under a comment, which its author wrote.
-func addresses(e *bridgev1.CloudEvent, def string) bool {
+func addresses(e *bridgev1.CloudEvent, names []string) bool {
 	var p struct {
 		Label  *struct{ Name string } `json:"label"`
 		Sender struct {
@@ -428,7 +459,8 @@ func addresses(e *bridgev1.CloudEvent, def string) bool {
 	var body *struct{ Body string }
 	switch {
 	case action == "labeled":
-		return p.Label != nil && strings.EqualFold(p.Label.Name, def) && p.Sender.Login == e.GetActorLogin()
+		return p.Label != nil && slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(p.Label.Name, n) }) &&
+			p.Sender.Login == e.GetActorLogin()
 	case kind == "issue_comment":
 		body = p.Comment
 	case kind == "pull_request_review":
@@ -438,7 +470,7 @@ func addresses(e *bridgev1.CloudEvent, def string) bool {
 	case kind == "issues" && action == "opened":
 		body = p.Issue
 	}
-	return body != nil && mentions(body.Body, def)
+	return body != nil && mentionsAny(body.Body, names)
 }
 
 // mentions: @def in markdown, outside > quote lines, fenced and indented
@@ -554,7 +586,8 @@ type decision struct {
 // decide returns the stored gate decision for (event, definition), computing
 // and storing it the first time: a redelivery reuses it, since its inputs
 // (the client's actors, whether the thread waits on a person) move on.
-func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def string) (decision, error) {
+func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head) (decision, error) {
+	def := h.Name
 	var dec decision
 	err := d.pool.QueryRow(ctx, `SELECT wake, outcome FROM dispatch_decisions WHERE source = $1 AND event_id = $2 AND definition = $3`,
 		e.GetSource(), e.GetId(), def).Scan(&dec.wake, &dec.outcome)
@@ -564,7 +597,7 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return dec, err
 	}
-	wake, err := d.gate(ctx, e, def)
+	wake, err := d.gate(ctx, e, h)
 	if err != nil {
 		return dec, err
 	}
@@ -581,11 +614,12 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, def str
 // replay, and never a thread that waits on a person, whose follow-ups are
 // context. owns and subscribes only route: what they match without an
 // address is context. An address is a fleet hand-off through PublishEvent
-// (T1), or T0's (a GitHub login in the bridge client's actors.allow) label
+// (T1) whose text @mentions the definition, or T0's (a GitHub login in the bridge client's actors.allow) label
 // naming the definition or @mention of it, in one of our repos. Only a live
 // pod waits: an unanswered request left by a pod that is gone is closed as
 // stale at the next warm (ReserveSlot), so it blocks nothing.
-func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def string) (bool, error) {
+func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head) (bool, error) {
+	def := h.Name
 	if e.GetReplayed() || !d.mayClaim(e.GetActorLogin()) {
 		return false, nil
 	}
@@ -593,6 +627,9 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 	case e.GetActor() == "agent" && strings.HasPrefix(e.GetActorLogin(), "agent:"):
 		if !e.GetActorTrusted() {
 			return false, nil // Publish found no bridge event behind the session: a hand-off wakes only with a cause
+		}
+		if !handsOff(e, h) {
+			return false, nil // untargeted, or its own: context
 		}
 		// PublishEvent's hops end at a GitHub round-trip (an agent's push
 		// comes back as a fresh event), so its wakes are capped per thread.
@@ -607,7 +644,7 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, def strin
 			slog.Warn("dispatch: agent hand-offs reached their cap on this thread, delivering as context", "definition", def, "subject", e.GetSubject(), "wakes", n)
 			return false, nil
 		}
-	case e.GetActor() == "human" && strings.HasPrefix(e.GetSource(), "github.com/") && addresses(e, def):
+	case e.GetActor() == "human" && strings.HasPrefix(e.GetSource(), "github.com/") && addresses(e, names(h, e.GetSubject())):
 		// Neither of the bridge's trust facts is asked: T0 addressing a stranger's
 		// or a fork's PR wakes too (docs/adr/0082 §2), with only T0's bytes.
 		// A foreign repo (T3) never wakes: the App is public, so anyone may
@@ -650,7 +687,7 @@ func (d *Dispatcher) finish(ctx context.Context, e *bridgev1.CloudEvent, def, ou
 
 // deliver is one event to one definition.
 func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head) error {
-	dec, err := d.decide(ctx, e, h.Name)
+	dec, err := d.decide(ctx, e, h)
 	if err != nil {
 		return err
 	}
@@ -667,7 +704,7 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	msg := Render(e, dec.wake)
 	req := &agentfleetv1.OpenRequest{
 		Definition: h.Name, ThreadKey: e.GetSubject(), Message: msg,
-		Wake: dec.wake,
+		Wake:        dec.wake,
 		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: e.GetSource() + ":" + e.GetId() + ":" + h.Name,
 		Actor:          e.GetActorLogin(), CausationId: Causation(e),

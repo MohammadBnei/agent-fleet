@@ -405,9 +405,12 @@ func (x *DefinitionPodProfile) GetTimeoutSeconds() int64 {
 // (docs/adr/0065). `secret` is an Infisical KEY name: values never travel on
 // this wire, the provisioner reads them from its own mounted Secret.
 type VaultSpec struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Services      []*VaultService        `protobuf:"bytes,2,rep,name=services,proto3" json:"services,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Services []*VaultService        `protobuf:"bytes,2,rep,name=services,proto3" json:"services,omitempty"`
+	// git.mode none (docs/adr/0082 slice 5): the vault mints read-only GitHub
+	// permissions {contents, pull_requests, metadata: read}.
+	ReadOnly      bool `protobuf:"varint,3,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -454,6 +457,13 @@ func (x *VaultSpec) GetServices() []*VaultService {
 		return x.Services
 	}
 	return nil
+}
+
+func (x *VaultSpec) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 type VaultService struct {
@@ -1759,6 +1769,217 @@ func (x *ProvisionServiceResponse) GetDsn() string {
 	return ""
 }
 
+// One inline review comment, on the PR head's version of the file.
+type ReviewComment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Line          int32                  `protobuf:"varint,2,opt,name=line,proto3" json:"line,omitempty"`
+	Body          string                 `protobuf:"bytes,3,opt,name=body,proto3" json:"body,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReviewComment) Reset() {
+	*x = ReviewComment{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReviewComment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReviewComment) ProtoMessage() {}
+
+func (x *ReviewComment) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReviewComment.ProtoReflect.Descriptor instead.
+func (*ReviewComment) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ReviewComment) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ReviewComment) GetLine() int32 {
+	if x != nil {
+		return x.Line
+	}
+	return 0
+}
+
+func (x *ReviewComment) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+type PostReviewRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// owner/name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Pr   int64  `protobuf:"varint,2,opt,name=pr,proto3" json:"pr,omitempty"`
+	// 40 hex; the review's commit_id and the status's commit.
+	HeadSha string `protobuf:"bytes,3,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	// "approve" | "changes" | "comment". The provisioner downgrades approve and
+	// changes to a COMMENT on a PR it does not count as owned.
+	Verdict       string           `protobuf:"bytes,4,opt,name=verdict,proto3" json:"verdict,omitempty"`
+	Body          string           `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
+	Comments      []*ReviewComment `protobuf:"bytes,6,rep,name=comments,proto3" json:"comments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PostReviewRequest) Reset() {
+	*x = PostReviewRequest{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PostReviewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PostReviewRequest) ProtoMessage() {}
+
+func (x *PostReviewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PostReviewRequest.ProtoReflect.Descriptor instead.
+func (*PostReviewRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *PostReviewRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *PostReviewRequest) GetPr() int64 {
+	if x != nil {
+		return x.Pr
+	}
+	return 0
+}
+
+func (x *PostReviewRequest) GetHeadSha() string {
+	if x != nil {
+		return x.HeadSha
+	}
+	return ""
+}
+
+func (x *PostReviewRequest) GetVerdict() string {
+	if x != nil {
+		return x.Verdict
+	}
+	return ""
+}
+
+func (x *PostReviewRequest) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *PostReviewRequest) GetComments() []*ReviewComment {
+	if x != nil {
+		return x.Comments
+	}
+	return nil
+}
+
+type PostReviewResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ReviewUrl string                 `protobuf:"bytes,1,opt,name=review_url,json=reviewUrl,proto3" json:"review_url,omitempty"`
+	// The event GitHub got: APPROVE | REQUEST_CHANGES | COMMENT.
+	Event string `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	// The agent-review status posted: "success" | "failure", "" when none.
+	StatusState   string `protobuf:"bytes,3,opt,name=status_state,json=statusState,proto3" json:"status_state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PostReviewResponse) Reset() {
+	*x = PostReviewResponse{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PostReviewResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PostReviewResponse) ProtoMessage() {}
+
+func (x *PostReviewResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PostReviewResponse.ProtoReflect.Descriptor instead.
+func (*PostReviewResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *PostReviewResponse) GetReviewUrl() string {
+	if x != nil {
+		return x.ReviewUrl
+	}
+	return ""
+}
+
+func (x *PostReviewResponse) GetEvent() string {
+	if x != nil {
+		return x.Event
+	}
+	return ""
+}
+
+func (x *PostReviewResponse) GetStatusState() string {
+	if x != nil {
+		return x.StatusState
+	}
+	return ""
+}
+
 type SweepSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -1768,7 +1989,7 @@ type SweepSessionRequest struct {
 
 func (x *SweepSessionRequest) Reset() {
 	*x = SweepSessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[28]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1780,7 +2001,7 @@ func (x *SweepSessionRequest) String() string {
 func (*SweepSessionRequest) ProtoMessage() {}
 
 func (x *SweepSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[28]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1793,7 +2014,7 @@ func (x *SweepSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepSessionRequest.ProtoReflect.Descriptor instead.
 func (*SweepSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{28}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SweepSessionRequest) GetSessionId() string {
@@ -1811,7 +2032,7 @@ type SweepSessionResponse struct {
 
 func (x *SweepSessionResponse) Reset() {
 	*x = SweepSessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[29]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1823,7 +2044,7 @@ func (x *SweepSessionResponse) String() string {
 func (*SweepSessionResponse) ProtoMessage() {}
 
 func (x *SweepSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[29]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1836,7 +2057,7 @@ func (x *SweepSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepSessionResponse.ProtoReflect.Descriptor instead.
 func (*SweepSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{29}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{32}
 }
 
 type SyncRepoCacheRequest struct {
@@ -1849,7 +2070,7 @@ type SyncRepoCacheRequest struct {
 
 func (x *SyncRepoCacheRequest) Reset() {
 	*x = SyncRepoCacheRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[30]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1861,7 +2082,7 @@ func (x *SyncRepoCacheRequest) String() string {
 func (*SyncRepoCacheRequest) ProtoMessage() {}
 
 func (x *SyncRepoCacheRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[30]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1874,7 +2095,7 @@ func (x *SyncRepoCacheRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRepoCacheRequest.ProtoReflect.Descriptor instead.
 func (*SyncRepoCacheRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{30}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SyncRepoCacheRequest) GetRepo() string {
@@ -1921,7 +2142,7 @@ type SyncRepoCacheResponse struct {
 
 func (x *SyncRepoCacheResponse) Reset() {
 	*x = SyncRepoCacheResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[31]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1933,7 +2154,7 @@ func (x *SyncRepoCacheResponse) String() string {
 func (*SyncRepoCacheResponse) ProtoMessage() {}
 
 func (x *SyncRepoCacheResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[31]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1946,7 +2167,7 @@ func (x *SyncRepoCacheResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRepoCacheResponse.ProtoReflect.Descriptor instead.
 func (*SyncRepoCacheResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{31}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *SyncRepoCacheResponse) GetCloned() bool {
@@ -2017,10 +2238,11 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
 	"\x10git_author_email\x18\x03 \x01(\tR\x0egitAuthorEmail\x12.\n" +
 	"\x05vault\x18\x04 \x01(\v2\x18.agentfleet.v1.VaultSpecR\x05vault\x12'\n" +
-	"\x0ftimeout_seconds\x18\x05 \x01(\x03R\x0etimeoutSeconds\"X\n" +
+	"\x0ftimeout_seconds\x18\x05 \x01(\x03R\x0etimeoutSeconds\"u\n" +
 	"\tVaultSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
-	"\bservices\x18\x02 \x03(\v2\x1b.agentfleet.v1.VaultServiceR\bservices\"P\n" +
+	"\bservices\x18\x02 \x03(\v2\x1b.agentfleet.v1.VaultServiceR\bservices\x12\x1b\n" +
+	"\tread_only\x18\x03 \x01(\bR\breadOnly\"P\n" +
 	"\fVaultService\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x14\n" +
 	"\x05paths\x18\x02 \x03(\tR\x05paths\x12\x16\n" +
@@ -2094,7 +2316,23 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\",\n" +
 	"\x18ProvisionServiceResponse\x12\x10\n" +
-	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"4\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"K\n" +
+	"\rReviewComment\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04line\x18\x02 \x01(\x05R\x04line\x12\x12\n" +
+	"\x04body\x18\x03 \x01(\tR\x04body\"\xba\x01\n" +
+	"\x11PostReviewRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
+	"\x02pr\x18\x02 \x01(\x03R\x02pr\x12\x19\n" +
+	"\bhead_sha\x18\x03 \x01(\tR\aheadSha\x12\x18\n" +
+	"\averdict\x18\x04 \x01(\tR\averdict\x12\x12\n" +
+	"\x04body\x18\x05 \x01(\tR\x04body\x128\n" +
+	"\bcomments\x18\x06 \x03(\v2\x1c.agentfleet.v1.ReviewCommentR\bcomments\"l\n" +
+	"\x12PostReviewResponse\x12\x1d\n" +
+	"\n" +
+	"review_url\x18\x01 \x01(\tR\treviewUrl\x12\x14\n" +
+	"\x05event\x18\x02 \x01(\tR\x05event\x12!\n" +
+	"\fstatus_state\x18\x03 \x01(\tR\vstatusState\"4\n" +
 	"\x13SweepSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x16\n" +
@@ -2111,7 +2349,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\fhead_changed\x18\x05 \x01(\bR\vheadChanged*\\\n" +
 	"\vSessionKind\x12\x1c\n" +
 	"\x18SESSION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
-	"\x13SESSION_KIND_WORKER\x10\x01\"\x04\b\x02\x10\x02*\x10SESSION_KIND_E2E2\x94\t\n" +
+	"\x13SESSION_KIND_WORKER\x10\x01\"\x04\b\x02\x10\x02*\x10SESSION_KIND_E2E2\xe7\t\n" +
 	"\x12ProvisionerService\x12`\n" +
 	"\x0fCreateWorkerPod\x12%.agentfleet.v1.CreateWorkerPodRequest\x1a&.agentfleet.v1.CreateWorkerPodResponse\x12`\n" +
 	"\x0fTearDownSession\x12%.agentfleet.v1.TearDownSessionRequest\x1a&.agentfleet.v1.TearDownSessionResponse\x12]\n" +
@@ -2125,7 +2363,9 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\fSweepSession\x12\".agentfleet.v1.SweepSessionRequest\x1a#.agentfleet.v1.SweepSessionResponse\x12l\n" +
 	"\x13ListDefinitionFiles\x12).agentfleet.v1.ListDefinitionFilesRequest\x1a*.agentfleet.v1.ListDefinitionFilesResponse\x12`\n" +
 	"\x0fReconcileVaults\x12%.agentfleet.v1.ReconcileVaultsRequest\x1a&.agentfleet.v1.ReconcileVaultsResponse\x12`\n" +
-	"\x0fListGitHubRepos\x12%.agentfleet.v1.ListGitHubReposRequest\x1a&.agentfleet.v1.ListGitHubReposResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x0fListGitHubRepos\x12%.agentfleet.v1.ListGitHubReposRequest\x1a&.agentfleet.v1.ListGitHubReposResponse\x12Q\n" +
+	"\n" +
+	"PostReview\x12 .agentfleet.v1.PostReviewRequest\x1a!.agentfleet.v1.PostReviewResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_provisioner_proto_rawDescOnce sync.Once
@@ -2140,7 +2380,7 @@ func file_agentfleet_v1_provisioner_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_provisioner_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(SessionKind)(0),                    // 0: agentfleet.v1.SessionKind
 	(*CreateWorkerPodRequest)(nil),      // 1: agentfleet.v1.CreateWorkerPodRequest
@@ -2171,10 +2411,13 @@ var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(*UnexposeSessionResponse)(nil),     // 26: agentfleet.v1.UnexposeSessionResponse
 	(*ProvisionServiceRequest)(nil),     // 27: agentfleet.v1.ProvisionServiceRequest
 	(*ProvisionServiceResponse)(nil),    // 28: agentfleet.v1.ProvisionServiceResponse
-	(*SweepSessionRequest)(nil),         // 29: agentfleet.v1.SweepSessionRequest
-	(*SweepSessionResponse)(nil),        // 30: agentfleet.v1.SweepSessionResponse
-	(*SyncRepoCacheRequest)(nil),        // 31: agentfleet.v1.SyncRepoCacheRequest
-	(*SyncRepoCacheResponse)(nil),       // 32: agentfleet.v1.SyncRepoCacheResponse
+	(*ReviewComment)(nil),               // 29: agentfleet.v1.ReviewComment
+	(*PostReviewRequest)(nil),           // 30: agentfleet.v1.PostReviewRequest
+	(*PostReviewResponse)(nil),          // 31: agentfleet.v1.PostReviewResponse
+	(*SweepSessionRequest)(nil),         // 32: agentfleet.v1.SweepSessionRequest
+	(*SweepSessionResponse)(nil),        // 33: agentfleet.v1.SweepSessionResponse
+	(*SyncRepoCacheRequest)(nil),        // 34: agentfleet.v1.SyncRepoCacheRequest
+	(*SyncRepoCacheResponse)(nil),       // 35: agentfleet.v1.SyncRepoCacheResponse
 }
 var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
 	3,  // 0: agentfleet.v1.CreateWorkerPodRequest.definition:type_name -> agentfleet.v1.DefinitionPodProfile
@@ -2187,35 +2430,38 @@ var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
 	16, // 7: agentfleet.v1.ListGitHubReposResponse.repos:type_name -> agentfleet.v1.GitHubRepo
 	0,  // 8: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
 	21, // 9: agentfleet.v1.ListWorkerPodsResponse.pods:type_name -> agentfleet.v1.LiveWorkerPod
-	1,  // 10: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
-	18, // 11: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
-	20, // 12: agentfleet.v1.ProvisionerService.ListWorkerPods:input_type -> agentfleet.v1.ListWorkerPodsRequest
-	10, // 13: agentfleet.v1.ProvisionerService.GetVersion:input_type -> agentfleet.v1.GetVersionRequest
-	23, // 14: agentfleet.v1.ProvisionerService.ExposeSession:input_type -> agentfleet.v1.ExposeSessionRequest
-	25, // 15: agentfleet.v1.ProvisionerService.UnexposeSession:input_type -> agentfleet.v1.UnexposeSessionRequest
-	27, // 16: agentfleet.v1.ProvisionerService.ProvisionService:input_type -> agentfleet.v1.ProvisionServiceRequest
-	31, // 17: agentfleet.v1.ProvisionerService.SyncRepoCache:input_type -> agentfleet.v1.SyncRepoCacheRequest
-	29, // 18: agentfleet.v1.ProvisionerService.SweepSession:input_type -> agentfleet.v1.SweepSessionRequest
-	12, // 19: agentfleet.v1.ProvisionerService.ListDefinitionFiles:input_type -> agentfleet.v1.ListDefinitionFilesRequest
-	7,  // 20: agentfleet.v1.ProvisionerService.ReconcileVaults:input_type -> agentfleet.v1.ReconcileVaultsRequest
-	15, // 21: agentfleet.v1.ProvisionerService.ListGitHubRepos:input_type -> agentfleet.v1.ListGitHubReposRequest
-	6,  // 22: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
-	19, // 23: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
-	22, // 24: agentfleet.v1.ProvisionerService.ListWorkerPods:output_type -> agentfleet.v1.ListWorkerPodsResponse
-	11, // 25: agentfleet.v1.ProvisionerService.GetVersion:output_type -> agentfleet.v1.GetVersionResponse
-	24, // 26: agentfleet.v1.ProvisionerService.ExposeSession:output_type -> agentfleet.v1.ExposeSessionResponse
-	26, // 27: agentfleet.v1.ProvisionerService.UnexposeSession:output_type -> agentfleet.v1.UnexposeSessionResponse
-	28, // 28: agentfleet.v1.ProvisionerService.ProvisionService:output_type -> agentfleet.v1.ProvisionServiceResponse
-	32, // 29: agentfleet.v1.ProvisionerService.SyncRepoCache:output_type -> agentfleet.v1.SyncRepoCacheResponse
-	30, // 30: agentfleet.v1.ProvisionerService.SweepSession:output_type -> agentfleet.v1.SweepSessionResponse
-	14, // 31: agentfleet.v1.ProvisionerService.ListDefinitionFiles:output_type -> agentfleet.v1.ListDefinitionFilesResponse
-	8,  // 32: agentfleet.v1.ProvisionerService.ReconcileVaults:output_type -> agentfleet.v1.ReconcileVaultsResponse
-	17, // 33: agentfleet.v1.ProvisionerService.ListGitHubRepos:output_type -> agentfleet.v1.ListGitHubReposResponse
-	22, // [22:34] is the sub-list for method output_type
-	10, // [10:22] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	29, // 10: agentfleet.v1.PostReviewRequest.comments:type_name -> agentfleet.v1.ReviewComment
+	1,  // 11: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
+	18, // 12: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
+	20, // 13: agentfleet.v1.ProvisionerService.ListWorkerPods:input_type -> agentfleet.v1.ListWorkerPodsRequest
+	10, // 14: agentfleet.v1.ProvisionerService.GetVersion:input_type -> agentfleet.v1.GetVersionRequest
+	23, // 15: agentfleet.v1.ProvisionerService.ExposeSession:input_type -> agentfleet.v1.ExposeSessionRequest
+	25, // 16: agentfleet.v1.ProvisionerService.UnexposeSession:input_type -> agentfleet.v1.UnexposeSessionRequest
+	27, // 17: agentfleet.v1.ProvisionerService.ProvisionService:input_type -> agentfleet.v1.ProvisionServiceRequest
+	34, // 18: agentfleet.v1.ProvisionerService.SyncRepoCache:input_type -> agentfleet.v1.SyncRepoCacheRequest
+	32, // 19: agentfleet.v1.ProvisionerService.SweepSession:input_type -> agentfleet.v1.SweepSessionRequest
+	12, // 20: agentfleet.v1.ProvisionerService.ListDefinitionFiles:input_type -> agentfleet.v1.ListDefinitionFilesRequest
+	7,  // 21: agentfleet.v1.ProvisionerService.ReconcileVaults:input_type -> agentfleet.v1.ReconcileVaultsRequest
+	15, // 22: agentfleet.v1.ProvisionerService.ListGitHubRepos:input_type -> agentfleet.v1.ListGitHubReposRequest
+	30, // 23: agentfleet.v1.ProvisionerService.PostReview:input_type -> agentfleet.v1.PostReviewRequest
+	6,  // 24: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
+	19, // 25: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
+	22, // 26: agentfleet.v1.ProvisionerService.ListWorkerPods:output_type -> agentfleet.v1.ListWorkerPodsResponse
+	11, // 27: agentfleet.v1.ProvisionerService.GetVersion:output_type -> agentfleet.v1.GetVersionResponse
+	24, // 28: agentfleet.v1.ProvisionerService.ExposeSession:output_type -> agentfleet.v1.ExposeSessionResponse
+	26, // 29: agentfleet.v1.ProvisionerService.UnexposeSession:output_type -> agentfleet.v1.UnexposeSessionResponse
+	28, // 30: agentfleet.v1.ProvisionerService.ProvisionService:output_type -> agentfleet.v1.ProvisionServiceResponse
+	35, // 31: agentfleet.v1.ProvisionerService.SyncRepoCache:output_type -> agentfleet.v1.SyncRepoCacheResponse
+	33, // 32: agentfleet.v1.ProvisionerService.SweepSession:output_type -> agentfleet.v1.SweepSessionResponse
+	14, // 33: agentfleet.v1.ProvisionerService.ListDefinitionFiles:output_type -> agentfleet.v1.ListDefinitionFilesResponse
+	8,  // 34: agentfleet.v1.ProvisionerService.ReconcileVaults:output_type -> agentfleet.v1.ReconcileVaultsResponse
+	17, // 35: agentfleet.v1.ProvisionerService.ListGitHubRepos:output_type -> agentfleet.v1.ListGitHubReposResponse
+	31, // 36: agentfleet.v1.ProvisionerService.PostReview:output_type -> agentfleet.v1.PostReviewResponse
+	24, // [24:37] is the sub-list for method output_type
+	11, // [11:24] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_provisioner_proto_init() }
@@ -2229,7 +2475,7 @@ func file_agentfleet_v1_provisioner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_provisioner_proto_rawDesc), len(file_agentfleet_v1_provisioner_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   32,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

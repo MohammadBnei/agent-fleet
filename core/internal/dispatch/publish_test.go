@@ -140,7 +140,7 @@ func TestAgentWakesAreCapped(t *testing.T) {
 		agents.opens = nil
 		e := &bridgev1.CloudEvent{Seq: int64(i + 1), Id: string(rune('a' + i)), Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
 			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Hops: 1,
-			Data: []byte(`{"text":"go"}`)}
+			Data: []byte(`{"text":"@owner go"}`)}
 		if err := d.Handle(ctx, e); err != nil {
 			t.Fatal(err)
 		}

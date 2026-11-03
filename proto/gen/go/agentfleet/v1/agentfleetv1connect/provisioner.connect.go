@@ -69,6 +69,9 @@ const (
 	// ProvisionerServiceListGitHubReposProcedure is the fully-qualified name of the
 	// ProvisionerService's ListGitHubRepos RPC.
 	ProvisionerServiceListGitHubReposProcedure = "/agentfleet.v1.ProvisionerService/ListGitHubRepos"
+	// ProvisionerServicePostReviewProcedure is the fully-qualified name of the ProvisionerService's
+	// PostReview RPC.
+	ProvisionerServicePostReviewProcedure = "/agentfleet.v1.ProvisionerService/PostReview"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -109,6 +112,10 @@ type ProvisionerServiceClient interface {
 	// core's repos sync source (docs/adr/0074): accepts allowlisted
 	// invitations, then lists every repo the bot can reach.
 	ListGitHubRepos(context.Context, *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error)
+	// Posts a reviewer definition's review and its agent-review commit status
+	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
+	// CoreService.SubmitReview here once it has authorized the session.
+	PostReview(context.Context, *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -194,6 +201,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("ListGitHubRepos")),
 			connect.WithClientOptions(opts...),
 		),
+		postReview: connect.NewClient[v1.PostReviewRequest, v1.PostReviewResponse](
+			httpClient,
+			baseURL+ProvisionerServicePostReviewProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("PostReview")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -211,6 +224,7 @@ type provisionerServiceClient struct {
 	listDefinitionFiles *connect.Client[v1.ListDefinitionFilesRequest, v1.ListDefinitionFilesResponse]
 	reconcileVaults     *connect.Client[v1.ReconcileVaultsRequest, v1.ReconcileVaultsResponse]
 	listGitHubRepos     *connect.Client[v1.ListGitHubReposRequest, v1.ListGitHubReposResponse]
+	postReview          *connect.Client[v1.PostReviewRequest, v1.PostReviewResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -273,6 +287,11 @@ func (c *provisionerServiceClient) ListGitHubRepos(ctx context.Context, req *con
 	return c.listGitHubRepos.CallUnary(ctx, req)
 }
 
+// PostReview calls agentfleet.v1.ProvisionerService.PostReview.
+func (c *provisionerServiceClient) PostReview(ctx context.Context, req *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error) {
+	return c.postReview.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
@@ -311,6 +330,10 @@ type ProvisionerServiceHandler interface {
 	// core's repos sync source (docs/adr/0074): accepts allowlisted
 	// invitations, then lists every repo the bot can reach.
 	ListGitHubRepos(context.Context, *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error)
+	// Posts a reviewer definition's review and its agent-review commit status
+	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
+	// CoreService.SubmitReview here once it has authorized the session.
+	PostReview(context.Context, *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -392,6 +415,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("ListGitHubRepos")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServicePostReviewHandler := connect.NewUnaryHandler(
+		ProvisionerServicePostReviewProcedure,
+		svc.PostReview,
+		connect.WithSchema(provisionerServiceMethods.ByName("PostReview")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceCreateWorkerPodProcedure:
@@ -418,6 +447,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceReconcileVaultsHandler.ServeHTTP(w, r)
 		case ProvisionerServiceListGitHubReposProcedure:
 			provisionerServiceListGitHubReposHandler.ServeHTTP(w, r)
+		case ProvisionerServicePostReviewProcedure:
+			provisionerServicePostReviewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -473,4 +504,8 @@ func (UnimplementedProvisionerServiceHandler) ReconcileVaults(context.Context, *
 
 func (UnimplementedProvisionerServiceHandler) ListGitHubRepos(context.Context, *connect.Request[v1.ListGitHubReposRequest]) (*connect.Response[v1.ListGitHubReposResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListGitHubRepos is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) PostReview(context.Context, *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.PostReview is not implemented"))
 }

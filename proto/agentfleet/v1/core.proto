@@ -475,6 +475,29 @@ message PublishEventResponse {
   int32 hops = 3;
 }
 
+// SubmitReviewRequest is a reviewer definition session's one review of the PR
+// its thread is about (docs/adr/0082 slice 5). core checks the session may
+// post it and relays it to ProvisionerService.PostReview.
+message SubmitReviewRequest {
+  string session_id = 1;
+  // owner/name; with pr, must be the session's thread github/<owner>/<repo>/pr/<n>.
+  string repo = 2;
+  int64 pr = 3;
+  // 40 hex.
+  string head_sha = 4;
+  // "approve" | "changes" | "comment".
+  string verdict = 5;
+  // At most 60000 characters.
+  string body = 6;
+  repeated ReviewComment comments = 7;
+}
+
+message SubmitReviewResponse {
+  string review_url = 1;
+  // The event GitHub got: APPROVE | REQUEST_CHANGES | COMMENT.
+  string event = 2;
+}
+
 // HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
 // here. Both are deleted in docs/adr/0048.
 //
@@ -740,5 +763,9 @@ service CoreService {
   rpc DraftCard(DraftCardRequest) returns (DraftCardResponse) {
     option (ukubi.errors.v1.keys) = "core.card_budget";
   }
+
+  // Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
+  // submit_review.
+  rpc SubmitReview(SubmitReviewRequest) returns (SubmitReviewResponse);
 }
 

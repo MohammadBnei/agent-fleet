@@ -194,6 +194,12 @@ type Config struct {
 	// a malformed one refuses the start, in cmd/provisioner where telemetry.New
 	// checks it.
 	TracesEndpoint string
+	// TrustedLogins are the GitHub logins whose PRs an agent review may
+	// formally approve or request changes on (PROVISIONER_TRUSTED_LOGINS,
+	// comma-separated; ADR-0082 slice 5). Empty: only the App's own PRs
+	// count as owned, and those get a COMMENT anyway, so every review is a
+	// COMMENT plus the agent-review status.
+	TrustedLogins []string
 }
 
 // FromProcess is the provisioner's configuration from its environment: the
@@ -271,6 +277,11 @@ func Load(getenv func(string) string) (Config, error) {
 		ClaudeModel:               getenv("CLAUDE_MODEL"),
 		MaxTurns:                  getenv("MAX_TURNS"),
 		TracesEndpoint:            getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+	}
+	for _, l := range strings.Split(getenv("PROVISIONER_TRUSTED_LOGINS"), ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			c.TrustedLogins = append(c.TrustedLogins, l)
+		}
 	}
 	var errs []error
 	if err := c.rewriteMalformed(); err != nil {
