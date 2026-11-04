@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -214,7 +215,8 @@ func (c Config) post(w http.ResponseWriter, r *http.Request, id auth.Identity) {
 		case errkeys.KeyDecisionStale, errkeys.KeyDecisionExpired:
 			page(w, http.StatusConflict, view{Msg: "This card expired or changed since. Nothing was done."})
 		default:
-			page(w, http.StatusInternalServerError, view{Msg: "Error: " + err.Error()})
+			slog.ErrorContext(r.Context(), "confirm: answer failed", "decisionId", cl.ID, "error", err)
+			page(w, http.StatusInternalServerError, view{Msg: "The answer failed. Try again from the console."})
 		}
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -240,6 +241,16 @@ func TestGate_RedirectsDocumentsAndRefusesXHR(t *testing.T) {
 	}
 	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "return_to=%2Fsessions%2Fabc") && !strings.Contains(loc, "return_to=/sessions/abc") {
 		t.Errorf("navigation lost its destination: Location = %q", loc)
+	}
+
+	// A query with escapes of its own (the confirm page's own_text) comes back from login exactly.
+	confirm := "/decisions/confirm?id=d&own_text=a%26b%23c%2B"
+	nav = httptest.NewRequest(http.MethodGet, confirm, nil)
+	nav.Header.Set("Sec-Fetch-Mode", "navigate")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, nav)
+	if u, err := url.Parse(rec.Header().Get("Location")); err != nil || u.Query().Get("return_to") != confirm {
+		t.Errorf("return_to did not round-trip: Location = %q", rec.Header().Get("Location"))
 	}
 
 	// The SPA's own call must get a status it can react to. A 302 would be

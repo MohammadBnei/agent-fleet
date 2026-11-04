@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -138,7 +139,7 @@ func (o *OIDC) Gate(allow Policy, routes ...Route) func(http.Handler) http.Handl
 				logForbidden(id, r.URL.EscapedPath())
 				http.Error(w, errForbidden.Error(), http.StatusForbidden)
 			case isDocumentRequest(r):
-				http.Redirect(w, r, "/auth/login?return_to="+urlQueryEscape(r.URL.RequestURI()), http.StatusFound)
+				http.Redirect(w, r, "/auth/login?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 			default:
 				http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			}
@@ -155,10 +156,6 @@ func isDocumentRequest(r *http.Request) bool {
 		return m == "navigate"
 	}
 	return r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html")
-}
-
-func urlQueryEscape(s string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(s, "&", "%26"), "?", "%3F")
 }
 
 // Me answers "who am I", for the console's own chrome.
