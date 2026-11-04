@@ -166,6 +166,11 @@ type Config struct {
 	// gate is off, so a local page (the game's dev server, the dashboard's vite proxy) can call it as the dev
 	// identity. Only with FLEET_AUTH_DISABLED=1: set otherwise, core refuses to start.
 	DevOrigins []string
+	// AdminOrigins are our own app origins (https://game.bnei.dev) where an admin answers cards in place
+	// (docs/adr/0082 §7): a reversible "yes" there, the rest through core's confirm page, which may send the browser
+	// back to one of them. Never merged with a definition's embed.origins: agentsvc checks these first, so an origin
+	// a definition also lists is still a surface, never an island. https only while the gate is on.
+	AdminOrigins []string
 	// SessionRetention is how long an untouched session keeps its disk — its
 	// working directory and per-session SDK state (docs/adr/0048). After
 	// this the retention GC reclaims both and marks the session swept:
@@ -324,6 +329,7 @@ func Load(getenv func(string) string) (Config, error) {
 	// party from them: discovery target, redirect URI base); a malformed one makes the console unusable for every
 	// human. With the gate explicitly off nothing reads them, so a malformed one is only a warning.
 	c.DevOrigins = l.devOrigins("FLEET_DEV_ORIGINS", c.AuthDisabled)
+	c.AdminOrigins = l.origins("FLEET_ADMIN_ORIGINS", c.AuthDisabled)
 	c.OIDCIssuerURL = l.urlWith("OIDC_ISSUER_URL", "", l.requiredIf(!c.AuthDisabled))
 	c.DashboardPublicURL = l.urlWith("DASHBOARD_PUBLIC_URL", "", l.requiredIf(!c.AuthDisabled))
 	c.TracesEndpoint = l.urlWith("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", l.refuse)
@@ -495,13 +501,23 @@ func (l *loader) devOrigins(key string, authDisabled bool) []string {
 		l.refuse(key, v, "must be unset while the console gate is on (dev origins call AgentService as the dev identity)")
 		return nil
 	}
+	return l.origins(key, true)
+}
+
+// origins is a comma-separated list of exact origins, each scheme://host[:port]: https only unless allowHTTP, no
+// path, query, userinfo or wildcard. Any problem refuses: a malformed one would silently admit nothing.
+func (l *loader) origins(key string, allowHTTP bool) []string {
+	v := l.getenv(key)
+	if v == "" {
+		return nil
+	}
 	var out []string
 	for _, o := range strings.Split(v, ",") {
 		o = strings.TrimSpace(o)
 		u, err := url.Parse(o)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil ||
-			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
-			l.refuse(key, v, "must be comma-separated origins, each scheme://host[:port]")
+		if err != nil || (u.Scheme != "https" && (!allowHTTP || u.Scheme != "http")) || u.Hostname() == "" || u.User != nil ||
+			strings.Contains(u.Host, "*") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			l.refuse(key, v, "must be comma-separated origins, each scheme://host[:port] (https while the gate is on)")
 			return nil
 		}
 		// A browser sends the host lowercased; one written otherwise would never match.

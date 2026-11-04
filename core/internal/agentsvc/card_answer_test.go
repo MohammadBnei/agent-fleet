@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
@@ -149,6 +151,49 @@ func TestAnswerDecision_Card(t *testing.T) {
 			t.Errorf("thread %s archived %v, want %v", id, got.ArchivedAt != nil, archived)
 		}
 	}
+	// A surface (docs/adr/0082 §7): a reversible "yes" option is answered in
+	// place, anything else is sent to the confirm page with nothing done, and
+	// the page's ConfirmCard refuses a card changed since it was shown.
+	fromSurface := func(m *agentfleetv1.AnswerDecisionRequest) error {
+		req := as("root", m)
+		req.Header().Set("X-Origin", "https://game.bnei.dev")
+		req.Header().Set("X-Surface", "1")
+		_, err := c.AnswerDecision(ctx, req)
+		return err
+	}
+	writer5 := thread("github/o/r/pr/5")
+	surfaceCard := draft(writer5, 5, keep, closeAll)
+	lreq := as("root", &agentfleetv1.ListDecisionsRequest{})
+	lreq.Header().Set("X-Origin", "https://game.bnei.dev")
+	lreq.Header().Set("X-Surface", "1")
+	if l, err := c.ListDecisions(ctx, lreq); err != nil || len(l.Msg.GetDecisions()) == 0 ||
+		slices.ContainsFunc(l.Msg.GetDecisions(), func(d *agentfleetv1.Decision) bool {
+			return d.GetKind() != agentfleetv1.DecisionKind_DECISION_KIND_CARD
+		}) {
+		t.Errorf("a surface's deck: %v", err)
+	}
+	rec, _ := decs.Get(ctx, surfaceCard)
+	v := strconv.FormatInt(rec.Version, 10)
+	for m, u := range map[*agentfleetv1.AnswerDecisionRequest]string{
+		{DecisionId: surfaceCard, OptionId: "2"}:    "https://fleet.bnei.dev/decisions/confirm?id=" + surfaceCard + "&option=2&v=" + v,
+		{DecisionId: surfaceCard, OwnText: "later"}: "https://fleet.bnei.dev/decisions/confirm?id=" + surfaceCard + "&option=&own_text=later&v=" + v,
+	} {
+		if err := fromSurface(m); errkeys.Of(err) != errkeys.KeyDecisionConfirmRequired || !strings.HasSuffix(err.Error(), u) || state(surfaceCard) != decisions.Open {
+			t.Errorf("surface %v: %v, %s", m, err, state(surfaceCard))
+		}
+	}
+	rootID := auth.Identity{Sub: "root", Email: "root@bnei.dev", Groups: []string{auth.RequiredGroup}}
+	if _, _, err := s.ConfirmCard(ctx, rootID, surfaceCard, "2", "", rec.Version-1); errkeys.Of(err) != errkeys.KeyDecisionStale || state(surfaceCard) != decisions.Open {
+		t.Errorf("ConfirmCard on an older version: %v, %s", err, state(surfaceCard))
+	}
+	if ok, _, err := s.ConfirmCard(ctx, rootID, surfaceCard, "", "later", rec.Version); err != nil || !ok || state(surfaceCard) != decisions.Answered {
+		t.Errorf("ConfirmCard: %v, %s", err, state(surfaceCard))
+	}
+	yesCard := draft(thread("github/o/r/pr/6"), 6, keep, closeAll)
+	if err := fromSurface(&agentfleetv1.AnswerDecisionRequest{DecisionId: yesCard, OptionId: "1"}); err != nil || state(yesCard) != decisions.Answered {
+		t.Errorf("a surface's reversible yes: %v, %s", err, state(yesCard))
+	}
+
 	// The answered card stays listed though close_threads archived its writer.
 	l, err := c.ListDecisions(ctx, as("root", &agentfleetv1.ListDecisionsRequest{}))
 	if err != nil || !slices.ContainsFunc(l.Msg.GetDecisions(), func(d *agentfleetv1.Decision) bool { return d.GetId() == newer }) {

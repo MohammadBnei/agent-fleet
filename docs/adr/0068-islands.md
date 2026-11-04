@@ -205,7 +205,8 @@ boundaries either: the script calls the API, not the element.
   bug, or any XSS on an allowlisted host can act as every member who opens
   that page, within that member's rights on the host's definitions:
   answering, approving, posting, reading their threads. Admin power is out of
-  reach (island calls are member-only). Group removal takes effect when the
+  reach (island calls are member-only). An island answers no card either: it
+  shows them read-only and links to the console (ADR-0082 §7, slice 6). Group removal takes effect when the
   12h cookie expires (ADR-0069 §5).
 - An origin goes into `embed.origins` only when its scripts are reviewed or
   guarded like this. Adding one is a definition PR.

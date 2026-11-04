@@ -70,6 +70,20 @@ type Identity struct {
 	Email  string   `json:"e"`
 	Groups []string `json:"g"`
 	Expiry int64    `json:"x"`
+	// AuthAt is the ID token's auth_time, unix seconds: when the owner last
+	// typed a credential, not when this cookie was minted (docs/adr/0082 §7).
+	// 0 is unknown (an older cookie, or a provider that omits it) and is never
+	// fresh.
+	AuthAt int64 `json:"a,omitempty"`
+}
+
+// freshFor is how recent a sign-in must be for an irreversible card answer
+// (docs/adr/0082 §7).
+const freshFor = 10 * time.Minute
+
+// Fresh reports whether id signed in within the last ten minutes.
+func Fresh(id Identity, now time.Time) bool {
+	return id.AuthAt != 0 && now.Sub(time.Unix(id.AuthAt, 0)) <= freshFor
 }
 
 func (i Identity) InGroup(name string) bool {

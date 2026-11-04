@@ -45,6 +45,10 @@ type Config struct {
 	// everything but its member routes AdminOnly. Empty admits RequiredGroup
 	// only.
 	AdmitGroups []string
+	// AdminOrigins are our app surfaces a login may return to as an absolute
+	// URL (FLEET_ADMIN_ORIGINS, docs/adr/0082 §7): exact origins, never
+	// merged with embed.origins.
+	AdminOrigins []string
 }
 
 type OIDC struct {
@@ -52,6 +56,7 @@ type OIDC struct {
 	oauth    *oauth2.Config
 	signer   *Signer
 	admit    []string
+	origins  []string
 }
 
 // admits reports whether a login carrying id's groups is let in.
@@ -108,8 +113,9 @@ func New(ctx context.Context, cfg Config) (*OIDC, error) {
 			RedirectURL:  strings.TrimSuffix(cfg.PublicURL, "/") + "/auth/callback",
 			Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 		},
-		signer: signer,
-		admit:  cfg.AdmitGroups,
+		signer:  signer,
+		admit:   cfg.AdmitGroups,
+		origins: cfg.AdminOrigins,
 	}, nil
 }
 
@@ -121,7 +127,14 @@ type stateClaim struct {
 	Nonce    string `json:"n"`
 	Verifier string `json:"v"`
 	Return   string `json:"r"`
+	// Reauth marks a forced fresh sign-in (docs/adr/0082 §7): the callback
+	// then refuses an ID token whose auth_time is missing or old.
+	Reauth bool `json:"a,omitempty"`
 }
+
+// reauthWindow is how close to now a forced sign-in's auth_time must be. A
+// provider that ignored prompt=login hands back the old auth_time and fails.
+const reauthWindow = 2 * time.Minute
 
 // Login starts the authorization-code flow.
 func (o *OIDC) Login(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +155,9 @@ func (o *OIDC) Login(w http.ResponseWriter, r *http.Request) {
 	// entry point, clicked exactly when somebody must act. Without this, every
 	// notification lands them on the fleet root and they have to find the
 	// session again by hand.
-	claim := stateClaim{Nonce: nonce, Verifier: verifier, Return: safeReturnTo(r.URL.Query().Get("return_to"))}
+	claim := stateClaim{Nonce: nonce, Verifier: verifier,
+		Return: SafeReturnTo(r.URL.Query().Get("return_to"), o.origins),
+		Reauth: r.URL.Query().Get("reauth") == "1"}
 	blob, _ := json.Marshal(claim)
 	http.SetCookie(w, &http.Cookie{
 		Name:     stateCookieName,
@@ -154,10 +169,13 @@ func (o *OIDC) Login(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(stateTTL.Seconds()),
 	})
 
-	http.Redirect(w, r, o.oauth.AuthCodeURL(state,
-		oidc.Nonce(nonce),
-		oauth2.S256ChallengeOption(verifier),
-	), http.StatusFound)
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)}
+	if claim.Reauth {
+		// Both, because a provider may honour only one; the callback checks
+		// auth_time either way, so neither is trusted on its own.
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "login"), oauth2.SetAuthURLParam("max_age", "0"))
+	}
+	http.Redirect(w, r, o.oauth.AuthCodeURL(state, opts...), http.StatusFound)
 }
 
 // Callback completes the flow.
@@ -208,8 +226,9 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var claims struct {
-		Email  string   `json:"email"`
-		Groups []string `json:"groups"`
+		Email    string   `json:"email"`
+		Groups   []string `json:"groups"`
+		AuthTime int64    `json:"auth_time"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		http.Error(w, "login failed", http.StatusUnauthorized)
@@ -224,7 +243,16 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := Identity{Sub: idToken.Subject, Email: claims.Email, Groups: claims.Groups}
+	// Fails closed: no auth_time means we cannot tell the sign-in was fresh.
+	if claim.Reauth {
+		if age := time.Since(time.Unix(claims.AuthTime, 0)); claims.AuthTime == 0 || age > reauthWindow || age < -reauthWindow {
+			slog.Warn("auth: fresh sign-in refused", "email", claims.Email, "auth_time", claims.AuthTime)
+			http.Error(w, "fresh sign-in failed", http.StatusForbidden)
+			return
+		}
+	}
+
+	id := Identity{Sub: idToken.Subject, Email: claims.Email, Groups: claims.Groups, AuthAt: claims.AuthTime}
 	if !o.admits(id) {
 		// Logged with the groups actually received, because the likeliest
 		// cause is not an unauthorised person: it is the provider not emitting
@@ -248,20 +276,34 @@ func (o *OIDC) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// safeReturnTo refuses anything that is not a local path.
+// SafeReturnTo refuses anything that is not a local path or a URL on one of
+// origins, compared exactly after parsing (docs/adr/0082 §7).
 //
 // A bare "//evil.com" is a protocol-relative URL that browsers follow
 // off-origin, so checking only for a leading "/" is not enough — that is the
 // classic open-redirect, and here it would be one reached through a login flow,
-// which is where they are most convincing.
-func safeReturnTo(raw string) string {
-	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+// which is where they are most convincing. Backslashes and control characters
+// are refused outright: browsers read a backslash as "/", url.Parse does not.
+func SafeReturnTo(raw string, origins []string) string {
+	if raw == "" || strings.ContainsFunc(raw, func(r rune) bool { return r == '\\' || r < 0x20 || r == 0x7f }) {
 		return "/"
 	}
-	if u, err := url.Parse(raw); err != nil || u.Host != "" || u.Scheme != "" {
+	u, err := url.Parse(raw)
+	if err != nil {
 		return "/"
 	}
-	return raw
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") && u.Host == "" && u.Scheme == "" {
+		return raw
+	}
+	if u.Scheme != "https" || u.User != nil || u.Host == "" || u.Opaque != "" {
+		return "/"
+	}
+	for _, o := range origins {
+		if o == "https://"+u.Host {
+			return raw
+		}
+	}
+	return "/"
 }
 
 func randomString() (string, error) {

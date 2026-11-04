@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 // Callback, end to end against a fake IdP: discovery, JWKS and a token
@@ -61,14 +63,18 @@ func TestCallback_MintsTheSessionFromTheIDToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	login := func(sub string, groups []string) (*httptest.ResponseRecorder, Identity) {
+	var authTime any // auth_time claim; nil leaves it out
+	loginAt := func(path, sub string, groups []string) (*httptest.ResponseRecorder, Identity) {
 		rec := httptest.NewRecorder()
-		o.Login(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+		o.Login(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		loc, _ := url.Parse(rec.Header().Get("Location"))
 		state := rec.Result().Cookies()[0]
 		claims = map[string]any{"iss": issuer, "aud": "client", "exp": time.Now().Add(time.Hour).Unix(),
 			"iat": time.Now().Unix(), "nonce": loc.Query().Get("nonce"), "sub": sub,
 			"email": "me@bnei.dev", "groups": groups}
+		if authTime != nil {
+			claims["auth_time"] = authTime
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=c&state="+loc.Query().Get("state"), nil)
 		req.AddCookie(state)
@@ -82,6 +88,9 @@ func TestCallback_MintsTheSessionFromTheIDToken(t *testing.T) {
 		}
 		return rec, Identity{}
 	}
+	login := func(sub string, groups []string) (*httptest.ResponseRecorder, Identity) {
+		return loginAt("/auth/login", sub, groups)
+	}
 
 	if rec, id := login("sub-123", []string{RequiredGroup}); rec.Code != http.StatusFound || id.Sub != "sub-123" || id.Email != "me@bnei.dev" {
 		t.Errorf("admin login: %d, identity %+v; want 302 carrying sub", rec.Code, id)
@@ -92,6 +101,25 @@ func TestCallback_MintsTheSessionFromTheIDToken(t *testing.T) {
 	if rec, id := login("sub-123", []string{"opus-users"}); rec.Code != http.StatusForbidden || id.Email != "" {
 		t.Errorf("non-admin: %d, identity %+v; want 403 and no session", rec.Code, id)
 	}
+	// docs/adr/0082 §7: auth_time rides into the cookie; a reauth login
+	// fails closed without a recent one.
+	authTime = time.Now().Add(-time.Hour).Unix()
+	if rec, id := login("sub-123", []string{RequiredGroup}); rec.Code != http.StatusFound || id.AuthAt != authTime {
+		t.Errorf("auth_time: %d, identity %+v; want AuthAt %v", rec.Code, id, authTime)
+	}
+	if rec, id := loginAt("/auth/login?reauth=1", "sub-123", []string{RequiredGroup}); rec.Code != http.StatusForbidden || id.Email != "" {
+		t.Errorf("reauth, old auth_time: %d, identity %+v; want 403 and no session", rec.Code, id)
+	}
+	authTime = nil
+	if rec, id := loginAt("/auth/login?reauth=1", "sub-123", []string{RequiredGroup}); rec.Code != http.StatusForbidden || id.Email != "" {
+		t.Errorf("reauth, no auth_time: %d, identity %+v; want 403 and no session", rec.Code, id)
+	}
+	authTime = time.Now().Unix()
+	if rec, id := loginAt("/auth/login?reauth=1", "sub-123", []string{RequiredGroup}); rec.Code != http.StatusFound || !Fresh(id, time.Now()) {
+		t.Errorf("reauth, fresh: %d, identity %+v; want 302 and a fresh session", rec.Code, id)
+	}
+	authTime = nil
+
 	// docs/adr/0066 §2: an admitted audience group logs in. What it may reach
 	// is the Gate's business, not the callback's.
 	o.admit = []string{"shared-notes"}
@@ -100,5 +128,19 @@ func TestCallback_MintsTheSessionFromTheIDToken(t *testing.T) {
 	}
 	if rec, id := login("sub-456", []string{"opus-users"}); rec.Code != http.StatusForbidden || id.Email != "" {
 		t.Errorf("unknown group: %d, identity %+v; want 403 and no session", rec.Code, id)
+	}
+}
+
+// docs/adr/0082 §7: reauth=1 asks the provider for a fresh credential.
+func TestLogin_ReauthForcesAFreshSignIn(t *testing.T) {
+	o := &OIDC{oauth: &oauth2.Config{Endpoint: oauth2.Endpoint{AuthURL: "https://idp/authorize"}}}
+	for path, want := range map[string]bool{"/auth/login": false, "/auth/login?reauth=1": true} {
+		rec := httptest.NewRecorder()
+		o.Login(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		loc, _ := url.Parse(rec.Header().Get("Location"))
+		q := loc.Query()
+		if got := q.Get("prompt") == "login" && q.Has("max_age") && q.Get("max_age") == "0"; got != want {
+			t.Errorf("%s: prompt=%q max_age=%q, want forced=%v", path, q.Get("prompt"), q.Get("max_age"), want)
+		}
 	}
 }

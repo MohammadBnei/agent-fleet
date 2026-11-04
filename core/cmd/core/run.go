@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
+	"github.com/MohammadBnei/agent-fleet/core/internal/confirm"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
@@ -361,6 +364,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// not. FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out, so "no
 	// auth" is always something someone wrote down.
 	var authInterceptors []connect.Interceptor
+	var confirmKey []byte // set only with the gate on: the confirm page needs the gate's identity
 	memberInterceptors := devInterceptors(cfg.AuthDisabled)
 	gate := func(h http.Handler) http.Handler { return h }
 	// The constant, not NewAgentServiceHandler(nil): the generated constructor
@@ -381,6 +385,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			PublicURL:    cfg.DashboardPublicURL,
 			SessionKeys:  cfg.SessionKeys,
 			AdmitGroups:  definitions.KnownGroups(),
+			AdminOrigins: cfg.AdminOrigins,
 		})
 		if err != nil {
 			return fmt.Errorf("oidc setup (set FLEET_AUTH_DISABLED=1 for a local stack): %w", err)
@@ -403,6 +408,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		members := auth.AnyGroup(definitions.KnownGroups())
 		memberInterceptors = append(memberInterceptors, oidcAuth.ConnectInterceptor(members))
 		gate = oidcAuth.Gate(policy, auth.Route{Prefix: agentPath, Allow: members})
+		confirmKey = deriveKey(cfg.SessionKeys, "confirm")
 	}
 	// CSRF stays alongside the session check and is not redundant: a cookie is
 	// attached by the browser to same-origin requests regardless of which page
@@ -437,8 +443,16 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 the identity is devIdentity (above).
 	memberInterceptors = connectInterceptors(tr, true,
-		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.DevOrigins...))...)
+		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.AdminOrigins, cfg.DevOrigins...))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
+	// The confirm page for a card answer from a surface (docs/adr/0082 §7). Behind the gate, not exempt: it reads
+	// the gate's identity, and an unauthenticated visit is sent to login and back. Gate off: not mounted.
+	if confirmKey != nil {
+		mux.Handle(confirm.Path, confirm.Handler(confirm.Config{
+			Fleet: originOf(cfg.DashboardPublicURL), Key: confirmKey, Load: decisionStore.Get, Card: agentsvc.CardOf,
+			Answer: agentSvc.ConfirmCard, AdminOrigins: cfg.AdminOrigins, Now: time.Now,
+		}))
+	}
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
 	// definition threads through agentSvc as client bridge, and a firing
 	// alert reaches the same handler as /webhook/alertmanager.
@@ -491,7 +505,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// closed. It also has to sit outside the SPA handler specifically, because
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
-	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), withDev(embedOrigins(defs), cfg.DevOrigins))
+	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), withDev(embedOrigins(defs), slices.Concat(cfg.DevOrigins, cfg.AdminOrigins)))
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate, cors), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 
 	go func() {
@@ -553,7 +567,7 @@ func devInterceptors(authDisabled bool) []connect.Interceptor {
 	return []connect.Interceptor{auth.DevInterceptor(devIdentity)}
 }
 
-// withDev adds the dev origins (set only with the gate off) to the origins CORS answers.
+// withDev adds the dev origins (set only with the gate off) and the admin origins to the origins CORS answers.
 func withDev(embed func() []string, dev []string) func() []string {
 	if len(dev) == 0 {
 		return embed
@@ -564,6 +578,15 @@ func withDev(embed func() []string, dev []string) func() []string {
 		}
 		return append(slices.Clone(dev), embed()...)
 	}
+}
+
+// deriveKey is a key for one purpose from the session signing key in use (the first of SessionKeys), so a value
+// signed for one use never verifies as another.
+func deriveKey(sessionKeys, purpose string) []byte {
+	k, _, _ := strings.Cut(sessionKeys, ",")
+	m := hmac.New(sha256.New, []byte(strings.TrimSpace(k)))
+	m.Write([]byte(purpose))
+	return m.Sum(nil)
 }
 
 // embedOrigins is nil without a registry: no island is accepted.

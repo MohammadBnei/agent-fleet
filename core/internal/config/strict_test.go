@@ -67,6 +67,7 @@ var refusals = []struct {
 	{"FLEET_AUTH_DISABLED", []string{"true", "false", "yes", "2", " 1", "on"}, []string{"1", "0"}},
 	// Any value refuses on a gated core (this table loads with the gate on); TestLoadDevOrigins has the good ones.
 	{"FLEET_DEV_ORIGINS", []string{"http://127.0.0.1:7410", "x"}, nil},
+	{"FLEET_ADMIN_ORIGINS", []string{"http://game.bnei.dev", "https://*.bnei.dev", "https://game.bnei.dev/x", "https://u@game.bnei.dev", "game.bnei.dev"}, []string{"https://game.bnei.dev", "https://game.bnei.dev:8443,https://b.bnei.dev"}},
 	{"LOKI_URL", []string{"loki:3100", "ftp://loki", "http://", "//loki", "not a url", "http://[::1"}, []string{"http://loki:3100", "https://loki.example/"}},
 	{"PROMETHEUS_URL", []string{"prom:9090", "ws://prom", "http:///x"}, []string{"http://prom:9090"}},
 	{"DASHBOARD_PUBLIC_URL", []string{"fleet.bnei.dev", "https://", "javascript:alert(1)"}, []string{"https://fleet.bnei.dev", "http://localhost:8080"}},
@@ -90,7 +91,7 @@ func defaultsFor(t *testing.T, base map[string]string) Config {
 }
 
 // required is the keys Load refuses on (the rest of refusals warns).
-var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true, "FLEET_DEV_ORIGINS": true, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": true}
+var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true, "FLEET_DEV_ORIGINS": true, "FLEET_ADMIN_ORIGINS": true, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": true}
 
 // TestLoadRefusals: a bad value of a required key refuses the start; a bad value of any other key loads with one
 // warning naming it and the Config of the same environment without it. Every good value loads with no warning (the

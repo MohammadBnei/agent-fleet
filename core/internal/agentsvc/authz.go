@@ -26,12 +26,23 @@ type Principal struct {
 	// (docs/adr/0068): that page's scripts can send the cookie, so the call
 	// gets member rights only, within the definitions listing Origin.
 	Origin string
+	// Surface is set when Origin is one of FLEET_ADMIN_ORIGINS, our own app
+	// (docs/adr/0082 §7): an admin there reads and answers cards, nothing
+	// else, and answers in place only a reversible "yes" option.
+	Surface bool
+	// fleet is the console's origin, for a surface's confirm URL.
+	fleet string
 }
 
 // Admin is a member in platform-admins on this request's cookie, calling
 // from the console, never from an island.
 func (p Principal) Admin() bool {
 	return p.Member != nil && p.Origin == "" && auth.AdminOnly(*p.Member)
+}
+
+// AnswersCards is an admin in the console or on a surface (docs/adr/0082 §7).
+func (p Principal) AnswersCards() bool {
+	return p.Member != nil && (p.Origin == "" || p.Surface) && auth.AdminOnly(*p.Member)
 }
 
 type principalKey struct{}
@@ -78,9 +89,17 @@ var table = map[string]access{
 	agentfleetv1connect.AgentServiceWaitForResultProcedure:       {client: true},
 }
 
+// surfaceCalls are all a surface may call (docs/adr/0082 §7).
+var surfaceCalls = []string{
+	agentfleetv1connect.AgentServiceListDecisionsProcedure,
+	agentfleetv1connect.AgentServiceGetDecisionProcedure,
+	agentfleetv1connect.AgentServiceWatchDecisionsProcedure,
+	agentfleetv1connect.AgentServiceAnswerDecisionProcedure,
+}
+
 func allowed(procedure string, p Principal) bool {
 	a, ok := table[procedure]
-	if !ok {
+	if !ok || (p.Surface && !slices.Contains(surfaceCalls, procedure)) {
 		return false
 	}
 	return (p.Member != nil && a.member) || (p.Client != "" && a.client)
@@ -93,18 +112,20 @@ func allowed(procedure string, p Principal) bool {
 //
 // The request's Origin (docs/adr/0068): absent or fleetOrigin is the
 // console; one of embedOrigins() is an island, member rights only; anything
-// else, "null" included, is refused. The CORS layer refuses those first;
+// else, "null" included, is refused. One of adminOrigins is a surface
+// (docs/adr/0082 §7), never an island, even when a definition lists it. The CORS layer refuses those first;
 // this is the second layer.
 //
 // devOrigins pass as the fleet's own (admin rights for an admin). Only set with the gate off (config refuses
 // FLEET_DEV_ORIGINS otherwise), where the caller is the dev identity anyway.
-func MemberInterceptor(fleetOrigin string, embedOrigins func() []string, devOrigins ...string) connect.Interceptor {
-	return memberAuth{fleet: fleetOrigin, embed: embedOrigins, dev: devOrigins}
+func MemberInterceptor(fleetOrigin string, embedOrigins func() []string, adminOrigins []string, devOrigins ...string) connect.Interceptor {
+	return memberAuth{fleet: fleetOrigin, embed: embedOrigins, admin: adminOrigins, dev: devOrigins}
 }
 
 type memberAuth struct {
 	fleet string
 	embed func() []string
+	admin []string
 	dev   []string
 }
 
@@ -117,7 +138,9 @@ func (m memberAuth) principal(ctx context.Context, procedure string, h http.Head
 	}
 	p := Principal{Member: &id}
 	if o := h.Get("Origin"); o != "" && o != m.fleet && !slices.Contains(m.dev, o) {
-		if m.embed == nil || !slices.Contains(m.embed(), o) {
+		if slices.Contains(m.admin, o) {
+			p.Surface, p.fleet = true, m.fleet
+		} else if m.embed == nil || !slices.Contains(m.embed(), o) {
 			slog.WarnContext(ctx, "agentsvc: refused origin", "email", id.Email, "origin", o, "procedure", procedure)
 			return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errOrigin)
 		}
