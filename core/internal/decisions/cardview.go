@@ -118,7 +118,8 @@ func questionCard(r Record) *agentfleetv1.Card {
 		}
 	}
 	c := view(r, q.Questions[0].Question, strings.Join(detail, "\n"))
-	c.WriteOwn = true
+	// own words answer the one question; several are answered in the console, every one by name
+	c.WriteOwn = len(q.Questions) == 1
 	if first := q.Questions[0]; len(q.Questions) == 1 && !first.MultiSelect && len(first.Options) >= 2 && len(first.Options) <= 3 {
 		for i, o := range first.Options {
 			c.Options = append(c.Options, option(fmt.Sprintf("q%d", i+1), o.Label, "choose", "yes"))

@@ -28,14 +28,17 @@ func TestCardView_Question(t *testing.T) {
 	}
 	// Anything but one single-select question of 2-3 options: own words only.
 	for name, p := range map[string]string{
-		"multiSelect":   `{"questions":[{"question":"q","multiSelect":true,"options":[{"label":"a"},{"label":"b"}]}]}`,
-		"four options":  `{"questions":[{"question":"q","options":[{"label":"a"},{"label":"b"},{"label":"c"},{"label":"d"}]}]}`,
-		"one option":    `{"questions":[{"question":"q","options":[{"label":"a"}]}]}`,
-		"two questions": `{"questions":[{"question":"q","options":[{"label":"a"},{"label":"b"}]},{"question":"r"}]}`,
+		"multiSelect":  `{"questions":[{"question":"q","multiSelect":true,"options":[{"label":"a"},{"label":"b"}]}]}`,
+		"four options": `{"questions":[{"question":"q","options":[{"label":"a"},{"label":"b"},{"label":"c"},{"label":"d"}]}]}`,
+		"one option":   `{"questions":[{"question":"q","options":[{"label":"a"}]}]}`,
 	} {
 		if c := CardView(Record{Kind: Question, Payload: p}); c == nil || len(c.GetOptions()) != 0 || !c.GetWriteOwn() {
 			t.Errorf("%s: %v", name, c)
 		}
+	}
+	// Several questions: no option and no own words (one reply cannot answer each by name): the console answers.
+	if c := CardView(Record{Kind: Question, Payload: `{"questions":[{"question":"q","options":[{"label":"a"},{"label":"b"}]},{"question":"r"}]}`}); c == nil || len(c.GetOptions()) != 0 || c.GetWriteOwn() || !strings.Contains(c.GetDetail(), "r") {
+		t.Errorf("two questions: %v", c)
 	}
 	if c := CardView(Record{Kind: Question, Payload: `not json`}); c != nil {
 		t.Errorf("no question: %v", c)

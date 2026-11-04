@@ -235,7 +235,8 @@ func TestAnswerDecision(t *testing.T) {
 	opt := thread("private")
 	for _, tc := range []struct{ typ, payload, option, want string }{
 		{"permission_request", bash, "allow", `{"behavior":"allow"}`},
-		{"permission_request", `{"tool":"ExitPlanMode","input":{"plan":"x"}}`, "keep_planning", `"behavior":"deny"`},
+		{"permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`, "allow", `"decisionId":"`},
+		{"permission_request", `{"tool":"ExitPlanMode","input":{"plan":"x"}}`, "keep_planning", `"behavior":"deny","message":"Keep planning."`},
 		{"question", `{"questions":[{"question":"which?","options":[{"label":"red"},{"label":"blue"}]}]}`, "q2", `"blue"`},
 	} {
 		id := ask(opt, tc.typ, tc.payload)
