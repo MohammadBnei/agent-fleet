@@ -216,11 +216,23 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
+	// docs/adr/0082 §7: a surface answers a question, permission or plan by
+	// its card view only, past the surface rule; never by a behavior, scope,
+	// mode or withdraw that would skip the confirm page.
+	if p.Surface && r.Kind != decisions.Card {
+		if !p.AnswersCards() || (m.GetOptionId() == "" && m.GetOwnText() == "") {
+			return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("a surface answers by card option only"))
+		}
+		return s.answerOption(ctx, p, r, m.GetOptionId(), m.GetOwnText())
+	}
 	if m.GetBehavior() == "withdraw" {
 		return s.withdraw(ctx, p, r)
 	}
 	if r.Kind == decisions.Card {
 		return s.answerCard(ctx, p, r, m)
+	}
+	if p.AnswersCards() && (m.GetOptionId() != "" || m.GetOwnText() != "") {
+		return s.answerOption(ctx, p, r, m.GetOptionId(), m.GetOwnText())
 	}
 	if err := validMessage(m.GetMessage()); err != nil {
 		return nil, err
@@ -272,14 +284,8 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 	if err := validMessage(m.GetOwnText()); err != nil {
 		return nil, err
 	}
-	// The page shows the surface's own words exactly, so they ride the URL.
-	if p.Surface && (m.GetOwnText() != "" || reversible(r, m.GetOptionId()) != "yes") {
-		q := url.Values{"id": {r.ID}, "option": {m.GetOptionId()}, "v": {strconv.FormatInt(r.Version, 10)}}
-		if m.GetOwnText() != "" {
-			q.Set("own_text", m.GetOwnText())
-		}
-		u := p.fleet + confirm.Path + "?" + q.Encode()
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionConfirmRequired, fmt.Errorf("confirm this answer at %s", u))
+	if err := confirmFirst(p, r, m.GetOptionId(), m.GetOwnText()); err != nil {
+		return nil, err
 	}
 	// The owner's choice can stand while its writer cannot resume to read it
 	// (decisions.ErrNotDelivered): the answer, with "not delivered" and the
@@ -301,6 +307,45 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 	return connect.NewResponse(res), nil
 }
 
+// confirmFirst is the surface rule (docs/adr/0082 §7), for any kind's card
+// view: own words, or an option not reversible "yes", are refused with core's
+// confirm URL. The page shows the surface's own words exactly, so they ride
+// the URL.
+func confirmFirst(p Principal, r decisions.Record, optionID, ownText string) error {
+	if !p.Surface || (ownText == "" && reversible(r, optionID) == "yes") {
+		return nil
+	}
+	q := url.Values{"id": {r.ID}, "option": {optionID}, "v": {strconv.FormatInt(r.Version, 10)}}
+	if ownText != "" {
+		q.Set("own_text", ownText)
+	}
+	u := p.fleet + confirm.Path + "?" + q.Encode()
+	return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionConfirmRequired, fmt.Errorf("confirm this answer at %s", u))
+}
+
+// answerOption is AnswerDecision by a question's, permission's or plan's
+// card view (docs/adr/0082 §5): an admin's, in the console or past the
+// surface rule, mapped by decisions.AnswerOption onto the answer
+// RespondToPermission, ApprovePlan and AnswerQuestion give, without their
+// thread checks, as an admin's in the console has none.
+func (s *Server) answerOption(ctx context.Context, p Principal, r decisions.Record, optionID, ownText string) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
+	if err := validMessage(ownText); err != nil {
+		return nil, err
+	}
+	if err := confirmFirst(p, r, optionID, ownText); err != nil {
+		return nil, err
+	}
+	a, err := decisions.AnswerOption(r, optionID, ownText)
+	if err != nil {
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, err)
+	}
+	n, err := s.answer(ctx, p, r, a)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}), nil
+}
+
 // cardAnswerErr: an expired or stale card is keyed, so the console says
 // which and that nothing was done; a reply not a human's is refused.
 func cardAnswerErr(ctx context.Context, err error) error {
@@ -316,8 +361,9 @@ func cardAnswerErr(ctx context.Context, err error) error {
 }
 
 // ConfirmCard is the confirm page's answer (docs/adr/0082 §7): id's, as an
-// admin in the console, on the card exactly as the page showed it, so a card
-// changed since (its Version moved) is stale and nothing is done. It says,
+// admin in the console, on any decision with a card view exactly as the page
+// showed it, so one changed since (its Version moved) is stale and nothing
+// is done. It says,
 // as the console does, whether the agent will read the answer, and why not.
 func (s *Server) ConfirmCard(ctx context.Context, id auth.Identity, decisionID, optionID, ownText string, version int64) (bool, string, error) {
 	p := Principal{Member: &id}
@@ -325,7 +371,7 @@ func (s *Server) ConfirmCard(ctx context.Context, id auth.Identity, decisionID, 
 		return false, "", errNoDecision
 	}
 	r, err := s.decisions.Get(ctx, decisionID)
-	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind != decisions.Card || !s.visible(p, r))) {
+	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (cardOf(r) == nil || !s.visible(p, r))) {
 		return false, "", errNoDecision
 	}
 	if err != nil {
@@ -334,14 +380,19 @@ func (s *Server) ConfirmCard(ctx context.Context, id auth.Identity, decisionID, 
 	if r.Version != version {
 		return false, "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, decisions.ErrStale)
 	}
-	res, err := s.answerCard(ctx, p, r, &agentfleetv1.AnswerDecisionRequest{DecisionId: decisionID, OptionId: optionID, OwnText: ownText})
+	var res *connect.Response[agentfleetv1.AnswerDecisionResponse]
+	if r.Kind == decisions.Card {
+		res, err = s.answerCard(ctx, p, r, &agentfleetv1.AnswerDecisionRequest{DecisionId: decisionID, OptionId: optionID, OwnText: ownText})
+	} else {
+		res, err = s.answerOption(ctx, p, r, optionID, ownText)
+	}
 	if err != nil {
 		return false, "", err
 	}
 	return res.Msg.GetDelivered(), res.Msg.GetNotDeliveredReason(), nil
 }
 
-// reversible is the card option's reversible, "" for an unknown option.
+// reversible is the card view option's reversible, "" for an unknown option.
 func reversible(r decisions.Record, optionID string) string {
 	for _, o := range cardOf(r).GetOptions() {
 		if o.GetId() == optionID {

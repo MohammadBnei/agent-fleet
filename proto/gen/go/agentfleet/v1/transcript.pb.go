@@ -697,7 +697,12 @@ type Card struct {
 	// The definition of the session that drafted it.
 	WriterDefinition string `protobuf:"bytes,6,opt,name=writer_definition,json=writerDefinition,proto3" json:"writer_definition,omitempty"`
 	// "agent" or "core".
-	DraftedBy     string `protobuf:"bytes,7,opt,name=drafted_by,json=draftedBy,proto3" json:"drafted_by,omitempty"`
+	DraftedBy string `protobuf:"bytes,7,opt,name=drafted_by,json=draftedBy,proto3" json:"drafted_by,omitempty"`
+	// Core-filled, the full request behind a question, permission or plan
+	// decision's card view (docs/adr/0082 §5): a question's text and option
+	// descriptions, a permission's canonical input as JSON, the full plan.
+	// Empty for a drafted card.
+	Detail        string `protobuf:"bytes,8,opt,name=detail,proto3" json:"detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -781,6 +786,13 @@ func (x *Card) GetDraftedBy() string {
 	return ""
 }
 
+func (x *Card) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
 var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
@@ -837,7 +849,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
 	"reversible\x18\x04 \x01(\tR\n" +
 	"reversible\x12 \n" +
-	"\vrecommended\x18\x05 \x01(\bR\vrecommended\"\x8b\x02\n" +
+	"\vrecommended\x18\x05 \x01(\bR\vrecommended\"\xa3\x02\n" +
 	"\x04Card\x12\x10\n" +
 	"\x03ask\x18\x01 \x01(\tR\x03ask\x124\n" +
 	"\asubject\x18\x02 \x01(\v2\x1a.agentfleet.v1.CardSubjectR\asubject\x123\n" +
@@ -847,7 +859,8 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"expires_at\x18\x05 \x01(\tR\texpiresAt\x12+\n" +
 	"\x11writer_definition\x18\x06 \x01(\tR\x10writerDefinition\x12\x1d\n" +
 	"\n" +
-	"drafted_by\x18\a \x01(\tR\tdraftedBy*\xe7\x04\n" +
+	"drafted_by\x18\a \x01(\tR\tdraftedBy\x12\x16\n" +
+	"\x06detail\x18\b \x01(\tR\x06detail*\xe7\x04\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +

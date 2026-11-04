@@ -38,15 +38,27 @@ func setup() (Config, *fake) {
 		{Id: "1", Label: "keep", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
 		{Id: "2", Label: "close all", Reversible: "no", Effect: &agentfleetv1.CardEffect{Verb: "close_threads"}},
 	}}
+	perm := &agentfleetv1.Card{Ask: "Run Bash?", Detail: `{"command":"<script>alert(1)</script>"}`, Options: []*agentfleetv1.CardOption{
+		{Id: "allow", Label: "Allow once", Reversible: "no", Effect: &agentfleetv1.CardEffect{Verb: "grant"}},
+		{Id: "deny", Label: "Deny", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "deny"}},
+	}}
 	return Config{
 		Fleet: fleet, Key: []byte("k"), AdminOrigins: []string{"https://game.bnei.dev"}, Now: func() time.Time { return now },
 		Load: func(_ context.Context, id string) (decisions.Record, error) {
-			if id != "d1" {
-				return decisions.Record{}, decisions.ErrNotFound
+			switch id {
+			case "d1":
+				return decisions.Record{ID: "d1", Kind: decisions.Card, State: decisions.Open, Version: 3}, nil
+			case "p1":
+				return decisions.Record{ID: "p1", Kind: decisions.Permission, State: decisions.Open, Version: 3}, nil
 			}
-			return decisions.Record{ID: "d1", Kind: decisions.Card, State: decisions.Open, Version: 3}, nil
+			return decisions.Record{}, decisions.ErrNotFound
 		},
-		Card: func(decisions.Record) *agentfleetv1.Card { return card },
+		Card: func(r decisions.Record) *agentfleetv1.Card {
+			if r.Kind == decisions.Permission {
+				return perm
+			}
+			return card
+		},
 		Answer: func(_ context.Context, _ auth.Identity, _, _, own string, v int64) (bool, string, error) {
 			f.calls++
 			f.gotOwn, f.version = own, v
@@ -284,5 +296,39 @@ func TestReauthOwnWordsSize(t *testing.T) {
 	}
 	if w := get(c, stale, "id=d1&option=&v=3&own_text=ship"); !strings.Contains(w.Body.String(), "own_text%3Dship") {
 		t.Errorf("short: %s", w.Body)
+	}
+}
+
+// A permission's card view confirms like a card: its input shown escaped.
+func TestGetPermission(t *testing.T) {
+	c, _ := setup()
+	w := get(c, owner, "id=p1&option=allow&v=3")
+	if b := w.Body.String(); w.Code != http.StatusOK || strings.Contains(b, "<script>") ||
+		!strings.Contains(b, `<pre style="white-space:pre-wrap">{&#34;command&#34;:&#34;&lt;script&gt;alert(1)&lt;/script&gt;&#34;}</pre>`) ||
+		!strings.Contains(b, "Lets the agent run exactly this, once (irreversible)") {
+		t.Errorf("allow: %d %s", w.Code, b)
+	}
+	if w := get(c, owner, "id=p1&option=deny&v=3"); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "reversible") {
+		t.Errorf("deny: %d %s", w.Code, w.Body)
+	}
+	if w := get(c, owner, "id=p1&option=allow&v=2"); w.Code != http.StatusConflict {
+		t.Errorf("stale version: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestEffectText(t *testing.T) {
+	s := &agentfleetv1.CardSubject{Repo: "o/r", Kind: "repo"}
+	for verb, want := range map[string]string{
+		"grant":         "Lets the agent run exactly this, once",
+		"deny":          "Refuses; the agent is told",
+		"approve_plan":  "The agent leaves plan mode and starts the work",
+		"keep_planning": "The agent keeps planning",
+		"choose":        "Sends your choice to the agent",
+		"handoff":       "Sends your choice to the agent",
+		"close_threads": "Closes every thread on o/r",
+	} {
+		if got := effectText(&agentfleetv1.CardOption{Effect: &agentfleetv1.CardEffect{Verb: verb}}, s); got != want {
+			t.Errorf("%s: %q", verb, got)
+		}
 	}
 }

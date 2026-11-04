@@ -189,6 +189,16 @@ func TestAnswerDecision_Card(t *testing.T) {
 	if ok, _, err := s.ConfirmCard(ctx, rootID, surfaceCard, "", "later", rec.Version); err != nil || !ok || state(surfaceCard) != decisions.Answered {
 		t.Errorf("ConfirmCard: %v, %s", err, state(surfaceCard))
 	}
+	// A confirmed close_threads is a card's answer still: its threads close.
+	writer7 := thread("github/o/r/pr/7")
+	closeCard := draft(writer7, 7, closeAll, keep)
+	rec, _ = decs.Get(ctx, closeCard)
+	if _, _, err := s.ConfirmCard(ctx, rootID, closeCard, "1", "", rec.Version); err != nil {
+		t.Errorf("ConfirmCard close_threads: %v", err)
+	}
+	if got, _ := store.Get(ctx, writer7); got.ArchivedAt == nil {
+		t.Error("a confirmed close_threads left its thread open")
+	}
 	yesCard := draft(thread("github/o/r/pr/6"), 6, keep, closeAll)
 	if err := fromSurface(&agentfleetv1.AnswerDecisionRequest{DecisionId: yesCard, OptionId: "1"}); err != nil || state(yesCard) != decisions.Answered {
 		t.Errorf("a surface's reversible yes: %v, %s", err, state(yesCard))

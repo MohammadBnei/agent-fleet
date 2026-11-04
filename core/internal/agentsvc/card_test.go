@@ -74,18 +74,34 @@ func TestAnswerCard_SurfaceConfirm(t *testing.T) {
 	}
 }
 
-// A surface shows an admin cards only, never a permission, plan or question.
+// A surface shows an admin every kind (ListDecisions defaults it to cards),
+// and a member none.
 func TestVisible_Surface(t *testing.T) {
 	admin := Principal{Member: &auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup}}, Origin: "https://game.bnei.dev", Surface: true}
 	member := Principal{Member: &auth.Identity{Sub: "alice"}, Origin: admin.Origin, Surface: true}
 	for _, k := range []decisions.Kind{decisions.Card, decisions.Permission, decisions.Plan, decisions.Question} {
 		r := decisions.Record{Kind: k, State: decisions.Open}
-		if got := (&Server{}).visible(admin, r); got != (k == decisions.Card) {
-			t.Errorf("admin on a surface sees a %s: %v", k, got)
+		if !(&Server{}).visible(admin, r) {
+			t.Errorf("admin on a surface does not see a %s", k)
 		}
 		if (&Server{}).visible(member, r) {
 			t.Errorf("member on a surface sees a %s", k)
 		}
+	}
+}
+
+// The surface rule holds for a permission's card view too: allowing is
+// reversible "no", so it goes through the confirm page before the store;
+// denying is "yes" and passes.
+func TestAnswerOption_SurfaceConfirm(t *testing.T) {
+	surface := Principal{Member: &auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup}}, Origin: "https://game.bnei.dev", Surface: true, fleet: "https://fleet.bnei.dev"}
+	r := decisions.Record{ID: "p1", Kind: decisions.Permission, State: decisions.Open, Payload: `{"tool":"Bash","input":{"command":"ls"}}`, Version: 3}
+	_, err := (&Server{}).answerOption(context.Background(), surface, r, "allow", "")
+	if errkeys.Of(err) != errkeys.KeyDecisionConfirmRequired || !strings.HasSuffix(err.Error(), "https://fleet.bnei.dev/decisions/confirm?id=p1&option=allow&v=3") {
+		t.Errorf("allow from a surface: %v", err)
+	}
+	if err := confirmFirst(surface, r, "deny", ""); err != nil {
+		t.Errorf("deny from a surface: %v", err)
 	}
 }
 

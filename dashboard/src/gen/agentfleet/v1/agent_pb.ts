@@ -1063,7 +1063,8 @@ export type Decision = Message<"agentfleet.v1.Decision"> & {
   interrupted: boolean;
 
   /**
-   * A card's, set only for DECISION_KIND_CARD.
+   * The decision as a card (docs/adr/0082 §5): a card's own, or the view core
+   * builds for a question, permission or plan. Unset when none can be built.
    *
    * @generated from field: agentfleet.v1.Card card = 16;
    */
