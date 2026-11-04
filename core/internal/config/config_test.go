@@ -159,4 +159,8 @@ func TestLoadDevOrigins(t *testing.T) {
 	if _, err := Load(env(gated)); err == nil || !strings.Contains(err.Error(), "gate is on") {
 		t.Errorf("gated core: %v; want a refusal", err)
 	}
+	// FLEET_ADMIN_ORIGINS takes http only with the gate off (a local game).
+	if c, err := Load(env(with(map[string]string{"FLEET_ADMIN_ORIGINS": "http://127.0.0.1:7410"}))); err != nil || !reflect.DeepEqual(c.AdminOrigins, []string{"http://127.0.0.1:7410"}) {
+		t.Errorf("admin origin, gate off: %q, %v", c.AdminOrigins, err)
+	}
 }

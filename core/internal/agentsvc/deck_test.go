@@ -25,7 +25,8 @@ import (
 
 // asSub stands in for the listeners: the principal is the member named by
 // the X-Sub header, in the audience group unless it is "carol", and "root" is
-// in platform-admins. X-Origin makes the call an island's.
+// in platform-admins. X-Origin makes the call an island's, and X-Surface a
+// surface's (docs/adr/0082 §7).
 type asSub struct{}
 
 func (asSub) principal(ctx context.Context, h http.Header) context.Context {
@@ -37,7 +38,8 @@ func (asSub) principal(ctx context.Context, h http.Header) context.Context {
 	case "root":
 		groups = []string{auth.RequiredGroup}
 	}
-	return withPrincipal(ctx, Principal{Member: &auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}, Origin: h.Get("X-Origin")})
+	return withPrincipal(ctx, Principal{Member: &auth.Identity{Sub: sub, Email: sub + "@bnei.dev", Groups: groups}, Origin: h.Get("X-Origin"),
+		Surface: h.Get("X-Surface") != "", fleet: "https://fleet.bnei.dev"})
 }
 
 func (a asSub) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {

@@ -104,7 +104,7 @@ func TestMemberListener(t *testing.T) {
 			return next(ctx, req)
 		}
 	})
-	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(setID, MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{"https://opus.bnei.dev"} })))
+	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(setID, MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{"https://opus.bnei.dev"} }, nil)))
 	mux := http.NewServeMux()
 	mux.Handle(path, h)
 	hs := httptest.NewServer(mux)
@@ -166,7 +166,7 @@ func TestOriginFence(t *testing.T) {
 		}
 	})
 	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(setID,
-		MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{"https://opus.bnei.dev"} })))
+		MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{"https://opus.bnei.dev"} }, nil)))
 	mux := http.NewServeMux()
 	mux.Handle(path, h)
 	hs := httptest.NewServer(mux)
@@ -218,7 +218,7 @@ func TestDevIdentityAndOrigins(t *testing.T) {
 	}}
 	dev := auth.DevInterceptor(auth.Identity{Sub: "dev", Email: "dev@localhost", Groups: []string{auth.RequiredGroup}})
 	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(dev,
-		MemberInterceptor("", nil, "http://127.0.0.1:7410")))
+		MemberInterceptor("", nil, nil, "http://127.0.0.1:7410")))
 	mux := http.NewServeMux()
 	mux.Handle(path, h)
 	hs := httptest.NewServer(mux)
@@ -244,5 +244,32 @@ func TestDevIdentityAndOrigins(t *testing.T) {
 		if _, err := list(o); connect.CodeOf(err) != connect.CodePermissionDenied {
 			t.Errorf("origin %q: %v; want PermissionDenied", o, err)
 		}
+	}
+}
+
+// A surface (docs/adr/0082 §7) calls the deck's four card calls, nothing else.
+func TestAllowed_Surface(t *testing.T) {
+	surface := Principal{Member: &auth.Identity{Sub: "a", Groups: []string{auth.RequiredGroup}}, Origin: "https://game.bnei.dev", Surface: true}
+	for proc := range table {
+		want := slices.Contains(surfaceCalls, proc)
+		if got := allowed(proc, surface); got != want {
+			t.Errorf("surface %s: %v, want %v", proc, got, want)
+		}
+	}
+}
+
+// An admin origin is a surface, even when a definition embeds it; its
+// principal keeps the Origin.
+func TestMemberInterceptor_Surface(t *testing.T) {
+	game := "https://game.bnei.dev"
+	m := MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{game} }, []string{game}).(memberAuth)
+	ctx := auth.WithIdentity(context.Background(), auth.Identity{Sub: "a"})
+	h := http.Header{"Origin": {game}}
+	ctx, err := m.principal(ctx, agentfleetv1connect.AgentServiceListDecisionsProcedure, h)
+	if p, _ := FromContext(ctx); err != nil || !p.Surface || p.Origin != game || p.fleet != "https://fleet.bnei.dev" {
+		t.Errorf("surface principal: %+v, %v", p, err)
+	}
+	if _, err := m.principal(auth.WithIdentity(context.Background(), auth.Identity{Sub: "a"}), agentfleetv1connect.AgentServiceCreateThreadProcedure, h); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("surface CreateThread: %v", err)
 	}
 }

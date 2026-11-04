@@ -48,6 +48,13 @@
   read-only token); the sidecar's `submit_review` → `CoreService.SubmitReview` → `ProvisionerService.PostReview`,
   which posts the review and the `agent-review` status. First reviewer: `definitions/agent-reviewer-agent-fleet.yaml`,
   opened by the `bridge` client. Rulesets requiring `agent-review` are not set yet.
+- **Built (slice 6):** surfaces, §6 and §7 as amended: `FLEET_ADMIN_ORIGINS` (exact origins) is CORS-allowed on
+  AgentService and marks a call `Principal.Surface` (lists, gets, watches and answers cards only); a surface answers a
+  reversible "yes" option in place, anything else gets `agent.decision_confirm_required` with core's confirm URL.
+  `core/internal/confirm` serves `/decisions/confirm` behind the gate: core renders the stored option, needs a sign-in
+  under 10 minutes old (login `reauth=1`: `prompt=login`, `max_age=0`, the ID token's `auth_time` in the cookie's
+  `a`), and answers on a signed same-origin POST through `agentsvc.ConfirmCard`, then returns to an admin origin.
+  The game's in-place answering is a later ukubi-game PR.
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
@@ -165,21 +172,26 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      text is T0.
    - Core re-checks the pinned state when the owner answers and again at hand-off. On a mismatch the card goes stale
      and must be re-drafted.
-   - Error keys (ADR-0081): `decision.stale`, `decision.expired`, `decision.fresh_auth_required`.
+   - Error keys (ADR-0081): `agent.decision_stale`, `agent.decision_expired`, `agent.decision_confirm_required`.
+     *(Amended, slice 6: `fresh_auth_required` is folded into the confirm page, which asks for the fresh sign-in.)*
 7. **Answering.**
-   - Only `Admin()` answers: in the console, in an island, or in another of our app surfaces (the mountain 3D game),
+   - Only `Admin()` answers: in the console or in another of our app surfaces (the mountain 3D game),
      provided the answer call goes from the browser straight to core under core's own OIDC session, never through
      another app's server or credential.
-   - Island and embedded surfaces: core's `frame-ancestors` lists only our app origins; a confirm step re-shows the
-     effect as core renders it and needs a second deliberate action; an irreversible effect needs a fresh sign-in once
-     the session is older than 10 minutes.
-   - A surface with its own UI (the game) calls the card methods cross-origin with credentials. Core's CORS lists
-     only configured origins (`https://game.bnei.dev`; `http://127.0.0.1:7410` only in a local `--dev` core). Sign-in
-     is a top-level redirect to core with a return URL limited to those origins. `decision.fresh_auth_required` carries
-     that sign-in URL.
-   - Since that surface draws its own confirm step, a script injected into it could answer for the owner. So an
-     irreversible effect answered from such a surface always passes core's own top-level confirmation page, whatever
-     the session's age. A reversible one may be answered in place.
+   - *(Amended, slice 6, owner 2026-11-04.)* Surfaces are only the origins in `FLEET_ADMIN_ORIGINS`
+     (`https://game.bnei.dev`), exact origins, never merged with `embed.origins` and checked before them. Islands stay
+     member-only: they show cards read-only and link to the console.
+   - A surface calls the card methods cross-origin with credentials, and only those (list, get, watch, answer). A
+     script injected into it can click whatever it draws, so only an option that is reversible "yes" is answered in
+     place. Any other option, and any answer in the owner's own words, is refused with
+     `agent.decision_confirm_required`, carrying core's confirm URL (`/decisions/confirm?id&option&v`, and
+     `own_text`, which the page shows read-only and answers exactly).
+   - The confirm page is core's, Go-rendered at that one path, top level only (`frame-ancestors 'none'`, as every
+     response): it shows the option and effect from the stored card, never answers on GET, and answers on a POST
+     with a signed token, `Origin` core's own. It needs a sign-in under 10 minutes old, else it links (top level) to
+     login with `reauth=1` (`prompt=login`, `max_age=0`); the callback then requires the ID token's `auth_time` within
+     2 minutes and fails closed without it, and the session keeps `auth_time`, never the time of the callback.
+     Afterwards it returns to a URL on one of the admin origins, exactly.
    - Creating a card sends a notification. An expired card closes as "no action": ignoring never approves.
 8. **Load.**
    - At most one open card per subject; later inputs fold into it (`FoldEvent`).
@@ -258,5 +270,5 @@ Slice 1 is built. Slices, in order:
 3. Removing core's taint.
 4. The bridge's events and trust facts.
 5. The merge right: the `agent-review` status and the rulesets.
-6. Island and embedded surfaces, with `frame-ancestors`.
+6. Admin surfaces (the game) and core's confirm page; islands stay read-only, `frame-ancestors 'none'` everywhere.
 7. Folding the old decision kinds into cards.

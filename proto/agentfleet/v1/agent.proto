@@ -25,6 +25,9 @@ enum AgentErrorKey {
   AGENT_ERROR_KEY_DECISION_EXPIRED = 4 [(ukubi.errors.v1.key) = "agent.decision_expired"];
   // The card was replaced by a newer one on the same subject: nothing was done.
   AGENT_ERROR_KEY_DECISION_STALE = 5 [(ukubi.errors.v1.key) = "agent.decision_stale"];
+  // A surface (FLEET_ADMIN_ORIGINS) chose own words or an option not reversible "yes": nothing was done; the
+  // message carries core's confirm page URL (docs/adr/0082 §7).
+  AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED = 6 [(ukubi.errors.v1.key) = "agent.decision_confirm_required"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients
@@ -63,6 +66,7 @@ service AgentService {
   rpc AnswerDecision(AnswerDecisionRequest) returns (AnswerDecisionResponse) {
     option (ukubi.errors.v1.keys) = "agent.decision_expired";
     option (ukubi.errors.v1.keys) = "agent.decision_stale";
+    option (ukubi.errors.v1.keys) = "agent.decision_confirm_required";
   }
   // Sends the decisions version, then each change: the version reached and the ids that changed. It ends after 90 s;
   // the client reconnects with since_version and re-reads the ids it holds.

@@ -51,3 +51,12 @@ func TestWithDev(t *testing.T) {
 		t.Errorf("both: %q", got)
 	}
 }
+
+// The confirm page's key is the session key in use, bound to its purpose: never the cookie key itself, and an old
+// verify-only key after the comma does not change it.
+func TestDeriveKey(t *testing.T) {
+	k := deriveKey("new, old", "confirm")
+	if !slices.Equal(k, deriveKey("new", "confirm")) || slices.Equal(k, deriveKey("new", "other")) || slices.Equal(k, []byte("new")) {
+		t.Errorf("deriveKey not bound to the first key and the purpose")
+	}
+}

@@ -37,7 +37,7 @@ func TestSigner_CookieWithoutSubStillVerifies(t *testing.T) {
 	b := base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil,
 		`{"e":"me@bnei.dev","g":["platform-admins"],"x":%d}`, time.Now().Add(time.Hour).Unix()))
 	id, ok := s.Verify(b + "." + s.mac(s.keys[0], b))
-	if !ok || id.Email != "me@bnei.dev" || id.Sub != "" {
+	if !ok || id.Email != "me@bnei.dev" || id.Sub != "" || id.AuthAt != 0 {
 		t.Fatalf("old-shape cookie: ok=%v id=%+v", ok, id)
 	}
 	if id, _ := s.Verify(s.Sign(Identity{Sub: "abc", Email: "me@bnei.dev"})); id.Sub != "abc" {
@@ -149,9 +149,20 @@ func TestSafeReturnTo(t *testing.T) {
 		"http://evil.com/x":       "/",
 		"evil.com":                "/",
 		"//evil.com/sessions/abc": "/",
+		"/\\evil.com":             "/",
+		// docs/adr/0082 §7: an admin origin, compared exactly.
+		"https://game.bnei.dev/play?x=1":      "https://game.bnei.dev/play?x=1",
+		"https://game.bnei.dev":               "https://game.bnei.dev",
+		"https://game.bnei.dev@evil.com/":     "/",
+		"https://game.bnei.dev.evil.com/":     "/",
+		"http://game.bnei.dev/":               "/",
+		"https://game.bnei.dev:8443/":         "/",
+		"https://game.bnei.dev\\@evil.com/":   "/",
+		"https:\\\\game.bnei.dev/":            "/",
+		"https://game.bnei.dev/\nSet-Cookie:": "/",
 	} {
-		if got := safeReturnTo(in); got != want {
-			t.Errorf("safeReturnTo(%q) = %q, want %q", in, got, want)
+		if got := SafeReturnTo(in, []string{"https://game.bnei.dev"}); got != want {
+			t.Errorf("SafeReturnTo(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -286,5 +297,21 @@ func TestGate_RefusesTheWorkerPodBypassFrom200(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("got %d, want 401", rec.Code)
+	}
+}
+
+// docs/adr/0082 §7: ten minutes since the owner typed a credential, and an
+// unknown auth time (an older cookie) is never fresh.
+func TestFresh(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	for at, want := range map[int64]bool{
+		0:                false,
+		now.Unix():       true,
+		now.Unix() - 600: true,
+		now.Unix() - 601: false,
+	} {
+		if got := Fresh(Identity{AuthAt: at}, now); got != want {
+			t.Errorf("Fresh(AuthAt=%d) = %v, want %v", at, got, want)
+		}
 	}
 }

@@ -202,6 +202,8 @@ ingress; what shipped is narrower, and the webhook does not.*
   origin allowlist. *(Amended by [ADR-0068](0068-islands.md): there is no `/embed/*`;
   islands are web components in the host page, so `frame-ancestors 'none'`
   holds on every path, and each host must send `frame-ancestors 'self'`.)*
+  *(ADR-0082 §7, slice 6: unchanged by the card surfaces. Core's confirm page
+  sends its own CSP, still `frame-ancestors 'none'`: it is opened top level.)*
 - `frame-ancestors` only. A full script/style CSP for the SPA is a separate
   piece of work and is not claimed here.
 

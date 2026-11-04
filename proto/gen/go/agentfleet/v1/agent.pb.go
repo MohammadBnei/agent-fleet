@@ -44,6 +44,9 @@ const (
 	AgentErrorKey_AGENT_ERROR_KEY_DECISION_EXPIRED AgentErrorKey = 4
 	// The card was replaced by a newer one on the same subject: nothing was done.
 	AgentErrorKey_AGENT_ERROR_KEY_DECISION_STALE AgentErrorKey = 5
+	// A surface (FLEET_ADMIN_ORIGINS) chose own words or an option not reversible "yes": nothing was done; the
+	// message carries core's confirm page URL (docs/adr/0082 §7).
+	AgentErrorKey_AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED AgentErrorKey = 6
 )
 
 // Enum value maps for AgentErrorKey.
@@ -55,14 +58,16 @@ var (
 		3: "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
 		4: "AGENT_ERROR_KEY_DECISION_EXPIRED",
 		5: "AGENT_ERROR_KEY_DECISION_STALE",
+		6: "AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED",
 	}
 	AgentErrorKey_value = map[string]int32{
-		"AGENT_ERROR_KEY_UNSPECIFIED":            0,
-		"AGENT_ERROR_KEY_DEFINITION_CHANGED":     1,
-		"AGENT_ERROR_KEY_THREAD_CAP":             2,
-		"AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE": 3,
-		"AGENT_ERROR_KEY_DECISION_EXPIRED":       4,
-		"AGENT_ERROR_KEY_DECISION_STALE":         5,
+		"AGENT_ERROR_KEY_UNSPECIFIED":               0,
+		"AGENT_ERROR_KEY_DEFINITION_CHANGED":        1,
+		"AGENT_ERROR_KEY_THREAD_CAP":                2,
+		"AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE":    3,
+		"AGENT_ERROR_KEY_DECISION_EXPIRED":          4,
+		"AGENT_ERROR_KEY_DECISION_STALE":            5,
+		"AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED": 6,
 	}
 )
 
@@ -3195,14 +3200,15 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1f\n" +
 	"\vchanged_ids\x18\x02 \x03(\tR\n" +
-	"changedIds*\xfa\x02\n" +
+	"changedIds*\xce\x03\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
 	"\x1aAGENT_ERROR_KEY_THREAD_CAP\x10\x02\x1a\x14\xc2\xf3\x18\x10agent.thread_cap\x12L\n" +
 	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x03\x1a \xc2\xf3\x18\x1cagent.definition_unavailable\x12@\n" +
 	" AGENT_ERROR_KEY_DECISION_EXPIRED\x10\x04\x1a\x1a\xc2\xf3\x18\x16agent.decision_expired\x12<\n" +
-	"\x1eAGENT_ERROR_KEY_DECISION_STALE\x10\x05\x1a\x18\xc2\xf3\x18\x14agent.decision_stale*\x97\x01\n" +
+	"\x1eAGENT_ERROR_KEY_DECISION_STALE\x10\x05\x1a\x18\xc2\xf3\x18\x14agent.decision_stale\x12R\n" +
+	")AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED\x10\x06\x1a#\xc2\xf3\x18\x1fagent.decision_confirm_required*\x97\x01\n" +
 	"\fDecisionKind\x12\x1d\n" +
 	"\x19DECISION_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DECISION_KIND_QUESTION\x10\x01\x12\x1c\n" +
@@ -3215,7 +3221,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\xba\x10\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\xdd\x10\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
@@ -3227,8 +3233,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x0eAnswerQuestion\x120.agentfleet.v1.AgentServiceAnswerQuestionRequest\x1a1.agentfleet.v1.AgentServiceAnswerQuestionResponse\x12T\n" +
 	"\vApprovePlan\x12!.agentfleet.v1.ApprovePlanRequest\x1a\".agentfleet.v1.ApprovePlanResponse\x12Z\n" +
 	"\rListDecisions\x12#.agentfleet.v1.ListDecisionsRequest\x1a$.agentfleet.v1.ListDecisionsResponse\x12T\n" +
-	"\vGetDecision\x12!.agentfleet.v1.GetDecisionRequest\x1a\".agentfleet.v1.GetDecisionResponse\x12\x91\x01\n" +
-	"\x0eAnswerDecision\x12$.agentfleet.v1.AnswerDecisionRequest\x1a%.agentfleet.v1.AnswerDecisionResponse\"2\xca\xf3\x18\x16agent.decision_expired\xca\xf3\x18\x14agent.decision_stale\x12_\n" +
+	"\vGetDecision\x12!.agentfleet.v1.GetDecisionRequest\x1a\".agentfleet.v1.GetDecisionResponse\x12\xb4\x01\n" +
+	"\x0eAnswerDecision\x12$.agentfleet.v1.AnswerDecisionRequest\x1a%.agentfleet.v1.AnswerDecisionResponse\"U\xca\xf3\x18\x16agent.decision_expired\xca\xf3\x18\x14agent.decision_stale\xca\xf3\x18\x1fagent.decision_confirm_required\x12_\n" +
 	"\x0eWatchDecisions\x12$.agentfleet.v1.WatchDecisionsRequest\x1a%.agentfleet.v1.WatchDecisionsResponse0\x01\x12N\n" +
 	"\tSetConfig\x12\x1f.agentfleet.v1.SetConfigRequest\x1a .agentfleet.v1.SetConfigResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +

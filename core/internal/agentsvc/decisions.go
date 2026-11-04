@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
+	"github.com/MohammadBnei/agent-fleet/core/internal/confirm"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
@@ -257,13 +261,25 @@ func (s *Server) AnswerDecision(ctx context.Context, req *connect.Request[agentf
 // archiving withdraws a thread's open decisions, and the card is one of them
 // when its writer is on the subject.
 func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record, m *agentfleetv1.AnswerDecisionRequest) (*connect.Response[agentfleetv1.AnswerDecisionResponse], error) {
-	if !p.Admin() {
+	if !p.AnswersCards() {
 		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only an admin answers a card"))
 	}
+	// docs/adr/0082 §7: a script on a surface's page can click whatever it
+	// draws, so only a reversible "yes" option is answered there; own words
+	// or anything else go through core's confirm page, before any effect.
 	// decisions.answerCard refuses anything but exactly one of option_id or
 	// own_text (ErrInvalid, InvalidArgument via cardAnswerErr).
 	if err := validMessage(m.GetOwnText()); err != nil {
 		return nil, err
+	}
+	// The page shows the surface's own words exactly, so they ride the URL.
+	if p.Surface && (m.GetOwnText() != "" || reversible(r, m.GetOptionId()) != "yes") {
+		q := url.Values{"id": {r.ID}, "option": {m.GetOptionId()}, "v": {strconv.FormatInt(r.Version, 10)}}
+		if m.GetOwnText() != "" {
+			q.Set("own_text", m.GetOwnText())
+		}
+		u := p.fleet + confirm.Path + "?" + q.Encode()
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionConfirmRequired, fmt.Errorf("confirm this answer at %s", u))
 	}
 	// The owner's choice can stand while its writer cannot resume to read it
 	// (decisions.ErrNotDelivered): the answer, with "not delivered" and the
@@ -297,6 +313,42 @@ func cardAnswerErr(ctx context.Context, err error) error {
 		return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, err)
 	}
 	return dashboard.AnswerErr(ctx, "agentsvc answer card", err)
+}
+
+// ConfirmCard is the confirm page's answer (docs/adr/0082 §7): id's, as an
+// admin in the console, on the card exactly as the page showed it, so a card
+// changed since (its Version moved) is stale and nothing is done. It says,
+// as the console does, whether the agent will read the answer, and why not.
+func (s *Server) ConfirmCard(ctx context.Context, id auth.Identity, decisionID, optionID, ownText string, version int64) (bool, string, error) {
+	p := Principal{Member: &id}
+	if uuid.Validate(decisionID) != nil {
+		return false, "", errNoDecision
+	}
+	r, err := s.decisions.Get(ctx, decisionID)
+	if errors.Is(err, decisions.ErrNotFound) || (err == nil && (r.Kind != decisions.Card || !s.visible(p, r))) {
+		return false, "", errNoDecision
+	}
+	if err != nil {
+		return false, "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	if r.Version != version {
+		return false, "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, decisions.ErrStale)
+	}
+	res, err := s.answerCard(ctx, p, r, &agentfleetv1.AnswerDecisionRequest{DecisionId: decisionID, OptionId: optionID, OwnText: ownText})
+	if err != nil {
+		return false, "", err
+	}
+	return res.Msg.GetDelivered(), res.Msg.GetNotDeliveredReason(), nil
+}
+
+// reversible is the card option's reversible, "" for an unknown option.
+func reversible(r decisions.Record, optionID string) string {
+	for _, o := range cardOf(r).GetOptions() {
+		if o.GetId() == optionID {
+			return o.GetReversible()
+		}
+	}
+	return ""
 }
 
 // closesThreads: the chosen option's effect is close_threads.

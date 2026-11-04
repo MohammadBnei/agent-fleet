@@ -3,6 +3,7 @@ package agentsvc
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +52,10 @@ func (s *Server) visible(p Principal, r decisions.Record) bool {
 	if p.Admin() {
 		return true
 	}
+	// A surface shows an admin cards only (docs/adr/0082 §7).
+	if p.Surface {
+		return r.Kind == decisions.Card && p.AnswersCards()
+	}
 	if r.Definition == nil {
 		return false
 	}
@@ -67,6 +72,9 @@ func decisionToProto(r decisions.Record) *agentfleetv1.Decision {
 		Interrupted: r.Interrupted, Card: cardOf(r),
 	}
 }
+
+// CardOf is cardOf for core's confirm page (docs/adr/0082 §7).
+func CardOf(r decisions.Record) *agentfleetv1.Card { return cardOf(r) }
 
 // cardOf is a card's payload, the protojson Card the decisions hook built,
 // with what the row knows better: who wrote it and when it expires. nil for
@@ -128,7 +136,7 @@ func (s *Server) ListDecisions(ctx context.Context, req *connect.Request[agentfl
 	}
 	f := decisions.Filter{
 		SubjectRepo: m.GetSubjectRepo(), SessionID: m.GetThreadId(),
-		Owner: p.owner(), Shared: p.Member != nil, Admin: p.Admin(),
+		Owner: p.owner(), Shared: p.Member != nil, Admin: p.Admin() || p.AnswersCards(),
 		Before: before, Limit: size + 1,
 	}
 	for _, st := range m.GetStates() {
@@ -148,6 +156,13 @@ func (s *Server) ListDecisions(ctx context.Context, req *connect.Request[agentfl
 	// A filter naming only unknown values matches nothing, not everything.
 	if len(f.States) < len(m.GetStates()) || len(f.Kinds) < len(m.GetKinds()) {
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("unknown decision state or kind"))
+	}
+	// A surface reads cards only (visible), so its pages are cards only too.
+	if p.Surface {
+		if len(f.Kinds) > 0 && !slices.Contains(f.Kinds, decisions.Card) {
+			return connect.NewResponse(&agentfleetv1.ListDecisionsResponse{}), nil
+		}
+		f.Kinds = []decisions.Kind{decisions.Card}
 	}
 	rows, err := s.decisions.List(ctx, f)
 	if err != nil {

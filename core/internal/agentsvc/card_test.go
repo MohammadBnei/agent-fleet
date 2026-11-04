@@ -46,6 +46,49 @@ func TestAnswerCard_Refusals(t *testing.T) {
 	}
 }
 
+// docs/adr/0082 §7: from a surface, own words or an option not reversible
+// "yes" (or none known) need the confirm page, before any effect; the URL
+// names the card's version.
+func TestAnswerCard_SurfaceConfirm(t *testing.T) {
+	admin := &auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup}}
+	surface := Principal{Member: admin, Origin: "https://game.bnei.dev", Surface: true, fleet: "https://fleet.bnei.dev"}
+	partial := strings.Replace(cardPayload, `"reversible":"no"`, `"reversible":"partial"`, 1)
+	for _, tc := range []struct {
+		name, payload, option, own, want string
+	}{
+		{"no", cardPayload, "1", "", "https://fleet.bnei.dev/decisions/confirm?id=c1&option=1&v=4"},
+		{"partial", partial, "1", "", "option=1&v=4"},
+		{"own text", cardPayload, "", "leave it", "option=&own_text=leave+it&v=4"},
+		{"unknown option", cardPayload, "9", "", "option=9&v=4"},
+	} {
+		r := decisions.Record{ID: "c1", Kind: decisions.Card, State: decisions.Open, Payload: tc.payload, Version: 4}
+		_, err := (&Server{}).answerCard(context.Background(), surface, r, &agentfleetv1.AnswerDecisionRequest{OptionId: tc.option, OwnText: tc.own})
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || errkeys.Of(err) != errkeys.KeyDecisionConfirmRequired || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v key %q", tc.name, err, errkeys.Of(err))
+		}
+	}
+	member := Principal{Member: &auth.Identity{Sub: "alice"}, Origin: surface.Origin, Surface: true}
+	r := decisions.Record{ID: "c1", Kind: decisions.Card, State: decisions.Open, Payload: cardPayload}
+	if _, err := (&Server{}).answerCard(context.Background(), member, r, &agentfleetv1.AnswerDecisionRequest{OptionId: "2"}); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("a member on a surface: %v", err)
+	}
+}
+
+// A surface shows an admin cards only, never a permission, plan or question.
+func TestVisible_Surface(t *testing.T) {
+	admin := Principal{Member: &auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup}}, Origin: "https://game.bnei.dev", Surface: true}
+	member := Principal{Member: &auth.Identity{Sub: "alice"}, Origin: admin.Origin, Surface: true}
+	for _, k := range []decisions.Kind{decisions.Card, decisions.Permission, decisions.Plan, decisions.Question} {
+		r := decisions.Record{Kind: k, State: decisions.Open}
+		if got := (&Server{}).visible(admin, r); got != (k == decisions.Card) {
+			t.Errorf("admin on a surface sees a %s: %v", k, got)
+		}
+		if (&Server{}).visible(member, r) {
+			t.Errorf("member on a surface sees a %s", k)
+		}
+	}
+}
+
 func TestCardAnswerErr(t *testing.T) {
 	for _, tc := range []struct {
 		err  error
