@@ -169,4 +169,9 @@ message Card {
   string writer_definition = 6;
   // "agent" or "core".
   string drafted_by = 7;
+  // Core-filled, the full request behind a question, permission or plan
+  // decision's card view (docs/adr/0082 §5): a question's text and option
+  // descriptions, a permission's canonical input as JSON, the full plan.
+  // Empty for a drafted card.
+  string detail = 8;
 }

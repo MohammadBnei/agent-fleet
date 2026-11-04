@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -282,6 +283,49 @@ func TestDecisionDeck(t *testing.T) {
 		for _, id := range rootStream.Msg().GetChangedIds() {
 			delete(want, id)
 		}
+	}
+
+	// A surface (docs/adr/0082 §7) reads and hears of cards unless it names
+	// kinds; named, they come with their card views.
+	surfaced := func(h http.Header) {
+		h.Set("X-Origin", "https://game.bnei.dev")
+		h.Set("X-Surface", "1")
+	}
+	sreq := as("root", &agentfleetv1.WatchDecisionsRequest{})
+	surfaced(sreq.Header())
+	surfaceStream, err := c.WatchDecisions(sctx, sreq)
+	if err != nil || !surfaceStream.Receive() {
+		t.Fatalf("the surface's baseline: %v", err)
+	}
+	ask(console, "question", `{"questions":[]}`)
+	time.Sleep(100 * time.Millisecond) // a poll passes with only a question
+	card, err := s.decisions.Draft(ctx, transcr, decisions.Draft{SessionID: console, From: "system", Ask: "Keep it?",
+		Subject: &agentfleetv1.CardSubject{Repo: "o/r", Kind: "pr", Number: 1}, Options: []*agentfleetv1.CardOption{
+			{Label: "Keep", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}, Reversible: "yes"},
+			{Label: "Close", Effect: &agentfleetv1.CardEffect{Verb: "close_threads"}, Reversible: "no"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !surfaceStream.Receive() || !slices.Equal(surfaceStream.Msg().GetChangedIds(), []string{card.ID}) {
+		t.Errorf("the surface's change: %v, want only the card %s", surfaceStream.Msg(), card.ID)
+	}
+	surfaceList := func(kinds ...agentfleetv1.DecisionKind) []*agentfleetv1.Decision {
+		req := as("root", &agentfleetv1.ListDecisionsRequest{Kinds: kinds})
+		surfaced(req.Header())
+		r, err := c.ListDecisions(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Msg.GetDecisions()
+	}
+	if got := surfaceList(); len(got) != 1 || got[0].GetId() != card.ID {
+		t.Errorf("a surface's default deck: %v, want the card only", got)
+	}
+	perms := surfaceList(agentfleetv1.DecisionKind_DECISION_KIND_PERMISSION)
+	if len(perms) != 2 || slices.ContainsFunc(perms, func(d *agentfleetv1.Decision) bool {
+		return d.GetKind() != agentfleetv1.DecisionKind_DECISION_KIND_PERMISSION || d.GetCard().GetDetail() == "" || len(d.GetCard().GetOptions()) == 0
+	}) {
+		t.Errorf("a surface naming permissions: %v", perms)
 	}
 
 	// An archived thread's decisions leave the deck.

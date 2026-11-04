@@ -3,14 +3,12 @@ package agentsvc
 import (
 	"context"
 	"errors"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
@@ -52,9 +50,10 @@ func (s *Server) visible(p Principal, r decisions.Record) bool {
 	if p.Admin() {
 		return true
 	}
-	// A surface shows an admin cards only (docs/adr/0082 §7).
+	// A surface shows an admin every kind it asks for (docs/adr/0082 §7);
+	// ListDecisions and WatchDecisions default it to cards.
 	if p.Surface {
-		return r.Kind == decisions.Card && p.AnswersCards()
+		return p.AnswersCards()
 	}
 	if r.Definition == nil {
 		return false
@@ -76,16 +75,13 @@ func decisionToProto(r decisions.Record) *agentfleetv1.Decision {
 // CardOf is cardOf for core's confirm page (docs/adr/0082 §7).
 func CardOf(r decisions.Record) *agentfleetv1.Card { return cardOf(r) }
 
-// cardOf is a card's payload, the protojson Card the decisions hook built,
-// with what the row knows better: who wrote it and when it expires. nil for
-// any other kind, and for a payload that does not parse (the deck still
-// shows the row, by its ask).
+// cardOf is decisions.CardView, a card's stored payload or another kind's
+// built view, with what the row knows better: who wrote it and when it
+// expires. nil when there is none, a card's payload that does not parse
+// included (the deck still shows the row, by its ask).
 func cardOf(r decisions.Record) *agentfleetv1.Card {
-	if r.Kind != decisions.Card {
-		return nil
-	}
-	c := &agentfleetv1.Card{}
-	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(r.Payload), c); err != nil {
+	c := decisions.CardView(r)
+	if c == nil {
 		return nil
 	}
 	if r.Definition != nil {
@@ -157,11 +153,8 @@ func (s *Server) ListDecisions(ctx context.Context, req *connect.Request[agentfl
 	if len(f.States) < len(m.GetStates()) || len(f.Kinds) < len(m.GetKinds()) {
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("unknown decision state or kind"))
 	}
-	// A surface reads cards only (visible), so its pages are cards only too.
-	if p.Surface {
-		if len(f.Kinds) > 0 && !slices.Contains(f.Kinds, decisions.Card) {
-			return connect.NewResponse(&agentfleetv1.ListDecisionsResponse{}), nil
-		}
+	// A surface naming no kinds reads cards (docs/adr/0082 §7).
+	if p.Surface && len(f.Kinds) == 0 {
 		f.Kinds = []decisions.Kind{decisions.Card}
 	}
 	rows, err := s.decisions.List(ctx, f)
@@ -214,7 +207,8 @@ func (s *Server) WatchDecisions(ctx context.Context, req *connect.Request[agentf
 	err = s.decisions.Watch(ctx, req.Msg.GetSinceVersion(), func(version int64, changed []decisions.Record) error {
 		msg := &agentfleetv1.WatchDecisionsResponse{Version: version}
 		for _, r := range changed {
-			if s.visible(p, r) {
+			// A surface names no kinds here, so it hears of cards only.
+			if s.visible(p, r) && (!p.Surface || r.Kind == decisions.Card) {
 				msg.ChangedIds = append(msg.ChangedIds, r.ID)
 			}
 		}

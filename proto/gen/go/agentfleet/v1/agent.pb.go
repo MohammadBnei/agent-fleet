@@ -2324,7 +2324,8 @@ type Decision struct {
 	// An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
 	// the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.
 	Interrupted bool `protobuf:"varint,15,opt,name=interrupted,proto3" json:"interrupted,omitempty"`
-	// A card's, set only for DECISION_KIND_CARD.
+	// The decision as a card (docs/adr/0082 §5): a card's own, or the view core
+	// builds for a question, permission or plan. Unset when none can be built.
 	Card          *Card `protobuf:"bytes,16,opt,name=card,proto3" json:"card,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

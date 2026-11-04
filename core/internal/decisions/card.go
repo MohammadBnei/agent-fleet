@@ -203,7 +203,7 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 	if recommended > 1 {
 		return bad("at most one option is recommended")
 	}
-	c.ExpiresAt, c.WriterDefinition, c.DraftedBy = "", "", ""
+	c.ExpiresAt, c.WriterDefinition, c.DraftedBy, c.Detail = "", "", "", ""
 	return key, nil
 }
 

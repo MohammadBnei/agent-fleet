@@ -7,14 +7,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -44,6 +48,7 @@ func TestAnswerDecision(t *testing.T) {
 		Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
 		Model:     &definitions.Model{Default: "claude-opus-5", Allow: []string{"claude-opus-5"}},
 		Mode:      &definitions.Mode{Default: "auto", Allow: []string{"auto", "plan"}},
+		Embed:     &definitions.Embed{Origins: []string{"https://game.bnei.dev"}},
 	}
 	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")}
 	decs := decisions.NewStore(pool)
@@ -223,5 +228,70 @@ func TestAnswerDecision(t *testing.T) {
 	}
 	if d, _ := decs.Get(ctx, botReq); d.State != decisions.Open {
 		t.Errorf("after a refused withdraw: %s", d.State)
+	}
+
+	// docs/adr/0082 §5: an admin answers any kind by its card view's option,
+	// onto that kind's own answer, here on a thread it does not own.
+	opt := thread("private")
+	for _, tc := range []struct{ typ, payload, option, want string }{
+		{"permission_request", bash, "allow", `{"behavior":"allow"}`},
+		{"permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`, "allow", `"decisionId":"`},
+		{"permission_request", `{"tool":"ExitPlanMode","input":{"plan":"x"}}`, "keep_planning", `"behavior":"deny","message":"Keep planning."`},
+		{"question", `{"questions":[{"question":"which?","options":[{"label":"red"},{"label":"blue"}]}]}`, "q2", `"blue"`},
+	} {
+		id := ask(opt, tc.typ, tc.payload)
+		if e, err := answer("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: id, OptionId: tc.option}); err != nil || !strings.Contains(e.Text, tc.want) {
+			t.Errorf("option %s: %+v, %v", tc.option, e, err)
+		}
+	}
+	// From a surface: allowing (reversible "no") needs the confirm page and
+	// does nothing; denying ("yes") is answered in place. The page's
+	// ConfirmCard refuses a decision changed since it was shown.
+	fromSurface := func(m *agentfleetv1.AnswerDecisionRequest) error {
+		req := as("root", m)
+		req.Header().Set("X-Origin", "https://game.bnei.dev")
+		req.Header().Set("X-Surface", "1")
+		_, err := c.AnswerDecision(ctx, req)
+		return err
+	}
+	state := func(id string) string {
+		d, _ := decs.Get(ctx, id)
+		return d.State
+	}
+	allow := ask(opt, "permission_request", bash)
+	rec, _ := decs.Get(ctx, allow)
+	u := "https://fleet.bnei.dev/decisions/confirm?id=" + allow + "&option=allow&v=" + strconv.FormatInt(rec.Version, 10)
+	if err := fromSurface(&agentfleetv1.AnswerDecisionRequest{DecisionId: allow, OptionId: "allow"}); errkeys.Of(err) != errkeys.KeyDecisionConfirmRequired ||
+		!strings.HasSuffix(err.Error(), u) || state(allow) != decisions.Open {
+		t.Errorf("a surface allowing: %v, %s", err, state(allow))
+	}
+	rootID := auth.Identity{Sub: "root", Email: "root@bnei.dev", Groups: []string{auth.RequiredGroup}}
+	if _, _, err := s.ConfirmCard(ctx, rootID, allow, "allow", "", rec.Version-1); errkeys.Of(err) != errkeys.KeyDecisionStale || state(allow) != decisions.Open {
+		t.Errorf("ConfirmCard on an older version: %v, %s", err, state(allow))
+	}
+	if ok, _, err := s.ConfirmCard(ctx, rootID, allow, "allow", "", rec.Version); err != nil || !ok || state(allow) != decisions.Answered {
+		t.Errorf("ConfirmCard on a permission: %v, %s", err, state(allow))
+	}
+	deny := ask(opt, "permission_request", bash)
+	if err := fromSurface(&agentfleetv1.AnswerDecisionRequest{DecisionId: deny, OptionId: "deny"}); err != nil || state(deny) != decisions.Answered {
+		t.Errorf("a surface denying: %v, %s", err, state(deny))
+	}
+	// Nor does a surface answer by behavior: not withdraw, not an allow,
+	// remembered for the session or not, even on the admin's own thread of a
+	// definition that embeds the surface and whose audience it is in.
+	own, err := store.Create(ctx, sessions.CreateParams{Repo: "notes", DefinitionName: "d", DefinitionSHA: "sha1", Owner: "root", Visibility: "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	surface := withPrincipal(ctx, Principal{Member: &auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup, "shared-notes"}},
+		Origin: "https://game.bnei.dev", Surface: true, fleet: "https://fleet.bnei.dev"})
+	for _, m := range []*agentfleetv1.AnswerDecisionRequest{
+		{DecisionId: ask(own, "permission_request", bash), Behavior: "withdraw"},
+		{DecisionId: ask(own, "permission_request", bash), Behavior: "allow", Scope: "session"},
+		{DecisionId: ask(own, "permission_request", bash), Behavior: "allow"},
+	} {
+		if _, err := s.AnswerDecision(surface, connect.NewRequest(m)); code(err) != connect.CodePermissionDenied || state(m.GetDecisionId()) != decisions.Open {
+			t.Errorf("a surface's %s: %v, %s", m.GetBehavior(), err, state(m.GetDecisionId()))
+		}
 	}
 }

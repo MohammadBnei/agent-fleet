@@ -55,6 +55,11 @@
   under 10 minutes old (login `reauth=1`: `prompt=login`, `max_age=0`, the ID token's `auth_time` in the cookie's
   `a`), and answers on a signed same-origin POST through `agentsvc.ConfirmCard`, then returns to an admin origin.
   The game's in-place answering is a later ukubi-game PR.
+- **Built (slice 7, PR A):** every kind is a card, §5's note: `decisions.CardView` is a card's own payload or the
+  view core builds for a question, permission or plan (`Card.detail`, field 8, holds the full request), on every
+  `Decision.card`. `AnswerDecision` maps a card-answering principal's `option_id` or own words on another kind onto
+  that kind's own answer, and the confirm page and `ConfirmCard` take any kind with a view, showing `detail`. A
+  surface naming no kinds still reads cards only (`WatchDecisions` has no kinds field, so it stays cards only).
 - **Date:** 2026-10-28
 - **Supersedes:** [ADR-0079](0079-provenance-ledger.md) (provenance ledger, never built)
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md) §3 (no taint),
@@ -154,6 +159,11 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      wakes a parked session. A question's answer is its text or choice. A plan approval moves the session out of
      plan mode. A permission approval records a one-time grant bound to the session and the exact tool input:
      the agent retries, and the gate lets that one call through, once. A denial arrives as a message too.
+   - **Every kind is a card** (slice 7). Core builds a card view over a question, permission or plan, so one
+     card renderer answers all four; the answer still takes that kind's path. v1 limits: a question gets options
+     (`q1`..`q3`) only when it is one question of 2 to 3 options, not multiSelect, and is otherwise answered in
+     the owner's own words; a plan's approve switches no mode (the mode choice stays the console's); a
+     permission offers allow only when grantable or unstamped (its pod still waits), deny always.
    - **A card's answer runs its bound effect** (§6) instead of reaching a session.
    - **Nothing goes stale behind the owner's back.** The warm-time closing of unanswered requests goes. A decision
      closes when answered, withdrawn (its session archived, or the agent withdraws it), stale (§6, pinned state

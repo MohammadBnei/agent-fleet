@@ -54,7 +54,8 @@ type Config struct {
 	// Key signs the form token.
 	Key  []byte
 	Load func(ctx context.Context, id string) (decisions.Record, error)
-	// Card reads a record's stored card; nil when it is not one.
+	// Card is decisions.CardView: a record's card view, stored or built
+	// from its kind; nil when it has none.
 	Card func(decisions.Record) *agentfleetv1.Card
 	// Answer is agentsvc's ConfirmCard: whether the agent will read it, and
 	// why not.
@@ -130,11 +131,11 @@ func (c Config) get(w http.ResponseWriter, r *http.Request, id auth.Identity) {
 		return
 	}
 	card := c.Card(rec)
-	if rec.Kind != decisions.Card || card == nil || rec.State != decisions.Open || rec.Version != v {
+	if card == nil || rec.State != decisions.Open || rec.Version != v {
 		page(w, http.StatusConflict, view{Msg: "This card is closed or changed since. Nothing was done."})
 		return
 	}
-	vw := view{Ask: card.GetAsk(), Own: cl.Option == ""}
+	vw := view{Ask: card.GetAsk(), Detail: card.GetDetail(), Own: cl.Option == ""}
 	if vw.Own {
 		if !card.GetWriteOwn() {
 			page(w, http.StatusBadRequest, view{Msg: "This card takes no answer in your own words. Nothing was done."})
@@ -250,8 +251,20 @@ func (c Config) returnTo(raw string) string {
 // says what an option does, beside the agent's label.
 var reversibleText = map[string]string{"yes": "reversible", "partial": "partly reversible", "no": "irreversible"}
 
+var verbText = map[string]string{
+	"grant":         "Lets the agent run exactly this, once",
+	"deny":          "Refuses; the agent is told",
+	"approve_plan":  "The agent leaves plan mode and starts the work",
+	"keep_planning": "The agent keeps planning",
+}
+
 func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string {
-	if o.GetEffect().GetVerb() != "close_threads" {
+	v := o.GetEffect().GetVerb()
+	if t, ok := verbText[v]; ok {
+		return t
+	}
+	// choose, handoff and any other verb.
+	if v != "close_threads" {
 		return "Sends your choice to the agent"
 	}
 	if s.GetKind() == "repo" {
@@ -261,17 +274,19 @@ func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string 
 }
 
 type view struct {
-	Msg, Login, Back               string
-	Ask, Label, Effect, Reversible string
-	Own                            bool
-	Form                           *claim
-	Token                          string
+	Msg, Login, Back           string
+	Ask, Detail, Label, Effect string
+	Reversible                 string
+	Own                        bool
+	Form                       *claim
+	Token                      string
 }
 
 var tmpl = template.Must(template.New("").Parse(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Confirm answer</title>
 <body style="font-family:system-ui,sans-serif;padding:24px;max-width:40em">
 {{if .Msg}}<p>{{.Msg}}</p>{{if .Login}}<p><a href="{{.Login}}" target="_top">Sign in again</a></p>{{end}}{{if .Back}}<p><a href="{{.Back}}" target="_top">Back</a></p>{{end}}
 {{else}}<p><small>Agent claim</small><br>{{.Ask}}</p>
+{{if .Detail}}<pre style="white-space:pre-wrap">{{.Detail}}</pre>{{end}}
 <form method="post" action="/decisions/confirm">
 {{if .Form.Text}}<p><small>Your answer, in your own words</small><br><textarea readonly rows="6" cols="60">{{.Form.Text}}</textarea></p>
 {{else if .Own}}<p><label>Your answer, in your own words<br><textarea name="own_text" rows="6" cols="60" maxlength="2000" required></textarea></label></p>
