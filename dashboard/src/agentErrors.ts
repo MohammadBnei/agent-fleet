@@ -17,6 +17,8 @@ const keyText: Record<Keyed, string> = {
     "The bridge may not open this agent's threads: the definition and the client must list each other.",
   DECISION_EXPIRED: "This card expired; nothing was done.",
   DECISION_STALE: "This card was replaced by a newer one.",
+  DECISION_CONFIRM_REQUIRED:
+    "This answer needs a fresh confirmation. Confirm it on the confirm page; nothing was done.",
 };
 
 // agentErrorText is the key's text, or the error's own message for a key with none (server.internal, a key a newer
