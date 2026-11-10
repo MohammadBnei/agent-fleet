@@ -1,5 +1,16 @@
 # Changelog
 
+# [7.6.0](https://github.com/MohammadBnei/agent-fleet/compare/7.5.0...7.6.0) (2026-11-10)
+
+### Bug Fixes
+
+* **console:** text for the DECISION_CONFIRM_REQUIRED error key ([#364](https://github.com/MohammadBnei/agent-fleet/issues/364)) ([1959ad6](https://github.com/MohammadBnei/agent-fleet/commit/1959ad61090c4c5422fa1a74049938b9e608eee4))
+
+### Features
+
+* **core:** questions, permissions and plans as cards (ADR-0082 slice 7, PR A) ([#362](https://github.com/MohammadBnei/agent-fleet/issues/362)) ([e89b94b](https://github.com/MohammadBnei/agent-fleet/commit/e89b94b1e65a4d3976f23b740246148c78e8ab20))
+* **core:** the game answers cards, through core's confirm page (ADR-0082 slice 6) ([#361](https://github.com/MohammadBnei/agent-fleet/issues/361)) ([ff2f86d](https://github.com/MohammadBnei/agent-fleet/commit/ff2f86d83fe973a4daec8db7005c1723f8809e2f))
+
 # [7.5.0](https://github.com/MohammadBnei/agent-fleet/compare/7.4.0...7.5.0) (2026-11-03)
 
 ### Features
