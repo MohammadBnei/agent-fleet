@@ -48,6 +48,8 @@ const keyText: Record<Keyed, string> = {
   DEFINITION_UNAVAILABLE: "This agent is not available to you.",
   DECISION_EXPIRED: "This card expired; nothing was done.",
   DECISION_STALE: "This card was replaced by a newer one.",
+  DECISION_CONFIRM_REQUIRED:
+    "This answer needs a fresh confirmation. Confirm it on the confirm page; nothing was done.",
 };
 
 // The key's text, or "" for a key with none (server.internal, or one a newer core added).
