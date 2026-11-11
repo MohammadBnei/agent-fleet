@@ -59,6 +59,10 @@ spec:
             # this cluster has no authentik.
             - name: FLEET_AUTH_DISABLED
               value: "1"
+            # In a cluster core refuses the flag unless the console port is
+            # loopback-only; port-forward reaches the pod's loopback.
+            - name: CORE_HTTP_HOST
+              value: "127.0.0.1"
             # AgentService runs as the dev identity with the gate off; the
             # port-forwarded console's origin must be admitted to reach it.
             - name: FLEET_DEV_ORIGINS
@@ -82,10 +86,11 @@ spec:
           envFrom:
             - secretRef:
                 name: agent-fleet-local-secrets
+          # gRPC, not /healthz on 8080: that port listens on loopback only
+          # (CORE_HTTP_HOST above), which the kubelet's probe cannot reach.
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: 9090
             periodSeconds: 2
           resources:
             requests:

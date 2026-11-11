@@ -75,9 +75,12 @@ service:
 #     own OIDC redirect, which is why Grafana and ArgoCD keep local admins. core
 #     has none. So an authentik (or Pigsty, or Patroni) outage now means no
 #     console at all, on the surface where a blocked session's permission
-#     decision gets answered. Recovery is FLEET_AUTH_DISABLED=1 plus a redeploy,
-#     or kubectl port-forward. This is a real cost that was accepted, not one
-#     that went away.
+#     decision gets answered. The only break-glass is kubectl port-forward:
+#     redeploy with FLEET_AUTH_DISABLED=1 AND CORE_HTTP_HOST=127.0.0.1, then
+#     `kubectl port-forward -n agent-fleet svc/agent-fleet-core 8080:8080`.
+#     core refuses the flag in a cluster on any other address, since this
+#     route would hand the console to the internet. This is a real cost that
+#     was accepted, not one that went away.
 #
 # Consequence worth re-reading before adding a route: this IngressRoute matches
 # on HOST with no path constraint, so every path core serves on 8080 is now

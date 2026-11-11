@@ -294,8 +294,13 @@ every other optional secret it reads — the Infisical operator renders stale or
 empty Secrets often enough that "off when unset" would come up wide open and
 looking healthy. `FLEET_AUTH_DISABLED=1` is the explicit local-stack opt-out.
 The cost, accepted knowingly: core has no local admin, so an authentik → Pigsty
-→ Patroni outage means no console at all. Recovery is `FLEET_AUTH_DISABLED=1`
-plus a redeploy, or `kubectl port-forward`.
+→ Patroni outage means no console at all. The only break-glass is
+`kubectl port-forward`: redeploy core with `FLEET_AUTH_DISABLED=1` and
+`CORE_HTTP_HOST=127.0.0.1`, then `kubectl port-forward -n agent-fleet svc/agent-fleet-core
+8080:8080`. In a cluster core refuses the flag on any other address, because
+`:8080` is behind the public IngressRoute and every caller would be a platform
+admin. While it runs, `fleet.bnei.dev` and the alert webhook get no answer.
+Revert both variables when authentik is back.
 
 **What is deliberately not done.** core never reads `X-authentik-*` headers: a
 pod-network caller can forge one, turning an authorization gap into an
@@ -846,6 +851,7 @@ the proxy variables) are theirs and not listed.
 | Variable | Default | Rule when set | What it is |
 |---|---|---|---|
 | `CORE_PORT` | `8080` | port, 1-65535 | the console, `ConnectRPC`, `/auth/*`, the alert webhook (internet-routed, behind the OIDC gate) |
+| `CORE_HTTP_HOST` | every interface | any | the address `CORE_PORT` listens on; `127.0.0.1` is what lets `FLEET_AUTH_DISABLED=1` start in a cluster |
 | `CORE_GRPC_PORT` | `9090` | port | `CoreService`, for the sidecar and the provisioner |
 | `CORE_METRICS_PORT` | `9093` | port | `/metrics` on its own listener, no ingress (`adr/0059`) |
 | `CORE_CLIENT_PORT` | `9091` | port | `AgentService` for registered clients (`adr/0066` §3) |
@@ -870,7 +876,8 @@ the proxy variables) are theirs and not listed.
 | `OIDC_CLIENT_ID` | none | any (refuses: missing, with the gate on) | OIDC client |
 | `OIDC_CLIENT_SECRET` | none | any (refuses: missing, with the gate on) | secret |
 | `FLEET_SESSION_KEYS` | none | any, at least one non-blank key (refuses: missing, with the gate on) | secret, comma-separated cookie keys |
-| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on. With it, every AgentService call runs as the dev identity (`dev@localhost`, platform-admins) |
+| `FLEET_AUTH_DISABLED` | unset | `1`, or `0` | `1` is the explicit local-stack opt-out of the console gate; any other value warns and the gate stays on. With it, every AgentService call runs as the dev identity (`dev@localhost`, platform-admins). In a cluster it refuses the start unless `CORE_HTTP_HOST` is loopback |
+| `KUBERNETES_SERVICE_HOST` | unset | any | set by the kubelet: core runs in a cluster, so `FLEET_AUTH_DISABLED=1` needs a loopback `CORE_HTTP_HOST` |
 | `FLEET_DEV_ORIGINS` | none | comma-separated `scheme://host[:port]` (refuses: malformed, or set with the gate on) | browser origins AgentService treats as the console's own while the gate is off, with CORS: a local game or the dashboard's vite proxy |
 | `FLEET_ADMIN_ORIGINS` | none | comma-separated exact origins `https://host[:port]` (refuses: malformed, a path, userinfo, a wildcard, or http with the gate on) | our app surfaces where an admin answers cards in place, with CORS on AgentService; anything not reversible "yes" goes through core's confirm page, which may return there (docs/adr/0082 §7). Checked before embed origins: never an island |
 | `FLEET_VERSION` | none | any | the release reported (`dev` without it) |

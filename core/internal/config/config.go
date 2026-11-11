@@ -162,6 +162,13 @@ type Config struct {
 	// wrote down, never something that happened because a secret failed to
 	// render.
 	AuthDisabled bool
+	// HTTPHost is the address Port listens on (CORE_HTTP_HOST); empty is every interface. A loopback value is what
+	// lets FLEET_AUTH_DISABLED=1 run inside a cluster: only kubectl port-forward reaches the pod's loopback, never the
+	// IngressRoute or another pod (cmd/core requireLoopback).
+	HTTPHost string
+	// InCluster is KUBERNETES_SERVICE_HOST being set: core runs in a pod, where port 8080 is behind a public
+	// IngressRoute.
+	InCluster bool
 	// DevOrigins are browser origins (scheme://host[:port]) that AgentService treats as the console's own while the
 	// gate is off, so a local page (the game's dev server, the dashboard's vite proxy) can call it as the dev
 	// identity. Only with FLEET_AUTH_DISABLED=1: set otherwise, core refuses to start.
@@ -302,6 +309,8 @@ func Load(getenv func(string) string) (Config, error) {
 		OIDCClientSecret:      getenv("OIDC_CLIENT_SECRET"),
 		SessionKeys:           getenv("FLEET_SESSION_KEYS"),
 		AuthDisabled:          l.authDisabled("FLEET_AUTH_DISABLED"),
+		HTTPHost:              getenv("CORE_HTTP_HOST"),
+		InCluster:             getenv("KUBERNETES_SERVICE_HOST") != "",
 		GarageS3Endpoint:      l.url("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
 		GarageFilesBucket:     l.str("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
