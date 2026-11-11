@@ -447,9 +447,15 @@ jobs:
     # success()-on-needs would skip this job in both cases — hence always(). The explicit
     # release.result test is what stops a failed release from being built: 'skipped' passes
     # here, 'failure' does not.
+    #
+    # A fork PR never reaches this self-hosted runner: buildah runs as root
+    # there, on the LAN beside the registry the cluster pulls from. This guard
+    # cannot stop a fork that edits this file; only refusing to approve the
+    # run can, so never approve a fork run that touches .github/.
     if: >-
       always()
       && needs.release.result != 'failure'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       && (github.event_name != 'pull_request' || needs.changes.outputs.components != '')
       && (github.event_name != 'push' || needs.release.outputs.version != '')
       && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
@@ -817,6 +823,12 @@ jobs:
             echo ""
             echo "**Total: ${{ steps.build.outputs.total_seconds }}s** — pushed: \`${{ steps.tag.outputs.push }}\`, latest: \`${{ steps.tag.outputs.latest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The runner outlives the job: drop the registry credential however the
+      # job ended, so the next job on this box does not inherit a login.
+      - name: Registry logout
+        if: always()
+        run: sudo buildah logout "$REGISTRY" || true
 
   deploy:
     needs: [release, build-push]
