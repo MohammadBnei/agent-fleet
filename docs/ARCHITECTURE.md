@@ -300,7 +300,9 @@ The cost, accepted knowingly: core has no local admin, so an authentik → Pigst
 8080:8080`. In a cluster core refuses the flag on any other address, because
 `:8080` is behind the public IngressRoute and every caller would be a platform
 admin. While it runs, `fleet.bnei.dev` and the alert webhook get no answer.
-Revert both variables when authentik is back.
+Revert both variables when authentik is back. It holds while core has no probe on
+`:8080` (none in prod, checked 2026-11-12): a probe added later must be a TCP
+probe on 9090, or the kubelet fails the loopback-only pod during the break-glass.
 
 **What is deliberately not done.** core never reads `X-authentik-*` headers: a
 pod-network caller can forge one, turning an authorization gap into an

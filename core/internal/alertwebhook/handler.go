@@ -275,7 +275,7 @@ func untrusted(s string) string {
 			return string(out) + "…"
 		}
 		switch {
-		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), unicode.In(r, unicode.Zl, unicode.Zp):
 			r = ' '
 		case r == '<':
 			r = '‹'
