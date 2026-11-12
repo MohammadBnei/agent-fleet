@@ -85,3 +85,50 @@ func TestRunChecksOIDCBeforeBuildingTheGate(t *testing.T) {
 		t.Errorf("run() must call requireOIDC (at %v) before auth.New (at %v)", require, newAuth)
 	}
 }
+
+// TestRequireLoopback: in a cluster, FLEET_AUTH_DISABLED=1 refuses unless the console port is bound to loopback,
+// because 8080 there is behind the public IngressRoute. Off-cluster (a laptop, /dashboard-e2e) and with the gate on,
+// nothing is required.
+func TestRequireLoopback(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		disabled, cluster bool
+		host              string
+		refused           bool
+	}{
+		{"gate on in cluster", false, true, "", false},
+		{"gate off on a laptop", true, false, "", false},
+		{"gate off in cluster, every interface", true, true, "", true},
+		{"gate off in cluster, pod IP", true, true, "10.233.64.7", true},
+		{"gate off in cluster, 0.0.0.0", true, true, "0.0.0.0", true},
+		{"gate off in cluster, 127.0.0.1", true, true, "127.0.0.1", false},
+		{"gate off in cluster, ::1", true, true, "::1", false},
+		{"gate off in cluster, localhost", true, true, "localhost", false},
+	} {
+		err := requireLoopback(config.Config{AuthDisabled: tc.disabled, InCluster: tc.cluster, HTTPHost: tc.host})
+		if (err != nil) != tc.refused {
+			t.Errorf("%s: err = %v, want refused=%v", tc.name, err, tc.refused)
+		}
+	}
+}
+
+// TestRunChecksLoopback: run() calls requireLoopback, so the check cannot be dropped silently (run() needs a
+// database, so it is read, not run).
+func TestRunChecksLoopback(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "run.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok {
+			if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "requireLoopback" {
+				found = true
+			}
+		}
+		return true
+	})
+	if !found {
+		t.Error("run() must call requireLoopback")
+	}
+}

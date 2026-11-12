@@ -247,7 +247,9 @@ since the feature was written.
   in a tab with a session cookie attached.
   There is no basic-auth behind it any more and core has no local admin, so an
   authentik/Pigsty/Patroni outage means no console — recovery is
-  `FLEET_AUTH_DISABLED=1` plus a redeploy, or `kubectl port-forward`.
+  `kubectl port-forward` to a core redeployed with `FLEET_AUTH_DISABLED=1` and
+  `CORE_HTTP_HOST=127.0.0.1` (in a cluster core refuses the flag on any other
+  address: `:8080` is public).
 - **"Zero rejections in the logs" is not "the auth works" when there was no
   traffic.** After deploying `CoreService` lease auth, core showed zero auth
   failures — and also zero `CoreService` calls and zero worker pods in the same

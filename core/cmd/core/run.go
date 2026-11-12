@@ -371,6 +371,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// reads method values off its argument and panics on nil.
 	agentPath := "/" + agentfleetv1connect.AgentServiceName + "/"
 	if cfg.AuthDisabled {
+		if err := requireLoopback(cfg); err != nil {
+			return err
+		}
 		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
 		slog.Warn("FLEET_AUTH_DISABLED=1: AgentService calls run as the dev identity",
 			"email", devIdentity.Email, "group", auth.RequiredGroup, "dev_origins", cfg.DevOrigins)
@@ -506,7 +509,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
 	cors := auth.CORS(agentPath, originOf(cfg.DashboardPublicURL), withDev(embedOrigins(defs), slices.Concat(cfg.DevOrigins, cfg.AdminOrigins)))
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate, cors), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
+	httpServer := &http.Server{Addr: net.JoinHostPort(cfg.HTTPHost, cfg.Port), Handler: httpHandler(mux, gate, cors), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 
 	go func() {
 		slog.Info("core listening", "port", cfg.Port)

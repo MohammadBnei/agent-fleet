@@ -20,9 +20,10 @@
 //     enforces that; FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out.
 //   - An authentik outage — or Pigsty, or Patroni, which sit under it — means no
 //     console at all, on the surface where a blocked session's permission
-//     decision gets answered. Recovery is FLEET_AUTH_DISABLED plus a redeploy,
-//     or kubectl port-forward. That cost was accepted knowingly; it did not go
-//     away.
+//     decision gets answered. The break-glass is kubectl port-forward to a core
+//     redeployed with FLEET_AUTH_DISABLED=1 and CORE_HTTP_HOST=127.0.0.1 (in a
+//     cluster cmd/core refuses the flag on any other address). That cost was
+//     accepted knowingly; it did not go away.
 package auth
 
 import (
