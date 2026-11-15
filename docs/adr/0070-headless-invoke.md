@@ -1,6 +1,6 @@
 # ADR-0070 — Headless invoke: any session can ask, one structured result
 
-- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3. Amended 2026-11-15 (proposed, awaiting the owner's approval): §6 is rebuilt on ADR-0082's one-time grants and the `defer` spike is dropped; §3's result key is per result; a build order is added.
+- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3. Amended 2026-11-15: §6 is rebuilt on ADR-0082's one-time grants and the `defer` spike is dropped; §3's result key is per result; a build order is added. Approved by the owner (merged as #369); the six open questions were answered 2026-11-16 (see "Owner answers" at the end of §6).
 - **Date:** 2026-10-20, amended 2026-10-25 (the owner's rule: "absolutely
   any session, headless or not, must be able to ask a question"), amended
   2026-11-15 (§6 on ADR-0082, §3's key, build order)
@@ -87,7 +87,7 @@ is the only way in.
   (capacity, a definition refusal, a crash) re-runs on the same session. A
   retry of a parked request returns it parked. The same key with a
   different definition or input gets `FailedPrecondition`.
-- **Warm.** Through `WarmIfIdle`, like every other path. The input is
+- **Warm.** Through `WarmForAppend`, like every other path. The input is
   appended after the warm, with the key as its transcript key.
 - **A cap on parked runs.** A client file may set `maxParked` (default 20):
   `Invoke` answers `PARKED_LIMIT` (not `CAPACITY`: the SDK helpers do not
@@ -232,11 +232,15 @@ the run instead (§6).
 
 ### 6. A decision never holds a pod (amended 2026-11-15: on ADR-0082)
 
-In a single-shot session no open decision keeps a pod. ADR-0082 §5 already
+In a single-shot session no open decision keeps a pod beyond a bounded hold
+of `DECISION_WAIT_MS` after its turn ends; a parked run holds none. ADR-0082 §5 already
 made every decision non-blocking; a single-shot run adds only that its pod
 does not wait for the next message after a turn ends.
 
-- **The pod exits when its input is used up.** Today the worker runs one
+- **The pod exits when its input is used up, after a grace.** When a turn
+  ends on an open decision, the worker waits up to `DECISION_WAIT_MS` (the
+  same knob as the live decision wait, default 45 s) for the answer before
+  exiting, so a quick answer costs no new pod (owner, 2026-11-16). Today the worker runs one
   continuous `query()` and treats `success` as "wait for the next input"
   (`session.ts:1423`, `:2295-2303`). A single-shot worker instead exits
   after a `result` when nothing is left to run: the result's
@@ -253,8 +257,8 @@ does not wait for the next message after a turn ends.
   `process.exitCode` is not an exit).
 - **A permission parks on its stamp.** The call asks, holds for
   `DECISION_WAIT_MS`, and is denied "Pending (request seq N) … end your
-  turn"; the turn ends with the stamped request open; the worker writes the
-  result and exits. Core sees the exit result with an open decision:
+  turn"; the turn ends with the stamped request open; the worker holds up to
+  `DECISION_WAIT_MS` for a live answer, then writes the result and exits. Core sees the exit result with an open decision:
   parked.
 - **The answer resumes it.** `RespondToPermission` (both services) and
   `ApprovePlan` warm first and append second (built, ADR-0082). An allow of a
@@ -264,13 +268,16 @@ does not wait for the next message after a turn ends.
   runs. A deny arrives as a message the same way. A warm that fails refuses
   the answer, and the request stays open.
 - **A question parks as it does today** (ADR-0050, ADR-0082): `pending`
-  after the wait, the turn ends, the pod exits, the answer arrives as a turn.
+  after the wait, the turn ends, the pod holds up to `DECISION_WAIT_MS`, then
+  exits; the answer arrives as a turn.
 - **A plan.** On a fresh pod a late approval in plan mode switches mode and
   says "go ahead" (`approvePlanLate`, `session.ts:1813-1847`). If the session
   is no longer in plan mode when the answer lands, the worker can only say
   "retry once", and since `planRetry` is empty on a fresh pod
   (`session.ts:1280`, `:2009-2012`) the retried `ExitPlanMode` asks again:
-  one more park. Accepted; the re-park cap below bounds it.
+  one more park. Not accepted (owner, 2026-11-16): core carries the
+  approved plan, the plan decision's id and its input, to the next pod on
+  the resume path, and the worker applies the approval without asking again.
 - **An answer must not land on a pod that is leaving.** `WarmIfIdle` is a
   no-op while `pod_phase` reads live (`core/internal/dashboard/server.go:1175`),
   and `pod_phase` lags the exit: it is written by the provisioner's pod
@@ -281,17 +288,18 @@ does not wait for the next message after a turn ends.
   delivered. So when a single-shot pod ends, core re-warms the session if a
   human or answer entry lies above the exit result's `consumedSeq`, with the
   new pod's cursor just past it, and the finality rule (§3) runs only after
-  this check. This is the one change to `WarmIfIdle`: an explicit cursor for
-  this path.
+  this check. This is the one change to `WarmForAppend` (the warm-then-append
+  entry point since #376): an explicit cursor for this path.
 - **Grant matching on retry: a per-tool match key, not the defer hook.**
   `ConsumeGrant` matches the full canonical input (`answer.go:325`), and an
   input with no canon is never grantable (`decisions.go:134-137`, `:287`).
   A resumed model re-derives the call and may rewrite free text that changes
   nothing it does, Bash's `description` above all, and the grant misses.
   The fix is a match key: `decisions` stores, and `ConsumeGrant` compares,
-  the canon of a per-tool subset of the input. Bash drops `description`;
-  every other tool keeps its whole input until a measured miss names a
-  field. The card still shows the full input, and the subset never drops a
+  the canon of a per-tool subset of the input. Known free text is dropped up
+  front (owner, 2026-11-16): Bash and Agent drop `description`, WebFetch
+  drops `prompt` (the URL stays in the key); every other tool keeps its
+  whole input until a measured miss names a field. The card still shows the full input, and the subset never drops a
   field that changes what runs. `input_canon` is redefined in place to hold
   the match key, and every reader and writer of it switches together, in
   one PR:
@@ -322,7 +330,8 @@ does not wait for the next message after a turn ends.
 - **Re-park cap.** Each park costs a person an answer and the fleet a warm,
   and a retry that misses its grant parks again. A park is a pod exit that
   leaves an open decision, not an ask (a turn may ask and get its answer
-  live). A single-shot run that parks more than 10 times ends `failed`
+  live). A single-shot run that parks more than `limits.maxParks` times
+  (default 10, set per definition in its reviewed file) ends `failed`
   (`PARK_LIMIT`). The count needs no column: it is the session's `exit:
   true` results at whose `created_at` some decision of the session was open
   (its `created_at` earlier, its `answered_at` null or later; both columns
@@ -337,7 +346,8 @@ does not wait for the next message after a turn ends.
   `released`, `spentDecisions` and `planRetry` are memory only
   (`session.ts:1268-1280`), so the next pod has none: a late approval of a
   call the dead pod held becomes "retry once" (grant still spendable, once),
-  a plan approval may ask again (above). The decision row is durable, so
+  a plan approval is carried by core to the next pod (above), so it does
+  not ask again. The decision row is durable, so
   nothing is lost that a person gave. **Required test** (the worker-exit
   slice): resume a session whose JSONL ends on an unanswered `tool_use`,
   check that the SDK starts, that the next turn runs, and that an open
@@ -361,6 +371,20 @@ does not wait for the next message after a turn ends.
   (migration 000023 has `state`, `created_at`, `answered_at` and `UNIQUE
   (session_id, request_seq)`, which is all §6 reads, the re-park count
   included). A slice that finds it needs a column adds a new numbered pair.
+
+### Owner answers (2026-11-16)
+
+1. **Re-park cap:** default 10, a definition limit (`limits.maxParks`).
+2. **Grant match key:** drop known free text now: Bash and Agent
+   `description`, WebFetch `prompt`.
+3. **Exit timing:** a grace of `DECISION_WAIT_MS` after a turn that ends on
+   an open decision, then exit.
+4. **Exit-window re-warm:** yes, with an explicit cursor on the warm
+   (`WarmForAppend`, which #376 made the one warm-then-append entry point).
+5. **Plan approval on a fresh pod:** core carries the approved plan to the
+   next pod; no second ask.
+6. **Exit code:** a clean exit 0 with no result and no open decision is
+   `failed` / `NO_RESULT`; `AGENT_CRASHED` stays non-zero only.
 
 ### 7. Headless sessions are cleaned up on every terminal path
 
@@ -396,7 +420,9 @@ proves it; none ships code that nothing can call.
    `NonBlocking`/`OpenRequest` dedup). Entry: today's resident sessions'
    grants. Test: a Bash retry with a new `description` gets the open
    request's seq back (no second card) and spends the grant; one with a new
-   `command` does neither. Before parking, since parking makes retries
+   `command` does neither. Agent `description` and WebFetch `prompt` are
+   dropped too: a WebFetch retry with a new `prompt` spends the grant, one
+   with a new URL does not. Before parking, since parking makes retries
    routine.
 4. **`interaction`, release one.** Loader optional and ignored, the request
    hash's constant, `AskUserQuestion` in every definition's `sidecarTools`,
@@ -429,18 +455,24 @@ proves it; none ships code that nothing can call.
 7. **The worker exits when its input is used up**, flushing first, with
    `consumedSeq` and `exit: true` on its last result; core judges only exit
    results, re-warms for an answer above `consumedSeq` before the finality
-   rule, and labels a clean exit with no result `NO_RESULT`. Entry:
+   rule (an explicit cursor on `WarmForAppend`), and labels a clean exit
+   with no result `NO_RESULT`. A turn that ends on an open decision first
+   holds up to `DECISION_WAIT_MS` for a live answer. Core carries an
+   approved plan (decision id and input) to the next pod, which applies it
+   without a second ask. Entry:
    `Invoke`. Test: worker tests that a single-shot `success` with
    `queued_turn_count` 0 exits, one with a queued live answer runs that
    turn first, and a resident one never exits; integration test of an
    answer appended in the exit window reaching the next pod; the mid-call
-   resume test (§6).
+   resume test (§6); an answer inside the hold needs no new pod; a late
+   plan approval on a fresh pod does not re-ask.
 8. **§7 teardown and sweep** on final result, crash and `Stop`. Entry:
    `Invoke`. Test: fake provisioner records `TearDownSession` then
    `SweepSession` per path; a parked run keeps its PVC.
 9. **Parked is respected.** `WarmIfIdle` and the message paths refuse a
    parked single-shot session except by its answer; `Status`/
-   `WaitForResult` read `waiting` without a pod; the re-park cap. Entry: `Invoke`, then an answer. Test: Warm and
+   `WaitForResult` read `waiting` without a pod; the re-park cap, with the
+   `limits.maxParks` spec field (loader: positive int, default 10). Entry: `Invoke`, then an answer. Test: Warm and
    `PostMessage` refused; the answer warms; the eleventh park ends `failed`.
 10. **`maxParked` / `PARKED_LIMIT`.** Client file field, `Invoke` refusal.
     Entry: `Invoke`. Test: the twenty-first parked run is refused, not
@@ -485,7 +517,9 @@ proves it; none ships code that nothing can call.
 - An answer costs one warm and one retry turn: the model re-issues the call,
   and the grant lets that one through once. A retry that changes what runs
   asks again.
-- A single-shot run's pod lives until its input is used up, then exits.
+- A single-shot run's pod lives until its input is used up, then exits,
+  after a bounded hold of `DECISION_WAIT_MS` when the turn ended on an open
+  decision.
   Every turn writes a result with structured output; only core's check,
   after the exit-window re-warm, makes one final.
 - A full fleet refuses an answer; the client retries it, and the request
@@ -498,7 +532,8 @@ proves it; none ships code that nothing can call.
 - QA:
   - `curl` an `Invoke` and get schema-valid JSON.
   - Park more invokes than `MAX_EXTERNAL_SESSIONS` at once on questions and
-    permissions. Check that each pod exits once its turn ends, that each
+    permissions. Check that each pod exits once its turn ends and `DECISION_WAIT_MS` has
+    passed, that each
     run reads `waiting`, and that answering all of them finishes each one
     `done`.
   - Answer a permission whose retry rewrites Bash's `description`: it runs
