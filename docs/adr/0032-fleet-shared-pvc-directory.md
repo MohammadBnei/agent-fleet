@@ -79,6 +79,15 @@ code.
   deliberately from `EnsureRepoCloned`/`CreateWorktree`'s fail-the-dispatch
   behavior, since shared context is a convenience layer, not the target
   repo itself.
+- **Note (2026-11-15, implementation, not a decision change):** the
+  provisioner refreshes its fleet-shared clone in the background, at start
+  and every 60 s (`git.Manager.RefreshFleetShared`, `cmd/provisioner`
+  `fleetSharedRefreshInterval`), and a warm only rsyncs the local copy into
+  its `claude-home`. So "at sync time" means "as of the last refresh": a
+  warm's copy is at most 60 s stale. Until the first refresh succeeds (cold
+  start, or after a failed one) the warm refreshes the clone itself, as
+  before. A refresh whose fetch moved nothing skips the hard reset. Measured
+  live before this: 3.1 s of a 6.8 s warm was this refresh.
 - `worker/Dockerfile`'s build-time `claude plugin marketplace add
   DietrichGebert/ponytail && claude plugin install ponytail@ponytail` step
   (and its `/root/.claude/settings.json` copy) is left in place but remains

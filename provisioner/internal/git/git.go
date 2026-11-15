@@ -51,6 +51,11 @@ type Manager struct {
 	// no token reaches argv, which run() quotes in errors. An error falls back
 	// to the ambient git credentials.
 	GitEnv func(context.Context) ([]string, error)
+
+	// fleetSharedReady: the last refresh of <root>/fleet-shared in this
+	// process succeeded, so a warm lays in the local copy without fetching.
+	// Guarded by the fleet-shared lock.
+	fleetSharedReady bool
 }
 
 func NewManager(root string) *Manager {
@@ -360,12 +365,40 @@ const fleetSharedSentinel = "_fleet-shared"
 // fleet-shared/ must never be able to wipe that.
 var fleetSharedNames = []string{"CLAUDE.md", "settings.json", "skills", "plugins"}
 
-// SyncFleetShared clones (or hard-resets) a second, fleet-owned git source
-// into <root>/fleet-shared — deliberately outside <root>/repos, so it never
-// appears in ListClonedRepos (the sweep loop) or gets treated as a target
-// repo anywhere keyed on the repo string — then mirrors fleetSharedNames
-// into claudeHomeDir via `rsync -a --delete`, one item at a time, so each
-// rsync call only ever touches its own subtree of claudeHomeDir.
+// RefreshFleetShared brings <root>/fleet-shared up to branch. The
+// provisioner's background tick calls it (cmd/provisioner,
+// fleetSharedRefreshInterval), so a warm only lays the local copy into its
+// claude-home: a warm sees fleet-shared at most one tick stale. Fleet-shared is
+// reviewed config that changes rarely; the cache a session clones from is not,
+// and EnsureRepoFetched still fetches on every warm.
+//
+// Detached and bounded (refreshDetached): a warm waits on this lock, so a hung
+// fetch must not hold it forever, and shutdown must not SIGKILL git mid-reset.
+//
+// ponytail: holds the lock across the fetch (~1.5s live), so a warm landing in
+// that window waits for it; fetch outside the lock and reset under it if that
+// wait ever shows in warm.fleet_shared_lock_wait.
+func (m *Manager) RefreshFleetShared(ctx context.Context, repoURL, branch string) error {
+	lock := m.repoLock(fleetSharedSentinel)
+	lock.Lock()
+	defer lock.Unlock()
+	err := m.refreshDetached(ctx, m.fleetSharedPath(), repoURL, branch)
+	m.fleetSharedReady = err == nil
+	return err
+}
+
+func (m *Manager) fleetSharedPath() string { return filepath.Join(m.root, "fleet-shared") }
+
+// SyncFleetShared mirrors fleetSharedNames from <root>/fleet-shared — a
+// second, fleet-owned git clone, deliberately outside <root>/repos, so it
+// never appears in ListClonedRepos (the sweep loop) or gets treated as a
+// target repo anywhere keyed on the repo string — into claudeHomeDir via
+// `rsync -a --delete`, one item at a time, so each rsync call only ever
+// touches its own subtree of claudeHomeDir.
+//
+// The clone is refreshed off the warm path (RefreshFleetShared). Only when
+// this process has no good refresh yet (cold start, or the last refresh
+// failed) does the warm clone or fetch it itself, as it always used to.
 //
 // This is what makes docs/adr/0019 point 6 real: the Agent SDK's
 // settingSources: ["user"] (worker/src/session.ts) natively discovers
@@ -380,11 +413,14 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 	endWait(nil)
 	defer lock.Unlock()
 
-	path := filepath.Join(m.root, "fleet-shared")
-	if err := spans.Do(ctx, "warm.fleet_shared_refresh", func(ctx context.Context) error {
-		return m.refreshClone(ctx, path, repoURL, branch)
-	}); err != nil {
-		return fmt.Errorf("fleet-shared: %w", err)
+	path := m.fleetSharedPath()
+	if !m.fleetSharedReady {
+		if err := spans.Do(ctx, "warm.fleet_shared_refresh", func(ctx context.Context) error {
+			return m.refreshClone(ctx, path, repoURL, branch)
+		}); err != nil {
+			return fmt.Errorf("fleet-shared: %w", err)
+		}
+		m.fleetSharedReady = true
 	}
 
 	// 0o777, matching EnsureClaudeHome — this runs first on a kind-local or
@@ -511,10 +547,34 @@ func (m *Manager) updateClone(ctx context.Context, path, repoURL, ref string, fe
 	if _, err := m.run(ctx, path, append(append([]string{"fetch"}, fetchArgs...), "origin", ref)...); err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
+	if fetchedIsCheckedOut(ctx, m, path) {
+		return nil
+	}
 	if _, err := m.run(ctx, path, "reset", "--hard", "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("reset: %w", err)
 	}
 	return nil
+}
+
+// fetchedIsCheckedOut: HEAD is already FETCH_HEAD and the checkout finished,
+// so the hard reset would rewrite nothing. It still costs: `reset --hard`
+// refreshes the index, an lstat of every tracked file of the monorepo on the
+// RWX (NFS) volume, ~1.4s live for a no-op. reset moves HEAD only after the
+// index and tree are written, and clone writes the index only once its
+// checkout is done, so a killed reset or clone never reads as checked out;
+// an index.lock left by one fails the next reset, which re-clones.
+func fetchedIsCheckedOut(ctx context.Context, m *Manager, path string) bool {
+	out, err := m.run(ctx, path, "rev-parse", "HEAD", "FETCH_HEAD")
+	heads := strings.Fields(out)
+	if err != nil || len(heads) != 2 || heads[0] != heads[1] {
+		return false
+	}
+	gitDir := filepath.Join(path, ".git")
+	if _, err := os.Stat(filepath.Join(gitDir, "index")); err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(gitDir, "index.lock"))
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // packEntryProblem says why one packs/ entry is not read, or "" when it is

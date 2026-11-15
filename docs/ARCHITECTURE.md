@@ -578,6 +578,11 @@ newly dangerous. The SDK derives its project-state directory from `cwd`, so
 every session now encodes to the same `projects/-workspace/`; the per-session
 `claude-home` mount is the only thing keeping them apart.
 
+A warm fetches the clone cache every time (load-bearing: no pod's clone
+contacts the remote), alongside seeding `claude-home`. The fleet-shared clone
+is not fetched on the warm: the provisioner refreshes it at start and every
+60 s, so a warm rsyncs a copy at most 60 s stale (`adr/0032`).
+
 Only the provisioner (clone cache, `claude-home` seeding) and session pods
 touch the shared volume — `core` holds zero PVC access, matching its zero-RBAC
 design.

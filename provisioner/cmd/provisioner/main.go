@@ -193,6 +193,16 @@ func main() {
 		}
 	}()
 
+	// docs/adr/0032: refresh the fleet-shared clone off the warm path, now and
+	// every fleetSharedRefreshInterval, so a warm only rsyncs it into its
+	// claude-home. A warm lays in a copy at most one interval stale; until
+	// the first refresh succeeds, a warm refreshes it itself.
+	if cfg.FleetSharedRepoURL != "" {
+		go refreshEvery(ctx, fleetSharedRefreshInterval, func(ctx context.Context) error {
+			return gitMgr.RefreshFleetShared(ctx, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch)
+		})
+	}
+
 	// The branch/worktree sweep loop is gone (docs/adr/0048 §5). It deleted
 	// worktrees on its own ticker, without telling core — which is why any
 	// claim that a session knew whether its disk still existed was false, and
@@ -232,6 +242,27 @@ func main() {
 // startReconcile runs the reconcile loop on the configured tick, with the
 // configured idle timeout for shared instances. Both durations are positive:
 // config.Load replaced anything else with its default before main got here.
+// fleetSharedRefreshInterval bounds how stale a warm's fleet-shared copy can
+// be (docs/adr/0032). Fleet-shared is reviewed config that changes rarely.
+const fleetSharedRefreshInterval = 60 * time.Second
+
+// refreshEvery runs refresh now, then every interval, until ctx ends. A
+// failure is logged; the next warm then refreshes fleet-shared itself.
+func refreshEvery(ctx context.Context, every time.Duration, refresh func(context.Context) error) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		if err := refresh(ctx); err != nil {
+			slog.Warn("fleet-shared refresh failed; the next warm refreshes it itself", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
 func startReconcile(ctx context.Context, cfg config.Config, k8sc reconcile.JobLister, core reconcile.EventReporter, vc reconcile.Revoker) {
 	loop := reconcile.New(k8sc, core, vc, cfg.SharedInstanceIdleTimeout)
 	go loop.Run(ctx, cfg.ReconcileInterval)
