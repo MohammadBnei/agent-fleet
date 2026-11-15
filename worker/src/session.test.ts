@@ -19,7 +19,12 @@ const pushedMessages: {
   text: string;
   type?: string;
   replyTo?: number;
+  key?: string;
 }[] = [];
+// Every push of a result entry, failed ones too, and how many of the next
+// ones the fake sidecar refuses (docs/adr/0070 section 3 retry).
+const resultAttempts: (string | undefined)[] = [];
+let failResultPushes = 0;
 const savedSessionIds: string[] = [];
 const savedModels: string[] = [];
 // The row's model and effort as GET /task returns them (docs/adr/0077).
@@ -72,12 +77,25 @@ let humanMessageHandler:
 // didn't reproduce locally where file execution order happened to differ).
 mock.module("./sidecarClient.js", () => ({
   pushMessage: mock(
-    async (from: string, text: string, type?: string, replyTo?: number) => {
+    async (
+      from: string,
+      text: string,
+      type?: string,
+      replyTo?: number,
+      key?: string,
+    ) => {
+      if (type === "result") {
+        resultAttempts.push(key);
+        if (failResultPushes > 0) {
+          failResultPushes--;
+          throw new Error("sidecar refused");
+        }
+      }
       const seq =
         type === "permission_request" && forcedRequestSeq !== null
           ? forcedRequestSeq
           : nextSeq++;
-      pushedMessages.push({ seq, from, text, type, replyTo });
+      pushedMessages.push({ seq, from, text, type, replyTo, key });
       return seq;
     },
   ),
@@ -127,8 +145,13 @@ mock.module("./sidecarClient.js", () => ({
   ),
 }));
 
-function pushHuman(text: string, type?: string, replyTo?: number): void {
-  humanMessageHandler?.({ seq: 0, from: "human", text, type, replyTo });
+function pushHuman(
+  text: string,
+  type?: string,
+  replyTo?: number,
+  seq = 0,
+): void {
+  humanMessageHandler?.({ seq, from: "human", text, type, replyTo });
 }
 
 // A prompt from ANOTHER session, exactly as core writes it: from "session",
@@ -423,6 +446,8 @@ const {
 
 beforeEach(() => {
   pushedMessages.length = 0;
+  resultAttempts.length = 0;
+  failResultPushes = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
   savedModels.length = 0;
@@ -3612,4 +3637,79 @@ test("a turn still open when the session ends is exported as unfinished", async 
   const tool = batches[0].find((s) => s.name === "execute_tool Bash") as Wire;
   expect(tool.attrs.unfinished).toBe(true);
   expect(tool.parent).toBe(turn.id);
+});
+
+// docs/adr/0070 sections 3 and 6: the result entry's key and body.
+describe("result entry key", () => {
+  const results = () => pushedMessages.filter((m) => m.type === "result");
+  // consumedSeq and the result count live for the whole file, so each test
+  // uses seqs above every earlier one and reads only the tail of the key.
+  const parts = (key: string | undefined) => {
+    const [, , seq, k] = (key ?? "").split(":");
+    return { seq: Number(seq), k: Number(k) };
+  };
+
+  test("a permission_response alone moves consumedSeq to its seq", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman(
+      JSON.stringify({ behavior: "deny" }),
+      "permission_response",
+      77,
+      5000,
+    );
+    await Bun.sleep(30);
+    pushHuman("", "abort");
+    await promise;
+    expect(results().length).toBe(1);
+    expect(results()[0].key).toMatch(/^result:/);
+    expect(parts(results()[0].key).seq).toBe(5000);
+    expect(JSON.parse(results()[0].text).consumedSeq).toBe(5000);
+  }, 10000);
+
+  test("human, answer and permission entries each move consumedSeq; k counts up", async () => {
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 6000);
+    await Bun.sleep(30);
+    pushHuman("blue", "answer", 5, 6001);
+    await Bun.sleep(30);
+    pushHuman(
+      JSON.stringify({ behavior: "allow" }),
+      "permission_response",
+      9,
+      6002,
+    );
+    await Bun.sleep(30);
+    pushHuman("", "abort");
+    await promise;
+    const got = results().map((m) => parts(m.key));
+    expect(got.map((g) => g.seq)).toEqual([6000, 6001, 6002]);
+    expect(got[1].k).toBe(got[0].k + 1);
+    expect(got[2].k).toBe(got[1].k + 1);
+  }, 10000);
+
+  test("the body carries result_text, structured_output and consumedSeq", async () => {
+    forceResult = {
+      subtype: "success",
+      num_turns: 1,
+      total_cost_usd: 0.1,
+      result: "all done",
+      structured_output: { answer: 42 },
+    };
+    await relayOnce([]);
+    const body = JSON.parse(results()[0].text);
+    expect(body.result_text).toBe("all done");
+    expect(body.structured_output).toEqual({ answer: 42 });
+    expect(typeof body.consumedSeq).toBe("number");
+  }, 10000);
+
+  test("a refused push is retried with the same key", async () => {
+    failResultPushes = 2;
+    await relayOnce([]);
+    expect(resultAttempts.length).toBe(3);
+    expect(new Set(resultAttempts).size).toBe(1);
+    expect(results().length).toBe(1);
+    expect(results()[0].key).toBe(resultAttempts[0]);
+  }, 15000);
 });

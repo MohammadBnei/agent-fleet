@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -209,6 +210,13 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 		}
 		if body.From == "" || body.Text == "" {
 			writeError(w, http.StatusBadRequest, errors.New("from and text are required"))
+			return
+		}
+		// The local API has no auth, so any process in the pod reaches it. The
+		// only key a caller may choose is its own session's result key; core's
+		// other keys (dispatch, stale-decision) must stay out of reach.
+		if body.IdempotencyKey != "" && !strings.HasPrefix(body.IdempotencyKey, "result:"+core.TaskID()+":") {
+			writeError(w, http.StatusBadRequest, errors.New("idempotencyKey must be a result key of this session"))
 			return
 		}
 		var seq int64

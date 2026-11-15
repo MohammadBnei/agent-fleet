@@ -9,7 +9,7 @@
   grants and a decision that holds no pod; build-order slice 2 (the result
   entry and its key: `POST /message` takes `idempotencyKey`, the worker
   writes `result_text`/`structured_output`/`consumedSeq` on every result
-  keyed `result:<session>:<consumedSeq>:<k>`, retried until core takes it).
+  keyed `result:<session>:<consumedSeq>:<k>`, retried up to 5 times; retry-until-ack before exit lands with slice 7).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

@@ -62,6 +62,18 @@ func TestMessage_IdempotencyKeyReachesCore(t *testing.T) {
 			t.Fatalf("HTTP %d for %s", resp.StatusCode, body)
 		}
 	}
+	// Any key that is not this session's result key is refused.
+	for _, k := range []string{"result:other:4:1", "stale-decision-s1-3", "bridge:x:y"} {
+		resp, err := http.Post(srv.URL+"/message", "application/json",
+			strings.NewReader(`{"from":"agent","text":"r","idempotencyKey":"`+k+`"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("key %q: HTTP %d, want 400", k, resp.StatusCode)
+		}
+	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	want := []string{"result:s1:4:1", "result:s1:4:2", ""}

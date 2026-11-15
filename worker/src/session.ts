@@ -2056,6 +2056,11 @@ export async function runSession(): Promise<SessionResult> {
           if (decisionId && spentDecisions.has(decisionId)) return;
           const call = released.get(seq);
           released.delete(seq);
+          // Both outcomes below push a turn: it is input this pod consumed
+          // (docs/adr/0070 §6), so the result key must move past it.
+          if (decision.behavior === "allow" || decision.behavior === "deny") {
+            consumedSeq = Math.max(consumedSeq, entry.seq);
+          }
           if (decision.behavior === "allow") {
             // core marks a plan's answer "kind":"plan"; anything else is a
             // permission.
