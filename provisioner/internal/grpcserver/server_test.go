@@ -287,6 +287,32 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 		t.Error("fleet-shared was seeded into the OLD shared claude-home as well — " +
 			"sessions would still be writing over each other")
 	}
+
+	// Once the clone exists, a warm does not fetch fleet-shared: a new
+	// commit reaches a session only after the background refresh.
+	if err := os.WriteFile(filepath.Join(fleetSharedOrigin, "fleet-shared", "CLAUDE.md"), []byte("fleet context, revised"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "revise")
+	warm := func(id string) string {
+		t.Helper()
+		if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
+			SessionId: id, Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+		}); err != nil {
+			t.Fatalf("CreateWorkerPod %s: %v", id, err)
+		}
+		b, _ := os.ReadFile(filepath.Join(gitMgr.ClaudeHomePath(id), "CLAUDE.md"))
+		return string(b)
+	}
+	if got := warm("task-2"); got != "fleet context" {
+		t.Errorf("warm with a local clone fetched fleet-shared: got %q", got)
+	}
+	if err := gitMgr.RefreshFleetShared(ctx, fleetSharedOrigin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if got := warm("task-3"); got != "fleet context, revised" {
+		t.Errorf("after the background refresh: got %q", got)
+	}
 }
 
 // The worker container runs as uid 1000 and everything the provisioner creates

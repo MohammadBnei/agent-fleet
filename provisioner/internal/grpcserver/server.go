@@ -271,7 +271,24 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
 	// No pod's clone contacts the remote (it holds no credential): it reads
 	// the cache's origin/<base>, so this fetch is load-bearing, never skipped.
-	if err := s.git.EnsureRepoFetched(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil { // spans itself
+	//
+	// It runs alongside the claude-home steps, which touch only this
+	// session's claude-home and the fleet-shared clone, never the cache.
+	// Everything after the join stays after it: the terminal Job delete and
+	// the genome swap must not run for a warm whose fetch fails (the failed
+	// Job is the evidence; docs/adr/0063's swap waits for no live Job), and
+	// minting during the fetch would hold the owner's vault lock across it,
+	// queueing every warm on that owner behind this one's fetch. The fetch is
+	// always joined, so no early return leaves it running. It still runs on
+	// the request ctx, as it always did: core's deadline on CreateWorkerPod
+	// (2 min) can kill it mid-way. A claude-home seeded for a warm whose fetch
+	// then failed is not swept here: the session gets one on its next warm
+	// anyway, and core's retention GC (SweepSession) removes it with the rest
+	// of the session's disk.
+	fetched := make(chan error, 1)
+	go func() { fetched <- s.git.EnsureRepoFetched(ctx, req.GetRepo(), req.GetRepoUrl()) }() // spans itself
+	homeMsg, homeErr := s.prepareClaudeHome(ctx, req.GetSessionId(), definition != nil)
+	if err := <-fetched; err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
@@ -280,47 +297,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// local-path PVC this process never mounts (docs/adr/0048 §4/§5) — a
 	// worktree added here would land on a different volume, silently.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
-
-	// Fatal, and deliberately outside the fleet-shared block below: the pod
-	// cannot start at all without a writable claude-home (see
-	// git.EnsureClaudeHome), so failing here beats creating a pod that will
-	// crash-loop on its entrypoint's plugin copy.
-	if err := spans.Do(ctx, "warm.ensure_claude_home", func(context.Context) error {
-		return s.git.EnsureClaudeHome(req.GetSessionId())
-	}, sessAttr); err != nil {
-		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
-		return nil, fmt.Errorf("ensure claude home: %w", err)
-	}
-
-	// Best-effort, unlike the clone/worktree steps above: stale or
-	// momentarily missing fleet-shared skills/context is a degraded worker
-	// session, not a broken one, so a sync failure here logs and continues
-	// rather than failing the whole dispatch (docs/adr/0032).
-	//
-	// Seeded into this session's OWN claude-home rather than one directory
-	// shared by every pod. That is what removes the rsync --delete race
-	// docs/adr/0048 §4 describes: the old layout rewrote settings.json and
-	// skills/ under other sessions mid-turn, with no lock. Here it is written
-	// once, before the pod exists, and nothing touches it again while the
-	// session is live.
-	//
-	// Never for a definition pod (docs/adr/0064): fleet-shared's settings.json
-	// pre-approves arbitrary-exec Bash (`go run`, `bun x`, ...) that would never
-	// reach canUseTool. It gets the image's baked plugins until P2's genome.
-	// Fatal, not best-effort: a copy an older replica left behind is removed,
-	// or no pod is built.
-	if definition != nil {
-		if err := spans.Do(ctx, "warm.remove_fleet_shared", func(context.Context) error {
-			return s.git.RemoveFleetShared(req.GetSessionId())
-		}, sessAttr); err != nil {
-			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
-			return nil, fmt.Errorf("remove fleet-shared: %w", err)
-		}
-	} else if s.fleetSharedRepoURL != "" {
-		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
-		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.git.ClaudeHomePath(req.GetSessionId())); err != nil {
-			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "sessionId", req.GetSessionId(), "error", err)
-		}
+	if homeErr != nil {
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", homeMsg+homeErr.Error())
+		return nil, homeErr
 	}
 
 	// No service ingredients to resolve up front. A session gets a Postgres
@@ -441,6 +420,57 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		GenomeApplied:            true,
 		FleetVersion:             s.version,
 	}, nil
+}
+
+// prepareClaudeHome makes a session's claude-home and lays fleet-shared into
+// it (or, for a definition pod, removes it). On failure it returns the CRASHED
+// message prefix, reported by the caller once the repo fetch has joined.
+func (s *Server) prepareClaudeHome(ctx context.Context, sessionID string, definition bool) (string, error) {
+	sessAttr := attribute.String("session_id", sessionID)
+	// Fatal, and deliberately outside the fleet-shared block below: the pod
+	// cannot start at all without a writable claude-home (see
+	// git.EnsureClaudeHome), so failing here beats creating a pod that will
+	// crash-loop on its entrypoint's plugin copy.
+	if err := spans.Do(ctx, "warm.ensure_claude_home", func(context.Context) error {
+		return s.git.EnsureClaudeHome(sessionID)
+	}, sessAttr); err != nil {
+		return "claude-home setup failed: ", fmt.Errorf("ensure claude home: %w", err)
+	}
+
+	// Best-effort, unlike the clone/worktree steps above: stale or
+	// momentarily missing fleet-shared skills/context is a degraded worker
+	// session, not a broken one, so a sync failure here logs and continues
+	// rather than failing the whole dispatch (docs/adr/0032).
+	//
+	// Seeded into this session's OWN claude-home rather than one directory
+	// shared by every pod. That is what removes the rsync --delete race
+	// docs/adr/0048 §4 describes: the old layout rewrote settings.json and
+	// skills/ under other sessions mid-turn, with no lock. Here it is written
+	// once, before the pod exists, and nothing touches it again while the
+	// session is live.
+	//
+	// The fleet-shared clone itself is refreshed in the background
+	// (git.Manager.RefreshFleetShared), so this is the rsyncs alone once the
+	// provisioner has refreshed it once.
+	//
+	// Never for a definition pod (docs/adr/0064): fleet-shared's settings.json
+	// pre-approves arbitrary-exec Bash (`go run`, `bun x`, ...) that would never
+	// reach canUseTool. It gets the image's baked plugins until P2's genome.
+	// Fatal, not best-effort: a copy an older replica left behind is removed,
+	// or no pod is built.
+	if definition {
+		if err := spans.Do(ctx, "warm.remove_fleet_shared", func(context.Context) error {
+			return s.git.RemoveFleetShared(sessionID)
+		}, sessAttr); err != nil {
+			return "claude-home setup failed: ", fmt.Errorf("remove fleet-shared: %w", err)
+		}
+	} else if s.fleetSharedRepoURL != "" {
+		s.reportEvent(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
+		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.git.ClaudeHomePath(sessionID)); err != nil {
+			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "sessionId", sessionID, "error", err)
+		}
+	}
+	return "", nil
 }
 
 // podLifetime caps every session pod's wall-clock life, so its vault token

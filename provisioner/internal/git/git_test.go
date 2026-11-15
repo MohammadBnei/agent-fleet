@@ -2,12 +2,15 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/spans"
 )
 
 // newOriginRepo builds a real local git repo to clone from — same "real temp
@@ -179,6 +182,136 @@ func TestEnsureRepoFetched_RefusesACacheFromAnotherOrigin(t *testing.T) {
 	}
 }
 
+// A refresh whose fetch moved nothing skips the hard reset (~1.4s of index
+// refresh on the RWX volume for a no-op); a moved ref, or a checkout with no
+// index (a clone killed mid-checkout), still resets.
+func TestRefreshFleetShared_ResetsOnlyWhenSomethingMoved(t *testing.T) {
+	m := NewManager(t.TempDir())
+	origin := newOriginRepo(t)
+	refresh := func() string {
+		t.Helper()
+		ctx := spans.WithRecorder(context.Background())
+		if err := m.RefreshFleetShared(ctx, origin, "main"); err != nil {
+			t.Fatal(err)
+		}
+		return spans.Summary(ctx)
+	}
+	if got := refresh(); !strings.Contains(got, "warm.git.clone") {
+		t.Fatalf("first refresh did not clone: %s", got)
+	}
+	if got := refresh(); !strings.Contains(got, "warm.git.fetch") || strings.Contains(got, "warm.git.reset") {
+		t.Errorf("unchanged refresh: want a fetch and no reset, got %s", got)
+	}
+	head := commitIn(t, origin)
+	if got := refresh(); !strings.Contains(got, "warm.git.reset") {
+		t.Errorf("moved ref did not reset: %s", got)
+	}
+	if got, err := m.run(context.Background(), m.fleetSharedPath(), "rev-parse", "HEAD"); err != nil || got != head {
+		t.Errorf("HEAD = %q (%v), want %q", got, err, head)
+	}
+	if err := os.Remove(filepath.Join(m.fleetSharedPath(), ".git", "index")); err != nil {
+		t.Fatal(err)
+	}
+	// A broken checkout (no index: a clone killed mid-checkout) is re-cloned.
+	if got := refresh(); !strings.Contains(got, "warm.git.clone") {
+		t.Errorf("checkout without an index was not re-cloned: %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(m.fleetSharedPath(), ".git", "index")); err != nil {
+		t.Errorf("re-clone left no index: %v", err)
+	}
+}
+
+// Once refreshed, a warm lays in the local copy without fetching: a commit
+// on the source reaches claude-home only after the next refresh. A fresh
+// Manager (cold start) refreshes on the warm itself.
+func TestSyncFleetShared_LaysInTheRefreshedCopyWithoutFetching(t *testing.T) {
+	m := NewManager(t.TempDir())
+	origin := newOriginRepo(t)
+	write := func(body string) {
+		t.Helper()
+		dst := filepath.Join(origin, "fleet-shared", "CLAUDE.md")
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", body}} {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = origin
+			cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@t.io", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@t.io")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v: %s", args, err, out)
+			}
+		}
+	}
+	sync := func() (string, string) {
+		t.Helper()
+		ctx := spans.WithRecorder(context.Background())
+		home := m.ClaudeHomePath("s")
+		if err := m.SyncFleetShared(ctx, origin, "main", home); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(filepath.Join(home, "CLAUDE.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b), spans.Summary(ctx)
+	}
+	write("v1")
+	if body, steps := sync(); body != "v1" || !strings.Contains(steps, "warm.fleet_shared_refresh") {
+		t.Fatalf("cold sync: body %q, steps %s", body, steps)
+	}
+	write("v2, longer")
+	if body, steps := sync(); body != "v1" || strings.Contains(steps, "warm.git.") {
+		t.Errorf("warm sync fetched: body %q, steps %s", body, steps)
+	}
+	if err := m.RefreshFleetShared(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := sync(); body != "v2, longer" {
+		t.Errorf("after refresh: body %q, want v2, longer", body)
+	}
+	// A failed fetch (and failed re-clone: an outage) keeps the intact
+	// checkout, still ready: the warm lays in the stale copy.
+	if err := m.RefreshFleetShared(context.Background(), origin, "no-such-branch"); err == nil {
+		t.Fatal("refresh of a missing branch succeeded")
+	}
+	if !m.fleetSharedReady.Load() {
+		t.Error("a failed fetch over an intact checkout cleared ready")
+	}
+	if body, steps := sync(); body != "v2, longer" || strings.Contains(steps, "warm.git.") {
+		t.Errorf("warm after a failed fetch: body %q, steps %s", body, steps)
+	}
+	// A missing clone in a process that had one: the next refresh re-clones.
+	if err := os.RemoveAll(m.fleetSharedPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RefreshFleetShared(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := sync(); body != "v2, longer" {
+		t.Errorf("after a re-clone: body %q", body)
+	}
+}
+
+// A warm never waits on the fleet-shared lock past its own ctx: it gives up
+// and returns the error, so the caller goes on without the sync.
+func TestSyncFleetShared_GivesUpAtTheWarmsDeadline(t *testing.T) {
+	m := NewManager(t.TempDir())
+	origin := newOriginRepo(t)
+	if err := m.RefreshFleetShared(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	unlock := m.LockRepo(fleetSharedSentinel)
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := m.SyncFleetShared(ctx, origin, "main", m.ClaudeHomePath("s")); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("sync behind a held lock: %v, want the deadline", err)
+	}
+}
+
 // docs/adr/0063 §8: once fleet-shared/CLAUDE.md and skills/ leave the source,
 // a resumed session's synced copies go too. settings.json and the image's
 // plugins/ stay.
@@ -207,6 +340,14 @@ func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
 	git("add", "-A")
 	git("commit", "-m", "fleet-shared")
 
+	// The background tick's job (RefreshFleetShared): a warm lays in the
+	// local copy without fetching.
+	refresh := func() {
+		t.Helper()
+		if err := m.RefreshFleetShared(ctx, origin, "main"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	home := m.ClaudeHomePath("s")
 	if err := os.MkdirAll(filepath.Join(home, "plugins", "p"), 0o755); err != nil {
 		t.Fatal(err)
@@ -220,6 +361,7 @@ func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
 
 	git("rm", "-rq", "fleet-shared/CLAUDE.md", "fleet-shared/skills")
 	git("commit", "-m", "moved to packs")
+	refresh()
 	if err := m.SyncFleetShared(ctx, origin, "main", home); err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +377,7 @@ func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
 	}
 	git("rm", "-rq", "fleet-shared")
 	git("commit", "-m", "wrong ref")
+	refresh()
 	if err := m.SyncFleetShared(ctx, origin, "main", home); err == nil {
 		t.Error("a source with no fleet-shared/ synced without error")
 	}
