@@ -331,6 +331,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   choosing an option bound to one effect (Accepted 2026-10-28; slice 1, and
   slice 2's decisions store, read API, `AnswerDecision` and one-time grants
   built; no worker requests a grant yet).
+- [`0083`](adr/0083-remote-mcp-for-definitions.md) — a definition may name remote MCP
+  servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
+  for a named user; not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
