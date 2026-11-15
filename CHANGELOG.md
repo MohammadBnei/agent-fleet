@@ -1,5 +1,11 @@
 # Changelog
 
+## [7.11.2](https://github.com/MohammadBnei/agent-fleet/compare/7.11.1...7.11.2) (2026-11-15)
+
+### Bug Fixes
+
+* **core:** serialize warm-then-append per session ([#376](https://github.com/MohammadBnei/agent-fleet/issues/376)) ([87f4a82](https://github.com/MohammadBnei/agent-fleet/commit/87f4a829ec2a90649d894248615f309e9dc065c9))
+
 ## [7.11.1](https://github.com/MohammadBnei/agent-fleet/compare/7.11.0...7.11.1) (2026-11-15)
 
 ### Performance Improvements
