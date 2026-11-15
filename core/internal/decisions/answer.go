@@ -255,7 +255,7 @@ func (s *Store) Withdraw(ctx context.Context, id string) error {
 // OpenRequest is the seq of this session's open non-blocking request for
 // this tool and match key, if there is one: the same call asked again
 // (coreserver SendMessage returns it rather than asking twice).
-func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, canon string) (int64, bool, error) {
+func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, key string) (int64, bool, error) {
 	session, err := uuid.Parse(sessionID)
 	if err != nil {
 		return 0, false, nil
@@ -265,7 +265,7 @@ func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, canon string) 
 		SELECT request_seq FROM decisions
 		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
 		   AND tool = $2 AND input_canon = $3 AND payload -> 'nb' = '1'::jsonb
-		 ORDER BY request_seq DESC LIMIT 1`, session, tool, canon).Scan(&seq)
+		 ORDER BY request_seq DESC LIMIT 1`, session, tool, key).Scan(&seq)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, nil
 	}
