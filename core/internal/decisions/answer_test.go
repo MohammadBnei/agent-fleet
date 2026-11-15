@@ -404,3 +404,40 @@ func (e *effects) WarmForAppend(ctx context.Context, id string) (string, func(),
 	p, err := e.WarmIfIdle(ctx, id)
 	return p, func() {}, err
 }
+
+// The grant and the open-request dedup match on the tool's key (docs/adr/0070
+// §6): a rewritten Bash or Agent description or WebFetch prompt is the same
+// call; a new command or URL is not.
+func TestMatchKey_GrantAndDedup(t *testing.T) {
+	for _, c := range []struct {
+		tool, in, same, other string
+	}{
+		{"Bash", `{"command":"ls","description":"List"}`, `{"description":"Show files","command":"ls"}`, `{"command":"ls -a","description":"List"}`},
+		{"Agent", `{"prompt":"p","description":"one"}`, `{"prompt":"p","description":"two"}`, `{"prompt":"q","description":"one"}`},
+		{"WebFetch", `{"url":"https://a.test","prompt":"x"}`, `{"url":"https://a.test","prompt":"y"}`, `{"url":"https://b.test","prompt":"x"}`},
+	} {
+		t.Run(c.tool, func(t *testing.T) {
+			f := setup(t)
+			s := f.session(t)
+			p := f.ask(t, s, "permission_request", `{"tool":"`+c.tool+`","input":`+c.in+`,"nb":1}`)
+			f.grantable(t, s, p)
+			key, _ := decisions.MatchKey(c.tool, []byte(c.same))
+			if got, ok, err := f.store.OpenRequest(f.ctx, s, c.tool, key); err != nil || !ok || got != p {
+				t.Errorf("rewritten retry: OpenRequest = %d, %v, %v; want %d", got, ok, err, p)
+			}
+			otherKey, _ := decisions.MatchKey(c.tool, []byte(c.other))
+			if _, ok, _ := f.store.OpenRequest(f.ctx, s, c.tool, otherKey); ok {
+				t.Error("a different call matched the open request")
+			}
+			if _, err := f.answer(t, &effects{}, s, p, decisions.Reply{Behavior: "allow"}); err != nil {
+				t.Fatal(err)
+			}
+			if id := f.consume(t, s, c.tool, c.other); id != "" {
+				t.Errorf("a different call spent the grant: %s", id)
+			}
+			if id := f.consume(t, s, c.tool, c.same); id == "" {
+				t.Error("a rewritten retry did not spend the grant")
+			}
+		})
+	}
+}
