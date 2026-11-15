@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.12.0](https://github.com/MohammadBnei/agent-fleet/compare/7.11.2...7.12.0) (2026-11-15)
+
+### Features
+
+* **core:** grant match key (ADR-0070 slice 3) ([#379](https://github.com/MohammadBnei/agent-fleet/issues/379)) ([92cfb0c](https://github.com/MohammadBnei/agent-fleet/commit/92cfb0ccfadaf978a135dd54d50d7d5f9433adca))
+
 ## [7.11.2](https://github.com/MohammadBnei/agent-fleet/compare/7.11.1...7.11.2) (2026-11-15)
 
 ### Bug Fixes
