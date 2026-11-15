@@ -17,7 +17,6 @@
     type Entry,
     type Thread,
   } from "../../dashboard/src/gen/agentfleet/v1/agent_pb";
-  import { serialQueue } from "../../dashboard/src/serialQueue";
   import {
     agentClient,
     errorText,
@@ -29,6 +28,7 @@
   import { drawDiagrams } from "./diagram";
   import { conversation, decisions, liveState } from "./feed";
   import { createRenderer } from "./render";
+  import { serialQueue } from "./serialQueue";
   import styles from "./styles.css?inline";
   import { threadTitle, withOther } from "./text";
   import tokens from "./tokens.css?inline";
