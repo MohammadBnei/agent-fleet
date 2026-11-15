@@ -29,7 +29,10 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/spans"
 )
 
 // Manager runs git commands against repo clones rooted at root (the shared
@@ -83,11 +86,21 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 	// single caller. Only the subcommand is labelled — the rest of the argv
 	// carries branch and task names, which are unbounded.
 	defer metrics.ObserveGit(args, time.Now())
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	ctx, end := spans.Start(ctx, "warm.git."+sub)
+	var runErr error
+	defer func() { end(runErr) }()
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	if m.GitEnv != nil && len(args) > 0 && (args[0] == "clone" || args[0] == "fetch") {
-		if env, err := m.GitEnv(ctx); err != nil {
+		envCtx, endEnv := spans.Start(ctx, "warm.git_credentials")
+		env, err := m.GitEnv(envCtx)
+		endEnv(err)
+		if err != nil {
 			slog.Warn("git: no App credentials, using ambient git auth", "error", err)
 		} else {
 			cmd.Env = append(os.Environ(), env...)
@@ -95,6 +108,7 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		runErr = err
 		return "", fmt.Errorf("git %s (in %s): %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
@@ -145,9 +159,14 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 // ctx returns before any git runs.
 //
 // ponytail: 200ms poll; a channel semaphore if the latency ever shows.
-func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) error {
+func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) (err error) {
+	ctx, end := spans.Start(ctx, "warm.ensure_repo_fetched", attribute.String("repo", repo))
+	defer func() { end(err) }()
 	lock := m.repoLock(repo)
-	if err := lockCtx(ctx, lock); err != nil {
+	_, endWait := spans.Start(ctx, "warm.repo_lock_wait", attribute.String("repo", repo))
+	err = lockCtx(ctx, lock)
+	endWait(err)
+	if err != nil {
 		return err
 	}
 	defer lock.Unlock()
@@ -158,7 +177,7 @@ func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) e
 		!strings.EqualFold(strings.TrimSuffix(origin, ".git"), strings.TrimSuffix(repoURL, ".git")) {
 		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; delete %s on the provisioner's workspace PVC and the next warm re-clones from repos.url (the console's sync only fetches)", repo, origin, repoURL, m.repoPath(repo))
 	}
-	_, err := m.ensureLocked(ctx, repo, repoURL)
+	_, err = m.ensureLocked(ctx, repo, repoURL)
 	return err
 }
 
@@ -352,13 +371,19 @@ var fleetSharedNames = []string{"CLAUDE.md", "settings.json", "skills", "plugins
 // settingSources: ["user"] (worker/src/session.ts) natively discovers
 // CLAUDE.md/settings.json/skills/plugins under claudeHomeDir, so adding a
 // skill becomes a PR merge here, not a worker image rebuild.
-func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHomeDir string) error {
+func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHomeDir string) (err error) {
+	ctx, end := spans.Start(ctx, "warm.sync_fleet_shared")
+	defer func() { end(err) }()
 	lock := m.repoLock(fleetSharedSentinel)
+	_, endWait := spans.Start(ctx, "warm.fleet_shared_lock_wait")
 	lock.Lock()
+	endWait(nil)
 	defer lock.Unlock()
 
 	path := filepath.Join(m.root, "fleet-shared")
-	if err := m.refreshClone(ctx, path, repoURL, branch); err != nil {
+	if err := spans.Do(ctx, "warm.fleet_shared_refresh", func(ctx context.Context) error {
+		return m.refreshClone(ctx, path, repoURL, branch)
+	}); err != nil {
 		return fmt.Errorf("fleet-shared: %w", err)
 	}
 
@@ -399,8 +424,11 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 		}
 		// One name failing never skips the rest: settings.json is the
 		// session's permission rules.
+		_, endRsync := spans.Start(ctx, "warm.rsync", attribute.String("name", name))
 		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", src, claudeHomeDir+string(filepath.Separator))
-		if out, err := cmd.CombinedOutput(); err != nil {
+		out, err := cmd.CombinedOutput()
+		endRsync(err)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("rsync %s: %w: %s", name, err, strings.TrimSpace(string(out))))
 		}
 	}
