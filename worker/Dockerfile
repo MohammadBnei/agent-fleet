@@ -267,6 +267,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -VV
 
+# npx, for repos whose .mcp.json starts an MCP server with `npx -y <pkg>`
+# (editable-blog's `svelte`, @sveltejs/mcp). The image has Bun's node shim but
+# no npm, so Claude Code reported "mcp server svelte failed" and the session
+# ran without its tools. `bunx -y` does the same fetch-and-run, verified with
+# an MCP initialize handshake in a live worker pod (2026-11-15).
+# ponytail: a shim, not npm. npx-only flags bunx lacks will fail; install npm
+# when a repo needs one.
+RUN printf '#!/bin/sh\nexec bunx "$@"\n' > /usr/local/bin/npx \
+    && chmod 755 /usr/local/bin/npx
+
 # entrypoint.sh is 100755 in git, and COPY keeps the mode.
 COPY --chown=bun:bun worker ./
 
