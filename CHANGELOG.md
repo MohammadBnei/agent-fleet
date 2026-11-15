@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.7.0](https://github.com/MohammadBnei/agent-fleet/compare/7.6.1...7.7.0) (2026-11-15)
+
+### Features
+
+* **dashboard:** ukubi fleet favicon ([#366](https://github.com/MohammadBnei/agent-fleet/issues/366)) ([924750f](https://github.com/MohammadBnei/agent-fleet/commit/924750fcf014307e686656c7a5bed40aa6b7a37e))
+
 ## [7.6.1](https://github.com/MohammadBnei/agent-fleet/compare/7.6.0...7.6.1) (2026-11-12)
 
 # [7.6.0](https://github.com/MohammadBnei/agent-fleet/compare/7.5.0...7.6.0) (2026-11-10)
