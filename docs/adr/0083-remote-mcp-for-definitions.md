@@ -4,7 +4,7 @@
   remote MCP server today.
 - **Date:** 2026-11-15
 - **Built:** nothing.
-- **Would amend:** [ADR-0048](0048-one-session-one-pod-one-shared-home.md) §6 ("MCP is
+- **Would amend:** [ADR-0062](0062-defined-agents.md) §7 (the tool ceiling), [ADR-0048](0048-one-session-one-pod-one-shared-home.md) §6 ("MCP is
   local, full stop"), [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md) §5
   ("any MCP server that needs the network" breaks in a definition pod, deliberately).
 - **Related:** [ADR-0062](0062-defined-agents.md) (the definition spec and its ceiling),
@@ -60,23 +60,31 @@ The server's host is a `credentials.services` entry like any other: the vault ho
 token and the pod holds a placeholder. The MCP connection goes through the vault proxy,
 and `unmatched_host_policy=deny` stays. The CiliumNetworkPolicy does not change, because
 traffic already reaches the vault proxy. Unverified: Claude Code's MCP HTTP client
-honours `HTTPS_PROXY` and the vault CA bundle. The first slice proves this before
+honours `HTTPS_PROXY` and the vault CA bundle. There is a warning precedent: Playwright MCP
+starts with an empty proxy env (ADR-0065 §5). The first slice proves this before
 anything else.
 
 ### 4. The tool gate
 
-- **Listed and not in `approval`:** added to `allowedTools` as `mcp__<name>__<tool>`.
+Today every `mcp__*` call outside the definition's `sidecarTools` is denied: the definition
+branch of `canUseTool` sends it to `definitionDecision`, which refuses anything outside
+`DEFINITION_TOOL_CEILING` (`worker/src/session.ts`). Those are the pieces that change,
+with the ceiling ADR-0062 §7 states:
+
+- **Listed and not in `approval`:** added to `allowedTools` as `mcp__<name>__<tool>` and
+  allowed by `definitionDecision`.
 - **In `approval`:** goes to the existing decision flow, including ADR-0082 grants.
 - **Anything else on that server:** stays denied.
+- The worker registers each server in `mcpServers` with `type: "http"`.
 
-`FLEET_OWN_TOOL` (the always-allowed fleet MCP tools) does not change. A remote server's
-tools are never the fleet's own.
+`FLEET_OWN_TOOL` (the always-allowed fleet MCP tools, repo sessions only) does not change.
+A remote server's tools are never the fleet's own.
 
 ## Alternatives considered
 
 - **A `RemoteMCPServer` object shared across definitions (kagent's shape).** Rejected for
-  now. There is one operator and no sharing need, and the CRD and operator path is closed
-  (ADR-0022, ADR-0034). A name inside the reviewed definition file is enough.
+  now. There is one operator and no sharing need, and a CRD and operator were rejected for
+  now (ADR-0022, ADR-0034). A name inside the reviewed definition file is enough.
 - **Remote MCP through the sidecar as a proxy.** Not needed: the vault proxy already is
   the one egress path and holds the credential.
 - **Build it now.** Rejected by the owner on 2026-11-15: no named user.
