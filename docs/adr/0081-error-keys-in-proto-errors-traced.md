@@ -27,8 +27,8 @@
   Trace export (2026-11-15): every `CoreService` server span carries `fleet.session.id`, the
   lease's session set in `coreserver/auth.go` (nothing for the provisioner, nothing on a
   rejected lease). `k8s/core.yaml` and `k8s/provisioner/deployment.yaml` hold
-  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` commented out until the trace backend (infra
-  `obs/tempo-traces`) lands. Core and the provisioner are single-replica (`replicaCount: 1`
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set to `platform-alloy.monitoring:4318`, live once the
+  trace backend (infra-bootstrap #443) merges. Core and the provisioner are single-replica (`replicaCount: 1`
   now explicit), which in-memory per-session span caps rely on.
   **Not yet built:** the `rawMessage.includes("DEFINITION_CHANGED")` removal (§5 step 3)
   and §5 step 5.
