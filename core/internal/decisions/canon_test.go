@@ -65,3 +65,21 @@ func TestRead(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchKey(t *testing.T) {
+	for _, c := range []struct{ tool, in, want string }{
+		{"Bash", `{"description":"d","command":"ls","timeout":5}`, `{"command":"ls","timeout":5}`},
+		{"Task", `{"description":"d","prompt":"p"}`, `{"prompt":"p"}`},
+		{"WebFetch", `{"url":"u","prompt":"p"}`, `{"url":"u"}`},
+		{"Read", `{"file_path":"f","description":"kept"}`, `{"description":"kept","file_path":"f"}`},
+		{"Bash", `["description"]`, `["description"]`},
+		{"Bash", `null`, `null`},
+	} {
+		if got, err := MatchKey(c.tool, []byte(c.in)); err != nil || got != c.want {
+			t.Errorf("MatchKey(%s, %s) = %q, %v; want %q", c.tool, c.in, got, err, c.want)
+		}
+	}
+	if _, err := MatchKey("Bash", []byte(`{"command":"\ud800"}`)); err == nil {
+		t.Error("a lone surrogate has a key")
+	}
+}

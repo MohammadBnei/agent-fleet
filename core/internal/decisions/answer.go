@@ -253,9 +253,9 @@ func (s *Store) Withdraw(ctx context.Context, id string) error {
 }
 
 // OpenRequest is the seq of this session's open non-blocking request for
-// this tool and canonical input, if there is one: the same call asked again
+// this tool and match key, if there is one: the same call asked again
 // (coreserver SendMessage returns it rather than asking twice).
-func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, canon string) (int64, bool, error) {
+func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, key string) (int64, bool, error) {
 	session, err := uuid.Parse(sessionID)
 	if err != nil {
 		return 0, false, nil
@@ -265,7 +265,7 @@ func (s *Store) OpenRequest(ctx context.Context, sessionID, tool, canon string) 
 		SELECT request_seq FROM decisions
 		 WHERE session_id = $1 AND state = 'open' AND kind IN ('permission', 'plan')
 		   AND tool = $2 AND input_canon = $3 AND payload -> 'nb' = '1'::jsonb
-		 ORDER BY request_seq DESC LIMIT 1`, session, tool, canon).Scan(&seq)
+		 ORDER BY request_seq DESC LIMIT 1`, session, tool, key).Scan(&seq)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -308,7 +308,7 @@ func (s *Store) Request(ctx context.Context, sessionID string, seq int64) (Recor
 
 // ConsumeGrant spends one unused one-time grant of this session for this
 // tool and input, and returns its decision's id, or "" when there is none.
-// The input is compared canonically (Canon). SKIP LOCKED: of two concurrent
+// The input is compared by its match key (MatchKey). SKIP LOCKED: of two concurrent
 // retries of one call, one gets the grant and the other none, never both.
 //
 // A grant is a grantable request a human allowed through Answer: Answer
@@ -321,7 +321,7 @@ func (s *Store) ConsumeGrant(ctx context.Context, sessionID, tool string, input 
 	if err != nil {
 		return "", nil
 	}
-	canon, err := Canon(input)
+	canon, err := MatchKey(tool, input)
 	if err != nil {
 		return "", fmt.Errorf("%w: input_json: %v", ErrInvalid, err)
 	}

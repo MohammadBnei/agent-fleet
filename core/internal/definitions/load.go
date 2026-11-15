@@ -183,6 +183,11 @@ func LoadAll(files map[string][]byte) (results []Result, valid []Client, fileErr
 				r.merged = merged
 				r.eff, r.err = toSpec(merged)
 				if r.err == nil {
+					// docs/adr/0070 §2: every session can ask, so no definition
+					// can be written without AskUserQuestion.
+					if !p.spec.Abstract && !slices.Contains(r.eff.SidecarTools, "AskUserQuestion") {
+						r.eff.SidecarTools = append(r.eff.SidecarTools, "AskUserQuestion")
+					}
 					r.err = validate(name, r.eff)
 				}
 			}
@@ -581,7 +586,7 @@ func validate(name string, s *Spec) error {
 		}
 		seenSkill[sk] = true
 	}
-	// tools, interaction and lifecycle are required: an absent bound is no
+	// tools and lifecycle are required: an absent bound is no
 	// bound (nil tools would mean the SDK's whole default tool set).
 	if need(s.Tools != nil, "tools") {
 		if len(s.Tools.Allow) == 0 && !s.Abstract {
@@ -611,7 +616,9 @@ func validate(name string, s *Spec) error {
 			}
 		}
 	}
-	if need(s.Interaction != nil, "interaction") {
+	// docs/adr/0070 §2, release one: optional and ignored by every reader
+	// that matters; still shape-checked when present.
+	if s.Interaction != nil {
 		checkList(&errs, "interaction", s.Interaction.Allow, interactions)
 	}
 	if need(s.Lifecycle != nil, "lifecycle") {

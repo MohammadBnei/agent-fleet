@@ -116,14 +116,15 @@ func read(msgType, text string) Decision {
 
 // NonBlocking reads a permission request a worker that never blocks sent
 // (stamped "nb": 1): its tool, its input's Canon ("" when it has none) and
-// whether it is a plan. ok is false for any other text.
+// whether it is a plan. canon is the match key (MatchKey). ok is false for any
+// other text.
 func NonBlocking(text string) (tool, canon string, isPlan, ok bool) {
 	var p permission
 	_ = json.Unmarshal([]byte(text), &p)
 	if p.NB != 1 {
 		return "", "", false, false
 	}
-	canon, _ = Canon(p.Input)
+	canon, _ = MatchKey(p.Tool, p.Input)
 	return clip(p.Tool, 200), canon, p.Tool == "ExitPlanMode", true
 }
 
@@ -152,6 +153,43 @@ func Canon(raw []byte) (string, error) {
 		return "", errors.New("canon: trailing data after the value")
 	}
 	b, err := json.Marshal(v)
+	return string(b), err
+}
+
+// matchDrops is the free text a retry may rewrite without changing what runs,
+// per tool (docs/adr/0070 §6, owner 2026-11-16). Justified from the SDK's
+// tool input types (sdk-tools.d.ts): Bash and Agent/Task `description` is a
+// label for the card ("what this command does"; the task's 3-5 word title)
+// while `command` and the Agent `prompt` stay in the key; WebFetch `prompt`
+// runs over the fetched page, it does not change what is fetched, and `url`
+// stays. Every other tool keeps its whole input.
+var matchDrops = map[string][]string{
+	"Bash":     {"description"},
+	"Agent":    {"description"},
+	"Task":     {"description"},
+	"WebFetch": {"prompt"},
+}
+
+// MatchKey is Canon of tool's input with that tool's matchDrops removed: what
+// input_canon stores and what a grant and the open-request dedup compare. A
+// stored row keeps whatever it was written with (no migration); an input
+// that is not a JSON object is keyed whole.
+func MatchKey(tool string, raw []byte) (string, error) {
+	canon, err := Canon(raw)
+	drops := matchDrops[tool]
+	if err != nil || len(drops) == 0 {
+		return canon, err
+	}
+	d := json.NewDecoder(strings.NewReader(canon))
+	d.UseNumber()
+	var m map[string]any
+	if d.Decode(&m) != nil || m == nil {
+		return canon, nil
+	}
+	for _, k := range drops {
+		delete(m, k)
+	}
+	b, err := json.Marshal(m)
 	return string(b), err
 }
 
@@ -281,7 +319,7 @@ func OnAppend(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Ent
 	if d.Kind() != Question {
 		t := clip(p.Tool, 200)
 		tool = &t
-		if c, err := Canon(p.Input); err == nil {
+		if c, err := MatchKey(p.Tool, p.Input); err == nil {
 			canon = &c
 		}
 		grantable = d.Kind() == Permission && p.NB == 1 && canon != nil

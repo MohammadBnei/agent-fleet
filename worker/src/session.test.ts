@@ -2078,29 +2078,6 @@ test.each([
   },
 );
 
-test.each([
-  ["auto", "Bash", { command: "ls" }],
-  ["auto", "Bash", { command: "git push --force" }],
-  ["default", "Edit", { file_path: "notes/a.md" }],
-  ["auto", "ExitPlanMode", {}],
-] as const)(
-  "interaction deny: %s %s %j asks become denies",
-  (mode, tool, input) => {
-    expect(
-      definitionDecision(
-        { ...DEF_ALLOW, interaction: "deny" },
-        tool,
-        input as Record<string, unknown>,
-        mode,
-        WT,
-      ),
-    ).toEqual({
-      behavior: "deny",
-      message: "not allowed in a headless run",
-    });
-  },
-);
-
 test("sdkMode: the fleet's auto is the SDK's default, every other mode passes through", () => {
   expect(sdkMode("auto")).toBe("default");
   expect(sdkMode("default")).toBe("default");
@@ -2647,20 +2624,6 @@ test("a grant still runs where tools.allow matched but would ask", () => {
       ["Bash(git push origin +main)"],
     ).behavior,
   ).toBe("allow");
-});
-
-test("a grant does not ask under interaction: deny", () => {
-  const spec = { ...DEF_NONE, interaction: "deny" };
-  expect(
-    definitionDecision(spec, "Bash", { command: "npm test" }, "auto", WT, [
-      "Bash(npm test)",
-    ]).behavior,
-  ).toBe("allow");
-  expect(
-    definitionDecision(spec, "Bash", { command: "ls" }, "auto", WT, [
-      "Bash(npm test)",
-    ]).behavior,
-  ).toBe("deny");
 });
 
 // docs/adr/0068 §4: a write asks a human in every mode, and no remembered

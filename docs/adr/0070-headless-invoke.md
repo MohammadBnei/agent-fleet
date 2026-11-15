@@ -6,11 +6,16 @@
   2026-11-15 (§6 on ADR-0082, §3's key, build order)
 - **Built:** the proto (`Invoke`, `WaitForResult`) and their authz rows only;
   and, through ADR-0082 slice 2, what §6 parks on: stamped requests, one-time
-  grants and a decision that holds no pod; and build-order slice 1:
-  `AgentSpec` carries `lifecycle` and `output_schema` (the loader validates
+  grants and a decision that holds no pod; build-order slice 1 (`AgentSpec`
+  carries `lifecycle` and `output_schema`: the loader validates
   `output.schema`; core fills `lifecycle` and the schema from the session row
   for `single-shot` only, so a resident session's `agent_spec_sha` is
-  unchanged). Nothing reads either field yet.
+  unchanged); slice 3, the grant match key (`decisions.MatchKey`:
+  `input_canon`, `ConsumeGrant` and the `NonBlocking`/`OpenRequest` dedup all
+  hold the per-tool subset's canon); slice 4 (`interaction`, release one:
+  optional and ignored by the loader and every reader, a constant in the
+  request hash, `AskUserQuestion` added to every effective `sidecarTools`, the
+  worker's deny branch gone).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

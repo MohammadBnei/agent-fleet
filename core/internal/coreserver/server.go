@@ -200,7 +200,7 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 
 // askOnce keeps one open decision per call a non-blocking worker asks
 // (docs/adr/0082 §5; an older worker's request, unstamped, is untouched).
-// The same call asked again, the same tool and canonical input while its
+// The same call asked again, the same tool and match key (decisions.MatchKey) while its
 // decision is open, is that decision: its seq, with nothing appended or
 // announced (ok). A new plan supersedes the session's open one first, as a
 // re-asked question does (reuseOrAppendQuestion): an agent-authored reply,
