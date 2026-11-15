@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.9.0](https://github.com/MohammadBnei/agent-fleet/compare/7.8.0...7.9.0) (2026-11-15)
+
+### Features
+
+* **worker:** export worker spans through the sidecar and core ([#370](https://github.com/MohammadBnei/agent-fleet/issues/370)) ([0c201c0](https://github.com/MohammadBnei/agent-fleet/commit/0c201c0cb513f2829738b820c721dae71e5e68b2))
+
 # [7.8.0](https://github.com/MohammadBnei/agent-fleet/compare/7.7.0...7.8.0) (2026-11-15)
 
 ### Features
