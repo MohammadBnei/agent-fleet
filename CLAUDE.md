@@ -286,12 +286,11 @@ deploy, CI, permission or pod-lifecycle paths.
 - Secrets never committed; fetched from Infisical at run time.
 - Conventional Commits — `docker.yml`'s `release` job runs `release-it` off them, bumping
   version/CHANGELOG on every push to `main`.
-- Commit trailers name the agent, with a little metadata — claims, never evidence.
-  `Co-Authored-By: <agent> <noreply@bnei.dev>`, agent =
-  `ukubi-claude-<host>` (laptop), `ukubi-claude-cloud` (claude.ai/code), `ukubi-agent`
-  (fleet repo pod); a definition pod adds none (its author is `git.identity`). Plus
-  `Agent-Session: <opaque id>` where one exists, and `Agent-Definition: <name>@<sha>` on a
-  definition pod. In fleet pods `worker/git-hooks` stamps all of them. No model ids, no URLs,
+- Commit trailers carry a little metadata — claims, never evidence. No `Co-Authored-By` naming
+  Claude or a model (the owner's global rule). `Agent-Session: <opaque id>` where one exists, and
+  `Agent-Definition: <name>@<sha>` on a definition pod. `worker/git-hooks` still stamps the
+  `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` form in fleet pods; the check accepts it, and
+  it names no Claude. No model ids, no URLs,
   no "Generated with" footer. CI enforces part of it: `trailers.yml` scans every commit of a PR
   (message, author and committer) plus its title and body and refuses a Claude or Anthropic
   co-author or identity, a Claude-Session trailer, claude.ai/claude.com links, a generated-with
