@@ -10,7 +10,12 @@
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
-  exits with an open stamped decision is parked, not crashed).
+  exits with an open decision is parked, not crashed; a clean exit with
+  neither is `NO_RESULT`, not `AGENT_CRASHED`),
+  [ADR-0082](0082-decision-cards.md) §5 (two points: a one-time grant is
+  bound to a per-tool match key of the input, not the exact tool input; and
+  in a single-shot session a question, permission or plan expires at
+  `limits.answerTimeout`, where §5 gives `expires_at` to cards only).
 - **Related:** [ADR-0066](0066-agent-service.md) (the client principal,
   `Invoke`/`WaitForResult` in the authz table, request claims, who may
   answer), [ADR-0062](0062-defined-agents.md) §7 (`output` was left out of
@@ -120,7 +125,14 @@ is the only way in.
 - **The worker learns its lifecycle.** `AgentSpec` carries `lifecycle` and
   `output_schema`. Core sends neither today: `agentSpec` leaves lifecycle
   empty on purpose (`agent_spec.go:53-55`). Core fills `lifecycle` from the
-  session row (`sessions.lifecycle`, migration 000015), not from the spec.
+  session row (`sessions.lifecycle`, migration 000015), not from the spec,
+  and only for `single-shot`: a resident session keeps `""` (the worker reads
+  `""` as resident) and an unset schema stays empty. Deterministic proto
+  encoding omits empty fields, so `agent_spec_sha` (`agent_spec.go:42-48`)
+  stays byte-identical for every existing session and a live pod is never
+  refused by ADR-0066 §8's gate after the deploy. A pod restart per slice
+  was the alternative; it would cost every live definition session its
+  turn for a field none of them uses.
 - The worker passes the schema to `query()` as `outputFormat: {type:
   "json_schema", schema}` **only when `lifecycle` is `single-shot`** and the
   schema is set. A resident session never gets one.
@@ -141,10 +153,12 @@ is the only way in.
   `tools` lists it and that a schema result arrives (the types do not say
   whether `tools` filters it or whether `canUseTool` sees it).
 - **The `result` entry gains `result_text` and `structured_output`**, for
-  every turn. The worker writes it through `SendMessage` with the
-  idempotency key **`result:<session>:<n>`**, where `n` is the result's
-  ordinal in this session (the count of `result` entries before it, read
-  from core at start, plus one per result this pod writes). A fixed
+  every turn, plus `consumedSeq` (below) and, on the pod's last result,
+  `exit: true`. The worker writes it through `SendMessage` with the
+  idempotency key **`result:<session>:<consumedSeq>:<k>`**, where `k` counts
+  this pod's results from 1. Both parts are the worker's own: no RPC
+  exposes a session's result count, and a new pod only starts after new
+  input, so its `consumedSeq` differs from any earlier pod's. A fixed
   `result:<session>` would be wrong: a retried append with a known key
   returns the first row's seq and writes nothing
   (`core/internal/transcript/postgres.go:87-95`), so the final result after
@@ -154,19 +168,29 @@ is the only way in.
   `idempotencyKey` body field, passed through to both `SendMessage` and
   `AppendReplyMessage`. The worker retries the result until core
   acknowledges it, and only then exits.
-- **Which turn is final.** In a single-shot session:
-  - a `success` turn is final, with `done`, only when the session has no
-    open stamped decision (question, permission or plan) once its result is
-    appended; core checks, since only core sees every open decision. A turn
-    that parks is a `success` too, and its structured output is kept on its
-    entry but never returned as the result;
-  - any other subtype (`error_max_turns`, `error_during_execution`,
-    `error_max_structured_output_retries`, …) is final, with `failed`.
+- **"Open decision" means any kind**: a question, permission or plan with
+  `state = 'open'` in `decisions`. Only permissions carry the `"nb": 1`
+  stamp (`core/internal/decisions/decisions.go:72-80`; a question has none),
+  so nothing here tests the stamp. A single-shot session only ever runs a
+  new worker, so all its requests are stamped anyway.
+- **Which turn is final.** Core judges only a pod's last result (`exit:
+  true`), in this order:
+  1. a human or answer entry above its `consumedSeq` exists: not final; the
+     session is re-warmed when the pod ends (§6, the exit window);
+  2. an open decision exists: not final, **parked**. This outranks
+     `success` and `error_max_structured_output_retries` alike: a parked
+     turn can exhaust the StructuredOutput retries, and its answer still
+     resumes the run. A parked turn's structured output stays on its entry
+     and is never returned as the result;
+  3. `success`: final, `done`;
+  4. any other subtype (`error_max_turns`, `error_during_execution`, …):
+     final, `failed`, and its open decisions are withdrawn.
 - **Core alone decides the terminal state**, in this order: `expired` (§6),
-  then the final result's `done`/`failed`, then a pod that exited with an
-  open stamped decision is **parked** (not an end), then a pod that exited
-  with neither is `AGENT_CRASHED` (ADR-0066 §10). On a final result core
-  marks the session finished, archives it, and runs §7.
+  then the rule above, then a pod that ended with no `exit` result: with an
+  open decision it is parked, a non-zero exit is `AGENT_CRASHED` (ADR-0066
+  §10), and a clean exit 0 with neither is `failed` with the new code
+  `NO_RESULT` (§10 defines `AGENT_CRASHED` as non-zero only). On a final
+  result core marks the session finished, archives it, and runs §7.
 
 ### 4. `WaitForResult` is a long poll
 
@@ -212,17 +236,25 @@ In a single-shot session no open decision keeps a pod. ADR-0082 §5 already
 made every decision non-blocking; a single-shot run adds only that its pod
 does not wait for the next message after a turn ends.
 
-- **One turn per pod.** A single-shot worker exits after every turn's
-  `result` is acknowledged (§3), whatever core will call it. Today the
-  worker runs one continuous `query()` and treats `success` as "wait for the
-  next input" (`session.ts:1423`, `:2295-2303`); in a single-shot session it
-  exits instead. Before exiting it flushes anything it buffers for core (the
-  planned worker span recorder's spans included), then exits explicitly
-  (verification trap: `process.exitCode` is not an exit).
+- **The pod exits when its input is used up.** Today the worker runs one
+  continuous `query()` and treats `success` as "wait for the next input"
+  (`session.ts:1423`, `:2295-2303`). A single-shot worker instead exits
+  after a `result` when nothing is left to run: the result's
+  `queued_turn_count` is 0 (absent counts as not 0) and its own input queue
+  is empty. An answer that arrives live after the "Pending" deny but before
+  the turn ends is pushed as "Approved: retry request seq N once"
+  (`session.ts:2012`) and queued by the SDK; exiting then would drop it, so
+  the worker never exits while `queued_turn_count > 0`. **Consumed** means
+  input that went into a completed turn: on the exiting result,
+  `consumedSeq` is the highest seq of a human or answer entry the worker
+  pushed, which a zero queue proves every turn has taken in. Before exiting
+  it flushes anything it buffers for core (the planned worker span
+  recorder's spans included), then exits explicitly (verification trap:
+  `process.exitCode` is not an exit).
 - **A permission parks on its stamp.** The call asks, holds for
   `DECISION_WAIT_MS`, and is denied "Pending (request seq N) … end your
   turn"; the turn ends with the stamped request open; the worker writes the
-  result and exits. Core sees the pod gone with an open stamped decision:
+  result and exits. Core sees the exit result with an open decision:
   parked.
 - **The answer resumes it.** `RespondToPermission` (both services) and
   `ApprovePlan` warm first and append second (built, ADR-0082). An allow of a
@@ -241,13 +273,16 @@ does not wait for the next message after a turn ends.
   one more park. Accepted; the re-park cap below bounds it.
 - **An answer must not land on a pod that is leaving.** `WarmIfIdle` is a
   no-op while `pod_phase` reads live (`core/internal/dashboard/server.go:1175`),
-  and `pod_phase` is the 60 s reconcile's, so an answer appended just after a
-  turn ends lands above the leaving pod's cursor and below the next pod's
-  (`server.go:1237`, `resumeFromSeq` = `LatestSeq`): never delivered. So the
-  worker's last result carries the seq of the last human entry it consumed,
-  and when a single-shot pod ends, core re-warms the session if a human or
-  answer entry lies above that seq, with the new pod's cursor just past it.
-  This is the one change to `WarmIfIdle`: an explicit cursor for this path.
+  and `pod_phase` lags the exit: it is written by the provisioner's pod
+  events (`ReportPodEvents`, `core/internal/coreserver/server.go:857`) and
+  by the 60 s reconcile, neither at the instant the worker exits. An answer
+  appended in that gap lands above the leaving pod's cursor and below the
+  next pod's (`server.go:1237`, `resumeFromSeq` = `LatestSeq`): never
+  delivered. So when a single-shot pod ends, core re-warms the session if a
+  human or answer entry lies above the exit result's `consumedSeq`, with the
+  new pod's cursor just past it, and the finality rule (§3) runs only after
+  this check. This is the one change to `WarmIfIdle`: an explicit cursor for
+  this path.
 - **Grant matching on retry: a per-tool match key, not the defer hook.**
   `ConsumeGrant` matches the full canonical input (`answer.go:325`), and an
   input with no canon is never grantable (`decisions.go:134-137`, `:287`).
@@ -257,9 +292,23 @@ does not wait for the next message after a turn ends.
   the canon of a per-tool subset of the input. Bash drops `description`;
   every other tool keeps its whole input until a measured miss names a
   field. The card still shows the full input, and the subset never drops a
-  field that changes what runs. Both sides call the one function, as `Canon`
-  does now. A request stored before the change keeps its full canon, so its
-  retry misses and asks again: the safe direction.
+  field that changes what runs. `input_canon` is redefined in place to hold
+  the match key, and every reader and writer of it switches together, in
+  one PR:
+  - `OnAppend`, which writes it at insert (`decisions.go:283-293`);
+  - `ConsumeGrant`, which spends a grant on it (`answer.go:325`);
+  - the dedup that answers a re-asked call with the open request's seq:
+    `NonBlocking` (`decisions.go:120-128`), called by `SendMessage`
+    (`core/internal/coreserver/server.go:206-211`), and `OpenRequest`
+    (`answer.go:251-260`).
+  With the dedup on the full input and the grant on the key, a retry that
+  differs only in `description` would open a second card for one call, and
+  an allow on one would beat a deny on the other through `ORDER BY
+  request_seq`. Stored rows keep their full canon: the key is computed in
+  Go, so no migration can rewrite them. A retry of a pre-change request with
+  a `description` therefore misses both the dedup and its grant, and asks
+  once more as a new decision: one extra card per open request at deploy
+  time, in the safe direction, and none once those are answered.
 - **What the defer hook would still add** is exact same-call replay: the
   parked `tool_use` itself runs on resume, so the model cannot rewrite or
   skip it, and no retry turn is spent. With the match key, the remaining
@@ -271,9 +320,15 @@ does not wait for the next message after a turn ends.
   that one question: does a resume with no prompt in streaming-input mode
   fire `PreToolUse` again for the deferred call.
 - **Re-park cap.** Each park costs a person an answer and the fleet a warm,
-  and a retry that misses its grant parks again. A single-shot run that
-  parks more than 10 times ends `failed` (`PARK_LIMIT`); the count is the
-  run's stamped decisions, so it needs no new column.
+  and a retry that misses its grant parks again. A park is a pod exit that
+  leaves an open decision, not an ask (a turn may ask and get its answer
+  live). A single-shot run that parks more than 10 times ends `failed`
+  (`PARK_LIMIT`). The count needs no column: it is the session's `exit:
+  true` results at whose `created_at` some decision of the session was open
+  (its `created_at` earlier, its `answered_at` null or later; both columns
+  are in migration 000023). Core reads it when it judges an exit result
+  parked, a handful of rows per run. If it ever proves slow, a `parks`
+  counter on `sessions` is the upgrade, as a new migration pair.
 - **A pod exits mid-call.** The idle sweep, a crash or the lifetime cap can
   end a pod while a tool runs or a call waits in `canUseTool`. The CLI's
   JSONL then holds a `tool_use` with no `tool_result`. ADR-0050 found the
@@ -286,7 +341,7 @@ does not wait for the next message after a turn ends.
   nothing is lost that a person gave. **Required test** (the worker-exit
   slice): resume a session whose JSONL ends on an unanswered `tool_use`,
   check that the SDK starts, that the next turn runs, and that an open
-  stamped decision for that call is still answerable and its grant spendable.
+  decision for that call is still answerable and its grant spendable.
 - **A parked session takes only its answer.** `WarmIfIdle` and the message
   paths (the console's Warm, `PostMessage`, a dispatcher wake) refuse a
   single-shot session with an open decision; only its answer warms it.
@@ -296,14 +351,16 @@ does not wait for the next message after a turn ends.
   default 24h, strictly less than `SESSION_RETENTION`, and the retention
   sweep skips parked sessions) bounds how long a decision may wait. Past
   it, core ends the session `expired` (the decisions go `expired`, a state
-  migration 000023 already allows) and runs §7; the check rides
+  migration 000023 already allows) and runs §7. This amends ADR-0082 §5,
+  which gives `expires_at` to cards only: in a single-shot session a
+  question, permission or plan expires too, at `limits.answerTimeout`; the check rides
   `sessions.Loop`. A parked session whose definition changed since its pin
   cannot warm, so core ends it `failed`. Nothing is answered for anyone.
 - **No migration.** Parked is derived, as every state is (ADR-0048 §2):
   `lifecycle = 'single-shot'`, no live pod, an open row in `decisions`
-  (migration 000023 has `state`, `created_at` and `UNIQUE (session_id,
-  request_seq)`, which is all §6 reads). A slice that finds it needs a column
-  adds a new numbered pair.
+  (migration 000023 has `state`, `created_at`, `answered_at` and `UNIQUE
+  (session_id, request_seq)`, which is all §6 reads, the re-park count
+  included). A slice that finds it needs a column adds a new numbered pair.
 
 ### 7. Headless sessions are cleaned up on every terminal path
 
@@ -321,29 +378,42 @@ proves it; none ships code that nothing can call.
 
 1. **`AgentSpec` carries `lifecycle` and `output_schema`.** Proto field adds;
    the loader validates `output.schema` (compiles, root `type: object`,
-   ≤ 64 KiB); `agentSpec` fills `lifecycle` from the session row. Entry:
-   `GetSession` for any definition session (resident reads `resident`).
-   Test: loader table tests; `agent_spec_test.go` for both lifecycles and
-   the sha. First, because every later worker slice reads it.
+   ≤ 64 KiB); `agentSpec` fills `lifecycle` from the session row for
+   `single-shot` only. Entry: `GetSession` for any definition session
+   (resident reads `""`). Test: loader table tests; `agent_spec_test.go`
+   for both lifecycles, and that a resident session's `agent_spec_sha` is
+   byte-identical to the one main computes today (so no live pod is refused
+   after the deploy). First, because every later worker slice reads it.
 2. **The result entry and its key.** `POST /message` takes
    `idempotencyKey`; the worker writes `result_text` and
-   `structured_output` on every `result`, keyed `result:<session>:<n>`.
+   `structured_output` on every `result`, keyed
+   `result:<session>:<consumedSeq>:<k>`.
    Entry: every session's result (resident too). Test: sidecar handler
    test that the key reaches core; an integration test that two results
    with distinct keys are two rows and a retried one is one.
-3. **The grant match key.** `decisions` stores the per-tool subset's canon;
-   `ConsumeGrant` compares it. Entry: today's resident sessions' grants.
-   Test: a Bash retry with a new `description` spends the grant; one with a
-   new `command` does not. Before parking, since parking makes retries
+3. **The grant match key.** `input_canon` holds the per-tool subset's canon,
+   at all three call sites at once (`OnAppend`, `ConsumeGrant`, the
+   `NonBlocking`/`OpenRequest` dedup). Entry: today's resident sessions'
+   grants. Test: a Bash retry with a new `description` gets the open
+   request's seq back (no second card) and spends the grant; one with a new
+   `command` does neither. Before parking, since parking makes retries
    routine.
 4. **`interaction`, release one.** Loader optional and ignored, the request
    hash's constant, `AskUserQuestion` in every definition's `sidecarTools`,
-   the worker's deny branch gone. Entry: the sync. Test: loader and hash
-   tests; an old claim still matches. Before `Invoke`, so `Invoke` never
+   the worker's deny branch gone. A valid `(name, sha)` row's `effective` is
+   frozen (`core/internal/definitions/registry.go:175-178`), so the loader's
+   addition reaches only rows synced at a new sha: a live pod keeps its
+   pinned spec and its `agent_spec_sha`, and is not refused. A definition
+   whose effective list lacks the tool gets it by a file edit, which moves
+   its pin the usual way (its next warm starts a new thread, ADR-0066 §6).
+   Entry: the sync. Test: loader and hash tests; an old claim still
+   matches; a frozen row's sha is unchanged. Before `Invoke`, so `Invoke` never
    reads it.
 5. **`Invoke` and `WaitForResult`, with the final-turn rule.** Handlers,
    proto additions (`pending`, `thread_id` on `CAPACITY`, `waiting`,
-   `expired`), §3's finality (`success` and no open stamped decision).
+   `expired`), §3's finality. The worker still runs continuously and
+   writes no `exit` result yet, so until slice 7 core applies rules 2 to 4
+   to every result.
    Entry: `Invoke` on `:9091` for a test definition allowing `single-shot`.
    The worker still runs continuously, so a run's pod idles until the idle
    sweep: correct, only slow. Test: bufconn Invoke → WaitForResult `done`
@@ -356,25 +426,29 @@ proves it; none ships code that nothing can call.
    only for single-shot; resident never); a `/kind-local` run whose
    `system/init` lists `StructuredOutput` and whose `WaitForResult` returns
    schema-valid JSON (the QA `curl`).
-7. **The worker exits after each turn**, flushing first, with the consumed
-   seq on its result; core's re-warm for an answer above it. Entry:
-   `Invoke`. Test: worker test that a single-shot `success` exits and a
-   resident one does not; integration test of an answer appended in the
-   exit window reaching the next pod; the mid-call resume test (§6).
+7. **The worker exits when its input is used up**, flushing first, with
+   `consumedSeq` and `exit: true` on its last result; core judges only exit
+   results, re-warms for an answer above `consumedSeq` before the finality
+   rule, and labels a clean exit with no result `NO_RESULT`. Entry:
+   `Invoke`. Test: worker tests that a single-shot `success` with
+   `queued_turn_count` 0 exits, one with a queued live answer runs that
+   turn first, and a resident one never exits; integration test of an
+   answer appended in the exit window reaching the next pod; the mid-call
+   resume test (§6).
 8. **§7 teardown and sweep** on final result, crash and `Stop`. Entry:
    `Invoke`. Test: fake provisioner records `TearDownSession` then
    `SweepSession` per path; a parked run keeps its PVC.
 9. **Parked is respected.** `WarmIfIdle` and the message paths refuse a
-   parked single-shot session except by its answer; the retention sweep
-   skips it; `Status`/`WaitForResult` read `waiting` without a pod; the
-   re-park cap. Entry: `Invoke`, then an answer. Test: Warm and
+   parked single-shot session except by its answer; `Status`/
+   `WaitForResult` read `waiting` without a pod; the re-park cap. Entry: `Invoke`, then an answer. Test: Warm and
    `PostMessage` refused; the answer warms; the eleventh park ends `failed`.
 10. **`maxParked` / `PARKED_LIMIT`.** Client file field, `Invoke` refusal.
     Entry: `Invoke`. Test: the twenty-first parked run is refused, not
     queued.
 11. **`answerTimeout` and `expired`; a changed definition ends `failed`.**
-    Both ride `sessions.Loop` and end through §7. Entry: a parked run left
-    alone. Test: a past-timeout run reads `expired` with its PVC gone; a
+    Both ride `sessions.Loop` and end through §7; the retention sweep
+    skips parked runs in the same PR, since `answerTimeout` is what bounds
+    them once it does. Entry: a parked run left alone. Test: a past-timeout run reads `expired` with its PVC gone; a
     run whose definition moved reads `failed`.
 12. **`interaction`, release two.** Drop it from `definitions/` and the
     loader. Ships when no single-shot run is parked (it moves every pin).
@@ -411,8 +485,9 @@ proves it; none ships code that nothing can call.
 - An answer costs one warm and one retry turn: the model re-issues the call,
   and the grant lets that one through once. A retry that changes what runs
   asks again.
-- A single-shot run's pod lives for one turn. Every turn writes a result
-  with structured output; only core's check makes one final.
+- A single-shot run's pod lives until its input is used up, then exits.
+  Every turn writes a result with structured output; only core's check,
+  after the exit-window re-warm, makes one final.
 - A full fleet refuses an answer; the client retries it, and the request
   stays open meanwhile. Answers do not jump ahead of new invokes.
 - Repeating an `Invoke` with the same key is safe and returns the same
