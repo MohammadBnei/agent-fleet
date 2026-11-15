@@ -875,8 +875,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		})
 	}
 
-	_, endJob := spans.Start(ctx, "warm.job_create", attribute.String("session_id", taskID))
-	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
+	jobCtx, endJob := spans.Start(ctx, "warm.job_create", attribute.String("session_id", taskID))
+	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
 	endJob(err)
 	if err != nil {
 		slog.Error("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo, "error", err)

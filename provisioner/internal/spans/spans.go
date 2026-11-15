@@ -11,7 +11,9 @@ package spans
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -51,8 +53,9 @@ func Start(ctx context.Context, name string, attrs ...attribute.KeyValue) (conte
 	began := time.Now()
 	return ctx, func(err error) {
 		if err != nil {
-			sp.RecordError(err)
-			sp.SetStatus(codes.Error, err.Error())
+			red := errors.New(Redact(err.Error()))
+			sp.RecordError(red)
+			sp.SetStatus(codes.Error, red.Error())
 		}
 		if r, _ := ctx.Value(recKey{}).(*recorder); r != nil {
 			r.mu.Lock()
@@ -61,6 +64,18 @@ func Start(ctx context.Context, name string, attrs ...attribute.KeyValue) (conte
 		}
 		sp.End()
 	}
+}
+
+var (
+	urlUserinfo = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/\s@]*@`)
+	tokenLike   = regexp.MustCompile(`(?i)\b(?:ghs_|ghp_|gho_|ghu_|ghr_|github_pat_|av_sess_)[A-Za-z0-9_]+|\bBearer\s+\S+`)
+)
+
+// Redact removes what an error string must not carry into a trace: URL
+// credentials (command argv and stderr quote the repo URL) and token-looking values.
+func Redact(s string) string {
+	s = urlUserinfo.ReplaceAllString(s, "${1}")
+	return tokenLike.ReplaceAllString(s, "[redacted]")
 }
 
 // Do runs fn inside a span named name.
