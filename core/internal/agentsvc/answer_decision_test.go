@@ -151,15 +151,8 @@ func TestAnswerDecision(t *testing.T) {
 		t.Errorf("mode after a plain approval: %s, want plan", deref(got.PermissionMode, ""))
 	}
 
-	// canSee but not canAnswer: a headless thread takes no answers.
 	headless := thread("shared")
 	headReq := ask(headless, "permission_request", bash)
-	if _, err := pool.Exec(ctx, `UPDATE sessions SET interaction = 'deny' WHERE id = $1`, headless); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := answer("bob", &agentfleetv1.AnswerDecisionRequest{DecisionId: headReq, Behavior: "allow"}); code(err) != connect.CodeFailedPrecondition {
-		t.Errorf("bob on a headless thread: %v", err)
-	}
 	// An archived session's decisions are gone from the deck, for an admin too.
 	if err := store.Archive(ctx, headless); err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ package definitions
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
@@ -16,7 +17,7 @@ func TestRegistry_FrozenEffectiveSurvivesLoaderAddition(t *testing.T) {
 	r := NewRegistry(dbtest.NewPool(t), &fakeLister{})
 	r.lister.(*fakeLister).set("sha1", map[string]string{
 		"definitions/base.yaml": baseYAML,
-		"definitions/aaa.yaml":    childYAML("aaa", nil),
+		"definitions/aaa.yaml":  childYAML("aaa", nil),
 	})
 	if err := r.Sync(ctx); err != nil {
 		t.Fatal(err)
@@ -34,5 +35,24 @@ func TestRegistry_FrozenEffectiveSurvivesLoaderAddition(t *testing.T) {
 	}
 	if n := rowCount(t, r, "aaa"); n != 1 || tools != `["draft_card"]` {
 		t.Fatalf("rows=%d tools=%s", n, tools)
+	}
+	// Rollout: the same definition at a new sha is a new row with the
+	// addition; the pinned sha1 row keeps its effective.
+	r.lister.(*fakeLister).set("sha2", map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/aaa.yaml":  childYAML("aaa", nil),
+	})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var old, fresh string
+	if err := r.pool.QueryRow(ctx, `SELECT effective->>'sidecarTools' FROM agent_definitions WHERE name = 'aaa' AND sha = 'sha1'`).Scan(&old); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT effective->>'sidecarTools' FROM agent_definitions WHERE name = 'aaa' AND sha = 'sha2'`).Scan(&fresh); err != nil {
+		t.Fatal(err)
+	}
+	if n := rowCount(t, r, "aaa"); n != 2 || old != `["draft_card"]` || !strings.Contains(fresh, "AskUserQuestion") {
+		t.Fatalf("rows=%d old=%s new=%s", n, old, fresh)
 	}
 }

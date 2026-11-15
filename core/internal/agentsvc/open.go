@@ -105,8 +105,8 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	if !ok {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
-	if !allows(head.Effective.Interaction, m.GetInteraction()) || !allows(head.Effective.Lifecycle, m.GetLifecycle()) {
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition does not take that interaction or lifecycle"))
+	if !allows(head.Effective.Lifecycle, m.GetLifecycle()) {
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition does not take that lifecycle"))
 	}
 	// A waking message needs an actor the client may claim (§6): exact,
 	// fail closed, an empty actor never wakes.
