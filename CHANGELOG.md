@@ -1,5 +1,11 @@
 # Changelog
 
+## [7.11.1](https://github.com/MohammadBnei/agent-fleet/compare/7.11.0...7.11.1) (2026-11-15)
+
+### Performance Improvements
+
+* **provisioner:** take the fleet-shared refresh off the warm path ([#375](https://github.com/MohammadBnei/agent-fleet/issues/375)) ([6aebd7c](https://github.com/MohammadBnei/agent-fleet/commit/6aebd7c9739eba8be63a1ada934176750234415a))
+
 # [7.11.0](https://github.com/MohammadBnei/agent-fleet/compare/7.10.1...7.11.0) (2026-11-15)
 
 ### Features
