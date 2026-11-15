@@ -62,7 +62,7 @@ spec:
         # definitions-only release changes only this value, which is what
         # rolls the pod onto the new definitions.
         - name: FLEET_VERSION
-          value: "7.10.0"
+          value: "7.10.1"
         - name: NAMESPACE
           value: agent-fleet
         # OTLP/HTTP traces URL in full (docs/adr/0081 §4). Unset = no export.
@@ -90,7 +90,7 @@ spec:
         # clones/worktrees onto, and where core's own gRPC server
         # (ReportPodEvents) lives.
         - name: WORKER_IMAGE
-          value: registry.bnei.lan:5000/agent-fleet-worker:src-1bef1c8795f9
+          value: registry.bnei.lan:5000/agent-fleet-worker:src-65c3851713cf
         - name: SIDECAR_IMAGE
           value: registry.bnei.lan:5000/agent-fleet-sidecar:src-7c62f8f6039e
         - name: WORKSPACE_PVC
