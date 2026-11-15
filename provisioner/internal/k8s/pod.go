@@ -22,7 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/util/retry"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/spans"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
@@ -463,7 +466,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	// affinity forces every later warm of this session back to the node that
 	// already holds its tree and its warm dependency cache, with no affinity
 	// rules to write and no re-clone.
-	if err := c.EnsureSessionPVC(ctx, taskID, repo); err != nil {
+	if err := spans.Do(ctx, "warm.ensure_session_pvc", func(ctx context.Context) error {
+		return c.EnsureSessionPVC(ctx, taskID, repo)
+	}, attribute.String("session_id", taskID), attribute.String("repo", repo)); err != nil {
 		return fmt.Errorf("ensure session pvc: %w", err)
 	}
 
@@ -870,7 +875,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		})
 	}
 
-	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
+	jobCtx, endJob := spans.Start(ctx, "warm.job_create", attribute.String("session_id", taskID))
+	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
+	endJob(err)
 	if err != nil {
 		slog.Error("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo, "error", err)
 		return err

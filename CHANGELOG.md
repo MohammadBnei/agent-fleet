@@ -1,5 +1,17 @@
 # Changelog
 
+# [7.10.0](https://github.com/MohammadBnei/agent-fleet/compare/7.9.1...7.10.0) (2026-11-15)
+
+### Features
+
+* **provisioner:** time each step of a warm as warm.* spans ([#372](https://github.com/MohammadBnei/agent-fleet/issues/372)) ([209f23a](https://github.com/MohammadBnei/agent-fleet/commit/209f23a9bc84e8cec6e3edd290f9a7980321051f))
+
+## [7.9.1](https://github.com/MohammadBnei/agent-fleet/compare/7.9.0...7.9.1) (2026-11-15)
+
+### Bug Fixes
+
+* **worker:** npx shim to bunx so repo MCP servers started with npx run ([#371](https://github.com/MohammadBnei/agent-fleet/issues/371)) ([bd32bb1](https://github.com/MohammadBnei/agent-fleet/commit/bd32bb168ef5f5b6de3158332d9b78685f1c02c1))
+
 # [7.9.0](https://github.com/MohammadBnei/agent-fleet/compare/7.8.0...7.9.0) (2026-11-15)
 
 ### Features
