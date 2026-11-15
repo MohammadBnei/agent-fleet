@@ -330,7 +330,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// stop an unapproved task ever getting a pod, and two implementations
 	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
 	// prevent.
-	coreSvc.SetWarmFunc(dashboardSvc.WarmIfIdle)
+	coreSvc.SetWarmFunc(dashboardSvc.WarmForAppend)
 	// One parking lot, both servers. The dashboard drops "diff this path" in;
 	// the sidecar's telemetry call — which lands on coreSvc, not here — is the
 	// only channel core has for asking a pod anything, so it is what carries

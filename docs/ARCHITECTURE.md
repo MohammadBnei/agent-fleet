@@ -125,6 +125,24 @@ from `LatestSeq` at provisioning time, so a message appended before the pod
 exists lands below the new pod's cursor and is never delivered — the pod boots
 and sits there with nothing to do.
 
+**Warm + append is one critical section per session.** A warm writes
+`POD_PHASE_PROVISIONING` before its `CreateWorkerPod` RPC returns, so a second
+sender arriving meanwhile used to read that reservation as a live pod, skip
+the warm and append ahead of the first sender's message. Every warm-then-append
+path (console `PostMessage`, `OpenFromProposal` and decision answers,
+`AgentService` `Open`/`PostMessage`, `CoreService` `PromptSession`) goes
+through `dashboard.Server.WarmForAppend`, which holds a per-session lock until
+the caller's append lands: senders to one session queue in arrival order, at
+most one `CreateWorkerPod` per session is in flight, other sessions never wait,
+and no database connection is held across the RPC. A create the provisioner
+refused undoes its own reservation (lease cleared, phase `CRASHED`), so the
+next sender warms rather than append onto a reservation with no pod; a
+cancelled, timed-out or unreachable create leaves it standing, since its pod
+may be booting. The
+lock is in-process, which holds because core runs one replica
+(`k8s/core.yaml` `replicaCount: 1`); a second replica needs a Postgres
+advisory lock on the session instead (`core/internal/dashboard/sendlock.go`).
+
 The dashboard's Stop button (or `AgentService.Stop`) posts a cooperative
 `abort` transcript entry; `query.interrupt()` — the SDK's own graceful stop
 primitive, not a process kill — plus `abortController.abort()` as a

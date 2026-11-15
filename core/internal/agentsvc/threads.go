@@ -232,7 +232,10 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 		// The words' prefix stays one release for islands that still read it (mountain plan/15 §4: the key is the API).
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDefinitionChanged, errors.New("DEFINITION_CHANGED: start a new thread"))
 	}
-	if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+	// Warm BEFORE appending, never after — see dashboard.WarmIfIdle.
+	_, release, err := s.dash.WarmForAppend(ctx, t.ID)
+	defer release()
+	if err != nil {
 		return nil, err
 	}
 	seq, err := s.transcr.AppendAuthored(ctx, t.ID, p.author(), req.Msg.GetText(), "discussion", uuid.NewString(), nil)

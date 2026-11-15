@@ -166,7 +166,10 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   **warm-then-append, never reverse**: `resumeFromSeq` = `LatestSeq` at dispatch, so a
   message appended before the pod exists lands below its cursor and is never
   delivered. `PostMessage`/`OpenFromProposal`/`PromptSession` all carry the comment —
-  copy it, don't re-derive.
+  copy it, don't re-derive. Warm + append is one critical section per session:
+  callers go through `dashboard.Server.WarmForAppend` and append before its
+  `release`, so concurrent sends land in arrival order with one `CreateWorkerPod`
+  (in-process lock — assumes core's single replica, `core/internal/dashboard/sendlock.go`).
 - **Dashboard is a console; the list answers decisions** (`adr/0042`). Blocked session
   renders its pending permission/question inline, answerable without opening it.
   A parked decision never stalls the session: the answer reaches the agent as a message. Five feed tiers stay visually distinct; a new

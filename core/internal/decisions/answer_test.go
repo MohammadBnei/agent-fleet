@@ -399,3 +399,8 @@ func TestArchive_WithdrawsOpenDecisionsAndUnusedGrants(t *testing.T) {
 		t.Errorf("an answered decision rewritten by archive: %s", r.State)
 	}
 }
+
+func (e *effects) WarmForAppend(ctx context.Context, id string) (string, func(), error) {
+	p, err := e.WarmIfIdle(ctx, id)
+	return p, func() {}, err
+}

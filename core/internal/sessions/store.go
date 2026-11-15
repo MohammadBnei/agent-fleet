@@ -816,6 +816,19 @@ func (s *Store) ClearLease(ctx context.Context, id string) error {
 	return nil
 }
 
+// RestoreLease hands a running pod back the lease a warm's ReserveSlot
+// replaced, when the create found that pod still running. Only while the
+// minted lease is still the row's: a later warm's lease is never overwritten.
+// Repo sessions only: a definition session's refused create is torn down
+// (refuseDefinitionPod).
+func (s *Store) RestoreLease(ctx context.Context, id, minted, prev string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET lease_id = NULLIF($3, '')::uuid WHERE id = $1 AND lease_id::text = $2`, id, minted, prev)
+	if err != nil {
+		return fmt.Errorf("restore lease: %w", err)
+	}
+	return nil
+}
+
 // PinnedEffective is the effective spec (JSON) of the definition version a
 // session is pinned to (docs/adr/0067 §4): nil for a repo session,
 // ErrDefinitionInvalid when that version was revoked, ErrNotFound for an

@@ -496,3 +496,8 @@ func TestCardMigration(t *testing.T) {
 		t.Fatalf("up: %v", err)
 	}
 }
+
+func (w *warmer) WarmForAppend(ctx context.Context, id string) (string, func(), error) {
+	p, err := w.WarmIfIdle(ctx, id)
+	return p, func() {}, err
+}

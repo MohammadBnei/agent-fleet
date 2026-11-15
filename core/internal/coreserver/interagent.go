@@ -147,10 +147,20 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// Fail instead. The caller is an agent with a tool result to read; telling
 	// it the fleet is full is a fact it can act on, where an accepted prompt
 	// that reaches nobody is not.
+	//
+	// Warmed whatever the phase read above: the warm re-reads it under the
+	// session's send lock, held until the append below lands, so a prompt
+	// racing a human's first message cannot read that message's PROVISIONING
+	// reservation as a pod and append ahead of it.
 	var podName string
-	if s.warm != nil && !sessions.IsPodPhaseLive(t.PodPhase) {
-		var warmErr error
-		if podName, warmErr = s.warm(ctx, target); warmErr != nil {
+	if s.warm != nil {
+		var (
+			warmErr error
+			release func()
+		)
+		podName, release, warmErr = s.warm(ctx, target)
+		defer release()
+		if warmErr != nil {
 			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", warmErr)
 			return nil, fmt.Errorf("target session %s has no pod and could not be warmed: %w", target, warmErr)
 		}
