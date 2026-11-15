@@ -65,6 +65,12 @@ spec:
           value: "7.7.0"
         - name: NAMESPACE
           value: agent-fleet
+        # OTLP/HTTP traces URL in full (docs/adr/0081 §4). Unset = no export.
+        # Uncomment when infra obs/tempo-traces lands; <alloy-otlp-service> is
+        # that PR's Service name. Replicas stay 1 (in-memory state in core
+        # assumes one provisioner and one core).
+        # - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+        #   value: "http://<alloy-otlp-service>.monitoring.svc.cluster.local:4318/v1/traces"
         # The model a repo session runs when it has none of its own
         # (worker/src/session.ts: the session's model, else this). Unset, it
         # was whatever Claude Code defaults to for the subscription.
