@@ -27,17 +27,11 @@ type sendLocks struct {
 type sendLock struct {
 	slot chan struct{} // holding the lock = a value in the slot
 	refs int           // holders + waiters, guarded by sendLocks.mu
-	// failed: the last holder's warm failed, so a live phase may be that
-	// failed warm's leftover PROVISIONING reservation rather than a pod (the
-	// reconcile loop clears it only after STARTUP_STALL_MS). The next holder
-	// warms anyway instead of appending onto a session with no pod. Read and
-	// written only by the holder.
-	failed bool
 }
 
 // lock waits for sessionID's lock, or until ctx is done. A caller that gives
-// up while waiting leaves nothing held.
-func (l *sendLocks) lock(ctx context.Context, sessionID string) (*sendLock, func(), error) {
+// up while waiting, or whose ctx ended as it won the slot, holds nothing.
+func (l *sendLocks) lock(ctx context.Context, sessionID string) (func(), error) {
 	l.mu.Lock()
 	if l.m == nil {
 		l.m = map[string]*sendLock{}
@@ -54,15 +48,21 @@ func (l *sendLocks) lock(ctx context.Context, sessionID string) (*sendLock, func
 	case e.slot <- struct{}{}:
 	case <-ctx.Done():
 		l.drop(sessionID, e)
-		return nil, nil, ctx.Err()
+		return nil, ctx.Err()
 	}
 	var once sync.Once
-	return e, func() {
+	release := func() {
 		once.Do(func() {
 			<-e.slot
 			l.drop(sessionID, e)
 		})
-	}, nil
+	}
+	// select picks at random when both are ready.
+	if err := ctx.Err(); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
 }
 
 func (l *sendLocks) drop(sessionID string, e *sendLock) {

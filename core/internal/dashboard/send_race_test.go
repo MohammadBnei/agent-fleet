@@ -32,12 +32,14 @@ type slowProvisioner struct {
 	mu                sync.Mutex
 	fail              int
 	calls             map[string]int
+	resume            map[string]int64 // the last create's resume_from_seq
 	inFlight, maxLive int
 }
 
 func (p *slowProvisioner) CreateWorkerPod(_ context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
 	p.mu.Lock()
 	p.calls[req.GetSessionId()]++
+	p.resume[req.GetSessionId()] = req.GetResumeFromSeq()
 	p.inFlight++
 	p.maxLive = max(p.maxLive, p.inFlight)
 	failing := p.fail > 0
@@ -69,7 +71,7 @@ func newRaceFixture(t *testing.T, delay time.Duration, fail int) raceFixture {
 	t.Helper()
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
-	prov := &slowProvisioner{delay: delay, fail: fail, calls: map[string]int{}}
+	prov := &slowProvisioner{delay: delay, fail: fail, calls: map[string]int{}, resume: map[string]int64{}}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -141,6 +143,7 @@ func TestPostMessage_ConcurrentSendsToAColdSessionWarmOnceInOrder(t *testing.T) 
 		})
 		// Arrival order is the order each send reached the lock.
 		waitFor(t, func() bool { return f.s.sends.waiting(id) == i+1 })
+		time.Sleep(50 * time.Millisecond) // counted before it parks: let it park
 	}
 	wg.Wait()
 
@@ -179,30 +182,99 @@ func TestPostMessage_TwoSessionsWarmInParallel(t *testing.T) {
 	}
 }
 
-// A send queued behind a failed warm warms again instead of appending onto the
-// failed warm's PROVISIONING reservation, which has no pod behind it.
-func TestPostMessage_AWaiterBehindAFailedWarmWarmsAgain(t *testing.T) {
-	f := newRaceFixture(t, 300*time.Millisecond, 1)
+// A create the provisioner refused undoes its own reservation, so a send
+// behind it — queued while it ran, or arriving after it released — warms
+// again instead of appending onto a PROVISIONING row with no pod, and its
+// message is at or above the new pod's cursor.
+func TestPostMessage_ASendBehindARefusedCreateWarmsAgain(t *testing.T) {
+	for _, queued := range []bool{true, false} {
+		t.Run(fmt.Sprintf("queued=%v", queued), func(t *testing.T) {
+			f := newRaceFixture(t, 300*time.Millisecond, 1)
+			id := f.session(t)
+
+			first := make(chan error, 1)
+			go func() { first <- f.post(id, "first") }()
+			waitFor(t, func() bool { return f.s.sends.waiting(id) == 1 })
+			if !queued {
+				if err := <-first; err == nil {
+					t.Fatal("the first send succeeded over a refused create")
+				}
+			}
+			res, err := f.s.PostMessage(f.ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: id, Text: "second"}))
+			if err != nil {
+				t.Fatalf("the second send's own warm failed: %v", err)
+			}
+			if queued {
+				if err := <-first; err == nil {
+					t.Fatal("the first send succeeded over a refused create")
+				}
+			}
+			if got := f.prov.count(id); got != 2 {
+				t.Errorf("%d CreateWorkerPod calls, want 2: the second send appended without warming", got)
+			}
+			if cursor := f.prov.resumeOf(id); res.Msg.GetSeq() < cursor {
+				t.Errorf("second message at seq %d, below the new pod's cursor %d: never delivered", res.Msg.GetSeq(), cursor)
+			}
+			if got := f.humanTexts(t, id); fmt.Sprint(got) != "[second]" {
+				t.Errorf("human messages %v, want [second]", got)
+			}
+		})
+	}
+}
+
+// A send whose caller gave up mid-create is ambiguous: the Job may exist and
+// its pod may be booting. Its reservation stands, so the next send does not
+// reserve again (which would rotate the lease out from under that pod) and
+// appends for the pod to read.
+func TestPostMessage_ASendBehindAnAmbiguousCreateKeepsTheReservation(t *testing.T) {
+	f := newRaceFixture(t, 300*time.Millisecond, 0)
 	id := f.session(t)
 
-	errs := make(chan error, 2)
-	go func() { errs <- f.post(id, "first") }()
-	waitFor(t, func() bool { return f.s.sends.waiting(id) == 1 })
-	go func() { errs <- f.post(id, "second") }()
-	waitFor(t, func() bool { return f.s.sends.waiting(id) == 2 })
+	ctx, cancel := context.WithCancel(f.ctx)
+	first := make(chan error, 1)
+	go func() {
+		_, err := f.s.PostMessage(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: id, Text: "first"}))
+		first <- err
+	}()
+	waitFor(t, func() bool { return f.prov.count(id) == 1 })
+	cancel()
+	if err := <-first; err == nil {
+		t.Fatal("a cancelled send succeeded")
+	}
+	before, err := f.sessions.Get(f.ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if err := <-errs; err == nil {
-		t.Fatal("the first send succeeded over a failed create")
+	res, err := f.s.PostMessage(f.ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: id, Text: "second"}))
+	if err != nil {
+		t.Fatalf("second send: %v", err)
 	}
-	if err := <-errs; err != nil {
-		t.Fatalf("the waiter's own warm failed: %v", err)
+	after, err := f.sessions.Get(f.ctx, id)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := f.prov.count(id); got != 2 {
-		t.Errorf("%d CreateWorkerPod calls, want 2: the waiter appended without warming", got)
+	if got := f.prov.count(id); got != 1 {
+		t.Errorf("%d CreateWorkerPod calls, want 1: the second send warmed over a pod that may be booting", got)
+	}
+	if after.LeaseID != before.LeaseID || before.LeaseID == "" {
+		t.Errorf("lease %q became %q: the booting pod's lease was rotated", before.LeaseID, after.LeaseID)
+	}
+	if !sessions.IsPodPhaseLive(after.PodPhase) {
+		t.Errorf("phase %v, want the reservation still live", after.PodPhase)
+	}
+	if cursor := f.prov.resumeOf(id); res.Msg.GetSeq() < cursor {
+		t.Errorf("second message at seq %d, below the booting pod's cursor %d", res.Msg.GetSeq(), cursor)
 	}
 	if got := f.humanTexts(t, id); fmt.Sprint(got) != "[second]" {
 		t.Errorf("human messages %v, want [second]", got)
 	}
+}
+
+func (p *slowProvisioner) resumeOf(id string) int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.resume[id]
 }
 
 func (p *slowProvisioner) count(id string) int {

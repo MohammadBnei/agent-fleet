@@ -1194,25 +1194,21 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 // to different sessions never wait on each other. A caller whose ctx ends
 // while it waits gets CodeCanceled and holds nothing.
 //
-// A sender that follows a failed warm warms again even when the phase reads
-// live: that phase can be the failed warm's own PROVISIONING reservation,
-// which reconcile clears only after STARTUP_STALL_MS, and appending onto it
-// would put the message below the next real pod's cursor. If the failed
-// create did leave a Job, the retry's create is refused (AlreadyExists) and
-// the sender gets an error, never a silent drop.
+// A sender behind a failed warm needs no help from here: a create the
+// provisioner refused undoes its own reservation (releaseReservation), so the
+// next sender reads a dead session and warms, and an ambiguous failure leaves
+// the reservation standing because a pod may be booting behind it.
 func (s *Server) WarmForAppend(ctx context.Context, sessionID string) (podName string, release func(), err error) {
-	lock, release, err := s.sends.lock(ctx, sessionID)
+	release, err = s.sends.lock(ctx, sessionID)
 	if err != nil {
 		return "", func() {}, errkeys.Connect(connect.CodeCanceled, errkeys.KeyInternal, err)
 	}
-	podName, err = s.warm(ctx, sessionID, lock.failed)
-	lock.failed = err != nil
+	podName, err = s.warm(ctx, sessionID)
 	return podName, release, err
 }
 
-// warm is WarmIfIdle's body, run under the session's send lock. retry skips
-// the live-phase shortcut (see WarmForAppend).
-func (s *Server) warm(ctx context.Context, sessionID string, retry bool) (podName string, err error) {
+// warm is WarmIfIdle's body, run under the session's send lock.
+func (s *Server) warm(ctx context.Context, sessionID string) (podName string, err error) {
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
@@ -1220,7 +1216,7 @@ func (s *Server) warm(ctx context.Context, sessionID string, retry bool) (podNam
 		}
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	if !retry && sessions.IsPodPhaseLive(t.PodPhase) {
+	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return "", nil
 	}
 	// A swept session has had its working directory and SDK state reclaimed,
@@ -1305,6 +1301,9 @@ func (s *Server) warm(ctx context.Context, sessionID string, retry bool) (podNam
 		}
 		return "", s.refuseDefinitionPod(ctx, sessionID, code, fmt.Sprintf("definition pod create failed (%v)", err))
 	case err != nil:
+		if createRefused(ctx, err) {
+			s.releaseReservation(ctx, sessionID, err)
+		}
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	case profile != nil && !pod.DefinitionProfileApplied:
 		// The create reached a provisioner that dropped the profile (an older
@@ -1404,6 +1403,42 @@ func (s *Server) refuseDefinitionPod(ctx context.Context, sessionID string, code
 		slog.ErrorContext(ctx, "dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
 	}
 	return errkeys.Connect(code, errkeys.KeyInternal, errors.New(msg))
+}
+
+// createRefused: the provisioner itself answered CreateWorkerPod with an
+// error, so this warm made no Job. A cancelled or timed-out call, or an
+// unreachable provisioner, is ambiguous: the Job may exist and its pod may be
+// booting, so the reservation must stand.
+func createRefused(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	switch st.Code() {
+	case codes.Canceled, codes.DeadlineExceeded, codes.Unavailable:
+		return false
+	}
+	return true
+}
+
+// releaseReservation undoes ReserveSlot after a refused create, as
+// refuseDefinitionPod does after a teardown: the lease goes and the phase
+// reads CRASHED, so the next sender warms instead of appending onto a
+// PROVISIONING row with no pod behind it (reconcile would clear it only after
+// STARTUP_STALL_MS). If a Job does exist after all, reconcile bumps the phase
+// back while it does.
+func (s *Server) releaseReservation(ctx context.Context, sessionID string, cause error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := s.sessions.ClearLease(ctx, sessionID); err != nil {
+		slog.ErrorContext(ctx, "dashboard warm: clearing a refused create's lease", "sessionId", sessionID, "error", err)
+	}
+	if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), fmt.Sprintf("pod create failed: %v", cause)); err != nil {
+		slog.ErrorContext(ctx, "dashboard warm: recording a refused create", "sessionId", sessionID, "error", err)
+	}
 }
 
 // definitionWarmable refuses to warm a definition session unless its pinned

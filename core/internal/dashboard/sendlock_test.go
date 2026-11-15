@@ -12,13 +12,13 @@ func TestSendLocks(t *testing.T) {
 	var l sendLocks
 	ctx := context.Background()
 
-	_, release, err := l.lock(ctx, "a")
+	release, err := l.lock(ctx, "a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Another session is free while "a" is held.
-	_, releaseB, err := l.lock(ctx, "b")
+	releaseB, err := l.lock(ctx, "b")
 	if err != nil {
 		t.Fatalf("session b waited on session a: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestSendLocks(t *testing.T) {
 	// A waiter whose ctx ends leaves nothing behind.
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	if _, _, err := l.lock(cctx, "a"); err == nil {
+	if _, err := l.lock(cctx, "a"); err == nil {
 		t.Fatal("lock returned while held")
 	}
 	if n := l.waiting("a"); n != 1 {
@@ -38,7 +38,7 @@ func TestSendLocks(t *testing.T) {
 	order := make(chan int, n)
 	for i := range n {
 		go func() {
-			_, r, err := l.lock(ctx, "a")
+			r, err := l.lock(ctx, "a")
 			if err != nil {
 				t.Error(err)
 				return
@@ -47,6 +47,7 @@ func TestSendLocks(t *testing.T) {
 			r()
 		}()
 		waitFor(t, func() bool { return l.waiting("a") == i+2 })
+		time.Sleep(20 * time.Millisecond) // counted before it parks: let it park
 	}
 	release()
 	for want := range n {

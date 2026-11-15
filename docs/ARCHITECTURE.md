@@ -134,8 +134,11 @@ path (console `PostMessage`, `OpenFromProposal` and decision answers,
 through `dashboard.Server.WarmForAppend`, which holds a per-session lock until
 the caller's append lands: senders to one session queue in arrival order, at
 most one `CreateWorkerPod` per session is in flight, other sessions never wait,
-and no database connection is held across the RPC. A sender queued behind a
-failed warm warms again rather than append onto the failed reservation. The
+and no database connection is held across the RPC. A create the provisioner
+refused undoes its own reservation (lease cleared, phase `CRASHED`), so the
+next sender warms rather than append onto a reservation with no pod; a
+cancelled, timed-out or unreachable create leaves it standing, since its pod
+may be booting. The
 lock is in-process, which holds because core runs one replica
 (`k8s/core.yaml` `replicaCount: 1`); a second replica needs a Postgres
 advisory lock on the session instead (`core/internal/dashboard/sendlock.go`).
