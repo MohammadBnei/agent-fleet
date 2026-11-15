@@ -13,11 +13,13 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -46,7 +48,7 @@ import (
 
 type Server struct {
 	// sends serializes warm-then-append per session (sendlock.go).
-	sends sendLocks
+	sends     sendLocks
 	sessions  *sessions.Store
 	proposals *proposals.Store
 	transcr   transcript.Store
@@ -1300,6 +1302,18 @@ func (s *Server) warm(ctx context.Context, sessionID string) (podName string, er
 			code = connect.Code(c)
 		}
 		return "", s.refuseDefinitionPod(ctx, sessionID, code, fmt.Sprintf("definition pod create failed (%v)", err))
+	case err != nil && podStillRunning(err):
+		// The provisioner found a live Job for this session: the phase this
+		// warm read was stale (reconcile had not caught up), and a pod is
+		// running on the lease ReserveSlot just replaced. Clearing ours would
+		// cut that pod off. Hand it its own lease back and leave the live
+		// phase for reconcile to correct: the session has a pod, so the
+		// caller's append goes to it, as for any live session.
+		if rerr := s.sessions.RestoreLease(ctx, sessionID, leaseID, t.LeaseID); rerr != nil {
+			return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, errors.Join(err, rerr))
+		}
+		slog.WarnContext(ctx, "dashboard warm: a pod was already running; kept its lease", "sessionId", sessionID)
+		return "", nil
 	case err != nil:
 		if createRefused(ctx, err) {
 			s.releaseReservation(ctx, sessionID, err)
@@ -1422,6 +1436,14 @@ func createRefused(ctx context.Context, err error) bool {
 		return false
 	}
 	return true
+}
+
+// podStillRunning is the provisioner's refusal to create over a live Job
+// (provisioner/internal/grpcserver CreateWorkerPod). It carries no error key
+// or status detail, so it is matched by code and message; keep the two in step.
+func podStillRunning(err error) bool {
+	st, ok := status.FromError(err)
+	return ok && st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), "a worker pod is still running")
 }
 
 // releaseReservation undoes ReserveSlot after a refused create, as

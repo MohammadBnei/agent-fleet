@@ -13,6 +13,8 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
@@ -31,6 +33,7 @@ type slowProvisioner struct {
 
 	mu                sync.Mutex
 	fail              int
+	stillRunning      bool // refuse every create as the provisioner does over a live Job
 	calls             map[string]int
 	resume            map[string]int64 // the last create's resume_from_seq
 	inFlight, maxLive int
@@ -42,7 +45,7 @@ func (p *slowProvisioner) CreateWorkerPod(_ context.Context, req *agentfleetv1.C
 	p.resume[req.GetSessionId()] = req.GetResumeFromSeq()
 	p.inFlight++
 	p.maxLive = max(p.maxLive, p.inFlight)
-	failing := p.fail > 0
+	failing, running := p.fail > 0, p.stillRunning
 	if failing {
 		p.fail--
 	}
@@ -55,6 +58,9 @@ func (p *slowProvisioner) CreateWorkerPod(_ context.Context, req *agentfleetv1.C
 	p.mu.Unlock()
 	if failing {
 		return nil, errors.New("clone failed")
+	}
+	if running {
+		return nil, status.Error(codes.FailedPrecondition, "a worker pod is still running for this session")
 	}
 	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-" + req.GetSessionId()}, nil
 }
@@ -287,4 +293,42 @@ func (p *slowProvisioner) peak() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.maxLive
+}
+
+// A create refused because a pod is still running (the phase read was stale)
+// hands that pod its own lease back, and the append goes to it.
+func TestPostMessage_AStillRunningRefusalKeepsTheRunningPodsLease(t *testing.T) {
+	f := newRaceFixture(t, 10*time.Millisecond, 0)
+	id := f.session(t)
+	if err := f.post(id, "first"); err != nil {
+		t.Fatal(err)
+	}
+	running, err := f.sessions.Get(f.ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reconcile has not caught up: the row reads the pod gone while it runs.
+	if err := f.sessions.SetPodPhase(f.ctx, id, "POD_PHASE_SUCCEEDED", ""); err != nil {
+		t.Fatal(err)
+	}
+	f.prov.mu.Lock()
+	f.prov.stillRunning = true
+	f.prov.mu.Unlock()
+
+	if err := f.post(id, "second"); err != nil {
+		t.Fatalf("send to a session whose pod is still running: %v", err)
+	}
+	after, err := f.sessions.Get(f.ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.LeaseID != running.LeaseID || running.LeaseID == "" {
+		t.Errorf("lease %q became %q: the running pod was cut off", running.LeaseID, after.LeaseID)
+	}
+	if !sessions.IsPodPhaseLive(after.PodPhase) {
+		t.Errorf("phase %v, want live", after.PodPhase)
+	}
+	if got := f.humanTexts(t, id); fmt.Sprint(got) != "[first second]" {
+		t.Errorf("human messages %v, want [first second]", got)
+	}
 }
