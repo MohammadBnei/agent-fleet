@@ -1,6 +1,6 @@
 # ADR-0070 — Headless invoke: any session can ask, one structured result
 
-- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3. Amended 2026-11-15 (proposed, awaiting the owner's approval): §6 is rebuilt on ADR-0082's one-time grants and the `defer` spike is dropped; §3's result key is per result; a build order is added.
+- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3. Amended 2026-11-15: §6 is rebuilt on ADR-0082's one-time grants and the `defer` spike is dropped; §3's result key is per result; a build order is added. Approved by the owner (merged as #369); the six open questions were answered 2026-11-16 (see "Owner answers" at the end of §6).
 - **Date:** 2026-10-20, amended 2026-10-25 (the owner's rule: "absolutely
   any session, headless or not, must be able to ask a question"), amended
   2026-11-15 (§6 on ADR-0082, §3's key, build order)
@@ -236,7 +236,10 @@ In a single-shot session no open decision keeps a pod. ADR-0082 §5 already
 made every decision non-blocking; a single-shot run adds only that its pod
 does not wait for the next message after a turn ends.
 
-- **The pod exits when its input is used up.** Today the worker runs one
+- **The pod exits when its input is used up, after a grace.** When a turn
+  ends on an open decision, the worker waits up to `DECISION_WAIT_MS` (the
+  same knob as the live decision wait, default 45 s) for the answer before
+  exiting, so a quick answer costs no new pod (owner, 2026-11-16). Today the worker runs one
   continuous `query()` and treats `success` as "wait for the next input"
   (`session.ts:1423`, `:2295-2303`). A single-shot worker instead exits
   after a `result` when nothing is left to run: the result's
@@ -270,7 +273,9 @@ does not wait for the next message after a turn ends.
   is no longer in plan mode when the answer lands, the worker can only say
   "retry once", and since `planRetry` is empty on a fresh pod
   (`session.ts:1280`, `:2009-2012`) the retried `ExitPlanMode` asks again:
-  one more park. Accepted; the re-park cap below bounds it.
+  one more park. Not accepted (owner, 2026-11-16): core carries the
+  approved plan, the plan decision's id and its input, to the next pod on
+  the resume path, and the worker applies the approval without asking again.
 - **An answer must not land on a pod that is leaving.** `WarmIfIdle` is a
   no-op while `pod_phase` reads live (`core/internal/dashboard/server.go:1175`),
   and `pod_phase` lags the exit: it is written by the provisioner's pod
@@ -289,9 +294,10 @@ does not wait for the next message after a turn ends.
   A resumed model re-derives the call and may rewrite free text that changes
   nothing it does, Bash's `description` above all, and the grant misses.
   The fix is a match key: `decisions` stores, and `ConsumeGrant` compares,
-  the canon of a per-tool subset of the input. Bash drops `description`;
-  every other tool keeps its whole input until a measured miss names a
-  field. The card still shows the full input, and the subset never drops a
+  the canon of a per-tool subset of the input. Known free text is dropped up
+  front (owner, 2026-11-16): Bash and Agent drop `description`, WebFetch
+  drops `prompt` (the URL stays in the key); every other tool keeps its
+  whole input until a measured miss names a field. The card still shows the full input, and the subset never drops a
   field that changes what runs. `input_canon` is redefined in place to hold
   the match key, and every reader and writer of it switches together, in
   one PR:
@@ -322,7 +328,8 @@ does not wait for the next message after a turn ends.
 - **Re-park cap.** Each park costs a person an answer and the fleet a warm,
   and a retry that misses its grant parks again. A park is a pod exit that
   leaves an open decision, not an ask (a turn may ask and get its answer
-  live). A single-shot run that parks more than 10 times ends `failed`
+  live). A single-shot run that parks more than `limits.maxParks` times
+  (default 10, set per definition in its reviewed file) ends `failed`
   (`PARK_LIMIT`). The count needs no column: it is the session's `exit:
   true` results at whose `created_at` some decision of the session was open
   (its `created_at` earlier, its `answered_at` null or later; both columns
@@ -361,6 +368,20 @@ does not wait for the next message after a turn ends.
   (migration 000023 has `state`, `created_at`, `answered_at` and `UNIQUE
   (session_id, request_seq)`, which is all §6 reads, the re-park count
   included). A slice that finds it needs a column adds a new numbered pair.
+
+### Owner answers (2026-11-16)
+
+1. **Re-park cap:** default 10, a definition limit (`limits.maxParks`).
+2. **Grant match key:** drop known free text now: Bash and Agent
+   `description`, WebFetch `prompt`.
+3. **Exit timing:** a grace of `DECISION_WAIT_MS` after a turn that ends on
+   an open decision, then exit.
+4. **Exit-window re-warm:** yes, with an explicit cursor on the warm
+   (`WarmForAppend`, which #376 made the one warm-then-append entry point).
+5. **Plan approval on a fresh pod:** core carries the approved plan to the
+   next pod; no second ask.
+6. **Exit code:** a clean exit 0 with no result and no open decision is
+   `failed` / `NO_RESULT`; `AGENT_CRASHED` stays non-zero only.
 
 ### 7. Headless sessions are cleaned up on every terminal path
 
