@@ -349,7 +349,7 @@ func (d *Dispatcher) route(e *bridgev1.CloudEvent) []definitions.Head {
 			continue
 		}
 		cur, ok := d.defs.MayOpen(Client, h.Name)
-		if !ok || !allows(cur.Effective.Interaction, "ask") || !allows(cur.Effective.Lifecycle, "resident") {
+		if !ok || !allows(cur.Effective.Lifecycle, "resident") {
 			continue
 		}
 		out = append(out, cur)

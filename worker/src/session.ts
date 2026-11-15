@@ -201,8 +201,7 @@ export function matchesToolRule(
 // §2, replacing docs/adr/0067 §4's "outside tools.allow is denied"): a call
 // tools.allow matches runs (in `default` an Edit/Write still asks), anything
 // else in the tool ceiling asks, and a tool outside the ceiling is denied.
-// ExitPlanMode asks in every mode. Under `interaction: deny` every ask is a
-// deny.
+// ExitPlanMode asks in every mode.
 // noGrant: the ask is the script-write one (docs/adr/0068 §4), which no
 // remembered grant can answer, so the request tells core not to offer one.
 export type DefinitionDecision =
@@ -462,10 +461,7 @@ export function definitionDecision(
   grants: string[] = [],
 ): DefinitionDecision {
   const allow: DefinitionDecision = { behavior: "allow" };
-  const ask: DefinitionDecision =
-    spec.interaction === "deny"
-      ? { behavior: "deny", message: "not allowed in a headless run" }
-      : { behavior: "ask" };
+  const ask: DefinitionDecision = { behavior: "ask" };
   if (toolName === "ExitPlanMode") return ask;
   // The ceiling first: tools.allow cannot widen it.
   if (!DEFINITION_TOOL_CEILING.has(toolName))
