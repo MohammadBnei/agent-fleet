@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -29,6 +30,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/spans"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
@@ -212,6 +214,13 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	if !sessionIDRe.MatchString(req.GetSessionId()) || strings.Contains(req.GetSessionId(), "-genome") {
 		return nil, status.Error(codes.InvalidArgument, "invalid session id")
 	}
+	// Every step below is a warm.* child span (and a line of the timings log),
+	// so a slow warm shows where it went, in Tempo and without it.
+	ctx = spans.WithRecorder(ctx)
+	defer func() {
+		slog.Info("grpcserver CreateWorkerPod timings", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "steps", spans.Summary(ctx))
+	}()
+	sessAttr, repoAttr := attribute.String("session_id", req.GetSessionId()), attribute.String("repo", req.GetRepo())
 	genome := make([]git.GenomeFile, 0, len(req.GetGenome()))
 	for _, f := range req.GetGenome() {
 		genome = append(genome, git.GenomeFile{Path: f.GetPath(), Body: f.GetBody()})
@@ -262,7 +271,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
 	// No pod's clone contacts the remote (it holds no credential): it reads
 	// the cache's origin/<base>, so this fetch is load-bearing, never skipped.
-	if err := s.git.EnsureRepoFetched(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
+	if err := s.git.EnsureRepoFetched(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil { // spans itself
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
@@ -276,7 +285,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// cannot start at all without a writable claude-home (see
 	// git.EnsureClaudeHome), so failing here beats creating a pod that will
 	// crash-loop on its entrypoint's plugin copy.
-	if err := s.git.EnsureClaudeHome(req.GetSessionId()); err != nil {
+	if err := spans.Do(ctx, "warm.ensure_claude_home", func(context.Context) error {
+		return s.git.EnsureClaudeHome(req.GetSessionId())
+	}, sessAttr); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
 		return nil, fmt.Errorf("ensure claude home: %w", err)
 	}
@@ -299,7 +310,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// Fatal, not best-effort: a copy an older replica left behind is removed,
 	// or no pod is built.
 	if definition != nil {
-		if err := s.git.RemoveFleetShared(req.GetSessionId()); err != nil {
+		if err := spans.Do(ctx, "warm.remove_fleet_shared", func(context.Context) error {
+			return s.git.RemoveFleetShared(req.GetSessionId())
+		}, sessAttr); err != nil {
 			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
 			return nil, fmt.Errorf("remove fleet-shared: %w", err)
 		}
@@ -318,7 +331,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 
 	// The Job name is per session, and reconcile keeps a Failed Job for its
 	// TTL, so a re-warm after a crash would die on AlreadyExists.
-	if err := s.replaceTerminalWorkerJob(ctx, req.GetSessionId()); err != nil {
+	if err := spans.Do(ctx, "warm.replace_terminal_worker_job", func(ctx context.Context) error {
+		return s.replaceTerminalWorkerJob(ctx, req.GetSessionId())
+	}, sessAttr); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "previous pod cleanup failed: "+err.Error())
 		return nil, fmt.Errorf("replace terminal worker job: %w", err)
 	}
@@ -332,7 +347,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		}
 		return nil, err
 	}
-	if err := s.git.WriteGenome(req.GetSessionId(), genome); err != nil {
+	if err := spans.Do(ctx, "warm.write_genome", func(context.Context) error {
+		return s.git.WriteGenome(req.GetSessionId(), genome)
+	}, sessAttr, attribute.Int("files", len(genome))); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "context packs write failed: "+err.Error())
 		return nil, fmt.Errorf("write genome: %w", err)
 	}
@@ -344,9 +361,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// widening runs wholly before this warm (whose reconcile then sees it) or
 	// wholly after (its revoke-all and Job delete then reach this pod).
 	if definition != nil {
-		defer s.vault.Lock(definition.Name)()
+		defer s.lockVault(ctx, definition.Name)()
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting vault token")
-		token, l, deadline, err := s.mintDefinitionToken(ctx, req.GetSessionId(), req.GetDefinition())
+		mctx, end := spans.Start(ctx, "warm.mint_definition_token", sessAttr)
+		token, l, deadline, err := s.mintDefinitionToken(mctx, req.GetSessionId(), req.GetDefinition())
+		end(err)
 		if err != nil {
 			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", status.Convert(err).Message())
 			return nil, err
@@ -359,9 +378,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	var repoVault *k8s.RepoVault
 	if definition == nil {
 		name := vault.OwnerVault(owner)
-		defer s.vault.Lock(name)()
+		defer s.lockVault(ctx, name)()
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting vault token")
-		token, l, deadline, err := s.mintRepoToken(ctx, req.GetSessionId(), owner)
+		mctx, end := spans.Start(ctx, "warm.mint_repo_token", sessAttr, attribute.String("owner", owner))
+		token, l, deadline, err := s.mintRepoToken(mctx, req.GetSessionId(), owner)
+		end(err)
 		if err != nil {
 			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", status.Convert(err).Message())
 			return nil, err
@@ -373,7 +394,8 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	}
 
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
-	if err := s.k8sc.CreateWorkerPod(ctx, k8s.WorkerPodSpec{
+	podCtx, endPod := spans.Start(ctx, "warm.k8s_create_worker_pod", sessAttr, repoAttr)
+	err := s.k8sc.CreateWorkerPod(podCtx, k8s.WorkerPodSpec{
 		SessionID:     req.GetSessionId(),
 		Repo:          req.GetRepo(),
 		RepoURL:       req.GetRepoUrl(),
@@ -387,7 +409,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		ExtraEnv:      nil,
 		Definition:    definition,
 		RepoVault:     repoVault,
-	}); err != nil {
+	})
+	endPod(err)
+	if err != nil {
 		v, label := "", ""
 		if definition != nil {
 			v, label = definition.Name, definition.VaultLabel
@@ -452,16 +476,23 @@ func (s *Server) mintRepoToken(ctx context.Context, sessionID, owner string) (to
 // (activeDeadlineSeconds counts from the Job's startTime, set at create: ms
 // of skew). The caller holds v's lock, after reconciling it.
 func (s *Server) mintSessionToken(ctx context.Context, sessionID, v string) (token, label string, deadline int64, err error) {
-	pem, err := s.vault.CA(ctx)
+	var pem []byte
+	err = spans.Do(ctx, "warm.vault_ca", func(ctx context.Context) (err error) {
+		pem, err = s.vault.CA(ctx)
+		return err
+	})
 	if err == nil {
-		err = s.k8sc.EnsureVaultCA(ctx, pem)
+		err = spans.Do(ctx, "warm.ensure_vault_ca", func(ctx context.Context) error { return s.k8sc.EnsureVaultCA(ctx, pem) })
 	}
 	if err != nil {
 		return "", "", 0, status.Error(codes.Unavailable, "vault CA: "+err.Error())
 	}
 	deadline = int64(podLifetime.Seconds())
 	label = sessionID + "." + strconv.FormatInt(time.Now().UnixMilli(), 10)
-	token, err = s.vault.Mint(ctx, v, label, time.Duration(deadline+60)*time.Second)
+	err = spans.Do(ctx, "warm.vault_mint", func(ctx context.Context) (err error) {
+		token, err = s.vault.Mint(ctx, v, label, time.Duration(deadline+60)*time.Second)
+		return err
+	}, attribute.String("vault", v))
 	if err != nil {
 		return "", "", 0, status.Error(codes.Unavailable, err.Error())
 	}
@@ -495,10 +526,17 @@ func (s *Server) reconcileOwnerLocked(ctx context.Context, owner string) error {
 	var mintErr error
 	if s.gh == nil {
 		mintErr = errors.New("no GitHub App: repo pods have no credentials")
-	} else if tok, mintErr = s.gh.OwnerToken(ctx, owner); mintErr != nil {
+	} else if mintErr = spans.Do(ctx, "warm.github_owner_token", func(ctx context.Context) (err error) {
+		tok, err = s.gh.OwnerToken(ctx, owner)
+		return err
+	}, attribute.String("owner", owner)); mintErr != nil {
 		tok = ""
 	}
-	widened, err := s.vault.ReconcileOwner(ctx, owner, tok)
+	var widened bool
+	err := spans.Do(ctx, "warm.vault_reconcile_owner", func(ctx context.Context) (err error) {
+		widened, err = s.vault.ReconcileOwner(ctx, owner, tok)
+		return err
+	}, attribute.String("owner", owner))
 	if err != nil && mintErr != nil {
 		return fmt.Errorf("%w (%v)", mintErr, err)
 	}
@@ -838,6 +876,10 @@ func repoOwner(repoURL string) (string, error) {
 }
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {
+	// A blocking RPC back to core: its own span, to see what the progress
+	// reports cost the warm.
+	ctx, end := spans.Start(ctx, "warm.report_event", attribute.String("session_id", taskID), attribute.String("event", phase.String()))
+	defer end(nil)
 	s.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
 		SessionId: taskID,
 		Kind:      kind,
@@ -845,4 +887,12 @@ func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleet
 		PodName:   podName,
 		Message:   message,
 	})
+}
+
+// lockVault takes name's vault lock, the wait showing as its own span: two
+// warms on one owner's vault queue here.
+func (s *Server) lockVault(ctx context.Context, name string) (unlock func()) {
+	_, end := spans.Start(ctx, "warm.vault_lock_wait", attribute.String("vault", name))
+	defer end(nil)
+	return s.vault.Lock(name)
 }
