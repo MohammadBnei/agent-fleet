@@ -1751,7 +1751,12 @@ type AgentSpec struct {
 	// docs/adr/0068 §4: the definition's workspace is served to an island host
 	// (its embed.origins is not empty), so a write that leaves active content
 	// in it, or a non-plain file, asks a human in every mode.
-	ScriptAsk     bool `protobuf:"varint,11,opt,name=script_ask,json=scriptAsk,proto3" json:"script_ask,omitempty"`
+	ScriptAsk bool `protobuf:"varint,11,opt,name=script_ask,json=scriptAsk,proto3" json:"script_ask,omitempty"`
+	// docs/adr/0070 §3: the definition's output.schema as compact JSON, and
+	// only for a single-shot session; "" for every other (an empty field is not
+	// encoded, so a resident session's agent_spec_sha is unchanged). `lifecycle`
+	// above is likewise filled from the session row for single-shot only.
+	OutputSchema  string `protobuf:"bytes,12,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1861,6 +1866,13 @@ func (x *AgentSpec) GetScriptAsk() bool {
 		return x.ScriptAsk
 	}
 	return false
+}
+
+func (x *AgentSpec) GetOutputSchema() string {
+	if x != nil {
+		return x.OutputSchema
+	}
+	return ""
 }
 
 // Sets an arbitrary SDK permission mode on a task. Reused by two very
@@ -3976,7 +3988,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"agent_spec\x18\x02 \x01(\v2\x18.agentfleet.v1.AgentSpecR\tagentSpec\x12$\n" +
 	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\x12\x16\n" +
 	"\x06grants\x18\x04 \x03(\tR\x06grants\x12(\n" +
-	"\x10decision_wait_ms\x18\x05 \x01(\x05R\x0edecisionWaitMs\"\x89\x03\n" +
+	"\x10decision_wait_ms\x18\x05 \x01(\x05R\x0edecisionWaitMs\"\xae\x03\n" +
 	"\tAgentSpec\x12\x1f\n" +
 	"\vtools_allow\x18\x01 \x03(\tR\n" +
 	"toolsAllow\x12\x1d\n" +
@@ -3994,7 +4006,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\tlifecycle\x18\n" +
 	" \x01(\tR\tlifecycle\x12\x1d\n" +
 	"\n" +
-	"script_ask\x18\v \x01(\bR\tscriptAsk\"g\n" +
+	"script_ask\x18\v \x01(\bR\tscriptAsk\x12#\n" +
+	"\routput_schema\x18\f \x01(\tR\foutputSchema\"g\n" +
 	"\x13ConsumeGrantRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +

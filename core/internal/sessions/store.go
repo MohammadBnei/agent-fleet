@@ -830,30 +830,28 @@ func (s *Store) RestoreLease(ctx context.Context, id, minted, prev string) error
 }
 
 // PinnedEffective is the effective spec (JSON) of the definition version a
-// session is pinned to (docs/adr/0067 §4): nil for a repo session,
+// session is pinned to (docs/adr/0067 §4), and the session row's lifecycle
+// ("" when none is set, which reads as resident): nil spec for a repo session,
 // ErrDefinitionInvalid when that version was revoked, ErrNotFound for an
 // unknown session.
-func (s *Store) PinnedEffective(ctx context.Context, id string) ([]byte, error) {
-	var (
-		pinned, valid bool
-		eff           []byte
-	)
-	err := s.pool.QueryRow(ctx, `
-		SELECT s.definition_name IS NOT NULL, COALESCE(d.valid, false), d.effective
+func (s *Store) PinnedEffective(ctx context.Context, id string) (eff []byte, lifecycle string, err error) {
+	var pinned, valid bool
+	err = s.pool.QueryRow(ctx, `
+		SELECT s.definition_name IS NOT NULL, COALESCE(d.valid, false), d.effective, COALESCE(s.lifecycle, '')
 		  FROM sessions s
 		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
-		 WHERE s.id = $1`, id).Scan(&pinned, &valid, &eff)
+		 WHERE s.id = $1`, id).Scan(&pinned, &valid, &eff, &lifecycle)
 	switch {
 	case err == pgx.ErrNoRows:
-		return nil, ErrNotFound
+		return nil, "", ErrNotFound
 	case err != nil:
-		return nil, fmt.Errorf("pinned effective: %w", err)
+		return nil, "", fmt.Errorf("pinned effective: %w", err)
 	case !pinned:
-		return nil, nil
+		return nil, "", nil
 	case !valid || eff == nil:
-		return nil, ErrDefinitionInvalid
+		return nil, "", ErrDefinitionInvalid
 	}
-	return eff, nil
+	return eff, lifecycle, nil
 }
 
 // SetPermissionMode persists a session's mode. For a definition session the
