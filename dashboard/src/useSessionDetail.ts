@@ -1,5 +1,5 @@
 import { Code, type ConnectError } from "@connectrpc/connect";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorText } from "./agentErrors";
 import { approvePlan } from "./approvePlan";
 import type { Grant, GrantPreview } from "./components/PermissionCard";
@@ -11,7 +11,8 @@ import {
   TranscriptEntryType,
 } from "./gen/agentfleet/v1/transcript_pb";
 import { pollVisible } from "./pollVisible";
-import { serialQueue } from "./serialQueue";
+import { queueFor } from "./serialQueue";
+import { keysOf, scopeKey } from "./sessionScope";
 import { isPodPhaseLive } from "./sessionState";
 import { withOptimistic } from "./transcript";
 import { useBusyAction } from "./useBusyAction";
@@ -67,19 +68,24 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   // the linter cannot see through the hook boundary — so it is listed in the
   // reset effect's deps below rather than the rule being silenced.
   const {
-    busyKey,
-    busyKeys,
+    busyKeys: allBusyKeys,
     error: actionError,
     run: runKeyed,
     setError: setActionError,
   } = useBusyAction();
+  // Which session this hook is on RIGHT NOW. Work started under another one
+  // finishes into the void: its error must not open on this session, and its
+  // keys must not read as this session's busy buttons (keys are scoped below,
+  // because permission:${seq} and question:${seq} repeat across sessions).
+  const idRef = useRef(sessionId);
+  idRef.current = sessionId;
+  const busyKeys = keysOf(sessionId, allBusyKeys);
+  const busyKey = busyKeys.length > 0 ? busyKeys[busyKeys.length - 1] : null;
+  const isBusy = (key: string) => busyKeys.includes(key);
   // Warm-capable calls (a message, an answer, the Warm button) take seconds on
   // a cold session and the server does not order two of them (see
   // serialQueue). They wait here instead of locking the page; `starting` says
   // how many of them are waiting on a cold pod, for the small indicator.
-  const enqueue = useMemo(() => serialQueue(), [sessionId]);
-  const queueRef = useRef(enqueue);
-  queueRef.current = enqueue;
   const [starting, setStarting] = useState(0);
   const sessionRef = useRef<Session | null>(null);
   // Optimistic echo for a just-sent human message — client.postMessage() plus
@@ -133,6 +139,7 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     setLoadError(null);
     setActionError(null);
     setPending(() => []);
+    setOptimistic([]);
     setStarting(0);
     setWithdrawn([]);
 
@@ -227,21 +234,36 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     }
   }
 
-  const queued = useCallback(<T>(action: () => Promise<T>): Promise<T> => {
-    const q = queueRef.current;
-    const cold = !isPodPhaseLive(sessionRef.current?.podPhase);
-    const bump = (d: number) => {
-      if (cold && queueRef.current === q) setStarting((n) => n + d);
-    };
-    bump(1);
-    return q(action).finally(() => bump(-1));
-  }, []);
+  const queued = useCallback(
+    <T>(action: () => Promise<T>): Promise<T> => {
+      const cold = !isPodPhaseLive(sessionRef.current?.podPhase);
+      const bump = (d: number) => {
+        if (cold && idRef.current === sessionId) setStarting((n) => n + d);
+      };
+      bump(1);
+      return queueFor(sessionId)(action).finally(() => bump(-1));
+    },
+    [sessionId],
+  );
 
-  // Warm is queued like a send; everything else runs straight away.
+  // Warm is queued like a send; everything else runs straight away. Keys are
+  // scoped to the session, and a failure that lands after the user has moved
+  // to another session is dropped rather than shown there.
   const run = useCallback(
-    (action: () => Promise<unknown>, key: string) =>
-      runKeyed(key === "action:warm" ? () => queued(action) : action, key),
-    [runKeyed, queued],
+    (action: () => Promise<unknown>, key: string) => {
+      const job = key === "action:warm" ? () => queued(action) : action;
+      return runKeyed(
+        async () => {
+          try {
+            await job();
+          } catch (err) {
+            if (idRef.current === sessionId) throw err;
+          }
+        },
+        scopeKey(sessionId, key),
+      );
+    },
+    [runKeyed, queued, sessionId],
   );
 
   // Both decisions go through here so the optimistic entry and the RPC can
@@ -345,8 +367,10 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   // Through run() like everything else, with one extra job: roll back the
   // optimistic echo when the post fails, so a message that never left does not
   // sit in the feed looking sent.
+  // Resolves to false when the message did not go, so the composer can put
+  // its text back.
   const sendDiscuss = useCallback(
-    async (text: string) => {
+    async (text: string): Promise<boolean> => {
       // Not through run(): that would hold busyKey, and with it the composer
       // and the menu, for the whole warm. The echo is the feedback; the queue
       // keeps order; the composer clears on send, so no double-submit.
@@ -355,9 +379,13 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       setActionError(null);
       try {
         await queued(() => client.postMessage({ sessionId, text }));
+        return true;
       } catch (err) {
+        // Gone to another session meanwhile: nothing here is theirs now.
+        if (idRef.current !== sessionId) return true;
         setActionError(errorText(err));
         setPending((prev) => prev.filter((p) => p !== item));
+        return false;
       }
     },
     [sessionId, queued, setPending, setActionError],
@@ -418,6 +446,7 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       optimistic,
     ),
     busyKey,
+    isBusy,
     // Page-level disabling is for the menu's own actions only; a card's answer
     // or a queued send must not lock unrelated buttons.
     menuBusy:

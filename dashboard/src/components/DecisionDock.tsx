@@ -26,7 +26,7 @@ import { QuestionCard } from "./QuestionCard";
 // chrome, so this wrapper is only the pin, the scroll bound, and the edge.
 export function DecisionDock({
   entries,
-  busyKey,
+  isBusy,
   // The session's pod state, for the permission rule below. Optional so a
   // caller with no session in hand still renders — it defaults to "live",
   // which is the pre-existing behaviour.
@@ -41,7 +41,7 @@ export function DecisionDock({
   onWithdraw,
 }: {
   entries: TranscriptEntry[];
-  busyKey: string | null;
+  isBusy: (key: string) => boolean;
   podLive?: boolean;
   swept?: boolean;
   compact?: boolean;
@@ -87,8 +87,8 @@ export function DecisionDock({
   // lands second would fail as no longer open.
   const seqBusy =
     permission !== null &&
-    (busyKey === `permission:${permission.entry.seq}` ||
-      busyKey === `withdraw:${permission.entry.seq}`);
+    (isBusy(`permission:${permission.entry.seq}`) ||
+      isBusy(`withdraw:${permission.entry.seq}`));
   const pad = compact ? "px-3.5 py-3" : "px-4.5 py-3.5";
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
@@ -126,7 +126,7 @@ export function DecisionDock({
       )}
       {permission && permissionLive && permission.interrupted && (
         <InterruptedBar
-          busy={busyKey === `withdraw:${permission.entry.seq}`}
+          busy={isBusy(`withdraw:${permission.entry.seq}`)}
           disabled={seqBusy}
           onClose={onWithdraw && (() => onWithdraw(permission.entry.seq))}
         />
@@ -173,7 +173,7 @@ export function DecisionDock({
         <QuestionCard
           entry={question}
           answer={null}
-          busy={busyKey === `question:${question.seq}`}
+          busy={isBusy(`question:${question.seq}`)}
           compact={compact}
           onSubmit={(answers) => onAnswer(question.seq, answers)}
         />

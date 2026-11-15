@@ -33,7 +33,7 @@ const BTN_DANGER = "btn btn-outline btn-error btn-xs font-normal";
 export function ActionsMenu({
   sessionId,
   busy,
-  busyKey,
+  isBusy,
   run,
   sweptAt,
   archivedAt,
@@ -52,7 +52,7 @@ export function ActionsMenu({
   // Which one is in flight, so the spinner lands on the button that was
   // actually clicked instead of every button greying out together — the
   // whole point being to tell the clicker their click registered.
-  busyKey: string | null;
+  isBusy: (key: string) => boolean;
   run: (action: () => Promise<unknown>, key: string) => void;
   // Set once the retention GC has reclaimed this session's working directory
   // (docs/adr/0048). Readable history, not resumable — so Warm is hidden
@@ -86,7 +86,7 @@ export function ActionsMenu({
           {turnRunning && (
             <ActionButton
               className={BTN}
-              busy={busyKey === "action:interrupt"}
+              busy={isBusy("action:interrupt")}
               disabled={busy}
               onClick={() =>
                 run(() => client.interrupt({ sessionId }), "action:interrupt")
@@ -97,7 +97,7 @@ export function ActionsMenu({
           )}
           <ActionButton
             className={BTN_DANGER}
-            busy={busyKey === "action:stop"}
+            busy={isBusy("action:stop")}
             disabled={busy}
             title="End the pod. The session stays and can be warmed again."
             onClick={() =>
@@ -109,7 +109,7 @@ export function ActionsMenu({
           {onRestart && (
             <ActionButton
               className={BTN}
-              busy={busyKey === "discuss"}
+              busy={isBusy("discuss")}
               disabled={busy}
               onClick={onRestart}
               title="Send /clear — end this conversation and start fresh on the next warm"
@@ -126,7 +126,7 @@ export function ActionsMenu({
         !sweptAt && (
           <ActionButton
             className={BTN}
-            busy={busyKey === "action:warm"}
+            busy={isBusy("action:warm")}
             disabled={busy}
             title="Start a pod and resume this session"
             onClick={() =>
@@ -143,7 +143,7 @@ export function ActionsMenu({
       {!archivedAt && (
         <ActionButton
           className={BTN}
-          busy={busyKey === "action:archive"}
+          busy={isBusy("action:archive")}
           disabled={busy}
           onClick={() =>
             run(() => client.archiveSession({ sessionId }), "action:archive")
@@ -157,7 +157,7 @@ export function ActionsMenu({
           detail is open), so a static anchor/id pair is safe. */}
       <ActionButton
         className={BTN}
-        busy={busyKey === "action:mode"}
+        busy={isBusy("action:mode")}
         disabled={busy}
         popoverTarget="popover-mode"
         style={{ anchorName: "--anchor-mode" } as CSSProperties}

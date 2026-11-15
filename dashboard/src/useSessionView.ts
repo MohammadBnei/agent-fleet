@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import { restoreDraft } from "./sessionScope";
 import {
   backgroundTasks,
   latestSlashCommands,
@@ -94,7 +95,7 @@ export function sessionPanelData(entries: TranscriptEntry[]) {
 // command and filtered by what is typed so far.
 export function useComposer(
   entries: TranscriptEntry[],
-  sendDiscuss: (text: string) => void,
+  sendDiscuss: (text: string) => unknown,
 ) {
   const [message, setMessage] = useState("");
   const slashCommands = message.startsWith("/")
@@ -106,7 +107,11 @@ export function useComposer(
     const text = message.trim();
     if (!text) return;
     setMessage("");
-    sendDiscuss(text);
+    // A message that did not go comes back in front of whatever was typed
+    // since, as the island does.
+    void Promise.resolve(sendDiscuss(text)).then((ok) => {
+      if (ok === false) setMessage((m) => restoreDraft(text, m));
+    });
   }
   return { message, setMessage, slashCommands, sendMessage };
 }

@@ -74,6 +74,10 @@
   // Bumped by every load/select/unmount. Work started under an older value
   // writes nothing: a slow response for thread A never lands in thread B.
   let gen = 0;
+  // Bumped only when the THREAD changes (not on a same-thread reload). Sends
+  // and answers bind to it, so a reload of the thread they belong to does not
+  // make them drop their text or their echo.
+  let epoch = 0;
   let seen = new Set<bigint>();
 
   const items = $derived(conversation(entries));
@@ -180,6 +184,7 @@
 
   async function load() {
     const my = ++gen;
+    epoch++;
     stream?.abort();
     phase = "loading";
     error = "";
@@ -196,15 +201,20 @@
   async function select(t: Thread) {
     const my = ++gen;
     stream?.abort();
+    // A reload of the same thread keeps what is still in flight in it.
+    const same = t.id === current?.id;
+    if (!same) epoch++;
     current = t;
     pinned = true;
     entries = [];
     withdrawn = new Set();
     seen = new Set();
-    answers = {};
-    pending = [];
+    if (!same) {
+      answers = {};
+      pending = [];
+      busySeqs = new Set();
+    }
     error = "";
-    busySeqs = new Set();
     stale = false;
     reconnecting = false;
     await guard(async () => {
@@ -226,6 +236,8 @@
       entries = res.entries;
       withdrawn = closed;
       seen = new Set(res.entries.map((e) => e.seq));
+      // Already in the reloaded transcript: its pending copy is done.
+      pending = pending.filter((p) => p.seq === undefined || !seen.has(p.seq));
       follow(t.id, res.nextSeq, my);
     });
   }
@@ -293,6 +305,7 @@
   // threads never pile up (they all looked alike).
   function startNew() {
     gen++;
+    epoch++;
     stream?.abort();
     current = undefined;
     entries = [];
@@ -315,15 +328,15 @@
     ordered = true,
   ): Promise<boolean> {
     if (busySeqs.has(seq) || !current) return false;
-    const my = gen;
+    const my = epoch;
     const threadId = current.id;
     busySeqs = new Set(busySeqs).add(seq);
     error = "";
     try {
       await (ordered ? serial(() => fn(threadId)) : fn(threadId));
-      return my === gen;
+      return my === epoch;
     } catch (err) {
-      if (my !== gen) return false;
+      if (my !== epoch) return false;
       if (isUnauthenticated(err)) phase = "signed-out";
       else if (isStale(err)) stale = true;
       else if (isAlreadyAnswered(err)) {
@@ -337,7 +350,7 @@
       }
       return false;
     } finally {
-      if (my === gen) {
+      if (my === epoch) {
         const next = new Set(busySeqs);
         next.delete(seq);
         busySeqs = next;
@@ -416,7 +429,7 @@
     let key = 0;
     // Bound to where the user is now: if they move to another thread while
     // this travels, nothing below writes into that one.
-    let my = gen;
+    let my = epoch;
     try {
       let t = current;
       if (!t) {
@@ -431,9 +444,9 @@
           if (!res.thread) throw new Error("no thread");
           t = res.thread;
           threads = [t, ...threads.filter((x) => x.id !== t!.id)];
-          if (my !== gen) return; // they picked another thread meanwhile
+          if (my !== epoch) return; // they picked another thread meanwhile
           await select(t);
-          my = gen;
+          my = epoch;
         } finally {
           creating = false;
         }
@@ -443,7 +456,7 @@
       pinned = true; // your own message always comes into view
       const threadId = t.id;
       const res = await serial(() => api.postMessage({ threadId, text }));
-      if (my !== gen) return;
+      if (my !== epoch) return;
       if (seen.has(res.seq)) {
         // Already streamed back.
         pending = pending.filter((p) => p.key !== key);
@@ -457,7 +470,7 @@
         );
       }
     } catch (err) {
-      if (my !== gen) return;
+      if (my !== epoch) return;
       pending = pending.filter((p) => p.key !== key);
       // Nothing typed since is lost: the failed text goes back in front of it.
       draft = draft ? `${text}\n${draft}` : text;
@@ -521,6 +534,7 @@
       window.removeEventListener("focus", onFocus);
       unfollow();
       gen++;
+      epoch++;
       stream?.abort();
     };
   });

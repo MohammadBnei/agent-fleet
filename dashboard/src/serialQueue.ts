@@ -7,6 +7,8 @@
 // — so it lands BEFORE the first message in the transcript. Rather than lock
 // the composer for the length of a warm, sends wait their turn here. One
 // failure does not stop the jobs behind it.
+export type Enqueue = ReturnType<typeof serialQueue>;
+
 export function serialQueue() {
   let tail: Promise<unknown> = Promise.resolve();
   return function enqueue<T>(job: () => Promise<T>): Promise<T> {
@@ -14,4 +16,17 @@ export function serialQueue() {
     tail = result;
     return result;
   };
+}
+
+// One queue per key (a session id), kept for the life of the page: leaving a
+// session and coming back, or a layout switch remounting its view, must land
+// on the SAME queue, or a send made before the switch races one made after.
+const queues = new Map<string, Enqueue>();
+export function queueFor(key: string): Enqueue {
+  let q = queues.get(key);
+  if (!q) {
+    q = serialQueue();
+    queues.set(key, q);
+  }
+  return q;
 }

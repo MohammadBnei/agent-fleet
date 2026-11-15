@@ -72,7 +72,7 @@ export function MobileSessionDetail({
   const {
     session,
     entries,
-    busyKey,
+    isBusy,
     loadError,
     actionError,
     pendingMessages,
@@ -240,7 +240,7 @@ export function MobileSessionDetail({
           entries={entries}
           visibility={visibility}
           density={density}
-          busyKey={busyKey}
+          isBusy={isBusy}
           hasOlder={hasOlder}
           loadingOlder={loadingOlder}
           onLoadOlder={() => anchorPrepend(loadOlder)}
@@ -296,7 +296,7 @@ export function MobileSessionDetail({
         entries={entries}
         podLive={isPodPhaseLive(session.podPhase)}
         swept={session.sweptAt !== undefined}
-        busyKey={busyKey}
+        isBusy={isBusy}
         compact
         onRespond={respondToPermission}
         previewGrant={previewGrant}
@@ -310,7 +310,7 @@ export function MobileSessionDetail({
         {(docked || slashCommands.length > 0) && (
           <div className="flex gap-2 px-3.5 pt-2.5 overflow-x-auto">
             <ActionButton
-              busy={busyKey === "action:interrupt"}
+              busy={isBusy("action:interrupt")}
               disabled={menuBusy}
               onClick={() =>
                 run(() => client.interrupt({ sessionId }), "action:interrupt")
@@ -320,7 +320,7 @@ export function MobileSessionDetail({
               /interrupt
             </ActionButton>
             <ActionButton
-              busy={busyKey === "action:mode"}
+              busy={isBusy("action:mode")}
               disabled={menuBusy}
               onClick={() =>
                 run(
@@ -346,7 +346,7 @@ export function MobileSessionDetail({
         )}
 
         <div className="px-3.5 py-2.5">
-          {startingPod && <PodStarting className="mb-2" />}
+          <PodStarting active={startingPod} className="mb-2" />
           <Composer
             value={message}
             onChange={setMessage}
@@ -426,7 +426,7 @@ export function MobileSessionDetail({
             model={model}
             session={session}
             busy={menuBusy}
-            busyKey={busyKey}
+            isBusy={isBusy}
             run={run}
             onAutoClick={() => {
               setPanelsOpen(false);

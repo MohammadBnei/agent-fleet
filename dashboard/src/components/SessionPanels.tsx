@@ -236,7 +236,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 export function SessionPanel({
   session,
   busy,
-  busyKey,
+  isBusy,
   run,
   onAutoClick,
   onRestart,
@@ -246,7 +246,7 @@ export function SessionPanel({
   // From the session's init line — see sessionPanelData.
   model?: string | null;
   busy: boolean;
-  busyKey: string | null;
+  isBusy: (key: string) => boolean;
   run: (action: () => Promise<unknown>, key: string) => void;
   onAutoClick: () => void;
   onRestart?: () => void;
@@ -291,7 +291,7 @@ export function SessionPanel({
       <ActionsMenu
         sessionId={session.id}
         busy={busy}
-        busyKey={busyKey}
+        isBusy={isBusy}
         run={run}
         sweptAt={session.sweptAt}
         archivedAt={session.archivedAt}

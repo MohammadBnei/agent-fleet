@@ -78,7 +78,7 @@ export function SessionDetail({
   const {
     session,
     entries,
-    busyKey,
+    isBusy,
     loadError,
     actionError,
     pendingMessages,
@@ -203,7 +203,7 @@ export function SessionDetail({
               entries={entries}
               visibility={visibility}
               density={density}
-              busyKey={busyKey}
+              isBusy={isBusy}
               hasOlder={hasOlder}
               loadingOlder={loadingOlder}
               onLoadOlder={() => anchorPrepend(loadOlder)}
@@ -250,7 +250,7 @@ export function SessionDetail({
           entries={entries}
           podLive={isPodPhaseLive(session.podPhase)}
           swept={session.sweptAt !== undefined}
-          busyKey={busyKey}
+          isBusy={isBusy}
           onRespond={respondToPermission}
           previewGrant={previewGrant}
           onApprovePlan={approvePlanDecision}
@@ -298,7 +298,7 @@ export function SessionDetail({
             </div>
           )}
 
-          {startingPod && <PodStarting className="mb-2" />}
+          <PodStarting active={startingPod} className="mb-2" />
           <Composer
             value={message}
             onChange={setMessage}
@@ -344,7 +344,7 @@ export function SessionDetail({
             model={model}
             session={session}
             busy={menuBusy}
-            busyKey={busyKey}
+            isBusy={isBusy}
             run={run}
             onAutoClick={() => setAutoOpen(true)}
             onRestart={() => sendDiscuss("/clear")}

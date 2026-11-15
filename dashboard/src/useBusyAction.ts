@@ -47,5 +47,17 @@ export function useBusyAction() {
 
   const clearError = useCallback(() => setError(null), []);
   const busyKey = busyKeys.length > 0 ? busyKeys[busyKeys.length - 1] : null;
-  return { busyKey, busyKeys, error, run, clearError, setError } as const;
+  const isBusy = useCallback(
+    (key: string) => busyKeys.includes(key),
+    [busyKeys],
+  );
+  return {
+    busyKey,
+    busyKeys,
+    isBusy,
+    error,
+    run,
+    clearError,
+    setError,
+  } as const;
 }

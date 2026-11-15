@@ -657,7 +657,13 @@ export function Schedules({
                   </span>
                   <button
                     type="button"
-                    disabled={rows[p.id]?.pending !== undefined}
+                    // aria-disabled, not disabled: a disabled button drops
+                    // keyboard focus to the page mid-wait (ActionButton's
+                    // keepFocus). proposeAct ignores a repeat click itself.
+                    aria-disabled={
+                      rows[p.id]?.pending !== undefined || undefined
+                    }
+                    aria-busy={rows[p.id]?.pending === "open" || undefined}
                     // THE human gate: the one call that can hand a
                     // cluster-access agent a pod. It creates the session and
                     // sends the proposal body as its first message, verbatim —
@@ -671,11 +677,14 @@ export function Schedules({
                         if (res.session) onSelectSession(res.session.id);
                       })
                     }
-                    className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"
+                    className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold aria-disabled:opacity-50"
                   >
                     {rows[p.id]?.pending === "open" ? (
                       <span className="inline-flex items-center gap-2">
-                        <span className="loading loading-spinner loading-xs" />
+                        <span
+                          aria-hidden
+                          className="size-3 flex-none rounded-full border-2 border-current border-r-transparent animate-spin"
+                        />
                         starting pod…
                       </span>
                     ) : (
@@ -684,7 +693,9 @@ export function Schedules({
                   </button>
                   <button
                     type="button"
-                    disabled={rows[p.id]?.pending !== undefined}
+                    aria-disabled={
+                      rows[p.id]?.pending !== undefined || undefined
+                    }
                     // dismissProposal, not deleteSession — this used to pass a
                     // proposal id as a sessionId, which could only ever 404
                     // (or, worse, match an unrelated session).
@@ -693,7 +704,7 @@ export function Schedules({
                         client.dismissProposal({ proposalId: p.id }),
                       )
                     }
-                    className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error disabled:opacity-50"
+                    className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error aria-disabled:opacity-50"
                   >
                     dismiss
                   </button>

@@ -21,10 +21,10 @@ export function RowAction({
   reload: () => void;
   className: string;
 }) {
-  const { busyKey, error, run } = useBusyAction();
+  const { isBusy, error, run } = useBusyAction();
   return (
     <ActionButton
-      busy={busyKey !== null}
+      busy={isBusy(label)}
       title={error ?? undefined}
       className={`${className} ${error ? "border-error! text-error" : ""}`}
       onClick={() => void run(action, label).then(reload)}
