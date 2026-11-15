@@ -77,8 +77,8 @@ image behind it, both died with `docs/adr/0048` §6.
 What does need care is the pair of pinned versions in `worker/Dockerfile`:
 
 ```dockerfile
-ARG PLAYWRIGHT_VERSION=1.62.1
-ARG PLAYWRIGHT_MCP_VERSION=0.0.79
+ARG PLAYWRIGHT_VERSION=1.65.1
+ARG PLAYWRIGHT_MCP_VERSION=0.0.85
 ```
 
 The browser **builds** live on the shared PVC, not in the image

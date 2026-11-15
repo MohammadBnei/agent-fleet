@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 # The global CLI is what the `claude plugin install` steps below run at BUILD
 # time. The SDK's bundled copy is what actually runs a session. They are
 # allowed to differ; they are not allowed to drift silently.
-ARG CLAUDE_CODE_VERSION=2.1.303
+ARG CLAUDE_CODE_VERSION=2.1.325
 RUN bun install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # The toolchain the session's builds and tests actually run on. This used to
@@ -89,8 +89,8 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # now the browser-cache Job's job (provisioner/internal/k8s/browsercache.go),
 # which runs both install commands against the shared PVC — the two halves
 # still have to stay together, they just live somewhere else.
-ARG PLAYWRIGHT_VERSION=1.62.1
-ARG PLAYWRIGHT_MCP_VERSION=0.0.79
+ARG PLAYWRIGHT_VERSION=1.65.1
+ARG PLAYWRIGHT_MCP_VERSION=0.0.85
 RUN bun install -g playwright@${PLAYWRIGHT_VERSION} @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
     && bunx playwright install-deps chromium \
     # bun's global install does NOT put @playwright/mcp's own bin on PATH —
@@ -134,7 +134,7 @@ RUN bun install -g playwright@${PLAYWRIGHT_VERSION} @playwright/mcp@${PLAYWRIGHT
 # a human approved was not the command that ran; that is deleted. A hook entry
 # in a settings.json would not work either — the Agent SDK does not run hooks
 # declared in settings files.
-ARG RTK_VERSION=v0.45.0
+ARG RTK_VERSION=v1.2.0
 RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin rtk
 
@@ -149,7 +149,7 @@ RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rt
 # file is `/usr/local/go/bin` for Go, and putting a tools directory ahead of
 # the image's own toolchain is the bug that killed the go-toolchain ingredient
 # (docs/adr/0054).
-ARG UV_VERSION=0.12.5
+ARG UV_VERSION=0.13.8
 RUN curl -fsSL https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin --strip-components=1 \
         uv-x86_64-unknown-linux-musl/uv uv-x86_64-unknown-linux-musl/uvx \
@@ -183,8 +183,8 @@ RUN curl -fsSL https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/u
 # from each repo's marketplace.json (not the directory), so the
 # `<plugin>@<marketplace>` ids below are unchanged — and they must keep
 # matching fleet-shared/settings.json's enabledPlugins.
-ARG PONYTAIL_VERSION=v4.9.0
-ARG CAVEMAN_VERSION=v2.2.0
+ARG PONYTAIL_VERSION=v5.3.3
+ARG CAVEMAN_VERSION=v4.1.0
 RUN git clone --depth 1 --branch ${PONYTAIL_VERSION} https://github.com/DietrichGebert/ponytail /opt/plugin-src/ponytail \
     && git clone --depth 1 --branch ${CAVEMAN_VERSION} https://github.com/JuliusBrussee/caveman /opt/plugin-src/caveman \
     && claude plugin marketplace add /opt/plugin-src/ponytail \
