@@ -50,6 +50,7 @@ func New(core *coreclient.Client) http.Handler {
 	mux.HandleFunc("GET /task", taskHandler(core))
 	mux.HandleFunc("POST /permission-mode", permissionModeHandler(core))
 	mux.HandleFunc("POST /grant/consume", grantConsumeHandler(core))
+	mux.HandleFunc("POST /spans", spansHandler(core))
 	return mux
 }
 

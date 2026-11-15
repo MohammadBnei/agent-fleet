@@ -33,6 +33,7 @@ const (
 	CoreService_SearchJournal_FullMethodName       = "/agentfleet.v1.CoreService/SearchJournal"
 	CoreService_SaveAgentSessionId_FullMethodName  = "/agentfleet.v1.CoreService/SaveAgentSessionId"
 	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
+	CoreService_ExportSpans_FullMethodName         = "/agentfleet.v1.CoreService/ExportSpans"
 	CoreService_StreamHumanMessages_FullMethodName = "/agentfleet.v1.CoreService/StreamHumanMessages"
 	CoreService_ListFiles_FullMethodName           = "/agentfleet.v1.CoreService/ListFiles"
 	CoreService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.CoreService/GetFileUploadUrl"
@@ -106,6 +107,8 @@ type CoreServiceClient interface {
 	SearchJournal(ctx context.Context, in *SearchJournalRequest, opts ...grpc.CallOption) (*SearchJournalResponse, error)
 	SaveAgentSessionId(ctx context.Context, in *SaveAgentSessionIdRequest, opts ...grpc.CallOption) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(ctx context.Context, in *PushToolTelemetryRequest, opts ...grpc.CallOption) (*PushToolTelemetryResponse, error)
+	// Worker spans, relayed by the sidecar (docs/adr/0081 §7). Session-only.
+	ExportSpans(ctx context.Context, in *ExportSpansRequest, opts ...grpc.CallOption) (*ExportSpansResponse, error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -286,6 +289,16 @@ func (c *coreServiceClient) PushToolTelemetry(ctx context.Context, in *PushToolT
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PushToolTelemetryResponse)
 	err := c.cc.Invoke(ctx, CoreService_PushToolTelemetry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ExportSpans(ctx context.Context, in *ExportSpansRequest, opts ...grpc.CallOption) (*ExportSpansResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportSpansResponse)
+	err := c.cc.Invoke(ctx, CoreService_ExportSpans_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -489,6 +502,8 @@ type CoreServiceServer interface {
 	SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error)
 	SaveAgentSessionId(context.Context, *SaveAgentSessionIdRequest) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error)
+	// Worker spans, relayed by the sidecar (docs/adr/0081 §7). Session-only.
+	ExportSpans(context.Context, *ExportSpansRequest) (*ExportSpansResponse, error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -573,6 +588,9 @@ func (UnimplementedCoreServiceServer) SaveAgentSessionId(context.Context, *SaveA
 }
 func (UnimplementedCoreServiceServer) PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PushToolTelemetry not implemented")
+}
+func (UnimplementedCoreServiceServer) ExportSpans(context.Context, *ExportSpansRequest) (*ExportSpansResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportSpans not implemented")
 }
 func (UnimplementedCoreServiceServer) StreamHumanMessages(*StreamHumanMessagesRequest, grpc.ServerStreamingServer[TranscriptEntry]) error {
 	return status.Error(codes.Unimplemented, "method StreamHumanMessages not implemented")
@@ -875,6 +893,24 @@ func _CoreService_PushToolTelemetry_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ExportSpans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportSpansRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ExportSpans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ExportSpans_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ExportSpans(ctx, req.(*ExportSpansRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_StreamHumanMessages_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamHumanMessagesRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -1160,6 +1196,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PushToolTelemetry",
 			Handler:    _CoreService_PushToolTelemetry_Handler,
+		},
+		{
+			MethodName: "ExportSpans",
+			Handler:    _CoreService_ExportSpans_Handler,
 		},
 		{
 			MethodName: "ListFiles",

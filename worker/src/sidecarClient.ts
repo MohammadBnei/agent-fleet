@@ -108,6 +108,13 @@ export async function consumeGrant(
   return postJSON("/grant/consume", { tool, input });
 }
 
+// A finished turn's spans (worker/src/spans.ts, docs/adr/0081 §7). The sidecar
+// forwards them to core and drops them when core is down; a failure here only
+// loses timings, so callers log and move on.
+export async function exportSpans(spans: unknown[]): Promise<void> {
+  await postJSON("/spans", { spans });
+}
+
 export async function savePermissionMode(mode: string): Promise<void> {
   await postJSON("/permission-mode", { mode });
 }

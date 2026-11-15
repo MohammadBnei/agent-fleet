@@ -425,6 +425,16 @@ func (c *Client) ConsumeGrant(ctx context.Context, tool, inputJSON string) (*age
 	return res, nil
 }
 
+// ExportSpans sends the worker's finished spans (docs/adr/0081 §7). The pod's
+// own session id is injected; core reads it only to bind the call to the lease.
+func (c *Client) ExportSpans(ctx context.Context, spans []*agentfleetv1.WorkerSpan) (int32, error) {
+	res, err := c.rpc.ExportSpans(ctx, &agentfleetv1.ExportSpansRequest{SessionId: c.taskID, Spans: spans})
+	if err != nil {
+		return 0, fmt.Errorf("ExportSpans: %w", err)
+	}
+	return res.GetAccepted(), nil
+}
+
 // UpdateSessionMeta relabels this pod's OWN session's title/description. A nil
 // title or description leaves that field unchanged. taskID is this pod's
 // identity, injected here, not an argument.
