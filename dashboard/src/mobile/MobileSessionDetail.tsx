@@ -7,6 +7,7 @@ import { AgentDetailModal } from "../components/DetailModal";
 import { ErrorModal } from "../components/ErrorModal";
 import { FileDiffModal } from "../components/FileDiffModal";
 import { Modal } from "../components/Modal";
+import { PodStarting } from "../components/PodStarting";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
 import {
@@ -74,7 +75,9 @@ export function MobileSessionDetail({
     busyKey,
     loadError,
     actionError,
-    pendingMessage,
+    pendingMessages,
+    menuBusy,
+    startingPod,
     hasOlder,
     loadingOlder,
     loadOlder,
@@ -112,7 +115,7 @@ export function MobileSessionDetail({
     ref: feedRef,
     onScroll,
     anchorPrepend,
-  } = useFeedScroll(sessionId, entries, pendingMessage);
+  } = useFeedScroll(sessionId, entries, pendingMessages.length);
 
   if (loadError) {
     return (
@@ -233,7 +236,7 @@ export function MobileSessionDetail({
         className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3.5 flex flex-col gap-3.5"
       >
         <SessionFeed
-          hasPendingMessage={pendingMessage !== null}
+          hasPendingMessage={pendingMessages.length > 0}
           entries={entries}
           visibility={visibility}
           density={density}
@@ -251,15 +254,15 @@ export function MobileSessionDetail({
           openCards={openCards}
           onCardAnswered={onCardAnswered}
         />
-        {pendingMessage && (
-          <div className="flex gap-2.5 items-baseline opacity-60">
+        {pendingMessages.map((text, i) => (
+          <div key={i} className="flex gap-2.5 items-baseline opacity-60">
             <span className="text-primary flex-none text-sm">❯</span>
             <div className="text-sm leading-[1.7] text-text2 min-w-0 flex-1">
-              {pendingMessage}
+              {text}
             </div>
             <span className="loading loading-spinner loading-xs flex-none" />
           </div>
-        )}
+        ))}
       </div>
 
       <ErrorModal message={actionError} onClose={clearActionError} />
@@ -308,7 +311,7 @@ export function MobileSessionDetail({
           <div className="flex gap-2 px-3.5 pt-2.5 overflow-x-auto">
             <ActionButton
               busy={busyKey === "action:interrupt"}
-              disabled={busyKey !== null}
+              disabled={menuBusy}
               onClick={() =>
                 run(() => client.interrupt({ sessionId }), "action:interrupt")
               }
@@ -318,7 +321,7 @@ export function MobileSessionDetail({
             </ActionButton>
             <ActionButton
               busy={busyKey === "action:mode"}
-              disabled={busyKey !== null}
+              disabled={menuBusy}
               onClick={() =>
                 run(
                   () => client.setPermissionMode({ sessionId, mode: "plan" }),
@@ -343,11 +346,11 @@ export function MobileSessionDetail({
         )}
 
         <div className="px-3.5 py-2.5">
+          {startingPod && <PodStarting className="mb-2" />}
           <Composer
             value={message}
             onChange={setMessage}
             onSend={sendMessage}
-            disabled={busyKey !== null}
             placeholder="message the agent"
             compact
           />
@@ -422,7 +425,7 @@ export function MobileSessionDetail({
           <SessionPanel
             model={model}
             session={session}
-            busy={busyKey !== null}
+            busy={menuBusy}
             busyKey={busyKey}
             run={run}
             onAutoClick={() => {

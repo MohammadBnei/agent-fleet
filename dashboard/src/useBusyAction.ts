@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { errorText } from "./agentErrors";
 
 // "Run one RPC, remember which button fired it, surface the failure" — the
@@ -12,16 +12,24 @@ import { errorText } from "./agentErrors";
 // lands on the button that was actually pressed, and callers that genuinely
 // want page-level disabling still have `busyKey !== null`.
 //
+// Several actions can be in flight at once (a slow warm must not lock an
+// unrelated card), so the in-flight keys are a list: busyKey is the newest of
+// them, and a second run() under a key that is already in flight is refused
+// rather than sent twice.
+//
 // run() resolves to whether the call succeeded, so a caller holding optimistic
 // state knows whether to keep or roll it back, and a caller that just wants to
 // reload on success can branch on it. Callers that care about neither ignore it.
 export function useBusyAction() {
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [busyKeys, setBusyKeys] = useState<string[]>([]);
+  const inFlight = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
 
   const run = useCallback(
     async (action: () => Promise<unknown>, key: string): Promise<boolean> => {
-      setBusyKey(key);
+      if (inFlight.current.has(key)) return false;
+      inFlight.current.add(key);
+      setBusyKeys((prev) => [...prev, key]);
       setError(null);
       try {
         await action();
@@ -30,12 +38,14 @@ export function useBusyAction() {
         setError(errorText(err));
         return false;
       } finally {
-        setBusyKey(null);
+        inFlight.current.delete(key);
+        setBusyKeys((prev) => prev.filter((k) => k !== key));
       }
     },
     [],
   );
 
   const clearError = useCallback(() => setError(null), []);
-  return { busyKey, error, run, clearError, setError } as const;
+  const busyKey = busyKeys.length > 0 ? busyKeys[busyKeys.length - 1] : null;
+  return { busyKey, busyKeys, error, run, clearError, setError } as const;
 }

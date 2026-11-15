@@ -32,7 +32,7 @@ import { useAtBottom } from "./useAtBottom";
 export function useFeedScroll(
   sessionId: string,
   entries: TranscriptEntry[],
-  pendingMessage: string | null,
+  pendingCount: number,
 ) {
   const { ref, atBottom, onScroll, scrollToBottom, anchorPrepend } =
     useAtBottom<HTMLDivElement>();
@@ -61,8 +61,8 @@ export function useFeedScroll(
   }, [sessionId, entries, ref]);
 
   useEffect(() => {
-    if (pendingMessage !== null) scrollToBottom();
-  }, [pendingMessage, scrollToBottom]);
+    if (pendingCount > 0) scrollToBottom();
+  }, [pendingCount, scrollToBottom]);
   useEffect(() => {
     if (atBottom) setHasNew(false);
   }, [atBottom]);

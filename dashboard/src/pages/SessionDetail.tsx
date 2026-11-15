@@ -6,6 +6,7 @@ import { AgentDetailModal } from "../components/DetailModal";
 import { ErrorModal } from "../components/ErrorModal";
 import { FileDiffModal } from "../components/FileDiffModal";
 import { Markdown } from "../components/Markdown";
+import { PodStarting } from "../components/PodStarting";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
 import {
@@ -80,7 +81,9 @@ export function SessionDetail({
     busyKey,
     loadError,
     actionError,
-    pendingMessage,
+    pendingMessages,
+    menuBusy,
+    startingPod,
     hasOlder,
     loadingOlder,
     loadOlder,
@@ -118,7 +121,7 @@ export function SessionDetail({
     scrollToBottom: feedScrollToBottom,
     anchorPrepend,
     hasNew: hasNewAiMessage,
-  } = useFeedScroll(sessionId, entries, pendingMessage);
+  } = useFeedScroll(sessionId, entries, pendingMessages.length);
 
   if (loadError)
     return (
@@ -196,7 +199,7 @@ export function SessionDetail({
             className="absolute inset-0 overflow-y-auto px-4.5 py-4.5 flex flex-col gap-4"
           >
             <SessionFeed
-              hasPendingMessage={pendingMessage !== null}
+              hasPendingMessage={pendingMessages.length > 0}
               entries={entries}
               visibility={visibility}
               density={density}
@@ -213,20 +216,20 @@ export function SessionDetail({
               openCards={openCards}
               onCardAnswered={onCardAnswered}
             />
-            {pendingMessage && (
-              <div className="flex gap-2.5 items-baseline opacity-60">
+            {pendingMessages.map((text, i) => (
+              <div key={i} className="flex gap-2.5 items-baseline opacity-60">
                 <span className="text-primary flex-none text-base">❯</span>
                 <div className="flex-1 min-w-0 text-base leading-[1.7] text-text2">
                   <Markdown
                     text={asDisplayMarkdown({
                       from: "human",
-                      text: pendingMessage,
+                      text,
                     })}
                   />
                 </div>
                 <span className="loading loading-spinner loading-xs flex-none" />
               </div>
-            )}
+            ))}
           </div>
           {!feedAtBottom && (
             <button
@@ -295,11 +298,11 @@ export function SessionDetail({
             </div>
           )}
 
+          {startingPod && <PodStarting className="mb-2" />}
           <Composer
             value={message}
             onChange={setMessage}
             onSend={sendMessage}
-            disabled={busyKey !== null}
             placeholder="message the agent — / for commands"
           />
 
@@ -340,7 +343,7 @@ export function SessionDetail({
           <SessionPanel
             model={model}
             session={session}
-            busy={busyKey !== null}
+            busy={menuBusy}
             busyKey={busyKey}
             run={run}
             onAutoClick={() => setAutoOpen(true)}

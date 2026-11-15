@@ -547,14 +547,30 @@ export function Schedules({
       .finally(() => setBusy(false));
   };
 
-  const proposeAct = (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    setError(null);
+  // Per proposal row, not page-wide: approving one boots a pod (seconds), and
+  // the other proposals must stay usable meanwhile. The session id exists only
+  // once the call returns (a failed warm deletes the session and re-opens the
+  // proposal), so the row shows the wait and the error itself rather than
+  // navigating early.
+  const [rows, setRows] = useState<
+    Record<string, { pending?: "open" | "dismiss"; error?: string }>
+  >({});
+  const proposeAct = (
+    id: string,
+    pending: "open" | "dismiss",
+    fn: () => Promise<unknown>,
+  ) => {
+    if (rows[id]?.pending) return;
+    setRows((r) => ({ ...r, [id]: { pending } }));
     fn()
-      .then(() => reloadSessions())
+      .then(() => {
+        setRows((r) => ({ ...r, [id]: {} }));
+        reloadSessions();
+      })
       // Opening a proposal is AgentService's Open: its refusals arrive keyed.
-      .catch((err: unknown) => setError(agentErrorText(err)))
-      .finally(() => setBusy(false));
+      .catch((err: unknown) =>
+        setRows((r) => ({ ...r, [id]: { error: agentErrorText(err) } })),
+      );
   };
 
   return (
@@ -641,14 +657,14 @@ export function Schedules({
                   </span>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={rows[p.id]?.pending !== undefined}
                     // THE human gate: the one call that can hand a
                     // cluster-access agent a pod. It creates the session and
                     // sends the proposal body as its first message, verbatim —
                     // no wrapper. That body is the text under "what the agent
                     // will be sent" below.
                     onClick={() =>
-                      proposeAct(async () => {
+                      proposeAct(p.id, "open", async () => {
                         const res = await client.openFromProposal({
                           proposalId: p.id,
                         });
@@ -657,16 +673,23 @@ export function Schedules({
                     }
                     className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"
                   >
-                    approve &amp; dispatch
+                    {rows[p.id]?.pending === "open" ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="loading loading-spinner loading-xs" />
+                        starting pod…
+                      </span>
+                    ) : (
+                      <>approve &amp; dispatch</>
+                    )}
                   </button>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={rows[p.id]?.pending !== undefined}
                     // dismissProposal, not deleteSession — this used to pass a
                     // proposal id as a sessionId, which could only ever 404
                     // (or, worse, match an unrelated session).
                     onClick={() =>
-                      proposeAct(() =>
+                      proposeAct(p.id, "dismiss", () =>
                         client.dismissProposal({ proposalId: p.id }),
                       )
                     }
@@ -675,6 +698,12 @@ export function Schedules({
                     dismiss
                   </button>
                 </div>
+                {rows[p.id]?.error && (
+                  <InlineError
+                    message={rows[p.id]?.error ?? null}
+                    onDismiss={() => setRows((r) => ({ ...r, [p.id]: {} }))}
+                  />
+                )}
                 <AlertPayload payload={p.payload} body={p.body} />
               </div>
             ))}

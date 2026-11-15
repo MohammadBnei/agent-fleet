@@ -137,7 +137,7 @@ function OrphanToolResult({
         </span>
       }
     >
-      <pre className="whitespace-pre-wrap break-all text-2xs text-dim leading-[1.5]">
+      <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-2xs text-dim leading-[1.5]">
         {text}
       </pre>
     </Collapse>

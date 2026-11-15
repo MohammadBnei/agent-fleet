@@ -9,6 +9,7 @@ const importRe = /^\s*(?:import|export)\b[^;]*?\bfrom\s+["']([^"']+)["']/gm;
 const allowed = new Set([
   "../../dashboard/src/gen/agentfleet/v1/agent_pb",
   "../../dashboard/src/gen/agentfleet/v1/transcript_pb",
+  "../../dashboard/src/serialQueue",
   "../../dashboard/src/transcript",
 ]);
 

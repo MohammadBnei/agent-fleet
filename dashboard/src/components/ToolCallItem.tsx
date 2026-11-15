@@ -111,7 +111,7 @@ export function ToolCallDetail({ pair }: { pair: ToolCallPair }) {
           className={`text-xs font-mono ${isError ? "text-error" : "text-dim"}`}
         >
           {typeof resultInfo.content === "string" ? (
-            <div className="whitespace-pre-wrap break-words">
+            <div className="max-h-96 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
               {resultInfo.content}
             </div>
           ) : (
@@ -182,7 +182,9 @@ export const ToolCallItem = memo(function ToolCallItem({
         {resultInfo && (
           <div className={`text-2xs font-mono ${isError ? "text-error" : ""}`}>
             {typeof resultInfo.content === "string" ? (
-              <div className="whitespace-pre-wrap">{resultInfo.content}</div>
+              <div className="max-h-96 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
+                {resultInfo.content}
+              </div>
             ) : (
               <JsonView value={resultInfo.content} />
             )}

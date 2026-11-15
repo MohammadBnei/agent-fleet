@@ -136,8 +136,10 @@ export function ToolInputView({
         {str("description") && (
           <div className="text-2xs text-dim">{str("description")}</div>
         )}
-        <div className="overflow-x-auto rounded-md bg-base-200/40 px-3 py-2.5">
-          <pre className="text-xs font-mono text-base-content w-max min-w-full">
+        {/* Wraps, keeps real newlines, and scrolls vertically past a cap: a
+            long command on one sideways-scrolling line was unreadable. */}
+        <div className="max-h-72 overflow-y-auto rounded-md bg-base-200/40 px-3 py-2.5">
+          <pre className="text-xs font-mono text-base-content whitespace-pre-wrap [overflow-wrap:anywhere]">
             {obj.command}
           </pre>
         </div>

@@ -3,6 +3,7 @@ import { approvePlan, planFeedback } from "../approvePlan";
 import { client } from "../connectClient";
 import { withdrawDecision } from "../decisions";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { optimistic } from "../optimistic";
 import { isPodPhaseLive } from "../sessionState";
 import {
   decisionAnswerable,
@@ -57,13 +58,21 @@ function useDecision(reload: () => void) {
   ) => {
     setPending(key);
     setError(null);
-    action()
-      .then(() => {
-        if (decidedSeq !== undefined) setAnswered({ seq: decidedSeq, key });
-        reload();
-      })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setPending(null));
+    // Optimistic, like useSessionDetail's echo: the card flips to "sent" at
+    // once instead of sitting live through a warm, and comes back with the
+    // error if the call fails — a card claiming a send that never left is
+    // worse than a slow one.
+    optimistic(
+      () => decidedSeq !== undefined && setAnswered({ seq: decidedSeq, key }),
+      action,
+      (err) => {
+        if (decidedSeq !== undefined) setAnswered(null);
+        setError(err.message);
+      },
+    ).then((ok) => {
+      if (ok) reload();
+      setPending(null);
+    });
   };
   return { busy: pending !== null, pending, answered, error, send };
 }
@@ -111,8 +120,13 @@ function PermissionBody({
             maxLines={4}
           />
         ) : (
-          <div className="border border-line bg-code px-2.5 py-[3px] text-sm text-text2 overflow-x-auto whitespace-pre-wrap break-all">
-            {summarizeToolInput(input)}
+          <div className="border border-line bg-code px-2.5 py-[3px] text-sm text-text2 max-h-48 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {/* The whole command, not its first line: approving a script you
+                can only see the top of is approving blind. */}
+            {tool === "Bash" &&
+            typeof (input as { command?: unknown })?.command === "string"
+              ? (input as { command: string }).command
+              : summarizeToolInput(input)}
           </div>
         )}
       </div>
