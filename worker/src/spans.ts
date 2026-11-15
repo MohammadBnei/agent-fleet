@@ -55,8 +55,7 @@ const nowNs = () => Date.now() * 1e6;
 let nextLocal = 0;
 const localId = () => `w${++nextLocal}`;
 
-const delta = (total: number, prev: number) =>
-  total >= prev ? total - prev : total; // a reset (new process) restarts at zero
+const delta = (total: number, prev: number) => Math.max(0, total - prev);
 
 export class SpanRecorder {
   private turn: { id: string; startNs: number } | null = null;
@@ -138,31 +137,50 @@ export class SpanRecorder {
     if (r.subtype) attrs["result.subtype"] = r.subtype;
     if (r.numTurns !== undefined) attrs["result.num_turns"] = r.numTurns;
     if (r.models?.length) attrs["gen_ai.request.model"] = r.models.join(",");
-    if (typeof r.totalCostUsd === "number") {
-      attrs["gen_ai.usage.cost_micro_usd"] = Math.round(
-        delta(r.totalCostUsd, this.prev.cost) * 1e6,
-      );
-      this.prev.cost = r.totalCostUsd;
-    }
-    if (r.tokens) {
-      const t = r.tokens;
-      attrs["gen_ai.usage.input_tokens"] = delta(t.input, this.prev.input);
-      attrs["gen_ai.usage.output_tokens"] = delta(t.output, this.prev.output);
-      attrs["gen_ai.usage.cache_read.input_tokens"] = delta(
-        t.cacheRead,
-        this.prev.cacheRead,
-      );
-      attrs["gen_ai.usage.cache_creation.input_tokens"] = delta(
-        t.cacheCreation,
-        this.prev.cacheCreation,
-      );
-      this.prev = {
-        ...this.prev,
-        input: t.input,
-        output: t.output,
-        cacheRead: t.cacheRead,
-        cacheCreation: t.cacheCreation,
-      };
+    const t = r.tokens;
+    // A crash or startup-error result can carry zeroed totals; it says nothing
+    // about spend, so it neither reports usage nor moves the baseline (else
+    // the next real result would count everything again).
+    const zeroed =
+      r.isError &&
+      !r.totalCostUsd &&
+      (!t || t.input + t.output + t.cacheRead + t.cacheCreation === 0);
+    if (!zeroed) {
+      // A reset (a new process starts every total at zero) is read once, from
+      // the cost total, for all the fields.
+      if (typeof r.totalCostUsd === "number" && r.totalCostUsd < this.prev.cost)
+        this.prev = {
+          cost: 0,
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+        };
+      if (typeof r.totalCostUsd === "number") {
+        attrs["gen_ai.usage.cost_micro_usd"] = Math.round(
+          delta(r.totalCostUsd, this.prev.cost) * 1e6,
+        );
+        this.prev.cost = r.totalCostUsd;
+      }
+      if (t) {
+        attrs["gen_ai.usage.input_tokens"] = delta(t.input, this.prev.input);
+        attrs["gen_ai.usage.output_tokens"] = delta(t.output, this.prev.output);
+        attrs["gen_ai.usage.cache_read.input_tokens"] = delta(
+          t.cacheRead,
+          this.prev.cacheRead,
+        );
+        attrs["gen_ai.usage.cache_creation.input_tokens"] = delta(
+          t.cacheCreation,
+          this.prev.cacheCreation,
+        );
+        this.prev = {
+          ...this.prev,
+          input: t.input,
+          output: t.output,
+          cacheRead: t.cacheRead,
+          cacheCreation: t.cacheCreation,
+        };
+      }
     }
     this.finish(r.uuid, r.isError ? "error" : "ok", attrs);
   }
@@ -175,18 +193,20 @@ export class SpanRecorder {
     const turn = this.turn;
     if (!turn) return;
     for (const id of [...this.open.keys()]) this.closeTool(id, "");
-    this.done.push({
+    // The turn span goes FIRST: core and the sidecar cut a long batch from the
+    // end, and the root is the one span the rest hang from.
+    const root: Pending = {
       name: "invoke_agent",
       id: turn.id,
       startNs: turn.startNs,
       endNs: this.clock(),
       status,
       attrs,
-    });
+    };
     // The SDK's result uuid names the turn on every pod; an unfinished turn
     // (the pod is going away) is keyed by when it began.
     const turnKey = key || `partial-${turn.startNs}`;
-    const batch = this.done.map((s) => ({ ...s, turn: turnKey }));
+    const batch = [root, ...this.done].map((s) => ({ ...s, turn: turnKey }));
     this.done = [];
     this.turn = null;
     this.send(batch);

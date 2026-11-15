@@ -188,8 +188,8 @@ not around it.
   span ids are replaced by fresh ones per batch and a parent link survives only inside one
   batch and one turn, so a worker cannot attach a span to another trace or to a span core
   minted.
-- **Bounded.** In memory, per session: a span count, an estimated byte total, and a token
-  bucket (50 spans/s, burst 200); a bounded export queue with a 5 s per-batch timeout and
+- **Bounded.** In memory, per session: a span count and an estimated byte total (each per 24 h window), and a token
+  bucket (50 spans/s, burst 500; roots are admitted first); a bounded export queue with a 5 s per-batch timeout and
   a drop when full, so a slow collector never stalls `CoreService` (the sidecar shares that
   connection with `SendMessage` and `ConsumeGrant`). The caps are in-process state and
   assume the single core replica.

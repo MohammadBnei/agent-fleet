@@ -28,9 +28,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -47,16 +49,18 @@ import (
 
 // Limits bound what one session may make core hold and export.
 type Limits struct {
-	MaxSpans int     // spans accepted per session, for the life of the process
-	MaxBytes int     // estimated bytes accepted per session
-	Rate     float64 // spans per second per session
-	Burst    int     // token bucket size
-	Queue    int     // batches waiting for the exporter
+	MaxSpans int           // spans accepted per session per Window
+	MaxBytes int           // estimated bytes accepted per session per Window
+	Window   time.Duration // the count and byte caps start over this often (0: never)
+	Rate     float64       // spans per second per session
+	Burst    int           // token bucket size
+	Queue    int           // batches waiting for the exporter
 }
 
-// DefaultLimits: a long session runs a few thousand tool calls; one second of
-// a runaway loop is cut at Burst.
-var DefaultLimits = Limits{MaxSpans: 20000, MaxBytes: 8 << 20, Rate: 50, Burst: 200, Queue: 64}
+// DefaultLimits: a long session runs a few thousand tool calls a day, so the
+// caps are per day and a resident session never goes silent for good. Burst is
+// at least the sidecar's largest batch (500), so one full turn fits.
+var DefaultLimits = Limits{MaxSpans: 20000, MaxBytes: 8 << 20, Window: 24 * time.Hour, Rate: 50, Burst: 500, Queue: 64}
 
 const (
 	maxSessions   = 4096
@@ -71,6 +75,7 @@ type usage struct {
 	spans, bytes int
 	tokens       float64
 	last         time.Time
+	since        time.Time // start of the current count/byte window
 }
 
 // Sink queues spans for export. A nil *Sink accepts nothing.
@@ -82,6 +87,7 @@ type Sink struct {
 
 	mu       sync.Mutex
 	sessions map[string]*usage
+	closed   bool
 
 	q    chan []sdktrace.ReadOnlySpan
 	done chan struct{}
@@ -147,7 +153,12 @@ func (s *Sink) Close() {
 
 // drain stops accepting and waits for the queued batches to be exported.
 func (s *Sink) drain() {
-	close(s.q)
+	s.mu.Lock()
+	if !s.closed {
+		s.closed = true // Submit sends under mu, so none can race the close
+		close(s.q)
+	}
+	s.mu.Unlock()
 	<-s.done
 }
 
@@ -167,11 +178,16 @@ func newSpanID() trace.SpanID {
 	return id
 }
 
+// clip cuts v to at most n bytes on a rune boundary: a split rune is invalid
+// UTF-8, and proto3 marshalling would then fail the whole shared batch.
 func clip(v string, n int) string {
-	if len(v) > n {
-		return v[:n]
+	if len(v) <= n {
+		return v
 	}
-	return v
+	for n > 0 && !utf8.RuneStart(v[n]) {
+		n--
+	}
+	return v[:n]
 }
 
 // clean is a span's attributes as the worker may set them: bounded, and never
@@ -206,8 +222,11 @@ func (s *Sink) admit(session string, size int, now time.Time) bool {
 			// lets a few live sessions spend their caps again. LRU if it ever shows in a profile.
 			s.sessions = map[string]*usage{}
 		}
-		u = &usage{tokens: float64(s.lim.Burst), last: now}
+		u = &usage{tokens: float64(s.lim.Burst), last: now, since: now}
 		s.sessions[session] = u
+	}
+	if s.lim.Window > 0 && now.Sub(u.since) >= s.lim.Window {
+		u.spans, u.bytes, u.since = 0, 0, now
 	}
 	u.tokens = min(float64(s.lim.Burst), u.tokens+now.Sub(u.last).Seconds()*s.lim.Rate)
 	u.last = now
@@ -231,14 +250,27 @@ func (s *Sink) Submit(session string, in []*agentfleetv1.WorkerSpan) int {
 		w     *agentfleetv1.WorkerSpan
 		attrs []attribute.KeyValue
 	}
-	var keep []kept
-	s.mu.Lock()
-	now := s.now()
+	var valid []*agentfleetv1.WorkerSpan
 	for _, w := range in {
 		if w.GetName() == "" || w.GetLocalId() == "" || w.GetTurnKey() == "" ||
 			w.GetStartUnixNano() <= 0 || w.GetEndUnixNano() < w.GetStartUnixNano() {
 			continue
 		}
+		valid = append(valid, w)
+	}
+	// Roots are admitted first, so a cap or the burst cuts a long turn from its
+	// children, never from the span they hang from.
+	sort.SliceStable(valid, func(i, j int) bool {
+		return valid[i].GetParentLocalId() == "" && valid[j].GetParentLocalId() != ""
+	})
+	var keep []kept
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return 0
+	}
+	now := s.now()
+	for _, w := range valid {
 		attrs, size := clean(w)
 		if s.admit(session, size+len(w.GetName())+64, now) {
 			keep = append(keep, kept{w, attrs})
@@ -282,6 +314,12 @@ func (s *Sink) Submit(session string, in []*agentfleetv1.WorkerSpan) int {
 			stub.Status.Code = codes.Error
 		}
 		batch = append(batch, stub.Snapshot())
+	}
+	// Under mu, with the closed check, so Close cannot close q between them.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return 0
 	}
 	select {
 	case s.q <- batch:

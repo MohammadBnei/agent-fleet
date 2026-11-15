@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -45,6 +46,10 @@ func spansHandler(core *coreclient.Client) http.HandlerFunc {
 			return
 		}
 		if len(body.Spans) > spansMaxBatch {
+			// Cut a long batch from the children, never the roots they hang from.
+			sort.SliceStable(body.Spans, func(i, j int) bool {
+				return body.Spans[i].Parent == "" && body.Spans[j].Parent != ""
+			})
 			body.Spans = body.Spans[:spansMaxBatch]
 		}
 		out := make([]*agentfleetv1.WorkerSpan, 0, len(body.Spans))
