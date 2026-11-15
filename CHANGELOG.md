@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.13.0](https://github.com/MohammadBnei/agent-fleet/compare/7.12.0...7.13.0) (2026-11-15)
+
+### Features
+
+* **definitions:** interaction release one (ADR-0070 slice 4) ([#381](https://github.com/MohammadBnei/agent-fleet/issues/381)) ([89153ec](https://github.com/MohammadBnei/agent-fleet/commit/89153ec126eab6dcc2fbdc1f3319cd4783e08053))
+
 # [7.12.0](https://github.com/MohammadBnei/agent-fleet/compare/7.11.2...7.12.0) (2026-11-15)
 
 ### Features
