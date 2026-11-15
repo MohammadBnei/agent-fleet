@@ -15,6 +15,12 @@
 # infra-bootstrap — see that directory's README) specifically because it
 # DOES need RBAC.
 
+# Exactly one replica, on purpose. The chart default is 1; it is written here
+# because core keeps state in memory that only holds with one pod (the span
+# caps for worker spans, docs/adr/0081 §6). Raising it needs that state moved
+# first. The provisioner is replicas: 1 for the same reason.
+replicaCount: 1
+
 image:
   repository: registry.bnei.lan:5000/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
@@ -148,6 +154,12 @@ env:
     # platform.applicationset.yaml templates every platform release as
     # 'platform-{{.name}}' — the loki Service is platform-loki, not loki.
     value: "http://platform-loki.monitoring.svc.cluster.local:3100"
+  # Where core exports its spans (docs/adr/0081 §4): the OTLP/HTTP traces URL in
+  # full. Unset, core still mints trace ids and exports nothing. Live once
+  # infra-bootstrap #443 merges (until then the exporter logs a WARN per failed
+  # batch and drops; nothing else is affected).
+  - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+    value: "http://platform-alloy.monitoring.svc.cluster.local:4318/v1/traces"
   - name: PROVISIONER_GRPC_ADDR
     value: "provisioner.agent-fleet.svc.cluster.local:9090"
   # A firing Alertmanager alert becomes a thot task (docs/adr/0037).

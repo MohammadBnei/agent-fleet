@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"log/slog"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -270,6 +272,17 @@ func (a *Authenticator) checkProvisioner(md metadata.MD) bool {
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(a.provisionerToken)) == 1
 }
 
+// tagSpan puts the verified caller session on the call's server span, so a trace
+// can be found by session (docs/adr/0081 §4). It is the lease's session, never a
+// request field, and the provisioner (no session) adds nothing. The span is the
+// one the gRPC stats handler started before any interceptor ran; with no tracing
+// it is a no-op span.
+func tagSpan(ctx context.Context, c caller) {
+	if c.session != "" {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("fleet.session.id", c.session))
+	}
+}
+
 // authorize checks the request does not act on somebody else's session, that a
 // definition session stays inside definitionMethods, and that a session writes
 // to its transcript only in its own voice.
@@ -328,6 +341,7 @@ func (a *Authenticator) UnaryInterceptor(ctx context.Context, req any, info *grp
 	if err != nil {
 		return nil, err
 	}
+	tagSpan(ctx, c)
 	if err := authorize(info.FullMethod, c, req); err != nil {
 		return nil, err
 	}
@@ -346,6 +360,7 @@ func (a *Authenticator) StreamInterceptor(srv any, ss grpc.ServerStream, info *g
 	if err != nil {
 		return err
 	}
+	tagSpan(ss.Context(), c)
 	return handler(srv, &authorizedStream{ServerStream: ss, method: info.FullMethod, caller: c})
 }
 
