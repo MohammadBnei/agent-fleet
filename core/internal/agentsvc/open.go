@@ -140,7 +140,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	// ponytail: drop wasTainted once no claim predates 000026.
 	hash := func(tainted string) string {
 		return requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), tainted,
-			m.GetActor(), m.GetCausationId(), m.GetVisibility(), m.GetInteraction(), m.GetLifecycle())
+			m.GetActor(), m.GetCausationId(), m.GetVisibility(), requestInteraction, m.GetLifecycle())
 	}
 	sha, wasTainted := hash("false"), hash("true")
 	claim, err := s.sessions.ClaimRequest(ctx, owner, key, sha)
@@ -313,6 +313,11 @@ func (s *Server) mayClaim(client, actor string) bool {
 	}
 	return false
 }
+
+// requestInteraction stands in the request hash where interaction was
+// (docs/adr/0070 §2): Open only ever took "ask", so claims stored with the
+// real value still match.
+const requestInteraction = "ask"
 
 // requestSHA is §7's request identity: the same key with another request is
 // refused. NUL-separated, since a thread key may hold any other byte.

@@ -479,7 +479,7 @@ func TestLoad_RequiresBounds(t *testing.T) {
 		t.Fatalf("an abstract base may leave them out: %v", fileErrs)
 	}
 	msg := errText(got["cee"].Err)
-	for _, want := range []string{"tools is required", "interaction is required", "lifecycle is required"} {
+	for _, want := range []string{"tools is required", "lifecycle is required"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("want %q in %q", want, msg)
 		}
