@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.11.0](https://github.com/MohammadBnei/agent-fleet/compare/7.10.1...7.11.0) (2026-11-15)
+
+### Features
+
+* **console:** do not lock the UI while a pod warms ([#374](https://github.com/MohammadBnei/agent-fleet/issues/374)) ([ea46df4](https://github.com/MohammadBnei/agent-fleet/commit/ea46df4cc0b411cb1707bebff79b649456a7acdb))
+
 ## [7.10.1](https://github.com/MohammadBnei/agent-fleet/compare/7.10.0...7.10.1) (2026-11-15)
 
 # [7.10.0](https://github.com/MohammadBnei/agent-fleet/compare/7.9.1...7.10.0) (2026-11-15)
