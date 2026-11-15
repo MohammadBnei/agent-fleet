@@ -247,13 +247,20 @@ func main() {
 const fleetSharedRefreshInterval = 60 * time.Second
 
 // refreshEvery runs refresh now, then every interval, until ctx ends. A
-// failure is logged; the next warm then refreshes fleet-shared itself.
+// failure is logged with backoff (the 1st, 2nd, 4th, 8th... in a row), so an
+// outage does not log every tick; warms keep the last good copy meanwhile.
 func refreshEvery(ctx context.Context, every time.Duration, refresh func(context.Context) error) {
 	t := time.NewTicker(every)
 	defer t.Stop()
+	failures := 0
 	for {
 		if err := refresh(ctx); err != nil {
-			slog.Warn("fleet-shared refresh failed; the next warm refreshes it itself", "error", err)
+			if failures++; failures&(failures-1) == 0 {
+				slog.Warn("fleet-shared refresh failed; warms use the last good copy", "error", err, "failuresInARow", failures)
+			}
+		} else if failures > 0 {
+			slog.Info("fleet-shared refresh recovered", "failuresInARow", failures)
+			failures = 0
 		}
 		select {
 		case <-ctx.Done():

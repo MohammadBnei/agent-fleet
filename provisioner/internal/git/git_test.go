@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -211,8 +212,12 @@ func TestRefreshFleetShared_ResetsOnlyWhenSomethingMoved(t *testing.T) {
 	if err := os.Remove(filepath.Join(m.fleetSharedPath(), ".git", "index")); err != nil {
 		t.Fatal(err)
 	}
-	if got := refresh(); !strings.Contains(got, "warm.git.reset") {
-		t.Errorf("checkout without an index did not reset: %s", got)
+	// A broken checkout (no index: a clone killed mid-checkout) is re-cloned.
+	if got := refresh(); !strings.Contains(got, "warm.git.clone") {
+		t.Errorf("checkout without an index was not re-cloned: %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(m.fleetSharedPath(), ".git", "index")); err != nil {
+		t.Errorf("re-clone left no index: %v", err)
 	}
 }
 
@@ -267,12 +272,43 @@ func TestSyncFleetShared_LaysInTheRefreshedCopyWithoutFetching(t *testing.T) {
 	if body, _ := sync(); body != "v2, longer" {
 		t.Errorf("after refresh: body %q, want v2, longer", body)
 	}
-	// A failed refresh puts the warm back on refreshing itself.
+	// A failed fetch (and failed re-clone: an outage) keeps the intact
+	// checkout, still ready: the warm lays in the stale copy.
 	if err := m.RefreshFleetShared(context.Background(), origin, "no-such-branch"); err == nil {
 		t.Fatal("refresh of a missing branch succeeded")
 	}
-	if _, steps := sync(); !strings.Contains(steps, "warm.fleet_shared_refresh") {
-		t.Errorf("warm after a failed refresh did not refresh: %s", steps)
+	if !m.fleetSharedReady.Load() {
+		t.Error("a failed fetch over an intact checkout cleared ready")
+	}
+	if body, steps := sync(); body != "v2, longer" || strings.Contains(steps, "warm.git.") {
+		t.Errorf("warm after a failed fetch: body %q, steps %s", body, steps)
+	}
+	// A missing clone in a process that had one: the next refresh re-clones.
+	if err := os.RemoveAll(m.fleetSharedPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RefreshFleetShared(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := sync(); body != "v2, longer" {
+		t.Errorf("after a re-clone: body %q", body)
+	}
+}
+
+// A warm never waits on the fleet-shared lock past its own ctx: it gives up
+// and returns the error, so the caller goes on without the sync.
+func TestSyncFleetShared_GivesUpAtTheWarmsDeadline(t *testing.T) {
+	m := NewManager(t.TempDir())
+	origin := newOriginRepo(t)
+	if err := m.RefreshFleetShared(context.Background(), origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	unlock := m.LockRepo(fleetSharedSentinel)
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := m.SyncFleetShared(ctx, origin, "main", m.ClaudeHomePath("s")); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("sync behind a held lock: %v, want the deadline", err)
 	}
 }
 

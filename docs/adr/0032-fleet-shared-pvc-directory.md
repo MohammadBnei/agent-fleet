@@ -84,9 +84,13 @@ code.
   and every 60 s (`git.Manager.RefreshFleetShared`, `cmd/provisioner`
   `fleetSharedRefreshInterval`), and a warm only rsyncs the local copy into
   its `claude-home`. So "at sync time" means "as of the last refresh": a
-  warm's copy is at most 60 s stale. Until the first refresh succeeds (cold
-  start, or after a failed one) the warm refreshes the clone itself, as
-  before. A refresh whose fetch moved nothing skips the hard reset. Measured
+  warm's copy is at most 60 s stale while GitHub is reachable. A failed
+  fetch keeps the intact checkout (an outage serves the last good copy);
+  a re-clone builds beside it and swaps in only on success. Until this
+  process has a usable checkout (cold start) the warm refreshes the clone
+  itself, as before; every warm wait is bounded by the warm's own deadline.
+  The fetch holds no lock a warm waits on. A refresh whose fetch moved
+  nothing skips the hard reset. Measured
   live before this: 3.1 s of a 6.8 s warm was this refresh.
 - `worker/Dockerfile`'s build-time `claude plugin marketplace add
   DietrichGebert/ponytail && claude plugin install ponytail@ponytail` step

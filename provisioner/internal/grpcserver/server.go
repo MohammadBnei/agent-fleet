@@ -279,8 +279,12 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// Job is the evidence; docs/adr/0063's swap waits for no live Job), and
 	// minting during the fetch would hold the owner's vault lock across it,
 	// queueing every warm on that owner behind this one's fetch. The fetch is
-	// always joined, never cancelled: a git fetch killed mid-way can leave ref
-	// locks in the shared cache.
+	// always joined, so no early return leaves it running. It still runs on
+	// the request ctx, as it always did: core's deadline on CreateWorkerPod
+	// (2 min) can kill it mid-way. A claude-home seeded for a warm whose fetch
+	// then failed is not swept here: the session gets one on its next warm
+	// anyway, and core's retention GC (SweepSession) removes it with the rest
+	// of the session's disk.
 	fetched := make(chan error, 1)
 	go func() { fetched <- s.git.EnsureRepoFetched(ctx, req.GetRepo(), req.GetRepoUrl()) }() // spans itself
 	homeMsg, homeErr := s.prepareClaudeHome(ctx, req.GetSessionId(), definition != nil)
