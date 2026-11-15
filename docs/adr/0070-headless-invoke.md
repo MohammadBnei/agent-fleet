@@ -6,7 +6,10 @@
   2026-11-15 (§6 on ADR-0082, §3's key, build order)
 - **Built:** the proto (`Invoke`, `WaitForResult`) and their authz rows only;
   and, through ADR-0082 slice 2, what §6 parks on: stamped requests, one-time
-  grants and a decision that holds no pod.
+  grants and a decision that holds no pod; build-order slice 2 (the result
+  entry and its key: `POST /message` takes `idempotencyKey`, the worker
+  writes `result_text`/`structured_output`/`consumedSeq` on every result
+  keyed `result:<session>:<consumedSeq>:<k>`, retried until core takes it).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

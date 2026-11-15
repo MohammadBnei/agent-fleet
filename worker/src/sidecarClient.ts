@@ -144,12 +144,14 @@ export async function pushMessage(
   text: string,
   type?: string,
   replyTo?: number,
+  idempotencyKey?: string,
 ): Promise<number> {
   const res = await postJSON<{ seq: number }>("/message", {
     from,
     text,
     type,
     replyTo,
+    idempotencyKey,
   });
   return res.seq;
 }

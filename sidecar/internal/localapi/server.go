@@ -199,6 +199,9 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 			// that resolution existed only in the worker's memory and every
 			// dashboard surface went on showing the request as pending.
 			ReplyTo int64 `json:"replyTo"`
+			// Core dedups an append on this key (docs/adr/0070 §3); empty
+			// means never deduplicated.
+			IdempotencyKey string `json:"idempotencyKey"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -211,9 +214,9 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 		var seq int64
 		var err error
 		if body.ReplyTo > 0 {
-			seq, err = core.AppendReplyMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "", body.ReplyTo)
+			seq, err = core.AppendReplyMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey, body.ReplyTo)
 		} else {
-			seq, err = core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "")
+			seq, err = core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey)
 		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
