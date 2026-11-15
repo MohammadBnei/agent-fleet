@@ -1,5 +1,7 @@
 # Changelog
 
+## [7.10.1](https://github.com/MohammadBnei/agent-fleet/compare/7.10.0...7.10.1) (2026-11-15)
+
 # [7.10.0](https://github.com/MohammadBnei/agent-fleet/compare/7.9.1...7.10.0) (2026-11-15)
 
 ### Features
