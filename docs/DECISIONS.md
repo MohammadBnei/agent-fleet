@@ -299,8 +299,10 @@ Any doc, code, comment, or memory that contradicts this file or an
 - [`0069`](adr/0069-component-auth-and-network-fences.md) — every gRPC surface needs
   a credential; ingress fences; console CSP; per-request admin check.
 - [`0070`](adr/0070-headless-invoke.md) — headless invoke: any session can ask, a
-  decision never holds a pod (permissions park through the SDK's defer), one
-  structured result (Accepted 2026-10-25, not built; a defer spike comes first).
+  decision never holds a pod (a single-shot run parks on ADR-0082's stamped
+  requests and one-time grants), one structured result (Accepted 2026-10-25;
+  amended 2026-11-15, awaiting owner approval: defer spike dropped, per-result
+  key, build order; not built).
 - [`0071`](adr/0071-events-reach-sessions-through-the-bridge.md) — events reach
   sessions through the bridge (Accepted; the dispatcher and `PublishEvent` are built,
   Alertmanager not yet repointed).
@@ -331,6 +333,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   choosing an option bound to one effect (Accepted 2026-10-28; slice 1, and
   slice 2's decisions store, read API, `AnswerDecision` and one-time grants
   built; no worker requests a grant yet).
+- [`0083`](adr/0083-remote-mcp-for-definitions.md) — a definition may name remote MCP
+  servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
+  for a named user; not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
