@@ -12,7 +12,7 @@ export function Composer({
   value,
   onChange,
   onSend,
-  disabled,
+  disabled = false,
   placeholder,
   compact,
 }: {
@@ -23,7 +23,7 @@ export function Composer({
   // string and each one visibly overwrote the last.
   onChange: Dispatch<SetStateAction<string>>;
   onSend: () => void;
-  disabled: boolean;
+  disabled?: boolean;
   placeholder: string;
   // Mobile: smaller type, a filled ground, and a bare "send" — desktop spells
   // out the keys because it has the room and a keyboard to use them with.

@@ -20,7 +20,9 @@ export function JsonView({
   if (typeof value === "string") {
     if (value.includes("\n")) {
       return (
-        <div className="whitespace-pre-wrap text-base-content">{value}</div>
+        <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-base-content">
+          {value}
+        </div>
       );
     }
     return <span className="text-base-content">"{value}"</span>;

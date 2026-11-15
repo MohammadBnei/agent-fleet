@@ -34,7 +34,7 @@ function render(
 ) {
   const tree = DecisionDock({
     entries,
-    busyKey: null,
+    isBusy: () => false,
     compact: true,
     onRespond: () => {},
     onAnswer: () => {},
@@ -86,7 +86,7 @@ test("an empty dock renders nothing at all", () => {
   expect(
     DecisionDock({
       entries: [],
-      busyKey: null,
+      isBusy: () => false,
       onRespond: () => {},
       onAnswer: () => {},
       onPlanFeedback: () => {},

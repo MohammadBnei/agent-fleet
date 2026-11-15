@@ -137,7 +137,7 @@ function OrphanToolResult({
         </span>
       }
     >
-      <pre className="whitespace-pre-wrap break-all text-2xs text-dim leading-[1.5]">
+      <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-2xs text-dim leading-[1.5]">
         {text}
       </pre>
     </Collapse>
@@ -306,7 +306,7 @@ export function SessionFeed({
   entries,
   visibility,
   density,
-  busyKey,
+  isBusy,
   hasOlder = false,
   loadingOlder = false,
   onLoadOlder,
@@ -335,7 +335,7 @@ export function SessionFeed({
   entries: TranscriptEntry[];
   visibility: FeedVisibility;
   density: Density;
-  busyKey: string | null;
+  isBusy: (key: string) => boolean;
   hasOlder?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?: () => void;
@@ -518,7 +518,7 @@ export function SessionFeed({
             <PlanCard
               plan={plan}
               pending={isPending}
-              busy={busyKey === permissionKey}
+              busy={isBusy(permissionKey)}
               decision={decisions.get(entry.seq)}
               onApprove={(mode) => onApprovePlan(entry.seq, mode)}
               onFeedback={(text) =>
@@ -538,7 +538,7 @@ export function SessionFeed({
             tool={parsed.tool}
             input={parsed.input}
             pending={isPending}
-            busy={busyKey === permissionKey}
+            busy={isBusy(permissionKey)}
             decision={decisions.get(entry.seq)}
             denyMessage={denyMessages.get(entry.seq)}
             onAllow={(grant) => respond({ behavior: "allow" }, grant)}
@@ -566,7 +566,7 @@ export function SessionFeed({
           <QuestionCard
             entry={entry}
             answer={answerEntry ? parseAnswers(answerEntry.text) : null}
-            busy={busyKey === `question:${entry.seq}`}
+            busy={isBusy(`question:${entry.seq}`)}
             compact={compact}
             onSubmit={(answers) => onAnswer(entry.seq, answers)}
           />

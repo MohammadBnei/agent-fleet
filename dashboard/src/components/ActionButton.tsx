@@ -43,7 +43,10 @@ export function ActionButton({
     >
       {busy ? (
         <span className="inline-flex items-center justify-center">
-          <span className="loading loading-spinner loading-xs" />
+          <span
+            aria-hidden
+            className="size-3 flex-none rounded-full border-2 border-current border-r-transparent animate-spin"
+          />
           <span className="sr-only">{children}</span>
         </span>
       ) : (

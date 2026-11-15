@@ -36,7 +36,13 @@ export function SessionActionsModal({
   reload: () => void;
 }) {
   const [autoOpen, setAutoOpen] = useState(false);
-  const { busyKey, error, run: runAction, clearError } = useBusyAction();
+  const {
+    busyKey,
+    isBusy,
+    error,
+    run: runAction,
+    clearError,
+  } = useBusyAction();
 
   // The list has no transcript stream to reflect a change back, so every action
   // that succeeds ends in a reload — and closes the menu: it used to stay up
@@ -80,7 +86,7 @@ export function SessionActionsModal({
             <ActionsMenu
               sessionId={session.id}
               busy={busyKey !== null}
-              busyKey={busyKey}
+              isBusy={isBusy}
               run={run}
               sweptAt={session.sweptAt}
               archivedAt={session.archivedAt}

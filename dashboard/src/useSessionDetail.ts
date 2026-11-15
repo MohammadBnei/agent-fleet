@@ -11,6 +11,9 @@ import {
   TranscriptEntryType,
 } from "./gen/agentfleet/v1/transcript_pb";
 import { pollVisible } from "./pollVisible";
+import { queueFor } from "./serialQueue";
+import { keysOf, scopeKey } from "./sessionScope";
+import { isPodPhaseLive } from "./sessionState";
 import { withOptimistic } from "./transcript";
 import { useBusyAction } from "./useBusyAction";
 
@@ -65,19 +68,44 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   // the linter cannot see through the hook boundary — so it is listed in the
   // reset effect's deps below rather than the rule being silenced.
   const {
-    busyKey,
+    busyKeys: allBusyKeys,
     error: actionError,
-    run,
+    run: runKeyed,
     setError: setActionError,
   } = useBusyAction();
+  // Which session this hook is on RIGHT NOW. Work started under another one
+  // finishes into the void: its error must not open on this session, and its
+  // keys must not read as this session's busy buttons (keys are scoped below,
+  // because permission:${seq} and question:${seq} repeat across sessions).
+  const idRef = useRef(sessionId);
+  idRef.current = sessionId;
+  const busyKeys = keysOf(sessionId, allBusyKeys);
+  const busyKey = busyKeys.length > 0 ? busyKeys[busyKeys.length - 1] : null;
+  const isBusy = (key: string) => busyKeys.includes(key);
+  // Warm-capable calls (a message, an answer, the Warm button) take seconds on
+  // a cold session and the server does not order two of them (see
+  // serialQueue). They wait here instead of locking the page; `starting` says
+  // how many of them are waiting on a cold pod, for the small indicator.
+  const [starting, setStarting] = useState(0);
+  const sessionRef = useRef<Session | null>(null);
   // Optimistic echo for a just-sent human message — client.postMessage() plus
   // the streamTranscript round trip to see it reflected back is enough
   // latency to feel laggy, so this shows the message immediately with a
   // spinner instead of waiting. Cleared once the real entry arrives (ref,
   // not state, so the subscribeTranscript closure below always reads the
   // latest value without needing to resubscribe on every keystroke/send).
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
-  const pendingRef = useRef<string | null>(null);
+  // A list: sends queue behind a warm, and each shows until its own echo lands.
+  const [pendingMessages, setPendingMessages] = useState<{ text: string }[]>(
+    [],
+  );
+  const pendingRef = useRef<{ text: string }[]>([]);
+  const setPending = useCallback(
+    (fn: (prev: { text: string }[]) => { text: string }[]) => {
+      pendingRef.current = fn(pendingRef.current);
+      setPendingMessages(pendingRef.current);
+    },
+    [],
+  );
   // The same idea as pendingMessage, for decisions: answering a permission
   // is two round trips (the RPC, then the response entry arriving on the
   // stream) before the card stops offering allow/deny. Holding the answer
@@ -110,8 +138,9 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     setLoadingOlder(false);
     setLoadError(null);
     setActionError(null);
-    pendingRef.current = null;
-    setPendingMessage(null);
+    setPending(() => []);
+    setOptimistic([]);
+    setStarting(0);
     setWithdrawn([]);
 
     let cancelled = false;
@@ -163,13 +192,11 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
         setHasOlder(res.entries.length >= PAGE);
         unsubscribe = subscribeTranscript(sessionId, res.nextSeq, (entry) => {
           setEntries((prev) => [...prev, entry]);
-          if (
-            pendingRef.current !== null &&
-            entry.from === "human" &&
-            entry.text === pendingRef.current
-          ) {
-            pendingRef.current = null;
-            setPendingMessage(null);
+          if (entry.from === "human") {
+            const at = pendingRef.current.findIndex(
+              (p) => p.text === entry.text,
+            );
+            if (at >= 0) setPending((prev) => prev.filter((_, i) => i !== at));
           }
         });
       })
@@ -179,7 +206,7 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       cancelled = true;
       unsubscribe();
     };
-  }, [sessionId, setActionError]);
+  }, [sessionId, setActionError, setPending]);
 
   // Fetches the page of entries just before the oldest one held and prepends
   // it. Resolves once state is set, so a caller can anchor the scroll
@@ -206,6 +233,38 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       setLoadingOlder(false);
     }
   }
+
+  const queued = useCallback(
+    <T>(action: () => Promise<T>): Promise<T> => {
+      const cold = !isPodPhaseLive(sessionRef.current?.podPhase);
+      const bump = (d: number) => {
+        if (cold && idRef.current === sessionId) setStarting((n) => n + d);
+      };
+      bump(1);
+      return queueFor(sessionId)(action).finally(() => bump(-1));
+    },
+    [sessionId],
+  );
+
+  // Warm is queued like a send; everything else runs straight away. Keys are
+  // scoped to the session, and a failure that lands after the user has moved
+  // to another session is dropped rather than shown there.
+  const run = useCallback(
+    (action: () => Promise<unknown>, key: string) => {
+      const job = key === "action:warm" ? () => queued(action) : action;
+      return runKeyed(
+        async () => {
+          try {
+            await job();
+          } catch (err) {
+            if (idRef.current === sessionId) throw err;
+          }
+        },
+        scopeKey(sessionId, key),
+      );
+    },
+    [runKeyed, queued, sessionId],
+  );
 
   // Both decisions go through here so the optimistic entry and the RPC can
   // never drift apart — a card showing "allowed" for a call that failed to
@@ -284,12 +343,15 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       seq,
       TranscriptEntryType.ANSWER,
       JSON.stringify({ answers }),
+      // Answering a cold session warms it, so it waits its turn like a send.
       () =>
-        client.answerQuestion({
-          sessionId,
-          seq,
-          answersJson: JSON.stringify({ answers }),
-        }),
+        queued(() =>
+          client.answerQuestion({
+            sessionId,
+            seq,
+            answersJson: JSON.stringify({ answers }),
+          }),
+        ),
       `question:${seq}`,
     );
 
@@ -305,20 +367,28 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   // Through run() like everything else, with one extra job: roll back the
   // optimistic echo when the post fails, so a message that never left does not
   // sit in the feed looking sent.
+  // Resolves to false when the message did not go, so the composer can put
+  // its text back.
   const sendDiscuss = useCallback(
-    async (text: string) => {
-      pendingRef.current = text;
-      setPendingMessage(text);
-      const ok = await run(
-        () => client.postMessage({ sessionId, text }),
-        "discuss",
-      );
-      if (!ok) {
-        pendingRef.current = null;
-        setPendingMessage(null);
+    async (text: string): Promise<boolean> => {
+      // Not through run(): that would hold busyKey, and with it the composer
+      // and the menu, for the whole warm. The echo is the feedback; the queue
+      // keeps order; the composer clears on send, so no double-submit.
+      const item = { text };
+      setPending((prev) => [...prev, item]);
+      setActionError(null);
+      try {
+        await queued(() => client.postMessage({ sessionId, text }));
+        return true;
+      } catch (err) {
+        // Gone to another session meanwhile: nothing here is theirs now.
+        if (idRef.current !== sessionId) return true;
+        setActionError(errorText(err));
+        setPending((prev) => prev.filter((p) => p !== item));
+        return false;
       }
     },
-    [sessionId, run],
+    [sessionId, queued, setPending, setActionError],
   );
 
   // A brand-new session's first message, if NewSessionDialog left one here.
@@ -362,10 +432,12 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     void sendDiscuss(queued);
   }, [sessionId, sendDiscuss]);
 
+  const current = session && (listed ?? session);
+  sessionRef.current = current;
   return {
     // Prefer the list's copy, but only once the one-shot fetch has landed, so
     // `session === null` still means "loading" to both views.
-    session: session && (listed ?? session),
+    session: current,
     // Withdrawn closures first: every derivation correlates by replyTo, and
     // anything positional (the newest entry, loadOlder's oldest) still sees
     // only real rows at the ends that matter.
@@ -374,9 +446,16 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
       optimistic,
     ),
     busyKey,
+    isBusy,
+    // Page-level disabling is for the menu's own actions only; a card's answer
+    // or a queued send must not lock unrelated buttons.
+    menuBusy:
+      busyKeys.some((k) => k.startsWith("action:")) ||
+      pendingMessages.some((p) => p.text === "/clear"),
+    startingPod: starting > 0,
     loadError,
     actionError,
-    pendingMessage,
+    pendingMessages: pendingMessages.map((p) => p.text),
     hasOlder,
     loadingOlder,
     loadOlder,

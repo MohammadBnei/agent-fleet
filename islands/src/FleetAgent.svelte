@@ -28,6 +28,7 @@
   import { drawDiagrams } from "./diagram";
   import { conversation, decisions, liveState } from "./feed";
   import { createRenderer } from "./render";
+  import { serialQueue } from "./serialQueue";
   import styles from "./styles.css?inline";
   import { threadTitle, withOther } from "./text";
   import tokens from "./tokens.css?inline";
@@ -50,7 +51,9 @@
   // Request seqs closed unanswered in the decisions store (see feed.ts).
   let withdrawn = $state<Set<bigint>>(new Set());
   let draft = $state("");
-  let busy = $state(false);
+  // Decisions whose answer is in flight: a second click on the same one is
+  // refused, every other stays usable while a warm runs.
+  let busySeqs = $state<Set<bigint>>(new Set());
   let answers = $state<Record<string, string>>({});
   let reconnecting = $state(false);
   // DEFINITION_CHANGED: this thread is pinned to an older definition.
@@ -59,13 +62,22 @@
   // Sent but not yet echoed by the stream: shown at once, faded (optimistic).
   let pending = $state<{ key: number; text: string; seq?: bigint }[]>([]);
   let pendingKey = 0;
-  let sending = false;
+  // Creating the thread for a first message: a second send waits for it, or
+  // it would make a second thread.
+  let creating = false;
+  // Warm-capable calls (message, answer) run one at a time, in order: the
+  // server does not order two concurrent ones, and a warm takes seconds.
+  const serial = serialQueue();
   // With no thread selected, the first message creates one with this visibility.
   let newVisibility = $state<"shared" | "private">("shared");
   let stream: AbortController | undefined;
   // Bumped by every load/select/unmount. Work started under an older value
   // writes nothing: a slow response for thread A never lands in thread B.
   let gen = 0;
+  // Bumped only when the THREAD changes (not on a same-thread reload). Sends
+  // and answers bind to it, so a reload of the thread they belong to does not
+  // make them drop their text or their echo.
+  let epoch = 0;
   let seen = new Set<bigint>();
 
   const items = $derived(conversation(entries));
@@ -172,6 +184,7 @@
 
   async function load() {
     const my = ++gen;
+    epoch++;
     stream?.abort();
     phase = "loading";
     error = "";
@@ -188,15 +201,20 @@
   async function select(t: Thread) {
     const my = ++gen;
     stream?.abort();
+    // A reload of the same thread keeps what is still in flight in it.
+    const same = t.id === current?.id;
+    if (!same) epoch++;
     current = t;
     pinned = true;
     entries = [];
     withdrawn = new Set();
     seen = new Set();
-    answers = {};
-    pending = [];
+    if (!same) {
+      answers = {};
+      pending = [];
+      busySeqs = new Set();
+    }
     error = "";
-    busy = false;
     stale = false;
     reconnecting = false;
     await guard(async () => {
@@ -218,6 +236,8 @@
       entries = res.entries;
       withdrawn = closed;
       seen = new Set(res.entries.map((e) => e.seq));
+      // Already in the reloaded transcript: its pending copy is done.
+      pending = pending.filter((p) => p.seq === undefined || !seen.has(p.seq));
       follow(t.id, res.nextSeq, my);
     });
   }
@@ -285,6 +305,7 @@
   // threads never pile up (they all looked alike).
   function startNew() {
     gen++;
+    epoch++;
     stream?.abort();
     current = undefined;
     entries = [];
@@ -296,21 +317,26 @@
     queueMicrotask(() => composer?.focus());
   }
 
-  // One action at a time, bound to the thread it was clicked in: a reply for
-  // a thread the user has left touches nothing (gen, as in select).
+  // Bound to the thread it was clicked in: a reply for a thread the user has
+  // left touches nothing (gen, as in select). Queued behind earlier sends and
+  // answers instead of blocking on them; one per decision at a time.
   async function act(
+    seq: bigint,
     fn: (threadId: string) => Promise<unknown>,
+    // Only calls that can warm a pod need to wait in line; a permission
+    // answer reaches a live pod and must not sit behind a warm.
+    ordered = true,
   ): Promise<boolean> {
-    if (busy || !current) return false;
-    const my = gen;
+    if (busySeqs.has(seq) || !current) return false;
+    const my = epoch;
     const threadId = current.id;
-    busy = true;
+    busySeqs = new Set(busySeqs).add(seq);
     error = "";
     try {
-      await fn(threadId);
-      return my === gen;
+      await (ordered ? serial(() => fn(threadId)) : fn(threadId));
+      return my === epoch;
     } catch (err) {
-      if (my !== gen) return false;
+      if (my !== epoch) return false;
       if (isUnauthenticated(err)) phase = "signed-out";
       else if (isStale(err)) stale = true;
       else if (isAlreadyAnswered(err)) {
@@ -324,7 +350,11 @@
       }
       return false;
     } finally {
-      if (my === gen) busy = false;
+      if (my === epoch) {
+        const next = new Set(busySeqs);
+        next.delete(seq);
+        busySeqs = next;
+      }
     }
   }
 
@@ -346,7 +376,7 @@
   // stream echoes it; on failure it comes back to the box. Nothing is disabled.
   async function send() {
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text || (!current && creating)) return;
     if (new TextEncoder().encode(text).length > MAX_MESSAGE) {
       error = "This message is too long (64 KiB at most).";
       return;
@@ -355,7 +385,7 @@
     // Code: a plain message would only queue behind the question it blocks on.
     const q = current ? open.find((d) => d.kind === "question") : undefined;
     if (q?.kind === "question") {
-      if (busy) {
+      if (busySeqs.has(q.seq)) {
         error = "Wait for the last answer to go through.";
         return;
       }
@@ -370,18 +400,16 @@
         error = "This answer is too long (64 KiB at most).";
         return;
       }
-      sending = true;
       draft = "";
       const threadId = current!.id;
       const key = ++pendingKey;
       pending = [...pending, { key, text }];
       pinned = true;
       let seq: bigint | undefined;
-      const ok = await act(async (threadId) => {
+      const ok = await act(q.seq, async (threadId) => {
         seq = (await api.answerQuestion({ threadId, seq: q.seq, answersJson }))
           .seq;
       });
-      sending = false;
       // They left the thread: nothing here is theirs now. Not gen: a reload
       // of this same thread (someone answered first) must keep the text.
       if (current?.id !== threadId) return;
@@ -396,34 +424,39 @@
       else draft = draft ? `${text}\n${draft}` : text;
       return;
     }
-    sending = true;
     error = "";
     draft = "";
     let key = 0;
     // Bound to where the user is now: if they move to another thread while
     // this travels, nothing below writes into that one.
-    let my = gen;
+    let my = epoch;
     try {
       let t = current;
       if (!t) {
         // The first line names the thread, so threads tell apart in the list.
-        const res = await api.createThread({
-          definition,
-          visibility: newVisibility,
-          title: threadTitle(text),
-        });
-        if (!res.thread) throw new Error("no thread");
-        t = res.thread;
-        threads = [t, ...threads.filter((x) => x.id !== t!.id)];
-        if (my !== gen) return; // they picked another thread meanwhile
-        await select(t);
-        my = gen;
+        creating = true;
+        try {
+          const res = await api.createThread({
+            definition,
+            visibility: newVisibility,
+            title: threadTitle(text),
+          });
+          if (!res.thread) throw new Error("no thread");
+          t = res.thread;
+          threads = [t, ...threads.filter((x) => x.id !== t!.id)];
+          if (my !== epoch) return; // they picked another thread meanwhile
+          await select(t);
+          my = epoch;
+        } finally {
+          creating = false;
+        }
       }
       key = ++pendingKey;
       pending = [...pending, { key, text }];
       pinned = true; // your own message always comes into view
-      const res = await api.postMessage({ threadId: t.id, text });
-      if (my !== gen) return;
+      const threadId = t.id;
+      const res = await serial(() => api.postMessage({ threadId, text }));
+      if (my !== epoch) return;
       if (seen.has(res.seq)) {
         // Already streamed back.
         pending = pending.filter((p) => p.key !== key);
@@ -437,7 +470,7 @@
         );
       }
     } catch (err) {
-      if (my !== gen) return;
+      if (my !== epoch) return;
       pending = pending.filter((p) => p.key !== key);
       // Nothing typed since is lost: the failed text goes back in front of it.
       draft = draft ? `${text}\n${draft}` : text;
@@ -448,14 +481,12 @@
         if (ConnectError.from(err).code === Code.PermissionDenied)
           await refreshCurrent();
       }
-    } finally {
-      sending = false;
     }
   }
 
   async function answer(seq: bigint) {
     if (
-      await act((threadId) =>
+      await act(seq, (threadId) =>
         api.answerQuestion({
           threadId,
           seq,
@@ -466,9 +497,13 @@
       answers = {};
   }
   const permit = (seq: bigint, behavior: "allow" | "deny") =>
-    act((threadId) => api.respondToPermission({ threadId, seq, behavior }));
+    act(
+      seq,
+      (threadId) => api.respondToPermission({ threadId, seq, behavior }),
+      false,
+    );
   const approve = (seq: bigint) =>
-    act((threadId) => api.approvePlan({ threadId, seq }));
+    act(seq, (threadId) => api.approvePlan({ threadId, seq }), false);
 
   // Login runs top-level on the fleet (authentik refuses to be framed). No
   // reliance on window.opener: the island retries when its window regains focus.
@@ -499,6 +534,7 @@
       window.removeEventListener("focus", onFocus);
       unfollow();
       gen++;
+      epoch++;
       stream?.abort();
     };
   });
@@ -613,21 +649,21 @@
               {/each}
             </div>
           {/each}
-          <button class="primary chamfer" disabled={busy || d.questions.some((q) => !answers[q.question])} onclick={() => answer(d.seq)}>Answer</button>
+          <button class="primary chamfer" disabled={busySeqs.has(d.seq) || d.questions.some((q) => !answers[q.question])} onclick={() => answer(d.seq)}>Answer</button>
         {:else if d.kind === "plan"}
           <p class="title">The agent proposes a plan</p>
           <div class="md plan">{@html render.markdown(d.plan)}</div>
           <div class="options">
-            <button class="primary chamfer" disabled={busy} onclick={() => approve(d.seq)}>Approve plan</button>
+            <button class="primary chamfer" disabled={busySeqs.has(d.seq)} onclick={() => approve(d.seq)}>Approve plan</button>
             <!-- A reply resolves a pending plan; AgentService has no plan deny. -->
-            <button class="secondary" disabled={busy} onclick={() => composer?.focus()}>Ask for changes</button>
+            <button class="secondary" disabled={busySeqs.has(d.seq)} onclick={() => composer?.focus()}>Ask for changes</button>
           </div>
         {:else if d.kind === "permission"}
           <p class="title">Allow {d.tool}?</p>
           {#if toolLine(d.input)}<pre class="code">{toolLine(d.input)}</pre>{/if}
           <div class="options">
-            <button class="primary chamfer" disabled={busy} onclick={() => permit(d.seq, "allow")}>Allow</button>
-            <button class="secondary danger-text" disabled={busy} onclick={() => permit(d.seq, "deny")}>Deny</button>
+            <button class="primary chamfer" disabled={busySeqs.has(d.seq)} onclick={() => permit(d.seq, "allow")}>Allow</button>
+            <button class="secondary danger-text" disabled={busySeqs.has(d.seq)} onclick={() => permit(d.seq, "deny")}>Deny</button>
           </div>
         {/if}
       </div>
