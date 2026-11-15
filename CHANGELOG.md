@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.8.0](https://github.com/MohammadBnei/agent-fleet/compare/7.7.0...7.8.0) (2026-11-15)
+
+### Features
+
+* **core:** tag CoreService spans with fleet.session.id, wire trace export config ([#368](https://github.com/MohammadBnei/agent-fleet/issues/368)) ([669b0f1](https://github.com/MohammadBnei/agent-fleet/commit/669b0f15de1e12601ea008ad071493676f7dd14e))
+
 # [7.7.0](https://github.com/MohammadBnei/agent-fleet/compare/7.6.1...7.7.0) (2026-11-15)
 
 ### Features
