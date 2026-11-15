@@ -624,6 +624,46 @@ message StreamHumanMessagesRequest {
 // Reuses files.proto's message shapes verbatim — the same cross-file reuse
 // ListWorktrees/DeleteWorktree also rely on.
 
+// --- sidecar -> core: worker spans (docs/adr/0081 §7) ---
+
+// One finished operation the worker timed: a turn, or a tool call inside it.
+// Names, ids and numbers only; the worker sends no content. Everything that
+// says WHO (the session, the service) comes from core, never from here.
+message WorkerSpan {
+  string name = 1;
+  // Ids are the worker's own and mean nothing outside this request: core
+  // mints fresh span ids and resolves parent_local_id only against the
+  // other spans in the same request.
+  string local_id = 2;
+  string parent_local_id = 3;
+  int64 start_unix_nano = 4;
+  int64 end_unix_nano = 5;
+  WorkerSpanStatus status = 6;
+  map<string, string> attributes = 7;
+  map<string, int64> int_attributes = 8;
+  // Stable across pods for one turn (the SDK result uuid or the transcript
+  // seq), never a per-pod counter. With the session id it names the trace.
+  string turn_key = 9;
+}
+
+enum WorkerSpanStatus {
+  WORKER_SPAN_STATUS_UNSPECIFIED = 0;
+  WORKER_SPAN_STATUS_OK = 1;
+  WORKER_SPAN_STATUS_ERROR = 2;
+}
+
+message ExportSpansRequest {
+  // Used only by the auth binder to prove the caller's own session; it is
+  // the trace's session attribute too, because the lease vouched for it.
+  string session_id = 1;
+  repeated WorkerSpan spans = 2;
+}
+
+message ExportSpansResponse {
+  // How many spans core queued. The rest hit a cap or the queue; not an error.
+  int32 accepted = 1;
+}
+
 // --- Log querying (Loki queries, docs/adr/0013) ---
 
 message QueryLogsRequest {
@@ -726,6 +766,8 @@ service CoreService {
   rpc SearchJournal(SearchJournalRequest) returns (SearchJournalResponse);
   rpc SaveAgentSessionId(SaveAgentSessionIdRequest) returns (SaveAgentSessionIdResponse);
   rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);
+  // Worker spans, relayed by the sidecar (docs/adr/0081 §7). Session-only.
+  rpc ExportSpans(ExportSpansRequest) returns (ExportSpansResponse);
   // Streams transcript.proto's TranscriptEntry directly, same precedent
   // dashboard.proto's StreamTranscript already set.
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME

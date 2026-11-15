@@ -58,6 +58,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
+	"github.com/MohammadBnei/agent-fleet/core/internal/workerspans"
 )
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
@@ -73,6 +74,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			slog.Warn("traces", "err", err)
 		}
 	}()
+	// Worker spans (docs/adr/0081 §7): same endpoint, a second exporter, nothing without one.
+	spanSink, err := workerspans.New(cfg.TracesEndpoint, workerspans.DefaultLimits)
+	if err != nil {
+		return err
+	}
+	defer spanSink.Close()
 	// The pools' rule (MAX_DEFINITION_SESSIONS < MAX_IN_FLIGHT_TASKS, ...) is config.Load's.
 	store := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	sessionStore := sessions.NewStore(pool)
@@ -256,6 +263,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		tr.ServerOption(),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
+	coreSvc.SetSpanSink(spanSink)
 	// docs/adr/0078 §8: a definition session hands work on through the
 	// bridge, with core setting actor, causation, hops and trust.
 	coreSvc.SetPublishFunc(func(ctx context.Context, sessionID, definition, typ, subject, text, key string) (string, bool, int32, error) {

@@ -37,6 +37,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
+	"github.com/MohammadBnei/agent-fleet/core/internal/workerspans"
 )
 
 // Same poll interval today's internal/mcpserver used for wait_for_messages/
@@ -98,6 +99,8 @@ type Server struct {
 	// worker on GetSession, and AskUserQuestion's longest hold. 0 sends 0
 	// (the worker's own default) and holds what the sidecar asks.
 	decisionWait time.Duration
+	// spans exports worker spans (docs/adr/0081 §7). nil accepts nothing.
+	spans *workerspans.Sink
 }
 
 // SetDecisionWait sets DECISION_WAIT_MS.

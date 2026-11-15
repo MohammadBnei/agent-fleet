@@ -71,6 +71,8 @@ const (
 	// CoreServicePushToolTelemetryProcedure is the fully-qualified name of the CoreService's
 	// PushToolTelemetry RPC.
 	CoreServicePushToolTelemetryProcedure = "/agentfleet.v1.CoreService/PushToolTelemetry"
+	// CoreServiceExportSpansProcedure is the fully-qualified name of the CoreService's ExportSpans RPC.
+	CoreServiceExportSpansProcedure = "/agentfleet.v1.CoreService/ExportSpans"
 	// CoreServiceStreamHumanMessagesProcedure is the fully-qualified name of the CoreService's
 	// StreamHumanMessages RPC.
 	CoreServiceStreamHumanMessagesProcedure = "/agentfleet.v1.CoreService/StreamHumanMessages"
@@ -164,6 +166,8 @@ type CoreServiceClient interface {
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
+	// Worker spans, relayed by the sidecar (docs/adr/0081 §7). Session-only.
+	ExportSpans(context.Context, *connect.Request[v1.ExportSpansRequest]) (*connect.Response[v1.ExportSpansResponse], error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -294,6 +298,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("PushToolTelemetry")),
 			connect.WithClientOptions(opts...),
 		),
+		exportSpans: connect.NewClient[v1.ExportSpansRequest, v1.ExportSpansResponse](
+			httpClient,
+			baseURL+CoreServiceExportSpansProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ExportSpans")),
+			connect.WithClientOptions(opts...),
+		),
 		streamHumanMessages: connect.NewClient[v1.StreamHumanMessagesRequest, v1.TranscriptEntry](
 			httpClient,
 			baseURL+CoreServiceStreamHumanMessagesProcedure,
@@ -391,6 +401,7 @@ type coreServiceClient struct {
 	searchJournal       *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
 	saveAgentSessionId  *connect.Client[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse]
 	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
+	exportSpans         *connect.Client[v1.ExportSpansRequest, v1.ExportSpansResponse]
 	streamHumanMessages *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
 	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
 	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
@@ -474,6 +485,11 @@ func (c *coreServiceClient) SaveAgentSessionId(ctx context.Context, req *connect
 // PushToolTelemetry calls agentfleet.v1.CoreService.PushToolTelemetry.
 func (c *coreServiceClient) PushToolTelemetry(ctx context.Context, req *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error) {
 	return c.pushToolTelemetry.CallUnary(ctx, req)
+}
+
+// ExportSpans calls agentfleet.v1.CoreService.ExportSpans.
+func (c *coreServiceClient) ExportSpans(ctx context.Context, req *connect.Request[v1.ExportSpansRequest]) (*connect.Response[v1.ExportSpansResponse], error) {
+	return c.exportSpans.CallUnary(ctx, req)
 }
 
 // StreamHumanMessages calls agentfleet.v1.CoreService.StreamHumanMessages.
@@ -597,6 +613,8 @@ type CoreServiceHandler interface {
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
+	// Worker spans, relayed by the sidecar (docs/adr/0081 §7). Session-only.
+	ExportSpans(context.Context, *connect.Request[v1.ExportSpansRequest]) (*connect.Response[v1.ExportSpansResponse], error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -723,6 +741,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("PushToolTelemetry")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceExportSpansHandler := connect.NewUnaryHandler(
+		CoreServiceExportSpansProcedure,
+		svc.ExportSpans,
+		connect.WithSchema(coreServiceMethods.ByName("ExportSpans")),
+		connect.WithHandlerOptions(opts...),
+	)
 	coreServiceStreamHumanMessagesHandler := connect.NewServerStreamHandler(
 		CoreServiceStreamHumanMessagesProcedure,
 		svc.StreamHumanMessages,
@@ -831,6 +855,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceSaveAgentSessionIdHandler.ServeHTTP(w, r)
 		case CoreServicePushToolTelemetryProcedure:
 			coreServicePushToolTelemetryHandler.ServeHTTP(w, r)
+		case CoreServiceExportSpansProcedure:
+			coreServiceExportSpansHandler.ServeHTTP(w, r)
 		case CoreServiceStreamHumanMessagesProcedure:
 			coreServiceStreamHumanMessagesHandler.ServeHTTP(w, r)
 		case CoreServiceListFilesProcedure:
@@ -920,6 +946,10 @@ func (UnimplementedCoreServiceHandler) SaveAgentSessionId(context.Context, *conn
 
 func (UnimplementedCoreServiceHandler) PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.PushToolTelemetry is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ExportSpans(context.Context, *connect.Request[v1.ExportSpansRequest]) (*connect.Response[v1.ExportSpansResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ExportSpans is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest], *connect.ServerStream[v1.TranscriptEntry]) error {

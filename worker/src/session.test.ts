@@ -88,6 +88,9 @@ mock.module("./sidecarClient.js", () => ({
   savePermissionMode: mock(async (mode: string) => {
     savedPermissionModes.push(mode);
   }),
+  exportSpans: mock(async (spans: Record<string, unknown>[]) => {
+    exportedSpans.push(spans);
+  }),
   consumeGrant: mock(async (tool: string, input: unknown) => {
     consumeGrantCalls.push({ tool, input });
     return consumeGrantAnswer();
@@ -213,6 +216,11 @@ let consumedInputs: { message: { content: string } }[] = [];
 // scripted happy path never produces (auth_status, tool_progress, a
 // thinking block, …) through the real logSdkMessage.
 let extraMessages: Record<string, unknown>[] = [];
+// One entry per round the fake session runs, consumed in order: the messages
+// that round yields in place of the canned assistant message and result.
+let roundScripts: Record<string, unknown>[][] = [];
+// Every batch the worker posted to the sidecar's POST /spans.
+const exportedSpans: Record<string, unknown>[][] = [];
 // Yielded before init on the first round, as the SDK's SessionStart/Setup
 // hook messages can be.
 let preInitMessages: Record<string, unknown>[] = [];
@@ -298,6 +306,12 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         if (round === crashOnRound) throw new Error("simulated session crash");
 
         for (const extra of extraMessages) yield extra;
+        // A scripted round replaces the canned assistant/result entirely.
+        const script = roundScripts.shift();
+        if (script) {
+          for (const m of script) yield m;
+          continue;
+        }
 
         yield {
           type: "assistant",
@@ -429,6 +443,8 @@ beforeEach(() => {
   queryOptions = null;
   consumedInputs = [];
   extraMessages = [];
+  roundScripts = [];
+  exportedSpans.length = 0;
   preInitMessages = [];
   sessionAgentSpec = null;
   streamedSpecSha = undefined;
@@ -3453,4 +3469,147 @@ describe("non-blocking decisions", () => {
     pushHuman("", "abort");
     await promise;
   }, 10000);
+});
+
+// --- spans (docs/adr/0081 §7) ---
+
+const toolUse = (id: string, name: string, parent?: string) => ({
+  type: "assistant",
+  ...(parent ? { parent_tool_use_id: parent } : {}),
+  message: {
+    content: [{ type: "tool_use", id, name, input: { secret: "x" } }],
+  },
+});
+const toolResult = (id: string, isError = false, parent?: string) => ({
+  type: "user",
+  ...(parent ? { parent_tool_use_id: parent } : {}),
+  message: {
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: id,
+        is_error: isError,
+        content: "private output",
+      },
+    ],
+  },
+});
+const usage = (input: number, output: number) => ({
+  m1: {
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+  },
+});
+
+type Wire = {
+  name: string;
+  id: string;
+  parent?: string;
+  turn: string;
+  status: string;
+  startNs: number;
+  endNs: number;
+  attrs: Record<string, string | number | boolean>;
+};
+
+async function runTurns(rounds: number): Promise<Wire[][]> {
+  const promise = runSession();
+  await Bun.sleep(20);
+  for (let i = 0; i < rounds; i++) {
+    pushHuman(`go ${i}`, "discussion");
+    await Bun.sleep(30);
+  }
+  pushHuman("", "abort");
+  await promise;
+  return exportedSpans as unknown as Wire[][];
+}
+
+test("a turn exports an invoke_agent span with tool children, nested subagent calls and cost deltas", async () => {
+  roundScripts = [
+    [
+      toolUse("T1", "Bash"),
+      toolUse("T2", "Task"),
+      toolUse("T3", "Read", "T2"),
+      toolResult("T3", false, "T2"),
+      toolResult("T2"),
+      toolResult("T1", true),
+      {
+        type: "result",
+        subtype: "success",
+        uuid: "r1",
+        num_turns: 2,
+        total_cost_usd: 0.1,
+        modelUsage: usage(100, 10),
+      },
+    ],
+    [
+      toolUse("T4", "Grep"),
+      toolResult("T4"),
+      {
+        type: "result",
+        subtype: "success",
+        uuid: "r2",
+        num_turns: 1,
+        total_cost_usd: 0.25,
+        modelUsage: usage(150, 40),
+      },
+    ],
+  ];
+  const batches = await runTurns(2);
+  expect(batches).toHaveLength(2);
+
+  const [one, two] = batches;
+  const by = (b: Wire[], n: string) => b.find((s) => s.name === n) as Wire;
+  const turn = by(one, "invoke_agent");
+  expect(one.map((s) => s.name).sort()).toEqual([
+    "execute_tool Bash",
+    "execute_tool Read",
+    "execute_tool Task",
+    "invoke_agent",
+  ]);
+  // One trace key per turn: the SDK result uuid, on every span.
+  expect(new Set(one.map((s) => s.turn))).toEqual(new Set(["r1"]));
+  expect(turn.parent).toBeUndefined();
+  expect(by(one, "execute_tool Bash").parent).toBe(turn.id);
+  expect(by(one, "execute_tool Task").parent).toBe(turn.id);
+  // The subagent's call nests under the Task call, not the turn.
+  expect(by(one, "execute_tool Read").parent).toBe(
+    by(one, "execute_tool Task").id,
+  );
+  expect(by(one, "execute_tool Bash").status).toBe("error");
+  expect(by(one, "execute_tool Read").status).toBe("ok");
+  expect(by(one, "execute_tool Bash").attrs).toMatchObject({
+    "gen_ai.tool.name": "Bash",
+    "gen_ai.tool.call.id": "T1",
+  });
+  expect(turn.attrs["gen_ai.usage.cost_micro_usd"]).toBe(100_000);
+  expect(turn.attrs["gen_ai.usage.input_tokens"]).toBe(100);
+  expect(turn.attrs["gen_ai.request.model"]).toBe("m1");
+  for (const s of one) expect(s.endNs).toBeGreaterThanOrEqual(s.startNs);
+
+  // Turn two reports what turn two cost, not the cumulative totals.
+  const turn2 = by(two, "invoke_agent");
+  expect(turn2.attrs["gen_ai.usage.cost_micro_usd"]).toBe(150_000);
+  expect(turn2.attrs["gen_ai.usage.input_tokens"]).toBe(50);
+  expect(turn2.attrs["gen_ai.usage.output_tokens"]).toBe(30);
+  expect(new Set(two.map((s) => s.turn))).toEqual(new Set(["r2"]));
+
+  // Names, ids and numbers only: no tool input or output anywhere.
+  const wire = JSON.stringify(batches);
+  expect(wire).not.toContain("private output");
+  expect(wire).not.toContain("secret");
+});
+
+test("a turn still open when the session ends is exported as unfinished", async () => {
+  roundScripts = [[toolUse("T1", "Bash")]]; // never reaches its result
+  const batches = await runTurns(1);
+  expect(batches).toHaveLength(1);
+  const turn = batches[0].find((s) => s.name === "invoke_agent") as Wire;
+  expect(turn.attrs.unfinished).toBe(true);
+  expect(turn.turn.startsWith("partial-")).toBe(true);
+  const tool = batches[0].find((s) => s.name === "execute_tool Bash") as Wire;
+  expect(tool.attrs.unfinished).toBe(true);
+  expect(tool.parent).toBe(turn.id);
 });

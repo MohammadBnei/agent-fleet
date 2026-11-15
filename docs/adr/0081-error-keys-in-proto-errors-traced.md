@@ -30,6 +30,7 @@
   `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set to `platform-alloy.monitoring:4318`, live once the
   trace backend (infra-bootstrap #443) merges. Core and the provisioner are single-replica (`replicaCount: 1`
   now explicit), which in-memory per-session span caps rely on.
+  §7 (worker spans through core, 2026-11-15): built.
   **Not yet built:** the `rawMessage.includes("DEFINITION_CHANGED")` removal (§5 step 3)
   and §5 step 5.
 - **Date:** 2026-10-28
@@ -160,6 +161,44 @@ run time.
   on `Canceled` and `DeadlineExceeded`
   (`sidecar/internal/mcpserver/server.go:495`).
 - **The trace backend.**
+
+### 7. Worker spans go through core (2026-11-15)
+
+The worker's own timings (a turn, each tool call) join the trace backend through core,
+not around it.
+
+- **Path.** The worker has no OpenTelemetry and no egress to a collector. It records
+  names, local ids and times (`worker/src/spans.ts`) and posts a finished turn's batch to
+  its sidecar (`POST /spans`), which forwards it on the existing `CoreService` connection
+  as `ExportSpans`. [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md) §5's
+  egress lock is untouched: no rule was added. The sidecar drops a batch when core is
+  down and keeps no buffer.
+- **Auth.** `ExportSpans` is in all three tables in `coreserver/auth.go`: bound to the
+  caller's own session (`session_id` is used only by that binder), allowed to definition
+  sessions, and in `sessionOnlyMethods`, so the provisioner token can never write spans.
+- **Core builds the spans.** ukubi-go's `Tracing` has no exporter and mints a span only
+  through a Tracer, which would put worker spans on core's clock and in core's own
+  traces. `core/internal/workerspans` builds each as a finished `tracetest.SpanStub`
+  snapshot and exports them through a second `otlptracehttp` exporter at the same
+  endpoint. No endpoint, no sink: `ExportSpans` accepts nothing.
+- **Identity is core's.** The trace id is `sha256(session id, turn key)[:16]`, the turn
+  key being the SDK result uuid (or `partial-<start>` for a turn cut short), never a per-pod
+  counter, so a resumed session on another pod continues the same traces. `fleet.session.id`
+  comes from the lease; payload attributes under `fleet.` or `service.` are dropped. Worker
+  span ids are replaced by fresh ones per batch and a parent link survives only inside one
+  batch and one turn, so a worker cannot attach a span to another trace or to a span core
+  minted.
+- **Bounded.** In memory, per session: a span count and an estimated byte total (each per 24 h window), and a token
+  bucket (50 spans/s, burst 500; roots are admitted first); a bounded export queue with a 5 s per-batch timeout and
+  a drop when full, so a slow collector never stalls `CoreService` (the sidecar shares that
+  connection with `SendMessage` and `ConsumeGrant`). The caps are in-process state and
+  assume the single core replica.
+- **What a span carries.** `invoke_agent` per turn with usage and cost as deltas (the SDK's
+  `total_cost_usd` and `modelUsage` are cumulative across a streaming-input process; a
+  resumed pod starts at zero), `execute_tool <name>` per tool call with
+  `gen_ai.tool.name`, `gen_ai.tool.call.id` and an error flag, subagent calls nested under
+  their Task call by `parent_tool_use_id`. Names, ids and numbers only: no prompt, tool
+  input or output. The worker flushes at the end of `runSession` and on SIGTERM.
 
 ## Alternatives considered
 

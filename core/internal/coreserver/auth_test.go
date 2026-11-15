@@ -302,6 +302,8 @@ func requestFor(method string) any {
 		return &agentfleetv1.DraftCardRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/SubmitReview":
 		return &agentfleetv1.SubmitReviewRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/ExportSpans":
+		return &agentfleetv1.ExportSpansRequest{SessionId: "s1"}
 	}
 	return nil // unbound methods: the request names no caller
 }
@@ -358,7 +360,7 @@ func TestAuth_DefinitionLeaseOnlyReachesItsAllowlist(t *testing.T) {
 		}
 	}
 	// The provisioner token never publishes, drafts or reviews as a session.
-	for _, m := range []string{"/agentfleet.v1.CoreService/PublishEvent", "/agentfleet.v1.CoreService/DraftCard", "/agentfleet.v1.CoreService/SubmitReview"} {
+	for _, m := range []string{"/agentfleet.v1.CoreService/PublishEvent", "/agentfleet.v1.CoreService/DraftCard", "/agentfleet.v1.CoreService/SubmitReview", "/agentfleet.v1.CoreService/ExportSpans"} {
 		if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), m, requestFor(m)); codeOf(err) != codes.PermissionDenied {
 			t.Errorf("provisioner %s: %v", m, err)
 		}

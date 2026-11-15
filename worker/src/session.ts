@@ -21,6 +21,7 @@ import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
 import { log } from "./log.js";
 import type { AgentSpec } from "./sidecarClient.js";
 import * as sidecar from "./sidecarClient.js";
+import { activeRecorder, SpanRecorder, setActiveRecorder } from "./spans.js";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -904,6 +905,8 @@ async function logSdkMessage(
     EPHEMERAL_SYSTEM_SUBTYPES.has(msg.subtype)
   )
     return;
+  // The turn's span starts at the first message after the last result.
+  if (!(msg.type === "user" && msg.isReplay)) activeRecorder()?.begin();
 
   if (msg.type === "system" && msg.subtype === "init") {
     log("info", `${actor} session started`, {
@@ -1047,6 +1050,13 @@ async function logSdkMessage(
         );
       }
       if (block.type === "tool_use") {
+        // Names and ids only. A tool the SDK reports under a subagent nests
+        // under that Task call through parent_tool_use_id.
+        activeRecorder()?.toolStart(
+          block.id,
+          block.name,
+          msg.parent_tool_use_id,
+        );
         log("info", `${actor} tool_use`, {
           tool: block.name,
           input: block.input,
@@ -1073,6 +1083,7 @@ async function logSdkMessage(
     for (const block of content) {
       if (block.type === "tool_result") {
         const isError = Boolean(block.is_error);
+        activeRecorder()?.toolEnd(block.tool_use_id, isError);
         const resultContent =
           typeof block.content === "string"
             ? block.content.slice(0, 2000)
@@ -1127,6 +1138,24 @@ async function logSdkMessage(
           cache_creation_input_tokens?: number;
         }
       | undefined;
+    const summed = sumModelUsage(msg.modelUsage);
+    activeRecorder()?.endTurn({
+      uuid: typeof msg.uuid === "string" ? msg.uuid : undefined,
+      isError: Boolean(msg.is_error),
+      subtype: typeof msg.subtype === "string" ? msg.subtype : undefined,
+      numTurns: typeof msg.num_turns === "number" ? msg.num_turns : undefined,
+      totalCostUsd:
+        typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : undefined,
+      tokens: summed
+        ? {
+            input: summed.inputTokensAll,
+            output: summed.outputTokensAll,
+            cacheRead: summed.cacheReadInputTokensAll,
+            cacheCreation: summed.cacheCreationInputTokensAll,
+          }
+        : undefined,
+      models: summed?.models,
+    });
     log("info", `${actor} result`, {
       subtype: msg.subtype,
       numTurns: msg.num_turns,
@@ -1207,6 +1236,9 @@ export async function runSession(): Promise<SessionResult> {
   // and the human would have no way to tell except by watching it start
   // asking again.
   const session = await sidecar.getSession();
+  // Spans for this process (docs/adr/0081 §7). Its cost and token baselines
+  // are zero because the SDK's totals restart with the process.
+  setActiveRecorder(new SpanRecorder((s) => sidecar.exportSpans(s)));
   // docs/adr/0067 §4: set for a definition session only. Everything below
   // that reads it narrows; a repo session (no spec) runs exactly as before.
   const spec = session.agentSpec;
@@ -2327,6 +2359,10 @@ export async function runSession(): Promise<SessionResult> {
     // Nothing left to answer them, and their timers would hold the process.
     resolveAllPendingDeny("The session ended.");
     await humanMessagesDone;
+    // A turn in progress is sent as unfinished; SIGTERM (index.ts) does the
+    // same when the pod is killed mid-query().
+    await activeRecorder()?.flush();
+    setActiveRecorder(null);
   }
 
   return { aborted, summary: finalText };

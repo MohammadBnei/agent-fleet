@@ -142,6 +142,55 @@ func (PodPhase) EnumDescriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{1}
 }
 
+type WorkerSpanStatus int32
+
+const (
+	WorkerSpanStatus_WORKER_SPAN_STATUS_UNSPECIFIED WorkerSpanStatus = 0
+	WorkerSpanStatus_WORKER_SPAN_STATUS_OK          WorkerSpanStatus = 1
+	WorkerSpanStatus_WORKER_SPAN_STATUS_ERROR       WorkerSpanStatus = 2
+)
+
+// Enum value maps for WorkerSpanStatus.
+var (
+	WorkerSpanStatus_name = map[int32]string{
+		0: "WORKER_SPAN_STATUS_UNSPECIFIED",
+		1: "WORKER_SPAN_STATUS_OK",
+		2: "WORKER_SPAN_STATUS_ERROR",
+	}
+	WorkerSpanStatus_value = map[string]int32{
+		"WORKER_SPAN_STATUS_UNSPECIFIED": 0,
+		"WORKER_SPAN_STATUS_OK":          1,
+		"WORKER_SPAN_STATUS_ERROR":       2,
+	}
+)
+
+func (x WorkerSpanStatus) Enum() *WorkerSpanStatus {
+	p := new(WorkerSpanStatus)
+	*p = x
+	return p
+}
+
+func (x WorkerSpanStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (WorkerSpanStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_agentfleet_v1_core_proto_enumTypes[2].Descriptor()
+}
+
+func (WorkerSpanStatus) Type() protoreflect.EnumType {
+	return &file_agentfleet_v1_core_proto_enumTypes[2]
+}
+
+func (x WorkerSpanStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use WorkerSpanStatus.Descriptor instead.
+func (WorkerSpanStatus) EnumDescriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{2}
+}
+
 type PodEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -3183,6 +3232,221 @@ func (x *StreamHumanMessagesRequest) GetAgentSpecSha() string {
 	return ""
 }
 
+// One finished operation the worker timed: a turn, or a tool call inside it.
+// Names, ids and numbers only; the worker sends no content. Everything that
+// says WHO (the session, the service) comes from core, never from here.
+type WorkerSpan struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Ids are the worker's own and mean nothing outside this request: core
+	// mints fresh span ids and resolves parent_local_id only against the
+	// other spans in the same request.
+	LocalId       string            `protobuf:"bytes,2,opt,name=local_id,json=localId,proto3" json:"local_id,omitempty"`
+	ParentLocalId string            `protobuf:"bytes,3,opt,name=parent_local_id,json=parentLocalId,proto3" json:"parent_local_id,omitempty"`
+	StartUnixNano int64             `protobuf:"varint,4,opt,name=start_unix_nano,json=startUnixNano,proto3" json:"start_unix_nano,omitempty"`
+	EndUnixNano   int64             `protobuf:"varint,5,opt,name=end_unix_nano,json=endUnixNano,proto3" json:"end_unix_nano,omitempty"`
+	Status        WorkerSpanStatus  `protobuf:"varint,6,opt,name=status,proto3,enum=agentfleet.v1.WorkerSpanStatus" json:"status,omitempty"`
+	Attributes    map[string]string `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	IntAttributes map[string]int64  `protobuf:"bytes,8,rep,name=int_attributes,json=intAttributes,proto3" json:"int_attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// Stable across pods for one turn (the SDK result uuid or the transcript
+	// seq), never a per-pod counter. With the session id it names the trace.
+	TurnKey       string `protobuf:"bytes,9,opt,name=turn_key,json=turnKey,proto3" json:"turn_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerSpan) Reset() {
+	*x = WorkerSpan{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerSpan) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerSpan) ProtoMessage() {}
+
+func (x *WorkerSpan) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerSpan.ProtoReflect.Descriptor instead.
+func (*WorkerSpan) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *WorkerSpan) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *WorkerSpan) GetLocalId() string {
+	if x != nil {
+		return x.LocalId
+	}
+	return ""
+}
+
+func (x *WorkerSpan) GetParentLocalId() string {
+	if x != nil {
+		return x.ParentLocalId
+	}
+	return ""
+}
+
+func (x *WorkerSpan) GetStartUnixNano() int64 {
+	if x != nil {
+		return x.StartUnixNano
+	}
+	return 0
+}
+
+func (x *WorkerSpan) GetEndUnixNano() int64 {
+	if x != nil {
+		return x.EndUnixNano
+	}
+	return 0
+}
+
+func (x *WorkerSpan) GetStatus() WorkerSpanStatus {
+	if x != nil {
+		return x.Status
+	}
+	return WorkerSpanStatus_WORKER_SPAN_STATUS_UNSPECIFIED
+}
+
+func (x *WorkerSpan) GetAttributes() map[string]string {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+func (x *WorkerSpan) GetIntAttributes() map[string]int64 {
+	if x != nil {
+		return x.IntAttributes
+	}
+	return nil
+}
+
+func (x *WorkerSpan) GetTurnKey() string {
+	if x != nil {
+		return x.TurnKey
+	}
+	return ""
+}
+
+type ExportSpansRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Used only by the auth binder to prove the caller's own session; it is
+	// the trace's session attribute too, because the lease vouched for it.
+	SessionId     string        `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Spans         []*WorkerSpan `protobuf:"bytes,2,rep,name=spans,proto3" json:"spans,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportSpansRequest) Reset() {
+	*x = ExportSpansRequest{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportSpansRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportSpansRequest) ProtoMessage() {}
+
+func (x *ExportSpansRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportSpansRequest.ProtoReflect.Descriptor instead.
+func (*ExportSpansRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ExportSpansRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ExportSpansRequest) GetSpans() []*WorkerSpan {
+	if x != nil {
+		return x.Spans
+	}
+	return nil
+}
+
+type ExportSpansResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How many spans core queued. The rest hit a cap or the queue; not an error.
+	Accepted      int32 `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportSpansResponse) Reset() {
+	*x = ExportSpansResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportSpansResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportSpansResponse) ProtoMessage() {}
+
+func (x *ExportSpansResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportSpansResponse.ProtoReflect.Descriptor instead.
+func (*ExportSpansResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ExportSpansResponse) GetAccepted() int32 {
+	if x != nil {
+		return x.Accepted
+	}
+	return 0
+}
+
 type QueryLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Optional - for fleet components
@@ -3199,7 +3463,7 @@ type QueryLogsRequest struct {
 
 func (x *QueryLogsRequest) Reset() {
 	*x = QueryLogsRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[45]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3211,7 +3475,7 @@ func (x *QueryLogsRequest) String() string {
 func (*QueryLogsRequest) ProtoMessage() {}
 
 func (x *QueryLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[45]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3224,7 +3488,7 @@ func (x *QueryLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryLogsRequest.ProtoReflect.Descriptor instead.
 func (*QueryLogsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{45}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *QueryLogsRequest) GetSessionId() string {
@@ -3298,7 +3562,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[46]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3310,7 +3574,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[46]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3323,7 +3587,7 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{46}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *LogEntry) GetTimestamp() string {
@@ -3385,7 +3649,7 @@ type QueryLogsResponse struct {
 
 func (x *QueryLogsResponse) Reset() {
 	*x = QueryLogsResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[47]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3397,7 +3661,7 @@ func (x *QueryLogsResponse) String() string {
 func (*QueryLogsResponse) ProtoMessage() {}
 
 func (x *QueryLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[47]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3410,7 +3674,7 @@ func (x *QueryLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryLogsResponse.ProtoReflect.Descriptor instead.
 func (*QueryLogsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{47}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *QueryLogsResponse) GetEntries() []*LogEntry {
@@ -3444,7 +3708,7 @@ type ViewLogsRequest struct {
 
 func (x *ViewLogsRequest) Reset() {
 	*x = ViewLogsRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[48]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3456,7 +3720,7 @@ func (x *ViewLogsRequest) String() string {
 func (*ViewLogsRequest) ProtoMessage() {}
 
 func (x *ViewLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[48]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3469,7 +3733,7 @@ func (x *ViewLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewLogsRequest.ProtoReflect.Descriptor instead.
 func (*ViewLogsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{48}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ViewLogsRequest) GetComponent() string {
@@ -3537,7 +3801,7 @@ type ViewLogsResponse struct {
 
 func (x *ViewLogsResponse) Reset() {
 	*x = ViewLogsResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[49]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3549,7 +3813,7 @@ func (x *ViewLogsResponse) String() string {
 func (*ViewLogsResponse) ProtoMessage() {}
 
 func (x *ViewLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[49]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3562,7 +3826,7 @@ func (x *ViewLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewLogsResponse.ProtoReflect.Descriptor instead.
 func (*ViewLogsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{49}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ViewLogsResponse) GetLogsText() string {
@@ -3833,7 +4097,32 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq\x12$\n" +
-	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\"\xee\x01\n" +
+	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\"\xa4\x04\n" +
+	"\n" +
+	"WorkerSpan\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x19\n" +
+	"\blocal_id\x18\x02 \x01(\tR\alocalId\x12&\n" +
+	"\x0fparent_local_id\x18\x03 \x01(\tR\rparentLocalId\x12&\n" +
+	"\x0fstart_unix_nano\x18\x04 \x01(\x03R\rstartUnixNano\x12\"\n" +
+	"\rend_unix_nano\x18\x05 \x01(\x03R\vendUnixNano\x127\n" +
+	"\x06status\x18\x06 \x01(\x0e2\x1f.agentfleet.v1.WorkerSpanStatusR\x06status\x12I\n" +
+	"\n" +
+	"attributes\x18\a \x03(\v2).agentfleet.v1.WorkerSpan.AttributesEntryR\n" +
+	"attributes\x12S\n" +
+	"\x0eint_attributes\x18\b \x03(\v2,.agentfleet.v1.WorkerSpan.IntAttributesEntryR\rintAttributes\x12\x19\n" +
+	"\bturn_key\x18\t \x01(\tR\aturnKey\x1a=\n" +
+	"\x0fAttributesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a@\n" +
+	"\x12IntAttributesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"d\n" +
+	"\x12ExportSpansRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12/\n" +
+	"\x05spans\x18\x02 \x03(\v2\x19.agentfleet.v1.WorkerSpanR\x05spans\"1\n" +
+	"\x13ExportSpansResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\x05R\baccepted\"\xee\x01\n" +
 	"\x10QueryLogsRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1c\n" +
@@ -3880,7 +4169,11 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x11POD_PHASE_RUNNING\x10\x03\x12\x15\n" +
 	"\x11POD_PHASE_CRASHED\x10\x04\x12\x18\n" +
 	"\x14POD_PHASE_TERMINATED\x10\x05\x12\x1a\n" +
-	"\x16POD_PHASE_PROVISIONING\x10\x062\xe5\x13\n" +
+	"\x16POD_PHASE_PROVISIONING\x10\x06*o\n" +
+	"\x10WorkerSpanStatus\x12\"\n" +
+	"\x1eWORKER_SPAN_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15WORKER_SPAN_STATUS_OK\x10\x01\x12\x1c\n" +
+	"\x18WORKER_SPAN_STATUS_ERROR\x10\x022\xbb\x14\n" +
 	"\vCoreService\x12T\n" +
 	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12O\n" +
 	"\vSendMessage\x12!.agentfleet.v1.SendMessageRequest\x1a\x1d.agentfleet.v1.AppendResponse\x12h\n" +
@@ -3896,7 +4189,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\rAppendJournal\x12#.agentfleet.v1.AppendJournalRequest\x1a$.agentfleet.v1.AppendJournalResponse\x12Z\n" +
 	"\rSearchJournal\x12#.agentfleet.v1.SearchJournalRequest\x1a$.agentfleet.v1.SearchJournalResponse\x12i\n" +
 	"\x12SaveAgentSessionId\x12(.agentfleet.v1.SaveAgentSessionIdRequest\x1a).agentfleet.v1.SaveAgentSessionIdResponse\x12f\n" +
-	"\x11PushToolTelemetry\x12'.agentfleet.v1.PushToolTelemetryRequest\x1a(.agentfleet.v1.PushToolTelemetryResponse\x12b\n" +
+	"\x11PushToolTelemetry\x12'.agentfleet.v1.PushToolTelemetryRequest\x1a(.agentfleet.v1.PushToolTelemetryResponse\x12T\n" +
+	"\vExportSpans\x12!.agentfleet.v1.ExportSpansRequest\x1a\".agentfleet.v1.ExportSpansResponse\x12b\n" +
 	"\x13StreamHumanMessages\x12).agentfleet.v1.StreamHumanMessagesRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12N\n" +
 	"\tListFiles\x12\x1f.agentfleet.v1.ListFilesRequest\x1a .agentfleet.v1.ListFilesResponse\x12c\n" +
 	"\x10GetFileUploadUrl\x12&.agentfleet.v1.GetFileUploadUrlRequest\x1a'.agentfleet.v1.GetFileUploadUrlResponse\x12i\n" +
@@ -3924,149 +4218,161 @@ func file_agentfleet_v1_core_proto_rawDescGZIP() []byte {
 	return file_agentfleet_v1_core_proto_rawDescData
 }
 
-var file_agentfleet_v1_core_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agentfleet_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_agentfleet_v1_core_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_agentfleet_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
 var file_agentfleet_v1_core_proto_goTypes = []any{
 	(CoreErrorKey)(0),                   // 0: agentfleet.v1.CoreErrorKey
 	(PodPhase)(0),                       // 1: agentfleet.v1.PodPhase
-	(*PodEvent)(nil),                    // 2: agentfleet.v1.PodEvent
-	(*ReportPodEventsResponse)(nil),     // 3: agentfleet.v1.ReportPodEventsResponse
-	(*SendMessageRequest)(nil),          // 4: agentfleet.v1.SendMessageRequest
-	(*AppendResponse)(nil),              // 5: agentfleet.v1.AppendResponse
-	(*AskUserQuestionRequest)(nil),      // 6: agentfleet.v1.AskUserQuestionRequest
-	(*AskUserQuestionResponse)(nil),     // 7: agentfleet.v1.AskUserQuestionResponse
-	(*ExposeRequest)(nil),               // 8: agentfleet.v1.ExposeRequest
-	(*ExposeResponse)(nil),              // 9: agentfleet.v1.ExposeResponse
-	(*UnexposeRequest)(nil),             // 10: agentfleet.v1.UnexposeRequest
-	(*UnexposeResponse)(nil),            // 11: agentfleet.v1.UnexposeResponse
-	(*RequestServiceRequest)(nil),       // 12: agentfleet.v1.RequestServiceRequest
-	(*RequestServiceResponse)(nil),      // 13: agentfleet.v1.RequestServiceResponse
-	(*Session)(nil),                     // 14: agentfleet.v1.Session
-	(*SessionSummary)(nil),              // 15: agentfleet.v1.SessionSummary
-	(*ListPeerSessionsRequest)(nil),     // 16: agentfleet.v1.ListPeerSessionsRequest
-	(*ListPeerSessionsResponse)(nil),    // 17: agentfleet.v1.ListPeerSessionsResponse
-	(*PromptSessionRequest)(nil),        // 18: agentfleet.v1.PromptSessionRequest
-	(*PromptSessionResponse)(nil),       // 19: agentfleet.v1.PromptSessionResponse
-	(*WaitForSessionStateRequest)(nil),  // 20: agentfleet.v1.WaitForSessionStateRequest
-	(*WaitForSessionStateResponse)(nil), // 21: agentfleet.v1.WaitForSessionStateResponse
-	(*GetSessionRequest)(nil),           // 22: agentfleet.v1.GetSessionRequest
-	(*GetSessionResponse)(nil),          // 23: agentfleet.v1.GetSessionResponse
-	(*AgentSpec)(nil),                   // 24: agentfleet.v1.AgentSpec
-	(*ConsumeGrantRequest)(nil),         // 25: agentfleet.v1.ConsumeGrantRequest
-	(*ConsumeGrantResponse)(nil),        // 26: agentfleet.v1.ConsumeGrantResponse
-	(*SetPermissionModeRequest)(nil),    // 27: agentfleet.v1.SetPermissionModeRequest
-	(*SetPermissionModeResponse)(nil),   // 28: agentfleet.v1.SetPermissionModeResponse
-	(*UpdateSessionMetaRequest)(nil),    // 29: agentfleet.v1.UpdateSessionMetaRequest
-	(*UpdateSessionMetaResponse)(nil),   // 30: agentfleet.v1.UpdateSessionMetaResponse
-	(*PublishEventRequest)(nil),         // 31: agentfleet.v1.PublishEventRequest
-	(*DraftCardRequest)(nil),            // 32: agentfleet.v1.DraftCardRequest
-	(*DraftCardResponse)(nil),           // 33: agentfleet.v1.DraftCardResponse
-	(*PublishEventResponse)(nil),        // 34: agentfleet.v1.PublishEventResponse
-	(*SubmitReviewRequest)(nil),         // 35: agentfleet.v1.SubmitReviewRequest
-	(*SubmitReviewResponse)(nil),        // 36: agentfleet.v1.SubmitReviewResponse
-	(*AppendJournalRequest)(nil),        // 37: agentfleet.v1.AppendJournalRequest
-	(*AppendJournalResponse)(nil),       // 38: agentfleet.v1.AppendJournalResponse
-	(*JournalEntry)(nil),                // 39: agentfleet.v1.JournalEntry
-	(*SearchJournalRequest)(nil),        // 40: agentfleet.v1.SearchJournalRequest
-	(*SearchJournalResponse)(nil),       // 41: agentfleet.v1.SearchJournalResponse
-	(*SaveAgentSessionIdRequest)(nil),   // 42: agentfleet.v1.SaveAgentSessionIdRequest
-	(*SaveAgentSessionIdResponse)(nil),  // 43: agentfleet.v1.SaveAgentSessionIdResponse
-	(*PushToolTelemetryRequest)(nil),    // 44: agentfleet.v1.PushToolTelemetryRequest
-	(*PushToolTelemetryResponse)(nil),   // 45: agentfleet.v1.PushToolTelemetryResponse
-	(*StreamHumanMessagesRequest)(nil),  // 46: agentfleet.v1.StreamHumanMessagesRequest
-	(*QueryLogsRequest)(nil),            // 47: agentfleet.v1.QueryLogsRequest
-	(*LogEntry)(nil),                    // 48: agentfleet.v1.LogEntry
-	(*QueryLogsResponse)(nil),           // 49: agentfleet.v1.QueryLogsResponse
-	(*ViewLogsRequest)(nil),             // 50: agentfleet.v1.ViewLogsRequest
-	(*ViewLogsResponse)(nil),            // 51: agentfleet.v1.ViewLogsResponse
-	(SessionKind)(0),                    // 52: agentfleet.v1.SessionKind
-	(TranscriptEntryType)(0),            // 53: agentfleet.v1.TranscriptEntryType
-	(*CardSubject)(nil),                 // 54: agentfleet.v1.CardSubject
-	(*CardOption)(nil),                  // 55: agentfleet.v1.CardOption
-	(*ReviewComment)(nil),               // 56: agentfleet.v1.ReviewComment
-	(*ReadTranscriptSinceRequest)(nil),  // 57: agentfleet.v1.ReadTranscriptSinceRequest
-	(*ListFilesRequest)(nil),            // 58: agentfleet.v1.ListFilesRequest
-	(*GetFileUploadUrlRequest)(nil),     // 59: agentfleet.v1.GetFileUploadUrlRequest
-	(*GetFileDownloadUrlRequest)(nil),   // 60: agentfleet.v1.GetFileDownloadUrlRequest
-	(*DeleteFileRequest)(nil),           // 61: agentfleet.v1.DeleteFileRequest
-	(*ReadTranscriptSinceResponse)(nil), // 62: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),             // 63: agentfleet.v1.TranscriptEntry
-	(*ListFilesResponse)(nil),           // 64: agentfleet.v1.ListFilesResponse
-	(*GetFileUploadUrlResponse)(nil),    // 65: agentfleet.v1.GetFileUploadUrlResponse
-	(*GetFileDownloadUrlResponse)(nil),  // 66: agentfleet.v1.GetFileDownloadUrlResponse
-	(*DeleteFileResponse)(nil),          // 67: agentfleet.v1.DeleteFileResponse
+	(WorkerSpanStatus)(0),               // 2: agentfleet.v1.WorkerSpanStatus
+	(*PodEvent)(nil),                    // 3: agentfleet.v1.PodEvent
+	(*ReportPodEventsResponse)(nil),     // 4: agentfleet.v1.ReportPodEventsResponse
+	(*SendMessageRequest)(nil),          // 5: agentfleet.v1.SendMessageRequest
+	(*AppendResponse)(nil),              // 6: agentfleet.v1.AppendResponse
+	(*AskUserQuestionRequest)(nil),      // 7: agentfleet.v1.AskUserQuestionRequest
+	(*AskUserQuestionResponse)(nil),     // 8: agentfleet.v1.AskUserQuestionResponse
+	(*ExposeRequest)(nil),               // 9: agentfleet.v1.ExposeRequest
+	(*ExposeResponse)(nil),              // 10: agentfleet.v1.ExposeResponse
+	(*UnexposeRequest)(nil),             // 11: agentfleet.v1.UnexposeRequest
+	(*UnexposeResponse)(nil),            // 12: agentfleet.v1.UnexposeResponse
+	(*RequestServiceRequest)(nil),       // 13: agentfleet.v1.RequestServiceRequest
+	(*RequestServiceResponse)(nil),      // 14: agentfleet.v1.RequestServiceResponse
+	(*Session)(nil),                     // 15: agentfleet.v1.Session
+	(*SessionSummary)(nil),              // 16: agentfleet.v1.SessionSummary
+	(*ListPeerSessionsRequest)(nil),     // 17: agentfleet.v1.ListPeerSessionsRequest
+	(*ListPeerSessionsResponse)(nil),    // 18: agentfleet.v1.ListPeerSessionsResponse
+	(*PromptSessionRequest)(nil),        // 19: agentfleet.v1.PromptSessionRequest
+	(*PromptSessionResponse)(nil),       // 20: agentfleet.v1.PromptSessionResponse
+	(*WaitForSessionStateRequest)(nil),  // 21: agentfleet.v1.WaitForSessionStateRequest
+	(*WaitForSessionStateResponse)(nil), // 22: agentfleet.v1.WaitForSessionStateResponse
+	(*GetSessionRequest)(nil),           // 23: agentfleet.v1.GetSessionRequest
+	(*GetSessionResponse)(nil),          // 24: agentfleet.v1.GetSessionResponse
+	(*AgentSpec)(nil),                   // 25: agentfleet.v1.AgentSpec
+	(*ConsumeGrantRequest)(nil),         // 26: agentfleet.v1.ConsumeGrantRequest
+	(*ConsumeGrantResponse)(nil),        // 27: agentfleet.v1.ConsumeGrantResponse
+	(*SetPermissionModeRequest)(nil),    // 28: agentfleet.v1.SetPermissionModeRequest
+	(*SetPermissionModeResponse)(nil),   // 29: agentfleet.v1.SetPermissionModeResponse
+	(*UpdateSessionMetaRequest)(nil),    // 30: agentfleet.v1.UpdateSessionMetaRequest
+	(*UpdateSessionMetaResponse)(nil),   // 31: agentfleet.v1.UpdateSessionMetaResponse
+	(*PublishEventRequest)(nil),         // 32: agentfleet.v1.PublishEventRequest
+	(*DraftCardRequest)(nil),            // 33: agentfleet.v1.DraftCardRequest
+	(*DraftCardResponse)(nil),           // 34: agentfleet.v1.DraftCardResponse
+	(*PublishEventResponse)(nil),        // 35: agentfleet.v1.PublishEventResponse
+	(*SubmitReviewRequest)(nil),         // 36: agentfleet.v1.SubmitReviewRequest
+	(*SubmitReviewResponse)(nil),        // 37: agentfleet.v1.SubmitReviewResponse
+	(*AppendJournalRequest)(nil),        // 38: agentfleet.v1.AppendJournalRequest
+	(*AppendJournalResponse)(nil),       // 39: agentfleet.v1.AppendJournalResponse
+	(*JournalEntry)(nil),                // 40: agentfleet.v1.JournalEntry
+	(*SearchJournalRequest)(nil),        // 41: agentfleet.v1.SearchJournalRequest
+	(*SearchJournalResponse)(nil),       // 42: agentfleet.v1.SearchJournalResponse
+	(*SaveAgentSessionIdRequest)(nil),   // 43: agentfleet.v1.SaveAgentSessionIdRequest
+	(*SaveAgentSessionIdResponse)(nil),  // 44: agentfleet.v1.SaveAgentSessionIdResponse
+	(*PushToolTelemetryRequest)(nil),    // 45: agentfleet.v1.PushToolTelemetryRequest
+	(*PushToolTelemetryResponse)(nil),   // 46: agentfleet.v1.PushToolTelemetryResponse
+	(*StreamHumanMessagesRequest)(nil),  // 47: agentfleet.v1.StreamHumanMessagesRequest
+	(*WorkerSpan)(nil),                  // 48: agentfleet.v1.WorkerSpan
+	(*ExportSpansRequest)(nil),          // 49: agentfleet.v1.ExportSpansRequest
+	(*ExportSpansResponse)(nil),         // 50: agentfleet.v1.ExportSpansResponse
+	(*QueryLogsRequest)(nil),            // 51: agentfleet.v1.QueryLogsRequest
+	(*LogEntry)(nil),                    // 52: agentfleet.v1.LogEntry
+	(*QueryLogsResponse)(nil),           // 53: agentfleet.v1.QueryLogsResponse
+	(*ViewLogsRequest)(nil),             // 54: agentfleet.v1.ViewLogsRequest
+	(*ViewLogsResponse)(nil),            // 55: agentfleet.v1.ViewLogsResponse
+	nil,                                 // 56: agentfleet.v1.WorkerSpan.AttributesEntry
+	nil,                                 // 57: agentfleet.v1.WorkerSpan.IntAttributesEntry
+	(SessionKind)(0),                    // 58: agentfleet.v1.SessionKind
+	(TranscriptEntryType)(0),            // 59: agentfleet.v1.TranscriptEntryType
+	(*CardSubject)(nil),                 // 60: agentfleet.v1.CardSubject
+	(*CardOption)(nil),                  // 61: agentfleet.v1.CardOption
+	(*ReviewComment)(nil),               // 62: agentfleet.v1.ReviewComment
+	(*ReadTranscriptSinceRequest)(nil),  // 63: agentfleet.v1.ReadTranscriptSinceRequest
+	(*ListFilesRequest)(nil),            // 64: agentfleet.v1.ListFilesRequest
+	(*GetFileUploadUrlRequest)(nil),     // 65: agentfleet.v1.GetFileUploadUrlRequest
+	(*GetFileDownloadUrlRequest)(nil),   // 66: agentfleet.v1.GetFileDownloadUrlRequest
+	(*DeleteFileRequest)(nil),           // 67: agentfleet.v1.DeleteFileRequest
+	(*ReadTranscriptSinceResponse)(nil), // 68: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),             // 69: agentfleet.v1.TranscriptEntry
+	(*ListFilesResponse)(nil),           // 70: agentfleet.v1.ListFilesResponse
+	(*GetFileUploadUrlResponse)(nil),    // 71: agentfleet.v1.GetFileUploadUrlResponse
+	(*GetFileDownloadUrlResponse)(nil),  // 72: agentfleet.v1.GetFileDownloadUrlResponse
+	(*DeleteFileResponse)(nil),          // 73: agentfleet.v1.DeleteFileResponse
 }
 var file_agentfleet_v1_core_proto_depIdxs = []int32{
-	52, // 0: agentfleet.v1.PodEvent.kind:type_name -> agentfleet.v1.SessionKind
+	58, // 0: agentfleet.v1.PodEvent.kind:type_name -> agentfleet.v1.SessionKind
 	1,  // 1: agentfleet.v1.PodEvent.phase:type_name -> agentfleet.v1.PodPhase
-	53, // 2: agentfleet.v1.SendMessageRequest.type:type_name -> agentfleet.v1.TranscriptEntryType
-	15, // 3: agentfleet.v1.ListPeerSessionsResponse.sessions:type_name -> agentfleet.v1.SessionSummary
-	14, // 4: agentfleet.v1.GetSessionResponse.session:type_name -> agentfleet.v1.Session
-	24, // 5: agentfleet.v1.GetSessionResponse.agent_spec:type_name -> agentfleet.v1.AgentSpec
-	54, // 6: agentfleet.v1.DraftCardRequest.subject:type_name -> agentfleet.v1.CardSubject
-	55, // 7: agentfleet.v1.DraftCardRequest.options:type_name -> agentfleet.v1.CardOption
-	56, // 8: agentfleet.v1.SubmitReviewRequest.comments:type_name -> agentfleet.v1.ReviewComment
-	39, // 9: agentfleet.v1.SearchJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
-	48, // 10: agentfleet.v1.QueryLogsResponse.entries:type_name -> agentfleet.v1.LogEntry
-	2,  // 11: agentfleet.v1.CoreService.ReportPodEvents:input_type -> agentfleet.v1.PodEvent
-	4,  // 12: agentfleet.v1.CoreService.SendMessage:input_type -> agentfleet.v1.SendMessageRequest
-	57, // 13: agentfleet.v1.CoreService.WaitForMessages:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
-	6,  // 14: agentfleet.v1.CoreService.AskUserQuestion:input_type -> agentfleet.v1.AskUserQuestionRequest
-	8,  // 15: agentfleet.v1.CoreService.Expose:input_type -> agentfleet.v1.ExposeRequest
-	10, // 16: agentfleet.v1.CoreService.Unexpose:input_type -> agentfleet.v1.UnexposeRequest
-	12, // 17: agentfleet.v1.CoreService.RequestService:input_type -> agentfleet.v1.RequestServiceRequest
-	22, // 18: agentfleet.v1.CoreService.GetSession:input_type -> agentfleet.v1.GetSessionRequest
-	27, // 19: agentfleet.v1.CoreService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
-	29, // 20: agentfleet.v1.CoreService.UpdateSessionMeta:input_type -> agentfleet.v1.UpdateSessionMetaRequest
-	37, // 21: agentfleet.v1.CoreService.AppendJournal:input_type -> agentfleet.v1.AppendJournalRequest
-	40, // 22: agentfleet.v1.CoreService.SearchJournal:input_type -> agentfleet.v1.SearchJournalRequest
-	42, // 23: agentfleet.v1.CoreService.SaveAgentSessionId:input_type -> agentfleet.v1.SaveAgentSessionIdRequest
-	44, // 24: agentfleet.v1.CoreService.PushToolTelemetry:input_type -> agentfleet.v1.PushToolTelemetryRequest
-	46, // 25: agentfleet.v1.CoreService.StreamHumanMessages:input_type -> agentfleet.v1.StreamHumanMessagesRequest
-	58, // 26: agentfleet.v1.CoreService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
-	59, // 27: agentfleet.v1.CoreService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
-	60, // 28: agentfleet.v1.CoreService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
-	61, // 29: agentfleet.v1.CoreService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
-	50, // 30: agentfleet.v1.CoreService.ViewLogs:input_type -> agentfleet.v1.ViewLogsRequest
-	16, // 31: agentfleet.v1.CoreService.ListPeerSessions:input_type -> agentfleet.v1.ListPeerSessionsRequest
-	18, // 32: agentfleet.v1.CoreService.PromptSession:input_type -> agentfleet.v1.PromptSessionRequest
-	20, // 33: agentfleet.v1.CoreService.WaitForSessionState:input_type -> agentfleet.v1.WaitForSessionStateRequest
-	31, // 34: agentfleet.v1.CoreService.PublishEvent:input_type -> agentfleet.v1.PublishEventRequest
-	25, // 35: agentfleet.v1.CoreService.ConsumeGrant:input_type -> agentfleet.v1.ConsumeGrantRequest
-	32, // 36: agentfleet.v1.CoreService.DraftCard:input_type -> agentfleet.v1.DraftCardRequest
-	35, // 37: agentfleet.v1.CoreService.SubmitReview:input_type -> agentfleet.v1.SubmitReviewRequest
-	3,  // 38: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
-	5,  // 39: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.AppendResponse
-	62, // 40: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	7,  // 41: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
-	9,  // 42: agentfleet.v1.CoreService.Expose:output_type -> agentfleet.v1.ExposeResponse
-	11, // 43: agentfleet.v1.CoreService.Unexpose:output_type -> agentfleet.v1.UnexposeResponse
-	13, // 44: agentfleet.v1.CoreService.RequestService:output_type -> agentfleet.v1.RequestServiceResponse
-	23, // 45: agentfleet.v1.CoreService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
-	28, // 46: agentfleet.v1.CoreService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	30, // 47: agentfleet.v1.CoreService.UpdateSessionMeta:output_type -> agentfleet.v1.UpdateSessionMetaResponse
-	38, // 48: agentfleet.v1.CoreService.AppendJournal:output_type -> agentfleet.v1.AppendJournalResponse
-	41, // 49: agentfleet.v1.CoreService.SearchJournal:output_type -> agentfleet.v1.SearchJournalResponse
-	43, // 50: agentfleet.v1.CoreService.SaveAgentSessionId:output_type -> agentfleet.v1.SaveAgentSessionIdResponse
-	45, // 51: agentfleet.v1.CoreService.PushToolTelemetry:output_type -> agentfleet.v1.PushToolTelemetryResponse
-	63, // 52: agentfleet.v1.CoreService.StreamHumanMessages:output_type -> agentfleet.v1.TranscriptEntry
-	64, // 53: agentfleet.v1.CoreService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
-	65, // 54: agentfleet.v1.CoreService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
-	66, // 55: agentfleet.v1.CoreService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
-	67, // 56: agentfleet.v1.CoreService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
-	51, // 57: agentfleet.v1.CoreService.ViewLogs:output_type -> agentfleet.v1.ViewLogsResponse
-	17, // 58: agentfleet.v1.CoreService.ListPeerSessions:output_type -> agentfleet.v1.ListPeerSessionsResponse
-	19, // 59: agentfleet.v1.CoreService.PromptSession:output_type -> agentfleet.v1.PromptSessionResponse
-	21, // 60: agentfleet.v1.CoreService.WaitForSessionState:output_type -> agentfleet.v1.WaitForSessionStateResponse
-	34, // 61: agentfleet.v1.CoreService.PublishEvent:output_type -> agentfleet.v1.PublishEventResponse
-	26, // 62: agentfleet.v1.CoreService.ConsumeGrant:output_type -> agentfleet.v1.ConsumeGrantResponse
-	33, // 63: agentfleet.v1.CoreService.DraftCard:output_type -> agentfleet.v1.DraftCardResponse
-	36, // 64: agentfleet.v1.CoreService.SubmitReview:output_type -> agentfleet.v1.SubmitReviewResponse
-	38, // [38:65] is the sub-list for method output_type
-	11, // [11:38] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	59, // 2: agentfleet.v1.SendMessageRequest.type:type_name -> agentfleet.v1.TranscriptEntryType
+	16, // 3: agentfleet.v1.ListPeerSessionsResponse.sessions:type_name -> agentfleet.v1.SessionSummary
+	15, // 4: agentfleet.v1.GetSessionResponse.session:type_name -> agentfleet.v1.Session
+	25, // 5: agentfleet.v1.GetSessionResponse.agent_spec:type_name -> agentfleet.v1.AgentSpec
+	60, // 6: agentfleet.v1.DraftCardRequest.subject:type_name -> agentfleet.v1.CardSubject
+	61, // 7: agentfleet.v1.DraftCardRequest.options:type_name -> agentfleet.v1.CardOption
+	62, // 8: agentfleet.v1.SubmitReviewRequest.comments:type_name -> agentfleet.v1.ReviewComment
+	40, // 9: agentfleet.v1.SearchJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
+	2,  // 10: agentfleet.v1.WorkerSpan.status:type_name -> agentfleet.v1.WorkerSpanStatus
+	56, // 11: agentfleet.v1.WorkerSpan.attributes:type_name -> agentfleet.v1.WorkerSpan.AttributesEntry
+	57, // 12: agentfleet.v1.WorkerSpan.int_attributes:type_name -> agentfleet.v1.WorkerSpan.IntAttributesEntry
+	48, // 13: agentfleet.v1.ExportSpansRequest.spans:type_name -> agentfleet.v1.WorkerSpan
+	52, // 14: agentfleet.v1.QueryLogsResponse.entries:type_name -> agentfleet.v1.LogEntry
+	3,  // 15: agentfleet.v1.CoreService.ReportPodEvents:input_type -> agentfleet.v1.PodEvent
+	5,  // 16: agentfleet.v1.CoreService.SendMessage:input_type -> agentfleet.v1.SendMessageRequest
+	63, // 17: agentfleet.v1.CoreService.WaitForMessages:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
+	7,  // 18: agentfleet.v1.CoreService.AskUserQuestion:input_type -> agentfleet.v1.AskUserQuestionRequest
+	9,  // 19: agentfleet.v1.CoreService.Expose:input_type -> agentfleet.v1.ExposeRequest
+	11, // 20: agentfleet.v1.CoreService.Unexpose:input_type -> agentfleet.v1.UnexposeRequest
+	13, // 21: agentfleet.v1.CoreService.RequestService:input_type -> agentfleet.v1.RequestServiceRequest
+	23, // 22: agentfleet.v1.CoreService.GetSession:input_type -> agentfleet.v1.GetSessionRequest
+	28, // 23: agentfleet.v1.CoreService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
+	30, // 24: agentfleet.v1.CoreService.UpdateSessionMeta:input_type -> agentfleet.v1.UpdateSessionMetaRequest
+	38, // 25: agentfleet.v1.CoreService.AppendJournal:input_type -> agentfleet.v1.AppendJournalRequest
+	41, // 26: agentfleet.v1.CoreService.SearchJournal:input_type -> agentfleet.v1.SearchJournalRequest
+	43, // 27: agentfleet.v1.CoreService.SaveAgentSessionId:input_type -> agentfleet.v1.SaveAgentSessionIdRequest
+	45, // 28: agentfleet.v1.CoreService.PushToolTelemetry:input_type -> agentfleet.v1.PushToolTelemetryRequest
+	49, // 29: agentfleet.v1.CoreService.ExportSpans:input_type -> agentfleet.v1.ExportSpansRequest
+	47, // 30: agentfleet.v1.CoreService.StreamHumanMessages:input_type -> agentfleet.v1.StreamHumanMessagesRequest
+	64, // 31: agentfleet.v1.CoreService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
+	65, // 32: agentfleet.v1.CoreService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
+	66, // 33: agentfleet.v1.CoreService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
+	67, // 34: agentfleet.v1.CoreService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
+	54, // 35: agentfleet.v1.CoreService.ViewLogs:input_type -> agentfleet.v1.ViewLogsRequest
+	17, // 36: agentfleet.v1.CoreService.ListPeerSessions:input_type -> agentfleet.v1.ListPeerSessionsRequest
+	19, // 37: agentfleet.v1.CoreService.PromptSession:input_type -> agentfleet.v1.PromptSessionRequest
+	21, // 38: agentfleet.v1.CoreService.WaitForSessionState:input_type -> agentfleet.v1.WaitForSessionStateRequest
+	32, // 39: agentfleet.v1.CoreService.PublishEvent:input_type -> agentfleet.v1.PublishEventRequest
+	26, // 40: agentfleet.v1.CoreService.ConsumeGrant:input_type -> agentfleet.v1.ConsumeGrantRequest
+	33, // 41: agentfleet.v1.CoreService.DraftCard:input_type -> agentfleet.v1.DraftCardRequest
+	36, // 42: agentfleet.v1.CoreService.SubmitReview:input_type -> agentfleet.v1.SubmitReviewRequest
+	4,  // 43: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
+	6,  // 44: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.AppendResponse
+	68, // 45: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	8,  // 46: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
+	10, // 47: agentfleet.v1.CoreService.Expose:output_type -> agentfleet.v1.ExposeResponse
+	12, // 48: agentfleet.v1.CoreService.Unexpose:output_type -> agentfleet.v1.UnexposeResponse
+	14, // 49: agentfleet.v1.CoreService.RequestService:output_type -> agentfleet.v1.RequestServiceResponse
+	24, // 50: agentfleet.v1.CoreService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
+	29, // 51: agentfleet.v1.CoreService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	31, // 52: agentfleet.v1.CoreService.UpdateSessionMeta:output_type -> agentfleet.v1.UpdateSessionMetaResponse
+	39, // 53: agentfleet.v1.CoreService.AppendJournal:output_type -> agentfleet.v1.AppendJournalResponse
+	42, // 54: agentfleet.v1.CoreService.SearchJournal:output_type -> agentfleet.v1.SearchJournalResponse
+	44, // 55: agentfleet.v1.CoreService.SaveAgentSessionId:output_type -> agentfleet.v1.SaveAgentSessionIdResponse
+	46, // 56: agentfleet.v1.CoreService.PushToolTelemetry:output_type -> agentfleet.v1.PushToolTelemetryResponse
+	50, // 57: agentfleet.v1.CoreService.ExportSpans:output_type -> agentfleet.v1.ExportSpansResponse
+	69, // 58: agentfleet.v1.CoreService.StreamHumanMessages:output_type -> agentfleet.v1.TranscriptEntry
+	70, // 59: agentfleet.v1.CoreService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
+	71, // 60: agentfleet.v1.CoreService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
+	72, // 61: agentfleet.v1.CoreService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
+	73, // 62: agentfleet.v1.CoreService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
+	55, // 63: agentfleet.v1.CoreService.ViewLogs:output_type -> agentfleet.v1.ViewLogsResponse
+	18, // 64: agentfleet.v1.CoreService.ListPeerSessions:output_type -> agentfleet.v1.ListPeerSessionsResponse
+	20, // 65: agentfleet.v1.CoreService.PromptSession:output_type -> agentfleet.v1.PromptSessionResponse
+	22, // 66: agentfleet.v1.CoreService.WaitForSessionState:output_type -> agentfleet.v1.WaitForSessionStateResponse
+	35, // 67: agentfleet.v1.CoreService.PublishEvent:output_type -> agentfleet.v1.PublishEventResponse
+	27, // 68: agentfleet.v1.CoreService.ConsumeGrant:output_type -> agentfleet.v1.ConsumeGrantResponse
+	34, // 69: agentfleet.v1.CoreService.DraftCard:output_type -> agentfleet.v1.DraftCardResponse
+	37, // 70: agentfleet.v1.CoreService.SubmitReview:output_type -> agentfleet.v1.SubmitReviewResponse
+	43, // [43:71] is the sub-list for method output_type
+	15, // [15:43] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_core_proto_init() }
@@ -4085,8 +4391,8 @@ func file_agentfleet_v1_core_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_core_proto_rawDesc), len(file_agentfleet_v1_core_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   50,
+			NumEnums:      3,
+			NumMessages:   55,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

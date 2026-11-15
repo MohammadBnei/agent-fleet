@@ -118,6 +118,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/SubmitReview": func(r any) string {
 		return r.(*agentfleetv1.SubmitReviewRequest).GetSessionId()
 	},
+	"/agentfleet.v1.CoreService/ExportSpans": func(r any) string {
+		return r.(*agentfleetv1.ExportSpansRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -175,6 +178,9 @@ var definitionMethods = map[string]bool{
 	// Granted per definition, as PublishEvent: the handler checks the
 	// pinned spec's sidecarTools for submit_review (docs/adr/0082 slice 5).
 	"/agentfleet.v1.CoreService/SubmitReview": true,
+	// The session's own timings, which every pod's sidecar sends; core
+	// derives the trace and the identity itself (docs/adr/0081 §7).
+	"/agentfleet.v1.CoreService/ExportSpans": true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents
@@ -189,13 +195,15 @@ var provisionerMethods = map[string]bool{
 // carry a session's own authority outward (PublishEvent inherits the
 // session's trust, docs/adr/0078 §8; ConsumeGrant spends a human's approval
 // given to that session; DraftCard spends its definition's card budget;
-// SubmitReview speaks on GitHub for the session's own PR thread),
+// SubmitReview speaks on GitHub for the session's own PR thread; ExportSpans
+// writes a session's trace, which the provisioner must never do),
 // which no component may borrow.
 var sessionOnlyMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/PublishEvent": true,
 	"/agentfleet.v1.CoreService/ConsumeGrant": true,
 	"/agentfleet.v1.CoreService/DraftCard":    true,
 	"/agentfleet.v1.CoreService/SubmitReview": true,
+	"/agentfleet.v1.CoreService/ExportSpans":  true,
 }
 
 var (

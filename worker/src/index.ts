@@ -21,6 +21,7 @@
 import { log } from "./log.js";
 import { runSession as defaultRunSession } from "./session.js";
 import * as defaultSidecar from "./sidecarClient.js";
+import { flushActiveSpans } from "./spans.js";
 
 type Sidecar = typeof defaultSidecar;
 type RunSession = typeof defaultRunSession;
@@ -108,6 +109,15 @@ export async function main(
 // index.test.ts) rather than run directly — keeps main() exported and
 // independently invokable, without a top-level side effect.
 if (import.meta.main) {
+  // A resident pod ends by SIGTERM (a Stop, the idle timeout) in the middle of
+  // one continuous query(), where no finally runs. Send the turn's spans first,
+  // bounded well under the pod's termination grace, then exit as SIGTERM would
+  // (docs/adr/0081 §7).
+  process.on("SIGTERM", () => {
+    void Promise.race([flushActiveSpans(), Bun.sleep(3000)]).finally(() =>
+      process.exit(143),
+    );
+  });
   main()
     .catch((err) => {
       log("error", "worker crashed", {

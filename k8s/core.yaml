@@ -17,7 +17,7 @@
 
 # Exactly one replica, on purpose. The chart default is 1; it is written here
 # because core keeps state in memory that only holds with one pod (the span
-# caps for worker spans, docs/adr/0081 §6). Raising it needs that state moved
+# caps for worker spans, docs/adr/0081 §7). Raising it needs that state moved
 # first. The provisioner is replicas: 1 for the same reason.
 replicaCount: 1
 
