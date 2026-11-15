@@ -203,7 +203,10 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		text = fmt.Sprintf("[continues thread %s, which can no longer run]\n%s", predecessor, text)
 	}
 	if !contextOnly {
-		if _, err := s.dash.WarmIfIdle(ctx, t.ID); err != nil {
+		// Warm BEFORE appending, never after — see dashboard.WarmIfIdle.
+		_, release, err := s.dash.WarmForAppend(ctx, t.ID)
+		defer release()
+		if err != nil {
 			if fresh {
 				// A thread this call created and could not start would hold
 				// the key with nothing in it, and later events would land

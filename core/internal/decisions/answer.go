@@ -40,7 +40,9 @@ type Reply struct {
 // (*dashboard.Server) does all three; it imports this package, so it is
 // handed in.
 type Effects interface {
-	WarmIfIdle(ctx context.Context, sessionID string) (string, error)
+	// WarmForAppend warms and holds the session's send lock until release,
+	// which is never nil (dashboard.Server.WarmForAppend).
+	WarmForAppend(ctx context.Context, sessionID string) (podName string, release func(), err error)
 	SetMode(ctx context.Context, sessionID, mode string) error
 	// RememberGrant stores the rule decision's allow names and returns the
 	// decision carrying core's "grant", with an undo for a failed append.
@@ -93,9 +95,14 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 	reply := func(text, typ string) (int64, error) {
 		return tr.AppendAuthored(ctx, r.SessionID, a.By, text, typ, uuid.NewString(), &seq)
 	}
-	// Warm, then append: the next pod streams from above the answer.
+	// Warm, then append: the next pod streams from above the answer. The
+	// send lock the warm takes is held until Answer returns, so the append
+	// lands before any later sender's warm or append.
+	release := func() {}
+	defer func() { release() }()
 	warm := func() error {
-		_, err := fx.WarmIfIdle(ctx, r.SessionID)
+		var err error
+		_, release, err = fx.WarmForAppend(ctx, r.SessionID)
 		return err
 	}
 	switch r.Kind {

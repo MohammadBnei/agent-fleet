@@ -45,6 +45,8 @@ import (
 )
 
 type Server struct {
+	// sends serializes warm-then-append per session (sendlock.go).
+	sends sendLocks
 	sessions  *sessions.Store
 	proposals *proposals.Store
 	transcr   transcript.Store
@@ -398,7 +400,9 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// Warm BEFORE appending, for the same reason PostMessage does: resumeFromSeq
 	// is computed from LatestSeq at provisioning time, so a message appended
 	// first lands below the new pod's cursor and is never delivered.
-	if _, err := s.WarmIfIdle(ctx, id); err != nil {
+	_, release, err := s.WarmForAppend(ctx, id)
+	defer release()
+	if err != nil {
 		// Roll the whole thing back. The comment here used to say the session
 		// and the proposal link both stand, so a human could send the message
 		// by hand — that was wrong twice over: the proposal is already
@@ -1055,7 +1059,9 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	// Warm BEFORE appending, never after — see WarmIfIdle. This ordering is
 	// also the whole mechanism by which a first message boots a session
 	// (docs/adr/0048).
-	if _, err := s.WarmIfIdle(ctx, sessionID); err != nil {
+	_, release, err := s.WarmForAppend(ctx, sessionID)
+	defer release()
+	if err != nil {
 		return nil, err
 	}
 	seq, err := s.transcr.Append(ctx, sessionID, "human", text, "discussion", uuid.NewString())
@@ -1151,9 +1157,11 @@ func (s *Server) WarmSession(ctx context.Context, req *connect.Request[agentflee
 // Not "delivered late": an entry appended to a cold session is undeliverable
 // forever, because the next warm's cursor will be above it too.
 //
-// Every caller that wants its append to reach the agent must call this first:
-// PostMessage, OpenFromProposal, PromptSession, AnswerQuestion. Each carries a
-// one-line reminder pointing here rather than repeating this.
+// Every caller that wants its append to reach the agent must warm first, through
+// WarmForAppend (below): PostMessage, OpenFromProposal, PromptSession,
+// AnswerQuestion and the other decision answers, AgentService's Open and
+// PostMessage. Each carries a one-line reminder pointing here rather than
+// repeating this.
 //
 // RespondToPermission is the deliberate exception and must NOT warm — see its
 // own comment.
@@ -1164,7 +1172,47 @@ func (s *Server) WarmSession(ctx context.Context, req *connect.Request[agentflee
 // unanswered entry instead would re-deliver stale abort/interrupt rows. The
 // upgrade path is a cold_from_seq column set on append-while-cold and cleared on
 // warm; worth building the moment a third caller needs it.
+//
+// # One sender at a time per session
+//
+// WarmIfIdle warms only. A caller that appends after warming calls
+// WarmForAppend instead and appends before calling its release: warm plus
+// append is one critical section per session (sendlock.go), so a second
+// sender cannot read the first one's PROVISIONING reservation as a live pod
+// and append ahead of the first one's message, and at most one CreateWorkerPod
+// per session is in flight.
 func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName string, err error) {
+	podName, release, err := s.WarmForAppend(ctx, sessionID)
+	release()
+	return podName, err
+}
+
+// WarmForAppend is WarmIfIdle holding the session's send lock until release
+// is called. release is never nil and must be called after the append,
+// whether or not the warm failed (a card answer still appends after a warm
+// that cannot resume). Senders to one session queue in arrival order; senders
+// to different sessions never wait on each other. A caller whose ctx ends
+// while it waits gets CodeCanceled and holds nothing.
+//
+// A sender that follows a failed warm warms again even when the phase reads
+// live: that phase can be the failed warm's own PROVISIONING reservation,
+// which reconcile clears only after STARTUP_STALL_MS, and appending onto it
+// would put the message below the next real pod's cursor. If the failed
+// create did leave a Job, the retry's create is refused (AlreadyExists) and
+// the sender gets an error, never a silent drop.
+func (s *Server) WarmForAppend(ctx context.Context, sessionID string) (podName string, release func(), err error) {
+	lock, release, err := s.sends.lock(ctx, sessionID)
+	if err != nil {
+		return "", func() {}, errkeys.Connect(connect.CodeCanceled, errkeys.KeyInternal, err)
+	}
+	podName, err = s.warm(ctx, sessionID, lock.failed)
+	lock.failed = err != nil
+	return podName, release, err
+}
+
+// warm is WarmIfIdle's body, run under the session's send lock. retry skips
+// the live-phase shortcut (see WarmForAppend).
+func (s *Server) warm(ctx context.Context, sessionID string, retry bool) (podName string, err error) {
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
@@ -1172,7 +1220,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		}
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	if sessions.IsPodPhaseLive(t.PodPhase) {
+	if !retry && sessions.IsPodPhaseLive(t.PodPhase) {
 		return "", nil
 	}
 	// A swept session has had its working directory and SDK state reclaimed,

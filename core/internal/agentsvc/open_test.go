@@ -332,3 +332,8 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 		t.Fatal("a fresh thread whose warm failed stayed open")
 	}
 }
+
+func (n *noWarm) WarmForAppend(ctx context.Context, id string) (string, func(), error) {
+	p, err := n.WarmIfIdle(ctx, id)
+	return p, func() {}, err
+}

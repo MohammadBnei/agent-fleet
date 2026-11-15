@@ -65,7 +65,7 @@ type Server struct {
 	// second dispatch implementation to keep in sync. nil disables
 	// warm-on-prompt, which only makes PromptSession fail for idle
 	// targets.
-	warm func(ctx context.Context, taskID string) (string, error)
+	warm func(ctx context.Context, taskID string) (podName string, release func(), err error)
 
 	// notifyBlocked posts "this session needs a human" out of band, wired to
 	// discord.Client.NotifyBlocked. Injected as a func rather than the client
@@ -114,7 +114,7 @@ func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *j
 // construction — dashboard.Server is built later than this one in
 // cmd/core/run.go, and inverting that order would be a bigger change than
 // a setter.
-func (s *Server) SetWarmFunc(warm func(ctx context.Context, taskID string) (string, error)) {
+func (s *Server) SetWarmFunc(warm func(ctx context.Context, taskID string) (podName string, release func(), err error)) {
 	s.warm = warm
 }
 
