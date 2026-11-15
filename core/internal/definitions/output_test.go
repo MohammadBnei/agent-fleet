@@ -23,6 +23,12 @@ func TestLoad_OutputSchema(t *testing.T) {
 		{"does not compile", `{ schema: { type: object, properties: 3 } }`, "does not compile"},
 		{"unknown type name", `{ schema: { type: object, properties: { n: { type: nope } } } }`, "does not compile"},
 		{"over 64 KiB", `{ schema: ` + big + ` }`, "over 65536"},
+		{"file ref", `{ schema: { type: object, properties: { a: { $ref: "file:///etc/passwd" } } } }`, "external references are refused"},
+		{"http ref", `{ schema: { type: object, properties: { a: { $ref: "http://127.0.0.1:1/x.json" } } } }`, "external references are refused"},
+		{"relative ref", `{ schema: { type: object, properties: { a: { $ref: "other.json" } } } }`, "external references are refused"},
+		{"local ref ok", `{ schema: { type: object, properties: { a: { $ref: "#/$defs/n" } }, $defs: { n: { type: integer } } } }`, ""},
+		{"draft-07 dodge", `{ schema: { $schema: "http://json-schema.org/draft-07/schema#", type: object, $ref: "#/definitions/x", definitions: { x: { type: array } } } }`, "$schema, when set"},
+		{"2020-12 explicit ok", `{ schema: { $schema: "https://json-schema.org/draft/2020-12/schema", type: object } }`, ""},
 		{"unknown output key", `{ schema: { type: object }, format: json }`, "field format not found"},
 	}
 	for _, tc := range cases {
@@ -63,5 +69,20 @@ func TestOutputSchemaJSON(t *testing.T) {
 	}
 	if s, err := OutputSchemaJSON(&Spec{}); s != "" || err != nil {
 		t.Errorf("no output: %q, %v", s, err)
+	}
+}
+
+// The refusal never carries the target's content.
+func TestLoad_OutputSchemaRefusalDoesNotLeak(t *testing.T) {
+	got, fileErrs := load(t, map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/cee.yaml":  childYAML("cee", map[string]string{"output": `{ schema: { type: object, properties: { a: { $ref: "file:///etc/passwd" } } } }`}),
+	})
+	all := errText(got["cee"].Err)
+	for _, e := range fileErrs {
+		all += e.Error()
+	}
+	if all == "" || strings.Contains(all, "root:") || strings.Contains(all, "/etc/passwd") {
+		t.Fatalf("refusal %q", all)
 	}
 }

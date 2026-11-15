@@ -60,7 +60,7 @@ type Spec struct {
 	Lifecycle    *AllowList    `yaml:"lifecycle,omitempty"    json:"lifecycle,omitempty"`
 	Output       *Output       `yaml:"output,omitempty"       json:"output,omitempty"`
 	Owns         *Owns         `yaml:"owns,omitempty"         json:"owns,omitempty"`
-	Subscribes  *Subscribes   `yaml:"subscribes,omitempty"   json:"subscribes,omitempty"`
+	Subscribes   *Subscribes   `yaml:"subscribes,omitempty"   json:"subscribes,omitempty"`
 	Resources    *Resources    `yaml:"resources,omitempty"    json:"resources,omitempty"`
 	Limits       *Limits       `yaml:"limits,omitempty"       json:"limits,omitempty"`
 }

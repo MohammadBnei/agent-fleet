@@ -697,16 +697,49 @@ func checkOutputSchema(schema map[string]any) error {
 	if schema["type"] != "object" {
 		return errors.New(`root must be "type": "object"`)
 	}
+	// Only 2020-12: under draft-07 a sibling $ref would override the root type.
+	if d, ok := schema["$schema"]; ok && d != "https://json-schema.org/draft/2020-12/schema" {
+		return errors.New(`$schema, when set, must be "https://json-schema.org/draft/2020-12/schema"`)
+	}
+	if localRefsOnly(schema) != nil {
+		return errors.New("$ref must be a local #-pointer; external references are refused")
+	}
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	// No schemes registered: every external load (file://, http://) fails.
+	c.UseLoader(jsonschema.SchemeURLLoader{})
 	if err := c.AddResource("output.json", doc); err != nil {
 		return err
 	}
 	if _, err := c.Compile("output.json"); err != nil {
 		return fmt.Errorf("does not compile: %w", err)
+	}
+	return nil
+}
+
+// localRefsOnly errors on any $ref or $dynamicRef string that is not a "#..."
+// pointer. It never echoes the reference.
+func localRefsOnly(v any) error {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, x := range t {
+			if str, ok := x.(string); ok && (k == "$ref" || k == "$dynamicRef") && !strings.HasPrefix(str, "#") {
+				return errors.New("external ref")
+			}
+			if err := localRefsOnly(x); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, x := range t {
+			if err := localRefsOnly(x); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
