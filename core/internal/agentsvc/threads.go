@@ -43,11 +43,20 @@ func (p Principal) owner() string {
 // and its definition's current head. A head that does not resolve is
 // returned as the zero Head: admins still see the thread, members do not.
 func (s *Server) thread(ctx context.Context, p Principal, id string) (*sessions.Session, definitions.Head, error) {
+	return s.lookup(ctx, p, id, false)
+}
+
+// lookup is thread, and with endedRuns also a single-shot run archived when
+// it ended (docs/adr/0070 §7), so WaitForResult still reads its result.
+func (s *Server) lookup(ctx context.Context, p Principal, id string, endedRuns bool) (*sessions.Session, definitions.Head, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, definitions.Head{}, errNoThread
 	}
 	t, err := s.sessions.Get(ctx, id)
-	if errors.Is(err, sessions.ErrNotFound) || (err == nil && (t.DefinitionName == nil || t.ArchivedAt != nil)) {
+	hidden := func() bool {
+		return t.ArchivedAt != nil && (!endedRuns || deref(t.Lifecycle, "") != singleShot)
+	}
+	if errors.Is(err, sessions.ErrNotFound) || (err == nil && (t.DefinitionName == nil || hidden())) {
 		return nil, definitions.Head{}, errNoThread
 	}
 	if err != nil {

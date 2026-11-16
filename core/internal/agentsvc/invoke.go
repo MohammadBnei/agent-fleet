@@ -22,6 +22,10 @@ const (
 	maxWait    = 60 * time.Second
 )
 
+// endRecheck bounds how late WaitForResult sees an end that appends
+// nothing; a var for tests.
+var endRecheck = 5 * time.Second
+
 // Invoke is Open with fixed choices (docs/adr/0070 §1): a private
 // single-shot thread the client owns, claimed on (invoker, idempotency_key)
 // as Open is (docs/adr/0066 §7), warmed through WarmForAppend, then the
@@ -164,7 +168,7 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 	if wait < 0 || wait > maxWait {
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("wait_seconds must be 0 to %d", int(maxWait/time.Second)))
 	}
-	t, _, err := s.thread(ctx, p, req.Msg.GetThreadId())
+	t, _, err := s.lookup(ctx, p, req.Msg.GetThreadId(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -180,8 +184,16 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 	defer cancel()
 	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
+	// An end that appends nothing (endRuns archiving a crashed or stopped
+	// run) wakes no subscriber, so the row is re-read every pass and a pass
+	// runs at least every recheck.
+	recheck := time.NewTicker(endRecheck)
+	defer recheck.Stop()
 	for {
-		out, err := s.result(ctx, t.ID)
+		if t, err = s.sessions.Get(ctx, t.ID); err != nil {
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
+		out, err := s.result(ctx, t)
 		if err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
@@ -193,6 +205,7 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 			return connect.NewResponse(out), nil
 		case <-deadline.C:
 			return connect.NewResponse(out), nil
+		case <-recheck.C:
 		case _, ok := <-wake:
 			if !ok {
 				return connect.NewResponse(out), nil
@@ -220,7 +233,11 @@ type resultEntry struct {
 // seq order for now: a result with turn-starting input after it is not
 // final, since a continuously running worker answers that input with a later
 // result. Slice 7 moves it to consumedSeq on the exit result.
-func (s *Server) result(ctx context.Context, sessionID string) (*agentfleetv1.WaitForResultResponse, error) {
+//
+// A run archived without a final result ended another way (§7: a crash or
+// a Stop): failed, never running.
+func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1.WaitForResultResponse, error) {
+	sessionID := t.ID
 	open, err := s.decisions.List(ctx, decisions.Filter{
 		SessionID: sessionID, States: []string{decisions.Open},
 		Kinds: []decisions.Kind{decisions.Question, decisions.Permission, decisions.Plan},
@@ -239,6 +256,13 @@ func (s *Server) result(ctx context.Context, sessionID string) (*agentfleetv1.Wa
 	text, inputAfter, found, err := s.sessions.LastResult(ctx, sessionID)
 	if err != nil {
 		return nil, err
+	}
+	if (!found || inputAfter) && t.ArchivedAt != nil {
+		e := &agentfleetv1.Status{State: "error", Message: "the run ended without a result"}
+		if deref(t.PodPhase, "") == agentfleetv1.PodPhase_POD_PHASE_CRASHED.String() {
+			e = &agentfleetv1.Status{State: "error", Code: "AGENT_CRASHED", Message: "the run's pod crashed"}
+		}
+		return &agentfleetv1.WaitForResultResponse{State: "failed", Error: e}, nil
 	}
 	if !found || inputAfter {
 		return &agentfleetv1.WaitForResultResponse{State: "running"}, nil

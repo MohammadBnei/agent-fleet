@@ -368,7 +368,9 @@ func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
 // entry yet, for Invoke's cap.
 //
 // ponytail: "has a result" stands in for finished until docs/adr/0070 build
-// order slice 8 archives a run on its final result; then this can count the
+// order slice 7 makes the exit result the final one. Until then endRuns
+// archives a finished run only once its pod is gone (the idle timeout),
+// which would hold the cap that long; after slice 7 this can count the
 // unarchived ones.
 func (s *Store) UnfinishedRuns(ctx context.Context, owner string) (int, error) {
 	var n int
@@ -376,6 +378,74 @@ func (s *Store) UnfinishedRuns(ctx context.Context, owner string) (int, error) {
 		AND s.lifecycle = 'single-shot'
 		AND NOT EXISTS (SELECT 1 FROM transcript r WHERE r.session_id = s.id AND r.type = 'result')`, owner).Scan(&n)
 	return n, err
+}
+
+// endedRun is the WHERE fragment for a single-shot session s that reached a
+// terminal state (docs/adr/0070 §7) and has no live pod ($1 = livePhases):
+// already claimed (archived, not yet swept); or a stop was asked for; or,
+// with no open decision, its pod crashed or its latest result has no
+// turn-starting input after it (the finality rule agentsvc's WaitForResult
+// reads, by seq until build order slice 7 moves it to the exit result). An
+// open decision without a stop is a parked run: never listed, so it keeps
+// its PVC.
+//
+// ponytail: "no live pod" is what makes the interim seq rule safe to act
+// on. A continuously running worker can hold a result while its next turn
+// (a live answer, a queued message) is under way; only once the idle sweep,
+// the stop grace or a crash has removed the pod is that result the end.
+// Slice 7's exit result lets a run end as soon as its pod exits.
+const endedRun = `s.lifecycle = 'single-shot' AND s.swept_at IS NULL
+	AND COALESCE(s.pod_phase, '') <> ALL($1)
+	AND (s.archived_at IS NOT NULL
+	     OR s.stop_requested_at IS NOT NULL
+	     OR (NOT EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open')
+	         AND (s.pod_phase = 'POD_PHASE_CRASHED'
+	              OR EXISTS (SELECT 1 FROM transcript r
+	                          WHERE r.session_id = s.id AND r.type = 'result'
+	                            AND NOT EXISTS (SELECT 1 FROM transcript h
+	                                             WHERE h.session_id = s.id AND h.seq > r.seq AND h."from" = 'human'
+	                                               AND NOT h.context_only
+	                                               AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response'))))))`
+
+// ListEndedRuns is every session endedRun matches, oldest first.
+func (s *Store) ListEndedRuns(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT s.id::text FROM sessions s WHERE `+endedRun+` ORDER BY s.created_at`, livePhases)
+	if err != nil {
+		return nil, fmt.Errorf("list ended runs: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("list ended runs: %w", err)
+	}
+	return ids, nil
+}
+
+// ClaimEndedRun archives id if endedRun still holds, re-checked in the
+// UPDATE itself, and withdraws its open decisions and unused grants as
+// Archive does. false: something changed since ListEndedRuns (input
+// arrived, a warm reserved a pod), and the run is left alone.
+//
+// Archiving before the teardown and sweep is what closes the window:
+// ReserveSlot takes only an unarchived row and writes a live pod_phase on
+// it, so a claim and a warm serialize on the row lock and exactly one wins.
+func (s *Store) ClaimEndedRun(ctx context.Context, id string) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("claim ended run: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE sessions s SET archived_at = COALESCE(s.archived_at, now()), updated_at = now()
+		WHERE s.id = $2 AND `+endedRun, livePhases, id)
+	if err != nil {
+		return false, fmt.Errorf("claim ended run: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	if err := withdrawDecisions(ctx, tx, id); err != nil {
+		return false, fmt.Errorf("claim ended run: withdraw decisions: %w", err)
+	}
+	return true, tx.Commit(ctx)
 }
 
 // ParkedRuns counts owner's parked single-shot runs (docs/adr/0070 §6, "No

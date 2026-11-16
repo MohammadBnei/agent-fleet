@@ -103,6 +103,7 @@ func (l *Loop) Run(ctx context.Context, interval time.Duration) {
 
 func (l *Loop) tick(ctx context.Context) {
 	l.reconcilePodPhases(ctx)
+	l.endRuns(ctx)
 	l.enforceStopGrace(ctx)
 	l.enforceStartupStall(ctx)
 	l.enforceIdleTimeout(ctx)
@@ -343,6 +344,50 @@ func (l *Loop) collectExpired(ctx context.Context) {
 			continue
 		}
 		slog.Info("sessions loop: swept session disk", "sessionId", id, "after", l.retention)
+	}
+}
+
+// endRuns cleans up every single-shot run that ended (docs/adr/0070 §7):
+// the row is claimed (archived, re-checking that it still ended and has no
+// live pod, so no warm can start one under the sweep), then the pod and its
+// vault token are torn down (TearDownSession), then the PVC is swept
+// (SweepSession). The transcript stays, so WaitForResult and the console
+// still read the run. A step that fails leaves the run archived and unswept,
+// and the next tick retries it; tearing down or sweeping what is gone is a
+// no-op.
+//
+// ponytail: up to one tick (60 s) after the pod is gone, not at once; until
+// build order slice 7 a finished run's pod goes only at the idle timeout.
+func (l *Loop) endRuns(ctx context.Context) {
+	ids, err := l.sessions.ListEndedRuns(ctx)
+	if err != nil {
+		slog.Error("sessions loop: list ended runs failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		if ok, err := l.sessions.ClaimEndedRun(ctx, id); err != nil || !ok {
+			if err != nil {
+				slog.Warn("sessions loop: claiming ended run failed", "sessionId", id, "error", err)
+			}
+			continue
+		}
+		// Not tearDown, which swallows the error: a pod that may still run
+		// must not lose its disk under it.
+		if err := l.provisioner.TearDownWorker(ctx, id); err != nil {
+			slog.Warn("sessions loop: ended run teardown failed", "sessionId", id, "error", err)
+			continue
+		}
+		if err := l.sessions.ClearLease(ctx, id); err != nil {
+			slog.Warn("sessions loop: ended run clearing lease failed", "sessionId", id, "error", err)
+		}
+		if err := l.provisioner.SweepSession(ctx, id); err != nil {
+			slog.Error("sessions loop: ended run sweep failed", "sessionId", id, "error", err)
+			continue
+		}
+		if err := l.sessions.MarkSwept(ctx, id); err != nil {
+			continue // logged by MarkSwept
+		}
+		slog.Info("sessions loop: ended run archived, torn down and swept", "sessionId", id)
 	}
 }
 
