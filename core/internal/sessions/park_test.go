@@ -129,6 +129,11 @@ func TestEndRuns_ParkLimit(t *testing.T) {
 		if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt == nil || s.SweptAt == nil {
 			t.Errorf("over the cap %s: %+v %v, want archived and swept", id, s, err)
 		}
+		// The verdict outlives the claim, which withdrew the last park's
+		// decision.
+		if ex, err := store.LastExitResult(ctx, id); err != nil || !ex.OverParkCap {
+			t.Errorf("claimed %s: OverParkCap = %v %v, want true", id, ex.OverParkCap, err)
+		}
 		if n, err := store.ParkedRuns(ctx, "client:bot"); err != nil || n != 2 {
 			t.Errorf("parked runs = %d %v, want the two under the cap", n, err)
 		}

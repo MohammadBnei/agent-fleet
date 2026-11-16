@@ -217,6 +217,14 @@ func TestInvoke(t *testing.T) {
 		}
 	}
 
+	// endRuns' claim withdraws the last park's decision: still PARK_LIMIT.
+	if ok, err := store.ClaimEndedRun(ctx, parkedID); err != nil || !ok {
+		t.Fatalf("claim the run over its cap: %v %v", ok, err)
+	}
+	if r, err := wait(bot, parkedID, 0); err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "PARK_LIMIT" {
+		t.Fatalf("after the claim: %v %v", r, err)
+	}
+
 	// §7: a run torn down, swept and archived still reads its result, for its
 	// owner only; one archived without a result reads failed, never running.
 	for _, ended := range []string{id, failedID} {

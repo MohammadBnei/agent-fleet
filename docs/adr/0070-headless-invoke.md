@@ -105,11 +105,14 @@
   default 10, absent from `effective` when unset, so frozen rows read the
   default; the park count is `parkCount` in SQL, the exit results at whose
   `created_at` a question, permission or plan was open (created earlier,
-  still open or answered later), no column. A run over its cap with no live
+  still open or answered later, or on a claimed run withdrawn before its
+  `archived_at`, so the verdict outlives `ClaimEndedRun`'s withdraw), no
+  column. A run over its cap with no live
   pod is in `endedRun` (claimed, torn down, swept), `WaitForResult` reads it
   `failed` with `PARK_LIMIT` before the open-decision rule, and every warm,
   an answer's included, refuses it. AgentService `GetStatus` reads
-  `waiting` with no pod for a single-shot run with an open decision;
+  `waiting` with no pod for a single-shot run with an open question,
+  permission or plan (never a card alone);
   resident threads keep `idle`, as §4's "whenever" is left to a later
   slice).
   **Not yet built:** everything else, in the order of "Build order" below.

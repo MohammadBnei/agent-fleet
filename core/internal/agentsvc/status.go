@@ -19,7 +19,7 @@ func status(t *sessions.Session) *agentfleetv1.Status {
 		// ponytail: single-shot only (build order slice 9 leaves resident
 		// threads untouched); §4 says any thread, drop the lifecycle check
 		// when a resident thread with no pod should read waiting too.
-		if t.PendingDecisions > 0 && t.Lifecycle != nil && *t.Lifecycle == singleShot {
+		if t.ParkDecisions > 0 && t.Lifecycle != nil && *t.Lifecycle == singleShot {
 			return &agentfleetv1.Status{State: "waiting"}
 		}
 		// Never last_error itself: it is the provisioner's text (pod names,

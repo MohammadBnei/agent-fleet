@@ -105,6 +105,10 @@ type Session struct {
 	// stamp (docs/adr/0082 §5), whose canUseTool promise waits with no time
 	// limit. DeriveLiveState keeps today's always-Blocked rule for these.
 	BlockingDecisions int `json:"-"`
+	// ParkDecisions is the part of PendingDecisions a parked run waits on:
+	// open questions, permissions and plans, never cards (parkedWhere's kinds,
+	// docs/adr/0070 §6).
+	ParkDecisions int `json:"-"`
 
 	// WorkerImage/SidecarImage are the images this session's pod actually got,
 	// written by SetPodImages from CreateWorkerPodResponse. Empty for a session
@@ -201,6 +205,8 @@ const selectCols = `
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
 	(SELECT count(*) FROM decisions d
+	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('question', 'permission', 'plan')) AS park_decisions,
+	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
 	     AND d.payload -> 'nb' IS DISTINCT FROM '1'::jsonb) AS blocking_decisions`
 
@@ -216,7 +222,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
-		&s.PendingDecisions, &s.BlockingDecisions,
+		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions,
 	)
 	if err != nil {
 		return nil, err
@@ -445,7 +451,15 @@ var endedRun = `s.lifecycle = 'single-shot' AND s.swept_at IS NULL
 // parkCount counts the parks of the session s (docs/adr/0070 §6, "Re-park
 // cap"): its exit results at whose created_at a question, permission or plan
 // of s was open, created earlier and still open or answered later. A
-// decision the agent withdrew (no answered_at) counts only while open.
+// decision the agent withdrew (no answered_at) counts only while open,
+// except on a claimed run: ClaimEndedRun withdraws the last park's decision
+// and stamps no time, so on an archived s a withdrawn one counts as open
+// until archived_at, and the PARK_LIMIT verdict outlives the claim.
+//
+// ponytail: that over-counts a decision a client withdrew before the claim
+// for any exit between that withdrawal and archived_at (nothing warms after
+// a withdraw, so only a human message can make one); a withdrawn_at column
+// is the upgrade if that ever matters.
 //
 // ponytail: counted from rows each time, a handful per run; a parks counter
 // on sessions (a new migration pair) is the upgrade if it ever shows slow.
@@ -455,7 +469,8 @@ const parkCount = `(SELECT count(*) FROM transcript r
 	    AND EXISTS (SELECT 1 FROM decisions d
 	                 WHERE d.session_id = s.id AND d.kind IN ('question', 'permission', 'plan')
 	                   AND d.created_at < r.created_at
-	                   AND (d.state = 'open' OR d.answered_at > r.created_at)))`
+	                   AND (d.state = 'open' OR d.answered_at > r.created_at
+	                        OR (d.state = 'withdrawn' AND d.answered_at IS NULL AND s.archived_at > r.created_at))))`
 
 // overParkCap is "the single-shot session s parked more than its
 // definition's limits.maxParks times" (definitions.DefaultMaxParks when the
