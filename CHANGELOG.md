@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.29.0](https://github.com/MohammadBnei/agent-fleet/compare/7.28.0...7.29.0) (2026-11-16)
+
+### Features
+
+* **core:** remediation catalogue, schema, denylist and rate limits, single-use rows (ADR-0086 §3) ([#407](https://github.com/MohammadBnei/agent-fleet/issues/407)) ([c770db6](https://github.com/MohammadBnei/agent-fleet/commit/c770db608ba10f55f1aa57c75498d48de57963de))
+
 # [7.28.0](https://github.com/MohammadBnei/agent-fleet/compare/7.27.0...7.28.0) (2026-11-16)
 
 ### Features
