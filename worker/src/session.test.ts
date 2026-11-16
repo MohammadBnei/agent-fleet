@@ -26,6 +26,7 @@ const pushedMessages: {
 const resultAttempts: (string | undefined)[] = [];
 let failResultPushes = 0;
 const savedSessionIds: string[] = [];
+let failSaveSessionId = false;
 const savedModels: string[] = [];
 // The row's model and effort as GET /task returns them (docs/adr/0077).
 let sessionModel: string | undefined;
@@ -100,6 +101,7 @@ mock.module("./sidecarClient.js", () => ({
     },
   ),
   saveSessionId: mock(async (id: string, model: string) => {
+    if (failSaveSessionId) throw new Error("sidecar refused");
     savedSessionIds.push(id);
     savedModels.push(model);
   }),
@@ -3566,8 +3568,81 @@ async function runTurns(rounds: number): Promise<Wire[][]> {
   }
   pushHuman("", "abort");
   await promise;
-  return exportedSpans as unknown as Wire[][];
+  // The startup batch is its own trace; the turn tests read the turns.
+  return (exportedSpans as unknown as Wire[][]).filter(
+    (b) => b[0]?.name !== "worker.startup",
+  );
 }
+
+const startupBatches = () =>
+  (exportedSpans as unknown as Wire[][]).filter(
+    (b) => b[0]?.name === "worker.startup",
+  );
+
+test("startup exports one batch: process start to the session id, steps in order, one stable key", async () => {
+  roundScripts = [[{ type: "result", subtype: "success", uuid: "r1" }]];
+  await runTurns(1);
+  const batches = startupBatches();
+  expect(batches).toHaveLength(1);
+  const [root, ...steps] = batches[0];
+  expect(steps.map((s) => s.name)).toEqual([
+    "worker.boot",
+    "worker.get_session",
+    "worker.setup",
+    "worker.query_start",
+    "worker.first_sdk_message",
+    "worker.session_id",
+    "worker.save_session_id",
+  ]);
+  expect(root.parent).toBeUndefined();
+  expect(root.status).toBe("ok");
+  for (const s of steps) expect(s.parent).toBe(root.id);
+  // Not the turn's result uuid: the startup trace is keyed by the pod.
+  expect(new Set(batches[0].map((s) => s.turn)).size).toBe(1);
+  expect(root.turn.startsWith("startup-")).toBe(true);
+  // Contiguous up to the first message, all inside the root.
+  for (let i = 1; i < 4; i++) expect(steps[i].startNs).toBe(steps[i - 1].endNs);
+  for (const s of steps) {
+    expect(s.endNs).toBeGreaterThanOrEqual(s.startNs);
+    expect(s.startNs).toBeGreaterThanOrEqual(root.startNs);
+    expect(s.endNs).toBeLessThanOrEqual(root.endNs);
+  }
+  expect(steps[4].attrs).toEqual({
+    "sdk.message.type": "system",
+    "sdk.message.subtype": "init",
+  });
+});
+
+test("startup is keyed by the pod name, and a failed session-id save is an error step", async () => {
+  const host = process.env.HOSTNAME;
+  process.env.HOSTNAME = "fleet-worker-abc-x1";
+  failSaveSessionId = true;
+  try {
+    roundScripts = [[{ type: "result", subtype: "success", uuid: "r1" }]];
+    await runTurns(1);
+  } finally {
+    failSaveSessionId = false;
+    if (host === undefined) delete process.env.HOSTNAME;
+    else process.env.HOSTNAME = host;
+  }
+  const [batch] = startupBatches();
+  expect(batch[0].turn).toBe("startup-fleet-worker-abc-x1");
+  const save = batch.find((s) => s.name === "worker.save_session_id") as Wire;
+  expect(save.status).toBe("error");
+  expect(save.attrs["error.type"]).toBe("save_failed");
+});
+
+test("a session that ends before its id is known sends startup as unfinished", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("", "abort"); // no input ever reached the SDK
+  await promise;
+  const [batch] = startupBatches();
+  expect(batch[0].status).toBe("");
+  expect(batch[0].attrs.unfinished).toBe(true);
+  expect(batch.map((s) => s.name)).toContain("worker.query_start");
+  expect(batch.map((s) => s.name)).not.toContain("worker.first_sdk_message");
+});
 
 test("a turn exports an invoke_agent span with tool children, nested subagent calls and cost deltas", async () => {
   roundScripts = [

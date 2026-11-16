@@ -1320,10 +1320,23 @@ export async function runSession(): Promise<SessionResult> {
   // acceptEdits/plan/auto would silently revert to "default",
   // and the human would have no way to tell except by watching it start
   // asking again.
-  const session = await sidecar.getSession();
+  //
   // Spans for this process (docs/adr/0081 §7). Its cost and token baselines
-  // are zero because the SDK's totals restart with the process.
-  setActiveRecorder(new SpanRecorder((s) => sidecar.exportSpans(s)));
+  // are zero because the SDK's totals restart with the process. Made before
+  // the first sidecar call so startup is timed from process start.
+  const nowNs = () => Date.now() * 1e6;
+  const spans = new SpanRecorder((s) => sidecar.exportSpans(s));
+  setActiveRecorder(spans);
+  const runStartNs = nowNs();
+  const processStartNs = Math.round(performance.timeOrigin * 1e6);
+  spans.startupBegin(
+    processStartNs,
+    `startup-${process.env.HOSTNAME || processStartNs}`,
+  );
+  spans.startupStep("worker.boot", processStartNs, runStartNs);
+  const session = await sidecar.getSession();
+  const setupStartNs = nowNs();
+  spans.startupStep("worker.get_session", runStartNs, setupStartNs);
   // docs/adr/0067 §4: set for a definition session only. Everything below
   // that reads it narrows; a repo session (no spec) runs exactly as before.
   const spec = session.agentSpec;
@@ -1559,6 +1572,8 @@ export async function runSession(): Promise<SessionResult> {
   const peerTools = ["SendMessage", "ListAgents"];
 
   const abortController = new AbortController();
+  const queryStartNs = nowNs();
+  spans.startupStep("worker.setup", setupStartNs, queryStartNs);
   const q = query({
     prompt: input.stream(),
     options: {
@@ -1907,6 +1922,11 @@ export async function runSession(): Promise<SessionResult> {
       abortController,
     },
   });
+  // query() returns at once and starts the CLI behind it; the first message
+  // (in streaming-input mode, after the first input is queued) says it is up.
+  const queryReturnedNs = nowNs();
+  spans.startupStep("worker.query_start", queryStartNs, queryReturnedNs);
+  let firstMessage = true;
 
   // q.interrupt() is not guaranteed to settle, so it is never awaited bare.
   //
@@ -2393,8 +2413,24 @@ export async function runSession(): Promise<SessionResult> {
 
   async function driveQuery(): Promise<void> {
     for await (const msg of q) {
+      if (firstMessage) {
+        firstMessage = false;
+        const m = msg as { type: string; subtype?: unknown };
+        spans.startupStep(
+          "worker.first_sdk_message",
+          queryReturnedNs,
+          nowNs(),
+          {
+            "sdk.message.type": m.type,
+            ...(typeof m.subtype === "string"
+              ? { "sdk.message.subtype": m.subtype }
+              : {}),
+          },
+        );
+      }
       if (!sessionId && "session_id" in msg) {
         sessionId = msg.session_id as string;
+        spans.startupStep("worker.session_id", queryReturnedNs);
         // Identity re-check (docs/adr/0041). We asked the SDK to resume a
         // specific session; if what came back is a different id, the resume
         // did not happen and this agent is starting from nothing — no prior
@@ -2431,12 +2467,23 @@ export async function runSession(): Promise<SessionResult> {
         // untouched and the init branch below saves it.
         if (msg.type === "system" && msg.subtype === "init")
           initModel = msg.model;
-        await sidecar.saveSessionId(sessionId, initModel).catch((err) =>
+        const saveStartNs = nowNs();
+        let saved = true;
+        await sidecar.saveSessionId(sessionId, initModel).catch((err) => {
+          saved = false;
           log("warn", "saveSessionId failed", {
             taskId: SESSION_ID,
             error: String(err),
-          }),
+          });
+        });
+        spans.startupStep(
+          "worker.save_session_id",
+          saveStartNs,
+          undefined,
+          saved ? {} : { "error.type": "save_failed" },
+          saved ? "ok" : "error",
         );
+        spans.startupEnd();
         // Also persist the initial permission mode if not already set. This
         // ensures the mode shows up in the dashboard instead of "?".
         if (!session.permissionMode) {
