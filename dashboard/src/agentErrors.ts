@@ -17,7 +17,7 @@ const keyText: Record<Keyed, string> = {
     "The bridge may not open this agent's threads: the definition and the client must list each other.",
   DECISION_EXPIRED:
     "This decision expired before it was answered; nothing was done.",
-  DECISION_STALE: "This decision was replaced by a newer one.",
+  DECISION_STALE: "This decision is no longer current; nothing was done.",
   DECISION_CONFIRM_REQUIRED:
     "This answer needs a fresh confirmation. Confirm it on the confirm page; nothing was done.",
   PARKED_LIMIT:
