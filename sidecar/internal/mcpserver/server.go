@@ -218,7 +218,7 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter) *server.MCPServer {
 			mcp.WithDescription("Write a file into this agent's memory repo: one git commit per write, tagged with this session. A session triggered by untrusted input writes to a quarantine location the owner reviews, never to memory other sessions read."),
 			mcp.WithString("path", mcp.Required(), mcp.Description("Relative path inside the memory repo")),
 			mcp.WithString("content", mcp.Required()),
-		), memoryWriteHandler(mem))
+		), memoryWriteHandler(core, mem))
 	}
 
 	s.AddTool(mcp.NewTool("set_session_meta",
@@ -391,17 +391,28 @@ func waitForMessagesHandler(core MessageWaiter) server.ToolHandlerFunc {
 
 // MemoryWriter is *memory.Store's slice, so a test needs no git.
 type MemoryWriter interface {
-	Write(rel, content string) (string, error)
+	WriteAs(quarantine bool, rel, content string) (string, error)
 }
 
-func memoryWriteHandler(mem MemoryWriter) server.ToolHandlerFunc {
-	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// MemoryAuthorizer is *coreclient.Client's slice: core reads the stored trust set and says where a write may go.
+type MemoryAuthorizer interface {
+	AuthorizeMemoryWrite(ctx context.Context) (quarantine bool, err error)
+}
+
+func memoryWriteHandler(core MemoryAuthorizer, mem MemoryWriter) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		path, content := req.GetString("path", ""), req.GetString("content", "")
 		if path == "" {
 			return mcp.NewToolResultError("path is required"), nil
 		}
 		slog.Info("mcp memory_write", "path", path)
-		if _, err := mem.Write(path, content); err != nil {
+		// Core decides from the stored set; the pod's own env is only a cross-check.
+		quarantine, err := core.AuthorizeMemoryWrite(ctx)
+		if err != nil {
+			slog.Error("mcp memory_write refused by core", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if _, err := mem.WriteAs(quarantine, path, content); err != nil {
 			slog.Error("mcp memory_write", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}

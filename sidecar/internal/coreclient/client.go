@@ -295,6 +295,16 @@ func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payl
 	return nil
 }
 
+// AuthorizeMemoryWrite asks core whether this session may write memory and where, from its stored set (ADR-0086 §2,
+// §5). quarantine is true when the write goes to the quarantine repo. Any error means refuse: the tool fails closed.
+func (c *Client) AuthorizeMemoryWrite(ctx context.Context) (quarantine bool, err error) {
+	r, err := c.rpc.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: c.taskID})
+	if err != nil {
+		return false, fmt.Errorf("AuthorizeMemoryWrite: %w", err)
+	}
+	return r.GetQuarantine(), nil
+}
+
 // JournalSearch mirrors journal.SearchOpts on core's side — a struct, not
 // four positional strings, because Repo/Query/Since/Until are all string and
 // a swapped pair would compile fine and silently return the wrong window.

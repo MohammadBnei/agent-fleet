@@ -159,3 +159,17 @@ func TestCommitTakesOnlyItsPath(t *testing.T) {
 		t.Errorf("staged stray path rode into the commit:\n%s", out)
 	}
 }
+
+// Core's word and the pod's own set must agree, or the write is refused and nothing lands.
+func TestWriteAs_RefusesDisagreement(t *testing.T) {
+	root := t.TempDir()
+	if _, err := (&Store{Root: root, Name: "kai", Set: "AB"}).WriteAs(false, "x", "y"); err != ErrRefused {
+		t.Errorf("A pod told memory: %v", err)
+	}
+	if _, err := (&Store{Root: root, Name: "kai", Set: "BC"}).WriteAs(true, "x", "y"); err != ErrRefused {
+		t.Errorf("BC pod told quarantine: %v", err)
+	}
+	if _, err := (&Store{Root: root, Name: "kai", Set: "AB"}).WriteAs(true, "x", "y"); err != nil {
+		t.Errorf("agreeing write: %v", err)
+	}
+}

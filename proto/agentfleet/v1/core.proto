@@ -531,6 +531,16 @@ message AppendJournalRequest {
 
 message AppendJournalResponse {}
 
+// AuthorizeMemoryWrite is the sidecar's memory_write asking core first (ADR-0086 §2, §5). Core reads the session's
+// stored set: A writes only to quarantine, C without A writes to memory, B alone is refused (agent.rule_of_two).
+message AuthorizeMemoryWriteRequest {
+  string session_id = 1;
+}
+
+message AuthorizeMemoryWriteResponse {
+  bool quarantine = 1; // the write goes to the quarantine repo
+}
+
 // JournalEntry also backs dashboard.proto's GetJournal (imported from
 // here, same reuse pattern as Session/GetSessionRequest/GetSessionResponse below).
 message JournalEntry {
@@ -777,6 +787,7 @@ service CoreService {
   // are deleted in docs/adr/0048 — see their message definitions above for
   // why each stopped being a question worth asking.
   rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
+  rpc AuthorizeMemoryWrite(AuthorizeMemoryWriteRequest) returns (AuthorizeMemoryWriteResponse);
   rpc SearchJournal(SearchJournalRequest) returns (SearchJournalResponse);
   rpc SaveAgentSessionId(SaveAgentSessionIdRequest) returns (SaveAgentSessionIdResponse);
   rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);

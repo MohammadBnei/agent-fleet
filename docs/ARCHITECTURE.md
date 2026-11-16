@@ -564,7 +564,7 @@ is the reason.
 - **Fleet-wide shared files** on Garage S3 (`docs/adr/0031`): core mints
   presigned URLs only; agents use the `*_shared_file*` MCP tools and `curl`.
 - **The journal is agent knowledge** (`adr/0055`): `journal_write` /
-  `journal_search`; nothing writes to it automatically. A note from a pod whose `FLEET_TRUST_SET` holds A is stored `quarantined` and hidden from `journal_search` until the owner promotes it (`adr/0086` §5). A long-lived agent's pod (`FLEET_AGENT_NAME`) also has `memory_write`: one git commit per write to `agent-<name>-memory`, or to `agent-<name>-quarantine` when the set holds A, tagged with session and set; the worker mounts memory read-only and never the quarantine.
+  `journal_search`; nothing writes to it automatically. A note from a session whose stored set holds A is stored `quarantined` (core stamps it from `sessions.trust_set`, never from the pod) and hidden from `journal_search` until the owner promotes it (`adr/0086` §5). A long-lived agent's pod (`FLEET_AGENT_NAME`) also has `memory_write`: one git commit per write to `agent-<name>-memory`, or to `agent-<name>-quarantine` when the set holds A, tagged with session and set. The sidecar asks core first (`AuthorizeMemoryWrite`): core reads the stored set, sends A to quarantine, C to memory, and refuses B alone with `agent.rule_of_two`. The provisioner wires the mounts for standing definitions only, from the profile's `trust_set`. The worker mounts memory read-only and never the quarantine.
 - **Peer sessions**: `prompt_agent` through core (`adr/0041`), plus Claude
   Code's own cross-session channel, closed for definition pods (`adr/0060`,
   `adr/0064`).

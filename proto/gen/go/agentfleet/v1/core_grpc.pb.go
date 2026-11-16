@@ -19,34 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CoreService_ReportPodEvents_FullMethodName     = "/agentfleet.v1.CoreService/ReportPodEvents"
-	CoreService_SendMessage_FullMethodName         = "/agentfleet.v1.CoreService/SendMessage"
-	CoreService_WaitForMessages_FullMethodName     = "/agentfleet.v1.CoreService/WaitForMessages"
-	CoreService_AskUserQuestion_FullMethodName     = "/agentfleet.v1.CoreService/AskUserQuestion"
-	CoreService_Expose_FullMethodName              = "/agentfleet.v1.CoreService/Expose"
-	CoreService_Unexpose_FullMethodName            = "/agentfleet.v1.CoreService/Unexpose"
-	CoreService_RequestService_FullMethodName      = "/agentfleet.v1.CoreService/RequestService"
-	CoreService_GetSession_FullMethodName          = "/agentfleet.v1.CoreService/GetSession"
-	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
-	CoreService_UpdateSessionMeta_FullMethodName   = "/agentfleet.v1.CoreService/UpdateSessionMeta"
-	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
-	CoreService_SearchJournal_FullMethodName       = "/agentfleet.v1.CoreService/SearchJournal"
-	CoreService_SaveAgentSessionId_FullMethodName  = "/agentfleet.v1.CoreService/SaveAgentSessionId"
-	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
-	CoreService_ExportSpans_FullMethodName         = "/agentfleet.v1.CoreService/ExportSpans"
-	CoreService_StreamHumanMessages_FullMethodName = "/agentfleet.v1.CoreService/StreamHumanMessages"
-	CoreService_ListFiles_FullMethodName           = "/agentfleet.v1.CoreService/ListFiles"
-	CoreService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.CoreService/GetFileUploadUrl"
-	CoreService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
-	CoreService_DeleteFile_FullMethodName          = "/agentfleet.v1.CoreService/DeleteFile"
-	CoreService_ViewLogs_FullMethodName            = "/agentfleet.v1.CoreService/ViewLogs"
-	CoreService_ListPeerSessions_FullMethodName    = "/agentfleet.v1.CoreService/ListPeerSessions"
-	CoreService_PromptSession_FullMethodName       = "/agentfleet.v1.CoreService/PromptSession"
-	CoreService_WaitForSessionState_FullMethodName = "/agentfleet.v1.CoreService/WaitForSessionState"
-	CoreService_PublishEvent_FullMethodName        = "/agentfleet.v1.CoreService/PublishEvent"
-	CoreService_ConsumeGrant_FullMethodName        = "/agentfleet.v1.CoreService/ConsumeGrant"
-	CoreService_DraftCard_FullMethodName           = "/agentfleet.v1.CoreService/DraftCard"
-	CoreService_SubmitReview_FullMethodName        = "/agentfleet.v1.CoreService/SubmitReview"
+	CoreService_ReportPodEvents_FullMethodName      = "/agentfleet.v1.CoreService/ReportPodEvents"
+	CoreService_SendMessage_FullMethodName          = "/agentfleet.v1.CoreService/SendMessage"
+	CoreService_WaitForMessages_FullMethodName      = "/agentfleet.v1.CoreService/WaitForMessages"
+	CoreService_AskUserQuestion_FullMethodName      = "/agentfleet.v1.CoreService/AskUserQuestion"
+	CoreService_Expose_FullMethodName               = "/agentfleet.v1.CoreService/Expose"
+	CoreService_Unexpose_FullMethodName             = "/agentfleet.v1.CoreService/Unexpose"
+	CoreService_RequestService_FullMethodName       = "/agentfleet.v1.CoreService/RequestService"
+	CoreService_GetSession_FullMethodName           = "/agentfleet.v1.CoreService/GetSession"
+	CoreService_SetPermissionMode_FullMethodName    = "/agentfleet.v1.CoreService/SetPermissionMode"
+	CoreService_UpdateSessionMeta_FullMethodName    = "/agentfleet.v1.CoreService/UpdateSessionMeta"
+	CoreService_AppendJournal_FullMethodName        = "/agentfleet.v1.CoreService/AppendJournal"
+	CoreService_AuthorizeMemoryWrite_FullMethodName = "/agentfleet.v1.CoreService/AuthorizeMemoryWrite"
+	CoreService_SearchJournal_FullMethodName        = "/agentfleet.v1.CoreService/SearchJournal"
+	CoreService_SaveAgentSessionId_FullMethodName   = "/agentfleet.v1.CoreService/SaveAgentSessionId"
+	CoreService_PushToolTelemetry_FullMethodName    = "/agentfleet.v1.CoreService/PushToolTelemetry"
+	CoreService_ExportSpans_FullMethodName          = "/agentfleet.v1.CoreService/ExportSpans"
+	CoreService_StreamHumanMessages_FullMethodName  = "/agentfleet.v1.CoreService/StreamHumanMessages"
+	CoreService_ListFiles_FullMethodName            = "/agentfleet.v1.CoreService/ListFiles"
+	CoreService_GetFileUploadUrl_FullMethodName     = "/agentfleet.v1.CoreService/GetFileUploadUrl"
+	CoreService_GetFileDownloadUrl_FullMethodName   = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
+	CoreService_DeleteFile_FullMethodName           = "/agentfleet.v1.CoreService/DeleteFile"
+	CoreService_ViewLogs_FullMethodName             = "/agentfleet.v1.CoreService/ViewLogs"
+	CoreService_ListPeerSessions_FullMethodName     = "/agentfleet.v1.CoreService/ListPeerSessions"
+	CoreService_PromptSession_FullMethodName        = "/agentfleet.v1.CoreService/PromptSession"
+	CoreService_WaitForSessionState_FullMethodName  = "/agentfleet.v1.CoreService/WaitForSessionState"
+	CoreService_PublishEvent_FullMethodName         = "/agentfleet.v1.CoreService/PublishEvent"
+	CoreService_ConsumeGrant_FullMethodName         = "/agentfleet.v1.CoreService/ConsumeGrant"
+	CoreService_DraftCard_FullMethodName            = "/agentfleet.v1.CoreService/DraftCard"
+	CoreService_SubmitReview_FullMethodName         = "/agentfleet.v1.CoreService/SubmitReview"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -104,6 +105,7 @@ type CoreServiceClient interface {
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
 	AppendJournal(ctx context.Context, in *AppendJournalRequest, opts ...grpc.CallOption) (*AppendJournalResponse, error)
+	AuthorizeMemoryWrite(ctx context.Context, in *AuthorizeMemoryWriteRequest, opts ...grpc.CallOption) (*AuthorizeMemoryWriteResponse, error)
 	SearchJournal(ctx context.Context, in *SearchJournalRequest, opts ...grpc.CallOption) (*SearchJournalResponse, error)
 	SaveAgentSessionId(ctx context.Context, in *SaveAgentSessionIdRequest, opts ...grpc.CallOption) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(ctx context.Context, in *PushToolTelemetryRequest, opts ...grpc.CallOption) (*PushToolTelemetryResponse, error)
@@ -259,6 +261,16 @@ func (c *coreServiceClient) AppendJournal(ctx context.Context, in *AppendJournal
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AppendJournalResponse)
 	err := c.cc.Invoke(ctx, CoreService_AppendJournal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) AuthorizeMemoryWrite(ctx context.Context, in *AuthorizeMemoryWriteRequest, opts ...grpc.CallOption) (*AuthorizeMemoryWriteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuthorizeMemoryWriteResponse)
+	err := c.cc.Invoke(ctx, CoreService_AuthorizeMemoryWrite_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -499,6 +511,7 @@ type CoreServiceServer interface {
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error)
+	AuthorizeMemoryWrite(context.Context, *AuthorizeMemoryWriteRequest) (*AuthorizeMemoryWriteResponse, error)
 	SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error)
 	SaveAgentSessionId(context.Context, *SaveAgentSessionIdRequest) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error)
@@ -579,6 +592,9 @@ func (UnimplementedCoreServiceServer) UpdateSessionMeta(context.Context, *Update
 }
 func (UnimplementedCoreServiceServer) AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AppendJournal not implemented")
+}
+func (UnimplementedCoreServiceServer) AuthorizeMemoryWrite(context.Context, *AuthorizeMemoryWriteRequest) (*AuthorizeMemoryWriteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeMemoryWrite not implemented")
 }
 func (UnimplementedCoreServiceServer) SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchJournal not implemented")
@@ -835,6 +851,24 @@ func _CoreService_AppendJournal_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).AppendJournal(ctx, req.(*AppendJournalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_AuthorizeMemoryWrite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuthorizeMemoryWriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).AuthorizeMemoryWrite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_AuthorizeMemoryWrite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).AuthorizeMemoryWrite(ctx, req.(*AuthorizeMemoryWriteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1184,6 +1218,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AppendJournal",
 			Handler:    _CoreService_AppendJournal_Handler,
+		},
+		{
+			MethodName: "AuthorizeMemoryWrite",
+			Handler:    _CoreService_AuthorizeMemoryWrite_Handler,
 		},
 		{
 			MethodName: "SearchJournal",

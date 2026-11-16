@@ -46,6 +46,15 @@ func (s *Store) Dir() string {
 	return ""
 }
 
+// WriteAs is Write after core's word on where the write goes (ADR-0086 §5). The pod's own set must agree: a
+// disagreement means a stale pod or a bug, and the write is refused.
+func (s *Store) WriteAs(quarantine bool, rel, content string) (string, error) {
+	if quarantine != Quarantined(s.Set) {
+		return "", ErrRefused
+	}
+	return s.Write(rel, content)
+}
+
 // Write stores content at rel inside the repo and commits it. It returns the repo dir.
 func (s *Store) Write(rel, content string) (string, error) {
 	if !nameRe.MatchString(s.Name) {

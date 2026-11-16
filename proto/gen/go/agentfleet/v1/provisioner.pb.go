@@ -339,7 +339,12 @@ type DefinitionPodProfile struct {
 	Memory string `protobuf:"bytes,7,opt,name=memory,proto3" json:"memory,omitempty"`
 	// Standing definitions only (ADR-0084 §9): cpu and memory then apply as
 	// Guaranteed QoS. Other definitions keep the ordinary sizing.
-	Guaranteed    bool `protobuf:"varint,8,opt,name=guaranteed,proto3" json:"guaranteed,omitempty"`
+	Guaranteed bool `protobuf:"varint,8,opt,name=guaranteed,proto3" json:"guaranteed,omitempty"`
+	// The session's stored Rule of Two set (ADR-0086 §2), e.g. "AB". A standing definition's pod gets its memory repos
+	// from it (§5): quarantine write when it holds A, read-only memory when it holds B.
+	TrustSet string `protobuf:"bytes,9,opt,name=trust_set,json=trustSet,proto3" json:"trust_set,omitempty"`
+	// The definition allows lifecycle "standing": a long-lived agent, so it has memory (ADR-0084).
+	Standing      bool `protobuf:"varint,10,opt,name=standing,proto3" json:"standing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -426,6 +431,20 @@ func (x *DefinitionPodProfile) GetMemory() string {
 func (x *DefinitionPodProfile) GetGuaranteed() bool {
 	if x != nil {
 		return x.Guaranteed
+	}
+	return false
+}
+
+func (x *DefinitionPodProfile) GetTrustSet() string {
+	if x != nil {
+		return x.TrustSet
+	}
+	return ""
+}
+
+func (x *DefinitionPodProfile) GetStanding() bool {
+	if x != nil {
+		return x.Standing
 	}
 	return false
 }
@@ -2261,7 +2280,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
 	"GenomeFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04body\x18\x02 \x01(\tR\x04body\"\x9f\x02\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\"\xd8\x02\n" +
 	"\x14DefinitionPodProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
 	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
@@ -2272,7 +2291,10 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x06memory\x18\a \x01(\tR\x06memory\x12\x1e\n" +
 	"\n" +
 	"guaranteed\x18\b \x01(\bR\n" +
-	"guaranteed\"u\n" +
+	"guaranteed\x12\x1b\n" +
+	"\ttrust_set\x18\t \x01(\tR\btrustSet\x12\x1a\n" +
+	"\bstanding\x18\n" +
+	" \x01(\bR\bstanding\"u\n" +
 	"\tVaultSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
 	"\bservices\x18\x02 \x03(\v2\x1b.agentfleet.v1.VaultServiceR\bservices\x12\x1b\n" +

@@ -28,6 +28,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
@@ -600,6 +601,26 @@ func (s *Server) UpdateSessionMeta(ctx context.Context, req *agentfleetv1.Update
 // fleet would wedge after five. Teardown now happens in three places that all
 // observe reality rather than trusting a self-report: the reconcile loop, the
 // idle/stall sweeps, and ArchiveSession.
+
+// AuthorizeMemoryWrite answers the sidecar's memory_write from the session's stored set (ADR-0086 §5): A writes only
+// to quarantine, C without A to memory, anything else is refused. Fails closed on a missing session.
+func (s *Server) AuthorizeMemoryWrite(ctx context.Context, req *agentfleetv1.AuthorizeMemoryWriteRequest) (*agentfleetv1.AuthorizeMemoryWriteResponse, error) {
+	t, err := s.sessions.Get(ctx, req.GetSessionId())
+	if err != nil {
+		return nil, fmt.Errorf("AuthorizeMemoryWrite: %w", err)
+	}
+	if t == nil {
+		return nil, status.Error(codes.NotFound, "session not found")
+	}
+	switch {
+	case sessions.HoldsTrust(t.TrustSet, "A"):
+		return &agentfleetv1.AuthorizeMemoryWriteResponse{Quarantine: true}, nil
+	case sessions.HoldsTrust(t.TrustSet, "C"):
+		return &agentfleetv1.AuthorizeMemoryWriteResponse{}, nil
+	}
+	return nil, errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,
+		"memory_write needs C, outside this session's trust set "+t.TrustSet+" (docs/adr/0086): ask the owner through a decision card")
+}
 
 func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJournalRequest) (*agentfleetv1.AppendJournalResponse, error) {
 	if err := s.journal.Append(ctx, req.GetRepo(), req.GetActor(), req.GetEventType(), req.GetPayloadJson(), req.GetQuarantined()); err != nil {

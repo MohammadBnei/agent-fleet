@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"log/slog"
+	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -66,6 +67,9 @@ type LeaseVerifier interface {
 // default anything falls into by being forgotten — unknownMethodPolicy makes a
 // new method fail closed.
 var callerSessionOf = map[string]func(any) string{
+	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": func(r any) string {
+		return r.(*agentfleetv1.AuthorizeMemoryWriteRequest).GetSessionId()
+	},
 	"/agentfleet.v1.CoreService/SendMessage": func(r any) string {
 		return r.(*agentfleetv1.SendMessageRequest).GetSessionId()
 	},
@@ -159,15 +163,17 @@ var unboundMethods = map[string]bool{
 // ponytail: a fixed table. P4 derives it from the definition's sidecarTools
 // (tool -> method); until then every definition gets the same set.
 var definitionMethods = map[string]bool{
-	"/agentfleet.v1.CoreService/SendMessage":         true,
-	"/agentfleet.v1.CoreService/WaitForMessages":     true,
-	"/agentfleet.v1.CoreService/StreamHumanMessages": true,
-	"/agentfleet.v1.CoreService/AskUserQuestion":     true,
-	"/agentfleet.v1.CoreService/GetSession":          true,
-	"/agentfleet.v1.CoreService/SetPermissionMode":   true,
-	"/agentfleet.v1.CoreService/UpdateSessionMeta":   true,
-	"/agentfleet.v1.CoreService/SaveAgentSessionId":  true,
-	"/agentfleet.v1.CoreService/PushToolTelemetry":   true,
+	// A long-lived agent's memory_write asks core first (docs/adr/0086 §5).
+	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": true,
+	"/agentfleet.v1.CoreService/SendMessage":          true,
+	"/agentfleet.v1.CoreService/WaitForMessages":      true,
+	"/agentfleet.v1.CoreService/StreamHumanMessages":  true,
+	"/agentfleet.v1.CoreService/AskUserQuestion":      true,
+	"/agentfleet.v1.CoreService/GetSession":           true,
+	"/agentfleet.v1.CoreService/SetPermissionMode":    true,
+	"/agentfleet.v1.CoreService/UpdateSessionMeta":    true,
+	"/agentfleet.v1.CoreService/SaveAgentSessionId":   true,
+	"/agentfleet.v1.CoreService/PushToolTelemetry":    true,
 	// Granted per definition: the handler checks the pinned spec's
 	// sidecarTools for publish_event (docs/adr/0078 §8).
 	"/agentfleet.v1.CoreService/PublishEvent": true,
@@ -201,11 +207,12 @@ var provisionerMethods = map[string]bool{
 // writes a session's trace, which the provisioner must never do),
 // which no component may borrow.
 var sessionOnlyMethods = map[string]bool{
-	"/agentfleet.v1.CoreService/PublishEvent": true,
-	"/agentfleet.v1.CoreService/ConsumeGrant": true,
-	"/agentfleet.v1.CoreService/DraftCard":    true,
-	"/agentfleet.v1.CoreService/SubmitReview": true,
-	"/agentfleet.v1.CoreService/ExportSpans":  true,
+	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": true,
+	"/agentfleet.v1.CoreService/PublishEvent":         true,
+	"/agentfleet.v1.CoreService/ConsumeGrant":         true,
+	"/agentfleet.v1.CoreService/DraftCard":            true,
+	"/agentfleet.v1.CoreService/SubmitReview":         true,
+	"/agentfleet.v1.CoreService/ExportSpans":          true,
 }
 
 var (
@@ -309,10 +316,15 @@ func authorize(method string, c caller, req any) error {
 		return errDefinition
 	}
 	// docs/adr/0086 §2: a method tagged B or C needs that letter in the session's stored set.
-	if letter := methodTags[method]; letter != "" && !sessions.HoldsTrust(c.trustSet, letter) {
+	// A tag "A|C" is a memory write: a set holding A may (to quarantine), else it needs C.
+	if tag := methodTags[method]; tag != "" && !holdsAny(c.trustSet, tag) {
 		slog.Warn("coreserver refused a method outside the session's trust set", "method", method, "session", c.session, "trustSet", c.trustSet)
 		return errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,
-			method+" needs "+letter+", outside this session's trust set "+c.trustSet+" (docs/adr/0086): ask the owner through a decision card")
+			method+" needs "+tag+", outside this session's trust set "+c.trustSet+" (docs/adr/0086): ask the owner through a decision card")
+	}
+	// docs/adr/0086 §5: quarantined is core's word, never the pod's. A set holding A quarantines every journal row.
+	if m, ok := req.(*agentfleetv1.AppendJournalRequest); ok {
+		m.Quarantined = sessions.HoldsTrust(c.trustSet, "A")
 	}
 	// Every pod writer authors as "agent" or "worker". "human" is written only
 	// by DashboardService and "session" only by core's own PromptSession, and
@@ -327,6 +339,16 @@ func authorize(method string, c caller, req any) error {
 		}
 	}
 	return nil
+}
+
+// holdsAny reports whether set holds one of the letters in tag ("B", "C" or "A|C").
+func holdsAny(set, tag string) bool {
+	for _, l := range strings.Split(tag, "|") {
+		if sessions.HoldsTrust(set, l) {
+			return true
+		}
+	}
+	return false
 }
 
 // bind is ADR-0057's rule: a bound method must name the caller's own session,

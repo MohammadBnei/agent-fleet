@@ -232,6 +232,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// docs/adr/0064: a profile switches the pod to the definition profile.
 	// Checked before anything is reported or touched.
 	var definition *k8s.DefinitionProfile
+	var memory *k8s.MemoryProfile
 	if d := req.GetDefinition(); d != nil {
 		if d.GetName() == "" || d.GetGitAuthorName() == "" || d.GetGitAuthorEmail() == "" {
 			return nil, status.Error(codes.InvalidArgument, "definition profile needs a name and a git identity")
@@ -256,6 +257,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 			}
 		}
 		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail(), CPU: d.GetCpu(), Memory: d.GetMemory(), Guaranteed: d.GetGuaranteed()}
+		// docs/adr/0086 §5: a long-lived agent's pod gets its memory repos by the session's stored set. A bad or
+		// missing set refuses the pod in applyMemory.
+		if d.GetStanding() {
+			memory = &k8s.MemoryProfile{Agent: d.GetName(), Set: d.GetTrustSet()}
+		}
 	}
 	// docs/adr/0075 §7: every repo pod uses its owner's vault. Checked before
 	// anything is reported or touched, like the profile above.
@@ -400,6 +406,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		ExtraEnv:      nil,
 		Definition:    definition,
 		RepoVault:     repoVault,
+		Memory:        memory,
 	})
 	endPod(err)
 	if err != nil {
