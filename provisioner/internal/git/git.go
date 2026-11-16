@@ -60,10 +60,31 @@ type Manager struct {
 	// fleetSharedRefresh runs one fleet-shared refresh at a time. Taken
 	// before the fleet-shared lock, never while holding it.
 	fleetSharedRefresh sync.Mutex
+
+	// lastUsed is when a warm or manual sync last touched each repo's cache
+	// (in memory: a restart forgets it, see PrefetchRepos). Guarded by mu.
+	lastUsed map[string]time.Time
+	// start is when this Manager was made: the last-used time of a repo no
+	// warm has touched yet, so it gets one idle window of grace.
+	start time.Time
+	// prefetchFails counts each repo's prefetch failures in a row, for its own
+	// log backoff. Guarded by mu.
+	prefetchFails map[string]int
+}
+
+type prefixKey struct{}
+
+// spanPrefix names the spans of git work: "warm" on the warm path, "prefetch"
+// for the background refresh, so Tempo's warm.* never counts background fetches.
+func spanPrefix(ctx context.Context) string {
+	if p, ok := ctx.Value(prefixKey{}).(string); ok {
+		return p
+	}
+	return "warm"
 }
 
 func NewManager(root string) *Manager {
-	return &Manager{root: root, locks: make(map[string]*sync.Mutex)}
+	return &Manager{root: root, locks: make(map[string]*sync.Mutex), lastUsed: make(map[string]time.Time), start: time.Now(), prefetchFails: make(map[string]int)}
 }
 
 func (m *Manager) repoLock(repo string) *sync.Mutex {
@@ -85,6 +106,12 @@ func (m *Manager) LockRepo(repo string) (unlock func()) {
 	return l.Unlock
 }
 
+func (m *Manager) touch(repo string) {
+	m.mu.Lock()
+	m.lastUsed[repo] = time.Now()
+	m.mu.Unlock()
+}
+
 func (m *Manager) repoPath(repo string) string {
 	return filepath.Join(m.root, "repos", repo)
 }
@@ -99,14 +126,14 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 	if len(args) > 0 {
 		sub = args[0]
 	}
-	ctx, end := spans.Start(ctx, "warm.git."+sub)
+	ctx, end := spans.Start(ctx, spanPrefix(ctx)+".git."+sub)
 	var runErr error
 	defer func() { end(runErr) }()
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	if m.GitEnv != nil && len(args) > 0 && (args[0] == "clone" || args[0] == "fetch") {
-		envCtx, endEnv := spans.Start(ctx, "warm.git_credentials")
+		envCtx, endEnv := spans.Start(ctx, spanPrefix(ctx)+".git_credentials")
 		env, err := m.GitEnv(envCtx)
 		endEnv(err)
 		if err != nil {
@@ -153,6 +180,7 @@ type SyncResult struct {
 // must still sync; failing a fetch that worked because a statistic about it
 // could not be computed would turn a reporting feature into an outage.
 func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (SyncResult, error) {
+	m.touch(repo)
 	lock := m.repoLock(repo)
 	lock.Lock()
 	defer lock.Unlock()
@@ -168,11 +196,19 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 // ctx returns before any git runs.
 //
 // ponytail: 200ms poll; a channel semaphore if the latency ever shows.
-func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) (err error) {
-	ctx, end := spans.Start(ctx, "warm.ensure_repo_fetched", attribute.String("repo", repo))
+func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) error {
+	m.touch(repo)
+	return m.ensureFetched(ctx, repo, repoURL)
+}
+
+// ensureFetched is EnsureRepoFetched's body, shared with the background
+// prefetch (which sets a "prefetch" span prefix on ctx and does not touch).
+func (m *Manager) ensureFetched(ctx context.Context, repo, repoURL string) (err error) {
+	p := spanPrefix(ctx)
+	ctx, end := spans.Start(ctx, p+".ensure_repo_fetched", attribute.String("repo", repo))
 	defer func() { end(err) }()
 	lock := m.repoLock(repo)
-	_, endWait := spans.Start(ctx, "warm.repo_lock_wait", attribute.String("repo", repo))
+	_, endWait := spans.Start(ctx, p+".repo_lock_wait", attribute.String("repo", repo))
 	err = lockCtx(ctx, lock)
 	endWait(err)
 	if err != nil {
@@ -809,4 +845,86 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 		return nil, "", fmt.Errorf("no definitions/ at %s (%.7s)", ref, sha)
 	}
 	return files, sha, nil
+}
+
+// PrefetchRepos fetches every repo cache a warm is likely to need soon, so the
+// warm's own synchronous fetch is a small delta (a 20-merge-stale cache took
+// 19.9 s to fetch on a warm, a fresh one ~3.2 s; Tempo, 2026-11-16).
+//
+// Selection: a cache directory exists (never clone here: a cache exists only
+// because a warm or sync already wanted the repo) AND it was not last used
+// more than idle ago. A cache not used since this process started counts as
+// last used at start: lastUsed is in memory, so a fresh pod gives every repo
+// one idle window of grace, then repos nobody warmed drop out; a warm on one
+// of those fetches synchronously, as before.
+//
+// Each fetch is EnsureRepoFetched's exact fetch (same lock, refspec,
+// credentials, origin check, gc.auto), on a context detached from ctx and
+// bounded by perFetch, so cancelling ctx does not kill a fetch mid-way (on
+// process exit the git child can still be orphaned, as with refreshDetached).
+// It fetches from the cache's own origin, not repos.url; the warm's origin
+// check still catches a mismatch, and pods mount the cache read-only.
+// A repo's failure is logged here with that repo's own backoff (1st, 2nd,
+// 4th... in a row) and never stops or hides the others, so the cycle itself
+// returns nil.
+func (m *Manager) PrefetchRepos(ctx context.Context, idle, perFetch time.Duration) error {
+	ctx = context.WithValue(ctx, prefixKey{}, "prefetch")
+	entries, err := os.ReadDir(filepath.Join(m.root, "repos"))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		repo := e.Name()
+		if ctx.Err() != nil {
+			break
+		}
+		if !e.IsDir() || !m.prefetchWanted(repo, idle) {
+			continue
+		}
+		err := m.prefetchOne(ctx, repo, perFetch)
+		m.mu.Lock()
+		n := m.prefetchFails[repo]
+		if err == nil {
+			delete(m.prefetchFails, repo)
+		} else {
+			n++
+			m.prefetchFails[repo] = n
+		}
+		m.mu.Unlock()
+		if err != nil && n&(n-1) == 0 {
+			slog.Warn("repo prefetch failed; warms fetch it themselves", "repo", repo, "error", err, "failuresInARow", n)
+		} else if err == nil && n > 0 {
+			slog.Info("repo prefetch recovered", "repo", repo, "failuresInARow", n)
+		}
+	}
+	return nil
+}
+
+// prefetchWanted: a real clone (has .git) not idle past the window.
+func (m *Manager) prefetchWanted(repo string, idle time.Duration) bool {
+	if _, err := os.Stat(filepath.Join(m.repoPath(repo), ".git")); err != nil {
+		return false
+	}
+	m.mu.Lock()
+	t, seen := m.lastUsed[repo]
+	if !seen {
+		t = m.start
+	}
+	m.mu.Unlock()
+	return time.Since(t) <= idle
+}
+
+func (m *Manager) prefetchOne(ctx context.Context, repo string, perFetch time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), perFetch)
+	defer cancel()
+	// The cache's own origin is the URL: the origin check in ensureFetched
+	// then passes by construction, and the cache is never re-pointed.
+	url, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url")
+	if err != nil {
+		return err
+	}
+	return m.ensureFetched(ctx, repo, url)
 }

@@ -601,6 +601,14 @@ contacts the remote), alongside seeding `claude-home`. The fleet-shared clone
 is not fetched on the warm: the provisioner refreshes it at start and every
 60 s, so a warm rsyncs a copy at most 60 s stale (`adr/0032`).
 
+To keep that warm fetch cheap (a ~20-merges-stale cache took 19.9 s, a fresh
+one ~3.2 s), the provisioner also prefetches the clone cache in the
+background at start and every `REPO_PREFETCH_INTERVAL_MS` (5 min, floored at
+30 s): every repo that already has a cache directory and was not left idle
+for 7 days of this process's life. It never clones, runs the same fetch as a
+warm under the same per-repo lock (spans `prefetch.git.*`, not `warm.*`), and
+a failure is logged with backoff and leaves the cache untouched.
+
 Only the provisioner (clone cache, `claude-home` seeding) and session pods
 touch the shared volume — `core` holds zero PVC access, matching its zero-RBAC
 design.
@@ -948,8 +956,8 @@ vault), `FLEET_GIT_AUTHOR_*` (repo pods' commit identity). It reads no
 `GH_TOKEN` and holds no `AGENTFLEET_DB_*`. `FLEET_CORE_PROVISIONER_TOKEN` is
 required (below); it is the only key whose absence stops the start. Every
 other variable is optional: one that is set but invalid
-(`RECONCILE_INTERVAL_MS` and `SHARED_INSTANCE_IDLE_TIMEOUT_MS` not a positive
-integer of milliseconds, `SHARED_INSTANCE_PVC_SIZE` not a positive Kubernetes
+(`RECONCILE_INTERVAL_MS`, `SHARED_INSTANCE_IDLE_TIMEOUT_MS` and
+`REPO_PREFETCH_INTERVAL_MS` not a positive integer of milliseconds, `SHARED_INSTANCE_PVC_SIZE` not a positive Kubernetes
 quantity) logs a WARN naming the variable and the rule, takes its default and
 the process starts; the WARN shows at any `LOG_LEVEL`, and a value containing
 `@` is never echoed. One exception, because it is containment rather than

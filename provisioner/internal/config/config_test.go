@@ -148,7 +148,7 @@ func TestLoad(t *testing.T) {
 		SessionNodeSelector: "a/b=c", WorkspaceRoot: "/ws", E2eHost: "e2e.test", Port: "1", GRPCPort: "2", CoreGRPCAddr: "core:3",
 		CoreToken: "to-core", CoreProvisionerToken: "from-core", ThotAuthToken: "thot", ExecutorAddr: "exec:4", ReconcileInterval: 5 * time.Millisecond,
 		LogLevel: "debug", FleetSharedRepoURL: "https://x/y.git", FleetSharedBranch: "dev", FleetDefinitionsRef: "ref",
-		PostgresImage: "pg:1", RedisImage: "rd:1", SharedInstancePVCSize: "9Gi", SharedInstanceIdleTimeout: 6 * time.Millisecond,
+		PostgresImage: "pg:1", RedisImage: "rd:1", SharedInstancePVCSize: "9Gi", SharedInstanceIdleTimeout: 6 * time.Millisecond, RepoPrefetchInterval: 5 * time.Minute,
 		AgentVaultAPI: "http://vault-local:1", AgentVaultProxy: "vault-local:2", AgentVaultSecretsDir: "/v", GitHubAppDir: "/app",
 		GitHubAccounts: "1,2", GitAuthorName: "me", GitAuthorEmail: "me@x", GitURLRewrite: "http://forge.local/",
 		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9", TracesEndpoint: "http://otel:4318/v1/traces",
@@ -164,7 +164,7 @@ func TestLoad(t *testing.T) {
 		E2eHost: "bnei.dev", Port: "8080", GRPCPort: "9090", CoreGRPCAddr: DefaultCoreGRPCAddr,
 		ExecutorAddr: "thot-executor.thot.svc.cluster.local:9090", ReconcileInterval: 10 * time.Second, LogLevel: "info",
 		FleetSharedRepoURL: "https://github.com/MohammadBnei/agent-fleet.git", FleetSharedBranch: "main", PostgresImage: "postgres:16-alpine",
-		RedisImage: "redis:7-alpine", SharedInstancePVCSize: "2Gi", SharedInstanceIdleTimeout: 12 * time.Hour, AgentVaultAPI: DefaultAgentVaultAPI,
+		RedisImage: "redis:7-alpine", SharedInstancePVCSize: "2Gi", SharedInstanceIdleTimeout: 12 * time.Hour, RepoPrefetchInterval: 5 * time.Minute, AgentVaultAPI: DefaultAgentVaultAPI,
 		AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault", GitHubAppDir: "/var/run/github-app",
 		GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
 	}
@@ -210,6 +210,7 @@ func TestLoad_Durations(t *testing.T) {
 	}{
 		{"RECONCILE_INTERVAL_MS", 10 * time.Second, "10s", func(c Config) time.Duration { return c.ReconcileInterval }},
 		{"SHARED_INSTANCE_IDLE_TIMEOUT_MS", 12 * time.Hour, "12h", func(c Config) time.Duration { return c.SharedInstanceIdleTimeout }},
+		{"REPO_PREFETCH_INTERVAL_MS", 5 * time.Minute, "5m", func(c Config) time.Duration { return c.RepoPrefetchInterval }},
 	} {
 		for _, tc := range []struct {
 			in      string

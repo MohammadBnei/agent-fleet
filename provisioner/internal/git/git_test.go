@@ -385,3 +385,77 @@ func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
 		t.Errorf("CLAUDE.md removed on a source with no fleet-shared/: %v", err)
 	}
 }
+
+// PrefetchRepos fetches caches that exist (never clones), keeps going past a
+// broken one, and leaves a cache idle past the window alone.
+func TestPrefetchRepos_SelectionAndErrors(t *testing.T) {
+	m := NewManager(t.TempDir())
+	ctx := context.Background()
+	origins := map[string]string{}
+	for _, r := range []string{"a", "idle", "zbroken"} {
+		origins[r] = newOriginRepo(t)
+		if _, err := m.EnsureRepoCloned(ctx, r, origins[r]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// "nocache" has a directory but is no clone.
+	if err := os.MkdirAll(m.repoPath("nocache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// zbroken: origin gone, so its fetch fails. "a" sorts before it, "idle"
+	// was last used long ago.
+	if err := os.RemoveAll(origins["zbroken"]); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.lastUsed["idle"] = time.Now().Add(-48 * time.Hour)
+	m.mu.Unlock()
+	tipA, tipIdle := commitIn(t, origins["a"]), commitIn(t, origins["idle"])
+
+	if err := m.PrefetchRepos(ctx, 24*time.Hour, time.Minute); err != nil {
+		t.Fatalf("a failing repo must not fail the cycle: %v", err)
+	}
+	m.mu.Lock()
+	failed := m.prefetchFails["zbroken"]
+	m.mu.Unlock()
+	if failed != 1 {
+		t.Fatalf("zbroken failures %d, want 1 counted", failed)
+	}
+	if got := m.originHead(ctx, m.repoPath("a")); got != tipA {
+		t.Errorf("a: origin/HEAD %s, want %s", got, tipA)
+	}
+	if got := m.originHead(ctx, m.repoPath("idle")); got == tipIdle {
+		t.Error("idle repo was fetched")
+	}
+	if _, err := os.Stat(filepath.Join(m.repoPath("nocache"), ".git")); err == nil {
+		t.Error("prefetch cloned into a directory that was no cache")
+	}
+	if _, err := os.Stat(m.repoPath("zbroken")); err != nil {
+		t.Error("a failed prefetch must leave the cache in place")
+	}
+}
+
+func TestPrefetchRepos_NoReposDir(t *testing.T) {
+	if err := NewManager(t.TempDir()).PrefetchRepos(context.Background(), time.Hour, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A cache no warm has touched gets one idle window from the Manager's start,
+// then drops out.
+func TestPrefetchWanted_UnseenRepoAgesFromStart(t *testing.T) {
+	m := NewManager(t.TempDir())
+	if _, err := m.EnsureRepoCloned(context.Background(), "r", newOriginRepo(t)); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	delete(m.lastUsed, "r")
+	m.mu.Unlock()
+	if !m.prefetchWanted("r", time.Hour) {
+		t.Fatal("fresh start: want grace")
+	}
+	m.start = time.Now().Add(-2 * time.Hour)
+	if m.prefetchWanted("r", time.Hour) {
+		t.Fatal("unseen for a whole window: want dropped")
+	}
+}
