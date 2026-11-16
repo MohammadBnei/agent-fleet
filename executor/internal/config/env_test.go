@@ -50,7 +50,7 @@ var envReaders = map[string][]string{
 // proxy variables.
 var envReadsAllowed = map[string][]string{
 	// The one reader of each binary: Executor's and Shim's FromProcess hand os.Getenv to Load.
-	"internal/config/config.go": {"os.Getenv", "os.Getenv"},
+	"internal/config/config.go": {"os.Getenv", "os.Getenv", "os.Getenv"},
 	// kubectl is run with the process's whole environment, on purpose: PATH to
 	// find it, and the pod's own variables it reads (KUBECONFIG, the in-cluster
 	// service account). A child process, not config.

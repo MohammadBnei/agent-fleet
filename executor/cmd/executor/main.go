@@ -41,17 +41,12 @@ type server struct {
 func (s *server) Exec(ctx context.Context, req *agentfleetv1.ExecRequest) (*agentfleetv1.ExecResponse, error) {
 	args := req.GetArgs()
 
-	if req.GetReadOnly() {
-		// Unattended path: kubectl_read bypasses canUseTool by design, so
-		// nothing else is checking this one.
-		if refusal := kubectl.ValidateReadOnly(args); refusal != "" {
-			slog.Warn("executor refused read-only request", "args", args, "reason", refusal)
-			return &agentfleetv1.ExecResponse{Refused: refusal, ExitCode: -1}, nil
-		}
-	} else {
-		// Human-gated path: a person approved this exact argv through
-		// canUseTool. Deliberately a dumb pipe — see executor.proto.
-		slog.Info("executor running human-approved command", "args", args)
+	// Every call is validated, whatever read_only says (ADR-0086 §3): the
+	// shim used to send false and nobody checked it, so an auto-mode session
+	// could mutate. Mutation lives in the remediation executor now.
+	if refusal := kubectl.ValidateReadOnly(args); refusal != "" {
+		slog.Warn("executor refused request", "args", args, "reason", refusal)
+		return &agentfleetv1.ExecResponse{Refused: refusal, ExitCode: -1}, nil
 	}
 
 	res := kubectl.Run(ctx, args)
