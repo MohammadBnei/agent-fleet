@@ -2,8 +2,10 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -47,8 +49,10 @@ func credVolume(name, secret string, keys ...string) (corev1.Volume, corev1.Volu
 }
 
 // createCredSecret writes the pod's Secret before its Job. A leftover from a
-// previous warm (its Job's delete may not have collected it yet) is replaced,
-// owner reference dropped, so the old Job's collection cannot delete it.
+// previous warm (its Job's delete may not have collected it yet) is deleted and
+// created again, so it has a new UID and the old Job's collection cannot take
+// it. A Secret whose Job still exists belongs to a live pod: it is an error and
+// is left alone.
 func (c *Client) createCredSecret(ctx context.Context, taskID string, data map[string]string) error {
 	s := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: CredSecretName(taskID), Namespace: c.Namespace, Labels: map[string]string{TaskIDLabel: taskID}},
@@ -57,11 +61,36 @@ func (c *Client) createCredSecret(ctx context.Context, taskID string, data map[s
 	}
 	secrets := c.Core.CoreV1().Secrets(c.Namespace)
 	_, err := secrets.Create(ctx, s, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
-		_, err = secrets.Update(ctx, s, metav1.UpdateOptions{})
+	if !apierrors.IsAlreadyExists(err) {
+		return err
 	}
+	old, err := secrets.Get(ctx, s.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	jobs := c.Core.BatchV1().Jobs(c.Namespace)
+	names := []string{WorkerResourceName(taskID)}
+	for _, o := range old.OwnerReferences {
+		if o.Kind == "Job" {
+			names = append(names, o.Name)
+		}
+	}
+	for _, n := range names {
+		if _, err := jobs.Get(ctx, n, metav1.GetOptions{}); err == nil {
+			return fmt.Errorf("credential secret %s belongs to live job %s: %w", s.Name, n, errCredSecretLive)
+		} else if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	// UID precondition: never delete a Secret a concurrent warm just replaced.
+	if err := ignoreNotFound(secrets.Delete(ctx, s.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &old.UID}})); err != nil {
+		return err
+	}
+	_, err = secrets.Create(ctx, s, metav1.CreateOptions{})
 	return err
 }
+
+var errCredSecretLive = errors.New("a live pod owns it")
 
 // adoptCredSecret makes the Job the Secret's owner, so the Job's deletion
 // (teardown, TTL, reconcile) collects it.
@@ -71,9 +100,12 @@ func (c *Client) adoptCredSecret(ctx context.Context, taskID string, job *batchv
 	return err
 }
 
-// deleteCredSecret is best effort: the owner reference is the real cleanup.
-func (c *Client) deleteCredSecret(ctx context.Context, taskID string) {
+// DeleteCredSecret is best effort: the owner reference is the real cleanup.
+// It runs under its own short budget, so a cancelled request still cleans up.
+func (c *Client) DeleteCredSecret(ctx context.Context, taskID string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	if err := ignoreNotFound(c.Core.CoreV1().Secrets(c.Namespace).Delete(ctx, CredSecretName(taskID), metav1.DeleteOptions{})); err != nil {
-		slog.Warn("k8s deleteCredSecret", "sessionId", taskID, "error", err)
+		slog.Warn("k8s DeleteCredSecret", "sessionId", taskID, "error", err)
 	}
 }

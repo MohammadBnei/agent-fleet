@@ -328,8 +328,9 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 // channel (docs/adr/0060), which never touches core and so is not bounded by
 // the definition allowlist.
 //
-// The proxy, its CA and NO_PROXY (loopback for the sidecar, core, the vault
-// API) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
+// The proxy (the sidecar's egress router on loopback, which alone holds the
+// vault token, in its credential file), its CA and NO_PROXY (loopback and core;
+// the vault is reached only through the router) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
 // NODE_USE_ENV_PROXY (Node's own fetch ignores the proxy vars without it), and
 // the CA in every variable a client in the worker image reads. No HTTP_PROXY:
 // the vault's plain http:// path injects too, so a plain-http request goes
@@ -949,15 +950,18 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	created, err := c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
 	endJob(err)
 	if err != nil {
-		c.deleteCredSecret(ctx, taskID)
+		// Only a Secret this call made: an AlreadyExists Job is a live pod's.
+		if !apierrors.IsAlreadyExists(err) {
+			c.DeleteCredSecret(ctx, taskID)
+		}
 		slog.Error("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo, "error", err)
 		return err
 	}
 	if err := c.adoptCredSecret(ctx, taskID, created); err != nil {
 		// An unowned Secret would outlive the Job: undo both, the caller
 		// revokes the token.
-		_ = c.DeleteWorkerJob(ctx, taskID)
-		c.deleteCredSecret(ctx, taskID)
+		_ = c.DeleteWorkerJob(context.WithoutCancel(ctx), taskID)
+		c.DeleteCredSecret(ctx, taskID)
 		return fmt.Errorf("adopt credential secret: %w", err)
 	}
 	slog.Info("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo)
@@ -988,7 +992,7 @@ func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 		slog.Error("k8s DeleteWorkerJob", "sessionId", taskID, "error", err)
 		return err
 	}
-	c.deleteCredSecret(ctx, taskID)
+	c.DeleteCredSecret(ctx, taskID)
 	slog.Info("k8s DeleteWorkerJob", "sessionId", taskID)
 	metrics.PodsDeletedTotal.WithLabelValues("worker").Inc()
 	return nil

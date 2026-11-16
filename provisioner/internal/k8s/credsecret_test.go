@@ -117,3 +117,26 @@ func TestCredSecret_ReplacesAStaleOne(t *testing.T) {
 		t.Errorf("secret %+v: want the new lease and no stale owner", sec)
 	}
 }
+
+// A second warm of a live session changes nothing: the running pod keeps its
+// Secret (lease, owner) and its Job.
+func TestCredSecret_SecondWarmLeavesALivePodAlone(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "r", LeaseID: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "r", LeaseID: "second"}); err == nil {
+		t.Fatal("want the second warm refused")
+	}
+	sec, err := c.Core.CoreV1().Secrets("agent-fleet").Get(ctx, CredSecretName("task-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("the live pod's Secret is gone: %v", err)
+	}
+	if sec.StringData["lease"] != "first" || len(sec.OwnerReferences) != 1 {
+		t.Errorf("secret %+v: want the first lease and its owner", sec)
+	}
+	if _, exists, _ := c.GetWorkerJob(ctx, "task-1"); !exists {
+		t.Error("the live Job was deleted")
+	}
+}

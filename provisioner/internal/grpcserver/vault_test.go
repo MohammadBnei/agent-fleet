@@ -1,7 +1,9 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -105,11 +107,27 @@ func TestCreateWorkerPod_DefinitionMintsVaultToken(t *testing.T) {
 	if len(sec.OwnerReferences) != 1 || sec.OwnerReferences[0].Kind != "Job" || sec.OwnerReferences[0].Name != job.Name {
 		t.Errorf("secret owner %v, want the Job", sec.OwnerReferences)
 	}
+	sidecarEnv := map[string]string{}
 	for _, c := range job.Spec.Template.Spec.InitContainers {
-		for _, e := range c.Env {
-			if c.Name == "sidecar" && e.Name == "FLEET_VAULT_HOSTS" && e.Value != "api.anthropic.com,github.com" {
-				t.Errorf("router hosts %q, want the definition's vault services", e.Value)
+		if c.Name == "sidecar" {
+			for _, e := range c.Env {
+				sidecarEnv[e.Name] = e.Value
 			}
+		}
+	}
+	for k, want := range map[string]string{
+		"FLEET_VAULT_HOSTS": "api.anthropic.com,github.com", "FLEET_VAULT_PROXY_FILE": "/run/fleet/cred/vault-proxy", "EGRESS_PORT": "9093",
+	} {
+		if sidecarEnv[k] != want {
+			t.Errorf("sidecar %s = %q, want %q", k, sidecarEnv[k], want)
+		}
+	}
+	// ADR-0086 §6: the token and lease are in no part of the Job (env, args,
+	// annotations, mounts), only in its Secret.
+	whole, _ := json.Marshal(job)
+	for _, secret := range []string{sess.Token, sec.StringData["lease"]} {
+		if secret != "" && bytes.Contains(whole, []byte(secret)) {
+			t.Errorf("the definition Job carries %q", secret)
 		}
 	}
 	for _, c := range append(job.Spec.Template.Spec.InitContainers, job.Spec.Template.Spec.Containers...) {

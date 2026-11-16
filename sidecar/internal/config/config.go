@@ -47,8 +47,9 @@ type Config struct {
 	LocalAPIPort string
 	HealthPort   string
 	// VaultProxy is the pod's Agent Vault proxy URL with its session token as
-	// userinfo (FLEET_VAULT_PROXY, docs/adr/0075 §7). Set on repo pods only;
-	// empty starts no egress router. Never logged.
+	// userinfo (FLEET_VAULT_PROXY, docs/adr/0075 §7). Set on every pod
+	// (repo and definition); empty starts no egress router. Read once at start
+	// from FLEET_VAULT_PROXY_FILE, the pod's credential Secret. Never logged.
 	VaultProxy string
 	// VaultHosts is the comma-separated host list the router sends to the vault
 	// (FLEET_VAULT_HOSTS), parsed by egress.New.

@@ -748,6 +748,8 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 		return nil, err
 	}
 	if !exists {
+		// A failed warm may have left an unowned credential Secret.
+		s.k8sc.DeleteCredSecret(ctx, taskID)
 		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
 	}
 	// docs/adr/0065, 0075 §7: a pod's token dies before the pod, exactly that

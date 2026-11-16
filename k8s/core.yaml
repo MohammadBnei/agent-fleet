@@ -21,6 +21,9 @@
 # first. The provisioner is replicas: 1 for the same reason.
 replicaCount: 1
 
+# docs/adr/0086 §6: core needs no cluster access, so it gets no API token.
+automountServiceAccountToken: false
+
 image:
   repository: registry.bnei.lan:5000/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
