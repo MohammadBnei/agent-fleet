@@ -1,5 +1,12 @@
 # Changelog
 
+# [7.22.0](https://github.com/MohammadBnei/agent-fleet/compare/7.21.0...7.22.0) (2026-11-16)
+
+### Features
+
+* **core:** drop interaction from definitions and the loader (ADR-0070 slice 12) ([#390](https://github.com/MohammadBnei/agent-fleet/issues/390)) ([0dec72d](https://github.com/MohammadBnei/agent-fleet/commit/0dec72de18f94bf11985218320cf90049e217c54))
+* **core:** parked single-shot runs take only their answer, with a re-park cap (ADR-0070 slice 9) ([#389](https://github.com/MohammadBnei/agent-fleet/issues/389)) ([472a90e](https://github.com/MohammadBnei/agent-fleet/commit/472a90efb64d84c3b949f4ccffb1dd00c202de4c))
+
 # [7.21.0](https://github.com/MohammadBnei/agent-fleet/compare/7.20.0...7.21.0) (2026-11-16)
 
 ### Features
