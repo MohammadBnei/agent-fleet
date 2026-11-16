@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.30.0](https://github.com/MohammadBnei/agent-fleet/compare/7.29.0...7.30.0) (2026-11-16)
+
+### Features
+
+* **core:** first responders and alert routing (ADR-0086 §3-§4) ([#408](https://github.com/MohammadBnei/agent-fleet/issues/408)) ([b007b65](https://github.com/MohammadBnei/agent-fleet/commit/b007b65539803d006f70971c84f0330f68137206))
+
 # [7.29.0](https://github.com/MohammadBnei/agent-fleet/compare/7.28.0...7.29.0) (2026-11-16)
 
 ### Features
