@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.16.0](https://github.com/MohammadBnei/agent-fleet/compare/7.15.0...7.16.0) (2026-11-16)
+
+### Features
+
+* **agentsvc:** Invoke and WaitForResult with the final-turn rule (ADR-0070 slice 5) ([#383](https://github.com/MohammadBnei/agent-fleet/issues/383)) ([ba81451](https://github.com/MohammadBnei/agent-fleet/commit/ba81451cba99065909dc147fc764872ea76810f3))
+
 # [7.15.0](https://github.com/MohammadBnei/agent-fleet/compare/7.14.0...7.15.0) (2026-11-16)
 
 ### Features
