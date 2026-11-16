@@ -282,6 +282,11 @@ message CloseThreadRequest {
 
 message CloseThreadResponse {}
 
+// Invoke runs definition once on input, in a private single-shot thread the client owns (docs/adr/0070 §1).
+// single-shot must be in the definition's lifecycle.allow, else FailedPrecondition. The same idempotency_key runs
+// once: a retry returns the same thread_id, and the same key with another definition or input is FailedPrecondition.
+// A full fleet is ResourceExhausted carrying an InvokeCapacity detail with the thread_id; the claim stays pending, so
+// the retry with the same key runs on that thread.
 message InvokeRequest {
   string definition = 1;
   string input = 2;
@@ -292,18 +297,30 @@ message InvokeResponse {
   string thread_id = 1;
 }
 
+// InvokeCapacity is the detail on Invoke's ResourceExhausted (the CAPACITY path, docs/adr/0070 §4).
+message InvokeCapacity {
+  string thread_id = 1;
+}
+
 message WaitForResultRequest {
   string thread_id = 1;
+  // At most 60; 0 answers at once.
   int32 wait_seconds = 2;
 }
 
 message WaitForResultResponse {
-  // "running", "done" or "failed".
+  // docs/adr/0070 §4: "done" or "failed" (the final result), "waiting" (a question, permission or plan is open;
+  // pending lists them), "expired" (a decision went unanswered past limits.answerTimeout; not reported yet), or
+  // "running" (anything else, the wait running out included).
   string state = 1;
+  // The final result's, as JSON; "" when the definition has no output.schema.
   string structured_output = 2;
   string result_text = 3;
+  // The final result's subtype: "success" with "done", the SDK's error subtype with "failed".
   string subtype = 4;
   Status error = 5;
+  // With "waiting": each open decision, to show and answer (AnswerQuestion, RespondToPermission, ApprovePlan).
+  repeated Decision pending = 6;
 }
 
 // A decision's kind (docs/adr/0082 §5).

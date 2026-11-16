@@ -42,6 +42,9 @@ func TestAllowed(t *testing.T) {
 		{agentfleetv1connect.AgentServiceOpenProcedure, member, false},
 		{agentfleetv1connect.AgentServiceOpenProcedure, client, true},
 		{agentfleetv1connect.AgentServiceInvokeProcedure, member, false},
+		{agentfleetv1connect.AgentServiceInvokeProcedure, client, true},
+		{agentfleetv1connect.AgentServiceWaitForResultProcedure, member, false},
+		{agentfleetv1connect.AgentServiceWaitForResultProcedure, client, true},
 		{"/agentfleet.v1.AgentService/Nope", member, false},
 		{agentfleetv1connect.AgentServiceListThreadsProcedure, Principal{}, false},
 	} {

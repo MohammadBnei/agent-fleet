@@ -37,9 +37,8 @@ func threadLock(owner, definition, threadKey string) string {
 // same key re-runs only what did not finish, and a finished one returns its
 // thread and starts nothing.
 //
-// ponytail: interaction deny and lifecycle single-shot are refused until the
-// headless worker (ADR-0070) ships with Invoke; the worker reads both from
-// the definition today, not from the thread.
+// Open takes resident threads only: a single-shot run comes in through
+// Invoke alone (docs/adr/0070 §1).
 func (s *Server) Open(ctx context.Context, req *connect.Request[agentfleetv1.OpenRequest]) (*connect.Response[agentfleetv1.OpenResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -99,7 +98,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	case m.GetVisibility() != "shared" && m.GetVisibility() != "private":
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New(`visibility must be "shared" or "private"`))
 	case m.GetInteraction() != "ask" || m.GetLifecycle() != "resident":
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New(`Open takes interaction "ask" and lifecycle "resident" until headless invoke ships`))
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New(`Open takes interaction "ask" and lifecycle "resident": a single-shot run is Invoke's`))
 	}
 	head, ok := s.usable(p, m.GetDefinition())
 	if !ok {
@@ -114,59 +113,23 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("actor is not in this client's actors.allow"))
 	}
 
-	// Each Open holds one pooled connection for its locks while it runs, and
-	// its own queries need more: a bound keeps a burst from taking the whole
-	// pool (docs/adr/0066 §7's "nothing ever blocks in the database").
-	select {
-	case openSlots <- struct{}{}:
-		defer func() { <-openSlots }()
-	default:
-		return nil, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, errors.New("too many requests in progress, retry"))
-	}
 	owner, key := p.owner(), m.GetIdempotencyKey()
-	lock, err := s.sessions.TryLock(ctx, "req\x00"+owner+"\x00"+key, threadLock(owner, m.GetDefinition(), m.GetThreadKey()))
-	if errors.Is(err, sessions.ErrBusy) {
-		return nil, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, err)
-	}
-	if err != nil {
-		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
-	}
-	defer lock.Release()
-
 	// Every field that decides trust is part of the request's identity, so a
 	// retry cannot quietly turn a non-waking message into a waking one.
 	// The fifth slot was the tainted flag, gone (docs/adr/0082 §3). A claim
 	// stored before holds either value, so either matches.
-	// ponytail: drop wasTainted once no claim predates 000026.
+	// ponytail: drop the tainted hash once no claim predates 000026.
 	hash := func(tainted string) string {
 		return requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), tainted,
 			m.GetActor(), m.GetCausationId(), m.GetVisibility(), requestInteraction, m.GetLifecycle())
 	}
-	sha, wasTainted := hash("false"), hash("true")
-	claim, err := s.sessions.ClaimRequest(ctx, owner, key, sha)
+	claim, delivered, seq, release, err := s.claimRequest(ctx, owner, key, []string{threadLock(owner, m.GetDefinition(), m.GetThreadKey())}, hash("false"), hash("true"))
+	defer release()
 	if err != nil {
-		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		return nil, err
 	}
-	// Step 3 before step 2: a different request on a used key is refused,
-	// never answered with the earlier request's result.
-	if claim.RequestSHA != sha && claim.RequestSHA != wasTainted {
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this idempotency_key was used for a different request"))
-	}
-	// Step 2: done is final, even when its session row was later deleted.
-	if claim.Done {
-		if claim.SessionID == "" {
-			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this request was delivered to a thread that no longer exists"))
-		}
-		seq, _, _ := s.sessions.FinishClaim(ctx, owner, key, claim.SessionID)
-		return connect.NewResponse(&agentfleetv1.OpenResponse{ThreadId: claim.SessionID, Seq: seq}), nil
-	}
-	// Step 4: delivered by an earlier attempt that crashed before marking it.
-	if claim.SessionID != "" {
-		if seq, found, err := s.sessions.FinishClaim(ctx, owner, key, claim.SessionID); err != nil {
-			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
-		} else if found {
-			return connect.NewResponse(&agentfleetv1.OpenResponse{ThreadId: claim.SessionID, Seq: seq}), nil
-		}
+	if delivered != "" {
+		return connect.NewResponse(&agentfleetv1.OpenResponse{ThreadId: delivered, Seq: seq}), nil
 	}
 
 	t, predecessor, err := s.resolveThread(ctx, p, head, claim, m)
@@ -220,7 +183,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 			return nil, err // the claim stays pending; a retry resumes here
 		}
 	}
-	seq, err := s.sessions.AppendClaimed(ctx, owner, key, sessions.ClaimedEntry{
+	seq, err = s.sessions.AppendClaimed(ctx, owner, key, sessions.ClaimedEntry{
 		SessionID: t.ID, Text: text, AuthorSub: owner, AuthorName: owner,
 		Actor: m.GetActor(), CausationID: m.GetCausationId(),
 		ContextOnly: contextOnly,
@@ -234,6 +197,61 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.OpenResponse{ThreadId: t.ID, Seq: seq}), nil
+}
+
+// claimRequest is docs/adr/0066 §7 steps 1-4's first half, for Open and
+// Invoke: under openSlots and the key's lock (plus extra locks), it claims
+// key for shas[0], refuses a used key's other request (any of shas matches a
+// stored claim), and returns the session an earlier attempt delivered to,
+// with its seq, or the pending claim. release is never nil; the caller holds
+// it until it answers.
+func (s *Server) claimRequest(ctx context.Context, owner, key string, extra []string, shas ...string) (claim sessions.Claim, delivered string, seq int64, release func(), err error) {
+	release = func() {}
+	// Each request holds one pooled connection for its locks while it runs,
+	// and its own queries need more: a bound keeps a burst from taking the
+	// whole pool (docs/adr/0066 §7's "nothing ever blocks in the database").
+	select {
+	case openSlots <- struct{}{}:
+	default:
+		return claim, "", 0, release, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, errors.New("too many requests in progress, retry"))
+	}
+	lock, err := s.sessions.TryLock(ctx, append([]string{"req\x00" + owner + "\x00" + key}, extra...)...)
+	if err != nil {
+		<-openSlots
+		if errors.Is(err, sessions.ErrBusy) {
+			return claim, "", 0, release, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, err)
+		}
+		return claim, "", 0, release, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	release = func() { lock.Release(); <-openSlots }
+	claim, err = s.sessions.ClaimRequest(ctx, owner, key, shas[0])
+	if err != nil {
+		return claim, "", 0, release, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	// Step 3 before step 2: a different request on a used key is refused,
+	// never answered with the earlier request's result.
+	if !slices.Contains(shas, claim.RequestSHA) {
+		return claim, "", 0, release, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this idempotency_key was used for a different request"))
+	}
+	// Step 2: done is final, even when its session row was later deleted.
+	if claim.Done {
+		if claim.SessionID == "" {
+			return claim, "", 0, release, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this request was delivered to a thread that no longer exists"))
+		}
+		seq, _, _ := s.sessions.FinishClaim(ctx, owner, key, claim.SessionID)
+		return claim, claim.SessionID, seq, release, nil
+	}
+	// Step 4: delivered by an earlier attempt that crashed before marking it.
+	if claim.SessionID != "" {
+		seq, found, err := s.sessions.FinishClaim(ctx, owner, key, claim.SessionID)
+		if err != nil {
+			return claim, "", 0, release, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
+		if found {
+			return claim, claim.SessionID, seq, release, nil
+		}
+	}
+	return claim, "", 0, release, nil
 }
 
 // resolveThread is step 4: the claim's session if still open, else the
