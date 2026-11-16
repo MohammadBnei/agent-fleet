@@ -81,8 +81,9 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 	}
 	if t == nil {
 		// Refused, not queued: the claim stays pending, so the same key runs
-		// once a parked run moves (docs/adr/0070 §1). Under invokeSlots, so
-		// two Invokes cannot both pass at maxParked-1.
+		// once a parked run moves (docs/adr/0070 §1). Admission-time only: runs
+		// still live when admitted may park later and exceed maxParked;
+		// maxClientRuns is the hard bound.
 		if n, err := s.sessions.ParkedRuns(ctx, owner); err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		} else if limit := s.maxParked(p.Client); n >= limit {

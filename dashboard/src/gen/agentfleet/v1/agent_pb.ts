@@ -1432,7 +1432,8 @@ export enum AgentErrorKey {
 
   /**
    * The client has its maxParked single-shot runs waiting on a decision (docs/adr/0070 §1): answer one first. Not
-   * the warm-time capacity: nothing was claimed, and a retry is refused until a parked run moves.
+   * the warm-time capacity: nothing was started (no session is created) and the claim stays pending, so a retry with
+   * the same key runs once a parked run moves.
    *
    * @generated from enum value: AGENT_ERROR_KEY_PARKED_LIMIT = 7;
    */
