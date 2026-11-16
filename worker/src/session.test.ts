@@ -439,6 +439,7 @@ const {
   decisionWaitMs,
   matchesToolRule,
   definitionDecision,
+  outputFormatFor,
   gitArgsAreInert,
   sdkMode,
   playwrightMcpServer,
@@ -2256,6 +2257,60 @@ test("definition session: query() options come from the spec, and the stream car
     "ExitPlanMode",
   ]);
   expect(streamedSpecSha).toBe("spec-sha");
+  // Resident (lifecycle ""): never an outputFormat (docs/adr/0070 §3).
+  expect(queryOptions && "outputFormat" in queryOptions).toBe(false);
+}, 10000);
+
+// --- docs/adr/0070 §3: outputFormat for single-shot only ---
+
+const SCHEMA = { type: "object", properties: { answer: { type: "string" } } };
+
+test.each([
+  ["single-shot", JSON.stringify(SCHEMA), true],
+  ["single-shot", "", false],
+  ["", JSON.stringify(SCHEMA), false],
+  ["resident", JSON.stringify(SCHEMA), false],
+])(
+  "outputFormatFor(lifecycle %j, schema %j) set = %p",
+  (lifecycle, outputSchema, set) => {
+    const spec = { ...DEF_SPEC, lifecycle, outputSchema };
+    expect(outputFormatFor(spec)).toEqual(
+      set ? { type: "json_schema", schema: SCHEMA } : undefined,
+    );
+    expect(
+      definitionDecision(
+        spec,
+        "StructuredOutput",
+        { answer: "x" },
+        "default",
+        WT,
+      ),
+    ).toEqual(
+      set
+        ? { behavior: "allow" }
+        : { behavior: "deny", message: "not available to definitions" },
+    );
+  },
+);
+
+test("outputFormatFor: a repo session (no spec) gets none", () => {
+  expect(outputFormatFor(undefined)).toBeUndefined();
+});
+
+test("single-shot definition session with a schema: query() gets outputFormat", async () => {
+  sessionAgentSpec = {
+    ...DEF_SPEC,
+    lifecycle: "single-shot",
+    outputSchema: JSON.stringify(SCHEMA),
+  };
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
+  expect(queryOptions?.outputFormat).toEqual({
+    type: "json_schema",
+    schema: SCHEMA,
+  });
 }, 10000);
 
 // docs/adr/0078 §8: publish_event wakes other agents, so a definition granting

@@ -30,7 +30,14 @@
   hub, `waiting` with `pending` on any open question, permission or plan,
   else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
   order: a result with turn-starting input after it is not final.
-  `expired` is declared, reported from slice 11).
+  `expired` is declared, reported from slice 11); slice 6 (`outputFormat`:
+  the worker's `outputFormatFor` sets `{type: json_schema, schema}` only for
+  `lifecycle: single-shot` with `outputSchema` set, never for a resident or
+  repo session, and `definitionDecision` allows `StructuredOutput` before the
+  ceiling only then. Checked against SDK 0.3.325 with a local `query()`:
+  `tools: [...]` does not filter `StructuredOutput` (`system/init` lists it)
+  and the CLI never routes it through `canUseTool`, even a deny-all one; the
+  `/kind-local` `Invoke` run is not yet done).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
