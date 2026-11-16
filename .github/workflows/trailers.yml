@@ -1,6 +1,7 @@
 # Commit messages and PR text carry only the attribution this repo allows
-# (CLAUDE.md, Workflow rules): "Co-Authored-By: ukubi-claude-<host>
-# <noreply@bnei.dev>" or "ukubi-agent", "Agent-Session: <id>", and in a
+# (CLAUDE.md, Workflow rules): "Co-Authored-By: ukubi-agent
+# <noreply@bnei.dev>" (the legacy "ukubi-claude-<host>" form is still accepted
+# for old history, not for new commits), "Agent-Session: <id>", and in a
 # definition pod "Agent-Definition: <name>@<sha>". Refused: a Claude or Anthropic
 # co-author or commit author/committer in any other form (a squash merge turns
 # each author into a Co-authored-by line on main), a generated-with footer, a
