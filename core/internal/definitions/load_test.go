@@ -193,7 +193,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"interaction outside ceiling", map[string]string{"interaction": "{ allow: [ask, approve] }"}, "interaction"},
 		{"lifecycle outside ceiling", map[string]string{"lifecycle": "{ allow: [forever] }"}, "lifecycle"},
 		{"agents key unknown", map[string]string{"agents": "[x]"}, "field agents not found"},
-		{"output key unknown", map[string]string{"output": "{ x: y }"}, "field output not found"},
+		{"output key unknown", map[string]string{"output": "{ x: y }"}, "field x not found"},
 		// NUL: Postgres text/jsonb cannot store it, so it must be an invalid
 		// row, not a failed sync transaction.
 		{"NUL in a value", map[string]string{"systemPrompt": `{ append: "x\0y" }`}, "NUL"},

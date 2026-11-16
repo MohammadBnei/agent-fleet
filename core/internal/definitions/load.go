@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
@@ -54,6 +55,7 @@ var (
 
 const (
 	maxSystemPrompt  = 16 << 10
+	maxOutputSchema  = 64 << 10
 	maxMilliCPU      = 4000 // = limitRange.max in k8s/core.yaml (repo_test.go)
 	maxMemoryMi      = 4096
 	maxTurns         = 500
@@ -622,6 +624,11 @@ func validate(name string, s *Spec) error {
 	if need(s.Lifecycle != nil, "lifecycle") {
 		checkList(&errs, "lifecycle", s.Lifecycle.Allow, lifecycles)
 	}
+	if s.Output != nil {
+		if err := checkOutputSchema(s.Output.Schema); err != nil {
+			bad("output.schema: %v", err)
+		}
+	}
 	if o := s.Owns; o != nil {
 		shapeList(&errs, "owns.repos", o.Repos, "")
 		shapeList(&errs, "owns.components", o.Components, "")
@@ -668,6 +675,80 @@ func validate(name string, s *Spec) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// OutputSchemaJSON is the compact JSON of a definition's output.schema, "" when
+// it has none (docs/adr/0070 §3). json.Marshal sorts map keys, so the bytes
+// are stable.
+func OutputSchemaJSON(s *Spec) (string, error) {
+	if s.Output == nil {
+		return "", nil
+	}
+	b, err := json.Marshal(s.Output.Schema)
+	return string(b), err
+}
+
+// checkOutputSchema: the schema compiles, its root is `type: object`, and it
+// is at most 64 KiB encoded (docs/adr/0070 §3).
+func checkOutputSchema(schema map[string]any) error {
+	if len(schema) == 0 {
+		return errors.New("is required when output is set")
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	if len(b) > maxOutputSchema {
+		return fmt.Errorf("is %d bytes, over %d", len(b), maxOutputSchema)
+	}
+	if schema["type"] != "object" {
+		return errors.New(`root must be "type": "object"`)
+	}
+	// Only 2020-12: under draft-07 a sibling $ref would override the root type.
+	if d, ok := schema["$schema"]; ok && d != "https://json-schema.org/draft/2020-12/schema" {
+		return errors.New(`$schema, when set, must be "https://json-schema.org/draft/2020-12/schema"`)
+	}
+	if localRefsOnly(schema) != nil {
+		return errors.New("$ref must be a local #-pointer; external references are refused")
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	// No schemes registered: every external load (file://, http://) fails.
+	c.UseLoader(jsonschema.SchemeURLLoader{})
+	if err := c.AddResource("output.json", doc); err != nil {
+		return err
+	}
+	if _, err := c.Compile("output.json"); err != nil {
+		return fmt.Errorf("does not compile: %w", err)
+	}
+	return nil
+}
+
+// localRefsOnly errors on any $ref or $dynamicRef string that is not a "#..."
+// pointer. It never echoes the reference.
+func localRefsOnly(v any) error {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, x := range t {
+			if str, ok := x.(string); ok && (k == "$ref" || k == "$dynamicRef") && !strings.HasPrefix(str, "#") {
+				return errors.New("external ref")
+			}
+			if err := localRefsOnly(x); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, x := range t {
+			if err := localRefsOnly(x); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func checkAllow(errs *[]error, field, def string, allow, ceiling, byName []string) {

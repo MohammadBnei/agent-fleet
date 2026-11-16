@@ -25,7 +25,7 @@ var errSpecNotApplied = status.Error(codes.FailedPrecondition, "worker has not a
 // cached: the sha GetSession hands out and the one the gate below compares
 // against are then the same computation, and a restarted core needs no state.
 func (s *Server) agentSpecOf(ctx context.Context, sessionID string) (*agentfleetv1.AgentSpec, string, error) {
-	raw, err := s.sessions.PinnedEffective(ctx, sessionID)
+	raw, lifecycle, err := s.sessions.PinnedEffective(ctx, sessionID)
 	switch {
 	case errors.Is(err, sessions.ErrDefinitionInvalid):
 		return nil, "", status.Error(codes.FailedPrecondition, err.Error())
@@ -40,7 +40,10 @@ func (s *Server) agentSpecOf(ctx context.Context, sessionID string) (*agentfleet
 	if err := json.Unmarshal(raw, &eff); err != nil {
 		return nil, "", fmt.Errorf("definition spec of %s: %w", sessionID, err)
 	}
-	spec := agentSpec(&eff)
+	spec, err := agentSpec(&eff, lifecycle)
+	if err != nil {
+		return nil, "", err
+	}
 	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(spec)
 	if err != nil {
 		return nil, "", err
@@ -50,9 +53,12 @@ func (s *Server) agentSpecOf(ctx context.Context, sessionID string) (*agentfleet
 }
 
 // agentSpec flattens an effective spec into what the worker applies.
-// Interaction and lifecycle stay "": they are the session's choice, and no
-// session carries one yet (ADR-0067's migration).
-func agentSpec(eff *definitions.Spec) *agentfleetv1.AgentSpec {
+// Interaction stays "": nothing reads it (ADR-0070 §2). Lifecycle is the
+// session row's, passed in, and is sent for single-shot only (with the
+// definition's output schema): a resident session keeps both empty, which
+// proto's deterministic encoding omits, so its agent_spec_sha is the one it
+// always had (ADR-0070 §3).
+func agentSpec(eff *definitions.Spec, lifecycle string) (*agentfleetv1.AgentSpec, error) {
 	a := &agentfleetv1.AgentSpec{SidecarTools: eff.SidecarTools}
 	if t := eff.Tools; t != nil {
 		a.ToolsAllow, a.ToolsDeny = t.Allow, t.Deny
@@ -75,7 +81,15 @@ func agentSpec(eff *definitions.Spec) *agentfleetv1.AgentSpec {
 	// docs/adr/0068 §4: a workspace an island host serves gets the
 	// script-write ask in the worker.
 	a.ScriptAsk = eff.Embed != nil && len(eff.Embed.Origins) > 0
-	return a
+	if lifecycle == "single-shot" {
+		a.Lifecycle = lifecycle
+		schema, err := definitions.OutputSchemaJSON(eff)
+		if err != nil {
+			return nil, err
+		}
+		a.OutputSchema = schema
+	}
+	return a, nil
 }
 
 // requireSpecApplied is the gate of docs/adr/0066 §8: a definition session

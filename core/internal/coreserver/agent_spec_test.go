@@ -35,10 +35,10 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	store := sessions.NewStore(pool)
 	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
 	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
-		VALUES ('a', 'sha-a', '{}', '{"limits":{"concurrency":1,"maxTurns":60},"mode":{"default":"default","allow":["default","plan"]},
+		VALUES ('a', 'sha-a', '{}', '{"limits":{"concurrency":2,"maxTurns":60},"mode":{"default":"default","allow":["default","plan"]},
 		        "tools":{"allow":["Read","Bash(git add:*)"],"deny":["Edit(.git/**)"]},"sidecarTools":["send_message","wait_for_messages"],
 		        "model":{"default":"claude-opus-5","allow":["claude-opus-5"]},"thinking":{"default":"medium"},
-		        "systemPrompt":{"append":"Be brief."}}', true)`); err != nil {
+		        "systemPrompt":{"append":"Be brief."},"output":{"schema":{"type":"object"}}}', true)`); err != nil {
 		t.Fatal(err)
 	}
 	def, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
@@ -55,6 +55,15 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	repoLease, err := store.ReserveSlot(ctx, repo, caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// docs/adr/0070 §3: the same definition, as a single-shot session row.
+	shot, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a", Lifecycle: "single-shot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shotLease, err := store.ReserveSlot(ctx, shot, caps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +120,15 @@ func TestAgentSpec_GetSessionAndTheGate(t *testing.T) {
 	}
 	if err != nil || again.GetAgentSpecSha() != sha {
 		t.Errorf("sha not stable: %q then %q (%v)", sha, again.GetAgentSpecSha(), err)
+	}
+	if got.GetAgentSpec().GetOutputSchema() != "" {
+		t.Errorf("resident session carries output_schema %q", got.GetAgentSpec().GetOutputSchema())
+	}
+	asShot := metadata.AppendToOutgoingContext(ctx, mdSessionID, shot, mdLeaseID, shotLease)
+	if s, err := c.GetSession(asShot, &agentfleetv1.GetSessionRequest{Id: shot}); err != nil ||
+		s.GetAgentSpec().GetLifecycle() != "single-shot" || s.GetAgentSpec().GetOutputSchema() != `{"type":"object"}` ||
+		s.GetAgentSpecSha() == sha {
+		t.Errorf("single-shot session: spec %v sha %q (resident %q) err %v", s.GetAgentSpec(), s.GetAgentSpecSha(), sha, err)
 	}
 	if r, err := c.GetSession(asRepo, &agentfleetv1.GetSessionRequest{Id: repo}); err != nil || r.GetAgentSpec() != nil || r.GetAgentSpecSha() != "" {
 		t.Errorf("repo session: spec %v sha %q err %v, want none", r.GetAgentSpec(), r.GetAgentSpecSha(), err)

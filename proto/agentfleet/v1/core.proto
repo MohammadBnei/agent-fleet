@@ -390,6 +390,11 @@ message AgentSpec {
   // (its embed.origins is not empty), so a write that leaves active content
   // in it, or a non-plain file, asks a human in every mode.
   bool script_ask = 11;
+  // docs/adr/0070 §3: the definition's output.schema as compact JSON, and
+  // only for a single-shot session; "" for every other (an empty field is not
+  // encoded, so a resident session's agent_spec_sha is unchanged). `lifecycle`
+  // above is likewise filled from the session row for single-shot only.
+  string output_schema = 12;
 }
 
 // Sets an arbitrary SDK permission mode on a task. Reused by two very

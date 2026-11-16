@@ -18,6 +18,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.opentelemetry.io/otel v1.47.0
