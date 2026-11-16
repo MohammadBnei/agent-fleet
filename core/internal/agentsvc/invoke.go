@@ -144,7 +144,7 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 	if wait < 0 || wait > maxWait {
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("wait_seconds must be 0 to %d", int(maxWait/time.Second)))
 	}
-	t, _, err := s.thread(ctx, p, req.Msg.GetThreadId())
+	t, _, err := s.lookup(ctx, p, req.Msg.GetThreadId(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
 	for {
-		out, err := s.result(ctx, t.ID)
+		out, err := s.result(ctx, t)
 		if err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
@@ -200,7 +200,11 @@ type resultEntry struct {
 // seq order for now: a result with turn-starting input after it is not
 // final, since a continuously running worker answers that input with a later
 // result. Slice 7 moves it to consumedSeq on the exit result.
-func (s *Server) result(ctx context.Context, sessionID string) (*agentfleetv1.WaitForResultResponse, error) {
+//
+// A run archived without a final result ended another way (§7: a crash or
+// a Stop): failed, never running.
+func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1.WaitForResultResponse, error) {
+	sessionID := t.ID
 	open, err := s.decisions.List(ctx, decisions.Filter{
 		SessionID: sessionID, States: []string{decisions.Open},
 		Kinds: []decisions.Kind{decisions.Question, decisions.Permission, decisions.Plan},
@@ -219,6 +223,13 @@ func (s *Server) result(ctx context.Context, sessionID string) (*agentfleetv1.Wa
 	text, inputAfter, found, err := s.sessions.LastResult(ctx, sessionID)
 	if err != nil {
 		return nil, err
+	}
+	if (!found || inputAfter) && t.ArchivedAt != nil {
+		e := &agentfleetv1.Status{State: "error", Message: "the run ended without a result"}
+		if deref(t.PodPhase, "") == agentfleetv1.PodPhase_POD_PHASE_CRASHED.String() {
+			e = &agentfleetv1.Status{State: "error", Code: "AGENT_CRASHED", Message: "the run's pod crashed"}
+		}
+		return &agentfleetv1.WaitForResultResponse{State: "failed", Error: e}, nil
 	}
 	if !found || inputAfter {
 		return &agentfleetv1.WaitForResultResponse{State: "running"}, nil

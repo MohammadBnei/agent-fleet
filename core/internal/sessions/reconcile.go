@@ -103,6 +103,7 @@ func (l *Loop) Run(ctx context.Context, interval time.Duration) {
 
 func (l *Loop) tick(ctx context.Context) {
 	l.reconcilePodPhases(ctx)
+	l.endRuns(ctx)
 	l.enforceStopGrace(ctx)
 	l.enforceStartupStall(ctx)
 	l.enforceIdleTimeout(ctx)
@@ -343,6 +344,45 @@ func (l *Loop) collectExpired(ctx context.Context) {
 			continue
 		}
 		slog.Info("sessions loop: swept session disk", "sessionId", id, "after", l.retention)
+	}
+}
+
+// endRuns cleans up every single-shot run that ended (docs/adr/0070 §7):
+// the pod and its vault token (TearDownSession), then the PVC
+// (SweepSession), then the row is archived so the run leaves the client's
+// caps. The transcript stays, so WaitForResult and the console still read
+// the run. A step that fails leaves the run unarchived and the next tick
+// retries it; tearing down or sweeping what is gone is a no-op.
+//
+// ponytail: up to one tick (60 s) after the end, not at once; a hook on the
+// result append is the upgrade if a finished pod's minute ever matters.
+func (l *Loop) endRuns(ctx context.Context) {
+	ids, err := l.sessions.ListEndedRuns(ctx)
+	if err != nil {
+		slog.Error("sessions loop: list ended runs failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		// Not tearDown, which swallows the error: a pod that may still run
+		// must not lose its disk under it.
+		if err := l.provisioner.TearDownWorker(ctx, id); err != nil {
+			slog.Warn("sessions loop: ended run teardown failed", "sessionId", id, "error", err)
+			continue
+		}
+		if err := l.sessions.ClearLease(ctx, id); err != nil {
+			slog.Warn("sessions loop: ended run clearing lease failed", "sessionId", id, "error", err)
+		}
+		if err := l.provisioner.SweepSession(ctx, id); err != nil {
+			slog.Error("sessions loop: ended run sweep failed", "sessionId", id, "error", err)
+			continue
+		}
+		if err := l.sessions.MarkSwept(ctx, id); err != nil {
+			continue // logged by MarkSwept
+		}
+		if err := l.sessions.Archive(ctx, id); err != nil {
+			continue // logged by Archive
+		}
+		slog.Info("sessions loop: ended run torn down, swept and archived", "sessionId", id)
 	}
 }
 

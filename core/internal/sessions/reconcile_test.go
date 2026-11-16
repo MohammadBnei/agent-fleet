@@ -5,10 +5,13 @@ package sessions
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
 // fakeProvisioner stands in for the gRPC client. ListWorkerPods is what
@@ -19,6 +22,7 @@ type fakeProvisioner struct {
 	sweepErr    error
 	tornWorkers []string
 	swept       []string
+	calls       []string // "teardown:<id>" and "sweep:<id>", in call order
 }
 
 func (f *fakeProvisioner) ListWorkerPods(ctx context.Context) (map[string]string, error) {
@@ -30,6 +34,7 @@ func (f *fakeProvisioner) ListWorkerPods(ctx context.Context) (map[string]string
 
 func (f *fakeProvisioner) TearDownWorker(ctx context.Context, id string) error {
 	f.tornWorkers = append(f.tornWorkers, id)
+	f.calls = append(f.calls, "teardown:"+id)
 	return nil
 }
 
@@ -38,6 +43,7 @@ func (f *fakeProvisioner) SweepSession(ctx context.Context, id string) error {
 		return f.sweepErr
 	}
 	f.swept = append(f.swept, id)
+	f.calls = append(f.calls, "sweep:"+id)
 	return nil
 }
 
@@ -476,5 +482,121 @@ func TestTick_RunsOnTickHook(t *testing.T) {
 	l.tick(context.Background())
 	if ran != 1 {
 		t.Fatalf("onTick ran %d times in one tick, want 1", ran)
+	}
+}
+
+// endRunsFixture is a store with definition d, for single-shot rows.
+func endRunsFixture(t *testing.T) (*Store, transcript.Store, func(lifecycle string) string) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	return store, tr, func(lifecycle string) string {
+		t.Helper()
+		id, err := store.Create(ctx, CreateParams{Repo: "notes", DefinitionName: "d", DefinitionSHA: "sha1",
+			Owner: "client:bot", Invoker: "bot", Visibility: "private", Lifecycle: lifecycle})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tr.Append(ctx, id, "human", "go", "discussion", ""); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+}
+
+// docs/adr/0070 §7: a single-shot run is torn down and then swept on every
+// terminal path (final result, crash, Stop), then archived; a parked run, a
+// run still going and a resident session keep their pod and PVC.
+func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
+	ctx := context.Background()
+	store, tr, create := endRunsFixture(t)
+	result := func(id string) {
+		t.Helper()
+		if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success","result_text":"ok"}`, "result", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	final := create("single-shot")
+	result(final)
+	crashed := create("single-shot")
+	if err := store.SetPodPhase(ctx, crashed, "POD_PHASE_CRASHED", ""); err != nil {
+		t.Fatal(err)
+	}
+	stopped := create("single-shot")
+	if err := store.MarkStopRequested(ctx, stopped); err != nil {
+		t.Fatal(err)
+	}
+	parked := create("single-shot")
+	if _, err := tr.Append(ctx, parked, "agent", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`, "permission_request", ""); err != nil {
+		t.Fatal(err)
+	}
+	result(parked)
+	// A pod that ends with an open decision is parked, not crashed.
+	if err := store.SetPodPhase(ctx, parked, "POD_PHASE_CRASHED", ""); err != nil {
+		t.Fatal(err)
+	}
+	running := create("single-shot")
+	resident := create("resident")
+	result(resident)
+
+	fake := &fakeProvisioner{}
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	loop.endRuns(ctx)
+
+	want := []string{}
+	for _, id := range []string{final, crashed, stopped} {
+		want = append(want, "teardown:"+id, "sweep:"+id)
+	}
+	if !slices.Equal(fake.calls, want) {
+		t.Fatalf("calls = %v, want teardown then sweep per ended run %v", fake.calls, want)
+	}
+	for _, id := range []string{final, crashed, stopped} {
+		s, err := store.Get(ctx, id)
+		if err != nil || s.ArchivedAt == nil || s.SweptAt == nil {
+			t.Errorf("ended run %s: %+v %v, want archived and swept", id, s, err)
+		}
+	}
+	for _, id := range []string{parked, running, resident} {
+		s, err := store.Get(ctx, id)
+		if err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
+			t.Errorf("session %s lost its PVC or row: %+v %v", id, s, err)
+		}
+	}
+	if n, err := store.UnfinishedRuns(ctx, "client:bot"); err != nil || n != 2 {
+		t.Errorf("unfinished runs = %d %v, want the parked and the running one", n, err)
+	}
+
+	// Ended runs are archived, so the next pass touches nothing.
+	fake.calls = nil
+	loop.endRuns(ctx)
+	if len(fake.calls) != 0 {
+		t.Errorf("second pass: %v", fake.calls)
+	}
+}
+
+// A failed sweep leaves the run unarchived for the next tick: its disk is
+// still there.
+func TestEndRuns_FailedSweepRetries(t *testing.T) {
+	ctx := context.Background()
+	store, tr, create := endRunsFixture(t)
+	id := create("single-shot")
+	if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success"}`, "result", ""); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeProvisioner{sweepErr: errors.New("disk busy")}
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	loop.endRuns(ctx)
+	if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
+		t.Fatalf("a failed sweep archived the run: %+v %v", s, err)
+	}
+	fake.sweepErr = nil
+	loop.endRuns(ctx)
+	if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt == nil || s.SweptAt == nil {
+		t.Fatalf("the retry never finished the run: %+v %v", s, err)
 	}
 }

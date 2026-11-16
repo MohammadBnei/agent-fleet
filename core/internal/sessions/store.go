@@ -364,18 +364,44 @@ func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
 	return n, err
 }
 
-// UnfinishedRuns counts owner's open single-shot sessions with no result
-// entry yet, for Invoke's cap.
-//
-// ponytail: "has a result" stands in for finished until docs/adr/0070 build
-// order slice 8 archives a run on its final result; then this can count the
-// unarchived ones.
+// UnfinishedRuns counts owner's unarchived single-shot sessions, for
+// Invoke's cap. A run is archived when it ends (ListEndedRuns,
+// docs/adr/0070 §7), so a parked run still counts.
 func (s *Store) UnfinishedRuns(ctx context.Context, owner string) (int, error) {
 	var n int
 	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions s WHERE s.owner = $1 AND s.archived_at IS NULL
-		AND s.lifecycle = 'single-shot'
-		AND NOT EXISTS (SELECT 1 FROM transcript r WHERE r.session_id = s.id AND r.type = 'result')`, owner).Scan(&n)
+		AND s.lifecycle = 'single-shot'`, owner).Scan(&n)
 	return n, err
+}
+
+// ListEndedRuns is every unarchived single-shot session that reached a
+// terminal state (docs/adr/0070 §7): a stop was asked for; or, with no open
+// decision, its pod crashed or its latest result has no turn-starting input
+// after it (the finality rule agentsvc's WaitForResult reads, by seq until
+// build order slice 7 moves it to the exit result). An open decision without
+// a stop is a parked run: not listed, so it keeps its PVC.
+func (s *Store) ListEndedRuns(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id::text FROM sessions s
+		 WHERE s.lifecycle = 'single-shot' AND s.archived_at IS NULL
+		   AND (s.stop_requested_at IS NOT NULL
+		        OR (NOT EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open')
+		            AND (s.pod_phase = 'POD_PHASE_CRASHED'
+		                 OR EXISTS (SELECT 1 FROM transcript r
+		                             WHERE r.session_id = s.id AND r.type = 'result'
+		                               AND NOT EXISTS (SELECT 1 FROM transcript h
+		                                                WHERE h.session_id = s.id AND h.seq > r.seq AND h."from" = 'human'
+		                                                  AND NOT h.context_only
+		                                                  AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response'))))))
+		 ORDER BY s.created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("list ended runs: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("list ended runs: %w", err)
+	}
+	return ids, nil
 }
 
 // Get returns ErrNotFound when no such session exists.

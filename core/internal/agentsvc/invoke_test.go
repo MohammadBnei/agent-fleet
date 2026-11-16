@@ -181,6 +181,39 @@ func TestInvoke(t *testing.T) {
 		t.Fatalf("failed: %v %v", r, err)
 	}
 
+	// §7: a run torn down, swept and archived still reads its result, for its
+	// owner only; one archived without a result reads failed, never running.
+	for _, ended := range []string{id, failedID} {
+		if err := store.MarkSwept(ctx, ended); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Archive(ctx, ended); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r, err := wait(bot, id, 0); err != nil || r.GetState() != "done" || r.GetResultText() != "42" {
+		t.Fatalf("done after teardown: %v %v", r, err)
+	}
+	if _, err := wait(other, id, 0); code(err) != connect.CodeNotFound {
+		t.Errorf("another client's ended run: %v", err)
+	}
+	if _, err := s.GetStatus(withPrincipal(ctx, Principal{Client: "bot"}), connect.NewRequest(&agentfleetv1.GetStatusRequest{ThreadId: id})); code(err) != connect.CodeNotFound {
+		t.Errorf("an ended run stays hidden from the other thread calls: %v", err)
+	}
+	crashedID, err := invoke(bot, "d", "crash", "k-crash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPodPhase(ctx, crashedID, "POD_PHASE_CRASHED", "OOMKilled"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, crashedID); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := wait(bot, crashedID, 30); err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "AGENT_CRASHED" {
+		t.Fatalf("crashed run: %v %v", r, err)
+	}
+
 	// Only the owning client reads a run, and members call neither method.
 	if _, err := wait(other, id, 0); code(err) != connect.CodeNotFound {
 		t.Errorf("another client's run: %v", err)
@@ -240,6 +273,10 @@ func TestInvoke(t *testing.T) {
 		t.Fatalf("over the run cap: %v", err)
 	}
 	appendEntry(capID, "worker", "result", `{"subtype":"success","result_text":"ok","consumedSeq":1}`)
+	// What sessions.Loop's endRuns does to a final result (docs/adr/0070 §7).
+	if err := store.Archive(ctx, capID); err != nil {
+		t.Fatal(err)
+	}
 	utf8ID, err := invoke(bot, "d", "one more", utf8Key)
 	if err != nil {
 		t.Fatalf("a finished run frees the cap, multi-byte key: %v", err)

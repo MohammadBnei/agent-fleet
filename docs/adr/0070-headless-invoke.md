@@ -30,7 +30,14 @@
   hub, `waiting` with `pending` on any open question, permission or plan,
   else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
   order: a result with turn-starting input after it is not final.
-  `expired` is declared, reported from slice 11).
+  `expired` is declared, reported from slice 11); slice 8 (§7: each
+  `sessions.Loop` tick, `endRuns` takes every unarchived single-shot run
+  that was stopped, or, with no open decision, crashed or holds a final
+  result by the rule above, and calls `TearDownSession`, then
+  `SweepSession`, then marks it swept and archives it; a parked run keeps
+  its PVC; Invoke's run cap now counts unarchived runs; `WaitForResult`
+  still reads an archived run for its owner, `failed` with
+  `AGENT_CRASHED` or "ended without a result" when it has no final result).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
