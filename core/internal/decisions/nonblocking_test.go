@@ -5,6 +5,7 @@ package decisions_test
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,12 +83,19 @@ func TestAnswer_StampedWarmsThenAppends(t *testing.T) {
 		want  string
 	}{
 		{`{"tool":"Bash","input":{"command":"ls"},"nb":1}`, decisions.Reply{Behavior: "deny", Message: "no"}, true, `{"behavior":"deny","message":"no"}`},
-		{`{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`, decisions.Reply{Behavior: "allow"}, true, `{"behavior":"allow","kind":"plan"}`},
+		// An approval carries the plan to the next pod (docs/adr/0070 §6).
+		{`{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`, decisions.Reply{Behavior: "allow"}, true, `{"behavior":"allow","kind":"plan","planDecisionId":"ID","planInput":{"plan":"p"}}`},
+		{`{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`, decisions.Reply{Behavior: "deny"}, true, `{"behavior":"deny","kind":"plan"}`},
 		{`{"tool":"Bash","input":{"command":"ls"}}`, decisions.Reply{Behavior: "allow"}, false, `{"behavior":"allow"}`},
 		{`{"tool":"ExitPlanMode","input":{"plan":"p"}}`, decisions.Reply{Behavior: "allow"}, false, `{"behavior":"allow"}`},
 	} {
 		fx := &effects{tr: f.tr}
 		seq := f.ask(t, s, "permission_request", c.text)
+		var id string
+		if err := f.pool.QueryRow(f.ctx, `SELECT id::text FROM decisions WHERE session_id = $1 AND request_seq = $2`, s, seq).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		c.want = strings.Replace(c.want, `"ID"`, `"`+id+`"`, 1)
 		if text, err := f.answer(t, fx, s, seq, c.reply); err != nil || text != c.want {
 			t.Fatalf("%s: answer %s (%v), want %s", c.text, text, err, c.want)
 		}

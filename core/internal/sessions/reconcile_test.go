@@ -509,22 +509,56 @@ func endRunsFixture(t *testing.T) (*Store, transcript.Store, func(lifecycle stri
 }
 
 // docs/adr/0070 §7: a single-shot run is torn down and then swept on every
-// terminal path (final result, crash, Stop) once its pod is gone, after it
-// is archived; a parked run, a run still going, a run whose pod is still up
-// after a result (its next turn may be under way, ADR §6's interim rule) and
-// a resident session keep their pod and PVC.
+// terminal path (final exit result, a clean exit with none, crash, Stop) once
+// its pod is gone, after it is archived; a parked run, a run still going, a
+// run whose pod is still up after its exit result, a run in the exit window
+// (input above the exit result's consumedSeq, re-warmed instead) and a
+// resident session keep their pod and PVC.
 func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 	ctx := context.Background()
 	store, tr, create := endRunsFixture(t)
+	// The worker's exit result: it consumed the "go" at seq 0.
 	result := func(id string) {
 		t.Helper()
-		if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success","result_text":"ok"}`, "result", ""); err != nil {
+		if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success","result_text":"ok","consumedSeq":0,"exit":true}`, "result", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exited := func(id string) {
+		t.Helper()
+		if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	final := create("single-shot")
 	result(final)
+	exited(final)
+	// A clean exit with no exit result: ended, NO_RESULT.
+	noResult := create("single-shot")
+	exited(noResult)
+	// A result that is not the pod's last is never final: no exit flag, and
+	// no pod exit reported, so the run is still going.
+	interim := create("single-shot")
+	if _, err := tr.Append(ctx, interim, "worker", `{"subtype":"success","consumedSeq":0}`, "result", ""); err != nil {
+		t.Fatal(err)
+	}
+	// An answer appended while the leaving pod's phase still read live:
+	// above its consumedSeq, so the run is re-warmed, not ended.
+	window := create("single-shot")
+	result(window)
+	if _, err := tr.Append(ctx, window, "human", "one more thing", "discussion", ""); err != nil {
+		t.Fatal(err)
+	}
+	exited(window)
+	// A peer session's prompt relayed in the same gap is input too: the
+	// worker takes in from="session" and counts it in consumedSeq.
+	peer := create("single-shot")
+	result(peer)
+	if _, err := tr.Append(ctx, peer, "session", "from a peer", "discussion", ""); err != nil {
+		t.Fatal(err)
+	}
+	exited(peer)
 	crashed := create("single-shot")
 	if err := store.SetPodPhase(ctx, crashed, "POD_PHASE_CRASHED", ""); err != nil {
 		t.Fatal(err)
@@ -543,8 +577,8 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := create("single-shot")
-	// A result with the pod still up: the queued turn of a live answer may
-	// be running. Not final until the pod is gone (slice 7's exit result).
+	// An exit result with the pod still up: final only once the pod is gone,
+	// and the exit-window check has run.
 	livePod := create("single-shot")
 	result(livePod)
 	if err := store.SetPodPhase(ctx, livePod, "POD_PHASE_RUNNING", ""); err != nil {
@@ -563,22 +597,44 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 
 	fake := &fakeProvisioner{}
 	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	var rewarmed []string
+	loop.SetRewarm(func(_ context.Context, id string) error {
+		rewarmed = append(rewarmed, id)
+		return nil
+	})
 	loop.endRuns(ctx)
 
+	// The window runs' next pods stream from just past the exit result's
+	// consumedSeq (0), where the human answer or the relayed peer prompt at
+	// seq 2 waits.
+	slices.Sort(rewarmed)
+	wantRewarm := []string{window, peer}
+	slices.Sort(wantRewarm)
+	if !slices.Equal(rewarmed, wantRewarm) {
+		t.Fatalf("re-warmed %v, want %v", rewarmed, wantRewarm)
+	}
+	for _, id := range wantRewarm {
+		if from, ok, err := store.ExitCursor(ctx, id); err != nil || !ok || from != 1 {
+			t.Fatalf("exit cursor of %s = %d %v %v, want 1", id, from, ok, err)
+		}
+	}
+	if _, ok, err := store.ExitCursor(ctx, final); err != nil || ok {
+		t.Fatalf("exit cursor of a final run: %v %v, want none", ok, err)
+	}
 	want := []string{}
-	for _, id := range []string{final, crashed, stopped} {
+	for _, id := range []string{final, noResult, crashed, stopped} {
 		want = append(want, "teardown:"+id, "sweep:"+id)
 	}
 	if !slices.Equal(fake.calls, want) {
 		t.Fatalf("calls = %v, want teardown then sweep per ended run %v", fake.calls, want)
 	}
-	for _, id := range []string{final, crashed, stopped} {
+	for _, id := range []string{final, noResult, crashed, stopped} {
 		s, err := store.Get(ctx, id)
 		if err != nil || s.ArchivedAt == nil || s.SweptAt == nil {
 			t.Errorf("ended run %s: %+v %v, want archived and swept", id, s, err)
 		}
 	}
-	for _, id := range []string{parked, running, livePod, stopping, resident} {
+	for _, id := range []string{interim, window, peer, parked, running, livePod, stopping, resident} {
 		s, err := store.Get(ctx, id)
 		if err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
 			t.Errorf("session %s lost its PVC or row: %+v %v", id, s, err)
@@ -602,7 +658,10 @@ func TestEndRuns_FailedSweepRetries(t *testing.T) {
 	ctx := context.Background()
 	store, tr, create := endRunsFixture(t)
 	id := create("single-shot")
-	if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success"}`, "result", ""); err != nil {
+	if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success","consumedSeq":0,"exit":true}`, "result", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", ""); err != nil {
 		t.Fatal(err)
 	}
 	fake := &fakeProvisioner{sweepErr: errors.New("disk busy")}
@@ -625,7 +684,10 @@ func TestClaimEndedRun_RechecksTheEnd(t *testing.T) {
 	store, tr, create := endRunsFixture(t)
 	answered, warmed := create("single-shot"), create("single-shot")
 	for _, id := range []string{answered, warmed} {
-		if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success"}`, "result", ""); err != nil {
+		if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success","consumedSeq":0,"exit":true}`, "result", ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", ""); err != nil {
 			t.Fatal(err)
 		}
 	}

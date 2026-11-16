@@ -1284,6 +1284,15 @@ func (s *Server) warm(ctx context.Context, sessionID string) (podName string, er
 	if err != nil {
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
+	// docs/adr/0070 §6, the exit window: input appended while a single-shot
+	// pod was leaving lies above its exit result's consumedSeq and below
+	// LatestSeq, so the next pod starts just past consumedSeq, whichever
+	// caller warms. It only ever lowers the cursor.
+	if fromSeq, ok, err := s.sessions.ExitCursor(ctx, sessionID); err != nil {
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	} else if ok && fromSeq < resumeFromSeq {
+		resumeFromSeq = fromSeq
+	}
 	// Both from repoCfg, which is the row already read above. This used to
 	// re-fetch the same repo through a toolKeysFor helper — two reads of one
 	// row, which a concurrent "manage repos" edit could have straddled, so a

@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
@@ -60,7 +61,19 @@ type Loop struct {
 	// onTick runs last in every tick (SetOnTick). Run's ticker does not slip
 	// for a tick shorter than the interval, so a slow hook delays nothing.
 	onTick func(context.Context)
+
+	// rewarm re-warms a run in the exit window (SetRewarm). Atomic: core
+	// wires it after Run has started.
+	rewarm atomic.Pointer[RewarmFunc]
 }
+
+// RewarmFunc warms sessionID (dashboard.Server.WarmIfIdle, whose warm puts
+// the new pod's cursor just past the exit result's consumedSeq).
+type RewarmFunc func(ctx context.Context, sessionID string) error
+
+// SetRewarm wires the exit-window re-warm in (docs/adr/0070 §6). Unset, no
+// run is re-warmed, and one in the window stays open until it is.
+func (l *Loop) SetRewarm(f RewarmFunc) { l.rewarm.Store(&f) }
 
 // SetOnTick adds one more step to the loop's periodic pass, after the
 // sessions sweeps: the definitions sync (docs/adr/0062). Call before Run.
@@ -356,9 +369,28 @@ func (l *Loop) collectExpired(ctx context.Context) {
 // and the next tick retries it; tearing down or sweeping what is gone is a
 // no-op.
 //
-// ponytail: up to one tick (60 s) after the pod is gone, not at once; until
-// build order slice 7 a finished run's pod goes only at the idle timeout.
+// First, a run in the exit window (docs/adr/0070 §6: input above its exit
+// result's consumedSeq, appended while pod_phase still read live) that no
+// sender has warmed since is re-warmed; warm puts the new pod's cursor just
+// past that consumedSeq, so the input reaches it. The finality rule judges
+// only runs that check leaves: endedRun excludes every run it lists.
+//
+// ponytail: up to one tick (60 s) after the pod exits, not at once; a
+// pod-event hook is the upgrade if that latency shows.
 func (l *Loop) endRuns(ctx context.Context) {
+	if f := l.rewarm.Load(); f != nil {
+		runs, err := l.sessions.ListRewarmRuns(ctx)
+		if err != nil {
+			slog.Error("sessions loop: list rewarm runs failed", "error", err)
+		}
+		for _, id := range runs {
+			if err := (*f)(ctx, id); err != nil {
+				slog.Warn("sessions loop: exit-window re-warm failed", "sessionId", id, "error", err)
+				continue
+			}
+			slog.Info("sessions loop: re-warmed a run for input above its exit result", "sessionId", id)
+		}
+	}
 	ids, err := l.sessions.ListEndedRuns(ctx)
 	if err != nil {
 		slog.Error("sessions loop: list ended runs failed", "error", err)

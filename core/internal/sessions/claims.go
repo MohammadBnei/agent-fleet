@@ -193,25 +193,3 @@ func (s *Store) AppendClaimed(ctx context.Context, invoker, key string, e Claime
 	}
 	return seq, tx.Commit(ctx)
 }
-
-// LastResult is the session's latest result entry's text, and whether input
-// that starts a turn (a human message, answer or permission response, not
-// context) came after it: then a later result follows (docs/adr/0070 §3).
-// found is false with no result yet.
-func (s *Store) LastResult(ctx context.Context, sessionID string) (text string, inputAfter, found bool, err error) {
-	err = s.pool.QueryRow(ctx, `
-		SELECT r.text, EXISTS (SELECT 1 FROM transcript h
-		                        WHERE h.session_id = r.session_id AND h.seq > r.seq AND h."from" = 'human'
-		                          AND NOT h.context_only
-		                          AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response'))
-		  FROM transcript r
-		 WHERE r.session_id = $1 AND r.type = 'result'
-		 ORDER BY r.seq DESC LIMIT 1`, sessionID).Scan(&text, &inputAfter)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", false, false, nil
-	}
-	if err != nil {
-		return "", false, false, fmt.Errorf("last result: %w", err)
-	}
-	return text, inputAfter, true, nil
-}

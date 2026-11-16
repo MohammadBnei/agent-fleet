@@ -67,6 +67,25 @@ func response(behavior, message, decisionID, kind string) (string, error) {
 	return string(b), err
 }
 
+// carryPlan adds the plan decision's id and its input (the ExitPlanMode
+// call's, from the stored request) to a plan approval's text, as
+// planDecisionId and planInput. Never decisionId: a worker spends that as a
+// one-time grant.
+func carryPlan(text string, r Record) (string, error) {
+	var req permission
+	_ = json.Unmarshal([]byte(r.Payload), &req)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(text), &m); err != nil {
+		return "", err
+	}
+	m["planDecisionId"] = r.ID
+	if len(req.Input) > 0 {
+		m["planInput"] = req.Input
+	}
+	b, err := json.Marshal(m)
+	return string(b), err
+}
+
 // Answer answers an open decision for a human and returns the answer's seq,
 // one path per kind (docs/adr/0082 §5). The append's one-reply index still
 // decides a race: the loser gets transcript.ErrAlreadyAnswered.
@@ -119,6 +138,14 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		text, err := response(a.Behavior, a.Message, "", kind)
 		if err != nil {
 			return 0, err
+		}
+		// docs/adr/0070 §6: the approved plan rides its answer to whichever
+		// pod reads it, so a fresh pod (which never held the call) applies it
+		// without asking again.
+		if r.NonBlocking && a.Behavior == "allow" {
+			if text, err = carryPlan(text, r); err != nil {
+				return 0, err
+			}
 		}
 		if r.NonBlocking {
 			if err := warm(); err != nil {

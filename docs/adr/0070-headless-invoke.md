@@ -18,8 +18,8 @@
   worker's deny branch gone); slice 2 (the result entry and its key: `POST
   /message` takes `idempotencyKey`, the worker writes
   `result_text`/`structured_output`/`consumedSeq` on every result keyed
-  `result:<session>:<consumedSeq>:<k>`, retried up to 5 times;
-  retry-until-ack before exit lands with slice 7); slice 5 (`Invoke` and
+  `result:<session>:<consumedSeq>:<k>`, retried up to 5 times, the exit
+  result until core acks it, slice 7); slice 5 (`Invoke` and
   `WaitForResult` in `core/internal/agentsvc/invoke.go`: Open's claim flow
   on `(invoker, idempotency_key)` with the request hash over definition and
   input, a private single-shot thread warmed through `WarmForAppend`, a full
@@ -28,8 +28,7 @@
   on their own at 500 without a result per client, under their own
   one-slot claim semaphore; `WaitForResult` a long poll on the transcript
   hub, `waiting` with `pending` on any open question, permission or plan,
-  else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
-  order: a result with turn-starting input after it is not final.
+  else §3's rule on the exit result, slice 7.
   `expired` is declared, reported from slice 11); slice 6 (`outputFormat`:
   the worker's `outputFormatFor` sets `{type: json_schema, schema}` only for
   `lifecycle: single-shot` with `outputSchema` set, never for a resident or
@@ -49,17 +48,53 @@
   open question, permission or plan. Its `parkedWhere` is the one SQL
   spelling of parked, for slice 9 to reuse); slice 8 (§7: each
   `sessions.Loop` tick, `endRuns` takes every single-shot run with no live
-  pod that was stopped, or, with no open decision, crashed or holds a final
-  result by the rule above, claims it by archiving it with that condition
-  re-checked in the same UPDATE (so a warm and a claim serialize on the row),
-  then calls `TearDownSession`, then `SweepSession`, then marks it swept; a
-  parked run keeps its PVC. Until slice 7 "no live pod" means a finished run
-  ends only after the idle timeout reaps its pod, since a running worker's
-  result can be followed by a turn already under way, and Invoke's run cap
-  keeps counting runs with no result; `WaitForResult` still reads an archived
-  run for its owner, `failed` with `AGENT_CRASHED` or "ended without a
-  result" when it has no final result, and re-reads the row at least every 5
-  s while it waits).
+  pod that was stopped, or, with no open decision, crashed or exited with no
+  input above its exit result's `consumedSeq` (slice 7), claims it by
+  archiving it with that condition re-checked in the same UPDATE (so a warm
+  and a claim serialize on the row), then calls `TearDownSession`, then
+  `SweepSession`, then marks it swept; a parked run keeps its PVC. Invoke's
+  run cap counts runs with no result entry; `WaitForResult` still reads an
+  archived run for its owner, `failed` when it has no final result, and
+  re-reads the row at least every 5 s while it waits); slice 7 (the worker
+  exits when its input is used up: a `single-shot` worker, after a result
+  with `queued_turn_count` 0 (absent is not 0), nothing pushed since or
+  unpulled and no entry mid-handling, writes its last result with `exit:
+  true` and `consumedSeq` (the highest human or session entry it took in;
+  none is taken in once it decides), retried until core acks, flushes its
+  spans and returns, and `index.ts` exits explicitly; a non-success exit
+  result still exits non-zero. A turn that ends on an open decision (a
+  permission it let go, a question whose tool came back pending) first holds
+  up to `DECISION_WAIT_MS`; an answer in the hold runs on the same pod. A
+  resident worker never exits. Core judges only exit results:
+  `sessions.Store.LastExitResult` for `WaitForResult` and the same SQL
+  (`exitResultOf`, `inputAfterExit`) in `endedRun`; the exit result's
+  `exit`/`consumedSeq` are read from its JSON in SQL, guarded by `IS JSON`.
+  A turn-starting entry is a human message, answer or permission response
+  or a relayed peer prompt (`from` `session`), the worker's `takeIn` filter.
+  A run with one above its exit result's `consumedSeq` is in the exit
+  window: every warm of it, whoever calls `WarmForAppend`, starts the new pod
+  at `consumedSeq + 1` instead of `LatestSeq` (`sessions.Store.ExitCursor`,
+  read inside `warm`), and with a TERMINATED pod that nobody warmed `endRuns`
+  re-warms it (`ListRewarmRuns`, through `WarmIfIdle`) and `endedRun` leaves
+  it alone. An archived run with no exit result is judged on its latest
+  result by the seq rule from before slice 7 (no turn-starting entry above
+  its seq), so a run whose pod ran an older worker at deploy, or whose result
+  had no `queued_turn_count`, still reads `done`; with no such result it reads
+  `AGENT_CRASHED` on a crashed pod, `NO_RESULT` on a clean exit without a
+  stop. A plan
+  approval of a stamped request carries `planDecisionId` and `planInput` on
+  its `permission_response`; a pod that never held the call, out of plan
+  mode, says "go ahead" with no retry and lets that plan's `ExitPlanMode`
+  through. The mid-call resume was checked by hand against SDK 0.3.325 with
+  the real CLI: a Bash call parked in `canUseTool`, the CLI SIGKILLed, so
+  the JSONL ends on a `tool_use` with no `tool_result`; a resume starts with
+  the same session id, the CLI inserts a "[Tool call interrupted …]"
+  `tool_result`, and the next turn runs to `success` with
+  `queued_turn_count: 0`. A graceful abort instead writes its own
+  `tool_result`. The decision side is the worker test "an allow for a call a
+  dead pod held": the answer arrives as a message and the retry spends the
+  grant. Not run live on a pod: the `/kind-local` `Invoke` QA above still
+  covers it; and the re-warm runs on the 60 s tick, not on the pod event).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

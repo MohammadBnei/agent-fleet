@@ -443,6 +443,7 @@ const {
   gitArgsAreInert,
   sdkMode,
   playwrightMcpServer,
+  questionPending,
 } = await import("./session.js");
 
 beforeEach(() => {
@@ -3731,3 +3732,261 @@ describe("result entry key", () => {
     expect(results()[0].key).toBe(resultAttempts[0]);
   }, 15000);
 });
+
+// docs/adr/0070 §6 (build order slice 7): a single-shot worker exits when its
+// input is used up, holding up to the decision wait when its turn ended on an
+// open decision; a resident one never exits on its own.
+describe("single-shot exit", () => {
+  const SINGLE = { ...DEF_SPEC, lifecycle: "single-shot" };
+  const results = () =>
+    pushedMessages
+      .filter((m) => m.type === "result")
+      .map((m) => JSON.parse(m.text));
+  const done = (queued?: number) => ({
+    type: "result",
+    subtype: "success",
+    num_turns: 1,
+    total_cost_usd: 0,
+    ...(queued === undefined ? {} : { queued_turn_count: queued }),
+  });
+  // A turn that asks the sidecar's question and gets "still pending" back.
+  const askedPending = [
+    {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "ask-1",
+            name: "mcp__agent-fleet-sidecar__AskUserQuestion",
+            input: { questions: [] },
+          },
+        ],
+      },
+    },
+    {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "ask-1",
+            content: [{ type: "text", text: '{"status":"pending"}' }],
+          },
+        ],
+      },
+    },
+    done(0),
+  ];
+  // Resolves to whether runSession ended within ms.
+  const endsWithin = (p: Promise<unknown>, ms: number) =>
+    Promise.race([p.then(() => true), Bun.sleep(ms).then(() => false)]);
+
+  test("success with queued_turn_count 0 exits, and the last result says so", async () => {
+    sessionAgentSpec = SINGLE;
+    forceResult = { ...done(0) };
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7000);
+    expect(await endsWithin(promise, 2000)).toBe(true);
+    expect((await promise).aborted).toBe(false);
+    const r = results();
+    expect(r.length).toBe(1);
+    expect(r[0].exit).toBe(true);
+    expect(r[0].consumedSeq).toBe(7000);
+  }, 10000);
+
+  test("an absent queued_turn_count never exits", async () => {
+    sessionAgentSpec = SINGLE;
+    forceResult = { ...done() };
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7010);
+    expect(await endsWithin(promise, 200)).toBe(false);
+    pushHuman("", "abort");
+    await promise;
+    expect(results().every((r) => r.exit === undefined)).toBe(true);
+  }, 10000);
+
+  test("a queued live answer runs its turn first, then the pod exits", async () => {
+    sessionAgentSpec = SINGLE;
+    roundScripts = [[done(1)], [done(0)]];
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7020);
+    await Bun.sleep(30);
+    expect(results().length).toBe(1);
+    expect(results()[0].exit).toBeUndefined();
+    // The answer the SDK had queued arrives as the next turn.
+    pushHuman("blue", "answer", 5, 7021);
+    expect(await endsWithin(promise, 2000)).toBe(true);
+    const r = results();
+    expect(r.map((x) => x.exit)).toEqual([undefined, true]);
+    expect(r[1].consumedSeq).toBe(7021);
+    expect(consumedInputs.length).toBe(2);
+  }, 10000);
+
+  test("a resident session never exits after a result", async () => {
+    sessionAgentSpec = DEF_SPEC;
+    forceResult = { ...done(0) };
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7030);
+    expect(await endsWithin(promise, 300)).toBe(false);
+    pushHuman("", "abort");
+    await promise;
+    expect(results().every((r) => r.exit === undefined)).toBe(true);
+  }, 10000);
+
+  test("an answer inside the hold runs on this pod: no new pod needed", async () => {
+    sessionAgentSpec = SINGLE;
+    sessionDecisionWaitMs = 5000;
+    roundScripts = [askedPending, [done(0)]];
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7040);
+    await Bun.sleep(100);
+    // Holding for the answer: no result written yet, the pod still up.
+    expect(results().length).toBe(0);
+    const start = Date.now();
+    pushHuman('{"answers":{"q":"a"}}', "answer", 3, 7041);
+    expect(await endsWithin(promise, 2000)).toBe(true);
+    expect(Date.now() - start).toBeLessThan(2000);
+    const r = results();
+    expect(r.map((x) => x.exit)).toEqual([undefined, true]);
+    expect(r[1].consumedSeq).toBe(7041);
+  }, 10000);
+
+  test("an open decision with no answer: the pod exits once the hold ends", async () => {
+    sessionAgentSpec = SINGLE;
+    sessionDecisionWaitMs = 300;
+    roundScripts = [askedPending];
+    const promise = runSession();
+    await Bun.sleep(20);
+    const start = Date.now();
+    pushHuman("go", "discussion", undefined, 7050);
+    expect(await endsWithin(promise, 3000)).toBe(true);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(250);
+    const r = results();
+    expect(r.length).toBe(1);
+    expect(r[0].exit).toBe(true);
+    expect(r[0].consumedSeq).toBe(7050);
+  }, 10000);
+
+  test("an interrupt inside the hold does not keep the leaving pod up", async () => {
+    sessionAgentSpec = SINGLE;
+    sessionDecisionWaitMs = 300;
+    roundScripts = [askedPending];
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7055);
+    await Bun.sleep(100);
+    expect(results().length).toBe(0);
+    // Nothing runs to interrupt; it only sets the soft-interrupt flag.
+    pushHuman("", "interrupt", undefined, 7056);
+    expect(await endsWithin(promise, 3000)).toBe(true);
+    const r = results();
+    expect(r.length).toBe(1);
+    expect(r[0].exit).toBe(true);
+  }, 10000);
+
+  test("a non-success exit result still fails the pod", async () => {
+    sessionAgentSpec = SINGLE;
+    forceResult = { ...done(0), subtype: "error_max_turns" };
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7060);
+    await expect(promise).rejects.toThrow("error_max_turns");
+    expect(results()[0].exit).toBe(true);
+  }, 10000);
+
+  test("the exit result is retried past five refusals, until core takes it", async () => {
+    sessionAgentSpec = SINGLE;
+    forceResult = { ...done(0) };
+    failResultPushes = 5;
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7070);
+    await promise;
+    expect(resultAttempts.length).toBe(6);
+    expect(new Set(resultAttempts).size).toBe(1);
+    expect(results().length).toBe(1);
+    expect(results()[0].exit).toBe(true);
+  }, 30000);
+});
+
+test("questionPending reads the sidecar's pending reply only", () => {
+  expect(questionPending('{"status":"pending"}')).toBe(true);
+  expect(
+    questionPending([{ type: "text", text: '{"status":"pending","id":"d"}' }]),
+  ).toBe(true);
+  expect(questionPending('{"answers":{"q":"a"}}')).toBe(false);
+  expect(questionPending("not json")).toBe(false);
+  expect(questionPending(undefined)).toBe(false);
+});
+
+// docs/adr/0070 §6, the mid-call resume, the worker's half: the pod that held
+// the call died, so this one never held it. Its allow arrives as a message,
+// and the retried call spends the one-time grant and runs, unasked. (The SDK's
+// half, resuming a JSONL that ends on an unanswered tool_use, needs the real
+// CLI and was checked by hand against SDK 0.3.325.)
+test("an allow for a call a dead pod held: the retry spends the grant", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman(
+    JSON.stringify({ behavior: "allow", decisionId: "d-9" }),
+    "permission_response",
+    55,
+    7200,
+  );
+  await Bun.sleep(30);
+  expect(consumedInputs.at(-1)?.message.content).toBe(
+    "Approved: retry request seq 55 once.",
+  );
+  consumeGrantAnswer = async () => ({ granted: true, decisionId: "d-9" });
+  const r = await capturedCanUseTool!("Bash", { command: "make deploy" });
+  expect(r).toEqual({
+    behavior: "allow",
+    updatedInput: { command: "make deploy" },
+  });
+  expect(consumeGrantCalls).toEqual([
+    { tool: "Bash", input: { command: "make deploy" } },
+  ]);
+  expect(pushedMessages.some((m) => m.type === "permission_request")).toBe(
+    false,
+  );
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+// docs/adr/0070 §6: core carries an approved plan to the next pod. On a fresh
+// pod (it never held the ExitPlanMode call) out of plan mode, the approval
+// runs without a second ask.
+test("a late plan approval on a fresh pod does not re-ask", async () => {
+  sessionPermissionMode = "default";
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman(
+    JSON.stringify({
+      behavior: "allow",
+      kind: "plan",
+      planDecisionId: "d-1",
+      planInput: { plan: "ship it" },
+    }),
+    "permission_response",
+    42,
+    7100,
+  );
+  await Bun.sleep(30);
+  const turn = consumedInputs.at(-1)?.message.content ?? "";
+  expect(turn).toContain("Plan approved (request seq 42)");
+  expect(turn).not.toContain("retry");
+  // The agent still sends ExitPlanMode with that plan: it runs unasked.
+  const r = await capturedCanUseTool!("ExitPlanMode", { plan: "ship it" });
+  expect(r.behavior).toBe("allow");
+  expect(pushedMessages.some((m) => m.type === "permission_request")).toBe(
+    false,
+  );
+  pushHuman("", "abort");
+  await promise;
+}, 10000);

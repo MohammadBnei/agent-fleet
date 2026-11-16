@@ -58,10 +58,11 @@ export async function main(
   // session.stopped's "summary" was the last assistant text block, already
   // pushed to transcript verbatim as a discussion entry. Nothing read either.
   try {
-    // runSession returns only via a human-initiated Stop. There is no
-    // automated completion detection anywhere — no PR_READY match, no
-    // PR-existence check — because a session may end in a PR, an
-    // explanation, or a dead end, and nothing here can tell those apart.
+    // runSession returns via a human-initiated Stop, or, in a single-shot
+    // session only, once its input is used up and its exit result is stored
+    // (docs/adr/0070 §6). There is no other completion detection — no
+    // PR_READY match, no PR-existence check — because a session may end in a
+    // PR, an explanation, or a dead end, and nothing here can tell those apart.
     const result = await runSession();
     log("info", "session ended", {
       sessionId: SESSION_ID,
