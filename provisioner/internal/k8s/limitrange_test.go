@@ -57,6 +57,62 @@ func TestCreateWorkerPod_ResourcesWithinLimitRange(t *testing.T) {
 				tc.name, tc.container, tc.max)
 		}
 	}
+
+	// ADR-0084 §9: a definition's resources reach the pod as Guaranteed QoS.
+	// Worker, sidecar and clone all have requests == limits, the worker takes
+	// the definition's numbers, the sidecar 256Mi/100m, and every limit fits
+	// the LimitRange max (the largest definition load accepts is that max).
+	for _, d := range []struct{ cpu, mem string }{
+		{"500m", "1536Mi"},
+		{values.LimitRange.Max["cpu"], values.LimitRange.Max["memory"]},
+	} {
+		c := newTestClient()
+		ctx := context.Background()
+		if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
+			SessionID: "task-g", Repo: "r", LeaseID: "l",
+			Definition: &DefinitionProfile{Name: "d", ProxyURL: "http://p", DeadlineSeconds: 60, CPU: d.cpu, Memory: d.mem},
+		}); err != nil {
+			t.Fatalf("CreateWorkerPod: %v", err)
+		}
+		job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-g"), metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("get job: %v", err)
+		}
+		ps := job.Spec.Template.Spec
+		all := append(append([]corev1.Container{}, ps.InitContainers...), ps.Containers...)
+		want := map[string][2]string{"worker": {d.cpu, d.mem}, "sidecar": {"100m", "256Mi"}}
+		for _, ct := range all {
+			if !equalLists(ct.Resources.Requests, ct.Resources.Limits) {
+				t.Errorf("%s: requests %v != limits %v, pod is not Guaranteed", ct.Name, ct.Resources.Requests, ct.Resources.Limits)
+			}
+			if w, ok := want[ct.Name]; ok {
+				if got := ct.Resources.Limits[corev1.ResourceCPU]; got.Cmp(resource.MustParse(w[0])) != 0 {
+					t.Errorf("%s cpu = %s, want %s", ct.Name, got.String(), w[0])
+				}
+				if got := ct.Resources.Limits[corev1.ResourceMemory]; got.Cmp(resource.MustParse(w[1])) != 0 {
+					t.Errorf("%s memory = %s, want %s", ct.Name, got.String(), w[1])
+				}
+			}
+			for name, max := range map[corev1.ResourceName]string{corev1.ResourceCPU: values.LimitRange.Max["cpu"], corev1.ResourceMemory: values.LimitRange.Max["memory"]} {
+				if l := ct.Resources.Limits[name]; l.Cmp(resource.MustParse(max)) > 0 {
+					t.Errorf("%s %s limit %s over limitRange.max %s", ct.Name, name, l.String(), max)
+				}
+			}
+		}
+	}
+}
+
+func equalLists(a, b corev1.ResourceList) bool {
+	if len(a) != len(b) || len(a) == 0 {
+		return false
+	}
+	for k, v := range a {
+		w := b[k]
+		if v.Cmp(w) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // TestCreateWorkerPod_WorkerResources asserts the shape actually reaching the

@@ -182,6 +182,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		// resources / limits / misc
 		{"cpu over ceiling", map[string]string{"resources": `{ cpu: "8", memory: 1Gi }`}, "resources.cpu"},
 		{"memory over ceiling", map[string]string{"resources": "{ cpu: 500m, memory: 8Gi }"}, "resources.memory"},
+		{"memory one Mi over the 4Gi max", map[string]string{"resources": "{ cpu: 500m, memory: 4097Mi }"}, "resources.memory"},
 		{"resources ok", map[string]string{"resources": "{ cpu: 4000m, memory: 4096Mi }"}, ""},
 		{"bad timeout", map[string]string{"limits": "{ maxTurns: 10, timeout: forever, concurrency: 1, startupBudget: 3m }"}, "limits.timeout"},
 		{"timeout too long", map[string]string{"limits": "{ maxTurns: 10, timeout: 13h, concurrency: 1, startupBudget: 3m }"}, "limits.timeout"},

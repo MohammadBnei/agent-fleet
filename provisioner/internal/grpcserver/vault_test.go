@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -584,4 +585,30 @@ func TestRepoOwner(t *testing.T) {
 			t.Errorf("repoOwner(%q) = %q, %v; want %q", url, got, err, want)
 		}
 	}
+}
+
+// ADR-0084 §9: the profile's cpu/memory reach the worker container.
+func TestCreateWorkerPod_DefinitionResourcesReachWorker(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	ctx := context.Background()
+	p := profile("dev-x")
+	p.Cpu, p.Memory = "500m", "1536Mi"
+	if _, err := s.CreateWorkerPod(ctx, defRequest(t, "def-res", p)); err != nil {
+		t.Fatal(err)
+	}
+	job, err := k8sc.Core.BatchV1().Jobs(k8sc.Namespace).Get(ctx, k8s.WorkerResourceName("def-res"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range job.Spec.Template.Spec.Containers {
+		if c.Name != "worker" {
+			continue
+		}
+		if m := c.Resources.Limits.Memory(); m.Cmp(resource.MustParse("1536Mi")) != 0 {
+			t.Errorf("worker memory limit = %s, want 1536Mi", m.String())
+		}
+		return
+	}
+	t.Fatal("no worker container")
 }

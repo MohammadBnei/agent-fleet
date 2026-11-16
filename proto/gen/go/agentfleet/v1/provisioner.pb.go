@@ -332,8 +332,13 @@ type DefinitionPodProfile struct {
 	// timeout (docs/adr/0065, amended); still sent because an older provisioner
 	// refuses a profile without it. The pod's lifetime is a fixed cap.
 	TimeoutSeconds int64 `protobuf:"varint,5,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The definition's validated `resources` (ADR-0084 §9). Both set makes the
+	// pod Guaranteed QoS: worker = these, sidecar and clone requests == limits.
+	// Empty keeps the ordinary sizing.
+	Cpu           string `protobuf:"bytes,6,opt,name=cpu,proto3" json:"cpu,omitempty"`
+	Memory        string `protobuf:"bytes,7,opt,name=memory,proto3" json:"memory,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DefinitionPodProfile) Reset() {
@@ -399,6 +404,20 @@ func (x *DefinitionPodProfile) GetTimeoutSeconds() int64 {
 		return x.TimeoutSeconds
 	}
 	return 0
+}
+
+func (x *DefinitionPodProfile) GetCpu() string {
+	if x != nil {
+		return x.Cpu
+	}
+	return ""
+}
+
+func (x *DefinitionPodProfile) GetMemory() string {
+	if x != nil {
+		return x.Memory
+	}
+	return ""
 }
 
 // A vault's desired state, from a definition's validated effective spec
@@ -2232,13 +2251,15 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
 	"GenomeFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04body\x18\x02 \x01(\tR\x04body\"\xd5\x01\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\"\xff\x01\n" +
 	"\x14DefinitionPodProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
 	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
 	"\x10git_author_email\x18\x03 \x01(\tR\x0egitAuthorEmail\x12.\n" +
 	"\x05vault\x18\x04 \x01(\v2\x18.agentfleet.v1.VaultSpecR\x05vault\x12'\n" +
-	"\x0ftimeout_seconds\x18\x05 \x01(\x03R\x0etimeoutSeconds\"u\n" +
+	"\x0ftimeout_seconds\x18\x05 \x01(\x03R\x0etimeoutSeconds\x12\x10\n" +
+	"\x03cpu\x18\x06 \x01(\tR\x03cpu\x12\x16\n" +
+	"\x06memory\x18\a \x01(\tR\x06memory\"u\n" +
 	"\tVaultSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
 	"\bservices\x18\x02 \x03(\v2\x1b.agentfleet.v1.VaultServiceR\bservices\x12\x1b\n" +
