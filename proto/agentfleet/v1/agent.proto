@@ -32,6 +32,9 @@ enum AgentErrorKey {
   // the warm-time capacity: nothing was started (no session is created) and the claim stays pending, so a retry with
   // the same key runs once a parked run moves.
   AGENT_ERROR_KEY_PARKED_LIMIT = 7 [(ukubi.errors.v1.key) = "agent.parked_limit"];
+  // The single-shot run is parked on a decision (docs/adr/0070 §6): only its answer resumes it, so a message or a
+  // warm is refused and nothing was appended. Answer the decision (GetStatus or WaitForResult lists it).
+  AGENT_ERROR_KEY_PARKED = 8 [(ukubi.errors.v1.key) = "agent.parked"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients
@@ -52,6 +55,7 @@ service AgentService {
   }
   rpc PostMessage(AgentServicePostMessageRequest) returns (AgentServicePostMessageResponse) {
     option (ukubi.errors.v1.keys) = "agent.definition_changed";
+    option (ukubi.errors.v1.keys) = "agent.parked";
   }
   rpc GetTranscript(AgentServiceGetTranscriptRequest) returns (AgentServiceGetTranscriptResponse);
   rpc StreamTranscript(AgentServiceStreamTranscriptRequest) returns (stream AgentServiceStreamTranscriptResponse);

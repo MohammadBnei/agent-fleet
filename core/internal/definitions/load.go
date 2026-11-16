@@ -679,6 +679,9 @@ func validate(name string, s *Spec) error {
 		if l.Concurrency < 1 {
 			bad("limits.concurrency %d must be >= 1", l.Concurrency)
 		}
+		if l.MaxParks != nil && *l.MaxParks < 1 {
+			bad("limits.maxParks %d must be a positive integer", *l.MaxParks)
+		}
 		if l.AnswerTimeout != "" {
 			if d, err := time.ParseDuration(l.AnswerTimeout); err != nil || d <= 0 || d > maxAnswerTimeout {
 				bad("limits.answerTimeout %q must be a duration in (0, %s]", l.AnswerTimeout, maxAnswerTimeout)

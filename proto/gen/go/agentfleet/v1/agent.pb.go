@@ -51,6 +51,9 @@ const (
 	// the warm-time capacity: nothing was started (no session is created) and the claim stays pending, so a retry with
 	// the same key runs once a parked run moves.
 	AgentErrorKey_AGENT_ERROR_KEY_PARKED_LIMIT AgentErrorKey = 7
+	// The single-shot run is parked on a decision (docs/adr/0070 §6): only its answer resumes it, so a message or a
+	// warm is refused and nothing was appended. Answer the decision (GetStatus or WaitForResult lists it).
+	AgentErrorKey_AGENT_ERROR_KEY_PARKED AgentErrorKey = 8
 )
 
 // Enum value maps for AgentErrorKey.
@@ -64,6 +67,7 @@ var (
 		5: "AGENT_ERROR_KEY_DECISION_STALE",
 		6: "AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED",
 		7: "AGENT_ERROR_KEY_PARKED_LIMIT",
+		8: "AGENT_ERROR_KEY_PARKED",
 	}
 	AgentErrorKey_value = map[string]int32{
 		"AGENT_ERROR_KEY_UNSPECIFIED":               0,
@@ -74,6 +78,7 @@ var (
 		"AGENT_ERROR_KEY_DECISION_STALE":            5,
 		"AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED": 6,
 		"AGENT_ERROR_KEY_PARKED_LIMIT":              7,
+		"AGENT_ERROR_KEY_PARKED":                    8,
 	}
 )
 
@@ -3274,7 +3279,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1f\n" +
 	"\vchanged_ids\x18\x02 \x03(\tR\n" +
-	"changedIds*\x88\x04\n" +
+	"changedIds*\xb6\x04\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
@@ -3283,7 +3288,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	" AGENT_ERROR_KEY_DECISION_EXPIRED\x10\x04\x1a\x1a\xc2\xf3\x18\x16agent.decision_expired\x12<\n" +
 	"\x1eAGENT_ERROR_KEY_DECISION_STALE\x10\x05\x1a\x18\xc2\xf3\x18\x14agent.decision_stale\x12R\n" +
 	")AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED\x10\x06\x1a#\xc2\xf3\x18\x1fagent.decision_confirm_required\x128\n" +
-	"\x1cAGENT_ERROR_KEY_PARKED_LIMIT\x10\a\x1a\x16\xc2\xf3\x18\x12agent.parked_limit*\x97\x01\n" +
+	"\x1cAGENT_ERROR_KEY_PARKED_LIMIT\x10\a\x1a\x16\xc2\xf3\x18\x12agent.parked_limit\x12,\n" +
+	"\x16AGENT_ERROR_KEY_PARKED\x10\b\x1a\x10\xc2\xf3\x18\fagent.parked*\x97\x01\n" +
 	"\fDecisionKind\x12\x1d\n" +
 	"\x19DECISION_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DECISION_KIND_QUESTION\x10\x01\x12\x1c\n" +
@@ -3296,12 +3302,12 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\xaa\x11\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\xba\x11\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
-	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12\x8a\x01\n" +
-	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\"\x1c\xca\xf3\x18\x18agent.definition_changed\x12r\n" +
+	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12\x9a\x01\n" +
+	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\",\xca\xf3\x18\x18agent.definition_changed\xca\xf3\x18\fagent.parked\x12r\n" +
 	"\rGetTranscript\x12/.agentfleet.v1.AgentServiceGetTranscriptRequest\x1a0.agentfleet.v1.AgentServiceGetTranscriptResponse\x12}\n" +
 	"\x10StreamTranscript\x122.agentfleet.v1.AgentServiceStreamTranscriptRequest\x1a3.agentfleet.v1.AgentServiceStreamTranscriptResponse0\x01\x12\x84\x01\n" +
 	"\x13RespondToPermission\x125.agentfleet.v1.AgentServiceRespondToPermissionRequest\x1a6.agentfleet.v1.AgentServiceRespondToPermissionResponse\x12u\n" +

@@ -222,7 +222,9 @@ type resultEntry struct {
 	StructuredOutput json.RawMessage `json:"structured_output"`
 }
 
-// result is §3's final-turn rule. Only an exit result (the pod's last,
+// result is §3's final-turn rule, after §6's re-park cap (a run with no live
+// pod that parked more than limits.maxParks times is failed, PARK_LIMIT).
+// Only an exit result (the pod's last,
 // `exit: true`) is judged, in this order:
 //  1. a human or answer entry above its consumedSeq: not final (running);
 //     core re-warms the run for it (sessions.Loop's exit-window re-warm);
@@ -237,6 +239,18 @@ type resultEntry struct {
 // failed; never running.
 func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1.WaitForResultResponse, error) {
 	sessionID := t.ID
+	ex, err := s.sessions.LastExitResult(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	// docs/adr/0070 §6, the re-park cap: past limits.maxParks parks the run
+	// ends failed whatever it waits on (endRuns withdraws its decisions within
+	// a tick, and warm refuses it meanwhile). A parked turn's result is never
+	// the answer.
+	if ex.OverParkCap && !sessions.IsPodPhaseLive(t.PodPhase) {
+		return &agentfleetv1.WaitForResultResponse{State: "failed", Error: &agentfleetv1.Status{
+			State: "error", Code: "PARK_LIMIT", Message: "the run parked more than its limits.maxParks times"}}, nil
+	}
 	open, err := s.decisions.List(ctx, decisions.Filter{
 		SessionID: sessionID, States: []string{decisions.Open},
 		Kinds: []decisions.Kind{decisions.Question, decisions.Permission, decisions.Plan},
@@ -251,10 +265,6 @@ func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1
 			out.Pending = append(out.Pending, decisionToProto(r))
 		}
 		return out, nil
-	}
-	ex, err := s.sessions.LastExitResult(ctx, sessionID)
-	if err != nil {
-		return nil, err
 	}
 	// Core ended it waiting (sessions.Loop's expireRuns, docs/adr/0070 §6):
 	// expired outranks every result (§3), and a moved pin is failed.

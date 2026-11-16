@@ -400,7 +400,7 @@ func TestArchive_WithdrawsOpenDecisionsAndUnusedGrants(t *testing.T) {
 	}
 }
 
-func (e *effects) WarmForAppend(ctx context.Context, id string) (string, func(), error) {
+func (e *effects) WarmForAnswer(ctx context.Context, id string) (string, func(), error) {
 	p, err := e.WarmIfIdle(ctx, id)
 	return p, func() {}, err
 }

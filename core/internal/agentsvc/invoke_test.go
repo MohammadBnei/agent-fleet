@@ -150,6 +150,10 @@ func TestInvoke(t *testing.T) {
 	if err != nil || r.GetState() != "waiting" || len(r.GetPending()) != 1 || r.GetPending()[0].GetRequestSeq() != req || r.GetResultText() != "" {
 		t.Fatalf("parked: %v %v", r, err)
 	}
+	// docs/adr/0070 §4: the thread's Status reads waiting with no pod too.
+	if st, err := s.GetStatus(withPrincipal(ctx, Principal{Client: "bot"}), connect.NewRequest(&agentfleetv1.GetStatusRequest{ThreadId: id})); err != nil || st.Msg.GetStatus().GetState() != "waiting" {
+		t.Fatalf("GetStatus of a parked run with no pod: %v %v", st, err)
+	}
 	// The answer is input above the parked result: running until a new one.
 	ans := connect.NewRequest(&agentfleetv1.AgentServiceRespondToPermissionRequest{ThreadId: id, Seq: req, Behavior: "allow"})
 	bot(ans)
@@ -187,6 +191,38 @@ func TestInvoke(t *testing.T) {
 	appendEntry(failedID, "worker", "result", `{"subtype":"error_max_turns","result_text":"","consumedSeq":0,"exit":true}`)
 	if r, err := wait(bot, failedID, 0); err != nil || r.GetState() != "failed" || r.GetSubtype() != "error_max_turns" {
 		t.Fatalf("failed: %v %v", r, err)
+	}
+
+	// docs/adr/0070 §6, the re-park cap: the eleventh park (limits.maxParks
+	// unset, 10) is failed PARK_LIMIT, not waiting, and not the parked turn's
+	// success.
+	parkedID, err := invoke(bot, "d", "ask a lot", "k-parks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 11 {
+		q := appendEntry(parkedID, "agent", "permission_request", fmt.Sprintf(`{"tool":"Bash","input":{"command":"ls %d"},"nb":1}`, i))
+		appendEntry(parkedID, "worker", "result", `{"subtype":"success","result_text":"parked","consumedSeq":100000,"exit":true}`)
+		if r, err := wait(bot, parkedID, 0); err != nil || r.GetState() != "waiting" {
+			if i < 10 || err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "PARK_LIMIT" {
+				t.Fatalf("park %d: %v %v", i+1, r, err)
+			}
+			break
+		}
+		if i == 10 {
+			t.Fatal("the eleventh park still reads waiting")
+		}
+		if _, err := transcr.AppendAuthored(ctx, parkedID, transcript.Author{Sub: "client:bot", Name: "client:bot"}, `{"behavior":"deny","message":"no"}`, "permission_response", "", &q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// endRuns' claim withdraws the last park's decision: still PARK_LIMIT.
+	if ok, err := store.ClaimEndedRun(ctx, parkedID); err != nil || !ok {
+		t.Fatalf("claim the run over its cap: %v %v", ok, err)
+	}
+	if r, err := wait(bot, parkedID, 0); err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "PARK_LIMIT" {
+		t.Fatalf("after the claim: %v %v", r, err)
 	}
 
 	// §7: a run torn down, swept and archived still reads its result, for its

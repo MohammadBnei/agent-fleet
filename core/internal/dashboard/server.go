@@ -1205,17 +1205,34 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 // provisioner refused undoes its own reservation (releaseReservation), so the
 // next sender reads a dead session and warms, and an ambiguous failure leaves
 // the reservation standing because a pod may be booting behind it.
+//
+// A parked single-shot run (docs/adr/0070 §6: no live pod, an open
+// question, permission or plan) takes only its answer: WarmForAppend, and so
+// WarmIfIdle, Warm, PostMessage and every other append, refuse it with
+// agent.parked. Its answer warms through WarmForAnswer.
 func (s *Server) WarmForAppend(ctx context.Context, sessionID string) (podName string, release func(), err error) {
+	return s.warmLocked(ctx, sessionID, false)
+}
+
+// WarmForAnswer is WarmForAppend for a decision's answer, which warms a
+// parked run (decisions.Effects). The exit-window re-warm uses it too: it
+// delivers input already appended, which a parked run must not lose.
+func (s *Server) WarmForAnswer(ctx context.Context, sessionID string) (podName string, release func(), err error) {
+	return s.warmLocked(ctx, sessionID, true)
+}
+
+func (s *Server) warmLocked(ctx context.Context, sessionID string, answer bool) (podName string, release func(), err error) {
 	release, err = s.sends.lock(ctx, sessionID)
 	if err != nil {
 		return "", func() {}, errkeys.Connect(connect.CodeCanceled, errkeys.KeyInternal, err)
 	}
-	podName, err = s.warm(ctx, sessionID)
+	podName, err = s.warm(ctx, sessionID, answer)
 	return podName, release, err
 }
 
-// warm is WarmIfIdle's body, run under the session's send lock.
-func (s *Server) warm(ctx context.Context, sessionID string) (podName string, err error) {
+// warm is WarmIfIdle's body, run under the session's send lock. answer: the
+// caller delivers a decision's answer, so a parked run is warmed.
+func (s *Server) warm(ctx context.Context, sessionID string, answer bool) (podName string, err error) {
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
@@ -1233,6 +1250,20 @@ func (s *Server) warm(ctx context.Context, sessionID string) (podName string, er
 		return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, decisions.CannotResume(
 			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed")))
 
+	}
+	// docs/adr/0070 §6: a parked run takes only its answer, and one past its
+	// re-park cap takes nothing: it ends failed, PARK_LIMIT, on the loop's
+	// next tick. Resident sessions never read it.
+	if t.Lifecycle != nil && *t.Lifecycle == "single-shot" {
+		parked, overCap, err := s.sessions.ParkState(ctx, sessionID)
+		switch {
+		case err != nil:
+			return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		case overCap:
+			return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("PARK_LIMIT: this run parked more than its limits.maxParks times and is ending"))
+		case parked && !answer:
+			return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyParked, errors.New("this run is waiting on a decision: answer it to resume the run"))
+		}
 	}
 
 	repoCfg, err := s.repos.Get(ctx, t.Repo)

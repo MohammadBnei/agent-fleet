@@ -1,6 +1,7 @@
 package definitions
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -637,6 +638,46 @@ func TestLoad_ClientMaxParked(t *testing.T) {
 		}
 		if len(fileErrs) != 0 || len(valid) != 1 || valid[0].Spec.ParkedCap() != tc.want {
 			t.Errorf("%q: valid %v, errs %v", tc.line, valid, fileErrs)
+		}
+	}
+}
+
+// docs/adr/0070 §6 and owner answer 1: limits.maxParks is a positive int,
+// DefaultMaxParks when unset, and absent from effective then, so a frozen
+// row's JSON is unchanged.
+func TestLoad_LimitsMaxParks(t *testing.T) {
+	three := 3
+	for _, tc := range []struct {
+		extra string
+		want  *int
+		err   string
+	}{
+		{"", nil, ""},
+		{", maxParks: 3", &three, ""},
+		{", maxParks: 0", nil, "limits.maxParks 0 must be a positive integer"},
+		{", maxParks: -1", nil, "limits.maxParks -1 must be a positive integer"},
+		{", maxParks: lots", nil, "cannot unmarshal"},
+	} {
+		limits := "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m" + tc.extra + " }"
+		got, _ := load(t, map[string]string{
+			"definitions/base.yaml":  baseYAML,
+			"definitions/parks.yaml": childYAML("parks", map[string]string{"limits": limits}),
+		})
+		r := got["parks"]
+		if tc.err != "" {
+			if !strings.Contains(errText(r.Err), tc.err) {
+				t.Errorf("%q: err %v, want %q", tc.extra, r.Err, tc.err)
+			}
+			continue
+		}
+		if r.Err != nil || r.Effective == nil {
+			t.Fatalf("%q: %v", tc.extra, r.Err)
+		}
+		if m := r.Effective.Limits.MaxParks; (m == nil) != (tc.want == nil) || (m != nil && *m != *tc.want) {
+			t.Errorf("%q: maxParks %v, want %v", tc.extra, m, tc.want)
+		}
+		if b, _ := json.Marshal(r.Effective.Limits); tc.want == nil && strings.Contains(string(b), "maxParks") {
+			t.Errorf("unset maxParks is in effective: %s", b)
 		}
 	}
 }

@@ -21,11 +21,14 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 )
 
 // capLockKey serializes the read-decide-provision sequence in ReserveSlot.
@@ -102,6 +105,10 @@ type Session struct {
 	// stamp (docs/adr/0082 §5), whose canUseTool promise waits with no time
 	// limit. DeriveLiveState keeps today's always-Blocked rule for these.
 	BlockingDecisions int `json:"-"`
+	// ParkDecisions is the part of PendingDecisions a parked run waits on:
+	// open questions, permissions and plans, never cards (parkedWhere's kinds,
+	// docs/adr/0070 §6).
+	ParkDecisions int `json:"-"`
 
 	// WorkerImage/SidecarImage are the images this session's pod actually got,
 	// written by SetPodImages from CreateWorkerPodResponse. Empty for a session
@@ -124,12 +131,12 @@ type Session struct {
 	// docs/adr/0067 §1, AgentService sessions only. A nil Owner (every
 	// console-created session) reads as admin-only; nil Interaction and
 	// Lifecycle read as ask and resident.
-	Owner       *string `json:"owner,omitempty"`
-	Visibility  *string `json:"visibility,omitempty"`
-	Invoker     *string `json:"invoker,omitempty"`
-	Interaction *string `json:"interaction,omitempty"`
-	Lifecycle   *string `json:"lifecycle,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	Owner       *string   `json:"owner,omitempty"`
+	Visibility  *string   `json:"visibility,omitempty"`
+	Invoker     *string   `json:"invoker,omitempty"`
+	Interaction *string   `json:"interaction,omitempty"`
+	Lifecycle   *string   `json:"lifecycle,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // Caps is the pair of ceilings ReserveSlot enforces. A struct, not two ints:
@@ -182,7 +189,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // description is COALESCEd because the column is nullable and Session.Description
 // is a plain string: one row with a NULL description fails the scan, and that
 // takes down the whole of ListSessions rather than that one row. Create() writes
-// '' rather than NULL, so nothing in the app produces one today — but
+// ” rather than NULL, so nothing in the app produces one today — but
 // docs/adr/0048 made description a vestigial label that new sessions leave
 // empty, so "nobody writes NULL" is a convention, and one row is enough to blank
 // the console. Title stays a pointer; it is optional on the wire too.
@@ -197,6 +204,8 @@ const selectCols = `
 	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
+	(SELECT count(*) FROM decisions d
+	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('question', 'permission', 'plan')) AS park_decisions,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
 	     AND d.payload -> 'nb' IS DISTINCT FROM '1'::jsonb) AS blocking_decisions`
@@ -213,7 +222,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
-		&s.PendingDecisions, &s.BlockingDecisions,
+		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions,
 	)
 	if err != nil {
 		return nil, err
@@ -423,19 +432,64 @@ const legacyFinal = `(SELECT r.text FROM transcript r
 
 // endedRun is the WHERE fragment for a single-shot session s that reached a
 // terminal state (docs/adr/0070 §7) and has no live pod ($1 = livePhases):
-// already claimed (archived, not yet swept); or a stop was asked for; or,
+// already claimed (archived, not yet swept); or a stop was asked for; or it
+// parked more than its limits.maxParks times (overParkCap: PARK_LIMIT); or,
 // with no open decision, its pod crashed, or exited (TERMINATED) with no
 // input above its exit result's consumedSeq: a final exit result, or a clean
 // exit with none (NO_RESULT, which WaitForResult reports). An open decision
 // without a stop is a parked run, and input above the exit result waits for
 // its re-warm (ListRewarmRuns): neither is listed, so both keep their PVC.
-const endedRun = `s.lifecycle = 'single-shot' AND s.swept_at IS NULL
+var endedRun = `s.lifecycle = 'single-shot' AND s.swept_at IS NULL
 	AND COALESCE(s.pod_phase, '') <> ALL($1)
 	AND (s.archived_at IS NOT NULL
 	     OR s.stop_requested_at IS NOT NULL
+	     OR ` + overParkCap + `
 	     OR (NOT EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open')
 	         AND (s.pod_phase = 'POD_PHASE_CRASHED'
 	              OR (s.pod_phase = 'POD_PHASE_TERMINATED' AND NOT ` + inputAfterExit + `))))`
+
+// parkCount counts the parks of the session s (docs/adr/0070 §6, "Re-park
+// cap"): its exit results at whose created_at a question, permission or plan
+// of s was open, created earlier and still open or answered later. A
+// decision the agent withdrew (no answered_at) counts only while open,
+// except on a claimed run: ClaimEndedRun withdraws the last park's decision
+// and stamps no time, so on an archived s a withdrawn one counts as open
+// until archived_at, and the PARK_LIMIT verdict outlives the claim.
+//
+// ponytail: that over-counts a decision a client withdrew before the claim
+// for any exit between that withdrawal and archived_at (nothing warms after
+// a withdraw, so only a human message can make one); a withdrawn_at column
+// is the upgrade if that ever matters.
+//
+// ponytail: counted from rows each time, a handful per run; a parks counter
+// on sessions (a new migration pair) is the upgrade if it ever shows slow.
+const parkCount = `(SELECT count(*) FROM transcript r
+	  WHERE r.session_id = s.id AND r.type = 'result'
+	    AND CASE WHEN r.text IS JSON OBJECT THEN r.text::jsonb -> 'exit' = 'true'::jsonb ELSE false END
+	    AND EXISTS (SELECT 1 FROM decisions d
+	                 WHERE d.session_id = s.id AND d.kind IN ('question', 'permission', 'plan')
+	                   AND d.created_at < r.created_at
+	                   AND (d.state = 'open' OR d.answered_at > r.created_at
+	                        OR (d.state = 'withdrawn' AND d.answered_at IS NULL AND s.archived_at > r.created_at))))`
+
+// overParkCap is "the single-shot session s parked more than its
+// definition's limits.maxParks times" (definitions.DefaultMaxParks when the
+// pinned row sets none, or the row is gone): it ends failed, PARK_LIMIT.
+var overParkCap = `(s.lifecycle = 'single-shot' AND ` + parkCount + ` > COALESCE(
+	(SELECT (ad.effective -> 'limits' ->> 'maxParks')::int FROM agent_definitions ad
+	  WHERE ad.name = s.definition_name AND ad.sha = s.definition_sha), ` + strconv.Itoa(definitions.DefaultMaxParks) + `))`
+
+// ParkState reads whether the session is a parked run (parkedWhere) and
+// whether it is over its park cap (overParkCap), for warm's refusals
+// (docs/adr/0070 §6, "A parked session takes only its answer").
+func (s *Store) ParkState(ctx context.Context, sessionID string) (parked, overCap bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT `+parkedWhere+`, `+overParkCap+` FROM sessions s WHERE s.id = $1`,
+		sessionID, livePhases).Scan(&parked, &overCap)
+	if err != nil {
+		return false, false, fmt.Errorf("park state: %w", err)
+	}
+	return parked, overCap, nil
+}
 
 // ListRewarmRuns is every single-shot run in the exit window (docs/adr/0070
 // §6): its pod exited cleanly, it is neither archived nor stopping, and a
@@ -487,6 +541,9 @@ type ExitResult struct {
 	// Legacy is legacyFinal's text when there is no exit result, else "":
 	// what an ended run is judged on instead of NO_RESULT.
 	Legacy string
+	// OverParkCap: it parked more than its limits.maxParks times, so it
+	// ends failed, PARK_LIMIT (overParkCap).
+	OverParkCap bool
 	// Expired / Moved: core ended the run waiting on a decision (ExpireRun,
 	// EndMovedRun), read from the state its decisions were closed as.
 	Expired, Moved bool
@@ -501,8 +558,8 @@ func (s *Store) LastExitResult(ctx context.Context, sessionID string) (ExitResul
 			AND d.kind IN ('question', 'permission', 'plan'))`
 	}
 	err := s.pool.QueryRow(ctx, `SELECT (SELECT e.text FROM `+exitResultOf+` e), `+inputAfterExit+`, s.stop_requested_at IS NOT NULL, `+legacyFinal+`,
-		`+closedAs("expired")+`, `+closedAs("stale")+`
-		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped, &legacy, &out.Expired, &out.Moved)
+		`+closedAs("expired")+`, `+closedAs("stale")+`, `+overParkCap+`
+		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped, &legacy, &out.Expired, &out.Moved, &out.OverParkCap)
 	if err != nil {
 		return out, fmt.Errorf("last exit result: %w", err)
 	}

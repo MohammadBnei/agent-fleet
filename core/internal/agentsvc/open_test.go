@@ -337,3 +337,7 @@ func (n *noWarm) WarmForAppend(ctx context.Context, id string) (string, func(), 
 	p, err := n.WarmIfIdle(ctx, id)
 	return p, func() {}, err
 }
+
+func (n *noWarm) WarmForAnswer(ctx context.Context, id string) (string, func(), error) {
+	return n.WarmForAppend(ctx, id)
+}
