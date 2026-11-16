@@ -459,3 +459,76 @@ func TestPrefetchWanted_UnseenRepoAgesFromStart(t *testing.T) {
 		t.Fatal("unseen for a whole window: want dropped")
 	}
 }
+
+// failLsRemote puts a git on PATH that refuses ls-remote and runs the real
+// git for everything else.
+func failLsRemote(t *testing.T) {
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	shim := "#!/bin/sh\n[ \"$1\" = ls-remote ] && { echo 'fatal: unable to access remote' >&2; exit 128; }\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// The warm fetch is skipped only when ls-remote shows the cache already holds
+// every branch and tag the remote has; any change, or an ls-remote failure,
+// fetches as before, so the cache stays exactly as fresh as an always-fetch.
+func TestEnsureRepoFetched_FetchesOnlyWhenTheRemoteMoved(t *testing.T) {
+	cases := []struct {
+		name      string
+		change    func(t *testing.T, origin string)
+		wantFetch bool
+	}{
+		{"head equal, annotated tag on both: no fetch", func(*testing.T, string) {}, false},
+		{"head differs: fetch", func(t *testing.T, o string) { commitIn(t, o) }, true},
+		{"new branch: fetch", func(t *testing.T, o string) { gitIn(t, o, "branch", "feature") }, true},
+		{"new tag, no branch moved: fetch", func(t *testing.T, o string) { gitIn(t, o, "tag", "v2") }, true},
+		{"ls-remote fails, head differs: fetch", func(t *testing.T, o string) { failLsRemote(t); commitIn(t, o) }, true},
+		{"ls-remote fails, nothing moved: still fetch", func(t *testing.T, _ string) { failLsRemote(t) }, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewManager(t.TempDir())
+			origin := newOriginRepo(t)
+			gitIn(t, origin, "tag", "-a", "v1", "-m", "v1")
+			if err := m.EnsureRepoFetched(context.Background(), "r", origin); err != nil {
+				t.Fatal(err)
+			}
+			tc.change(t, origin)
+			ctx := spans.WithRecorder(context.Background())
+			if err := m.EnsureRepoFetched(ctx, "r", origin); err != nil {
+				t.Fatal(err)
+			}
+			steps := spans.Summary(ctx)
+			if got := strings.Contains(steps, "warm.git.fetch="); got != tc.wantFetch {
+				t.Fatalf("fetched = %v, want %v: %s", got, tc.wantFetch, steps)
+			}
+			if !strings.Contains(steps, "warm.git.ls-remote=") {
+				t.Errorf("no ls-remote span: %s", steps)
+			}
+			if want, got := gitIn(t, origin, "rev-parse", "HEAD"), m.originHead(context.Background(), m.repoPath("r")); got != want {
+				t.Errorf("origin/HEAD %s, want the remote's %s", got, want)
+			}
+		})
+	}
+	// After any sync the cache matches the remote, so the next one skips.
+	m := NewManager(t.TempDir())
+	origin := newOriginRepo(t)
+	for range 2 {
+		if err := m.EnsureRepoFetched(context.Background(), "r", origin); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, origin, "tag", "-a", "v"+commitIn(t, origin)[:7], "-m", "x")
+	}
+	if err := m.EnsureRepoFetched(context.Background(), "r", origin); err != nil {
+		t.Fatal(err)
+	}
+	if !m.remoteUnchanged(context.Background(), m.repoPath("r")) {
+		t.Error("cache still differs from the remote after a fetch")
+	}
+}

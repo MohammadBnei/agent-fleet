@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/spans"
@@ -132,7 +133,7 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	if m.GitEnv != nil && len(args) > 0 && (args[0] == "clone" || args[0] == "fetch") {
+	if m.GitEnv != nil && len(args) > 0 && (args[0] == "clone" || args[0] == "fetch" || args[0] == "ls-remote") {
 		envCtx, endEnv := spans.Start(ctx, spanPrefix(ctx)+".git_credentials")
 		env, err := m.GitEnv(envCtx)
 		endEnv(err)
@@ -187,11 +188,14 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 	return m.ensureLocked(ctx, repo, repoURL)
 }
 
-// EnsureRepoFetched always fetches, waiting for the repo lock no longer than
-// ctx. A definition pod's clone reads the cache's origin/<base> and never
-// contacts the remote (docs/adr/0064), so a fetch skipped under a busy lock
-// would start the session on a stale base, or kill it (BackoffLimit 0) when the
-// base branch is newer than the cache's last fetch. The plain sync.Mutex
+// EnsureRepoFetched always brings the cache up to the remote, waiting for the
+// repo lock no longer than ctx. A definition pod's clone reads the cache's
+// origin/<base> and never contacts the remote (docs/adr/0064), so a fetch
+// skipped under a busy lock would start the session on a stale base, or kill it
+// (BackoffLimit 0) when the base branch is newer than the cache's last fetch.
+// "Up to the remote" is checked, never assumed: the fetch is skipped only when
+// ls-remote shows the cache already holds every branch and tag the remote has
+// (remoteUnchanged), and any doubt fetches. The plain sync.Mutex
 // cannot be waited on with a deadline, so this polls TryLock, and a wait past
 // ctx returns before any git runs.
 //
@@ -231,6 +235,11 @@ func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncR
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
 		before := m.originHead(ctx, path)
+		unchanged := m.remoteUnchanged(ctx, path)
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("skipped", unchanged))
+		if unchanged {
+			return SyncResult{Head: before}, m.disableAutoGC(ctx, path)
+		}
 		if _, err := m.run(ctx, path, "fetch", "origin"); err != nil {
 			return SyncResult{}, err
 		}
@@ -252,6 +261,47 @@ func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncR
 		return SyncResult{}, err
 	}
 	return SyncResult{Cloned: true, Head: m.originHead(ctx, path)}, m.disableAutoGC(ctx, path)
+}
+
+// remoteUnchanged: `git fetch origin` would change nothing, because every
+// branch and tag ls-remote lists (one round trip, no pack negotiation) is
+// already in the cache at the same object: refs/heads/X as
+// refs/remotes/origin/X (the clone's default refspec), refs/tags/X as itself.
+// Refs only the cache has are ignored, as the fetch (no --prune) ignores them.
+// Fail-closed: an ls-remote error, an empty listing or any difference reads as
+// changed, and the caller fetches as it always did. A remote tag the fetch
+// never brings in (its commit is on no branch) keeps that repo fetching every
+// time, which is today's behaviour.
+func (m *Manager) remoteUnchanged(ctx context.Context, path string) bool {
+	remote, err := m.run(ctx, path, "ls-remote", "--heads", "--tags", "origin")
+	if err != nil {
+		return false
+	}
+	local, err := m.run(ctx, path, "for-each-ref", "--format=%(objectname) %(refname)", "refs/remotes/origin", "refs/tags")
+	if err != nil {
+		return false
+	}
+	have := map[string]string{}
+	for line := range strings.Lines(local) {
+		if sha, ref, ok := strings.Cut(strings.TrimSpace(line), " "); ok {
+			have[ref] = sha
+		}
+	}
+	n := 0
+	for line := range strings.Lines(remote) {
+		sha, ref, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok || strings.HasSuffix(ref, "^{}") { // a peeled tag: its own line is compared
+			continue
+		}
+		if b, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+			ref = "refs/remotes/origin/" + b
+		}
+		if have[ref] != sha {
+			return false
+		}
+		n++
+	}
+	return n > 0
 }
 
 // originHead resolves the cache's origin/HEAD, or "" if it has none. `git
@@ -410,7 +460,7 @@ var fleetSharedNames = []string{"CLAUDE.md", "settings.json", "skills", "plugins
 // fleetSharedRefreshInterval), so a warm only lays the local copy into its
 // claude-home: a warm sees fleet-shared at most one tick stale. Fleet-shared is
 // reviewed config that changes rarely; the cache a session clones from is not,
-// and EnsureRepoFetched still fetches on every warm.
+// and EnsureRepoFetched still brings it up to the remote on every warm.
 //
 // Detached and bounded: shutdown must not SIGKILL git mid-reset, and a hung
 // fetch ends at refreshTimeout. The fetch holds no lock a warm waits on: only
