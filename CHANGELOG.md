@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.15.0](https://github.com/MohammadBnei/agent-fleet/compare/7.14.0...7.15.0) (2026-11-16)
+
+### Features
+
+* key every result entry (ADR-0070 slice 2) ([#380](https://github.com/MohammadBnei/agent-fleet/issues/380)) ([3a72418](https://github.com/MohammadBnei/agent-fleet/commit/3a724181a1f9384c875ae0cd21a6c30714be9cb0))
+
 # [7.14.0](https://github.com/MohammadBnei/agent-fleet/compare/7.13.0...7.14.0) (2026-11-16)
 
 ### Features
