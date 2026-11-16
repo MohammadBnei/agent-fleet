@@ -65,7 +65,19 @@ type Loop struct {
 	// rewarm re-warms a run in the exit window (SetRewarm). Atomic: core
 	// wires it after Run has started.
 	rewarm atomic.Pointer[RewarmFunc]
+
+	// head is a definition's current version (SetDefinitionHead).
+	head func(name string) (sha string, ok bool)
 }
+
+// defaultAnswerTimeout is limits.answerTimeout unset (docs/adr/0070 §6).
+const defaultAnswerTimeout = 24 * time.Hour
+
+// SetDefinitionHead wires in a definition's current sha, ok false when it
+// cannot be told (registry not synced or stale, definition unknown or invalid
+// at HEAD): a run is ended for a moved pin only against a known current sha.
+// Call before Run. Unset, no run is ended for a moved pin.
+func (l *Loop) SetDefinitionHead(f func(name string) (sha string, ok bool)) { l.head = f }
 
 // RewarmFunc warms sessionID (dashboard.Server.WarmIfIdle, whose warm puts
 // the new pod's cursor just past the exit result's consumedSeq).
@@ -116,6 +128,7 @@ func (l *Loop) Run(ctx context.Context, interval time.Duration) {
 
 func (l *Loop) tick(ctx context.Context) {
 	l.reconcilePodPhases(ctx)
+	l.expireRuns(ctx)
 	l.endRuns(ctx)
 	l.enforceStopGrace(ctx)
 	l.enforceStartupStall(ctx)
@@ -420,6 +433,52 @@ func (l *Loop) endRuns(ctx context.Context) {
 			continue // logged by MarkSwept
 		}
 		slog.Info("sessions loop: ended run archived, torn down and swept", "sessionId", id)
+	}
+}
+
+// expireRuns ends the single-shot runs that can no longer finish
+// (docs/adr/0070 §6), just before endRuns, which then tears each down and
+// sweeps it (§7) in the same tick. A run with a question, permission or plan
+// open past its limits.answerTimeout (default 24h, at most the retention
+// window) ends expired. A parked run pinned to a definition version that is
+// no longer current cannot warm, so it ends; WaitForResult reads it failed,
+// DEFINITION_CHANGED. One with nothing open is not parked and is left alone.
+// Nothing is answered for anyone.
+func (l *Loop) expireRuns(ctx context.Context) {
+	runs, err := l.sessions.ListIdleRuns(ctx)
+	if err != nil {
+		slog.Error("sessions loop: list idle runs failed", "error", err)
+		return
+	}
+	for _, r := range runs {
+		timeout := defaultAnswerTimeout
+		if d, err := time.ParseDuration(r.AnswerTimeout); err == nil && d > 0 {
+			timeout = d
+		}
+		// The retention sweep skips parked runs, so this is what keeps one
+		// inside the retention window (the loader's 5d cap already does
+		// under the deployed 6d).
+		if l.retention > 0 {
+			timeout = min(timeout, l.retention)
+		}
+		if r.OpenFor != nil && *r.OpenFor > timeout {
+			if ok, err := l.sessions.ExpireRun(ctx, r.ID, timeout); err != nil {
+				slog.Warn("sessions loop: expiring run failed", "sessionId", r.ID, "error", err)
+			} else if ok {
+				slog.Info("sessions loop: run expired waiting on a decision", "sessionId", r.ID, "answerTimeout", timeout)
+			}
+			continue
+		}
+		if r.OpenFor == nil || l.head == nil || r.Definition == "" {
+			continue
+		}
+		if sha, ok := l.head(r.Definition); ok && sha != r.SHA {
+			if ok, err := l.sessions.EndMovedRun(ctx, r.ID); err != nil {
+				slog.Warn("sessions loop: ending moved run failed", "sessionId", r.ID, "error", err)
+			} else if ok {
+				slog.Info("sessions loop: run's definition moved, ended", "sessionId", r.ID, "pinned", r.SHA, "current", sha)
+			}
+		}
 	}
 }
 

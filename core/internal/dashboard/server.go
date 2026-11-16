@@ -984,9 +984,14 @@ func (s *Server) answer(ctx context.Context, sessionID string, seq int64, wantTy
 }
 
 // AnswerErr is decisions.Answer's error for the wire. A connect error (a
-// warm's, a mode switch's) passes through.
+// warm's, a mode switch's) passes through. Expired and stale are keyed, for
+// every kind, so the caller says which and that nothing was done.
 func AnswerErr(ctx context.Context, op string, err error) error {
 	switch {
+	case errors.Is(err, decisions.ErrExpired):
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionExpired, err)
+	case errors.Is(err, decisions.ErrStale):
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, err)
 	case errors.Is(err, transcript.ErrAlreadyAnswered):
 		return connect.NewError(connect.CodeAlreadyExists, err)
 	case errors.Is(err, decisions.ErrInvalid):

@@ -341,15 +341,10 @@ func (s *Server) answerOption(ctx context.Context, p Principal, r decisions.Reco
 	return connect.NewResponse(&agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}), nil
 }
 
-// cardAnswerErr: an expired or stale card is keyed, so the console says
-// which and that nothing was done; a reply not a human's is refused.
+// cardAnswerErr: a reply not a human's is refused; the rest (expired and
+// stale keyed among them) is dashboard.AnswerErr's.
 func cardAnswerErr(ctx context.Context, err error) error {
-	switch {
-	case errors.Is(err, decisions.ErrExpired):
-		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionExpired, err)
-	case errors.Is(err, decisions.ErrStale):
-		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, err)
-	case errors.Is(err, decisions.ErrNotOwner):
+	if errors.Is(err, decisions.ErrNotOwner) {
 		return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, err)
 	}
 	return dashboard.AnswerErr(ctx, "agentsvc answer card", err)
