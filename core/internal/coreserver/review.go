@@ -57,7 +57,7 @@ func (s *Server) SubmitReview(ctx context.Context, req *agentfleetv1.SubmitRevie
 	// The provisioner mints a review token for whatever repo it is handed: a
 	// reviewer reviews only the repo its reviewed file names, whatever threads
 	// it is routed.
-	raw, err := s.sessions.PinnedEffective(ctx, req.GetSessionId())
+	raw, _, err := s.sessions.PinnedEffective(ctx, req.GetSessionId())
 	if err != nil {
 		return nil, err
 	}

@@ -207,11 +207,4 @@ func TestDecisions(t *testing.T) {
 		t.Errorf("owner SetConfig after a stranger's entry: %v", err)
 	}
 
-	// A headless thread takes no answers.
-	if _, err := pool.Exec(ctx, `UPDATE sessions SET interaction = 'deny' WHERE id = $1`, priv); err != nil {
-		t.Fatal(err)
-	}
-	if err := respond(alice, priv, privReq, "allow"); code(err) != connect.CodeFailedPrecondition {
-		t.Errorf("headless thread: %v", err)
-	}
 }

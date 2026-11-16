@@ -60,15 +60,10 @@ func (s *Server) answerable(ctx context.Context, p Principal, threadID string, s
 }
 
 // mayAnswer is canAnswer for a thread the caller can see, while its client
-// is still registered, on a thread that takes answers.
+// is still registered.
 func (s *Server) mayAnswer(p Principal, t *sessions.Session) error {
 	if !canAnswer(p, t) || !s.stillRegistered(p, t) {
 		return errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("you cannot answer in this thread"))
-	}
-	// docs/adr/0070: a headless thread has nobody to answer, and its worker
-	// asks nothing.
-	if deref(t.Interaction, "ask") == "deny" {
-		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this thread takes no answers"))
 	}
 	return nil
 }

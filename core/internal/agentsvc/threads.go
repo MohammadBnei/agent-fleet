@@ -195,8 +195,8 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 	if !mayUse(p, h.Effective) {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
-	if !allows(h.Effective.Interaction, "ask") || !allows(h.Effective.Lifecycle, "resident") {
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition takes no interactive threads"))
+	if !allows(h.Effective.Lifecycle, "resident") {
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition takes no resident threads"))
 	}
 	t, err := s.dash.CreateThread(ctx, h, req.Msg.GetTitle(), sessions.CreateParams{
 		Owner: p.owner(), Visibility: vis, Interaction: "ask", Lifecycle: "resident",
@@ -257,7 +257,7 @@ func entryToProto(p Principal, e transcript.Entry) *agentfleetv1.Entry {
 		Seq: e.Seq, Type: dashboard.ProtoType(e.Type), From: e.From, Text: e.Text, ReplyTo: e.ReplyTo,
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt), AuthorName: e.AuthorName,
 		ContextOnly: e.ContextOnly,
-		Mine: e.AuthorSub != "" && e.AuthorSub == p.author().Sub,
+		Mine:        e.AuthorSub != "" && e.AuthorSub == p.author().Sub,
 	}
 }
 

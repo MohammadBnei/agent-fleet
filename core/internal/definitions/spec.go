@@ -38,8 +38,8 @@ type clientFile struct {
 // `limits.concurrency` and `mode.allow` out of it (sessions.ReserveSlot,
 // sessions.SetPermissionMode).
 //
-// ponytail: no Agents / Output fields in P1. Strict decode rejects `agents:`
-// and `output:` as unknown keys; P4, their only consumer, adds them.
+// ponytail: no Agents field in P1. Strict decode rejects `agents:` as an
+// unknown key. `output:` joined with docs/adr/0070 §3.
 type Spec struct {
 	Extends      string        `yaml:"extends,omitempty"      json:"extends,omitempty"`
 	Abstract     bool          `yaml:"abstract,omitempty"     json:"abstract,omitempty"` // never inherited
@@ -58,6 +58,7 @@ type Spec struct {
 	SidecarTools []string      `yaml:"sidecarTools,omitempty" json:"sidecarTools,omitempty"`
 	Interaction  *AllowList    `yaml:"interaction,omitempty"  json:"interaction,omitempty"`
 	Lifecycle    *AllowList    `yaml:"lifecycle,omitempty"    json:"lifecycle,omitempty"`
+	Output       *Output       `yaml:"output,omitempty"       json:"output,omitempty"`
 	Owns         *Owns         `yaml:"owns,omitempty"         json:"owns,omitempty"`
 	Subscribes   *Subscribes   `yaml:"subscribes,omitempty"   json:"subscribes,omitempty"`
 	Resources    *Resources    `yaml:"resources,omitempty"    json:"resources,omitempty"`
@@ -124,6 +125,12 @@ type Tools struct {
 
 type AllowList struct {
 	Allow []string `yaml:"allow" json:"allow"`
+}
+
+// Output is a single-shot session's result shape (docs/adr/0070 §3): a JSON
+// Schema whose root is `type: object`, at most 64 KiB once encoded.
+type Output struct {
+	Schema map[string]any `yaml:"schema" json:"schema"`
 }
 
 type Owns struct {
