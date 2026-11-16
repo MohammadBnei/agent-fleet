@@ -1733,9 +1733,8 @@ func (x *GetSessionResponse) GetDecisionWaitMs() int32 {
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).
 // Flattened from the definition's effective spec (core/internal/definitions
-// Spec); interaction and lifecycle are the SESSION's choice within the
-// definition's allow lists, empty until sessions carry them (the worker
-// reads "" as "ask" and "resident").
+// Spec); lifecycle is the SESSION's choice within the definition's allow
+// list, empty for a resident session (the worker reads "" as "resident").
 type AgentSpec struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ToolsAllow         []string               `protobuf:"bytes,1,rep,name=tools_allow,json=toolsAllow,proto3" json:"tools_allow,omitempty"`
@@ -1746,8 +1745,11 @@ type AgentSpec struct {
 	ModeAllow          []string               `protobuf:"bytes,6,rep,name=mode_allow,json=modeAllow,proto3" json:"mode_allow,omitempty"`
 	SystemPromptAppend string                 `protobuf:"bytes,7,opt,name=system_prompt_append,json=systemPromptAppend,proto3" json:"system_prompt_append,omitempty"`
 	MaxTurns           int32                  `protobuf:"varint,8,opt,name=max_turns,json=maxTurns,proto3" json:"max_turns,omitempty"`
-	Interaction        string                 `protobuf:"bytes,9,opt,name=interaction,proto3" json:"interaction,omitempty"`
-	Lifecycle          string                 `protobuf:"bytes,10,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
+	// Unused: interaction is gone (docs/adr/0070 §2). Always empty.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/core.proto.
+	Interaction string `protobuf:"bytes,9,opt,name=interaction,proto3" json:"interaction,omitempty"`
+	Lifecycle   string `protobuf:"bytes,10,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
 	// docs/adr/0068 §4: the definition's workspace is served to an island host
 	// (its embed.origins is not empty), so a write that leaves active content
 	// in it, or a non-plain file, asks a human in every mode.
@@ -1847,6 +1849,7 @@ func (x *AgentSpec) GetMaxTurns() int32 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/core.proto.
 func (x *AgentSpec) GetInteraction() string {
 	if x != nil {
 		return x.Interaction
@@ -3988,7 +3991,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"agent_spec\x18\x02 \x01(\v2\x18.agentfleet.v1.AgentSpecR\tagentSpec\x12$\n" +
 	"\x0eagent_spec_sha\x18\x03 \x01(\tR\fagentSpecSha\x12\x16\n" +
 	"\x06grants\x18\x04 \x03(\tR\x06grants\x12(\n" +
-	"\x10decision_wait_ms\x18\x05 \x01(\x05R\x0edecisionWaitMs\"\xae\x03\n" +
+	"\x10decision_wait_ms\x18\x05 \x01(\x05R\x0edecisionWaitMs\"\xb2\x03\n" +
 	"\tAgentSpec\x12\x1f\n" +
 	"\vtools_allow\x18\x01 \x03(\tR\n" +
 	"toolsAllow\x12\x1d\n" +
@@ -4001,8 +4004,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"mode_allow\x18\x06 \x03(\tR\tmodeAllow\x120\n" +
 	"\x14system_prompt_append\x18\a \x01(\tR\x12systemPromptAppend\x12\x1b\n" +
-	"\tmax_turns\x18\b \x01(\x05R\bmaxTurns\x12 \n" +
-	"\vinteraction\x18\t \x01(\tR\vinteraction\x12\x1c\n" +
+	"\tmax_turns\x18\b \x01(\x05R\bmaxTurns\x12$\n" +
+	"\vinteraction\x18\t \x01(\tB\x02\x18\x01R\vinteraction\x12\x1c\n" +
 	"\tlifecycle\x18\n" +
 	" \x01(\tR\tlifecycle\x12\x1d\n" +
 	"\n" +

@@ -56,3 +56,41 @@ func TestRegistry_FrozenEffectiveSurvivesLoaderAddition(t *testing.T) {
 		t.Fatalf("rows=%d old=%s new=%s", n, old, fresh)
 	}
 }
+
+// docs/adr/0070 slice 12: a row an older core wrote still holds interaction.
+// It is still judged under this core's ceiling: revoked when outside it,
+// valid when inside, never left alone as a newer core's row.
+func TestRegistry_RetiredInteractionKeyStillJudged(t *testing.T) {
+	ctx := context.Background()
+	r := NewRegistry(dbtest.NewPool(t), &fakeLister{})
+	r.lister.(*fakeLister).set("sha1", map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/aaa.yaml":  childYAML("aaa", nil),
+	})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+		SELECT name, 'old-in', spec, effective || '{"interaction":{"allow":["ask"]}}', true
+		  FROM agent_definitions WHERE name = 'aaa' AND sha = 'sha1'
+		UNION ALL
+		SELECT name, 'old-out', spec, jsonb_set(effective || '{"interaction":{"allow":["ask"]}}',
+		       '{mode}', '{"default":"bypassPermissions","allow":["bypassPermissions"]}'), true
+		  FROM agent_definitions WHERE name = 'aaa' AND sha = 'sha1'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for sha, want := range map[string]bool{"old-in": true, "old-out": false} {
+		var valid bool
+		var msg *string
+		if err := r.pool.QueryRow(ctx, `SELECT valid, error FROM agent_definitions WHERE name = 'aaa' AND sha = $1`, sha).Scan(&valid, &msg); err != nil {
+			t.Fatal(err)
+		}
+		if valid != want || (!want && (msg == nil || !strings.Contains(*msg, "revoked by the current ceiling"))) {
+			t.Fatalf("%s: valid=%v err=%v, want valid=%v", sha, valid, msg, want)
+		}
+	}
+}

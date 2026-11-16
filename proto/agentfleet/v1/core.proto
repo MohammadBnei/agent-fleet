@@ -372,9 +372,8 @@ message GetSessionResponse {
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).
 // Flattened from the definition's effective spec (core/internal/definitions
-// Spec); interaction and lifecycle are the SESSION's choice within the
-// definition's allow lists, empty until sessions carry them (the worker
-// reads "" as "ask" and "resident").
+// Spec); lifecycle is the SESSION's choice within the definition's allow
+// list, empty for a resident session (the worker reads "" as "resident").
 message AgentSpec {
   repeated string tools_allow = 1;
   repeated string tools_deny = 2;
@@ -384,7 +383,8 @@ message AgentSpec {
   repeated string mode_allow = 6;
   string system_prompt_append = 7;
   int32 max_turns = 8;
-  string interaction = 9;
+  // Unused: interaction is gone (docs/adr/0070 §2). Always empty.
+  string interaction = 9 [deprecated = true];
   string lifecycle = 10;
   // docs/adr/0068 §4: the definition's workspace is served to an island host
   // (its embed.origins is not empty), so a write that leaves active content

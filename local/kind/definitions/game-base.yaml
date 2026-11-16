@@ -21,7 +21,6 @@ spec:
     deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
   # AskUserQuestion: any session can ask (docs/adr/0070).
   sidecarTools: [AskUserQuestion]
-  interaction: { allow: [ask] }
   lifecycle: { allow: [resident, single-shot] }
   resources: { cpu: "1", memory: 2Gi }
   limits: { maxTurns: 60, timeout: 30m, concurrency: 1, startupBudget: 3m }

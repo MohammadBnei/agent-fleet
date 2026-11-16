@@ -116,7 +116,7 @@ func TestInvoke(t *testing.T) {
 		t.Fatalf("a definition without single-shot: %v", err)
 	}
 	if _, err := s.Open(withPrincipal(ctx, Principal{Client: "bot"}), connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "t", Message: "x", Wake: true,
-		Interaction: "ask", Lifecycle: "single-shot", Visibility: "private", IdempotencyKey: "o1"})); code(err) != connect.CodeFailedPrecondition {
+		Lifecycle: "single-shot", Visibility: "private", IdempotencyKey: "o1"})); code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("Open with single-shot: %v", err)
 	}
 

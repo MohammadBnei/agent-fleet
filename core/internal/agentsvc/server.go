@@ -129,9 +129,6 @@ func (s *Server) ListDefinitions(ctx context.Context, _ *connect.Request[agentfl
 		if e.Mode != nil {
 			d.ModeAllow = slices.Clone(e.Mode.Allow)
 		}
-		if e.Interaction != nil {
-			d.InteractionAllow = slices.Clone(e.Interaction.Allow)
-		}
 		if e.Lifecycle != nil {
 			d.LifecycleAllow = slices.Clone(e.Lifecycle.Allow)
 		}

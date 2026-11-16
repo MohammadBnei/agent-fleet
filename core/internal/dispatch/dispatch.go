@@ -332,7 +332,7 @@ func (d *Dispatcher) alert(ctx context.Context, e *bridgev1.CloudEvent) error {
 
 // route is every definition that owns or subscribes to e and that the bridge
 // client may open (two-sided: the client lists it, it lists the client), and
-// whose interaction and lifecycle Open's only shape fits.
+// whose lifecycle Open's only shape fits.
 func (d *Dispatcher) route(e *bridgev1.CloudEvent) []definitions.Head {
 	heads, _ := d.defs.List()
 	var out []definitions.Head
@@ -704,8 +704,8 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	msg := Render(e, dec.wake)
 	req := &agentfleetv1.OpenRequest{
 		Definition: h.Name, ThreadKey: e.GetSubject(), Message: msg,
-		Wake:        dec.wake,
-		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
+		Wake:      dec.wake,
+		Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: e.GetSource() + ":" + e.GetId() + ":" + h.Name,
 		Actor:          e.GetActorLogin(), CausationId: Causation(e),
 	}
@@ -1035,7 +1035,7 @@ func OpenProposal(ctx context.Context, agents Agents, p *proposals.Proposal, adm
 	sum := sha256.Sum256([]byte(p.Body + "\x00" + adminSub))
 	res, err := agents.OpenAsAdmin(ctx, Client, adminSub, &agentfleetv1.OpenRequest{
 		Definition: p.Event.Definition, ThreadKey: p.Event.ThreadKey, Message: truncate(p.Body, maxMessage),
-		Interaction: "ask", Lifecycle: "resident", Visibility: "shared",
+		Lifecycle: "resident", Visibility: "shared",
 		IdempotencyKey: "proposal:" + p.ID + ":" + hex.EncodeToString(sum[:8]), CausationId: p.Event.CausationID,
 	})
 	if err != nil {

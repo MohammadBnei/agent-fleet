@@ -167,7 +167,6 @@ export type AgentSpec = {
   modeAllow: string[];
   systemPromptAppend: string;
   maxTurns: number;
-  interaction: string;
   lifecycle: string;
   // docs/adr/0070 §3: the definition's output.schema as compact JSON, set by
   // core for a single-shot session only. Absent from an older sidecar's JSON.

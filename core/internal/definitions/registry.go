@@ -278,11 +278,12 @@ func (r *Registry) current(ctx context.Context, tx pgx.Tx, name, headSHA string)
 	}
 	for _, x := range all {
 		var s Spec
-		dec := json.NewDecoder(bytes.NewReader(x.eff))
+		dec := json.NewDecoder(bytes.NewReader(withoutRetired(x.eff)))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&s); err != nil {
-			// Only a core writes effective, so a row this core cannot decode
-			// was written by a NEWER one (a rollout overlap, a rollback). Not
+			// Only a core writes effective, and keys an older core wrote are
+			// stripped above, so a row this core cannot decode was written by
+			// a NEWER one (a rollout overlap, a rollback). Not
 			// this core's to judge: never revoke it, or the newer core would
 			// re-insert at its sha and strand every session pinned to this one.
 			// It is still no head for THIS core.
@@ -311,6 +312,33 @@ func (r *Registry) current(ctx context.Context, tx pgx.Tx, name, headSHA string)
 		}
 	}
 	return head, nil
+}
+
+// retiredKeys are effective keys an older core wrote and this one dropped
+// from Spec (docs/adr/0070 slice 12: interaction). current() strips them
+// before the strict decode, so those rows are still judged under this core's
+// ceiling instead of being read as a newer core's.
+var retiredKeys = []string{"interaction"}
+
+// withoutRetired returns eff minus retiredKeys; eff unchanged when it holds
+// none or is not a JSON object (the strict decode then reports it).
+func withoutRetired(eff []byte) []byte {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(eff, &m) != nil {
+		return eff
+	}
+	n := len(m)
+	for _, k := range retiredKeys {
+		delete(m, k)
+	}
+	if len(m) == n {
+		return eff
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return eff
+	}
+	return out
 }
 
 func nullJSON(b []byte) any {

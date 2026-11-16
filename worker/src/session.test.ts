@@ -1986,7 +1986,6 @@ const DEF_SPEC = {
   modeAllow: ["auto", "default", "plan"],
   systemPromptAppend: "Keep pages small.",
   maxTurns: 60,
-  interaction: "",
   lifecycle: "",
 };
 

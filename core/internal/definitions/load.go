@@ -49,7 +49,6 @@ var (
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review"}
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
-	interactions   = []string{"ask", "deny"}
 	lifecycles     = []string{"resident", "single-shot"}
 )
 
@@ -621,11 +620,6 @@ func validate(name string, s *Spec) error {
 				bad("sidecarTools: %q is not in %v", t, sidecarCeiling)
 			}
 		}
-	}
-	// docs/adr/0070 §2, release one: optional and ignored by every reader
-	// that matters; still shape-checked when present.
-	if s.Interaction != nil {
-		checkList(&errs, "interaction", s.Interaction.Allow, interactions)
 	}
 	if need(s.Lifecycle != nil, "lifecycle") {
 		checkList(&errs, "lifecycle", s.Lifecycle.Allow, lifecycles)
