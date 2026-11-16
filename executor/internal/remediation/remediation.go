@@ -33,7 +33,7 @@ const (
 type Row struct {
 	ID        string
 	Action    string
-	Kind      string // restart, scale: "deployment" or "statefulset"
+	Kind      string // restart: deployment or statefulset; scale: deployment
 	Namespace string // empty for sync_app (Applications live in argocdNS)
 	Name      string
 	// Replicas, with MinReplicas and MaxReplicas (the definition's bounds), for scale.
@@ -150,9 +150,10 @@ func restart(ctx context.Context, run Runner, r Row) Outcome {
 }
 
 func scale(ctx context.Context, run Runner, r Row) Outcome {
-	kind, ok := kinds[r.Kind]
-	if !ok {
-		return refuse("scale takes a deployment or statefulset")
+	// deployments/scale is the only scale grant (ADR-0086 §3).
+	kind := r.Kind
+	if kind != "deployment" {
+		return refuse("scale takes a deployment")
 	}
 	if r.Replicas < r.MinReplicas || r.Replicas > r.MaxReplicas {
 		return refuse("replicas %d outside bounds %d..%d", r.Replicas, r.MinReplicas, r.MaxReplicas)

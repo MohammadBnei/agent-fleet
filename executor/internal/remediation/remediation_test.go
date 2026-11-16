@@ -75,6 +75,9 @@ func TestScaleBoundsAndSelfHeal(t *testing.T) {
 	if o.Status != "refused" || len(f.calls) != 0 {
 		t.Fatalf("out of bounds: %+v", o)
 	}
+	if o := execute(context.Background(), f.run, Row{Action: ActionScale, Kind: "statefulset", Namespace: "ns", Name: "db", Replicas: 2, MinReplicas: 1, MaxReplicas: 5}); o.Status != "refused" || len(f.calls) != 0 {
+		t.Fatalf("statefulset scale has no RBAC: %+v", o)
+	}
 	f = &fake{gets: map[string]string{"spec.replicas": "2", "labels.argocd": "web", "selfHeal": "true"}}
 	o = execute(context.Background(), f.run, Row{Action: ActionScale, Kind: "deployment", Namespace: "ns", Name: "web", Replicas: 3, MinReplicas: 1, MaxReplicas: 5})
 	if o.Status != "refused" || f.mutations() != 0 {
