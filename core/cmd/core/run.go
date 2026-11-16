@@ -52,6 +52,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -465,6 +466,22 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	})
 	alertHandler.SetInactive(repoStore.Inactive)
 	mux.Handle("/webhook/alertmanager", alertHandler)
+	remStore := remediations.NewStore(pool)
+	mux.Handle(remediations.Path, remediations.Handler(remStore, cfg.RemediationToken))
+	go func() { // a pulled row with no report in 15 min has an unknown outcome: mark it lost and say so
+		for t := time.NewTicker(time.Minute); ; {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if ids, err := remStore.SweepLost(ctx, 15*time.Minute); err != nil {
+					slog.Error("remediations: sweep failed", "error", err)
+				} else if len(ids) > 0 {
+					slog.Error("remediations: pulled but never reported, outcome unknown", "ids", ids)
+				}
+			}
+		}
+	}()
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 the identity is devIdentity (above).
 	memberInterceptors = connectInterceptors(tr, true,
