@@ -34,6 +34,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
+	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -94,6 +95,9 @@ type Agents interface {
 	Open(ctx context.Context, req *connect.Request[agentfleetv1.OpenRequest]) (*connect.Response[agentfleetv1.OpenResponse], error)
 	CloseThread(ctx context.Context, req *connect.Request[agentfleetv1.CloseThreadRequest]) (*connect.Response[agentfleetv1.CloseThreadResponse], error)
 	OpenAsAdmin(ctx context.Context, client, adminSub string, m *agentfleetv1.OpenRequest) (*agentfleetv1.OpenResponse, error)
+	// The first responders' alert runs (docs/adr/0086 §3).
+	InvokeUntrusted(ctx context.Context, req *connect.Request[agentfleetv1.InvokeRequest]) (*connect.Response[agentfleetv1.InvokeResponse], error)
+	WaitForResult(ctx context.Context, req *connect.Request[agentfleetv1.WaitForResultRequest]) (*connect.Response[agentfleetv1.WaitForResultResponse], error)
 }
 
 // Definitions is definitions.Registry.
@@ -127,6 +131,9 @@ type Dispatcher struct {
 	// close's threads as before (SetCards).
 	cards *decisions.Store
 	tr    transcript.Store
+	// responders runs the alert groups first-responder definitions subscribe to; nil: every alert is a proposal.
+	responders *responder.Runner
+	router     *responder.Router
 
 	lastNote string // the last "not configured" reason logged
 }
@@ -139,10 +146,31 @@ func New(pool *pgxpool.Pool, bridge Bridge, agents Agents, defs Definitions, pro
 // default branch into a card for the owner (closeCard) instead of a close.
 func (d *Dispatcher) SetCards(c *decisions.Store, tr transcript.Store) { d.cards, d.tr = c, tr }
 
+// SetResponders turns on docs/adr/0086 §3: an alert a first responder subscribes to starts its run (r) instead of
+// filing a proposal.
+func (d *Dispatcher) SetResponders(r *responder.Runner) {
+	d.responders = r
+	if r.Fallback == nil {
+		// A run that could not start must not lose its alert: it files the way an unanswered alert does.
+		r.Fallback = func(ctx context.Context, raw json.RawMessage) {
+			if d.alerts == nil {
+				return
+			}
+			if _, err := d.alerts.File(ctx, raw); err != nil && !errors.Is(err, alertwebhook.ErrSkipped) {
+				slog.Error("dispatch: filing a responder's alert as a proposal failed", "error", err)
+			}
+		}
+	}
+	d.router = &responder.Router{Start: r.Start}
+}
+
 // Run holds the subscription until ctx ends. Not being configured (no
 // password file) is one Info line per reason and a retry every BackoffMax; a
 // failed stream is a WARN with backoff, never an error loop.
 func (d *Dispatcher) Run(ctx context.Context) {
+	if d.responders != nil {
+		d.responders.Ctx = ctx
+	}
 	go d.prune(ctx)
 	backoff := time.Duration(0)
 	for ctx.Err() == nil {
@@ -315,7 +343,26 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 // on its fingerprint; a resolved one dismisses it if nobody opened it. An
 // alert never opens a thread (it is machine), so no definition sees it.
 func (d *Dispatcher) alert(ctx context.Context, e *bridgev1.CloudEvent) error {
-	if d.alerts == nil || e.GetReplayed() {
+	if e.GetReplayed() {
+		return nil
+	}
+	// A first responder takes the alert, and nothing is filed twice (docs/adr/0086 §3-§4).
+	if d.responders != nil {
+		if subs := responder.Subscribers(d.defs, Client, e.GetType(), e.GetSubject()); len(subs) > 0 {
+			if g, ok := responder.GroupOf(e.GetData()); ok {
+				for _, h := range subs {
+					if e.GetType() == typeAlertFiring {
+						d.router.Fire(h.Name, g, e.GetData())
+					} else {
+						d.router.Resolve(h.Name, g, e.GetData())
+					}
+				}
+				return nil
+			}
+			slog.Warn("dispatch: an alert a responder answers is not a JSON object, filing it as a proposal", "id", e.GetId())
+		}
+	}
+	if d.alerts == nil {
 		return nil
 	}
 	var err error

@@ -114,7 +114,11 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   `repeat_interval 4h`.
 - **A first responder is a single-shot run** (ADR-0070) of a definition with `trust.untrusted: B`.
   - The dispatcher, an in-process principal, `Invoke`s one per alert group with the key
-    `(dispatcher, alert:<groupKey>)` (amends ADR-0070 §1). A repeat inside the run's life is the same run.
+    `(dispatcher, alert:<groupKey>)` (amends ADR-0070 §1). A retry of a full fleet is the same run.
+    **Amended in S06:** the key is `alert:<groupKey>:<definition>:<window>`, the window being the cooldown window the
+    run starts. Two responders on one group are two runs, and firings held through the cooldown start the next run
+    while the first may still be live, so runs for one group can overlap. The dispatcher invokes as the bridge client,
+    so responder runs count against the bridge's parked and per-client caps, shared with the PR reviewer.
   - `<groupKey>` is a stable hash over `alertname`, `namespace` and `service`.
   - A cooldown of 10 min per key holds further firings and coalesces them, without dropping them. A `resolved`
     alert passes once the alert has been firing for at least `group_interval`.

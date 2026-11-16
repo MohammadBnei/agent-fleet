@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -54,6 +55,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
+	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
@@ -505,10 +507,25 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		}
 		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
 		dispatcher.SetCards(decisionStore, activityStore)
+		// First responders (docs/adr/0086 §3): an alert a responder definition subscribes to starts its run, and
+		// the webhook files no proposal for it.
+		remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
+		dispatcher.SetResponders(&responder.Runner{
+			Client: dispatch.Client, Agents: agentSvc, Defs: defs,
+			Filer: responder.Filer{Select: remSvc.Select, Draft: func(ctx context.Context, d decisions.Draft) error {
+				_, err := decisionStore.Draft(ctx, activityStore, d)
+				return err
+			}},
+		})
 		dashboardSvc.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, sub string) (string, error) {
 			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
 		})
 		if cfg.Bridge.URL != "" {
+			// Only while the dispatcher runs does a responder answer: without it the webhook files every alert.
+			// B definitions take no subject filter (validateTrust), so a type match is the whole question.
+			alertHandler.SetSkip(func(json.RawMessage) bool {
+				return len(responder.Subscribers(defs, dispatch.Client, responder.AlertFiring, "")) > 0
+			})
 			go dispatcher.Run(ctx)
 		}
 	}

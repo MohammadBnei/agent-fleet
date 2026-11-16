@@ -125,6 +125,8 @@ func (s *Store) ExpireCards(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
+var groupKey = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
 var repoName = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 // normalize checks c against docs/adr/0082 §5's card and fills what core
@@ -142,31 +144,41 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 	if sub == nil {
 		return bad("a card needs a subject")
 	}
-	repo := sub.GetRepo()
-	owner, name, _ := strings.Cut(repo, "/")
-	if !repoName.MatchString(repo) || owner == "." || owner == ".." || name == "." || name == ".." {
-		return bad("subject.repo %q is not owner/name", repo)
-	}
-	n := strconv.FormatInt(sub.GetNumber(), 10)
-	key := "github/" + strings.ToLower(repo)
-	switch sub.GetKind() {
-	case "pr", "issue", "alert":
-		if sub.GetNumber() <= 0 {
-			return bad("a %s subject needs its number", sub.GetKind())
+	var key string
+	if sub.GetKind() == "alert_group" {
+		// docs/adr/0086 §4: a responder's alert group has no GitHub subject. The key is core's, 16 hex.
+		if !groupKey.MatchString(sub.GetGroupKey()) || sub.GetRepo() != "" || sub.GetNumber() != 0 {
+			return bad("an alert_group subject is its group_key alone, 16 lowercase hex")
 		}
-		key += "/" + sub.GetKind() + "/" + n
-	case "repo":
-		if sub.GetNumber() != 0 {
-			return bad("a repo subject has no number")
+		key = "alert/" + sub.GetGroupKey()
+	} else {
+		repo := sub.GetRepo()
+		owner, name, _ := strings.Cut(repo, "/")
+		if !repoName.MatchString(repo) || owner == "." || owner == ".." || name == "." || name == ".." {
+			return bad("subject.repo %q is not owner/name", repo)
 		}
-	default:
-		return bad(`subject.kind must be "pr", "issue", "alert" or "repo"`)
+		n := strconv.FormatInt(sub.GetNumber(), 10)
+		key = "github/" + strings.ToLower(repo)
+		switch sub.GetKind() {
+		case "pr", "issue", "alert":
+			if sub.GetNumber() <= 0 {
+				return bad("a %s subject needs its number", sub.GetKind())
+			}
+			key += "/" + sub.GetKind() + "/" + n
+		case "repo":
+			if sub.GetNumber() != 0 {
+				return bad("a repo subject has no number")
+			}
+		default:
+			return bad(`subject.kind must be "pr", "issue", "alert" or "repo"`)
+		}
+		sub.Url = map[string]string{
+			"pr":    "https://github.com/" + repo + "/pull/" + n,
+			"issue": "https://github.com/" + repo + "/issues/" + n,
+			"repo":  "https://github.com/" + repo,
+		}[sub.GetKind()]
+
 	}
-	sub.Url = map[string]string{
-		"pr":    "https://github.com/" + repo + "/pull/" + n,
-		"issue": "https://github.com/" + repo + "/issues/" + n,
-		"repo":  "https://github.com/" + repo,
-	}[sub.GetKind()]
 
 	opts := c.GetOptions()
 	if len(opts) < 2 || len(opts) > 3 {
@@ -252,6 +264,9 @@ func onCard(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry
 	subject, err := normalize(&c)
 	if err != nil {
 		return err
+	}
+	if c.GetSubject().GetKind() == "alert_group" && draftedBy != "core" {
+		return fmt.Errorf("%w: only core files an alert_group card", ErrInvalid)
 	}
 	if _, err := tx.Exec(ctx, cardLock); err != nil {
 		return fmt.Errorf("card lock: %w", err)

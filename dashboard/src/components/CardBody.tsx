@@ -30,6 +30,7 @@ const REVERSIBLE: Record<string, string> = {
 
 function subjectText(s: CardSubject | undefined): string {
   if (!s) return "";
+  if (s.kind === "alert_group") return `alert ${s.groupKey}`;
   return s.kind === "repo" ? s.repo : `${s.repo} ${s.kind} #${s.number}`;
 }
 
