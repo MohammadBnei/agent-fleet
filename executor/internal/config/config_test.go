@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -34,6 +36,21 @@ func TestLoadShim(t *testing.T) {
 	}
 	if ErrNoExecutorAddr.Error() != "kubectl: EXECUTOR_ADDR unset — this pod has no cluster access configured" {
 		t.Errorf("the printed words moved: %q", ErrNoExecutorAddr)
+	}
+}
+
+// TestLoadShimTokenFile: ADR-0086 §6, the token comes from the file THOT_AUTH_TOKEN_FILE names and an unreadable one is an error.
+func TestLoadShimTokenFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tok")
+	if err := os.WriteFile(p, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadShim(getenv(map[string]string{"EXECUTOR_ADDR": "exec:1", "THOT_AUTH_TOKEN": "env", "THOT_AUTH_TOKEN_FILE": p}))
+	if err != nil || s.AuthToken != "from-file" {
+		t.Errorf("file: %+v, %v", s, err)
+	}
+	if _, err := LoadShim(getenv(map[string]string{"EXECUTOR_ADDR": "exec:1", "THOT_AUTH_TOKEN_FILE": p + "x"})); err == nil {
+		t.Error("an unreadable token file must not look like no token")
 	}
 }
 

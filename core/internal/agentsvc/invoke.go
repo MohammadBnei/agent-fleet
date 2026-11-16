@@ -33,6 +33,17 @@ var endRecheck = 5 * time.Second
 // appended re-runs on the same thread; a delivered one returns its thread
 // and starts nothing.
 func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.InvokeRequest]) (*connect.Response[agentfleetv1.InvokeResponse], error) {
+	return s.invoke(ctx, req, sessions.TierFleet)
+}
+
+// InvokeUntrusted is Invoke for a run whose input is an untrusted machine event (docs/adr/0086 §3): the
+// dispatcher's alert-group runs. The run's set is A plus the definition's trust.untrusted letter, and a
+// definition without one refuses it (sessions.ErrNoUntrusted).
+func (s *Server) InvokeUntrusted(ctx context.Context, req *connect.Request[agentfleetv1.InvokeRequest]) (*connect.Response[agentfleetv1.InvokeResponse], error) {
+	return s.invoke(ctx, req, sessions.TierUntrusted)
+}
+
+func (s *Server) invoke(ctx context.Context, req *connect.Request[agentfleetv1.InvokeRequest], tier sessions.Tier) (*connect.Response[agentfleetv1.InvokeResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
 		return nil, err
@@ -52,6 +63,19 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 	}
 	if !allows(head.Effective.Lifecycle, singleShot) {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition does not take single-shot runs"))
+	}
+	// A first responder is A·B and only the dispatcher's alert runs start one (docs/adr/0086 §3): a client's own
+	// Invoke would give it a trusted set.
+	if tier != sessions.TierUntrusted && head.Effective.Responder() {
+		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("a first responder is started by an alert, not an Invoke"))
+	}
+	var untrusted string
+	if head.Effective.Trust != nil {
+		untrusted = head.Effective.Trust.Untrusted
+	}
+	trustSet, err := sessions.TrustSetFor(tier, untrusted)
+	if err != nil {
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 	}
 	owner, key := p.owner(), m.GetIdempotencyKey()
 	// "invoke" first: an Open's claim on the same key never matches.
@@ -106,6 +130,7 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		title := key[:n]
 		if t, err = s.dash.CreateThread(ctx, head, title, sessions.CreateParams{
 			Owner: owner, Visibility: "private", Lifecycle: singleShot, Invoker: p.Client,
+			TrustSet: trustSet,
 		}); err != nil {
 			return nil, err
 		}

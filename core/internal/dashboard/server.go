@@ -6,6 +6,7 @@
 package dashboard
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -252,6 +253,8 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		Lifecycle:      thread.Lifecycle,
 		Invoker:        thread.Invoker,
 		ThreadKey:      thread.ThreadKey,
+		// A client thread names its tier; the console and every other caller is the owner.
+		TrustSet: cmp.Or(thread.TrustSet, sessions.TrustFor(sessions.TierOwner)),
 	}
 	// No capacity check for either kind: a create provisions nothing
 	// (docs/adr/0048 §1), so ReserveSlot at warm is the one capacity gate
@@ -374,7 +377,7 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// No permission mode: a proposal-opened session takes the column default,
 	// "auto" (docs/adr/0061) — so this body runs unattended except `rm`/`sudo`.
 	// That was a deliberate call, ADR records the prompt-injection trade-off.
-	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: s.fallbackModel()})
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: s.fallbackModel(), TrustSet: sessions.TrustFor(sessions.TierOwner)})
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
@@ -416,7 +419,13 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 		s.rollbackOpen(ctx, p.ID, id)
 		return nil, err
 	}
-	if _, err := s.transcr.Append(ctx, id, "human", p.Body, "discussion", uuid.NewString()); err != nil {
+	// An alert's body is attacker-shaped text (docs/adr/0086 §4): the owner's click opens the session, the words in it
+	// are not the owner's. It goes in as an agent-authored entry labelled with its source, never as "human".
+	from, body := "human", p.Body
+	if p.Source == "alert" {
+		from, body = "session", "[alert proposal "+p.ID+", untrusted alert text]\n"+p.Body
+	}
+	if _, err := s.transcr.Append(ctx, id, from, body, "discussion", uuid.NewString()); err != nil {
 		slog.ErrorContext(ctx, "dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
 		s.rollbackOpen(ctx, p.ID, id)
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
@@ -1555,10 +1564,16 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("definition %q limits.timeout: %w", name, err))
 	}
 	id := eff.Git.Identity
-	return &agentfleetv1.DefinitionPodProfile{
+	profile := &agentfleetv1.DefinitionPodProfile{
 		Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email,
 		Vault: definitions.VaultSpec(eff), TimeoutSeconds: int64(timeout.Seconds()),
-	}, nil
+	}
+	if r := eff.Resources; r != nil {
+		profile.Cpu, profile.Memory = r.CPU, r.Memory
+		// Guaranteed QoS is for standing definitions only (ADR-0084 §9).
+		profile.Guaranteed = eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
+	}
+	return profile, nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —
@@ -1828,6 +1843,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		Model:          t.Model,
 		PermissionMode: t.PermissionMode,
 		Effort:         t.Effort,
+		TrustSet:       t.TrustSet,
 		LastActiveAt:   rfc3339(t.LastActiveAt),
 		SweptAt:        rfc3339(t.SweptAt),
 		ArchivedAt:     rfc3339(t.ArchivedAt),

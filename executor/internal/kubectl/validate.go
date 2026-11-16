@@ -16,8 +16,8 @@ import (
 
 // readVerbs is every kubectl subcommand that only reads. Deliberately
 // excludes some read-ish ones: `rollout` has a mutating `restart`
-// subcommand, and `auth reconcile` writes. When in doubt it's left out —
-// a human-gated call can still run it.
+// subcommand, and `auth reconcile` writes. When in doubt it's left out:
+// thot-executor is read-only, so a left-out verb is simply unavailable.
 var readVerbs = map[string]bool{
 	"get":           true,
 	"describe":      true,
@@ -47,11 +47,17 @@ var deniedFlags = map[string]bool{
 	"--client-certificate": true,
 	"--username":           true,
 	"--password":           true,
+	// Where or how to connect: a token must never go to a chosen host.
+	"--certificate-authority":    true,
+	"--insecure-skip-tls-verify": true,
+	"--tls-server-name":          true,
+	"--context":                  true,
+	"--cluster":                  true,
+	"--user":                     true,
 }
 
 // ValidateReadOnly returns a human-readable refusal, or "" if the args are
-// an acceptable unattended read. Only applied to read_only requests —
-// human-gated calls go through untouched (see executor.proto).
+// an acceptable read. It is the only gate on every thot-executor call.
 func ValidateReadOnly(args []string) string {
 	if len(args) == 0 {
 		return "no arguments given"
@@ -64,7 +70,7 @@ func ValidateReadOnly(args []string) string {
 		}
 		sort.Strings(allowed)
 		return fmt.Sprintf(
-			"%q is not a read-only verb. Allowed: %s. A mutating command has to go through the human permission prompt instead.",
+			"%q is not a read-only verb. Allowed: %s. thot-executor is read-only; a mutation is a catalogue remediation or a card (ADR-0086 §3, §4).",
 			args[0], strings.Join(allowed, ", "))
 	}
 
@@ -75,7 +81,8 @@ func ValidateReadOnly(args []string) string {
 		if i := strings.Index(arg, "="); i >= 0 {
 			flag = arg[:i]
 		}
-		if deniedFlags[flag] {
+		// -s is --server's short form, also glued to its value (-shttps://h).
+		if deniedFlags[flag] || strings.HasPrefix(flag, "-s") && !strings.HasPrefix(flag, "--") {
 			return fmt.Sprintf("flag %q is not permitted", flag)
 		}
 	}

@@ -2,6 +2,9 @@ package config
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -106,5 +109,26 @@ func TestTrustSetValidated(t *testing.T) {
 	}
 	if _, err := Load(getenv(base)); err != nil {
 		t.Errorf("plain pod refused: %v", err)
+	}
+}
+
+// TestLoadCredentialFiles: ADR-0086 §6, the lease and the vault proxy come from the file KEY_FILE names (trailing
+// newline trimmed), the file wins over a bare key, and an unreadable file refuses the start without quoting a value.
+func TestLoadCredentialFiles(t *testing.T) {
+	dir := t.TempDir()
+	lease, vp := filepath.Join(dir, "lease"), filepath.Join(dir, "vp")
+	if err := os.WriteFile(lease, []byte("l-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vp, []byte("http://t:p@v:5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(getenv(map[string]string{"SESSION_ID": "s", "LEASE_ID": "l-env", "LEASE_ID_FILE": lease, "FLEET_VAULT_PROXY_FILE": vp}))
+	if err != nil || c.LeaseID != "l-file" || c.VaultProxy != "http://t:p@v:5" {
+		t.Errorf("files: %+v, %v", c, err)
+	}
+	_, err = Load(getenv(map[string]string{"SESSION_ID": "s", "LEASE_ID_FILE": filepath.Join(dir, "missing")}))
+	if err == nil || !errors.Is(err, ErrNoLeaseID) || !strings.Contains(err.Error(), "LEASE_ID_FILE") {
+		t.Errorf("missing lease file: %v", err)
 	}
 }

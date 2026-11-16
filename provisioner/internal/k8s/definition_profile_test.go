@@ -84,8 +84,13 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 			t.Errorf("worker %s = %q, want %q", name, got, want)
 		}
 	}
-	if got, _ := findEnv(container(t, job, "sidecar").Env, "LEASE_ID"); got != "lease-1" {
-		t.Errorf("sidecar LEASE_ID = %q: it is the lease's only holder", got)
+	// ADR-0086 §6: the sidecar is the lease's only holder, by file.
+	sc := container(t, job, "sidecar")
+	if _, ok := findEnv(sc.Env, "LEASE_ID"); ok {
+		t.Error("sidecar has LEASE_ID in env")
+	}
+	if got, _ := findEnv(sc.Env, LeaseIDFileEnv); got != "/run/fleet/cred/lease" {
+		t.Errorf("sidecar %s = %q", LeaseIDFileEnv, got)
 	}
 
 	for _, name := range []string{"clone", "sidecar", "worker"} {
@@ -108,7 +113,7 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 // docs/adr/0065: after P3 no container of a definition pod, init containers
 // included, holds a real secret. Sentinels stand in for every credential the
 // provisioner's own environment carries. Deliberately excluded: the pod's two
-// per-session credentials, its av_sess_ (the worker's HTTPS_PROXY) and the
+// per-session credentials, its av_sess_ (the sidecar's vault-proxy file) and the
 // sidecar's LEASE_ID (CoreService, ADR-0057), both minted for this pod.
 func TestDefinitionPod_NoRealSecret(t *testing.T) {
 	sentinels := map[string]string{
@@ -144,9 +149,21 @@ func TestDefinitionPod_NoRealSecret(t *testing.T) {
 			t.Errorf("%s has envFrom", ctr.Name)
 		}
 	}
+	// The one Secret is the pod's own credential Secret (ADR-0086 §6), and
+	// only the sidecar mounts it: the worker holds no credential file.
 	for _, v := range ps.Volumes {
-		if v.Secret != nil {
-			t.Errorf("volume %s mounts a Secret", v.Name)
+		if v.Secret != nil && v.Secret.SecretName != CredSecretName("task-1") {
+			t.Errorf("volume %s mounts Secret %s", v.Name, v.Secret.SecretName)
+		}
+	}
+	for _, m := range container(t, job, "worker").VolumeMounts {
+		if strings.HasPrefix(m.Name, "cred") {
+			t.Errorf("definition worker mounts %s", m.Name)
+		}
+	}
+	for _, m := range container(t, job, "sidecar").VolumeMounts {
+		if strings.HasPrefix(m.Name, "cred") && (m.SubPath != "" || !m.ReadOnly) {
+			t.Errorf("sidecar mount %+v: no subPath (kubelet refreshes only whole-volume mounts), read-only", m)
 		}
 	}
 	// The ServiceAccount token is admission-mounted, so the template is the
@@ -166,8 +183,8 @@ func TestDefinitionPod_ProxyAndCAEnv(t *testing.T) {
 	job := createJob(t, definitionSpec())
 	worker := container(t, job, "worker")
 	for _, k := range []string{"HTTPS_PROXY", "https_proxy"} {
-		if got, _ := findEnv(worker.Env, k); got != testProxyURL {
-			t.Errorf("worker %s = %q", k, got)
+		if got, _ := findEnv(worker.Env, k); got != "http://127.0.0.1:9093" {
+			t.Errorf("worker %s = %q: the proxy is the sidecar's egress router (ADR-0086 §6)", k, got)
 		}
 	}
 	for _, k := range []string{"HTTP_PROXY", "http_proxy"} {
@@ -179,7 +196,7 @@ func TestDefinitionPod_ProxyAndCAEnv(t *testing.T) {
 		t.Errorf("worker NODE_USE_ENV_PROXY = %q", got)
 	}
 	for _, k := range []string{"NO_PROXY", "no_proxy"} {
-		if got, _ := findEnv(worker.Env, k); got != "127.0.0.1,localhost,agent-fleet-core.agent-fleet.svc.cluster.local,agent-vault.agent-vault.svc.cluster.local" {
+		if got, _ := findEnv(worker.Env, k); got != "127.0.0.1,localhost,agent-fleet-core.agent-fleet.svc.cluster.local" {
 			t.Errorf("worker %s = %q", k, got)
 		}
 	}

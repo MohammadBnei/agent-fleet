@@ -47,6 +47,16 @@ func TestCreateWorkerPod_RepoSessionGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ADR-0086 §6: no credential in the Job at all, env or mounts. Its Secret has them.
+	for _, secret := range []string{"tok:owner-o", "lease-1"} {
+		if bytes.Contains(got, []byte(secret)) {
+			t.Errorf("the Job carries %q", secret)
+		}
+	}
+	if sec, err := c.Core.CoreV1().Secrets("agent-fleet").Get(ctx, CredSecretName("task-1"), metav1.GetOptions{}); err != nil ||
+		sec.StringData["lease"] != "lease-1" || sec.StringData["vault-proxy"] == "" || len(sec.OwnerReferences) != 1 {
+		t.Errorf("credential secret %+v, %v", sec, err)
+	}
 	const path = "testdata/worker_job_repo_session.golden.json"
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {

@@ -24,17 +24,8 @@ message ExecRequest {
   // fleet's most privileged process.
   repeated string args = 1;
 
-  // read_only selects the validated path.
-  //
-  // true  — for unattended callers (the kubectl_read tool bypasses
-  //         canUseTool by design, so no human sees these). Rejected
-  //         unless the verb is a known read verb and no credential or
-  //         impersonation flags are present.
-  // false — for human-gated calls. Deliberately a dumb pipe: the human
-  //         already approved this exact argv through canUseTool, and a
-  //         second allowlist here would only duplicate that gate while
-  //         constraining what a human is permitted to decide. The
-  //         ClusterRole remains the outer boundary either way.
+  // read_only is ignored: the executor validates every call as read-only
+  // (ADR-0086 §3). Mutation is the remediation executor's, not this RPC's.
   bool read_only = 2;
 }
 

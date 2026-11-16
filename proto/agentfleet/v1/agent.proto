@@ -35,6 +35,9 @@ enum AgentErrorKey {
   // The single-shot run is parked on a decision (docs/adr/0070 §6): only its answer resumes it, so a message or a
   // warm is refused and nothing was appended. Answer the decision (GetStatus or WaitForResult lists it).
   AGENT_ERROR_KEY_PARKED = 8 [(ukubi.errors.v1.key) = "agent.parked"];
+  // The session's trust set (docs/adr/0086 §2) holds no letter for this method: core refuses it, nothing was done.
+  // The guidance names the card path.
+  AGENT_ERROR_KEY_RULE_OF_TWO = 9 [(ukubi.errors.v1.key) = "agent.rule_of_two"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients

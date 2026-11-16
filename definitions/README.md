@@ -18,6 +18,15 @@ read-only, and it posts only through `submit_review`. The `bridge` client must
 list it in `definitions`, and its `agent:<name>` in `actors.allow` for its
 hand-offs to wake the writer they @mention.
 
+## First responders (`docs/adr/0086` §3)
+
+`alert-responder.yaml` answers Alertmanager alert groups. `trust.untrusted: B` makes a definition a first responder:
+single-shot only, `git.mode: none` (no GitHub write), a typed `output.schema` and a `subscribes` naming the alerts it
+answers. The `bridge` client must list it. The dispatcher starts one run per alert group (key `alert:<groupKey>`, 10 min
+cooldown, held firings coalesced), with the trust set `A·B`; core files its output as a remediation row or a card.
+A client's own `Invoke` of a responder is refused. While a responder subscribes to an alert, `/webhook/alertmanager`
+files no proposal for it.
+
 ## Credentials and onboarding (`docs/adr/0065`)
 
 Every launchable definition names its vault and services in `credentials`; the

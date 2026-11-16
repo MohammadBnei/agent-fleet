@@ -1,7 +1,9 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -92,14 +95,47 @@ func TestCreateWorkerPod_DefinitionMintsVaultToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var proxy string
-	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
-		if e.Name == "HTTPS_PROXY" {
-			proxy = e.Value
+	// ADR-0086 §6: the worker proxies through the sidecar; the token is in the
+	// pod's Secret, owned by the Job, and in no env.
+	sec, err := k8sc.Core.CoreV1().Secrets("agent-fleet").Get(context.Background(), k8s.CredSecretName("def-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sec.StringData["vault-proxy"]; got != "http://"+sess.Token+":dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
+		t.Errorf("secret vault-proxy %q does not carry the minted token", got)
+	}
+	if len(sec.OwnerReferences) != 1 || sec.OwnerReferences[0].Kind != "Job" || sec.OwnerReferences[0].Name != job.Name {
+		t.Errorf("secret owner %v, want the Job", sec.OwnerReferences)
+	}
+	sidecarEnv := map[string]string{}
+	for _, c := range job.Spec.Template.Spec.InitContainers {
+		if c.Name == "sidecar" {
+			for _, e := range c.Env {
+				sidecarEnv[e.Name] = e.Value
+			}
 		}
 	}
-	if proxy != "http://"+sess.Token+":dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
-		t.Errorf("HTTPS_PROXY %q does not carry the minted token", proxy)
+	for k, want := range map[string]string{
+		"FLEET_VAULT_HOSTS": "api.anthropic.com,github.com", "FLEET_VAULT_PROXY_FILE": "/run/fleet/cred/vault-proxy", "EGRESS_PORT": "9093",
+	} {
+		if sidecarEnv[k] != want {
+			t.Errorf("sidecar %s = %q, want %q", k, sidecarEnv[k], want)
+		}
+	}
+	// ADR-0086 §6: the token and lease are in no part of the Job (env, args,
+	// annotations, mounts), only in its Secret.
+	whole, _ := json.Marshal(job)
+	for _, secret := range []string{sess.Token, sec.StringData["lease"]} {
+		if secret != "" && bytes.Contains(whole, []byte(secret)) {
+			t.Errorf("the definition Job carries %q", secret)
+		}
+	}
+	for _, c := range append(job.Spec.Template.Spec.InitContainers, job.Spec.Template.Spec.Containers...) {
+		for _, e := range c.Env {
+			if strings.Contains(e.Value, sess.Token) {
+				t.Errorf("%s env %s holds the vault token", c.Name, e.Name)
+			}
+		}
 	}
 	if d := job.Spec.ActiveDeadlineSeconds; d == nil || *d != 43200 {
 		t.Errorf("deadline %v, want the 12h cap, not limits.timeout (1800)", d)
@@ -494,7 +530,11 @@ func TestCreateWorkerPod_RepoSessionUsesItsOwnerVault(t *testing.T) {
 			}
 		}
 	}
-	if sidecar["FLEET_VAULT_PROXY"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" ||
+	sec, err := k8sc.Core.CoreV1().Secrets("agent-fleet").Get(context.Background(), k8s.CredSecretName("repo-1"), metav1.GetOptions{})
+	if err != nil || sec.StringData["vault-proxy"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" {
+		t.Errorf("secret %+v, %v", sec, err)
+	}
+	if sidecar["FLEET_VAULT_PROXY_FILE"] != "/run/fleet/cred/vault-proxy" || sidecar["FLEET_VAULT_PROXY"] != "" ||
 		sidecar["FLEET_VAULT_HOSTS"] != "api.anthropic.com,github.com,api.github.com" || sidecar["EGRESS_PORT"] != "9093" {
 		t.Errorf("sidecar env %v", sidecar)
 	}
@@ -583,5 +623,91 @@ func TestRepoOwner(t *testing.T) {
 		if got != want || (want == "") != (err != nil) {
 			t.Errorf("repoOwner(%q) = %q, %v; want %q", url, got, err, want)
 		}
+	}
+}
+
+func workerJob(t *testing.T, s *Server, k8sc *k8s.Client, id string, p *agentfleetv1.DefinitionPodProfile) []corev1.Container {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := s.CreateWorkerPod(ctx, defRequest(t, id, p)); err != nil {
+		t.Fatal(err)
+	}
+	job, err := k8sc.Core.BatchV1().Jobs(k8sc.Namespace).Get(ctx, k8s.WorkerResourceName(id), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := job.Spec.Template.Spec // the sidecar is a restartable init container
+	return append(append([]corev1.Container{}, spec.InitContainers...), spec.Containers...)
+}
+
+// ADR-0084 §9: a guaranteed profile's cpu/memory reach the worker, and the
+// sidecar is sized requests == limits too.
+func TestCreateWorkerPod_GuaranteedResources(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	p := profile("dev-x")
+	p.Cpu, p.Memory, p.Guaranteed = "500m", "1536Mi", true
+	seen := map[string]bool{}
+	for _, c := range workerJob(t, s, k8sc, "def-res", p) {
+		if c.Name != "worker" && c.Name != "sidecar" {
+			continue
+		}
+		seen[c.Name] = true
+		wantCPU, wantMem := "500m", "1536Mi"
+		if c.Name == "sidecar" {
+			wantCPU, wantMem = "100m", "256Mi"
+		}
+		for kind, l := range map[string]corev1.ResourceList{"requests": c.Resources.Requests, "limits": c.Resources.Limits} {
+			if got := l.Cpu(); got.Cmp(resource.MustParse(wantCPU)) != 0 {
+				t.Errorf("%s cpu %s = %s, want %s", c.Name, kind, got.String(), wantCPU)
+			}
+			if got := l.Memory(); got.Cmp(resource.MustParse(wantMem)) != 0 {
+				t.Errorf("%s memory %s = %s, want %s", c.Name, kind, got.String(), wantMem)
+			}
+		}
+	}
+	if !seen["worker"] || !seen["sidecar"] {
+		t.Fatalf("containers seen: %v", seen)
+	}
+}
+
+// A definition that is not standing keeps the ordinary sizing even when it
+// carries resources.
+func TestCreateWorkerPod_NonStandingKeepsOrdinarySizing(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	p := profile("dev-x")
+	p.Cpu, p.Memory = "1", "2Gi"
+	for _, c := range workerJob(t, s, k8sc, "def-ord", p) {
+		if c.Name == "worker" {
+			if m := c.Resources.Limits.Memory(); m.Cmp(resource.MustParse("4Gi")) != 0 {
+				t.Errorf("worker memory limit = %s, want 4Gi", m.String())
+			}
+			if m := c.Resources.Requests.Memory(); m.Cmp(resource.MustParse("1Gi")) != 0 {
+				t.Errorf("worker memory request = %s, want 1Gi", m.String())
+			}
+			return
+		}
+	}
+	t.Fatal("no worker container")
+}
+
+// The wire is a trust boundary: a bad quantity is InvalidArgument, never a panic.
+func TestCreateWorkerPod_GuaranteedRejectsBadResources(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	for _, c := range []struct{ name, cpu, mem string }{
+		{"unparseable", "lots", "1Gi"}, {"cpu only", "500m", ""}, {"memory only", "", "1Gi"},
+		{"cpu over max", "4001m", "1Gi"}, {"memory over max", "500m", "5Gi"},
+	} {
+		p := profile("dev-x")
+		p.Cpu, p.Memory, p.Guaranteed = c.cpu, c.mem, true
+		_, err := s.CreateWorkerPod(context.Background(), defRequest(t, "def-bad", p))
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("%s: got %v, want InvalidArgument", c.name, err)
+		}
+	}
+	if n := jobCount(t, k8sc); n != 0 {
+		t.Errorf("%d jobs created for refused profiles", n)
 	}
 }

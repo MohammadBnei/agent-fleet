@@ -52,6 +52,14 @@ func TestValidateReadOnly_RefusesCredentialOverrides(t *testing.T) {
 		{"get", "secrets", "--kubeconfig", "/tmp/evil.conf"},
 		{"get", "pods", "--server=https://evil.example.com"},
 		{"get", "pods", "--token=abc"},
+		{"get", "pods", "-s", "https://evil.example.com"},
+		{"get", "pods", "-shttps://evil.example.com"},
+		{"get", "pods", "--certificate-authority=/tmp/ca"},
+		{"get", "pods", "--insecure-skip-tls-verify"},
+		{"get", "pods", "--tls-server-name=x"},
+		{"get", "pods", "--context", "evil"},
+		{"get", "pods", "--cluster=evil"},
+		{"get", "pods", "--user=evil"},
 	} {
 		if refusal := ValidateReadOnly(args); !strings.Contains(refusal, "not permitted") {
 			t.Errorf("%v must be refused, got %q", args, refusal)

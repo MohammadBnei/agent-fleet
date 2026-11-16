@@ -8,7 +8,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 )
 
 // ErrNoExecutorAddr is the shim's one refusal, with the words it has always
@@ -69,6 +71,22 @@ func LoadExecutor(getenv func(string) string) Executor {
 	}
 }
 
+// Remediation is what the remediation executor runs with (ADR-0086 §3): the
+// id of the one approved row to run.
+type Remediation struct {
+	// ID is the remediations row to pull (REMEDIATION_ID, required).
+	ID string
+}
+
+// RemediationFromProcess is the remediation executor's configuration from its
+// environment: the one call that reads it.
+func RemediationFromProcess() Remediation { return LoadRemediation(os.Getenv) }
+
+// LoadRemediation is the remediation executor's configuration from getenv.
+func LoadRemediation(getenv func(string) string) Remediation {
+	return Remediation{ID: getenv("REMEDIATION_ID")}
+}
+
 // ShimFromProcess is the shim's configuration from its environment: the one
 // call that reads it.
 func ShimFromProcess() (Shim, error) { return LoadShim(os.Getenv) }
@@ -78,6 +96,14 @@ func ShimFromProcess() (Shim, error) { return LoadShim(os.Getenv) }
 // with it.
 func LoadShim(getenv func(string) string) (Shim, error) {
 	s := Shim{ExecutorAddr: getenv("EXECUTOR_ADDR"), AuthToken: getenv("THOT_AUTH_TOKEN")}
+	// docs/adr/0086 §6: the pod's Secret file, not env, carries the token.
+	if p := getenv("THOT_AUTH_TOKEN_FILE"); p != "" {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return s, fmt.Errorf("kubectl: THOT_AUTH_TOKEN_FILE: %w", err)
+		}
+		s.AuthToken = strings.TrimSpace(string(b))
+	}
 	if s.ExecutorAddr == "" {
 		return s, ErrNoExecutorAddr
 	}

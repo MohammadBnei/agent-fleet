@@ -157,7 +157,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		}
 		if t, err = s.dash.CreateThread(ctx, head, m.GetThreadKey(), sessions.CreateParams{
 			Owner: owner, Visibility: m.GetVisibility(), Lifecycle: m.GetLifecycle(),
-			Invoker: p.Client, ThreadKey: m.GetThreadKey(),
+			Invoker: p.Client, ThreadKey: m.GetThreadKey(), TrustSet: sessions.TrustFor(sessions.TierFleet),
 		}); err != nil {
 			return nil, err
 		}

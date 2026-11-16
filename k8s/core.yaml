@@ -21,11 +21,14 @@
 # first. The provisioner is replicas: 1 for the same reason.
 replicaCount: 1
 
+# docs/adr/0086 §6: core needs no cluster access, so it gets no API token.
+automountServiceAccountToken: false
+
 image:
   repository: registry.bnei.lan:5000/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "src-bf5e6916c5c4"
+  tag: "src-9d4607a9ebbd"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
 # dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
@@ -143,7 +146,7 @@ env:
   # the image tag is a hash of core's inputs, shared by every release that
   # doesn't change them, so the version can't come from the image.
   - name: FLEET_VERSION
-    value: "7.25.0"
+    value: "7.30.0"
   - name: CORE_PORT
     value: "8080"
   - name: CORE_GRPC_PORT
@@ -478,7 +481,7 @@ hooks:
     type: PreSync
     image:
       repository: registry.bnei.lan:5000/agent-fleet-migration
-      tag: "src-cce0149875e6"
+      tag: "src-a06c4bef62d3"
     args:
       - "up"
 

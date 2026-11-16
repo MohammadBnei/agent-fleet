@@ -50,7 +50,7 @@ var envReaders = map[string][]string{
 // proxy variables.
 var envReadsAllowed = map[string][]string{
 	// The one reader of each binary: Executor's and Shim's FromProcess hand os.Getenv to Load.
-	"internal/config/config.go": {"os.Getenv", "os.Getenv"},
+	"internal/config/config.go": {"os.Getenv", "os.Getenv", "os.Getenv"},
 	// kubectl is run with the process's whole environment, on purpose: PATH to
 	// find it, and the pod's own variables it reads (KUBECONFIG, the in-cluster
 	// service account). A child process, not config.
@@ -265,5 +265,14 @@ func TestEnvUses(t *testing.T) {
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: %v, want %v", c.src, got, c.want)
 		}
+	}
+}
+
+func TestLoadRemediation(t *testing.T) {
+	if got := LoadRemediation(func(k string) string { return map[string]string{"REMEDIATION_ID": "r1"}[k] }); got.ID != "r1" {
+		t.Fatalf("%+v", got)
+	}
+	if got := LoadRemediation(func(string) string { return "" }); got.ID != "" {
+		t.Fatalf("%+v", got)
 	}
 }

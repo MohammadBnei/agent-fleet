@@ -1,5 +1,36 @@
 # Changelog
 
+# [7.30.0](https://github.com/MohammadBnei/agent-fleet/compare/7.29.0...7.30.0) (2026-11-16)
+
+### Features
+
+* **core:** first responders and alert routing (ADR-0086 §3-§4) ([#408](https://github.com/MohammadBnei/agent-fleet/issues/408)) ([b007b65](https://github.com/MohammadBnei/agent-fleet/commit/b007b65539803d006f70971c84f0330f68137206))
+
+# [7.29.0](https://github.com/MohammadBnei/agent-fleet/compare/7.28.0...7.29.0) (2026-11-16)
+
+### Features
+
+* **core:** remediation catalogue, schema, denylist and rate limits, single-use rows (ADR-0086 §3) ([#407](https://github.com/MohammadBnei/agent-fleet/issues/407)) ([c770db6](https://github.com/MohammadBnei/agent-fleet/commit/c770db608ba10f55f1aa57c75498d48de57963de))
+
+# [7.28.0](https://github.com/MohammadBnei/agent-fleet/compare/7.27.0...7.28.0) (2026-11-16)
+
+### Features
+
+* **provisioner:** no credential in pod env (ADR-0086 §6) ([#406](https://github.com/MohammadBnei/agent-fleet/issues/406)) ([0654dbb](https://github.com/MohammadBnei/agent-fleet/commit/0654dbb9e3e655580b79968fad03212acd0a06e2))
+
+# [7.27.0](https://github.com/MohammadBnei/agent-fleet/compare/7.26.0...7.27.0) (2026-11-16)
+
+### Features
+
+* **core:** session trust set stored at create, method tags, enforcement (ADR-0086 §1-§2) ([#404](https://github.com/MohammadBnei/agent-fleet/issues/404)) ([739451e](https://github.com/MohammadBnei/agent-fleet/commit/739451e2aad5528b93c61b013f987585bd06dfea))
+
+# [7.26.0](https://github.com/MohammadBnei/agent-fleet/compare/7.25.0...7.26.0) (2026-11-16)
+
+### Features
+
+* **executor:** thot-executor read-only; remediation executor takes the mutate verbs ([#402](https://github.com/MohammadBnei/agent-fleet/issues/402)) ([5a16426](https://github.com/MohammadBnei/agent-fleet/commit/5a164268f41ee33e655df06f06dd2cc8bda37acd))
+* **provisioner:** apply definition resources, Guaranteed QoS (ADR-0084 slice 1) ([#403](https://github.com/MohammadBnei/agent-fleet/issues/403)) ([94ae440](https://github.com/MohammadBnei/agent-fleet/commit/94ae4403e0159202d29764c259e3449341fb81c6))
+
 # [7.25.0](https://github.com/MohammadBnei/agent-fleet/compare/7.24.0...7.25.0) (2026-11-16)
 
 ### Features

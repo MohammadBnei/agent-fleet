@@ -51,12 +51,11 @@ func main() {
 	// metacharacters stay inert the whole way. Nothing is ever joined
 	// into a string.
 	//
-	// ReadOnly is false: every call arriving here came from the agent's
-	// Bash tool, which a human already approved through canUseTool. The
-	// unattended read path is the separate kubectl_read MCP tool.
+	// ReadOnly is true: thot-executor is read-only and validates every call
+	// regardless (ADR-0086 §3); mutation is the remediation executor's.
 	resp, err := agentfleetv1.NewExecutorServiceClient(conn).Exec(ctx, &agentfleetv1.ExecRequest{
 		Args:     os.Args[1:],
-		ReadOnly: false,
+		ReadOnly: true,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kubectl: executor call failed: %v\n", err)

@@ -114,7 +114,11 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   `repeat_interval 4h`.
 - **A first responder is a single-shot run** (ADR-0070) of a definition with `trust.untrusted: B`.
   - The dispatcher, an in-process principal, `Invoke`s one per alert group with the key
-    `(dispatcher, alert:<groupKey>)` (amends ADR-0070 §1). A repeat inside the run's life is the same run.
+    `(dispatcher, alert:<groupKey>)` (amends ADR-0070 §1). A retry of a full fleet is the same run.
+    **Amended in S06:** the key is `alert:<groupKey>:<definition>:<window>`, the window being the cooldown window the
+    run starts. Two responders on one group are two runs, and firings held through the cooldown start the next run
+    while the first may still be live, so runs for one group can overlap. The dispatcher invokes as the bridge client,
+    so responder runs count against the bridge's parked and per-client caps, shared with the PR reviewer.
   - `<groupKey>` is a stable hash over `alertname`, `namespace` and `service`.
   - A cooldown of 10 min per key holds further firings and coalesces them, without dropping them. A `resolved`
     alert passes once the alert has been firing for at least `group_interval`.
@@ -247,7 +251,7 @@ interface and one deck stay.
   - The provisioner writes them into a per-pod Secret before the Job, and adopts it with an owner reference after.
   - The Secret is mounted as a file with no subPath. Env holds paths only.
   - The worker's proxy goes through the sidecar's egress router (`127.0.0.1:9093`) for definition pods too, so only
-    the sidecar reads the token file, per connection.
+    the sidecar reads the token file, once at start (the token is per warm and never rotated).
   - Automount of the namespace service account token goes off for every pod.
   - The golden tests check mounts as well as env.
 - **This is the first PR,** before any new read role. It also closes the exposure to today's `thot-executor` role,

@@ -66,7 +66,13 @@ type Handler struct {
 	discord   Notifier
 	cfg       Config
 	inactive  func(ctx context.Context, repo string) bool
+	skip      func(raw json.RawMessage) bool
 }
+
+// SetSkip installs the responder gate: an alert skip reports true for is the first responders' (docs/adr/0086 §4),
+// so this webhook files no proposal for it (File, the dispatcher's and the responders' fallback, never skips).
+// Nil means no gate.
+func (h *Handler) SetSkip(fn func(raw json.RawMessage) bool) { h.skip = fn }
 
 // SetInactive installs the repo gate: while cfg.Repo is inactive, firing
 // alerts file no proposal. Nil means no gate.
@@ -138,6 +144,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// batch: Alertmanager groups alerts, so failing the whole request
 		// would drop good alerts along with the bad one, and it retries the
 		// batch as a unit. File logs its own failures.
+		if h.skip != nil && h.skip(raw) {
+			skipped++
+			continue
+		}
 		switch ok, err := h.file(r.Context(), raw); {
 		case err != nil:
 		case ok:
@@ -293,3 +303,7 @@ func truncate(s string, n int) string {
 	}
 	return s[:n]
 }
+
+// Untrusted is untrusted for the first responders' input (docs/adr/0086 §3): one alert field, flattened to a
+// single line that cannot leave its fence.
+func Untrusted(s string) string { return untrusted(s) }

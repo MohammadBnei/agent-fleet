@@ -501,3 +501,35 @@ func (w *warmer) WarmForAnswer(ctx context.Context, id string) (string, func(), 
 	p, err := w.WarmIfIdle(ctx, id)
 	return p, func() {}, err
 }
+
+// docs/adr/0086 §4: a responder's card is on an alert group, not a GitHub subject, and only core files one.
+func TestDraft_AlertGroupSubject(t *testing.T) {
+	f := setup(t)
+	s := f.thread(t, "client:bridge", "private", "")
+	group := func(key string) decisions.Draft {
+		return decisions.Draft{
+			SessionID: s, From: "system", Ask: "Alert Down needs a code fix.",
+			Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: key},
+			Options: []*agentfleetv1.CardOption{opt("I will handle it", "handoff", "yes"), opt("Dismiss", "handoff", "yes")},
+		}
+	}
+	r := f.draft(t, group("0123456789abcdef"))
+	if r.Subject != "alert/0123456789abcdef" || payload(t, r).GetSubject().GetUrl() != "" || payload(t, r).GetDraftedBy() != "core" {
+		t.Fatalf("subject %q payload %v", r.Subject, payload(t, r))
+	}
+	for name, d := range map[string]decisions.Draft{
+		"a short key":  group("0123"),
+		"an upper key": group("0123456789ABCDEF"),
+		"a repo too":   func() decisions.Draft { d := group("0123456789abcdef"); d.Subject.Repo = "acme/web"; return d }(),
+		"a close": func() decisions.Draft {
+			d := group("0123456789abcdef")
+			d.Options[1] = opt("Close", "close_threads", "no")
+			return d
+		}(),
+		"from an agent": func() decisions.Draft { d := group("0123456789abcdef"); d.From = "agent"; return d }(),
+	} {
+		if _, err := f.store.Draft(f.ctx, f.tr, d); !errors.Is(err, decisions.ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", name, err)
+		}
+	}
+}

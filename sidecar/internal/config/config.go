@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 )
 
 var setRe = regexp.MustCompile(`^(A|AB|AC|ABC|B|BC|C)$`)
@@ -53,8 +54,9 @@ type Config struct {
 	LocalAPIPort string
 	HealthPort   string
 	// VaultProxy is the pod's Agent Vault proxy URL with its session token as
-	// userinfo (FLEET_VAULT_PROXY, docs/adr/0075 §7). Set on repo pods only;
-	// empty starts no egress router. Never logged.
+	// userinfo (FLEET_VAULT_PROXY, docs/adr/0075 §7). Set on every pod
+	// (repo and definition); empty starts no egress router. Read once at start
+	// from FLEET_VAULT_PROXY_FILE, the pod's credential Secret. Never logged.
 	VaultProxy string
 	// VaultHosts is the comma-separated host list the router sends to the vault
 	// (FLEET_VAULT_HOSTS), parsed by egress.New.
@@ -97,16 +99,30 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		return fallback
 	}
+	var fileErrs []error
+	// docs/adr/0086 §6: a credential is the file KEY_FILE names; the bare key
+	// is the fallback for a local run. An unreadable file is a refusal.
+	secret := func(key string) string {
+		path := getenv(key + "_FILE")
+		if path == "" {
+			return getenv(key)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			fileErrs = append(fileErrs, fmt.Errorf("%s_FILE: %w", key, err))
+		}
+		return strings.TrimSpace(string(b))
+	}
 	c := Config{
 		LogLevel:       env("LOG_LEVEL", "info"),
 		SessionID:      getenv("SESSION_ID"),
-		LeaseID:        getenv("LEASE_ID"),
+		LeaseID:        secret("LEASE_ID"),
 		CoreGRPCAddr:   env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
 		WorktreePath:   env("WORKTREE_PATH", "/workspace"),
 		MCPPort:        env("MCP_PORT", "9090"),
 		LocalAPIPort:   env("LOCAL_API_PORT", "9091"),
 		HealthPort:     env("HEALTH_PORT", "9092"),
-		VaultProxy:     getenv("FLEET_VAULT_PROXY"),
+		VaultProxy:     secret("FLEET_VAULT_PROXY"),
 		VaultHosts:     getenv("FLEET_VAULT_HOSTS"),
 		EgressPort:     env("EGRESS_PORT", "9093"),
 		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
@@ -124,5 +140,5 @@ func Load(getenv func(string) string) (Config, error) {
 	if (c.AgentName != "" || c.TrustSet != "") && !ValidSet(c.TrustSet) {
 		errs = append(errs, fmt.Errorf("FLEET_TRUST_SET %q is not a set like AB or BC", c.TrustSet))
 	}
-	return c, errors.Join(errs...)
+	return c, errors.Join(append(errs, fileErrs...)...)
 }

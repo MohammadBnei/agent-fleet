@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -52,7 +53,9 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
+	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
@@ -465,6 +468,22 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	})
 	alertHandler.SetInactive(repoStore.Inactive)
 	mux.Handle("/webhook/alertmanager", alertHandler)
+	remStore := remediations.NewStore(pool)
+	mux.Handle(remediations.Path, remediations.Handler(remStore, cfg.RemediationToken))
+	go func() { // a pulled row with no report in 15 min has an unknown outcome: mark it lost and say so
+		for t := time.NewTicker(time.Minute); ; {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if ids, err := remStore.SweepLost(ctx, 15*time.Minute); err != nil {
+					slog.Error("remediations: sweep failed", "error", err)
+				} else if len(ids) > 0 {
+					slog.Error("remediations: pulled but never reported, outcome unknown", "ids", ids)
+				}
+			}
+		}
+	}()
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 the identity is devIdentity (above).
 	memberInterceptors = connectInterceptors(tr, true,
@@ -488,10 +507,25 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		}
 		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
 		dispatcher.SetCards(decisionStore, activityStore)
+		// First responders (docs/adr/0086 §3): an alert a responder definition subscribes to starts its run, and
+		// the webhook files no proposal for it.
+		remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
+		dispatcher.SetResponders(&responder.Runner{
+			Client: dispatch.Client, Agents: agentSvc, Defs: defs,
+			Filer: responder.Filer{Select: remSvc.Select, Draft: func(ctx context.Context, d decisions.Draft) error {
+				_, err := decisionStore.Draft(ctx, activityStore, d)
+				return err
+			}},
+		})
 		dashboardSvc.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, sub string) (string, error) {
 			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
 		})
 		if cfg.Bridge.URL != "" {
+			// Only while the dispatcher runs does a responder answer: without it the webhook files every alert.
+			// B definitions take no subject filter (validateTrust), so a type match is the whole question.
+			alertHandler.SetSkip(func(json.RawMessage) bool {
+				return len(responder.Subscribers(defs, dispatch.Client, responder.AlertFiring, "")) > 0
+			})
 			go dispatcher.Run(ctx)
 		}
 	}

@@ -171,6 +171,13 @@ func contextBudgetEnv() []corev1.EnvVar {
 const (
 	workerMaxCPU    = "4000m"
 	workerMaxMemory = "4Gi"
+
+	// Guaranteed pods (ADR-0084 §9) size the sidecar and clone containers
+	// with requests == limits too, or the pod is Burstable.
+	sidecarGuaranteedCPU    = "100m"
+	sidecarGuaranteedMemory = "256Mi"
+	cloneGuaranteedCPU      = "1000m"
+	cloneGuaranteedMemory   = "1Gi"
 )
 
 func int32Ptr(i int32) *int32 { return &i }
@@ -247,10 +254,14 @@ type DefinitionProfile struct {
 	Name           string
 	GitAuthorName  string
 	GitAuthorEmail string
-	// ProxyURL is HTTPS_PROXY, carrying this pod's vault session token: the
-	// only credential in the pod, and one that reaches only its vault's rules
-	// (docs/adr/0065). Empty refuses the pod.
+	// ProxyURL carries this pod's vault session token: the only credential in
+	// the pod, and one that reaches only its vault's rules (docs/adr/0065).
+	// It goes to the pod's Secret for the sidecar's egress router, never to
+	// env (docs/adr/0086 §6). Empty refuses the pod.
 	ProxyURL string
+	// VaultHosts are the hosts of the definition's vault services: the
+	// router's host list.
+	VaultHosts []string
 	// DeadlineSeconds is the Job's activeDeadlineSeconds: the fixed lifetime
 	// cap (grpcserver's podLifetime). The token outlives it by 60s.
 	DeadlineSeconds int64
@@ -258,6 +269,27 @@ type DefinitionProfile struct {
 	// (VaultLabelAnnotation) so every revoke path deletes exactly this
 	// pod's token. Not a secret.
 	VaultLabel string
+	// CPU/Memory are the definition's validated `resources` (ADR-0084 §9).
+	// Both set makes the pod Guaranteed QoS: worker, sidecar and clone all
+	// carry requests == limits. Empty keeps the ordinary burstable sizing.
+	CPU, Memory string
+	// Guaranteed is set for standing definitions only.
+	Guaranteed bool
+}
+
+// guaranteedResources is requests == limits, which is what Guaranteed QoS needs.
+func guaranteedResources(cpu, memory string) corev1.ResourceRequirements {
+	l := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse(cpu),
+		corev1.ResourceMemory: resource.MustParse(memory),
+	}
+	return corev1.ResourceRequirements{Requests: l, Limits: l.DeepCopy()}
+}
+
+// guaranteed reports whether spec's definition asks for Guaranteed QoS.
+func (spec WorkerPodSpec) guaranteed() bool {
+	d := spec.Definition
+	return d != nil && d.Guaranteed && d.CPU != "" && d.Memory != ""
 }
 
 // VaultLabelAnnotation carries DefinitionProfile.VaultLabel on the Job.
@@ -298,8 +330,9 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 // channel (docs/adr/0060), which never touches core and so is not bounded by
 // the definition allowlist.
 //
-// The proxy, its CA and NO_PROXY (loopback for the sidecar, core, the vault
-// API) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
+// The proxy (the sidecar's egress router on loopback, which alone holds the
+// vault token, in its credential file), its CA and NO_PROXY (loopback and core;
+// the vault is reached only through the router) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
 // NODE_USE_ENV_PROXY (Node's own fetch ignores the proxy vars without it), and
 // the CA in every variable a client in the worker image reads. No HTTP_PROXY:
 // the vault's plain http:// path injects too, so a plain-http request goes
@@ -311,7 +344,7 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 	if coreHost != "" {
 		noProxy = append(noProxy, coreHost)
 	}
-	return vaultWorkerEnv(env, d.ProxyURL, noProxy, vaultCADir+"/ca.pem", d.Name, d.GitAuthorName, d.GitAuthorEmail)
+	return vaultWorkerEnv(env, fmt.Sprintf("http://127.0.0.1:%d", SidecarEgressPort), noProxy, vaultCADir+"/ca.pem", d.Name, d.GitAuthorName, d.GitAuthorEmail)
 }
 
 // withGitURLRewrite appends `url.<rewrite>.insteadOf = https://github.com/` to
@@ -436,7 +469,7 @@ func (c *Client) ResolveImages(override string) (worker, sidecar string) {
 
 func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error {
 	taskID, repo := spec.SessionID, spec.Repo
-	leaseID, resumeSessionID, resumeFromSeq := spec.LeaseID, spec.ResumeID, spec.ResumeFromSeq
+	resumeSessionID, resumeFromSeq := spec.ResumeID, spec.ResumeFromSeq
 	toolKeys, serviceIngredients, extraEnv := spec.ToolKeys, spec.ServiceRefs, spec.ExtraEnv
 
 	workerImage, _ := c.ResolveImages(spec.Image)
@@ -475,6 +508,37 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	}
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
+	// Raised from 250m/256Mi: in a repo pod every HTTPS connection the worker
+	// makes is tunnelled through the sidecar (sidecar/internal/egress), and an
+	// OOM there drops all of them, MCP included.
+	sidecarResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("50m"),
+			corev1.ResourceMemory: resource.MustParse("64Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1000m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+	}
+	// The 4000m/4Gi limits sit at exactly limitRange.max in k8s/core.yaml. A
+	// container limit ABOVE max is rejected at admission and the pod is never
+	// created. Change them together; TestCreateWorkerPod_ResourcesWithinLimitRange
+	// pins them.
+	workerResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(workerMaxCPU),
+			corev1.ResourceMemory: resource.MustParse(workerMaxMemory),
+		},
+	}
+	if spec.guaranteed() {
+		workerResources = guaranteedResources(spec.Definition.CPU, spec.Definition.Memory)
+		sidecarResources = guaranteedResources(sidecarGuaranteedCPU, sidecarGuaranteedMemory)
+	}
 
 	ingredientInitContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(toolKeys, serviceIngredients, ClusterAccess{ExecutorAddr: c.ExecutorAddr, AuthToken: c.ThotAuthToken})
 	if err != nil {
@@ -484,7 +548,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	workerEnv := []corev1.EnvVar{
 		{Name: "SESSION_ID", Value: taskID},
 		{Name: "TARGET_REPO", Value: repo},
-		{Name: "LEASE_ID", Value: leaseID},
 		// 127.0.0.1, not "localhost": the sidecar binds IPv4 loopback only, and
 		// "localhost" resolves to ::1 as well on a dual-stack image. Whether
 		// that works then depends on the client's happy-eyeballs behaviour
@@ -566,6 +629,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
+		// docs/adr/0086 §6: no pod reads the namespace's API-server token.
+		AutomountServiceAccountToken: boolPtr(false),
 		// fsGroup, and it is load-bearing rather than hardening.
 		//
 		// Kubelet creates a subPath directory root-owned 0755, and every
@@ -618,7 +683,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// The sidecar, not the worker, is what talks to core, so
 					// the credential CoreService checks has to be here too —
 					// the worker's own copy authenticates nothing.
-					{Name: "LEASE_ID", Value: spec.LeaseID},
+					{Name: LeaseIDFileEnv, Value: credDir + "/" + credKeyLease},
 					{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 					// Without this, the sidecar falls back to its own
@@ -681,21 +746,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// same as being able to run git on them.
 					repoCacheMount(spec),
 				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("50m"),
-						corev1.ResourceMemory: resource.MustParse("64Mi"),
-					},
-					// Raised from 250m/256Mi: in a repo pod every HTTPS
-					// connection the worker makes is tunnelled through this
-					// container (sidecar/internal/egress), and an OOM here
-					// drops all of them, MCP included. Definition pods get
-					// the same limit: one number, requests unchanged.
-					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("1000m"),
-						corev1.ResourceMemory: resource.MustParse("512Mi"),
-					},
-				},
+				Resources: sidecarResources,
 				// HTTP on /readyz, not a bare TCP check: a TCP probe only
 				// proves the sidecar process is listening, not that it can
 				// actually reach core — a sidecar with zero core
@@ -791,16 +842,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				// and the pod is never created at all — not throttled, not
 				// pending, absent. Change the two together;
 				// TestCreateWorkerPod_ResourcesWithinLimitRange pins them.
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
-					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse(workerMaxCPU),
-						corev1.ResourceMemory: resource.MustParse(workerMaxMemory),
-					},
-				},
+				Resources: workerResources,
 			},
 		},
 		Volumes: []corev1.Volume{
@@ -823,6 +865,44 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		podSpec.Volumes = append(podSpec.Volumes, *toolsVol)
 	}
 
+	// docs/adr/0086 §6: the per-warm credentials go to the pod's Secret, and
+	// env carries their paths. The sidecar holds the lease and the vault
+	// token; the worker holds only the executor token, in a cluster-access pod.
+	creds := map[string]string{credKeyLease: spec.LeaseID}
+	sidecarKeys := []string{credKeyLease}
+	var vaultProxy string
+	var vaultHosts []string
+	switch {
+	case spec.Definition != nil:
+		vaultProxy, vaultHosts = spec.Definition.ProxyURL, spec.Definition.VaultHosts
+	case spec.RepoVault != nil:
+		vaultProxy, vaultHosts = spec.RepoVault.ProxyURL, vault.OwnerHosts
+	}
+	for i := range podSpec.InitContainers {
+		sc := &podSpec.InitContainers[i]
+		if sc.Name != "sidecar" {
+			continue
+		}
+		if vaultProxy != "" {
+			creds[credKeyVaultProxy] = vaultProxy
+			sidecarKeys = append(sidecarKeys, credKeyVaultProxy)
+			sc.Env = append(sc.Env,
+				corev1.EnvVar{Name: VaultProxyFileEnv, Value: credDir + "/" + credKeyVaultProxy},
+				corev1.EnvVar{Name: "FLEET_VAULT_HOSTS", Value: strings.Join(vaultHosts, ",")},
+				corev1.EnvVar{Name: "EGRESS_PORT", Value: fmt.Sprint(SidecarEgressPort)},
+			)
+		}
+		vol, mount := credVolume("cred-sidecar", CredSecretName(taskID), sidecarKeys...)
+		podSpec.Volumes = append(podSpec.Volumes, vol)
+		sc.VolumeMounts = append(sc.VolumeMounts, mount)
+	}
+	if slices.ContainsFunc(workerEnv, func(e corev1.EnvVar) bool { return e.Name == ThotAuthTokenFileEnv }) {
+		creds[credKeyThot] = c.ThotAuthToken
+		vol, mount := credVolume("cred-worker", CredSecretName(taskID), credKeyThot)
+		podSpec.Volumes = append(podSpec.Volumes, vol)
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mount)
+	}
+
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
 		Spec: batchv1.JobSpec{
@@ -840,16 +920,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(r.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: r.VaultLabel}
 		mountVaultCA(&job.Spec.Template.Spec)
-		// The token goes to the sidecar's egress router only.
-		for i := range job.Spec.Template.Spec.InitContainers {
-			if c := &job.Spec.Template.Spec.InitContainers[i]; c.Name == "sidecar" {
-				c.Env = append(c.Env,
-					corev1.EnvVar{Name: "FLEET_VAULT_PROXY", Value: r.ProxyURL},
-					corev1.EnvVar{Name: "FLEET_VAULT_HOSTS", Value: strings.Join(vault.OwnerHosts, ",")},
-					corev1.EnvVar{Name: "EGRESS_PORT", Value: fmt.Sprint(SidecarEgressPort)},
-				)
-			}
-		}
 	}
 	if m := spec.Memory; m != nil {
 		if err := applyMemory(&job.Spec.Template.Spec, *m); err != nil {
@@ -862,9 +932,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(d.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: d.VaultLabel}
 		ps := &job.Spec.Template.Spec
-		// No API-server token (the namespace's default SA would mount one,
-		// readable by the agent's Read tool) and no Service env vars.
-		ps.AutomountServiceAccountToken = boolPtr(false)
+		// No Service env vars (the API-server token is off for every pod).
 		ps.EnableServiceLinks = boolPtr(false)
 		// REFUSED from the egress lock's DNS allowlist + musl's search
 		// expansion under ndots:5 stops resolution (spike 1 (b)).
@@ -882,12 +950,26 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		})
 	}
 
+	if err := c.createCredSecret(ctx, taskID, creds); err != nil {
+		return fmt.Errorf("create credential secret: %w", err)
+	}
 	jobCtx, endJob := spans.Start(ctx, "warm.job_create", attribute.String("session_id", taskID))
-	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
+	created, err := c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
 	endJob(err)
 	if err != nil {
+		// Only a Secret this call made: an AlreadyExists Job is a live pod's.
+		if !apierrors.IsAlreadyExists(err) {
+			c.DeleteCredSecret(ctx, taskID)
+		}
 		slog.Error("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo, "error", err)
 		return err
+	}
+	if err := c.adoptCredSecret(ctx, taskID, created); err != nil {
+		// An unowned Secret would outlive the Job: undo both, the caller
+		// revokes the token.
+		_ = c.DeleteWorkerJob(context.WithoutCancel(ctx), taskID)
+		c.DeleteCredSecret(ctx, taskID)
+		return fmt.Errorf("adopt credential secret: %w", err)
 	}
 	slog.Info("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo)
 	metrics.PodsCreatedTotal.WithLabelValues("worker").Inc()
@@ -917,6 +999,7 @@ func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 		slog.Error("k8s DeleteWorkerJob", "sessionId", taskID, "error", err)
 		return err
 	}
+	c.DeleteCredSecret(ctx, taskID)
 	slog.Info("k8s DeleteWorkerJob", "sessionId", taskID)
 	metrics.PodsDeletedTotal.WithLabelValues("worker").Inc()
 	return nil
@@ -1029,4 +1112,23 @@ func (c *Client) ensureVaultCA(ctx context.Context, data map[string]string) erro
 	cm.Data = data
 	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
 	return err
+}
+
+// ValidateGuaranteed checks a guaranteed profile's cpu and memory at the wire
+// boundary: both set, parseable, and within limitRange.max (a pod over it is
+// rejected at admission and never appears).
+func ValidateGuaranteed(cpu, memory string) error {
+	if cpu == "" || memory == "" {
+		return errors.New("guaranteed definition profile needs both cpu and memory")
+	}
+	for _, q := range []struct{ name, v, max string }{{"cpu", cpu, workerMaxCPU}, {"memory", memory, workerMaxMemory}} {
+		got, err := resource.ParseQuantity(q.v)
+		if err != nil {
+			return fmt.Errorf("definition profile %s %q: %w", q.name, q.v, err)
+		}
+		if got.Cmp(resource.MustParse(q.max)) > 0 {
+			return fmt.Errorf("definition profile %s %q is over %s", q.name, q.v, q.max)
+		}
+	}
+	return nil
 }

@@ -919,6 +919,8 @@ the proxy variables) are theirs and not listed.
 | `FLEET_CORE_PROVISIONER_TOKEN` | none | any | secret: core's bearer to `ProvisionerService` (`adr/0069`) |
 | `FLEET_CLIENT_TOKEN_<NAME>` | none | any | secret: a registered client's bearer; the name is its definition's `tokenRef`, read at match time (`adr/0066` §3) |
 | `FLEET_REPO_OVERRIDES` | none | any path | infra-bootstrap's overrides file; empty turns the repos sync off (`adr/0074`) |
+| `FLEET_REMEDIATION_TOKEN` | none | any secret | bearer the remediation executor presents to `/remediations/`; empty serves nothing (`adr/0086` §3) |
+| `FLEET_LOW_STAKES` | none | any path | infra-bootstrap's reviewed `fleet-low-stakes` list as mounted; empty means no namespace is low-stakes, so no free-form fix (`adr/0086` §3) |
 | `PROVISIONER_GRPC_ADDR` | `provisioner.agent-fleet.svc.cluster.local:9090` | `host:port` | where core commands the provisioner |
 | `STT_ADDR` | `ukubi-stt.ukubi-stt.svc.cluster.local:9090` | `host:port`; read only with `STT_TOKEN_FLEET` set | speech-to-text |
 | `STT_TOKEN_FLEET` | none | any | secret; unset disables dictation |
