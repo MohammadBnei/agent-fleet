@@ -652,6 +652,106 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 	}
 }
 
+// docs/adr/0070 §6 (build order slice 11): a parked run past its
+// answerTimeout ends expired and one whose definition moved ends, both
+// through §7 (torn down, then swept); a parked run inside its timeout, on a
+// current pin, is untouched, and the retention sweep leaves it alone too.
+func TestExpireRuns_TimeoutAndMovedPinEndThroughTeardown(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES
+		('d', 'sha1', '{}', '{}', true),
+		('short', 'sha1', '{}', '{"limits":{"answerTimeout":"1h"}}', true),
+		('m', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	// park opens a run on def, parks it on a permission waited on for age,
+	// and returns it.
+	park := func(def string, age time.Duration) string {
+		t.Helper()
+		id, err := store.Create(ctx, CreateParams{Repo: "notes", DefinitionName: def, DefinitionSHA: "sha1",
+			Owner: "client:bot", Invoker: "bot", Visibility: "private", Lifecycle: "single-shot"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range [][2]string{{"human", "discussion"}, {"agent", "permission_request"}, {"worker", "result"}} {
+			text := map[string]string{"discussion": "go", "permission_request": `{"tool":"Bash","input":{"command":"ls"},"nb":1}`,
+				"result": `{"subtype":"success","consumedSeq":0,"exit":true}`}[e[1]]
+			if _, err := tr.Append(ctx, id, e[0], text, e[1], ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE decisions SET created_at = now() - $2::interval WHERE session_id = $1`, id, age.String()); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	expired := park("d", 25*time.Hour)  // past the 24h default
+	short := park("short", 2*time.Hour) // past its own 1h
+	fresh := park("d", 23*time.Hour)    // inside the default
+	moved := park("m", time.Minute)     // pinned sha1, current sha2
+	shortFresh := park("short", time.Minute)
+
+	fake := &fakeProvisioner{}
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	loop.SetDefinitionHead(func(name string) (string, bool) {
+		return map[string]string{"d": "sha1", "short": "sha1", "m": "sha2"}[name], true
+	})
+	loop.expireRuns(ctx)
+	loop.endRuns(ctx)
+
+	state := func(id string) string {
+		t.Helper()
+		var s string
+		if err := pool.QueryRow(ctx, `SELECT state FROM decisions WHERE session_id = $1`, id).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	for id, want := range map[string]string{expired: "expired", short: "expired", moved: "stale"} {
+		s, err := store.Get(ctx, id)
+		if err != nil || s.ArchivedAt == nil || s.SweptAt == nil {
+			t.Errorf("ended run %s: %+v %v, want archived and its PVC swept", id, s, err)
+		}
+		if got := state(id); got != want {
+			t.Errorf("run %s decision %q, want %q", id, got, want)
+		}
+		if i := slices.Index(fake.calls, "teardown:"+id); i < 0 || i+1 >= len(fake.calls) || fake.calls[i+1] != "sweep:"+id {
+			t.Errorf("run %s: calls %v, want teardown then sweep", id, fake.calls)
+		}
+	}
+	for _, id := range []string{fresh, shortFresh} {
+		s, err := store.Get(ctx, id)
+		if err != nil || s.ArchivedAt != nil || s.SweptAt != nil || state(id) != "open" {
+			t.Errorf("parked run %s inside its timeout was touched: %+v %v", id, s, err)
+		}
+	}
+
+	// Retention: a parked run untouched for longer than the window keeps
+	// its PVC (answerTimeout bounds it); an untouched resident one does not.
+	resident, err := store.Create(ctx, CreateParams{Repo: "notes", Title: "", Description: "old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPodPhase(ctx, resident, "POD_PHASE_TERMINATED", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET last_active_at = now() - interval '30 days' WHERE id = ANY($1::uuid[])`,
+		[]string{fresh, resident}); err != nil {
+		t.Fatal(err)
+	}
+	fake.swept = nil
+	loop.collectExpired(ctx)
+	if !slices.Equal(fake.swept, []string{resident}) {
+		t.Errorf("retention swept %v, want only the resident session %s (not parked %s)", fake.swept, resident, fresh)
+	}
+}
+
 // A failed sweep leaves the run archived and unswept for the next tick:
 // its disk is still there.
 func TestEndRuns_FailedSweepRetries(t *testing.T) {

@@ -180,6 +180,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	repoOverrides := &repos.Overrides{Path: cfg.RepoOverridesPath}
 	var repoSyncBusy atomic.Bool
 	decisionStore := decisions.NewStore(pool)
+	// A parked run pinned to a version that is no longer current ends
+	// (docs/adr/0070 §6); a registry that cannot tell ends nothing.
+	sessionLoop.SetDefinitionHead(func(name string) (string, bool) {
+		h, err := defs.Resolve(name)
+		return h.SHA, err == nil
+	})
 	sessionLoop.SetOnTick(func(ctx context.Context) {
 		// Before the sync, which returns early on failure: an expired card
 		// must not wait on a healthy registry.

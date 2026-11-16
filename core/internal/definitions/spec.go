@@ -157,6 +157,11 @@ type Limits struct {
 	Timeout       string `yaml:"timeout"       json:"timeout"`
 	Concurrency   int    `yaml:"concurrency"   json:"concurrency"`
 	StartupBudget string `yaml:"startupBudget" json:"startupBudget"`
+	// AnswerTimeout bounds how long a parked single-shot run's decision may
+	// wait (docs/adr/0070 §6); past it core ends the run expired. Unset is
+	// 24h, applied where it is read (sessions.Loop), not here: filling it in
+	// would change every definition's effective JSON and so move every pin.
+	AnswerTimeout string `yaml:"answerTimeout,omitempty" json:"answerTimeout,omitempty"`
 }
 
 type ClientSpec struct {
