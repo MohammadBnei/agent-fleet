@@ -279,6 +279,9 @@ deploy, CI, permission or pod-lifecycle paths.
 - OIDC issuer compared byte-for-byte → normalising it is a change. Fails closed = outage.
 - `fleet.bnei.dev` has one lock, IngressRoute matches host with no path constraint. **A new
   exempt path is a new public endpoint.**
+- Core release whose definitions loader rejects a field old definition files still carry →
+  provisioner reaches the cluster first (it serves the files at its tag), else one sync
+  tick marks every definition invalid. See `docs/verification-traps.md`.
 
 ## Workflow rules
 

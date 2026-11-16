@@ -46,7 +46,7 @@ test("a key reads as its text; anything else as the error's message", () => {
   const twice = keyed("stale", Code.FailedPrecondition, "agent.decision_stale");
   twice.metadata.set("Trace-Id", "2862b494c9c106a97920f1530cdcceea");
   expect(agentErrorText(twice)).toBe(
-    "This card was replaced by a newer one.\n\nTrace ID: 2862b494c9c106a97920f1530cdcceea",
+    "This decision is no longer current; nothing was done.\n\nTrace ID: 2862b494c9c106a97920f1530cdcceea",
   );
   // An unkeyed refusal (no such decision) keeps its message and gains the id.
   expect(
