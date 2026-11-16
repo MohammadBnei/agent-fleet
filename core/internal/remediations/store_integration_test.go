@@ -23,6 +23,15 @@ func TestStore_RateLimits(t *testing.T) {
 	if _, err := st.Insert(ctx, "r1", restartOf("a"), Bounds{}); err != nil {
 		t.Fatal(err)
 	}
+	// The preview says the same without writing.
+	svc := &Service{Store: st}
+	raw := []byte(`{"action":"restart","kind":"deployment","namespace":"game","name":"a"}`)
+	if err := svc.Check(ctx, "r2", raw, Bounds{}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("Check on a limited target: %v", err)
+	}
+	if err := svc.Check(ctx, "r2", []byte(`{"action":"restart","kind":"deployment","namespace":"game","name":"zz"}`), Bounds{}); err != nil {
+		t.Fatalf("Check on a free target: %v", err)
+	}
 	// Same target inside 10 min, even from another responder.
 	if _, err := st.Insert(ctx, "r2", restartOf("a"), Bounds{}); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("same target: %v", err)

@@ -154,12 +154,14 @@ func (c Config) get(w http.ResponseWriter, r *http.Request, id auth.Identity) {
 			return
 		}
 		o := card.GetOptions()[i]
-		// A reversible option is answered in place; this page is for the rest.
-		if o.GetReversible() == "yes" {
+		// A reversible option is answered in place; this page is for the rest, and for a core verb, which
+		// a surface never answers in place (agentsvc.confirmFirst).
+		if o.GetReversible() == "yes" && !decisions.IsCoreVerb(o.GetEffect().GetVerb()) {
 			page(w, http.StatusBadRequest, view{Msg: "This option is reversible: answer it where you are. Nothing was done."})
 			return
 		}
 		vw.Label, vw.Effect, vw.Reversible = o.GetLabel(), effectText(o, card.GetSubject()), reversibleText[o.GetReversible()]
+		vw.Payload = decisions.EffectLines(o.GetEffect())
 	}
 	// docs/adr/0082 §7: a fresh sign-in, at top level (authentik refuses
 	// framing), and back here.
@@ -263,6 +265,16 @@ func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string 
 	if t, ok := verbText[v]; ok {
 		return t
 	}
+	switch v {
+	case "catalogue":
+		return "Core runs the bound remediation, hash " + hashHead(o)
+	case "open_pr":
+		return "Core opens a pull request from the pushed branch, hash " + hashHead(o)
+	case "open_session":
+		return "Core starts a supervised session seeded with the typed brief, hash " + hashHead(o)
+	case "executor_step":
+		return "Refused: ADR-0072's executor does not exist yet"
+	}
 	// choose, handoff and any other verb.
 	if v != "close_threads" {
 		return "Sends your choice to the agent"
@@ -273,10 +285,16 @@ func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string 
 	return "Closes every thread on " + s.GetRepo() + " " + s.GetKind() + " #" + strconv.FormatInt(s.GetNumber(), 10)
 }
 
+func hashHead(o *agentfleetv1.CardOption) string {
+	h := o.GetEffect().GetPayloadHash()
+	return h[:min(len(h), 12)]
+}
+
 type view struct {
 	Msg, Login, Back           string
 	Ask, Detail, Label, Effect string
 	Reversible                 string
+	Payload                    []string
 	Own                        bool
 	Form                       *claim
 	Token                      string
@@ -290,7 +308,8 @@ var tmpl = template.Must(template.New("").Parse(`<!doctype html><meta charset="u
 <form method="post" action="/decisions/confirm">
 {{if .Form.Text}}<p><small>Your answer, in your own words</small><br><textarea readonly rows="6" cols="60">{{.Form.Text}}</textarea></p>
 {{else if .Own}}<p><label>Your answer, in your own words<br><textarea name="own_text" rows="6" cols="60" maxlength="2000" required></textarea></label></p>
-{{else}}<p><small>Agent claim</small><br><b>{{.Label}}</b></p><p>{{.Effect}} ({{.Reversible}}).</p>{{end}}
+{{else}}<p><small>Agent claim</small><br><b>{{.Label}}</b></p><p>{{.Effect}} ({{.Reversible}}).</p>{{if .Payload}}<pre style="white-space:pre-wrap">{{range .Payload}}{{.}}
+{{end}}</pre>{{end}}{{end}}
 <input type="hidden" name="id" value="{{.Form.ID}}"><input type="hidden" name="option" value="{{.Form.Option}}">
 <input type="hidden" name="v" value="{{.Form.V}}"><input type="hidden" name="return_to" value="{{.Form.Return}}">
 <input type="hidden" name="text" value="{{.Form.Text}}"><input type="hidden" name="exp" value="{{.Form.Exp}}"><input type="hidden" name="token" value="{{.Token}}">

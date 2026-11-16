@@ -102,3 +102,38 @@ func TestVaultSpec_CarriesReadOnly(t *testing.T) {
 		t.Error("read_only dropped on the way to the vault")
 	}
 }
+
+func TestOpenPullRequest(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	app := &fakeApp{}
+	s.SetGitHub(app)
+	req := func() *agentfleetv1.OpenPullRequestRequest {
+		return &agentfleetv1.OpenPullRequestRequest{Repo: "MohammadBnei/agent-fleet", Branch: "fix/x", HeadSha: headSHA, Title: "Fix x"}
+	}
+	resp, err := s.OpenPullRequest(context.Background(), req())
+	if err != nil || resp.GetUrl() != "https://x/pull/1" || len(app.prs) != 1 || app.prs[0] != "MohammadBnei/agent-fleet fix/x "+headSHA+" Fix x" {
+		t.Fatalf("open: %v %v %v", resp, err, app.prs)
+	}
+	for name, mut := range map[string]func(*agentfleetv1.OpenPullRequestRequest){
+		"repo":      func(r *agentfleetv1.OpenPullRequestRequest) { r.Repo = "../x" },
+		"branch":    func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "" },
+		"flag-like": func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "--x" },
+		"dotdot":    func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a/../../../x" },
+		"lock":      func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a/x.lock" },
+		"slashes":   func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a//x" },
+		"trailing":  func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a/" },
+		"sha":       func(r *agentfleetv1.OpenPullRequestRequest) { r.HeadSha = "abc" },
+		"title":     func(r *agentfleetv1.OpenPullRequestRequest) { r.Title = "" },
+	} {
+		r := req()
+		mut(r)
+		if _, err := s.OpenPullRequest(context.Background(), r); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// A branch that moved past the approved commit is final: FailedPrecondition, not a retry.
+	app.prErr = fmt.Errorf("moved: %w", github.ErrStaleHead)
+	if _, err := s.OpenPullRequest(context.Background(), req()); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("stale head: %v", err)
+	}
+}

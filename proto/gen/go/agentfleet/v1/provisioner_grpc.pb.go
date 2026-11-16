@@ -32,6 +32,7 @@ const (
 	ProvisionerService_ReconcileVaults_FullMethodName     = "/agentfleet.v1.ProvisionerService/ReconcileVaults"
 	ProvisionerService_ListGitHubRepos_FullMethodName     = "/agentfleet.v1.ProvisionerService/ListGitHubRepos"
 	ProvisionerService_PostReview_FullMethodName          = "/agentfleet.v1.ProvisionerService/PostReview"
+	ProvisionerService_OpenPullRequest_FullMethodName     = "/agentfleet.v1.ProvisionerService/OpenPullRequest"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
@@ -78,6 +79,9 @@ type ProvisionerServiceClient interface {
 	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
 	// CoreService.SubmitReview here once it has authorized the session.
 	PostReview(ctx context.Context, in *PostReviewRequest, opts ...grpc.CallOption) (*PostReviewResponse, error)
+	// Opens a pull request from a pushed branch, for an owner-approved card
+	// (docs/adr/0086 §4 open_pr).
+	OpenPullRequest(ctx context.Context, in *OpenPullRequestRequest, opts ...grpc.CallOption) (*OpenPullRequestResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -218,6 +222,16 @@ func (c *provisionerServiceClient) PostReview(ctx context.Context, in *PostRevie
 	return out, nil
 }
 
+func (c *provisionerServiceClient) OpenPullRequest(ctx context.Context, in *OpenPullRequestRequest, opts ...grpc.CallOption) (*OpenPullRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenPullRequestResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_OpenPullRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvisionerServiceServer is the server API for ProvisionerService service.
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
@@ -262,6 +276,9 @@ type ProvisionerServiceServer interface {
 	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
 	// CoreService.SubmitReview here once it has authorized the session.
 	PostReview(context.Context, *PostReviewRequest) (*PostReviewResponse, error)
+	// Opens a pull request from a pushed branch, for an owner-approved card
+	// (docs/adr/0086 §4 open_pr).
+	OpenPullRequest(context.Context, *OpenPullRequestRequest) (*OpenPullRequestResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -310,6 +327,9 @@ func (UnimplementedProvisionerServiceServer) ListGitHubRepos(context.Context, *L
 }
 func (UnimplementedProvisionerServiceServer) PostReview(context.Context, *PostReviewRequest) (*PostReviewResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostReview not implemented")
+}
+func (UnimplementedProvisionerServiceServer) OpenPullRequest(context.Context, *OpenPullRequestRequest) (*OpenPullRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method OpenPullRequest not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -566,6 +586,24 @@ func _ProvisionerService_PostReview_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_OpenPullRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenPullRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).OpenPullRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_OpenPullRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).OpenPullRequest(ctx, req.(*OpenPullRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvisionerService_ServiceDesc is the grpc.ServiceDesc for ProvisionerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -624,6 +662,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostReview",
 			Handler:    _ProvisionerService_PostReview_Handler,
+		},
+		{
+			MethodName: "OpenPullRequest",
+			Handler:    _ProvisionerService_OpenPullRequest_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

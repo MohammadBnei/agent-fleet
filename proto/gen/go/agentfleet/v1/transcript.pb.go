@@ -568,7 +568,18 @@ type CardEffect struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// "handoff" sends the owner's choice to the writer's thread; "close_threads"
 	// closes every thread on the subject (pr or issue only, reversible "no").
-	Verb          string `protobuf:"bytes,1,opt,name=verb,proto3" json:"verb,omitempty"`
+	// Core's own cards only (docs/adr/0086 §4), each running exactly its bound
+	// payload: "catalogue" (a remediation selection), "open_pr" (a branch a B.C
+	// session pushed), "open_session" (a supervised session seeded with a typed
+	// brief). "executor_step" is declared and refused until docs/adr/0072's
+	// executor exists.
+	Verb string `protobuf:"bytes,1,opt,name=verb,proto3" json:"verb,omitempty"`
+	// The bound payload as canonical JSON, for the verbs above. Core rewrites it
+	// from its typed form when the card is filed.
+	Payload string `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	// sha256 (hex) of verb and payload, set by core when the card is filed and
+	// checked again before the effect runs: the approval binds to it.
+	PayloadHash   string `protobuf:"bytes,3,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -606,6 +617,20 @@ func (*CardEffect) Descriptor() ([]byte, []int) {
 func (x *CardEffect) GetVerb() string {
 	if x != nil {
 		return x.Verb
+	}
+	return ""
+}
+
+func (x *CardEffect) GetPayload() string {
+	if x != nil {
+		return x.Payload
+	}
+	return ""
+}
+
+func (x *CardEffect) GetPayloadHash() string {
+	if x != nil {
+		return x.PayloadHash
 	}
 	return ""
 }
@@ -848,10 +873,12 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06number\x18\x03 \x01(\x03R\x06number\x12\x10\n" +
 	"\x03url\x18\x04 \x01(\tR\x03url\x12\x1b\n" +
-	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\" \n" +
+	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\"]\n" +
 	"\n" +
 	"CardEffect\x12\x12\n" +
-	"\x04verb\x18\x01 \x01(\tR\x04verb\"\xa7\x01\n" +
+	"\x04verb\x18\x01 \x01(\tR\x04verb\x12\x18\n" +
+	"\apayload\x18\x02 \x01(\tR\apayload\x12!\n" +
+	"\fpayload_hash\x18\x03 \x01(\tR\vpayloadHash\"\xa7\x01\n" +
 	"\n" +
 	"CardOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +

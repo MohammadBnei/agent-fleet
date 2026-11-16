@@ -2014,3 +2014,44 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 
 // ProtoType is stringToProtoType for AgentService's own Entry.
 func ProtoType(s string) agentfleetv1.TranscriptEntryType { return stringToProtoType(s) }
+
+// StartableRepo is startableRepo for AgentService's checks before a card's effect runs.
+func (s *Server) StartableRepo(ctx context.Context, name string) (*repos.Repo, error) {
+	return s.startableRepo(ctx, name)
+}
+
+// OpenSupervised starts a session on repo from an owner-approved card (docs/adr/0086 §4 open_session): T0
+// trust, B.C at most, and body goes in as an agent-authored entry, never as the owner's own words. It is
+// supervised: launched in "default" mode, so every tool asks and the owner answers (never the column's
+// unattended "auto"), its title marked. A console session is admin-only, so every admin is its owner
+// (sessions.owner is for definition threads only: sessions_agent_fields_definition_only).
+func (s *Server) OpenSupervised(ctx context.Context, repo, title, body string) (string, error) {
+	if _, err := s.startableRepo(ctx, repo); err != nil {
+		return "", err
+	}
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: repo, Title: "[supervised] " + title, Description: title, Model: s.fallbackModel(),
+		PermissionMode: "default", TrustSet: sessions.TrustFor(sessions.TierOwner)})
+	if err != nil {
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	rollback := func() {
+		if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.WarnContext(ctx, "dashboard OpenSupervised: rollback teardown failed", "sessionId", id, "error", err)
+		}
+		if err := s.sessions.Delete(ctx, id); err != nil {
+			slog.WarnContext(ctx, "dashboard OpenSupervised: rollback delete failed", "sessionId", id, "error", err)
+		}
+	}
+	// Warm before appending, as OpenFromProposal does: the pod's cursor is read at provisioning.
+	_, release, err := s.WarmForAppend(ctx, id)
+	defer release()
+	if err != nil {
+		rollback()
+		return "", err
+	}
+	if _, err := s.transcr.Append(ctx, id, "agent", body, "discussion", uuid.NewString()); err != nil {
+		rollback()
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	return id, nil
+}

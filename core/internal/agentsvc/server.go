@@ -26,6 +26,8 @@ type Server struct {
 	transcr     transcript.Store
 	hub         *dashboard.Hub
 	decisions   *decisions.Store
+	cardFx      CardEffects
+	opener      sessionOpener
 }
 
 // console is the part of *dashboard.Server AgentService reuses, so every pod
@@ -58,7 +60,7 @@ var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
 func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub, decs *decisions.Store) *Server {
 	s := &Server{sessions: store, transcr: transcr, hub: hub, decisions: decs}
 	if dash != nil {
-		s.dash = dash
+		s.dash, s.opener = dash, dash
 	}
 	if defs != nil {
 		s.definitions = defs

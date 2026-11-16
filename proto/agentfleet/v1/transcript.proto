@@ -140,7 +140,18 @@ message CardSubject {
 message CardEffect {
   // "handoff" sends the owner's choice to the writer's thread; "close_threads"
   // closes every thread on the subject (pr or issue only, reversible "no").
+  // Core's own cards only (docs/adr/0086 §4), each running exactly its bound
+  // payload: "catalogue" (a remediation selection), "open_pr" (a branch a B.C
+  // session pushed), "open_session" (a supervised session seeded with a typed
+  // brief). "executor_step" is declared and refused until docs/adr/0072's
+  // executor exists.
   string verb = 1;
+  // The bound payload as canonical JSON, for the verbs above. Core rewrites it
+  // from its typed form when the card is filed.
+  string payload = 2;
+  // sha256 (hex) of verb and payload, set by core when the card is filed and
+  // checked again before the effect runs: the approval binds to it.
+  string payload_hash = 3;
 }
 
 message CardOption {

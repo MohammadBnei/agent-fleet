@@ -34,10 +34,49 @@ function subjectText(s: CardSubject | undefined): string {
   return s.kind === "repo" ? s.repo : `${s.repo} ${s.kind} #${s.number}`;
 }
 
+// Core-run verbs (docs/adr/0086 §4): the hash is what the approval binds to.
+const coreVerbText: Record<string, string> = {
+  catalogue: "Core runs the bound remediation",
+  open_pr: "Core opens a pull request from the pushed branch",
+  open_session: "Core starts a supervised session seeded with the typed brief",
+  executor_step: "Refused: the executor does not exist yet",
+};
+
 function effectText(o: CardOption, subject: string): string {
-  return o.effect?.verb === "close_threads"
+  const v = o.effect?.verb ?? "";
+  if (v in coreVerbText) {
+    return `${coreVerbText[v]} (hash ${(o.effect?.payloadHash ?? "").slice(0, 12)})`;
+  }
+  return v === "close_threads"
     ? `Closes every thread on ${subject}`
     : "Sends your choice to the agent";
+}
+
+// The bound payload as the owner reads it, so an approval runs bytes that were
+// shown (docs/adr/0086 §4): its typed fields, the title labelled an agent claim,
+// and for open_pr the diff of the approved commit. Mirrors decisions.EffectLines.
+export function payloadLines(o: CardOption): string[] {
+  const e = o.effect;
+  if (!e || !(e.verb in coreVerbText) || !e.payload) return [];
+  let m: Record<string, unknown>;
+  try {
+    m = JSON.parse(e.payload);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const k of Object.keys(m).sort()) {
+    const v = m[k];
+    if (Array.isArray(v)) {
+      for (const f of v as { name?: unknown; value?: unknown }[])
+        out.push(`${k}: ${f.name} = ${f.value}`);
+    } else {
+      out.push(`${k === "title" ? "title (agent claim)" : k}: ${v}`);
+    }
+  }
+  if (e.verb === "open_pr")
+    out.push(`diff: https://github.com/${m.repo}/compare/${m.headSha}`);
+  return out;
 }
 
 // The not-delivered notice. agentsvc owns the reason's words; this only
@@ -194,6 +233,14 @@ export function CardBody({
             <span className="block text-xs text-dim [overflow-wrap:anywhere]">
               {effectText(o, subject)}
             </span>
+            {payloadLines(o).map((l) => (
+              <span
+                key={l}
+                className="block text-xs text-dim2 font-mono [overflow-wrap:anywhere]"
+              >
+                {l}
+              </span>
+            ))}
           </ActionButton>
         ))}
       </div>

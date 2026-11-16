@@ -409,6 +409,9 @@ service ProvisionerService {
   // (docs/adr/0082 §9): core holds no GitHub credential, so it relays
   // CoreService.SubmitReview here once it has authorized the session.
   rpc PostReview(PostReviewRequest) returns (PostReviewResponse);
+  // Opens a pull request from a pushed branch, for an owner-approved card
+  // (docs/adr/0086 §4 open_pr).
+  rpc OpenPullRequest(OpenPullRequestRequest) returns (OpenPullRequestResponse);
 }
 
 // One inline review comment, on the PR head's version of the file.
@@ -437,6 +440,21 @@ message PostReviewResponse {
   string event = 2;
   // The agent-review status posted: "success" | "failure", "" when none.
   string status_state = 3;
+}
+
+message OpenPullRequestRequest {
+  // owner/name.
+  string repo = 1;
+  // The pushed branch, and the commit the owner approved: the provisioner
+  // refuses a branch that moved past it.
+  string branch = 2;
+  string head_sha = 3;
+  string title = 4;
+  string body = 5;
+}
+
+message OpenPullRequestResponse {
+  string url = 1;
 }
 
 message SweepSessionRequest {
