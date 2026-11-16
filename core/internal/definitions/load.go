@@ -384,6 +384,9 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 		// Never echo it: this check exists to catch a pasted value.
 		errs = append(errs, fmt.Errorf("tokenRef must be a secret KEY name FLEET_CLIENT_TOKEN_* matching %s, never a value (value not shown)", envKeyRe))
 	}
+	if s.MaxParked != nil && *s.MaxParked < 1 {
+		errs = append(errs, fmt.Errorf("maxParked must be a positive integer, got %d", *s.MaxParked))
+	}
 	if len(s.Actors.Allow) == 0 {
 		errs = append(errs, errors.New("actors.allow must not be empty"))
 	}

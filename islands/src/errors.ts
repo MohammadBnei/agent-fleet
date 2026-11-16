@@ -50,6 +50,8 @@ const keyText: Record<Keyed, string> = {
   DECISION_STALE: "This card was replaced by a newer one.",
   DECISION_CONFIRM_REQUIRED:
     "This answer needs a fresh confirmation. Confirm it on the confirm page; nothing was done.",
+  PARKED_LIMIT:
+    "Too many runs are waiting on an answer. Answer one to start another.",
 };
 
 // The key's text, or "" for a key with none (server.internal, or one a newer core added).

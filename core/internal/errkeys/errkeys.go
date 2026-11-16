@@ -46,6 +46,8 @@ const (
 	KeyDecisionStale errs.Key = "agent.decision_stale"
 	// KeyDecisionConfirmRequired: a surface's answer needs core's confirm page (docs/adr/0082 §7); nothing was done.
 	KeyDecisionConfirmRequired errs.Key = "agent.decision_confirm_required"
+	// KeyParkedLimit: the client has maxParked single-shot runs waiting on a decision (docs/adr/0070 §1).
+	KeyParkedLimit errs.Key = "agent.parked_limit"
 	// KeyCardBudget: the definition drafted its 10 cards of the last 24 hours (CoreService.DraftCard).
 	KeyCardBudget errs.Key = "core.card_budget"
 )

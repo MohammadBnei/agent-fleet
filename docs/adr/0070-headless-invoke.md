@@ -41,8 +41,13 @@
   outstanding**: no live pod has yet shown `system/init` listing
   `StructuredOutput` or `WaitForResult` returning schema-valid JSON through
   sidecar protojson. It needs a single-shot test definition with
-  `output.schema` and a model token, and is owed before merge unless the
-  owner accepts the slice without it).
+  `output.schema` and a model token, and is tracked as the ADR's end-to-end
+  live QA after slice 7); slice 10 (a client file's `maxParked`, a positive
+  int, default 20; `Invoke` refuses a new run `ResourceExhausted` keyed
+  `agent.parked_limit` while the client has that many parked runs, counted by
+  `sessions.Store.ParkedRuns`: single-shot, not archived, no live pod, an
+  open question, permission or plan. Its `parkedWhere` is the one SQL
+  spelling of parked, for slice 9 to reuse).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

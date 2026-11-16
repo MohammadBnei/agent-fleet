@@ -609,3 +609,30 @@ func TestLoad_ClientTokenRefs(t *testing.T) {
 		t.Fatalf("in-process client: %v %v", valid, fileErrs)
 	}
 }
+
+// docs/adr/0070 §1: maxParked is a positive int, 20 when unset.
+func TestLoad_ClientMaxParked(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int    // ParkedCap of the valid client
+		err  string // substring in fileErrs
+	}{
+		{"", DefaultMaxParked, ""},
+		{"  maxParked: 5\n", 5, ""},
+		{"  maxParked: 0\n", 0, "maxParked must be a positive integer"},
+		{"  maxParked: -3\n", 0, "maxParked must be a positive integer"},
+		{"  maxParked: lots\n", 0, "cannot unmarshal"},
+	} {
+		y := strings.Replace(clientWith("", "", ""), "  tokenRef:", tc.line+"  tokenRef:", 1)
+		_, valid, fileErrs := LoadAll(map[string][]byte{"definitions/base.yaml": []byte(baseYAML), "definitions/clients/bridge.yaml": []byte(y)})
+		if tc.err != "" {
+			if len(valid) != 0 || len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), tc.err) {
+				t.Errorf("%q: valid %v, errs %v", tc.line, valid, fileErrs)
+			}
+			continue
+		}
+		if len(fileErrs) != 0 || len(valid) != 1 || valid[0].Spec.ParkedCap() != tc.want {
+			t.Errorf("%q: valid %v, errs %v", tc.line, valid, fileErrs)
+		}
+	}
+}
