@@ -132,8 +132,9 @@
   slice 12 (`interaction`, release two: gone from `definitions/`,
   `local/kind/definitions/` and the loader's `Spec`, so the strict decode
   refuses an `interaction:` key as unknown, and every definition's pin
-  moved; a stored row whose effective still holds it is not understood by
-  this core, as for any row an older ceiling wrote, and is left as it is.
+  moved; a stored row whose effective still holds it has the key stripped
+  before the strict decode, so it is still judged, and revoked, under this
+  core's ceiling like any other row, never left alone as a newer core's.
   `Open` ignores the request's `interaction` and checks only `lifecycle`;
   the request hash keeps the `"ask"` constant, since claims are never
   deleted; `sessions.interaction` is neither written nor read (the column
