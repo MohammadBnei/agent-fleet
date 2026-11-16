@@ -544,14 +544,22 @@ type ExitResult struct {
 	// OverParkCap: it parked more than its limits.maxParks times, so it
 	// ends failed, PARK_LIMIT (overParkCap).
 	OverParkCap bool
+	// Expired / Moved: core ended the run waiting on a decision (ExpireRun,
+	// EndMovedRun), read from the state its decisions were closed as.
+	Expired, Moved bool
 }
 
 // LastExitResult reads the session's latest exit result (ExitResult).
 func (s *Store) LastExitResult(ctx context.Context, sessionID string) (ExitResult, error) {
 	var out ExitResult
 	var text, legacy *string
-	err := s.pool.QueryRow(ctx, `SELECT (SELECT e.text FROM `+exitResultOf+` e), `+inputAfterExit+`, s.stop_requested_at IS NOT NULL, `+legacyFinal+`, `+overParkCap+`
-		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped, &legacy, &out.OverParkCap)
+	closedAs := func(state string) string {
+		return `EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = '` + state + `'
+			AND d.kind IN ('question', 'permission', 'plan'))`
+	}
+	err := s.pool.QueryRow(ctx, `SELECT (SELECT e.text FROM `+exitResultOf+` e), `+inputAfterExit+`, s.stop_requested_at IS NOT NULL, `+legacyFinal+`,
+		`+closedAs("expired")+`, `+closedAs("stale")+`, `+overParkCap+`
+		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped, &legacy, &out.Expired, &out.Moved, &out.OverParkCap)
 	if err != nil {
 		return out, fmt.Errorf("last exit result: %w", err)
 	}
@@ -600,6 +608,103 @@ func (s *Store) ClaimEndedRun(ctx context.Context, id string) (bool, error) {
 	}
 	if err := withdrawDecisions(ctx, tx, id); err != nil {
 		return false, fmt.Errorf("claim ended run: withdraw decisions: %w", err)
+	}
+	return true, tx.Commit(ctx)
+}
+
+// IdleRun is a single-shot run with no live pod, neither archived nor swept:
+// what sessions.Loop's expireRuns judges (docs/adr/0070 §6).
+type IdleRun struct {
+	ID, Definition, SHA string
+	// OpenFor is how long its oldest open question, permission or plan has
+	// waited; nil with none.
+	OpenFor *time.Duration
+	// AnswerTimeout is its pinned version's limits.answerTimeout, "" unset.
+	AnswerTimeout string
+}
+
+// ListIdleRuns is every IdleRun.
+func (s *Store) ListIdleRuns(ctx context.Context) ([]IdleRun, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id::text, COALESCE(s.definition_name, ''), COALESCE(s.definition_sha, ''),
+		       (SELECT EXTRACT(EPOCH FROM now() - min(d.created_at))::float8 FROM decisions d
+		         WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('question', 'permission', 'plan')),
+		       COALESCE(a.effective -> 'limits' ->> 'answerTimeout', '')
+		  FROM sessions s
+		  LEFT JOIN agent_definitions a ON a.name = s.definition_name AND a.sha = s.definition_sha
+		 WHERE s.lifecycle = 'single-shot' AND s.archived_at IS NULL AND s.swept_at IS NULL
+		   AND COALESCE(s.pod_phase, '') <> ALL($1)`, livePhases)
+	if err != nil {
+		return nil, fmt.Errorf("list idle runs: %w", err)
+	}
+	defer rows.Close()
+	var out []IdleRun
+	for rows.Next() {
+		var r IdleRun
+		var openSec *float64
+		if err := rows.Scan(&r.ID, &r.Definition, &r.SHA, &openSec, &r.AnswerTimeout); err != nil {
+			return nil, fmt.Errorf("scan idle run: %w", err)
+		}
+		if openSec != nil {
+			d := time.Duration(*openSec * float64(time.Second))
+			r.OpenFor = &d
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ExpireRun ends the single-shot run id expired (docs/adr/0070 §6) while it
+// still has no live pod and a question, permission or plan open longer than
+// after: it is archived, those decisions go 'expired' (what WaitForResult
+// reads), and unused grants are cleared as Archive does. endRuns then tears
+// it down and sweeps it (§7). false: the run moved on (answered, warmed,
+// ended) since it was listed.
+func (s *Store) ExpireRun(ctx context.Context, id string, after time.Duration) (bool, error) {
+	return s.endIdleRun(ctx, id, "expired", after.String())
+}
+
+// EndMovedRun ends the single-shot run id, pinned to a definition version
+// that is no longer current, while it is parked (no live pod, a question,
+// permission or plan open): it can never warm again, so core ends it failed
+// (docs/adr/0070 §6). Its open decisions go 'stale' (superseded, as a card
+// is by a newer one), which WaitForResult reads as failed,
+// DEFINITION_CHANGED; endRuns then runs §7. A run on a moved pin with
+// nothing open is not parked and is left as it was (§6 ends parked runs).
+// ponytail: the exit-window / capacity-pending case stays on its earlier
+// path; end it here too only with a reason that needs no open decision.
+func (s *Store) EndMovedRun(ctx context.Context, id string) (bool, error) {
+	return s.endIdleRun(ctx, id, "stale", "")
+}
+
+// endIdleRun archives id with the IdleRun condition re-checked in the UPDATE
+// (so a warm and this serialize on the row, as ClaimEndedRun's claim does),
+// only while it is parked (with after != "", on a decision open that long), and closes
+// its open questions, permissions and plans as closeAs.
+func (s *Store) endIdleRun(ctx context.Context, id, closeAs, after string) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("end idle run: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE sessions s SET archived_at = now(), updated_at = now()
+		WHERE s.id = $2 AND s.lifecycle = 'single-shot' AND s.archived_at IS NULL AND s.swept_at IS NULL
+		  AND COALESCE(s.pod_phase, '') <> ALL($1)
+		  AND EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open'
+		        AND d.kind IN ('question', 'permission', 'plan') AND ($3 = '' OR d.created_at <= now() - NULLIF($3, '')::interval))`,
+		livePhases, id, after)
+	if err != nil {
+		return false, fmt.Errorf("end idle run: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE decisions SET state = $2, version = nextval('decisions_version_seq')
+		WHERE session_id = $1 AND state = 'open' AND kind IN ('question', 'permission', 'plan')`, id, closeAs); err != nil {
+		return false, fmt.Errorf("end idle run: close decisions: %w", err)
+	}
+	if err := withdrawDecisions(ctx, tx, id); err != nil {
+		return false, fmt.Errorf("end idle run: withdraw decisions: %w", err)
 	}
 	return true, tx.Commit(ctx)
 }
@@ -1353,13 +1458,16 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 }
 
 // ListRetentionExpired finds sessions whose disk the GC should reclaim:
-// idle past the retention window, with no live pod, not already swept.
+// idle past the retention window, with no live pod, not already swept. A
+// parked run is skipped: limits.answerTimeout bounds it instead, and its end
+// runs §7 (docs/adr/0070 §6).
 func (s *Store) ListRetentionExpired(ctx context.Context, retention time.Duration) ([]string, error) {
 	return s.listIDs(ctx, `
-		SELECT id FROM sessions
-		WHERE swept_at IS NULL
-		  AND NOT (pod_phase = ANY($2))
-		  AND COALESCE(last_active_at, created_at) < now() - $1::interval
+		SELECT s.id FROM sessions s
+		WHERE s.swept_at IS NULL
+		  AND NOT (s.pod_phase = ANY($2))
+		  AND COALESCE(s.last_active_at, s.created_at) < now() - $1::interval
+		  AND NOT COALESCE(s.archived_at IS NULL AND `+parkedWhere+`, false)
 	`, retention, livePhases)
 }
 

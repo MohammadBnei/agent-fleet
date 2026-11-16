@@ -266,6 +266,16 @@ func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1
 		}
 		return out, nil
 	}
+	// Core ended it waiting (sessions.Loop's expireRuns, docs/adr/0070 §6):
+	// expired outranks every result (§3), and a moved pin is failed.
+	switch {
+	case ex.Expired:
+		return &agentfleetv1.WaitForResultResponse{State: "expired", Error: &agentfleetv1.Status{
+			State: "error", Code: "ANSWER_TIMEOUT", Message: "a decision went unanswered past limits.answerTimeout"}}, nil
+	case ex.Moved:
+		return &agentfleetv1.WaitForResultResponse{State: "failed", Error: &agentfleetv1.Status{
+			State: "error", Code: "DEFINITION_CHANGED", Message: "the run's definition changed while it waited on a decision"}}, nil
+	}
 	// An ended run with no exit result at all (a pod on an older worker at
 	// deploy, or a result without queued_turn_count) is judged by the seq
 	// rule from before slice 7 rather than read NO_RESULT.

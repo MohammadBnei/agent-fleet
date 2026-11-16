@@ -100,15 +100,15 @@ func carryPlan(text string, r Record) (string, error) {
 //
 // A card answers with an option or the owner's own words (answerCard).
 func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r Record, a Reply) (int64, error) {
-	if r.Kind == Card {
-		switch {
-		case r.State == Stale:
-			return 0, ErrStale
-		case r.State == Expired, r.State == Open && r.ExpiresAt != nil && !time.Now().Before(*r.ExpiresAt):
-			return 0, ErrExpired
-		}
-	}
-	if r.State != Open {
+	// Any kind: a card past its expiry or superseded, or a single-shot run's
+	// question, permission or plan that core closed when it ended the run
+	// (sessions.Store.ExpireRun, EndMovedRun; docs/adr/0070 §6).
+	switch {
+	case r.State == Stale:
+		return 0, ErrStale
+	case r.State == Expired, r.State == Open && r.ExpiresAt != nil && !time.Now().Before(*r.ExpiresAt):
+		return 0, ErrExpired
+	case r.State != Open:
 		return 0, transcript.ErrAlreadyAnswered
 	}
 	seq := r.RequestSeq

@@ -29,7 +29,7 @@
   one-slot claim semaphore; `WaitForResult` a long poll on the transcript
   hub, `waiting` with `pending` on any open question, permission or plan,
   else §3's rule on the exit result, slice 7.
-  `expired` is declared, reported from slice 11); slice 6 (`outputFormat`:
+  `expired` is declared, reported from slice 11, built below); slice 6 (`outputFormat`:
   the worker's `outputFormatFor` sets `{type: json_schema, schema}` only for
   `lifecycle: single-shot` with `outputSchema` set, never for a resident or
   repo session, and `definitionDecision` allows `StructuredOutput` before the
@@ -95,26 +95,40 @@
   dead pod held": the answer arrives as a message and the retry spends the
   grant. Not run live on a pod: the `/kind-local` `Invoke` QA above still
   covers it; and the re-warm runs on the 60 s tick, not on the pod event);
-  slice 9 (parked is respected: `WarmForAppend`, so `WarmIfIdle`, the
-  console's Warm and `PostMessage`, AgentService `PostMessage`, `PromptSession`
-  and every other append, refuses a parked run (`parkedWhere`, read by
-  `sessions.Store.ParkState`) `FailedPrecondition` keyed `agent.parked`;
-  an answer warms it through `WarmForAnswer`, the one warm
-  `decisions.Effects` holds, which the exit-window re-warm also uses since it
-  delivers input already appended. `limits.maxParks` is a positive int,
-  default 10, absent from `effective` when unset, so frozen rows read the
-  default; the park count is `parkCount` in SQL, the exit results at whose
-  `created_at` a question, permission or plan was open (created earlier,
-  still open or answered later, or on a claimed run withdrawn before its
-  `archived_at`, so the verdict outlives `ClaimEndedRun`'s withdraw), no
-  column. A run over its cap with no live
-  pod is in `endedRun` (claimed, torn down, swept), `WaitForResult` reads it
-  `failed` with `PARK_LIMIT` before the open-decision rule, and every warm,
-  an answer's included, refuses it. AgentService `GetStatus` reads
-  `waiting` with no pod for a single-shot run with an open question,
-  permission or plan (never a card alone);
-  resident threads keep `idle`, as §4's "whenever" is left to a later
-  slice).
+  slice 11 (`limits.answerTimeout`, a duration in (0, 5d], optional and
+  defaulted to 24h where it is read, never written into the effective spec,
+  so no pin moves; each `sessions.Loop` tick, `expireRuns` runs before
+  `endRuns` over every single-shot run with no live pod, neither archived nor
+  swept (`ListIdleRuns`): one with a question, permission or plan open past
+  its timeout (capped at `SESSION_RETENTION`) is archived by `ExpireRun` with
+  that re-checked in the UPDATE, its open decisions go `expired`; a parked
+  one pinned to a sha that is not the registry's current valid head is
+  archived by `EndMovedRun`, its open decisions go `stale` (an unparked run
+  on a moved pin is left as it was). Both then end through slice 8's teardown
+  and sweep in the same tick, and `WaitForResult` reads `expired`
+  (`ANSWER_TIMEOUT`) or `failed` (`DEFINITION_CHANGED`) from those states,
+  ahead of the exit result. A registry that is stale or cannot resolve the
+  name ends nothing for a moved pin. A late answer to a decision so closed,
+  of any kind, is refused `agent.decision_expired` or `agent.decision_stale`,
+  not "already answered". `ListRetentionExpired` skips an unarchived parked
+  run); 9 (parked is respected: `WarmForAppend`, so `WarmIfIdle`, the
+  console's Warm and `PostMessage`, AgentService `PostMessage`,
+  `PromptSession` and every other append, refuses a parked run
+  (`parkedWhere`, read by `sessions.Store.ParkState`) `FailedPrecondition`
+  keyed `agent.parked`; an answer warms it through `WarmForAnswer`, the one
+  warm `decisions.Effects` holds, which the exit-window re-warm also uses
+  since it delivers input already appended. `limits.maxParks` is a positive
+  int, default 10, absent from `effective` when unset, so frozen rows read
+  the default; the park count is `parkCount` in SQL, the exit results at
+  whose `created_at` a question, permission or plan was open (created
+  earlier, still open or answered later, or on a claimed run withdrawn before
+  its `archived_at`, so the verdict outlives `ClaimEndedRun`'s withdraw), no
+  column. A run over its cap with no live pod is in `endedRun` (claimed, torn
+  down, swept), `WaitForResult` reads it `failed` with `PARK_LIMIT` before
+  the open-decision rule, and every warm, an answer's included, refuses it.
+  AgentService `GetStatus` reads `waiting` with no pod for a single-shot run
+  with an open question, permission or plan (never a card alone); resident
+  threads keep `idle`, as §4's "whenever" is left to a later slice).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

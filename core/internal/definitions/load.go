@@ -61,6 +61,9 @@ const (
 	maxTurns         = 500
 	maxTimeout       = 12 * time.Hour
 	maxStartupBudget = 15 * time.Minute
+	// Below SESSION_RETENTION as deployed (6d, k8s/core.yaml), which the
+	// retention sweep no longer applies to a parked run (docs/adr/0070 §6).
+	maxAnswerTimeout = 5 * 24 * time.Hour
 )
 
 var (
@@ -678,6 +681,11 @@ func validate(name string, s *Spec) error {
 		}
 		if l.MaxParks != nil && *l.MaxParks < 1 {
 			bad("limits.maxParks %d must be a positive integer", *l.MaxParks)
+		}
+		if l.AnswerTimeout != "" {
+			if d, err := time.ParseDuration(l.AnswerTimeout); err != nil || d <= 0 || d > maxAnswerTimeout {
+				bad("limits.answerTimeout %q must be a duration in (0, %s]", l.AnswerTimeout, maxAnswerTimeout)
+			}
 		}
 	}
 	return errors.Join(errs...)

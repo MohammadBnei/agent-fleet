@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.20.0](https://github.com/MohammadBnei/agent-fleet/compare/7.19.0...7.20.0) (2026-11-16)
+
+### Features
+
+* **worker,core:** single-shot worker exits when its input is used up (ADR-0070 slice 7) ([#387](https://github.com/MohammadBnei/agent-fleet/issues/387)) ([e306722](https://github.com/MohammadBnei/agent-fleet/commit/e3067222775464dbf949b78f85e698f9c9f66d92))
+
 # [7.19.0](https://github.com/MohammadBnei/agent-fleet/compare/7.18.0...7.19.0) (2026-11-16)
 
 ### Features
