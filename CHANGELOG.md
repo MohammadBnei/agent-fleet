@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.14.0](https://github.com/MohammadBnei/agent-fleet/compare/7.13.0...7.14.0) (2026-11-16)
+
+### Features
+
+* **core:** AgentSpec carries lifecycle and output_schema (ADR-0070 slice 1) ([#382](https://github.com/MohammadBnei/agent-fleet/issues/382)) ([9481d5e](https://github.com/MohammadBnei/agent-fleet/commit/9481d5e2268d51dd532e47cd2ac542f211ad614f))
+
 # [7.13.0](https://github.com/MohammadBnei/agent-fleet/compare/7.12.0...7.13.0) (2026-11-15)
 
 ### Features
