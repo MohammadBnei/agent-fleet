@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.19.0](https://github.com/MohammadBnei/agent-fleet/compare/7.18.0...7.19.0) (2026-11-16)
+
+### Features
+
+* **core:** tear down and sweep single-shot runs on every terminal path (ADR-0070 slice 8) ([#386](https://github.com/MohammadBnei/agent-fleet/issues/386)) ([5ef8629](https://github.com/MohammadBnei/agent-fleet/commit/5ef862983568673bd4f35118cbeae7747f3c77b3))
+
 # [7.18.0](https://github.com/MohammadBnei/agent-fleet/compare/7.17.0...7.18.0) (2026-11-16)
 
 ### Features
