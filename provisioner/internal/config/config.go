@@ -150,6 +150,12 @@ type Config struct {
 	// 12h: a timeout of zero or less would make every annotated shared
 	// instance (a Postgres with its PVC included) idle on every reconcile tick.
 	SharedInstanceIdleTimeout time.Duration
+	// RepoPrefetchInterval is how often the provisioner fetches the repo
+	// caches warms are likely to use, so a warm's own fetch is small
+	// (REPO_PREFETCH_INTERVAL_MS, a positive integer of milliseconds; 5m
+	// unset). Any other value warns and takes the 5m; main floors a valid
+	// value at 30s so a typo cannot hammer GitHub.
+	RepoPrefetchInterval time.Duration
 	// AgentVaultAPI, AgentVaultProxy and AgentVaultSecretsDir locate
 	// infra-bootstrap's Agent Vault (docs/adr/0065): its API (provisioner
 	// only), its MITM proxy (definition pods), and the mounted Secret holding
@@ -265,6 +271,7 @@ func Load(getenv func(string) string) (Config, error) {
 		RedisImage:                env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:     pvcSize(),
 		SharedInstanceIdleTimeout: millis("SHARED_INSTANCE_IDLE_TIMEOUT_MS", 12*time.Hour),
+		RepoPrefetchInterval:      millis("REPO_PREFETCH_INTERVAL_MS", 5*time.Minute),
 		AgentVaultAPI:             env("AGENT_VAULT_API_ADDR", DefaultAgentVaultAPI),
 		AgentVaultProxy:           env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
 		AgentVaultSecretsDir:      env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),

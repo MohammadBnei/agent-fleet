@@ -16,7 +16,7 @@ func TestRefreshEvery_RunsNowThenTicksUntilCancelled(t *testing.T) {
 	calls := make(chan struct{}, 16)
 	done := make(chan struct{})
 	go func() {
-		refreshEvery(ctx, 5*time.Millisecond, func(context.Context) error {
+		refreshEvery(ctx, "test", 5*time.Millisecond, func(context.Context) error {
 			select {
 			case calls <- struct{}{}:
 			default:

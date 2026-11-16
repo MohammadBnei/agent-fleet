@@ -385,3 +385,53 @@ func TestSyncFleetShared_RemovesWhatLeftTheSource(t *testing.T) {
 		t.Errorf("CLAUDE.md removed on a source with no fleet-shared/: %v", err)
 	}
 }
+
+// PrefetchRepos fetches caches that exist (never clones), keeps going past a
+// broken one, and leaves a cache idle past the window alone.
+func TestPrefetchRepos_SelectionAndErrors(t *testing.T) {
+	m := NewManager(t.TempDir())
+	ctx := context.Background()
+	origins := map[string]string{}
+	for _, r := range []string{"a", "idle", "zbroken"} {
+		origins[r] = newOriginRepo(t)
+		if _, err := m.EnsureRepoCloned(ctx, r, origins[r]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// "nocache" has a directory but is no clone.
+	if err := os.MkdirAll(m.repoPath("nocache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// zbroken: origin gone, so its fetch fails. "a" sorts before it, "idle"
+	// was last used long ago.
+	if err := os.RemoveAll(origins["zbroken"]); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.lastUsed["idle"] = time.Now().Add(-48 * time.Hour)
+	m.mu.Unlock()
+	tipA, tipIdle := commitIn(t, origins["a"]), commitIn(t, origins["idle"])
+
+	err := m.PrefetchRepos(ctx, 24*time.Hour, time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "zbroken") {
+		t.Fatalf("want the broken repo's error, got %v", err)
+	}
+	if got := m.originHead(ctx, m.repoPath("a")); got != tipA {
+		t.Errorf("a: origin/HEAD %s, want %s", got, tipA)
+	}
+	if got := m.originHead(ctx, m.repoPath("idle")); got == tipIdle {
+		t.Error("idle repo was fetched")
+	}
+	if _, err := os.Stat(filepath.Join(m.repoPath("nocache"), ".git")); err == nil {
+		t.Error("prefetch cloned into a directory that was no cache")
+	}
+	if _, err := os.Stat(m.repoPath("zbroken")); err != nil {
+		t.Error("a failed prefetch must leave the cache in place")
+	}
+}
+
+func TestPrefetchRepos_NoReposDir(t *testing.T) {
+	if err := NewManager(t.TempDir()).PrefetchRepos(context.Background(), time.Hour, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+}

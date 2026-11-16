@@ -198,10 +198,19 @@ func main() {
 	// claude-home. A warm lays in a copy at most one interval stale; until
 	// the first refresh succeeds, a warm refreshes it itself.
 	if cfg.FleetSharedRepoURL != "" {
-		go refreshEvery(ctx, fleetSharedRefreshInterval, func(ctx context.Context) error {
+		go refreshEvery(ctx, "fleet-shared", fleetSharedRefreshInterval, func(ctx context.Context) error {
 			return gitMgr.RefreshFleetShared(ctx, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch)
 		})
 	}
+
+	// Keep active repos' clone caches fresh off the warm path: a warm's own
+	// fetch of a ~20-merges-stale cache took 19.9 s, of a fresh one ~3.2 s
+	// (Tempo, 2026-11-16). It fetches the same way a warm does, under the same
+	// per-repo lock; a warm and a prefetch serialize, each holding it only for
+	// the fetch.
+	go refreshEvery(ctx, "repo prefetch", max(cfg.RepoPrefetchInterval, minRepoPrefetchInterval), func(ctx context.Context) error {
+		return gitMgr.PrefetchRepos(ctx, repoPrefetchIdle, repoPrefetchTimeout)
+	})
 
 	// The branch/worktree sweep loop is gone (docs/adr/0048 §5). It deleted
 	// worktrees on its own ticker, without telling core — which is why any
@@ -246,20 +255,30 @@ func main() {
 // be (docs/adr/0032). Fleet-shared is reviewed config that changes rarely.
 const fleetSharedRefreshInterval = 60 * time.Second
 
+const (
+	minRepoPrefetchInterval = 30 * time.Second
+	// repoPrefetchIdle: a cache no warm or sync touched for this long, in this
+	// process's life, is left to go stale (see git.Manager.PrefetchRepos).
+	repoPrefetchIdle = 7 * 24 * time.Hour
+	// repoPrefetchTimeout bounds one repo's fetch, so a hung remote cannot
+	// hold the repo lock (and so a warm) past it.
+	repoPrefetchTimeout = 2 * time.Minute
+)
+
 // refreshEvery runs refresh now, then every interval, until ctx ends. A
 // failure is logged with backoff (the 1st, 2nd, 4th, 8th... in a row), so an
-// outage does not log every tick; warms keep the last good copy meanwhile.
-func refreshEvery(ctx context.Context, every time.Duration, refresh func(context.Context) error) {
+// outage does not log every tick; warms use the last good state meanwhile.
+func refreshEvery(ctx context.Context, name string, every time.Duration, refresh func(context.Context) error) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	failures := 0
 	for {
 		if err := refresh(ctx); err != nil {
 			if failures++; failures&(failures-1) == 0 {
-				slog.Warn("fleet-shared refresh failed; warms use the last good copy", "error", err, "failuresInARow", failures)
+				slog.Warn(name+" refresh failed; warms use the last good state", "error", err, "failuresInARow", failures)
 			}
 		} else if failures > 0 {
-			slog.Info("fleet-shared refresh recovered", "failuresInARow", failures)
+			slog.Info(name+" refresh recovered", "failuresInARow", failures)
 			failures = 0
 		}
 		select {
