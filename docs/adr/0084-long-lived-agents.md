@@ -88,17 +88,13 @@ What is left is a trusted agent that lives on.
   - The back-off doubles per crash entry of the last hour, read at re-warm time.
   - After the third crash in an hour, core stops re-warming and alerts the owner. No column counts anything, so
     ADR-0048 §2 stands for retries.
-- **Storage.** **Owner to confirm** (recommended):
-  - the character's session PVC is a Longhorn RWO volume rather than local-path, so its working tree survives a node
-    loss and the pod can be scheduled on either node;
-  - the alternative keeps local-path, accepting that a character is pinned to one node and goes down with it.
-- **The SDK session rotates; the row does not.**
-  - A fresh SDK session (no `resume`) starts daily at 04:00 Europe/Paris, at every re-pin and at Start.
-    **Default, owner may change.**
-  - Memory is the only carry-over. That bounds the context's growth and what compaction keeps.
+- **Storage.** The character's session PVC is a Longhorn RWO volume rather than local-path, so its working tree
+  survives a node loss and the pod can be scheduled on either node.
+- **Threads carry the SDK sessions (§4).** There is no scheduled rotation. A long thread relies on Claude Code's
+  auto-compaction.
 - **Re-pinned in place, only when nothing widens.** On a definition change, core drains:
-  - intake stops;
-  - the running turn gets its deadline (§4);
+  - intake stops on every thread;
+  - each running turn gets its deadline (§4);
   - the Job is deleted, the session is re-pinned to the new SHA, and a new Job is warmed.
   - The downtime is the drain plus one warm: a few seconds after a quiet turn, at most the turn deadline.
   - Re-pin is refused, and the owner must Stop and Start, when the change widens the ceiling, the vault, `cluster.read`
@@ -106,23 +102,44 @@ What is left is a trusted agent that lives on.
   - A narrowing, a revocation or a vault widening tears down at once, as for any definition.
   - The same drain replaces the pod before the 12h token cap (§9).
 
-### 4. Delivery: the worker's cursor, in strict order
+### 4. Threads, and delivery per thread
 
-- **The high-water cursor, unchanged from workers.** Entries are delivered in strict seq order. There are no
+- **Hermes-style threads inside one character.** A thread is a topic the owner opens.
+  - One pod per character; one SDK session per thread, each with its own SDK session id.
+  - Transcript entries of standing rows carry a `thread_key` (migration). The owner's admin thread is `main`.
+  - A thread closes when the owner closes it, or after 7 days idle. Closing drops its SDK session id. Its transcript
+    stays.
+  - Memory is shared across threads through the sidecar, the single writer (§8).
+- **Why this is safe now.** A character receives only T0 and T1 entries (§2), so every thread is T0/T1 and every
+  thread holds the same set.
+  - Cycle 1's B2 objection was that a prompt-injected thread could claim another thread's trust through Bash and the
+    shared loopback. It no longer applies: no thread holds anything another lacks.
+  - The isolation between threads is for context, not for trust.
+- **Running threads per pod: 1.** The owner asked for 2, but they do not fit in 1.5Gi.
+  - The measured RSS of a worker at an OOM kill was Claude Code 427Mi and the worker's Bun 90Mi
+    (`provisioner/internal/k8s/pod.go`, the OOM comment). Two CLI processes therefore start near 0.95Gi before any
+    growth.
+  - A long thread's heap grows until compaction, and `memory.oom.group` kills every process in the container at the
+    limit, so one thread's growth would cut both threads' turns.
+  - 2 running threads need the worker at 2Gi. **Owner to confirm.** The capacity sum (§9) then becomes
+    2 × 2.25Gi = 4.5Gi.
+  - Other threads wait, each at its own head.
+- **A high-water cursor per thread, in strict seq order**, unchanged from workers within a thread. There are no
   priority jumps.
-- **The cursor survives the pod.** A character resumes from its last result's `consumedSeq`, as a single-shot run's
+- **The cursors survive the pod.** Each thread resumes from its last result's `consumedSeq`, as a single-shot run's
   `ExitCursor` does (`core/internal/sessions/store.go`). It never resumes from `LatestSeq` at warm, so entries appended
   while the pod is down are delivered after the re-warm.
-- **One turn at a time.**
-  - A message entry waits until the running turn's result.
+- **One turn at a time per thread.**
+  - A message entry waits until its thread's running turn ends.
   - Answers, permission responses and Stop always pass, so a turn waiting on a question can be answered and a
     runaway can be stopped.
-  - A per-turn deadline of 15 min (**default, owner may change**) aborts a turn, and the next entry is delivered.
-- **The budget hold (§9) holds the head of the queue only.** It never skips an entry, so order is kept.
+  - A per-turn deadline of 15 min aborts a turn, and the thread's next entry is delivered.
+- **The budget hold (§9) is per character, across threads.** It holds each thread at its head only, and never skips
+  an entry.
 - **Effects are idempotent.**
-  - Every effect method carries a key of (session, entry seq, per-turn call ordinal).
-  - Once any effect of an entry has run, a crash marks that entry done: core advances the cursor past it with a
-    crash result, rather than replaying the turn.
+  - Every effect method carries a key of (session, thread_key, entry seq, per-turn call ordinal).
+  - Once any effect of an entry has run, a crash marks that entry done in its thread: core advances that thread's
+    cursor past it with a crash result, rather than replaying the turn.
 - **A poison entry** that crashes its turn three times before any effect is marked done the same way, and the owner
   gets an alert.
 
@@ -163,7 +180,7 @@ What is left is a trusted agent that lives on.
     - `apps/deployments`, `statefulsets`, `daemonsets`, `replicasets`;
     - `batch/jobs`, `cronjobs`;
     - `argoproj.io/applications`.
-  - `pods/log` comes only through Roles in a named namespace list (**owner to confirm**).
+  - `pods/log` comes only through Roles in a named namespace list (**owner to confirm**: the list).
   - Never `secrets`, `configmaps`, RBAC objects, `*/exec`, `*/proxy` or `nodes/proxy`.
   - The egress lock admits the API server for granted pods.
 
@@ -174,7 +191,7 @@ What is left is a trusted agent that lives on.
 - **The game server has no connection to characters.** Guests use the game's voice path.
 - **`CoreService.Speak(text, face)`**, granted per definition and tagged C, sends a character's line to the owner's
   browser on that admin origin. It never goes on the bridge and never wakes anything.
-  - Core bounds it at 20 lines per turn (**default, owner may change**).
+  - Core bounds it at 20 lines per turn.
   - A character that does not appear in the game has no `Speak` grant.
 
 ### 8. Memory
@@ -187,16 +204,16 @@ ADR-0086 §5 applies.
 
 ### 9. Capacity, credentials and runaway
 
-- **Guaranteed QoS.** **Owner to confirm.**
-  - The worker requests and is limited to 1.5Gi memory and 500m CPU.
+- **Guaranteed QoS.**
+  - The worker requests and is limited to 1.5Gi memory and 500m CPU, which runs 1 thread at a time (§4).
   - The sidecar requests and is limited to 256Mi and 100m. Its limit today is 512Mi (`provisioner/internal/k8s/pod.go`).
   - That sits within the LimitRange max of 4Gi (`k8s/core.yaml:309-319`), `maxMemoryMi` (`load.go:59`) and
     `workerMaxMemory` (`pod.go:173`).
   - The first slice applies a definition's `resources` to the worker; today they are validated (`load.go:658`) and
     never applied.
 - **`MAX_STANDING_SESSIONS` is a pool outside the cap of 5.** Spawns stay inside the definition pool.
-- **Owner to confirm: 2 characters.**
-  - 2 × 1.75Gi = 3.5Gi, requested and limited.
+- **2 characters.**
+  - 2 × 1.75Gi = 3.5Gi, requested and limited (4.5Gi if 2 threads run at once, §4).
   - Beside that, 5 workers × 4Gi = 20Gi at the limit (1Gi requested each).
   - 23.5Gi of limits against 31GB of session nodes, or 15GB with one node out. Guaranteed characters are evicted
     last.
@@ -204,8 +221,8 @@ ADR-0086 §5 applies.
   unmeasured, which is an open risk.
 - **Credentials.** ADR-0086 §6 applies. A character outlives the 12h token cap, so the provisioner replaces the pod
   through §3's drain before the cap, under the vault lock. The next `vault-label` is written on the Job before the mint.
-- **`limits.turnsPerDay`**, per character per calendar day, Europe/Paris.
-  - Past it, the head of the queue is held unless it is T0.
+- **`limits.turnsPerDay`**, per character across its threads, per calendar day, Europe/Paris.
+  - Past it, each thread's head is held unless it is T0.
   - Core files a card whose effect verb `raise_budget` sets a core-side override with a 24h TTL.
 - **An alert to the owner** when `turns_last_hour × 24 ≥ turnsPerDay / 2`.
 
@@ -213,13 +230,16 @@ ADR-0086 §5 applies.
 
 - A `runtime` field and a Hermes or OpenClaw spike behind the sidecar.
 - Multi-character scenes.
+- 2 running threads per pod, once the worker is sized at 2Gi (§4).
 - GitHub scope per session class.
 - gVisor.
 - The agent-sandbox spike for the workload. The Job stays until it decides.
 
 ## Alternatives considered
 
-- **Several threads in one pod, or one pod per tier.** Five rounds of blockers.
+- **Threads of mixed trust in one pod, or one pod per tier.** Five rounds of blockers. Threads stay, now that every
+  thread is T0/T1.
+- **A scheduled SDK rotation** (daily at 04:00). Dropped for owner-opened threads with auto-compaction.
 - **Untrusted characters (guest hosts).** Their context carries guest text for good. Dropped: guests never reach the
   fleet.
 - **A per-turn tier inside one character.** It recreates the lethal trifecta through the context. Dropped.
@@ -229,11 +249,11 @@ ADR-0086 §5 applies.
 
 ## Consequences
 
-- A character is a trusted worker that lives on: one session, one pod, the worker's cursor, and Bash within its
-  ceiling.
+- A character is a trusted worker that lives on: one session, one pod, threads with the worker's cursor each, and
+  Bash within its ceiling.
 - New surface:
   - lifecycle `standing`, the `standing:` principal, `Start` and Stop;
-  - the re-warm, crash entries and SDK rotation;
+  - the re-warm, crash entries, threads and `thread_key`;
   - `SpawnWorker`, `WaitForResult`, `QueryMetrics`, `OpenIssue`, `ListResponderCards`, `Speak` and
     `PostToCharacter`;
   - the read ServiceAccount;
@@ -247,8 +267,9 @@ it can be as capable as the owner's own sessions.
 ## Not doing
 
 - Untrusted characters.
-- Threads inside a pod.
+- Threads of different trust.
 - Per-turn tiers.
+- A scheduled SDK rotation.
 - Priority delivery.
 - Rotating a token in place.
 - A retry counter.
@@ -271,20 +292,23 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
    - The loader refuses a `standing:` client file, and `trust.untrusted` or an untrusted subscription on a standing
      definition.
    - `Open`, `Invoke` and routed proposals are refused.
-4. **Cursor and delivery.**
-   - An entry appended while the pod is down is delivered after the re-warm, in seq order.
+4. **Threads and delivery per thread.**
+   - `thread_key` on standing transcript entries; one SDK session id per thread.
+   - A thread opens on the owner's first message, closes on his close or after 7 days idle, and its transcript stays.
+   - At most 1 thread runs at once; the others wait at their own heads.
+   - An entry appended while the pod is down is delivered after the re-warm, in seq order within its thread.
    - Answers and Stop pass during a turn.
    - The turn deadline aborts a turn.
-   - An entry whose effect ran is not replayed after a crash.
-   - A poison entry is marked done after three crashes.
-   - The budget holds only the head.
-5. **Sweeps, re-warm, rotation and re-pin.**
+   - The idempotency key includes `thread_key`, and an entry whose effect ran is not replayed after a crash.
+   - A poison entry is marked done in its thread after three crashes.
+   - The budget is per character and holds each thread only at its head.
+5. **Sweeps, re-warm and re-pin.**
    - The idle and stop-grace sweeps skip standing rows. A startup stall alerts.
    - Every terminal path sets `restart_after`.
-   - A crash entry is appended on every `CRASHED` path, and none for Evicted or Preempted.
+   - A crash entry is appended to each thread that had a turn running, on every `CRASHED` path, and none for
+     Evicted or Preempted.
    - Three crashes stop the re-warm.
-   - Daily SDK rotation.
-   - Re-pin in place, and its refusal on a widening.
+   - Re-pin in place drains every thread, and is refused on a widening.
 6. **Counting.**
    - Standing rows count only in `MAX_STANDING_SESSIONS`.
    - Spawns count in `MaxDefinition`, `MaxLive` and the sub-pool.
