@@ -1,13 +1,13 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { imageTag } from "../imageTag";
 import { shortId } from "../sessionState";
-import { trustLabel } from "../trustLabel";
 import type {
   BackgroundTask,
   SubagentRun,
   TodoItem,
   ToolCallSummary,
 } from "../transcript";
+import { trustLabel } from "../trustLabel";
 import { ActionsMenu } from "./ActionsMenu";
 import { TickBar, todoProgress } from "./TickBar";
 
