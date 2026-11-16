@@ -288,16 +288,18 @@ deploy, CI, permission or pod-lifecycle paths.
   version/CHANGELOG on every push to `main`.
 - Commit trailers carry a little metadata — claims, never evidence. No `Co-Authored-By` naming
   Claude or a model (the owner's global rule). `Agent-Session: <opaque id>` where one exists, and
-  `Agent-Definition: <name>@<sha>` on a definition pod. `worker/git-hooks` still stamps the
-  `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` form in fleet pods; the check accepts it, and
-  it names no Claude. No model ids, no URLs,
+  `Agent-Definition: <name>@<sha>` on a definition pod. `worker/git-hooks` stamps the
+  `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` form in repo pods only (a definition pod
+  gets none); the check accepts it, and it names no Claude. No model ids, no URLs,
   no "Generated with" footer. CI enforces part of it: `trailers.yml` scans every commit of a PR
   (message, author and committer) plus its title and body and refuses a Claude or Anthropic
   co-author or identity, a Claude-Session trailer, claude.ai/claude.com links, a generated-with
   footer and model names (`.github/scripts/check-trailers.py`, self-tested by
   `check_trailers_test.py`). Other URLs, and the trailers' content beyond that, are not checked.
-  Author every commit as `ukubi-claude-<host> <noreply@bnei.dev>`: a squash merge turns each
-  other author into a `Co-authored-by:` line on `main`.
+  A squash merge turns each commit author into a `Co-authored-by:` line on `main`, so a
+  laptop or cloud session authors its commits as `ukubi-agent <noreply@bnei.dev>` (pods keep
+  the `ukubi <ukubi@bnei.dev>` / `git.identity` author above). The check still accepts
+  legacy `ukubi-claude-*` for old history; new commits must not use it.
 - `worker/`: `bun:test` for coordination logic cheap to mock (SDK streaming-input `query()`,
   sidecar local HTTP client). Runs in CI ahead of Docker build. Also `bun run typecheck`.
 - `core/`, `provisioner/`, `sidecar/`: `go test`. Table-driven units, `client-go` fake
