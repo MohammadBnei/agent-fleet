@@ -106,6 +106,7 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		title := key[:n]
 		if t, err = s.dash.CreateThread(ctx, head, title, sessions.CreateParams{
 			Owner: owner, Visibility: "private", Lifecycle: singleShot, Invoker: p.Client,
+			TrustSet: sessions.TrustFor(sessions.TierFleet),
 		}); err != nil {
 			return nil, err
 		}

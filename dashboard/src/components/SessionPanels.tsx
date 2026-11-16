@@ -7,6 +7,7 @@ import type {
   TodoItem,
   ToolCallSummary,
 } from "../transcript";
+import { trustLabel } from "../trustLabel";
 import { ActionsMenu } from "./ActionsMenu";
 import { TickBar, todoProgress } from "./TickBar";
 
@@ -266,6 +267,10 @@ export function SessionPanel({
         {/* Only when picked at creation (docs/adr/0077); otherwise the CLI's
             own, or a definition's thinking.default. */}
         {session.effort && <Fact label="effort" value={session.effort} />}
+        {/* The Rule of Two set, stored at create (docs/adr/0086 §2). */}
+        {session.trustSet && (
+          <Fact label="trust" value={trustLabel(session.trustSet)} />
+        )}
         {session.podPhase && (
           <Fact
             label="pod"

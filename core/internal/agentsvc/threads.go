@@ -207,7 +207,7 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition takes no resident threads"))
 	}
 	t, err := s.dash.CreateThread(ctx, h, req.Msg.GetTitle(), sessions.CreateParams{
-		Owner: p.owner(), Visibility: vis, Lifecycle: "resident",
+		Owner: p.owner(), Visibility: vis, Lifecycle: "resident", TrustSet: sessions.TrustFor(sessions.TierFleet),
 	})
 	if err != nil {
 		return nil, err

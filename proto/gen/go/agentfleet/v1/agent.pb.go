@@ -54,6 +54,9 @@ const (
 	// The single-shot run is parked on a decision (docs/adr/0070 §6): only its answer resumes it, so a message or a
 	// warm is refused and nothing was appended. Answer the decision (GetStatus or WaitForResult lists it).
 	AgentErrorKey_AGENT_ERROR_KEY_PARKED AgentErrorKey = 8
+	// The session's trust set (docs/adr/0086 §2) holds no letter for this method: core refuses it, nothing was done.
+	// The guidance names the card path.
+	AgentErrorKey_AGENT_ERROR_KEY_RULE_OF_TWO AgentErrorKey = 9
 )
 
 // Enum value maps for AgentErrorKey.
@@ -68,6 +71,7 @@ var (
 		6: "AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED",
 		7: "AGENT_ERROR_KEY_PARKED_LIMIT",
 		8: "AGENT_ERROR_KEY_PARKED",
+		9: "AGENT_ERROR_KEY_RULE_OF_TWO",
 	}
 	AgentErrorKey_value = map[string]int32{
 		"AGENT_ERROR_KEY_UNSPECIFIED":               0,
@@ -79,6 +83,7 @@ var (
 		"AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED": 6,
 		"AGENT_ERROR_KEY_PARKED_LIMIT":              7,
 		"AGENT_ERROR_KEY_PARKED":                    8,
+		"AGENT_ERROR_KEY_RULE_OF_TWO":               9,
 	}
 )
 
@@ -3290,7 +3295,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1f\n" +
 	"\vchanged_ids\x18\x02 \x03(\tR\n" +
-	"changedIds*\xb6\x04\n" +
+	"changedIds*\xee\x04\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
@@ -3300,7 +3305,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x1eAGENT_ERROR_KEY_DECISION_STALE\x10\x05\x1a\x18\xc2\xf3\x18\x14agent.decision_stale\x12R\n" +
 	")AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED\x10\x06\x1a#\xc2\xf3\x18\x1fagent.decision_confirm_required\x128\n" +
 	"\x1cAGENT_ERROR_KEY_PARKED_LIMIT\x10\a\x1a\x16\xc2\xf3\x18\x12agent.parked_limit\x12,\n" +
-	"\x16AGENT_ERROR_KEY_PARKED\x10\b\x1a\x10\xc2\xf3\x18\fagent.parked*\x97\x01\n" +
+	"\x16AGENT_ERROR_KEY_PARKED\x10\b\x1a\x10\xc2\xf3\x18\fagent.parked\x126\n" +
+	"\x1bAGENT_ERROR_KEY_RULE_OF_TWO\x10\t\x1a\x15\xc2\xf3\x18\x11agent.rule_of_two*\x97\x01\n" +
 	"\fDecisionKind\x12\x1d\n" +
 	"\x19DECISION_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DECISION_KIND_QUESTION\x10\x01\x12\x1c\n" +

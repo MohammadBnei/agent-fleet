@@ -19,17 +19,21 @@ type fakeLeases struct {
 	session    string
 	lease      string
 	definition string
+	trustSet   string // "" is BC
 	err        error
 }
 
-func (f fakeLeases) VerifyLease(_ context.Context, sessionID, leaseID string) (bool, string, error) {
+func (f fakeLeases) VerifyLease(_ context.Context, sessionID, leaseID string) (bool, string, string, error) {
 	if f.err != nil {
-		return false, "", f.err
+		return false, "", "", f.err
 	}
 	if sessionID != f.session || leaseID != f.lease {
-		return false, "", nil
+		return false, "", "", nil
 	}
-	return true, f.definition, nil
+	if f.trustSet == "" {
+		return true, f.definition, "BC", nil
+	}
+	return true, f.definition, f.trustSet, nil
 }
 
 func ctxWith(pairs ...string) context.Context {
