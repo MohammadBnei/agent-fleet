@@ -247,7 +247,7 @@ interface and one deck stay.
   - The provisioner writes them into a per-pod Secret before the Job, and adopts it with an owner reference after.
   - The Secret is mounted as a file with no subPath. Env holds paths only.
   - The worker's proxy goes through the sidecar's egress router (`127.0.0.1:9093`) for definition pods too, so only
-    the sidecar reads the token file, per connection.
+    the sidecar reads the token file, once at start (the token is per warm and never rotated).
   - Automount of the namespace service account token goes off for every pod.
   - The golden tests check mounts as well as env.
 - **This is the first PR,** before any new read role. It also closes the exposure to today's `thot-executor` role,

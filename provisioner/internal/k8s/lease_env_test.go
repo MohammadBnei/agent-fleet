@@ -27,14 +27,22 @@ func TestCreateWorkerPod_SidecarCarriesTheSessionLease(t *testing.T) {
 	}
 
 	sidecar := job.Spec.Template.Spec.InitContainers[1]
+	// ADR-0086 §6: env holds a path; the lease is in the pod's Secret.
 	var got string
 	for _, e := range sidecar.Env {
 		if e.Name == "LEASE_ID" {
+			t.Error("sidecar has LEASE_ID in env")
+		}
+		if e.Name == "LEASE_ID_FILE" {
 			got = e.Value
 		}
 	}
-	if got != "lease-abc" {
-		t.Errorf("sidecar LEASE_ID = %q, want %q — without it every CoreService call this pod makes is rejected", got, "lease-abc")
+	if got != "/run/fleet/cred/lease" {
+		t.Errorf("sidecar LEASE_ID_FILE = %q — without it every CoreService call this pod makes is rejected", got)
+	}
+	sec, err := c.Core.CoreV1().Secrets("agent-fleet").Get(ctx, CredSecretName("task-1"), metav1.GetOptions{})
+	if err != nil || sec.StringData["lease"] != "lease-abc" {
+		t.Errorf("credential secret %+v, %v", sec, err)
 	}
 
 	// And the pair must match: a sidecar authenticating as one session while

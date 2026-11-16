@@ -212,8 +212,14 @@ func TestBuildIngredients_ClusterAccessInjectsShimEnv(t *testing.T) {
 	if got["EXECUTOR_ADDR"] != cluster.ExecutorAddr {
 		t.Errorf("EXECUTOR_ADDR = %q, want %q — the shim cannot reach the executor without it", got["EXECUTOR_ADDR"], cluster.ExecutorAddr)
 	}
-	if got["THOT_AUTH_TOKEN"] != cluster.AuthToken {
-		t.Errorf("THOT_AUTH_TOKEN = %q, want %q — the executor will reject the call", got["THOT_AUTH_TOKEN"], cluster.AuthToken)
+	// ADR-0086 §6: a path, never the token.
+	if got["THOT_AUTH_TOKEN_FILE"] != "/run/fleet/cred/thot-token" {
+		t.Errorf("THOT_AUTH_TOKEN_FILE = %q — the executor will reject the call", got["THOT_AUTH_TOKEN_FILE"])
+	}
+	for k, v := range got {
+		if v == cluster.AuthToken {
+			t.Errorf("%s holds the executor token", k)
+		}
 	}
 }
 
@@ -241,7 +247,7 @@ func TestBuildIngredients_WithoutClusterAccessGetsNoClusterCredentials(t *testin
 				t.Fatalf("buildIngredients: %v", err)
 			}
 			for _, e := range env {
-				if e.Name == "EXECUTOR_ADDR" || e.Name == "THOT_AUTH_TOKEN" {
+				if e.Name == "EXECUTOR_ADDR" || e.Name == "THOT_AUTH_TOKEN" || e.Name == "THOT_AUTH_TOKEN_FILE" {
 					t.Errorf("%s leaked into a pod without cluster-access", e.Name)
 				}
 			}

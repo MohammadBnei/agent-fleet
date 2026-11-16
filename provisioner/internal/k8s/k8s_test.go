@@ -158,12 +158,14 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 		}
 	}
 
-	if len(podSpec.Volumes) != 2 {
-		t.Fatalf("expected two volumes (session, shared), got: %+v", podSpec.Volumes)
+	if len(podSpec.Volumes) != 3 {
+		t.Fatalf("expected three volumes (session, shared, the sidecar's credential Secret), got: %+v", podSpec.Volumes)
 	}
 	vols := map[string]string{}
 	for _, v := range podSpec.Volumes {
-		vols[v.Name] = v.PersistentVolumeClaim.ClaimName
+		if v.PersistentVolumeClaim != nil {
+			vols[v.Name] = v.PersistentVolumeClaim.ClaimName
+		}
 	}
 	if vols["session"] != SessionPVCName("task-1") {
 		t.Errorf("session volume should be this session's own PVC, got %q", vols["session"])
@@ -481,8 +483,25 @@ func TestCreateWorkerPod_ClusterAccessReachesTheJob(t *testing.T) {
 	if got["EXECUTOR_ADDR"] == "" {
 		t.Error("EXECUTOR_ADDR missing from the worker container — kubectl shim exits 2")
 	}
-	if got["THOT_AUTH_TOKEN"] == "" {
-		t.Error("THOT_AUTH_TOKEN missing from the worker container — executor rejects the call")
+	// ADR-0086 §6: a path in env, the token in a Secret mounted on the worker only.
+	if _, ok := got["THOT_AUTH_TOKEN"]; ok || got["THOT_AUTH_TOKEN_FILE"] != "/run/fleet/cred/thot-token" {
+		t.Errorf("worker env THOT_AUTH_TOKEN=%v THOT_AUTH_TOKEN_FILE=%q", got["THOT_AUTH_TOKEN"], got["THOT_AUTH_TOKEN_FILE"])
+	}
+	var mounted bool
+	for _, m := range worker.VolumeMounts {
+		mounted = mounted || (m.MountPath == "/run/fleet/cred" && m.SubPath == "" && m.ReadOnly)
+	}
+	if !mounted {
+		t.Error("the worker has no whole-volume credential mount — the shim cannot read its token")
+	}
+	for _, v := range spec.Volumes {
+		if v.Secret != nil && (len(v.Secret.Items) != 1 || v.Secret.Items[0].Key != "thot-token") && v.Name == "cred-worker" {
+			t.Errorf("worker volume projects %+v, want only thot-token", v.Secret.Items)
+		}
+	}
+	sec, err := c.Core.CoreV1().Secrets("agent-fleet").Get(context.Background(), CredSecretName("task-thot"), metav1.GetOptions{})
+	if err != nil || sec.StringData["thot-token"] != "tok" {
+		t.Errorf("credential secret: %v", err)
 	}
 }
 

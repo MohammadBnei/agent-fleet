@@ -43,6 +43,23 @@
             }
           },
           {
+            "name": "cred-sidecar",
+            "secret": {
+              "secretName": "worker-task1-cred",
+              "items": [
+                {
+                  "key": "lease",
+                  "path": "lease"
+                },
+                {
+                  "key": "vault-proxy",
+                  "path": "vault-proxy"
+                }
+              ],
+              "defaultMode": 288
+            }
+          },
+          {
             "name": "agent-vault-ca",
             "configMap": {
               "name": "agent-vault-ca"
@@ -113,8 +130,8 @@
                 "value": "9092"
               },
               {
-                "name": "LEASE_ID",
-                "value": "lease-1"
+                "name": "LEASE_ID_FILE",
+                "value": "/run/fleet/cred/lease"
               },
               {
                 "name": "WORKTREE_PATH",
@@ -139,8 +156,8 @@
                 "value": "*"
               },
               {
-                "name": "FLEET_VAULT_PROXY",
-                "value": "http://tok:owner-o@agent-vault.agent-vault.svc.cluster.local:14322"
+                "name": "FLEET_VAULT_PROXY_FILE",
+                "value": "/run/fleet/cred/vault-proxy"
               },
               {
                 "name": "FLEET_VAULT_HOSTS",
@@ -173,6 +190,11 @@
                 "readOnly": true,
                 "mountPath": "/repo-cache",
                 "subPath": "repos"
+              },
+              {
+                "name": "cred-sidecar",
+                "readOnly": true,
+                "mountPath": "/run/fleet/cred"
               }
             ],
             "startupProbe": {
@@ -423,6 +445,7 @@
           }
         ],
         "restartPolicy": "Never",
+        "automountServiceAccountToken": false,
         "securityContext": {
           "fsGroup": 1000
         }

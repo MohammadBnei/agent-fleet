@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -355,6 +356,12 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 			return nil, err
 		}
 		definition.ProxyURL, definition.DeadlineSeconds, definition.VaultLabel = s.vault.ProxyURL(token, definition.Name), deadline, l
+		// The sidecar's egress router sends exactly the vault's service hosts to it.
+		for _, svc := range req.GetDefinition().GetVault().GetServices() {
+			if h := svc.GetHost(); !slices.Contains(definition.VaultHosts, h) {
+				definition.VaultHosts = append(definition.VaultHosts, h)
+			}
+		}
 	}
 	// docs/adr/0075 §7: the same, on the owner's vault, under its lock: a
 	// widening (the owner vault's first creation) then revokes and ends only
@@ -741,6 +748,8 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 		return nil, err
 	}
 	if !exists {
+		// A failed warm may have left an unowned credential Secret.
+		s.k8sc.DeleteCredSecret(ctx, taskID)
 		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
 	}
 	// docs/adr/0065, 0075 §7: a pod's token dies before the pod, exactly that

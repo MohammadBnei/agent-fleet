@@ -97,7 +97,7 @@ func main() {
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
 	// docs/adr/0075 §7: a repo pod's HTTPS_PROXY. Set by the provisioner on
-	// repo pods only; a definition pod talks to its vault directly.
+	// every vault pod (repo and definition, docs/adr/0086 §6).
 	if vp := cfg.VaultProxy; vp != "" {
 		router, err := egress.New(vp, cfg.VaultHosts)
 		if err != nil {

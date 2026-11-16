@@ -252,10 +252,14 @@ type DefinitionProfile struct {
 	Name           string
 	GitAuthorName  string
 	GitAuthorEmail string
-	// ProxyURL is HTTPS_PROXY, carrying this pod's vault session token: the
-	// only credential in the pod, and one that reaches only its vault's rules
-	// (docs/adr/0065). Empty refuses the pod.
+	// ProxyURL carries this pod's vault session token: the only credential in
+	// the pod, and one that reaches only its vault's rules (docs/adr/0065).
+	// It goes to the pod's Secret for the sidecar's egress router, never to
+	// env (docs/adr/0086 §6). Empty refuses the pod.
 	ProxyURL string
+	// VaultHosts are the hosts of the definition's vault services: the
+	// router's host list.
+	VaultHosts []string
 	// DeadlineSeconds is the Job's activeDeadlineSeconds: the fixed lifetime
 	// cap (grpcserver's podLifetime). The token outlives it by 60s.
 	DeadlineSeconds int64
@@ -324,8 +328,9 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 // channel (docs/adr/0060), which never touches core and so is not bounded by
 // the definition allowlist.
 //
-// The proxy, its CA and NO_PROXY (loopback for the sidecar, core, the vault
-// API) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
+// The proxy (the sidecar's egress router on loopback, which alone holds the
+// vault token, in its credential file), its CA and NO_PROXY (loopback and core;
+// the vault is reached only through the router) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
 // NODE_USE_ENV_PROXY (Node's own fetch ignores the proxy vars without it), and
 // the CA in every variable a client in the worker image reads. No HTTP_PROXY:
 // the vault's plain http:// path injects too, so a plain-http request goes
@@ -337,7 +342,7 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 	if coreHost != "" {
 		noProxy = append(noProxy, coreHost)
 	}
-	return vaultWorkerEnv(env, d.ProxyURL, noProxy, vaultCADir+"/ca.pem", d.Name, d.GitAuthorName, d.GitAuthorEmail)
+	return vaultWorkerEnv(env, fmt.Sprintf("http://127.0.0.1:%d", SidecarEgressPort), noProxy, vaultCADir+"/ca.pem", d.Name, d.GitAuthorName, d.GitAuthorEmail)
 }
 
 // withGitURLRewrite appends `url.<rewrite>.insteadOf = https://github.com/` to
@@ -462,7 +467,7 @@ func (c *Client) ResolveImages(override string) (worker, sidecar string) {
 
 func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error {
 	taskID, repo := spec.SessionID, spec.Repo
-	leaseID, resumeSessionID, resumeFromSeq := spec.LeaseID, spec.ResumeID, spec.ResumeFromSeq
+	resumeSessionID, resumeFromSeq := spec.ResumeID, spec.ResumeFromSeq
 	toolKeys, serviceIngredients, extraEnv := spec.ToolKeys, spec.ServiceRefs, spec.ExtraEnv
 
 	workerImage, _ := c.ResolveImages(spec.Image)
@@ -541,7 +546,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	workerEnv := []corev1.EnvVar{
 		{Name: "SESSION_ID", Value: taskID},
 		{Name: "TARGET_REPO", Value: repo},
-		{Name: "LEASE_ID", Value: leaseID},
 		// 127.0.0.1, not "localhost": the sidecar binds IPv4 loopback only, and
 		// "localhost" resolves to ::1 as well on a dual-stack image. Whether
 		// that works then depends on the client's happy-eyeballs behaviour
@@ -623,6 +627,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
+		// docs/adr/0086 §6: no pod reads the namespace's API-server token.
+		AutomountServiceAccountToken: boolPtr(false),
 		// fsGroup, and it is load-bearing rather than hardening.
 		//
 		// Kubelet creates a subPath directory root-owned 0755, and every
@@ -675,7 +681,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// The sidecar, not the worker, is what talks to core, so
 					// the credential CoreService checks has to be here too —
 					// the worker's own copy authenticates nothing.
-					{Name: "LEASE_ID", Value: spec.LeaseID},
+					{Name: LeaseIDFileEnv, Value: credDir + "/" + credKeyLease},
 					{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 					// Without this, the sidecar falls back to its own
@@ -857,6 +863,44 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		podSpec.Volumes = append(podSpec.Volumes, *toolsVol)
 	}
 
+	// docs/adr/0086 §6: the per-warm credentials go to the pod's Secret, and
+	// env carries their paths. The sidecar holds the lease and the vault
+	// token; the worker holds only the executor token, in a cluster-access pod.
+	creds := map[string]string{credKeyLease: spec.LeaseID}
+	sidecarKeys := []string{credKeyLease}
+	var vaultProxy string
+	var vaultHosts []string
+	switch {
+	case spec.Definition != nil:
+		vaultProxy, vaultHosts = spec.Definition.ProxyURL, spec.Definition.VaultHosts
+	case spec.RepoVault != nil:
+		vaultProxy, vaultHosts = spec.RepoVault.ProxyURL, vault.OwnerHosts
+	}
+	for i := range podSpec.InitContainers {
+		sc := &podSpec.InitContainers[i]
+		if sc.Name != "sidecar" {
+			continue
+		}
+		if vaultProxy != "" {
+			creds[credKeyVaultProxy] = vaultProxy
+			sidecarKeys = append(sidecarKeys, credKeyVaultProxy)
+			sc.Env = append(sc.Env,
+				corev1.EnvVar{Name: VaultProxyFileEnv, Value: credDir + "/" + credKeyVaultProxy},
+				corev1.EnvVar{Name: "FLEET_VAULT_HOSTS", Value: strings.Join(vaultHosts, ",")},
+				corev1.EnvVar{Name: "EGRESS_PORT", Value: fmt.Sprint(SidecarEgressPort)},
+			)
+		}
+		vol, mount := credVolume("cred-sidecar", CredSecretName(taskID), sidecarKeys...)
+		podSpec.Volumes = append(podSpec.Volumes, vol)
+		sc.VolumeMounts = append(sc.VolumeMounts, mount)
+	}
+	if slices.ContainsFunc(workerEnv, func(e corev1.EnvVar) bool { return e.Name == ThotAuthTokenFileEnv }) {
+		creds[credKeyThot] = c.ThotAuthToken
+		vol, mount := credVolume("cred-worker", CredSecretName(taskID), credKeyThot)
+		podSpec.Volumes = append(podSpec.Volumes, vol)
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mount)
+	}
+
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
 		Spec: batchv1.JobSpec{
@@ -874,16 +918,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(r.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: r.VaultLabel}
 		mountVaultCA(&job.Spec.Template.Spec)
-		// The token goes to the sidecar's egress router only.
-		for i := range job.Spec.Template.Spec.InitContainers {
-			if c := &job.Spec.Template.Spec.InitContainers[i]; c.Name == "sidecar" {
-				c.Env = append(c.Env,
-					corev1.EnvVar{Name: "FLEET_VAULT_PROXY", Value: r.ProxyURL},
-					corev1.EnvVar{Name: "FLEET_VAULT_HOSTS", Value: strings.Join(vault.OwnerHosts, ",")},
-					corev1.EnvVar{Name: "EGRESS_PORT", Value: fmt.Sprint(SidecarEgressPort)},
-				)
-			}
-		}
 	}
 	if d := spec.Definition; d != nil {
 		// docs/adr/0065: a fixed lifetime cap, and its token's TTL is longer,
@@ -891,9 +925,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(d.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: d.VaultLabel}
 		ps := &job.Spec.Template.Spec
-		// No API-server token (the namespace's default SA would mount one,
-		// readable by the agent's Read tool) and no Service env vars.
-		ps.AutomountServiceAccountToken = boolPtr(false)
+		// No Service env vars (the API-server token is off for every pod).
 		ps.EnableServiceLinks = boolPtr(false)
 		// REFUSED from the egress lock's DNS allowlist + musl's search
 		// expansion under ndots:5 stops resolution (spike 1 (b)).
@@ -911,12 +943,26 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		})
 	}
 
+	if err := c.createCredSecret(ctx, taskID, creds); err != nil {
+		return fmt.Errorf("create credential secret: %w", err)
+	}
 	jobCtx, endJob := spans.Start(ctx, "warm.job_create", attribute.String("session_id", taskID))
-	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
+	created, err := c.Core.BatchV1().Jobs(c.Namespace).Create(jobCtx, job, metav1.CreateOptions{})
 	endJob(err)
 	if err != nil {
+		// Only a Secret this call made: an AlreadyExists Job is a live pod's.
+		if !apierrors.IsAlreadyExists(err) {
+			c.DeleteCredSecret(ctx, taskID)
+		}
 		slog.Error("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo, "error", err)
 		return err
+	}
+	if err := c.adoptCredSecret(ctx, taskID, created); err != nil {
+		// An unowned Secret would outlive the Job: undo both, the caller
+		// revokes the token.
+		_ = c.DeleteWorkerJob(context.WithoutCancel(ctx), taskID)
+		c.DeleteCredSecret(ctx, taskID)
+		return fmt.Errorf("adopt credential secret: %w", err)
 	}
 	slog.Info("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo)
 	metrics.PodsCreatedTotal.WithLabelValues("worker").Inc()
@@ -946,6 +992,7 @@ func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 		slog.Error("k8s DeleteWorkerJob", "sessionId", taskID, "error", err)
 		return err
 	}
+	c.DeleteCredSecret(ctx, taskID)
 	slog.Info("k8s DeleteWorkerJob", "sessionId", taskID)
 	metrics.PodsDeletedTotal.WithLabelValues("worker").Inc()
 	return nil

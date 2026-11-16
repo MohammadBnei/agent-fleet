@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.28.0](https://github.com/MohammadBnei/agent-fleet/compare/7.27.0...7.28.0) (2026-11-16)
+
+### Features
+
+* **provisioner:** no credential in pod env (ADR-0086 §6) ([#406](https://github.com/MohammadBnei/agent-fleet/issues/406)) ([0654dbb](https://github.com/MohammadBnei/agent-fleet/commit/0654dbb9e3e655580b79968fad03212acd0a06e2))
+
 # [7.27.0](https://github.com/MohammadBnei/agent-fleet/compare/7.26.0...7.27.0) (2026-11-16)
 
 ### Features
