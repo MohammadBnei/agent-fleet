@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.17.0](https://github.com/MohammadBnei/agent-fleet/compare/7.16.0...7.17.0) (2026-11-16)
+
+### Features
+
+* **worker:** outputFormat for single-shot sessions with a schema ([#384](https://github.com/MohammadBnei/agent-fleet/issues/384)) ([281997f](https://github.com/MohammadBnei/agent-fleet/commit/281997f5fc422cefa3954a494d3540f3886341bb))
+
 # [7.16.0](https://github.com/MohammadBnei/agent-fleet/compare/7.15.0...7.16.0) (2026-11-16)
 
 ### Features
