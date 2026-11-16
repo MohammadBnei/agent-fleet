@@ -1,6 +1,6 @@
 # ADR-0086 — Rule of Two: core sets each session's trust from its trigger
 
-- **Status:** Proposed (owner decisions 2026-11-16)
+- **Status:** Accepted (owner, 2026-11-16)
 - **Date:** 2026-11-16
 - **Would amend:**
   - [ADR-0082](0082-decision-cards.md):
