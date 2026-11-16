@@ -1555,10 +1555,16 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("definition %q limits.timeout: %w", name, err))
 	}
 	id := eff.Git.Identity
-	return &agentfleetv1.DefinitionPodProfile{
+	profile := &agentfleetv1.DefinitionPodProfile{
 		Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email,
 		Vault: definitions.VaultSpec(eff), TimeoutSeconds: int64(timeout.Seconds()),
-	}, nil
+	}
+	if r := eff.Resources; r != nil {
+		profile.Cpu, profile.Memory = r.CPU, r.Memory
+		// Guaranteed QoS is for standing definitions only (ADR-0084 §9).
+		profile.Guaranteed = eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
+	}
+	return profile, nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —

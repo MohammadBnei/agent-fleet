@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -583,5 +584,91 @@ func TestRepoOwner(t *testing.T) {
 		if got != want || (want == "") != (err != nil) {
 			t.Errorf("repoOwner(%q) = %q, %v; want %q", url, got, err, want)
 		}
+	}
+}
+
+func workerJob(t *testing.T, s *Server, k8sc *k8s.Client, id string, p *agentfleetv1.DefinitionPodProfile) []corev1.Container {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := s.CreateWorkerPod(ctx, defRequest(t, id, p)); err != nil {
+		t.Fatal(err)
+	}
+	job, err := k8sc.Core.BatchV1().Jobs(k8sc.Namespace).Get(ctx, k8s.WorkerResourceName(id), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := job.Spec.Template.Spec // the sidecar is a restartable init container
+	return append(append([]corev1.Container{}, spec.InitContainers...), spec.Containers...)
+}
+
+// ADR-0084 §9: a guaranteed profile's cpu/memory reach the worker, and the
+// sidecar is sized requests == limits too.
+func TestCreateWorkerPod_GuaranteedResources(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	p := profile("dev-x")
+	p.Cpu, p.Memory, p.Guaranteed = "500m", "1536Mi", true
+	seen := map[string]bool{}
+	for _, c := range workerJob(t, s, k8sc, "def-res", p) {
+		if c.Name != "worker" && c.Name != "sidecar" {
+			continue
+		}
+		seen[c.Name] = true
+		wantCPU, wantMem := "500m", "1536Mi"
+		if c.Name == "sidecar" {
+			wantCPU, wantMem = "100m", "256Mi"
+		}
+		for kind, l := range map[string]corev1.ResourceList{"requests": c.Resources.Requests, "limits": c.Resources.Limits} {
+			if got := l.Cpu(); got.Cmp(resource.MustParse(wantCPU)) != 0 {
+				t.Errorf("%s cpu %s = %s, want %s", c.Name, kind, got.String(), wantCPU)
+			}
+			if got := l.Memory(); got.Cmp(resource.MustParse(wantMem)) != 0 {
+				t.Errorf("%s memory %s = %s, want %s", c.Name, kind, got.String(), wantMem)
+			}
+		}
+	}
+	if !seen["worker"] || !seen["sidecar"] {
+		t.Fatalf("containers seen: %v", seen)
+	}
+}
+
+// A definition that is not standing keeps the ordinary sizing even when it
+// carries resources.
+func TestCreateWorkerPod_NonStandingKeepsOrdinarySizing(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	p := profile("dev-x")
+	p.Cpu, p.Memory = "1", "2Gi"
+	for _, c := range workerJob(t, s, k8sc, "def-ord", p) {
+		if c.Name == "worker" {
+			if m := c.Resources.Limits.Memory(); m.Cmp(resource.MustParse("4Gi")) != 0 {
+				t.Errorf("worker memory limit = %s, want 4Gi", m.String())
+			}
+			if m := c.Resources.Requests.Memory(); m.Cmp(resource.MustParse("1Gi")) != 0 {
+				t.Errorf("worker memory request = %s, want 1Gi", m.String())
+			}
+			return
+		}
+	}
+	t.Fatal("no worker container")
+}
+
+// The wire is a trust boundary: a bad quantity is InvalidArgument, never a panic.
+func TestCreateWorkerPod_GuaranteedRejectsBadResources(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	for _, c := range []struct{ name, cpu, mem string }{
+		{"unparseable", "lots", "1Gi"}, {"cpu only", "500m", ""}, {"memory only", "", "1Gi"},
+		{"cpu over max", "4001m", "1Gi"}, {"memory over max", "500m", "5Gi"},
+	} {
+		p := profile("dev-x")
+		p.Cpu, p.Memory, p.Guaranteed = c.cpu, c.mem, true
+		_, err := s.CreateWorkerPod(context.Background(), defRequest(t, "def-bad", p))
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("%s: got %v, want InvalidArgument", c.name, err)
+		}
+	}
+	if n := jobCount(t, k8sc); n != 0 {
+		t.Errorf("%d jobs created for refused profiles", n)
 	}
 }

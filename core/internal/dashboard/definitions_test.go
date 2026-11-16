@@ -384,6 +384,11 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		len(d.GetVault().GetServices()) != 1 || d.GetVault().GetServices()[0].GetSecret() != "CLAUDE_CODE_OAUTH_TOKEN" {
 		t.Errorf("profile vault/timeout = %v", d)
 	}
+	// ADR-0084 §9: resources inherited from workspace-base reach the profile,
+	// but only standing definitions ask for Guaranteed QoS.
+	if d := got.GetDefinition(); d.GetCpu() != "1" || d.GetMemory() != "2Gi" || d.GetGuaranteed() {
+		t.Errorf("profile resources = cpu %q memory %q guaranteed %v, want 1 / 2Gi / false", d.GetCpu(), d.GetMemory(), d.GetGuaranteed())
+	}
 	if got.GetImage() != "" || len(got.GetToolKeys()) != 0 {
 		t.Errorf("image %q tool keys %v: a definition pod takes the default image and no keys", got.GetImage(), got.GetToolKeys())
 	}

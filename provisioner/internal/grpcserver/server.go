@@ -249,7 +249,12 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		if d.GetVault() == nil || d.GetVault().GetName() != d.GetName() {
 			return nil, status.Error(codes.InvalidArgument, "definition profile needs its own vault (docs/adr/0065)")
 		}
-		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail()}
+		if d.GetGuaranteed() {
+			if err := k8s.ValidateGuaranteed(d.GetCpu(), d.GetMemory()); err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail(), CPU: d.GetCpu(), Memory: d.GetMemory(), Guaranteed: d.GetGuaranteed()}
 	}
 	// docs/adr/0075 §7: every repo pod uses its owner's vault. Checked before
 	// anything is reported or touched, like the profile above.

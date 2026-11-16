@@ -171,6 +171,13 @@ func contextBudgetEnv() []corev1.EnvVar {
 const (
 	workerMaxCPU    = "4000m"
 	workerMaxMemory = "4Gi"
+
+	// Guaranteed pods (ADR-0084 §9) size the sidecar and clone containers
+	// with requests == limits too, or the pod is Burstable.
+	sidecarGuaranteedCPU    = "100m"
+	sidecarGuaranteedMemory = "256Mi"
+	cloneGuaranteedCPU      = "1000m"
+	cloneGuaranteedMemory   = "1Gi"
 )
 
 func int32Ptr(i int32) *int32 { return &i }
@@ -256,6 +263,27 @@ type DefinitionProfile struct {
 	// (VaultLabelAnnotation) so every revoke path deletes exactly this
 	// pod's token. Not a secret.
 	VaultLabel string
+	// CPU/Memory are the definition's validated `resources` (ADR-0084 §9).
+	// Both set makes the pod Guaranteed QoS: worker, sidecar and clone all
+	// carry requests == limits. Empty keeps the ordinary burstable sizing.
+	CPU, Memory string
+	// Guaranteed is set for standing definitions only.
+	Guaranteed bool
+}
+
+// guaranteedResources is requests == limits, which is what Guaranteed QoS needs.
+func guaranteedResources(cpu, memory string) corev1.ResourceRequirements {
+	l := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse(cpu),
+		corev1.ResourceMemory: resource.MustParse(memory),
+	}
+	return corev1.ResourceRequirements{Requests: l, Limits: l.DeepCopy()}
+}
+
+// guaranteed reports whether spec's definition asks for Guaranteed QoS.
+func (spec WorkerPodSpec) guaranteed() bool {
+	d := spec.Definition
+	return d != nil && d.Guaranteed && d.CPU != "" && d.Memory != ""
 }
 
 // VaultLabelAnnotation carries DefinitionProfile.VaultLabel on the Job.
@@ -473,6 +501,37 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	}
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
+	// Raised from 250m/256Mi: in a repo pod every HTTPS connection the worker
+	// makes is tunnelled through the sidecar (sidecar/internal/egress), and an
+	// OOM there drops all of them, MCP included.
+	sidecarResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("50m"),
+			corev1.ResourceMemory: resource.MustParse("64Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1000m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+	}
+	// The 4000m/4Gi limits sit at exactly limitRange.max in k8s/core.yaml. A
+	// container limit ABOVE max is rejected at admission and the pod is never
+	// created. Change them together; TestCreateWorkerPod_ResourcesWithinLimitRange
+	// pins them.
+	workerResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(workerMaxCPU),
+			corev1.ResourceMemory: resource.MustParse(workerMaxMemory),
+		},
+	}
+	if spec.guaranteed() {
+		workerResources = guaranteedResources(spec.Definition.CPU, spec.Definition.Memory)
+		sidecarResources = guaranteedResources(sidecarGuaranteedCPU, sidecarGuaranteedMemory)
+	}
 
 	ingredientInitContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(toolKeys, serviceIngredients, ClusterAccess{ExecutorAddr: c.ExecutorAddr, AuthToken: c.ThotAuthToken})
 	if err != nil {
@@ -679,21 +738,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// same as being able to run git on them.
 					repoCacheMount(spec),
 				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("50m"),
-						corev1.ResourceMemory: resource.MustParse("64Mi"),
-					},
-					// Raised from 250m/256Mi: in a repo pod every HTTPS
-					// connection the worker makes is tunnelled through this
-					// container (sidecar/internal/egress), and an OOM here
-					// drops all of them, MCP included. Definition pods get
-					// the same limit: one number, requests unchanged.
-					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("1000m"),
-						corev1.ResourceMemory: resource.MustParse("512Mi"),
-					},
-				},
+				Resources: sidecarResources,
 				// HTTP on /readyz, not a bare TCP check: a TCP probe only
 				// proves the sidecar process is listening, not that it can
 				// actually reach core — a sidecar with zero core
@@ -789,16 +834,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				// and the pod is never created at all — not throttled, not
 				// pending, absent. Change the two together;
 				// TestCreateWorkerPod_ResourcesWithinLimitRange pins them.
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
-					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse(workerMaxCPU),
-						corev1.ResourceMemory: resource.MustParse(workerMaxMemory),
-					},
-				},
+				Resources: workerResources,
 			},
 		},
 		Volumes: []corev1.Volume{
@@ -1022,4 +1058,23 @@ func (c *Client) ensureVaultCA(ctx context.Context, data map[string]string) erro
 	cm.Data = data
 	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
 	return err
+}
+
+// ValidateGuaranteed checks a guaranteed profile's cpu and memory at the wire
+// boundary: both set, parseable, and within limitRange.max (a pod over it is
+// rejected at admission and never appears).
+func ValidateGuaranteed(cpu, memory string) error {
+	if cpu == "" || memory == "" {
+		return errors.New("guaranteed definition profile needs both cpu and memory")
+	}
+	for _, q := range []struct{ name, v, max string }{{"cpu", cpu, workerMaxCPU}, {"memory", memory, workerMaxMemory}} {
+		got, err := resource.ParseQuantity(q.v)
+		if err != nil {
+			return fmt.Errorf("definition profile %s %q: %w", q.name, q.v, err)
+		}
+		if got.Cmp(resource.MustParse(q.max)) > 0 {
+			return fmt.Errorf("definition profile %s %q is over %s", q.name, q.v, q.max)
+		}
+	}
+	return nil
 }

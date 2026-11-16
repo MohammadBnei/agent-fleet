@@ -160,6 +160,19 @@ git config --global --add safe.directory '*'
 
 ` + cloneTail(spec, base)
 
+	res := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1000m"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+	}
+	if spec.guaranteed() {
+		res = guaranteedResources(cloneGuaranteedCPU, cloneGuaranteedMemory)
+	}
 	return corev1.Container{
 		Name:    "clone",
 		Image:   image,
@@ -168,16 +181,7 @@ git config --global --add safe.directory '*'
 			{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
 			repoCacheMount(spec),
 		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("128Mi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1000m"),
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			},
-		},
+		Resources: res,
 	}
 }
 
