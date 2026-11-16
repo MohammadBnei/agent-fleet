@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.27.0](https://github.com/MohammadBnei/agent-fleet/compare/7.26.0...7.27.0) (2026-11-16)
+
+### Features
+
+* **core:** session trust set stored at create, method tags, enforcement (ADR-0086 §1-§2) ([#404](https://github.com/MohammadBnei/agent-fleet/issues/404)) ([739451e](https://github.com/MohammadBnei/agent-fleet/commit/739451e2aad5528b93c61b013f987585bd06dfea))
+
 # [7.26.0](https://github.com/MohammadBnei/agent-fleet/compare/7.25.0...7.26.0) (2026-11-16)
 
 ### Features
