@@ -1,6 +1,6 @@
 # ADR-0084 — Long-lived characters: one trusted pod per character, kept up by core
 
-- **Status:** Proposed (2026-11-16). Final revision.
+- **Status:** Accepted (owner, 2026-11-16)
   - The owner chose one pod per character and adopted [ADR-0086](0086-rule-of-two.md) (Rule of Two).
   - Guests never reach the fleet. Every character is the owner's, and so trusted.
   - Alerts go to ADR-0086's single-shot first responders.
