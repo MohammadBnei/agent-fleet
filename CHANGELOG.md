@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.18.0](https://github.com/MohammadBnei/agent-fleet/compare/7.17.0...7.18.0) (2026-11-16)
+
+### Features
+
+* **agentsvc:** maxParked caps a client's parked runs (ADR-0070 slice 10) ([#385](https://github.com/MohammadBnei/agent-fleet/issues/385)) ([23e4039](https://github.com/MohammadBnei/agent-fleet/commit/23e40396089e61f2e16a7a94b2a4a2a5326662f7))
+
 # [7.17.0](https://github.com/MohammadBnei/agent-fleet/compare/7.16.0...7.17.0) (2026-11-16)
 
 ### Features
