@@ -336,6 +336,12 @@ Any doc, code, comment, or memory that contradicts this file or an
 - [`0083`](adr/0083-remote-mcp-for-definitions.md) — a definition may name remote MCP
   servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
   for a named user; not built).
+- [`0084`](adr/0084-long-lived-agents.md) — long-lived characters: one pod and one session
+  per character, started by the owner and kept up by core; every character is the owner's and
+  trusted (guests never reach the fleet, alerts go to ADR-0086's single-shot first responders and
+  reach a character only as typed outcomes it reads); the worker's cursor in strict order, resumed
+  from the last result; Bash within the definition's ceiling; the owner talks from the game browser
+  straight to core (Proposed 2026-11-16; not built). Depends on [`0086`](adr/0086-rule-of-two.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -377,7 +383,8 @@ Any doc, code, comment, or memory that contradicts this file or an
   `SetPermissionMode` call, itself confirmation-gated for `auto`) — never
   inferred from anything else. `/approve` no
   longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
-- **Appending to a session that has no live pod without warming first.** The
+- **Appending to a session that has no live pod without warming first** (except a
+  long-lived character, which resumes from its last result's cursor, `adr/0084` §4). The
   resume cursor is `MAX(seq)+1` read at provisioning time, so an entry written
   to a cold session lands *below* the next pod's cursor and is undeliverable
   forever — not delivered late. `PostMessage`, `OpenFromProposal`,
@@ -458,7 +465,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   review/elicitation instead of a second independent session or an
   external orchestrator — see `adr/0002` (superseded) and `adr/0017`.
 - **A new passthrough RPC on `core` for a service that needs no `core`
-  state.** If `core` would open no connection, write no row and resolve
+  state** (named exception: `QueryMetrics` for egress-locked characters, `adr/0084` §6). If `core` would open no connection, write no row and resolve
   nothing, it does not belong in the path — add a `ServiceEndpoint` roster
   entry and a NetworkPolicy rule instead. This is the cost that produced
   `adr/0035`'s named exception; `adr/0045` removes the cost rather than the
