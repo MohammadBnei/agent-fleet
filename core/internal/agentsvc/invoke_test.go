@@ -224,4 +224,27 @@ func TestInvoke(t *testing.T) {
 	if entries, _, _ := transcr.ReadSince(ctx, capID, 0, 10); len(entries) != 1 {
 		t.Fatalf("entries after the retry: %+v", entries)
 	}
+
+	// Invoke's own cap counts unfinished runs only (capID so far), and runs
+	// never count against Open's thread cap.
+	if _, err := pool.Exec(ctx, `INSERT INTO sessions (repo, description, definition_name, definition_sha, owner, invoker, visibility, lifecycle)
+		SELECT 'notes', '', 'd', 'sha1', 'client:bot', 'bot', 'private', 'single-shot' FROM generate_series(1, $1)`, maxClientRuns-1); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := store.OpenThreads(ctx, "client:bot"); err != nil || n != 0 {
+		t.Fatalf("single-shot runs count as open threads: %d %v", n, err)
+	}
+	// A key cut at maxTitle bytes would split the é: the title stays UTF-8.
+	utf8Key := strings.Repeat("a", maxTitle-1) + "é"
+	if _, err := invoke(bot, "d", "one more", utf8Key); code(err) != connect.CodeResourceExhausted {
+		t.Fatalf("over the run cap: %v", err)
+	}
+	appendEntry(capID, "worker", "result", `{"subtype":"success","result_text":"ok","consumedSeq":1}`)
+	utf8ID, err := invoke(bot, "d", "one more", utf8Key)
+	if err != nil {
+		t.Fatalf("a finished run frees the cap, multi-byte key: %v", err)
+	}
+	if th, err := store.Get(ctx, utf8ID); err != nil || deref(th.Title, "") != strings.Repeat("a", maxTitle-1) {
+		t.Fatalf("title: %+v %v", th, err)
+	}
 }

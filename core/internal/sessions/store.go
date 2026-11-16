@@ -354,10 +354,27 @@ func (s *Store) OpenOnThreadKey(ctx context.Context, key string) ([]ThreadRef, e
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[ThreadRef])
 }
 
-// OpenThreads counts owner's open sessions, for CreateThread's cap.
+// OpenThreads counts owner's open sessions, for CreateThread's and Open's
+// cap. Single-shot runs are left out: they have no thread key to close them
+// by, and UnfinishedRuns bounds them instead.
 func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
 	var n int
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE owner = $1 AND archived_at IS NULL`, owner).Scan(&n)
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE owner = $1 AND archived_at IS NULL
+		AND lifecycle IS DISTINCT FROM 'single-shot'`, owner).Scan(&n)
+	return n, err
+}
+
+// UnfinishedRuns counts owner's open single-shot sessions with no result
+// entry yet, for Invoke's cap.
+//
+// ponytail: "has a result" stands in for finished until docs/adr/0070 build
+// order slice 8 archives a run on its final result; then this can count the
+// unarchived ones.
+func (s *Store) UnfinishedRuns(ctx context.Context, owner string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions s WHERE s.owner = $1 AND s.archived_at IS NULL
+		AND s.lifecycle = 'single-shot'
+		AND NOT EXISTS (SELECT 1 FROM transcript r WHERE r.session_id = s.id AND r.type = 'result')`, owner).Scan(&n)
 	return n, err
 }
 

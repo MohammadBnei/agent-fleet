@@ -22,11 +22,18 @@ const (
 	maxActor = 200
 	// A client's open threads; a member's is maxOpenThreads.
 	maxClientThreads = 500
+	// A client's single-shot runs with no result yet: Invoke's cap.
+	maxClientRuns = 500
 )
 
-// openSlots bounds concurrent Opens (each holds a pooled connection for its
-// locks). pgxpool's default is at least 4 connections.
-var openSlots = make(chan struct{}, 2)
+// openSlots bounds concurrent Opens and invokeSlots concurrent Invokes (each
+// holds a pooled connection for its locks), apart so headless runs never
+// crowd out event delivery. pgxpool's default is at least 4 connections:
+// three held leave one for their queries.
+var (
+	openSlots   = make(chan struct{}, 2)
+	invokeSlots = make(chan struct{}, 1)
+)
 
 func threadLock(owner, definition, threadKey string) string {
 	return "thread\x00" + owner + "\x00" + definition + "\x00" + threadKey
@@ -123,7 +130,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		return requestSHA(m.GetDefinition(), m.GetThreadKey(), m.GetMessage(), fmt.Sprint(m.GetWake()), tainted,
 			m.GetActor(), m.GetCausationId(), m.GetVisibility(), requestInteraction, m.GetLifecycle())
 	}
-	claim, delivered, seq, release, err := s.claimRequest(ctx, owner, key, []string{threadLock(owner, m.GetDefinition(), m.GetThreadKey())}, hash("false"), hash("true"))
+	claim, delivered, seq, release, err := s.claimRequest(ctx, openSlots, owner, key, []string{threadLock(owner, m.GetDefinition(), m.GetThreadKey())}, hash("false"), hash("true"))
 	defer release()
 	if err != nil {
 		return nil, err
@@ -200,30 +207,30 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 }
 
 // claimRequest is docs/adr/0066 §7 steps 1-4's first half, for Open and
-// Invoke: under openSlots and the key's lock (plus extra locks), it claims
+// Invoke: under slots (openSlots or invokeSlots) and the key's lock (plus extra locks), it claims
 // key for shas[0], refuses a used key's other request (any of shas matches a
 // stored claim), and returns the session an earlier attempt delivered to,
 // with its seq, or the pending claim. release is never nil; the caller holds
 // it until it answers.
-func (s *Server) claimRequest(ctx context.Context, owner, key string, extra []string, shas ...string) (claim sessions.Claim, delivered string, seq int64, release func(), err error) {
+func (s *Server) claimRequest(ctx context.Context, slots chan struct{}, owner, key string, extra []string, shas ...string) (claim sessions.Claim, delivered string, seq int64, release func(), err error) {
 	release = func() {}
 	// Each request holds one pooled connection for its locks while it runs,
 	// and its own queries need more: a bound keeps a burst from taking the
 	// whole pool (docs/adr/0066 §7's "nothing ever blocks in the database").
 	select {
-	case openSlots <- struct{}{}:
+	case slots <- struct{}{}:
 	default:
 		return claim, "", 0, release, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, errors.New("too many requests in progress, retry"))
 	}
 	lock, err := s.sessions.TryLock(ctx, append([]string{"req\x00" + owner + "\x00" + key}, extra...)...)
 	if err != nil {
-		<-openSlots
+		<-slots
 		if errors.Is(err, sessions.ErrBusy) {
 			return claim, "", 0, release, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, err)
 		}
 		return claim, "", 0, release, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	release = func() { lock.Release(); <-openSlots }
+	release = func() { lock.Release(); <-slots }
 	claim, err = s.sessions.ClaimRequest(ctx, owner, key, shas[0])
 	if err != nil {
 		return claim, "", 0, release, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)

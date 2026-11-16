@@ -24,7 +24,9 @@
   on `(invoker, idempotency_key)` with the request hash over definition and
   input, a private single-shot thread warmed through `WarmForAppend`, a full
   fleet answered `ResourceExhausted` with an `InvokeCapacity` detail
-  carrying the `thread_id`; `WaitForResult` a long poll on the transcript
+  carrying the `thread_id`; runs kept out of Open's thread cap and capped
+  on their own at 500 without a result per client, under their own
+  one-slot claim semaphore; `WaitForResult` a long poll on the transcript
   hub, `waiting` with `pending` on any open question, permission or plan,
   else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
   order: a result with turn-starting input after it is not final.

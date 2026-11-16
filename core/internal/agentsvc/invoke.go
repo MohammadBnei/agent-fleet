@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 
@@ -50,7 +51,7 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 	}
 	owner, key := p.owner(), m.GetIdempotencyKey()
 	// "invoke" first: an Open's claim on the same key never matches.
-	claim, delivered, _, release, err := s.claimRequest(ctx, owner, key, nil, requestSHA("invoke", m.GetDefinition(), m.GetInput()))
+	claim, delivered, _, release, err := s.claimRequest(ctx, invokeSlots, owner, key, nil, requestSHA("invoke", m.GetDefinition(), m.GetInput()))
 	defer release()
 	if err != nil {
 		return nil, err
@@ -79,12 +80,17 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		t = nil
 	}
 	if t == nil {
-		if n, err := s.sessions.OpenThreads(ctx, owner); err != nil {
+		if n, err := s.sessions.UnfinishedRuns(ctx, owner); err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
-		} else if n >= maxClientThreads {
-			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("this client has %d open threads; close some first", n))
+		} else if n >= maxClientRuns {
+			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("this client has %d unfinished runs; wait for some first", n))
 		}
-		title := key[:min(len(key), maxTitle)]
+		// Cut on a rune boundary: Postgres refuses invalid UTF-8.
+		n := min(len(key), maxTitle)
+		for n > 0 && n < len(key) && !utf8.RuneStart(key[n]) {
+			n--
+		}
+		title := key[:n]
 		if t, err = s.dash.CreateThread(ctx, head, title, sessions.CreateParams{
 			Owner: owner, Visibility: "private", Lifecycle: singleShot, Invoker: p.Client,
 		}); err != nil {
