@@ -395,14 +395,31 @@ const exitResultOf = `(SELECT r.seq, r.text,
 	    AND CASE WHEN r.text IS JSON OBJECT THEN r.text::jsonb -> 'exit' = 'true'::jsonb ELSE false END
 	  ORDER BY r.seq DESC LIMIT 1)`
 
-// inputAfterExit is "a human entry that starts a turn lies above the latest
-// exit result's consumedSeq" (docs/adr/0070 §3 rule 1): the pod that wrote it
-// never took that entry in, so the run is not final, and core re-warms it
-// once the pod is gone (§6, the exit window). False with no exit result.
+// turnStarting is the WHERE fragment for a transcript row h that starts a
+// turn: a human message, answer or permission response, or a peer session's
+// relayed prompt (from 'session', docs/adr/0041), never context. It matches
+// the worker's takeIn filter, so consumedSeq and this agree on what input is.
+const turnStarting = `h."from" IN ('human', 'session') AND NOT h.context_only
+	  AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response')`
+
+// inputAfterExit is "an entry that starts a turn lies above the latest exit
+// result's consumedSeq" (docs/adr/0070 §3 rule 1): the pod that wrote it
+// never took that entry in, so the run is not final, and the next warm starts
+// just past consumedSeq (§6, the exit window). False with no exit result.
 const inputAfterExit = `EXISTS (SELECT 1 FROM transcript h
-	WHERE h.session_id = s.id AND h."from" = 'human' AND NOT h.context_only
-	  AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response')
+	WHERE h.session_id = s.id AND ` + turnStarting + `
 	  AND h.seq > (SELECT e.consumed FROM ` + exitResultOf + ` e))`
+
+// legacyFinal selects the text of the session s.id's latest result when no
+// turn-starting entry lies above its seq: the seq rule from before slice 7.
+// WaitForResult judges an ended run with no exit result at all on it instead
+// of NO_RESULT: a run whose pod ran an older worker at deploy, or whose
+// result had no queued_turn_count (it never exits on its own).
+const legacyFinal = `(SELECT r.text FROM transcript r
+	  WHERE r.session_id = s.id AND r.type = 'result'
+	    AND NOT EXISTS (SELECT 1 FROM transcript h
+	                     WHERE h.session_id = s.id AND h.seq > r.seq AND ` + turnStarting + `)
+	  ORDER BY r.seq DESC LIMIT 1)`
 
 // endedRun is the WHERE fragment for a single-shot session s that reached a
 // terminal state (docs/adr/0070 §7) and has no live pod ($1 = livePhases):
@@ -422,29 +439,39 @@ const endedRun = `s.lifecycle = 'single-shot' AND s.swept_at IS NULL
 
 // ListRewarmRuns is every single-shot run in the exit window (docs/adr/0070
 // §6): its pod exited cleanly, it is neither archived nor stopping, and a
-// human or answer entry lies above its exit result's consumedSeq. Each comes
-// with that consumedSeq: the next pod's cursor goes just past it, not to the
-// latest seq, or the entry would sit below the cursor and never arrive.
-func (s *Store) ListRewarmRuns(ctx context.Context) (map[string]int64, error) {
-	rows, err := s.pool.Query(ctx, `SELECT s.id::text, (SELECT e.consumed FROM `+exitResultOf+` e)
-		FROM sessions s
+// turn-starting entry lies above its exit result's consumedSeq. Every warm
+// of such a run starts the next pod just past that consumedSeq (ExitCursor);
+// this lists the ones no sender has warmed, for the loop to warm.
+func (s *Store) ListRewarmRuns(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT s.id::text FROM sessions s
 		WHERE s.lifecycle = 'single-shot' AND s.swept_at IS NULL AND s.archived_at IS NULL
 		  AND s.stop_requested_at IS NULL AND s.pod_phase = 'POD_PHASE_TERMINATED'
 		  AND `+inputAfterExit)
 	if err != nil {
 		return nil, fmt.Errorf("list rewarm runs: %w", err)
 	}
-	defer rows.Close()
-	out := map[string]int64{}
-	for rows.Next() {
-		var id string
-		var consumed int64
-		if err := rows.Scan(&id, &consumed); err != nil {
-			return nil, fmt.Errorf("list rewarm runs: %w", err)
-		}
-		out[id] = consumed
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("list rewarm runs: %w", err)
 	}
-	return out, rows.Err()
+	return ids, nil
+}
+
+// ExitCursor is where a new pod of a single-shot session starts streaming
+// (docs/adr/0070 §6): just past its latest exit result's consumedSeq while a
+// turn-starting entry lies above it, so the entry the leaving pod never took
+// in reaches the next pod, whoever warms. ok is false otherwise (no exit
+// result, nothing above it, or not single-shot): LatestSeq stands.
+func (s *Store) ExitCursor(ctx context.Context, sessionID string) (fromSeq int64, ok bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT (SELECT e.consumed FROM `+exitResultOf+` e) + 1
+		FROM sessions s WHERE s.id = $1 AND s.lifecycle = 'single-shot' AND `+inputAfterExit, sessionID).Scan(&fromSeq)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("exit cursor: %w", err)
+	}
+	return fromSeq, true, nil
 }
 
 // ExitResult is what WaitForResult reads of a run's end (docs/adr/0070 §3).
@@ -457,19 +484,24 @@ type ExitResult struct {
 	InputAfter bool
 	// Stopped: a stop was asked for.
 	Stopped bool
+	// Legacy is legacyFinal's text when there is no exit result, else "":
+	// what an ended run is judged on instead of NO_RESULT.
+	Legacy string
 }
 
 // LastExitResult reads the session's latest exit result (ExitResult).
 func (s *Store) LastExitResult(ctx context.Context, sessionID string) (ExitResult, error) {
 	var out ExitResult
-	var text *string
-	err := s.pool.QueryRow(ctx, `SELECT (SELECT e.text FROM `+exitResultOf+` e), `+inputAfterExit+`, s.stop_requested_at IS NOT NULL
-		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped)
+	var text, legacy *string
+	err := s.pool.QueryRow(ctx, `SELECT (SELECT e.text FROM `+exitResultOf+` e), `+inputAfterExit+`, s.stop_requested_at IS NOT NULL, `+legacyFinal+`
+		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped, &legacy)
 	if err != nil {
 		return out, fmt.Errorf("last exit result: %w", err)
 	}
 	if text != nil {
 		out.Text, out.Found = *text, true
+	} else if legacy != nil {
+		out.Legacy = *legacy
 	}
 	return out, nil
 }

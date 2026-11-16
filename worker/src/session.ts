@@ -2536,15 +2536,16 @@ export async function runSession(): Promise<SessionResult> {
           exit,
         );
         if (aborted) break;
-        if (softInterrupted) {
-          softInterrupted = false;
-          continue;
-        }
         if (exit) {
           // The pod's input is used up: end the query, then index.ts exits
           // explicitly. A non-success exit still fails the pod (the throw
           // below); core judges the run on the exit result either way.
+          // Checked before softInterrupted: an interrupt taken in during the
+          // hold set it without a turn to stop, and no result follows.
           if (msg.subtype === "success") break;
+        } else if (softInterrupted) {
+          softInterrupted = false;
+          continue;
         } else if (singleShot) {
           // Not the last result: a queued turn (a live answer) runs next,
           // whatever this one's subtype. Its own result decides.

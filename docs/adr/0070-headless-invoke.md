@@ -69,13 +69,19 @@
   `sessions.Store.LastExitResult` for `WaitForResult` and the same SQL
   (`exitResultOf`, `inputAfterExit`) in `endedRun`; the exit result's
   `exit`/`consumedSeq` are read from its JSON in SQL, guarded by `IS JSON`.
-  A run with a turn-starting entry above its exit result's `consumedSeq` and
-  a TERMINATED pod is in the exit window: `endRuns` first re-warms it
-  (`ListRewarmRuns`) through `dashboard.Server.WarmForAppendAt`, the
-  explicit-cursor form of `WarmForAppend` (same send lock, same warm body;
-  `WarmForAppend` is it with no cursor), at `consumedSeq + 1`, and `endedRun`
-  leaves it alone. An archived run with no exit result reads `AGENT_CRASHED`
-  on a crashed pod, `NO_RESULT` on a clean exit without a stop. A plan
+  A turn-starting entry is a human message, answer or permission response
+  or a relayed peer prompt (`from` `session`), the worker's `takeIn` filter.
+  A run with one above its exit result's `consumedSeq` is in the exit
+  window: every warm of it, whoever calls `WarmForAppend`, starts the new pod
+  at `consumedSeq + 1` instead of `LatestSeq` (`sessions.Store.ExitCursor`,
+  read inside `warm`), and with a TERMINATED pod that nobody warmed `endRuns`
+  re-warms it (`ListRewarmRuns`, through `WarmIfIdle`) and `endedRun` leaves
+  it alone. An archived run with no exit result is judged on its latest
+  result by the seq rule from before slice 7 (no turn-starting entry above
+  its seq), so a run whose pod ran an older worker at deploy, or whose result
+  had no `queued_turn_count`, still reads `done`; with no such result it reads
+  `AGENT_CRASHED` on a crashed pod, `NO_RESULT` on a clean exit without a
+  stop. A plan
   approval of a stamped request carries `planDecisionId` and `planInput` on
   its `permission_response`; a pod that never held the call, out of plan
   mode, says "go ahead" with no retry and lets that plan's `ExitPlanMode`

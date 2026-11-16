@@ -3873,6 +3873,23 @@ describe("single-shot exit", () => {
     expect(r[0].consumedSeq).toBe(7050);
   }, 10000);
 
+  test("an interrupt inside the hold does not keep the leaving pod up", async () => {
+    sessionAgentSpec = SINGLE;
+    sessionDecisionWaitMs = 300;
+    roundScripts = [askedPending];
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go", "discussion", undefined, 7055);
+    await Bun.sleep(100);
+    expect(results().length).toBe(0);
+    // Nothing runs to interrupt; it only sets the soft-interrupt flag.
+    pushHuman("", "interrupt", undefined, 7056);
+    expect(await endsWithin(promise, 3000)).toBe(true);
+    const r = results();
+    expect(r.length).toBe(1);
+    expect(r[0].exit).toBe(true);
+  }, 10000);
+
   test("a non-success exit result still fails the pod", async () => {
     sessionAgentSpec = SINGLE;
     forceResult = { ...done(0), subtype: "error_max_turns" };

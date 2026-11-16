@@ -233,7 +233,7 @@ type resultEntry struct {
 //  4. any other subtype: failed.
 //
 // A run archived without a final result ended another way (§7): a crash is
-// AGENT_CRASHED, a clean exit with no exit result is NO_RESULT, a Stop is
+// AGENT_CRASHED, a clean exit with no result is NO_RESULT, a Stop is
 // failed; never running.
 func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1.WaitForResultResponse, error) {
 	sessionID := t.ID
@@ -255,6 +255,12 @@ func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1
 	ex, err := s.sessions.LastExitResult(ctx, sessionID)
 	if err != nil {
 		return nil, err
+	}
+	// An ended run with no exit result at all (a pod on an older worker at
+	// deploy, or a result without queued_turn_count) is judged by the seq
+	// rule from before slice 7 rather than read NO_RESULT.
+	if !ex.Found && ex.Legacy != "" && t.ArchivedAt != nil {
+		ex.Text, ex.Found = ex.Legacy, true
 	}
 	if (!ex.Found || ex.InputAfter) && t.ArchivedAt != nil {
 		e := &agentfleetv1.Status{State: "error", Message: "the run ended without a result"}

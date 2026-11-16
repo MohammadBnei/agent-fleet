@@ -551,6 +551,14 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	exited(window)
+	// A peer session's prompt relayed in the same gap is input too: the
+	// worker takes in from="session" and counts it in consumedSeq.
+	peer := create("single-shot")
+	result(peer)
+	if _, err := tr.Append(ctx, peer, "session", "from a peer", "discussion", ""); err != nil {
+		t.Fatal(err)
+	}
+	exited(peer)
 	crashed := create("single-shot")
 	if err := store.SetPodPhase(ctx, crashed, "POD_PHASE_CRASHED", ""); err != nil {
 		t.Fatal(err)
@@ -589,17 +597,29 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 
 	fake := &fakeProvisioner{}
 	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
-	rewarmed := map[string]int64{}
-	loop.SetRewarm(func(_ context.Context, id string, fromSeq int64) error {
-		rewarmed[id] = fromSeq
+	var rewarmed []string
+	loop.SetRewarm(func(_ context.Context, id string) error {
+		rewarmed = append(rewarmed, id)
 		return nil
 	})
 	loop.endRuns(ctx)
 
-	// The window run's next pod streams from just past the exit result's
-	// consumedSeq (0), where the answer at seq 2 waits.
-	if len(rewarmed) != 1 || rewarmed[window] != 1 {
-		t.Fatalf("re-warmed %v, want only %s from seq 1", rewarmed, window)
+	// The window runs' next pods stream from just past the exit result's
+	// consumedSeq (0), where the human answer or the relayed peer prompt at
+	// seq 2 waits.
+	slices.Sort(rewarmed)
+	wantRewarm := []string{window, peer}
+	slices.Sort(wantRewarm)
+	if !slices.Equal(rewarmed, wantRewarm) {
+		t.Fatalf("re-warmed %v, want %v", rewarmed, wantRewarm)
+	}
+	for _, id := range wantRewarm {
+		if from, ok, err := store.ExitCursor(ctx, id); err != nil || !ok || from != 1 {
+			t.Fatalf("exit cursor of %s = %d %v %v, want 1", id, from, ok, err)
+		}
+	}
+	if _, ok, err := store.ExitCursor(ctx, final); err != nil || ok {
+		t.Fatalf("exit cursor of a final run: %v %v, want none", ok, err)
 	}
 	want := []string{}
 	for _, id := range []string{final, noResult, crashed, stopped} {
@@ -614,7 +634,7 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 			t.Errorf("ended run %s: %+v %v, want archived and swept", id, s, err)
 		}
 	}
-	for _, id := range []string{interim, window, parked, running, livePod, stopping, resident} {
+	for _, id := range []string{interim, window, peer, parked, running, livePod, stopping, resident} {
 		s, err := store.Get(ctx, id)
 		if err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
 			t.Errorf("session %s lost its PVC or row: %+v %v", id, s, err)

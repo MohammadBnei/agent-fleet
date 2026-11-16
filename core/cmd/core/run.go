@@ -331,11 +331,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
 	// prevent.
 	coreSvc.SetWarmFunc(dashboardSvc.WarmForAppend)
-	// The exit-window re-warm (docs/adr/0070 §6) goes through the same
-	// warm-then-append entry point, with its explicit cursor.
-	sessionLoop.SetRewarm(func(ctx context.Context, id string, fromSeq int64) error {
-		_, release, err := dashboardSvc.WarmForAppendAt(ctx, id, fromSeq)
-		release()
+	// The exit-window re-warm (docs/adr/0070 §6) is a plain warm: warm itself
+	// puts the new pod's cursor just past the exit result's consumedSeq.
+	sessionLoop.SetRewarm(func(ctx context.Context, id string) error {
+		_, err := dashboardSvc.WarmIfIdle(ctx, id)
 		return err
 	})
 	// One parking lot, both servers. The dashboard drops "diff this path" in;

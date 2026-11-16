@@ -67,9 +67,9 @@ type Loop struct {
 	rewarm atomic.Pointer[RewarmFunc]
 }
 
-// RewarmFunc warms sessionID with the new pod's transcript cursor at
-// fromSeq (dashboard.Server.WarmForAppendAt, released at once).
-type RewarmFunc func(ctx context.Context, sessionID string, fromSeq int64) error
+// RewarmFunc warms sessionID (dashboard.Server.WarmIfIdle, whose warm puts
+// the new pod's cursor just past the exit result's consumedSeq).
+type RewarmFunc func(ctx context.Context, sessionID string) error
 
 // SetRewarm wires the exit-window re-warm in (docs/adr/0070 §6). Unset, no
 // run is re-warmed, and one in the window stays open until it is.
@@ -370,10 +370,10 @@ func (l *Loop) collectExpired(ctx context.Context) {
 // no-op.
 //
 // First, a run in the exit window (docs/adr/0070 §6: input above its exit
-// result's consumedSeq, appended while pod_phase still read live) is
-// re-warmed with the new pod's cursor just past that consumedSeq, so the
-// input reaches the next pod. The finality rule judges only runs that check
-// leaves: endedRun excludes every run it lists.
+// result's consumedSeq, appended while pod_phase still read live) that no
+// sender has warmed since is re-warmed; warm puts the new pod's cursor just
+// past that consumedSeq, so the input reaches it. The finality rule judges
+// only runs that check leaves: endedRun excludes every run it lists.
 //
 // ponytail: up to one tick (60 s) after the pod exits, not at once; a
 // pod-event hook is the upgrade if that latency shows.
@@ -383,12 +383,12 @@ func (l *Loop) endRuns(ctx context.Context) {
 		if err != nil {
 			slog.Error("sessions loop: list rewarm runs failed", "error", err)
 		}
-		for id, consumed := range runs {
-			if err := (*f)(ctx, id, consumed+1); err != nil {
+		for _, id := range runs {
+			if err := (*f)(ctx, id); err != nil {
 				slog.Warn("sessions loop: exit-window re-warm failed", "sessionId", id, "error", err)
 				continue
 			}
-			slog.Info("sessions loop: re-warmed a run for input above its exit result", "sessionId", id, "fromSeq", consumed+1)
+			slog.Info("sessions loop: re-warmed a run for input above its exit result", "sessionId", id)
 		}
 	}
 	ids, err := l.sessions.ListEndedRuns(ctx)

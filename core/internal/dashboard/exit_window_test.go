@@ -15,9 +15,9 @@ import (
 // docs/adr/0070 §6, the exit window: a single-shot pod writes its exit result
 // and exits, but pod_phase still reads live, so an answer in that gap warms
 // nothing and lands above the leaving pod's consumedSeq. Once the pod is gone
-// the run is re-warmed with the next pod's cursor just past that consumedSeq
-// (sessions.Loop's endRuns, through WarmForAppendAt), so the answer reaches
-// the next pod. A warm at LatestSeq would start above it: never delivered.
+// every warm (a sender's, or sessions.Loop's endRuns when nobody sends)
+// starts the next pod just past that consumedSeq, so the answer reaches it.
+// A warm at LatestSeq would start above it: never delivered.
 func TestExitWindow_AnswerReachesTheNextPod(t *testing.T) {
 	ctx := context.Background()
 	s, prov, _, store, pool := newDefinitionsServerPool(t)
@@ -65,16 +65,19 @@ func TestExitWindow_AnswerReachesTheNextPod(t *testing.T) {
 		t.Fatal(err)
 	}
 	runs, err := store.ListRewarmRuns(ctx)
-	if err != nil || len(runs) != 1 || runs[id] != 0 {
-		t.Fatalf("rewarm runs = %v %v, want %s from consumedSeq 0", runs, err, id)
+	if err != nil || len(runs) != 1 || runs[0] != id {
+		t.Fatalf("rewarm runs = %v %v, want %s", runs, err, id)
 	}
 	if ended, err := store.ListEndedRuns(ctx); err != nil || len(ended) != 0 {
 		t.Fatalf("ended before its re-warm: %v %v", ended, err)
 	}
-	_, release, err := s.WarmForAppendAt(ctx, id, runs[id]+1)
-	release()
-	if err != nil {
-		t.Fatalf("re-warm: %v", err)
+	// The client follows up before any loop tick: that sender's own warm
+	// must start the next pod at or below the answer, not at LatestSeq.
+	if _, err := s.PostMessage(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: id, Text: "and another thing"})); err != nil {
+		t.Fatalf("follow-up: %v", err)
+	}
+	if n := prov.createCount(); n != 2 {
+		t.Fatalf("creates = %d after the follow-up, want the next pod", n)
 	}
 	prov.mu.Lock()
 	next := prov.creates[len(prov.creates)-1]

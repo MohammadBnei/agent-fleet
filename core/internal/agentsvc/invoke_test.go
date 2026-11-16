@@ -243,6 +243,26 @@ func TestInvoke(t *testing.T) {
 	if r, err := wait(bot, cleanID, 0); err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "NO_RESULT" {
 		t.Fatalf("clean exit without a result: %v %v", r, err)
 	}
+	// A run whose pod never wrote an exit result (an older worker at
+	// deploy, reaped by the idle sweep) is judged by the pre-slice-7 seq
+	// rule once it ended: its latest result, with no input after it.
+	legacyID, err := invoke(bot, "d", "old worker", "k-legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendEntry(legacyID, "worker", "result", `{"subtype":"success","result_text":"old"}`)
+	if r, err := wait(bot, legacyID, 0); err != nil || r.GetState() != "running" {
+		t.Fatalf("legacy result, run not ended: %v %v", r, err)
+	}
+	if err := store.SetPodPhase(ctx, legacyID, "POD_PHASE_TERMINATED", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, legacyID); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := wait(bot, legacyID, 0); err != nil || r.GetState() != "done" || r.GetResultText() != "old" {
+		t.Fatalf("legacy result, run ended: %v %v", r, err)
+	}
 
 	// Only the owning client reads a run, and members call neither method.
 	if _, err := wait(other, id, 0); code(err) != connect.CodeNotFound {
