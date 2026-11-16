@@ -336,6 +336,9 @@ Any doc, code, comment, or memory that contradicts this file or an
 - [`0083`](adr/0083-remote-mcp-for-definitions.md) — a definition may name remote MCP
   servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
   for a named user; not built).
+- [`0084`](adr/0084-long-lived-agents.md) — long-lived agents: standing roles beside the
+  workers, a pluggable runtime behind the sidecar, core the only control plane; no 12h
+  cap, the token refreshed in place (Proposed 2026-11-16; not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
