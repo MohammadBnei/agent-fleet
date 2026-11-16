@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.24.0](https://github.com/MohammadBnei/agent-fleet/compare/7.23.2...7.24.0) (2026-11-16)
+
+### Features
+
+* **definitions:** ukubi-game residents and client in production ([#396](https://github.com/MohammadBnei/agent-fleet/issues/396)) ([d4f23d1](https://github.com/MohammadBnei/agent-fleet/commit/d4f23d1a051e30829158edf99f75b0557d01e68e))
+
 ## [7.23.2](https://github.com/MohammadBnei/agent-fleet/compare/7.23.1...7.23.2) (2026-11-16)
 
 ### Performance Improvements
