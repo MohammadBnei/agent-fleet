@@ -150,6 +150,17 @@ func (d *Dispatcher) SetCards(c *decisions.Store, tr transcript.Store) { d.cards
 // filing a proposal.
 func (d *Dispatcher) SetResponders(r *responder.Runner) {
 	d.responders = r
+	if r.Fallback == nil {
+		// A run that could not start must not lose its alert: it files the way an unanswered alert does.
+		r.Fallback = func(ctx context.Context, raw json.RawMessage) {
+			if d.alerts == nil {
+				return
+			}
+			if _, err := d.alerts.File(ctx, raw); err != nil && !errors.Is(err, alertwebhook.ErrSkipped) {
+				slog.Error("dispatch: filing a responder's alert as a proposal failed", "error", err)
+			}
+		}
+	}
 	d.router = &responder.Router{Start: r.Start}
 }
 
@@ -346,8 +357,9 @@ func (d *Dispatcher) alert(ctx context.Context, e *bridgev1.CloudEvent) error {
 						d.router.Resolve(h.Name, g, e.GetData())
 					}
 				}
+				return nil
 			}
-			return nil
+			slog.Warn("dispatch: an alert a responder answers is not a JSON object, filing it as a proposal", "id", e.GetId())
 		}
 	}
 	if d.alerts == nil {

@@ -2,6 +2,7 @@ package responder
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -64,7 +65,8 @@ func newRouter(t *testing.T) (*Router, *clock, *[]string, *sync.Mutex) {
 	var mu sync.Mutex
 	var started []string
 	c := &clock{time.Unix(1_000_000, 0)}
-	r := &Router{Now: c.now, Start: func(def string, g Group, input string) {
+	r := &Router{Now: c.now, Start: func(def string, g Group, batch []json.RawMessage) {
+		input := Input(g, batch)
 		mu.Lock()
 		defer mu.Unlock()
 		started = append(started, def+":"+input)
@@ -176,5 +178,34 @@ func TestSubscribers(t *testing.T) {
 	}
 	if got := Subscribers(r, "bridge", "dev.bnei.github.pr", ""); len(got) != 0 {
 		t.Fatalf("another type matches nothing: %v", got)
+	}
+}
+
+func TestInputStaysUnderInvokeLimit(t *testing.T) {
+	long := strings.Repeat("<", 500)
+	big, _ := json.Marshal(map[string]any{"status": "firing",
+		"labels":      map[string]string{"alertname": "A", "namespace": long, "service": long, "pod": long, "severity": long, "instance": long},
+		"annotations": map[string]string{"summary": long, "description": long}})
+	var batch []json.RawMessage
+	for range maxBatch {
+		batch = append(batch, big)
+	}
+	in := Input(Group{Key: "k"}, batch)
+	if len(in) > 64<<10 || !strings.Contains(in, "left out") || !strings.Contains(in, "<untrusted-alert>") {
+		t.Fatalf("len %d: input must fit Invoke's 64 KiB, keep the newest and count what it left out", len(in))
+	}
+}
+
+func TestIdleGroupsArePruned(t *testing.T) {
+	r, c, _, _ := newRouter(t)
+	for i := range 5 {
+		g := Group{Key: fmt.Sprint(i)}
+		r.Fire("d", g, alert("firing", "A", "ns", "svc"))
+		r.Resolve("d", g, alert("resolved", "A", "ns", "svc")) // a flap: firingSince cleared
+	}
+	c.t = c.t.Add(2 * Cooldown)
+	r.Fire("d", Group{Key: "new"}, alert("firing", "A", "ns", "svc"))
+	if len(r.groups) != 1 {
+		t.Fatalf("idle groups must go once out of cooldown: %d left", len(r.groups))
 	}
 }

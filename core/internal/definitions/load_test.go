@@ -709,6 +709,7 @@ func TestLoad_FirstResponder(t *testing.T) {
 		{"pr mode", responder(map[string]string{"git": "{ mode: pr, identity: { name: a, email: a@b.c } }"}), "no GitHub write"},
 		{"no output schema", responder(map[string]string{"output": ""}), "output.schema is required"},
 		{"no subscribes", responder(map[string]string{"subscribes": ""}), "subscribes is required"},
+		{"subject filter", responder(map[string]string{"subscribes": "{ types: [dev.bnei.alert.], subjects: [\"alert/*\"] }"}), "subscribes.subjects"},
 		{"scale inverted", responder(map[string]string{"trust": "{ untrusted: B, scale: { min: 3, max: 1 } }"}), "trust.scale"},
 		{"scale too wide", responder(map[string]string{"trust": "{ untrusted: B, scale: { min: 1, max: 51 } }"}), "trust.scale"},
 	}

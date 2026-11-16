@@ -223,6 +223,8 @@ is the only way in.
   (capacity, a definition refusal, a crash) re-runs on the same session. A
   retry of a parked request returns it parked. The same key with a
   different definition or input gets `FailedPrecondition`.
+  The dispatcher's first-responder key (ADR-0086 §3) is `alert:<groupKey>:<definition>:<window>`: one run per
+  definition and cooldown window, not per group alone.
 - **Warm.** Through `WarmForAppend`, like every other path. The input is
   appended after the warm, with the key as its transcript key.
 - **A cap on parked runs.** A client file may set `maxParked` (default 20):

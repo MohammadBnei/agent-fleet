@@ -930,6 +930,9 @@ func validateTrust(errs *[]error, s *Spec, t *Trust) {
 		}
 		if s.Subscribes == nil {
 			bad("trust.untrusted B: subscribes is required (the alerts it answers)")
+		} else if len(s.Subscribes.Subjects) > 0 {
+			// The alert webhook has no bridge subject to match, so a filter would file its alerts twice (ADR-0086 §4).
+			bad("trust.untrusted B: subscribes.subjects is not allowed, a responder answers by event type")
 		}
 		// git.mode none mints a read-only github.com key (docs/adr/0075); push and pr hold a write.
 		if s.Git == nil || s.Git.Mode != "none" {

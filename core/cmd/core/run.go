@@ -517,13 +517,15 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 				return err
 			}},
 		})
-		alertHandler.SetSkip(func(json.RawMessage) bool {
-			return len(responder.Subscribers(defs, dispatch.Client, responder.AlertFiring, "")) > 0
-		})
 		dashboardSvc.SetEventOpener(func(ctx context.Context, p *proposals.Proposal, sub string) (string, error) {
 			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
 		})
 		if cfg.Bridge.URL != "" {
+			// Only while the dispatcher runs does a responder answer: without it the webhook files every alert.
+			// B definitions take no subject filter (validateTrust), so a type match is the whole question.
+			alertHandler.SetSkip(func(json.RawMessage) bool {
+				return len(responder.Subscribers(defs, dispatch.Client, responder.AlertFiring, "")) > 0
+			})
 			go dispatcher.Run(ctx)
 		}
 	}

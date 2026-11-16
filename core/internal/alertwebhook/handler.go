@@ -70,7 +70,8 @@ type Handler struct {
 }
 
 // SetSkip installs the responder gate: an alert skip reports true for is the first responders' (docs/adr/0086 §4),
-// so no proposal is filed for it. Nil means no gate.
+// so this webhook files no proposal for it (File, the dispatcher's and the responders' fallback, never skips).
+// Nil means no gate.
 func (h *Handler) SetSkip(fn func(raw json.RawMessage) bool) { h.skip = fn }
 
 // SetInactive installs the repo gate: while cfg.Repo is inactive, firing
@@ -143,6 +144,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// batch: Alertmanager groups alerts, so failing the whole request
 		// would drop good alerts along with the bad one, and it retries the
 		// batch as a unit. File logs its own failures.
+		if h.skip != nil && h.skip(raw) {
+			skipped++
+			continue
+		}
 		switch ok, err := h.file(r.Context(), raw); {
 		case err != nil:
 		case ok:
@@ -176,9 +181,6 @@ func (h *Handler) file(ctx context.Context, raw json.RawMessage) (bool, error) {
 	var a alert
 	if err := json.Unmarshal(raw, &a); err != nil {
 		slog.Warn("alertwebhook: undecodable alert, skipping", "error", err)
-		return false, ErrSkipped
-	}
-	if h.skip != nil && h.skip(raw) {
 		return false, ErrSkipped
 	}
 	// Only firing. A resolved notification needs no investigation, and

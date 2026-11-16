@@ -29,10 +29,11 @@ import (
 )
 
 type fakeAgents struct {
-	opens   []*agentfleetv1.OpenRequest
-	invokes []*agentfleetv1.InvokeRequest
-	closes  []string
-	err     map[string]error // by definition
+	opens     []*agentfleetv1.OpenRequest
+	invokes   []*agentfleetv1.InvokeRequest
+	closes    []string
+	err       map[string]error // by definition
+	invokeErr error            // InvokeUntrusted's refusal
 }
 
 func (f *fakeAgents) AsClient(ctx context.Context, client string) (context.Context, error) {
@@ -52,6 +53,9 @@ func (f *fakeAgents) Open(_ context.Context, req *connect.Request[agentfleetv1.O
 
 func (f *fakeAgents) InvokeUntrusted(_ context.Context, req *connect.Request[agentfleetv1.InvokeRequest]) (*connect.Response[agentfleetv1.InvokeResponse], error) {
 	f.invokes = append(f.invokes, req.Msg)
+	if f.invokeErr != nil {
+		return nil, f.invokeErr
+	}
 	return connect.NewResponse(&agentfleetv1.InvokeResponse{ThreadId: "th"}), nil
 }
 
@@ -899,7 +903,8 @@ func TestAlertsGoToAFirstResponder(t *testing.T) {
 	defs.clients[0].Spec.Definitions = append(defs.clients[0].Spec.Definitions, "resp")
 	d.SetResponders(&responder.Runner{
 		Ctx: context.Background(), Client: Client, Agents: agents, Defs: defs,
-		Wait: func(run func()) { run() },
+		Filer: responder.Filer{Draft: func(context.Context, decisions.Draft) error { return nil }},
+		Wait:  func(run func()) { run() },
 	})
 
 	fire := func(id string) *bridgev1.CloudEvent {
@@ -924,5 +929,47 @@ func TestAlertsGoToAFirstResponder(t *testing.T) {
 	defs.clients[0].Spec.Definitions = defs.clients[0].Spec.Definitions[:len(defs.clients[0].Spec.Definitions)-1]
 	if err := d.Handle(context.Background(), fire("a3")); err != nil || al.filed != 1 {
 		t.Fatalf("no responder: err %v filed %d", err, al.filed)
+	}
+}
+
+// Two responders on one group are two runs under two keys, and an invoke core refuses still files the alert.
+func TestTwoRespondersAndARefusedInvoke(t *testing.T) {
+	d, agents, defs, _ := setup(t)
+	al := d.alerts.(*fakeAlerts)
+	for _, n := range []string{"r1", "r2"} {
+		h := head(n, nil, &definitions.Subscribes{Types: []string{"dev.bnei.alert."}}, Client)
+		h.Effective.Trust = &definitions.Trust{Untrusted: "B"}
+		defs.heads = append(defs.heads, h)
+		defs.clients[0].Spec.Definitions = append(defs.clients[0].Spec.Definitions, n)
+	}
+	d.SetResponders(&responder.Runner{
+		Ctx: context.Background(), Client: Client, Agents: agents, Defs: defs,
+		Filer: responder.Filer{Draft: func(context.Context, decisions.Draft) error { return nil }},
+		Wait:  func(run func()) { run() },
+	})
+	e := &bridgev1.CloudEvent{Id: "a1", Type: typeAlertFiring, Subject: "alert/fp",
+		Data: []byte(`{"status":"firing","fingerprint":"fp","labels":{"alertname":"Down"}}`)}
+	if err := d.Handle(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if len(agents.invokes) != 2 || agents.invokes[0].GetIdempotencyKey() == agents.invokes[1].GetIdempotencyKey() {
+		t.Fatalf("two responders, two runs: %+v", agents.invokes)
+	}
+
+	agents.invokeErr = connect.NewError(connect.CodeFailedPrecondition, errors.New("no letter"))
+	e2 := &bridgev1.CloudEvent{Id: "a2", Type: typeAlertFiring, Subject: "alert/fp2",
+		Data: []byte(`{"status":"firing","fingerprint":"fp2","labels":{"alertname":"Other"}}`)}
+	if err := d.Handle(context.Background(), e2); err != nil {
+		t.Fatal(err)
+	}
+	if al.filed == 0 {
+		t.Fatal("an alert whose run could not start must still be filed for the owner")
+	}
+
+	// Data that is not an alert object falls through to the proposal path, not into silence.
+	before := al.filed
+	bad := &bridgev1.CloudEvent{Id: "a3", Type: typeAlertFiring, Data: []byte(`[1]`)}
+	if err := d.Handle(context.Background(), bad); err != nil || al.filed != before+1 {
+		t.Fatalf("err %v filed %d->%d", err, before, al.filed)
 	}
 }

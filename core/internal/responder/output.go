@@ -189,6 +189,11 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 	return err
 }
 
+// Unanswered is the card for a run that ended without a usable answer, written by core.
+func (f Filer) Unanswered(ctx context.Context, thread string, g Group) error {
+	return f.card(ctx, thread, g, clip("Alert "+g.Name+": the responder could not answer. Look at it yourself.", 280))
+}
+
 func (f Filer) card(ctx context.Context, thread string, g Group, ask string) error {
 	handoff := func(label string) *agentfleetv1.CardOption {
 		return &agentfleetv1.CardOption{Label: label, Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}}

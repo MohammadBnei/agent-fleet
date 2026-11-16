@@ -332,3 +332,14 @@ func TestSkipFilesNothingForAResponder(t *testing.T) {
 		t.Fatalf("with no responder the alert files as before: %v", tasks.calls)
 	}
 }
+
+// The gate is the webhook's alone: File, the responders' fallback, still files an alert the webhook skips.
+func TestFileIgnoresTheWebhookSkip(t *testing.T) {
+	tasks := &fakeTasks{}
+	h := New(tasks, nil, Config{Token: "t", Repo: "infra-bootstrap"})
+	h.SetSkip(func(json.RawMessage) bool { return true })
+	raw := json.RawMessage(`{"status":"firing","fingerprint":"abc123","labels":{"alertname":"EtcdDown"}}`)
+	if _, err := h.File(context.Background(), raw); err != nil || len(tasks.calls) != 1 {
+		t.Fatalf("err %v calls %v", err, tasks.calls)
+	}
+}
