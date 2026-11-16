@@ -608,17 +608,21 @@ func (s *Store) ExpireRun(ctx context.Context, id string, after time.Duration) (
 }
 
 // EndMovedRun ends the single-shot run id, pinned to a definition version
-// that is no longer current, while it still has no live pod: it can never
-// warm again, so core ends it failed (docs/adr/0070 §6). Its open decisions
-// go 'stale' (superseded, as a card is by a newer one), which WaitForResult
-// reads as failed, DEFINITION_CHANGED; endRuns then runs §7.
+// that is no longer current, while it is parked (no live pod, a question,
+// permission or plan open): it can never warm again, so core ends it failed
+// (docs/adr/0070 §6). Its open decisions go 'stale' (superseded, as a card
+// is by a newer one), which WaitForResult reads as failed,
+// DEFINITION_CHANGED; endRuns then runs §7. A run on a moved pin with
+// nothing open is not parked and is left as it was (§6 ends parked runs).
+// ponytail: the exit-window / capacity-pending case stays on its earlier
+// path; end it here too only with a reason that needs no open decision.
 func (s *Store) EndMovedRun(ctx context.Context, id string) (bool, error) {
 	return s.endIdleRun(ctx, id, "stale", "")
 }
 
 // endIdleRun archives id with the IdleRun condition re-checked in the UPDATE
 // (so a warm and this serialize on the row, as ClaimEndedRun's claim does),
-// with after != "" only while a decision has been open that long, and closes
+// only while it is parked (with after != "", on a decision open that long), and closes
 // its open questions, permissions and plans as closeAs.
 func (s *Store) endIdleRun(ctx context.Context, id, closeAs, after string) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -629,8 +633,8 @@ func (s *Store) endIdleRun(ctx context.Context, id, closeAs, after string) (bool
 	tag, err := tx.Exec(ctx, `UPDATE sessions s SET archived_at = now(), updated_at = now()
 		WHERE s.id = $2 AND s.lifecycle = 'single-shot' AND s.archived_at IS NULL AND s.swept_at IS NULL
 		  AND COALESCE(s.pod_phase, '') <> ALL($1)
-		  AND ($3 = '' OR EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open'
-		        AND d.kind IN ('question', 'permission', 'plan') AND d.created_at <= now() - NULLIF($3, '')::interval))`,
+		  AND EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open'
+		        AND d.kind IN ('question', 'permission', 'plan') AND ($3 = '' OR d.created_at <= now() - NULLIF($3, '')::interval))`,
 		livePhases, id, after)
 	if err != nil {
 		return false, fmt.Errorf("end idle run: %w", err)

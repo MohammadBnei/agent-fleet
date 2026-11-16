@@ -696,6 +696,13 @@ func TestExpireRuns_TimeoutAndMovedPinEndThroughTeardown(t *testing.T) {
 	fresh := park("d", 23*time.Hour)    // inside the default
 	moved := park("m", time.Minute)     // pinned sha1, current sha2
 	shortFresh := park("short", time.Minute)
+	// A run on the moved pin with nothing open (the exit window, or still
+	// waiting on capacity) is not parked: §6 leaves it alone.
+	movedIdle, err := store.Create(ctx, CreateParams{Repo: "notes", DefinitionName: "m", DefinitionSHA: "sha1",
+		Owner: "client:bot", Invoker: "bot", Visibility: "private", Lifecycle: "single-shot"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	fake := &fakeProvisioner{}
 	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
@@ -730,6 +737,12 @@ func TestExpireRuns_TimeoutAndMovedPinEndThroughTeardown(t *testing.T) {
 		if err != nil || s.ArchivedAt != nil || s.SweptAt != nil || state(id) != "open" {
 			t.Errorf("parked run %s inside its timeout was touched: %+v %v", id, s, err)
 		}
+	}
+	if ok, err := store.EndMovedRun(ctx, movedIdle); err != nil || ok {
+		t.Errorf("EndMovedRun on a run with nothing open: %v %v, want false", ok, err)
+	}
+	if s, err := store.Get(ctx, movedIdle); err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
+		t.Errorf("unparked run %s on a moved pin was ended: %+v %v", movedIdle, s, err)
 	}
 
 	// Retention: a parked run untouched for longer than the window keeps

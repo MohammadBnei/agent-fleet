@@ -253,7 +253,7 @@ func TestInvoke(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		appendEntry(runID, "agent", "permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`)
+		reqSeq := appendEntry(runID, "agent", "permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`)
 		appendEntry(runID, "worker", "result", `{"subtype":"success","result_text":"parked","consumedSeq":0,"exit":true}`)
 		if err := store.SetPodPhase(ctx, runID, "POD_PHASE_TERMINATED", ""); err != nil {
 			t.Fatal(err)
@@ -272,6 +272,18 @@ func TestInvoke(t *testing.T) {
 		}
 		if r, err := wait(bot, runID, 0); err != nil || r.GetState() != c.state || r.GetError().GetCode() != c.code || r.GetResultText() != "" {
 			t.Fatalf("%s: %v %v", c.key, r, err)
+		}
+		// A late answer through the console (which, unlike a client's thread
+		// call, reaches an archived run) is told the decision expired or went
+		// stale, not that it was already answered.
+		r, err := s.decisions.Request(ctx, runID, reqSeq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantKey := map[string]any{"expired": errkeys.KeyDecisionExpired, "failed": errkeys.KeyDecisionStale}[c.state]
+		_, err = s.decisions.Answer(ctx, nil, nil, r, decisions.Reply{Behavior: "allow"})
+		if err = dashboard.AnswerErr(ctx, "late", err); connect.CodeOf(err) != connect.CodeFailedPrecondition || errkeys.Of(err) != wantKey {
+			t.Fatalf("%s: late answer: %v key %q, want %q", c.key, err, errkeys.Of(err), wantKey)
 		}
 	}
 	// A run whose pod never wrote an exit result (an older worker at

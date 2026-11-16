@@ -102,13 +102,16 @@
   nor swept (`ListIdleRuns`): one with a question, permission or plan open
   past its timeout (capped at `SESSION_RETENTION`) is archived by
   `ExpireRun` with that re-checked in the UPDATE, its open decisions go
-  `expired`; one pinned to a sha that is not the registry's current valid
-  head is archived by `EndMovedRun`, its open decisions go `stale`. Both then
+  `expired`; a parked one pinned to a sha that is not the registry's current
+  valid head is archived by `EndMovedRun`, its open decisions go `stale` (an
+  unparked run on a moved pin is left as it was). Both then
   end through slice 8's teardown and sweep in the same tick, and
   `WaitForResult` reads `expired` (`ANSWER_TIMEOUT`) or `failed`
   (`DEFINITION_CHANGED`) from those states, ahead of the exit result. A
   registry that is stale or cannot resolve the name ends nothing for a moved
-  pin. `ListRetentionExpired` skips an unarchived parked run).
+  pin. A late answer to a decision so closed, of any kind, is refused
+  `agent.decision_expired` or `agent.decision_stale`, not "already
+  answered". `ListRetentionExpired` skips an unarchived parked run).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

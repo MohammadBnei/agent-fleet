@@ -40,9 +40,11 @@ const (
 	KeyThreadCap errs.Key = "agent.thread_cap"
 	// KeyDefinitionUnavailable: the definition does not exist or is not the caller's to use.
 	KeyDefinitionUnavailable errs.Key = "agent.definition_unavailable"
-	// KeyDecisionExpired: the card is past its expiry; nothing was done.
+	// KeyDecisionExpired: the card is past its expiry, or the single-shot run
+	// ended past limits.answerTimeout (docs/adr/0070 §6); nothing was done.
 	KeyDecisionExpired errs.Key = "agent.decision_expired"
-	// KeyDecisionStale: a newer card on the same subject replaced it; nothing was done.
+	// KeyDecisionStale: a newer card on the same subject replaced it, or the
+	// run's definition moved (docs/adr/0070 §6); nothing was done.
 	KeyDecisionStale errs.Key = "agent.decision_stale"
 	// KeyDecisionConfirmRequired: a surface's answer needs core's confirm page (docs/adr/0082 §7); nothing was done.
 	KeyDecisionConfirmRequired errs.Key = "agent.decision_confirm_required"

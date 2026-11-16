@@ -24,9 +24,11 @@ var (
 	// last CardWindow; this one is refused. Core's own cards are exempt.
 	ErrCardBudget = errors.New("card budget spent")
 	// ErrExpired and ErrStale: the card is past its expiry, or a newer card
-	// on the same subject replaced it. Nothing was done.
-	ErrExpired = errors.New("card expired")
-	ErrStale   = errors.New("card stale")
+	// on the same subject replaced it; for a question, permission or plan,
+	// core ended its single-shot run past limits.answerTimeout, or on a moved
+	// definition (docs/adr/0070 §6). Nothing was done.
+	ErrExpired = errors.New("decision expired")
+	ErrStale   = errors.New("decision stale")
 	// ErrNotOwner: a reply to a card that a human did not write.
 	ErrNotOwner = errors.New("only the owner answers a card")
 	// ErrNotDelivered: Answer recorded the owner's answer, and returned its

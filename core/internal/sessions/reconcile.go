@@ -440,9 +440,10 @@ func (l *Loop) endRuns(ctx context.Context) {
 // (docs/adr/0070 §6), just before endRuns, which then tears each down and
 // sweeps it (§7) in the same tick. A run with a question, permission or plan
 // open past its limits.answerTimeout (default 24h, at most the retention
-// window) ends expired. A run pinned to a definition version that is no
-// longer current cannot warm, so it ends; WaitForResult reads it failed
-// unless it already had its final result. Nothing is answered for anyone.
+// window) ends expired. A parked run pinned to a definition version that is
+// no longer current cannot warm, so it ends; WaitForResult reads it failed,
+// DEFINITION_CHANGED. One with nothing open is not parked and is left alone.
+// Nothing is answered for anyone.
 func (l *Loop) expireRuns(ctx context.Context) {
 	runs, err := l.sessions.ListIdleRuns(ctx)
 	if err != nil {
@@ -468,7 +469,7 @@ func (l *Loop) expireRuns(ctx context.Context) {
 			}
 			continue
 		}
-		if l.head == nil || r.Definition == "" {
+		if r.OpenFor == nil || l.head == nil || r.Definition == "" {
 			continue
 		}
 		if sha, ok := l.head(r.Definition); ok && sha != r.SHA {
