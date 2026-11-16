@@ -37,7 +37,12 @@
   ceiling only then. Checked against SDK 0.3.325 with a local `query()`:
   `tools: [...]` does not filter `StructuredOutput` (`system/init` lists it)
   and the CLI never routes it through `canUseTool`, even a deny-all one; the
-  `/kind-local` `Invoke` run is not yet done).
+  `/kind-local` `Invoke` run in "Build order" slice 6 is **still
+  outstanding**: no live pod has yet shown `system/init` listing
+  `StructuredOutput` or `WaitForResult` returning schema-valid JSON through
+  sidecar protojson. It needs a single-shot test definition with
+  `output.schema` and a model token, and is owed before merge unless the
+  owner accepts the slice without it).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
