@@ -73,7 +73,9 @@ func Run(ctx context.Context, src Source, run Runner, id string) error {
 	return src.Report(ctx, id, o)
 }
 
-func refuse(f string, a ...any) Outcome { return Outcome{Status: "refused", Detail: fmt.Sprintf(f, a...)} }
+func refuse(f string, a ...any) Outcome {
+	return Outcome{Status: "refused", Detail: fmt.Sprintf(f, a...)}
+}
 
 func execute(ctx context.Context, run Runner, r Row) Outcome {
 	if !dns1123.MatchString(r.Name) || (r.Namespace != "" && !dns1123.MatchString(r.Namespace)) {
