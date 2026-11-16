@@ -59,7 +59,7 @@ func TestRefusals(t *testing.T) {
 		t.Errorf("empty set: %v", err)
 	}
 	s := &Store{Root: root, Name: "kai", Set: "BC"}
-	for _, p := range []string{"", "../x", "/etc/x", ".git/config", "a/../../x", ".", ".git"} {
+	for _, p := range []string{"", "x\n\nSession: other\nSet: BC", "a b", "a\x00b", "a/.git/x", "A/.GIT", "../x", "/etc/x", ".git/config", "a/../../x", ".", ".git"} {
 		if _, err := s.Write(p, "y"); err == nil {
 			t.Errorf("path %q accepted", p)
 		}
@@ -82,7 +82,80 @@ func TestSymlinkEscapeRefused(t *testing.T) {
 	if _, err := s.Write("link/x", "2"); err == nil {
 		t.Error("symlink escape accepted")
 	}
+	if _, err := s.Write("link/new/x", "2"); err == nil {
+		t.Error("symlink escape through a missing dir accepted")
+	}
+	if err := os.Symlink(filepath.Join(out, "t"), filepath.Join(root, "agent-kai-memory", "leaf")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write("leaf", "2"); err == nil {
+		t.Error("final-component symlink accepted")
+	}
+	if _, err := os.Stat(filepath.Join(out, "new")); err == nil {
+		t.Error("dir created outside repo")
+	}
+	if _, err := os.Stat(filepath.Join(out, "t")); err == nil {
+		t.Error("file written outside repo")
+	}
 	if _, err := os.Stat(filepath.Join(out, "x")); err == nil {
 		t.Error("file written outside repo")
+	}
+}
+
+func TestContentCap(t *testing.T) {
+	s := &Store{Root: t.TempDir(), Name: "kai", Set: "BC"}
+	if _, err := s.Write("big", strings.Repeat("x", MaxContent+1)); err == nil {
+		t.Error("oversized write accepted")
+	}
+	if _, err := s.Write("ok", strings.Repeat("x", MaxContent)); err != nil {
+		t.Error(err)
+	}
+}
+
+// A failed commit leaves no content behind, and nothing staged rides into the next commit.
+func TestFailedCommitLeavesNothing(t *testing.T) {
+	root := t.TempDir()
+	s := &Store{Root: root, Name: "kai", SessionID: "s1", Set: "BC"}
+	dir := filepath.Join(root, "agent-kai-memory")
+	if _, err := s.Write("keep", "1"); err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the index lock goes makes add fail.
+	if err := os.Mkdir(filepath.Join(dir, ".git", "index.lock"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write("new", "2"); err == nil {
+		t.Fatal("write succeeded with a locked index")
+	}
+	if _, err := s.Write("keep", "changed"); err == nil {
+		t.Fatal("write succeeded with a locked index")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "new")); err == nil {
+		t.Error("new file left without a commit")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "keep")); string(b) != "1" {
+		t.Errorf("modified file not restored: %q", b)
+	}
+}
+
+func TestCommitTakesOnlyItsPath(t *testing.T) {
+	root := t.TempDir()
+	s := &Store{Root: root, Name: "kai", SessionID: "s1", Set: "BC"}
+	dir := filepath.Join(root, "agent-kai-memory")
+	if _, err := s.Write("a", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "stray"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := git(dir, "add", "stray"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write("b", "2"); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := exec.Command("git", "-C", dir, "show", "--stat", "--format=", "HEAD").CombinedOutput()
+	if strings.Contains(string(out), "stray") {
+		t.Errorf("staged stray path rode into the commit:\n%s", out)
 	}
 }

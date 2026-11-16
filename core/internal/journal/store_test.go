@@ -192,3 +192,19 @@ func TestSearch_HidesQuarantined(t *testing.T) {
 		t.Errorf("want only the visible row, got %d", len(got))
 	}
 }
+
+// List is the owner's view: it shows quarantined rows, flagged, so the console can label them.
+func TestList_FlagsQuarantined(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{}`, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.List(ctx, "r", 0, 10)
+	if err != nil || len(got) != 2 || got[0].Quarantined || !got[1].Quarantined {
+		t.Errorf("want [false true], got %+v, %v", got, err)
+	}
+}

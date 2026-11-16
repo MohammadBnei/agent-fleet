@@ -537,6 +537,9 @@ message JournalEntry {
   string event_type = 4;
   string payload_json = 5;
   string created_at = 6; // RFC3339
+  // Written by a session whose set holds A: hidden from journal_search until
+  // the owner promotes it (ADR-0086 §5). The console labels these rows.
+  bool quarantined = 7;
 }
 
 // SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred

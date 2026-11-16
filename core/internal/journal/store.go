@@ -54,6 +54,7 @@ type Entry struct {
 	EventType   string
 	PayloadJSON string
 	CreatedAt   time.Time
+	Quarantined bool // hidden from Search; List shows it so the owner can label it
 }
 
 // List returns entries with id > sinceID, ascending (insertion order) —
@@ -69,7 +70,7 @@ type Entry struct {
 // repo is built on.
 func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int) ([]Entry, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at
+		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at, quarantined
 		FROM knowledge_journal
 		WHERE id > $1 AND ($2 = '' OR repo = $2)
 		ORDER BY id
@@ -87,7 +88,7 @@ func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int)
 	entries := []Entry{}
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt, &e.Quarantined); err != nil {
 			slog.Error("journal List: scan", "error", err)
 			return nil, fmt.Errorf("scan journal entry: %w", err)
 		}

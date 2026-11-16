@@ -35,27 +35,46 @@ func mounts(c corev1.Container) (all, ro []string) {
 	return
 }
 
-// ADR-0086 §5: the sidecar writes both repos; the worker sees only memory, read-only, never quarantine.
+// ADR-0086 §5: the sidecar mounts only the repo its set may write; the worker sees only memory, read-only, never quarantine.
 func TestMemoryMounts(t *testing.T) {
-	for _, set := range []string{"BC", "AB"} {
-		ps := memJob(t, set)
+	for _, c := range []struct {
+		set, sidecar string
+	}{
+		{"BC", "/memory/agent-kai-memory"}, {"AB", "/memory/agent-kai-quarantine"}, {"AC", "/memory/agent-kai-quarantine"},
+		{"C", "/memory/agent-kai-memory"}, {"B", ""}, {"A", "/memory/agent-kai-quarantine"},
+	} {
+		ps := memJob(t, c.set)
 		var sc corev1.Container
-		for _, c := range ps.InitContainers {
-			if c.Name == "sidecar" {
-				sc = c
+		for _, ic := range ps.InitContainers {
+			if ic.Name == "sidecar" {
+				sc = ic
 			}
 		}
-		if all, ro := mounts(sc); len(all) != 2 || len(ro) != 0 {
-			t.Errorf("%s: sidecar mounts %v ro %v, want two writable", set, all, ro)
+		all, ro := mounts(sc)
+		if (c.sidecar == "" && len(all) != 0) || (c.sidecar != "" && (len(all) != 1 || all[0] != c.sidecar)) || len(ro) != 0 {
+			t.Errorf("%s: sidecar mounts %v ro %v, want only %q writable", c.set, all, ro, c.sidecar)
 		}
-		all, ro := mounts(ps.Containers[0])
-		if len(all) != 1 || all[0] != "/memory/agent-kai-memory" || len(ro) != 1 {
-			t.Errorf("%s: worker mounts %v ro %v, want memory read-only only", set, all, ro)
+		all, ro = mounts(ps.Containers[0])
+		if strings.Contains(c.set, "B") {
+			if len(all) != 1 || all[0] != "/memory/agent-kai-memory" || len(ro) != 1 {
+				t.Errorf("%s: worker mounts %v ro %v, want memory read-only only", c.set, all, ro)
+			}
+		} else if len(all) != 0 {
+			t.Errorf("%s: worker without B mounted memory: %v", c.set, all)
 		}
 	}
-	// A set without B reads no memory at all.
-	if all, _ := mounts(memJob(t, "AC").Containers[0]); len(all) != 0 {
-		t.Errorf("worker without B mounted memory: %v", all)
+}
+
+func TestMemoryNeedsSidecarAndValidSet(t *testing.T) {
+	ps := &corev1.PodSpec{Containers: []corev1.Container{{Name: "worker"}}}
+	if err := applyMemory(ps, MemoryProfile{Agent: "kai", Set: "BC"}); err == nil {
+		t.Error("pod without sidecar accepted")
+	}
+	ps = &corev1.PodSpec{InitContainers: []corev1.Container{{Name: "sidecar"}}, Containers: []corev1.Container{{Name: "worker"}}}
+	for _, set := range []string{"", "ab", "{A,B}", "CB"} {
+		if err := applyMemory(ps, MemoryProfile{Agent: "kai", Set: set}); err == nil {
+			t.Errorf("set %q accepted", set)
+		}
 	}
 }
 

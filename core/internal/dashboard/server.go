@@ -1795,6 +1795,7 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 		EventType:   e.EventType,
 		PayloadJson: e.PayloadJSON,
 		CreatedAt:   e.CreatedAt.Format(time.RFC3339),
+		Quarantined: e.Quarantined,
 	}
 }
 

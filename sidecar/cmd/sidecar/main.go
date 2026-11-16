@@ -83,11 +83,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = core.Close() }()
-	core.Quarantine = memory.Quarantined(cfg.TrustSet)
 	var mem mcpserver.MemoryWriter
-	if cfg.AgentName != "" {
-		mem = &memory.Store{Root: cfg.MemoryRoot, Name: cfg.AgentName, SessionID: taskID, Set: cfg.TrustSet}
-	}
+	core.Quarantine, mem = memoryWiring(cfg, taskID)
 
 	// Backs /readyz: the provisioner's StartupProbe waits on this before
 	// unblocking the worker container, so a core outage/rollout blocks the
@@ -163,6 +160,15 @@ func main() {
 	if err := tr.Shutdown(); err != nil {
 		slog.Warn("traces", "err", err)
 	}
+}
+
+// memoryWiring is the journal's quarantine flag and, for a long-lived agent,
+// the memory tool's writer (nil otherwise).
+func memoryWiring(cfg config.Config, sessionID string) (quarantine bool, mem mcpserver.MemoryWriter) {
+	if cfg.AgentName != "" {
+		mem = &memory.Store{Root: cfg.MemoryRoot, Name: cfg.AgentName, SessionID: sessionID, Set: cfg.TrustSet}
+	}
+	return memory.Quarantined(cfg.TrustSet), mem
 }
 
 // servers builds the sidecar's three listeners. Split out of main purely so

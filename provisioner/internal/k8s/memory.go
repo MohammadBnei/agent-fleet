@@ -9,7 +9,7 @@ import (
 )
 
 // MemoryProfile gives a long-lived agent's pod its memory repos (docs/adr/0086
-// §5). The sidecar is the single writer of both; the worker gets the memory repo
+// §5). The sidecar is the single writer; the worker gets the memory repo
 // read-only, only when its set holds B, and never the quarantine repo.
 type MemoryProfile struct {
 	Agent string // the agent's name
@@ -17,6 +17,8 @@ type MemoryProfile struct {
 }
 
 const memoryDir = "/memory"
+
+var memorySetRe = regexp.MustCompile(`^(A|AB|AC|ABC|B|BC|C)$`)
 
 var memoryAgentRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
@@ -30,14 +32,31 @@ func applyMemory(ps *corev1.PodSpec, m MemoryProfile) error {
 	vm := func(dir string, ro bool) corev1.VolumeMount {
 		return corev1.VolumeMount{Name: "shared", MountPath: memoryDir + "/" + dir, SubPath: "claude-home/" + dir, ReadOnly: ro}
 	}
+	if !memorySetRe.MatchString(m.Set) {
+		return fmt.Errorf("memory: bad trust set %q", m.Set)
+	}
+	// The sidecar mounts only the repo this set may write: quarantine when it
+	// holds A, memory when it holds C without A, none otherwise.
+	var write []corev1.VolumeMount
+	switch {
+	case strings.Contains(m.Set, "A"):
+		write = append(write, vm(quar, false))
+	case strings.Contains(m.Set, "C"):
+		write = append(write, vm(mem, false))
+	}
+	found := false
 	for i := range ps.InitContainers {
 		if c := &ps.InitContainers[i]; c.Name == "sidecar" {
+			found = true
 			c.Env = append(c.Env,
 				corev1.EnvVar{Name: "FLEET_AGENT_NAME", Value: m.Agent},
 				corev1.EnvVar{Name: "FLEET_TRUST_SET", Value: m.Set},
 				corev1.EnvVar{Name: "FLEET_MEMORY_ROOT", Value: memoryDir})
-			c.VolumeMounts = append(c.VolumeMounts, vm(mem, false), vm(quar, false))
+			c.VolumeMounts = append(c.VolumeMounts, write...)
 		}
+	}
+	if !found {
+		return fmt.Errorf("memory: pod has no sidecar init container")
 	}
 	if strings.Contains(m.Set, "B") {
 		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, vm(mem, true))

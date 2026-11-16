@@ -82,3 +82,29 @@ func TestFromProcess(t *testing.T) {
 		t.Errorf("%+v, %v", c, err)
 	}
 }
+
+func TestTrustSetValidated(t *testing.T) {
+	base := map[string]string{"SESSION_ID": "s", "LEASE_ID": "l"}
+	for _, set := range []string{"", "ab", "a·b", "{A,B}", "BA", "D", "AA", "A B"} {
+		for _, k := range []string{"FLEET_AGENT_NAME", "FLEET_TRUST_SET"} {
+			env := map[string]string{"SESSION_ID": "s", "LEASE_ID": "l", "FLEET_TRUST_SET": set}
+			if k == "FLEET_AGENT_NAME" {
+				env[k] = "kai"
+			} else if set == "" {
+				continue
+			}
+			if _, err := Load(getenv(env)); err == nil {
+				t.Errorf("%s set, trust set %q accepted", k, set)
+			}
+		}
+	}
+	for _, set := range []string{"A", "AB", "BC", "ABC", "C"} {
+		env := map[string]string{"SESSION_ID": "s", "LEASE_ID": "l", "FLEET_TRUST_SET": set, "FLEET_AGENT_NAME": "kai"}
+		if _, err := Load(getenv(env)); err != nil {
+			t.Errorf("%q: %v", set, err)
+		}
+	}
+	if _, err := Load(getenv(base)); err != nil {
+		t.Errorf("plain pod refused: %v", err)
+	}
+}

@@ -6,8 +6,16 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"regexp"
 )
+
+var setRe = regexp.MustCompile(`^(A|AB|AC|ABC|B|BC|C)$`)
+
+// ValidSet reports whether set is a Rule of Two set: a non-empty, uppercase
+// subset of ABC, in that order.
+func ValidSet(set string) bool { return setRe.MatchString(set) }
 
 // ErrNoSessionID and ErrNoLeaseID are the two refusals, with the words the
 // sidecar has always logged for them.
@@ -60,8 +68,9 @@ type Config struct {
 	// checks it.
 	TracesEndpoint string
 	// TrustSet is the session's Rule of Two set, e.g. "AB" or "BC"
-	// (FLEET_TRUST_SET, ADR-0086 §2). Empty means unknown: memory writes
-	// refuse and journal rows are not flagged.
+	// (FLEET_TRUST_SET, ADR-0086 §2). Required, and valid per ValidSet, when
+	// FLEET_AGENT_NAME or FLEET_TRUST_SET is set: the sidecar refuses to start
+	// otherwise, so a malformed set never turns quarantine off.
 	TrustSet string
 	// AgentName is the long-lived agent whose memory this pod writes
 	// (FLEET_AGENT_NAME). Empty registers no memory tool.
@@ -111,6 +120,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.LeaseID == "" {
 		errs = append(errs, ErrNoLeaseID)
+	}
+	if (c.AgentName != "" || c.TrustSet != "") && !ValidSet(c.TrustSet) {
+		errs = append(errs, fmt.Errorf("FLEET_TRUST_SET %q is not a set like AB or BC", c.TrustSet))
 	}
 	return c, errors.Join(errs...)
 }

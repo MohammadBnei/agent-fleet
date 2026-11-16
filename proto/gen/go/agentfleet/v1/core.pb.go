@@ -2744,13 +2744,16 @@ func (*AppendJournalResponse) Descriptor() ([]byte, []int) {
 // JournalEntry also backs dashboard.proto's GetJournal (imported from
 // here, same reuse pattern as Session/GetSessionRequest/GetSessionResponse below).
 type JournalEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	EventType     string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
-	PayloadJson   string                 `protobuf:"bytes,5,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Repo        string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	Actor       string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	EventType   string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	PayloadJson string                 `protobuf:"bytes,5,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	CreatedAt   string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
+	// Written by a session whose set holds A: hidden from journal_search until
+	// the owner promotes it (ADR-0086 §5). The console labels these rows.
+	Quarantined   bool `protobuf:"varint,7,opt,name=quarantined,proto3" json:"quarantined,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2825,6 +2828,13 @@ func (x *JournalEntry) GetCreatedAt() string {
 		return x.CreatedAt
 	}
 	return ""
+}
+
+func (x *JournalEntry) GetQuarantined() bool {
+	if x != nil {
+		return x.Quarantined
+	}
+	return false
 }
 
 // SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred
@@ -4088,7 +4098,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12 \n" +
 	"\vquarantined\x18\x05 \x01(\bR\vquarantined\"\x17\n" +
-	"\x15AppendJournalResponse\"\xa9\x01\n" +
+	"\x15AppendJournalResponse\"\xcb\x01\n" +
 	"\fJournalEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x14\n" +
@@ -4097,7 +4107,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"event_type\x18\x04 \x01(\tR\teventType\x12!\n" +
 	"\fpayload_json\x18\x05 \x01(\tR\vpayloadJson\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\tR\tcreatedAt\"\x82\x01\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\x12 \n" +
+	"\vquarantined\x18\a \x01(\bR\vquarantined\"\x82\x01\n" +
 	"\x14SearchJournalRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05query\x18\x02 \x01(\tR\x05query\x12\x14\n" +

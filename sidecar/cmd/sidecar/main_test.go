@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/config"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -101,5 +102,19 @@ func TestServers_TracesAllButHealth(t *testing.T) {
 		if _, ok := line["trace_id"]; ok != c.traced {
 			t.Errorf("%s: trace_id on the line %v, want %v", c.name, ok, c.traced)
 		}
+	}
+}
+
+func TestMemoryWiring(t *testing.T) {
+	q, mem := memoryWiring(config.Config{TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m"}, "s1")
+	if !q || mem == nil {
+		t.Errorf("AB: quarantine %v, mem %v; want true and a writer", q, mem)
+	}
+	q, mem = memoryWiring(config.Config{TrustSet: "BC", AgentName: "kai", MemoryRoot: "/m"}, "s1")
+	if q || mem == nil {
+		t.Errorf("BC: quarantine %v, mem %v; want false and a writer", q, mem)
+	}
+	if _, mem = memoryWiring(config.Config{}, "s1"); mem != nil {
+		t.Error("a pod without an agent got a memory writer")
 	}
 }
