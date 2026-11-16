@@ -1201,16 +1201,25 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 // next sender reads a dead session and warms, and an ambiguous failure leaves
 // the reservation standing because a pod may be booting behind it.
 func (s *Server) WarmForAppend(ctx context.Context, sessionID string) (podName string, release func(), err error) {
+	return s.WarmForAppendAt(ctx, sessionID, -1)
+}
+
+// WarmForAppendAt is WarmForAppend with an explicit cursor for the new pod:
+// it streams from fromSeq instead of LatestSeq. Negative is LatestSeq. Only
+// the exit-window re-warm passes one (docs/adr/0070 §6): input appended
+// while a single-shot pod was leaving lies below LatestSeq, above the leaving
+// pod's consumedSeq, and the next pod must start just past that.
+func (s *Server) WarmForAppendAt(ctx context.Context, sessionID string, fromSeq int64) (podName string, release func(), err error) {
 	release, err = s.sends.lock(ctx, sessionID)
 	if err != nil {
 		return "", func() {}, errkeys.Connect(connect.CodeCanceled, errkeys.KeyInternal, err)
 	}
-	podName, err = s.warm(ctx, sessionID)
+	podName, err = s.warm(ctx, sessionID, fromSeq)
 	return podName, release, err
 }
 
 // warm is WarmIfIdle's body, run under the session's send lock.
-func (s *Server) warm(ctx context.Context, sessionID string) (podName string, err error) {
+func (s *Server) warm(ctx context.Context, sessionID string, fromSeq int64) (podName string, err error) {
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrNotFound) {
@@ -1283,6 +1292,10 @@ func (s *Server) warm(ctx context.Context, sessionID string) (podName string, er
 	resumeFromSeq, err := s.transcr.LatestSeq(ctx, sessionID)
 	if err != nil {
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	// An explicit cursor only ever lowers it: never above what exists.
+	if fromSeq >= 0 && fromSeq < resumeFromSeq {
+		resumeFromSeq = fromSeq
 	}
 	// Both from repoCfg, which is the row already read above. This used to
 	// re-fetch the same repo through a toolKeysFor helper — two reads of one

@@ -145,7 +145,7 @@ func TestInvoke(t *testing.T) {
 	}
 	// A turn that parks on a permission: waiting, whatever its result says.
 	req := appendEntry(id, "agent", "permission_request", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`)
-	appendEntry(id, "worker", "result", `{"subtype":"success","result_text":"parked","structured_output":{"answer":0},"consumedSeq":0}`)
+	appendEntry(id, "worker", "result", `{"subtype":"success","result_text":"parked","structured_output":{"answer":0},"consumedSeq":0,"exit":true}`)
 	r, err := wait(bot, id, 0)
 	if err != nil || r.GetState() != "waiting" || len(r.GetPending()) != 1 || r.GetPending()[0].GetRequestSeq() != req || r.GetResultText() != "" {
 		t.Fatalf("parked: %v %v", r, err)
@@ -159,10 +159,16 @@ func TestInvoke(t *testing.T) {
 	if r, err := wait(bot, id, 0); err != nil || r.GetState() != "running" {
 		t.Fatalf("answered, no new result: %v %v", r, err)
 	}
+	// Only the pod's exit result is judged (docs/adr/0070 slice 7): a turn's
+	// result that is not its pod's last is never final.
+	appendEntry(id, "worker", "result", `{"subtype":"success","result_text":"mid-run","consumedSeq":3}`)
+	if r, err := wait(bot, id, 0); err != nil || r.GetState() != "running" {
+		t.Fatalf("a result without exit: %v %v", r, err)
+	}
 	// The long poll answers as the final result lands.
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		appendEntry(id, "worker", "result", `{"subtype":"success","result_text":"42","structured_output":{"answer":42},"consumedSeq":3}`)
+		appendEntry(id, "worker", "result", `{"subtype":"success","result_text":"42","structured_output":{"answer":42},"consumedSeq":3,"exit":true}`)
 	}()
 	start := time.Now()
 	r, err = wait(bot, id, 30)
@@ -178,7 +184,7 @@ func TestInvoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendEntry(failedID, "worker", "result", `{"subtype":"error_max_turns","result_text":"","consumedSeq":0}`)
+	appendEntry(failedID, "worker", "result", `{"subtype":"error_max_turns","result_text":"","consumedSeq":0,"exit":true}`)
 	if r, err := wait(bot, failedID, 0); err != nil || r.GetState() != "failed" || r.GetSubtype() != "error_max_turns" {
 		t.Fatalf("failed: %v %v", r, err)
 	}
@@ -221,6 +227,21 @@ func TestInvoke(t *testing.T) {
 	}
 	if d := time.Since(start); d > 10*time.Second {
 		t.Errorf("the wait saw the crash after %v", d)
+	}
+	// A clean exit with no result and no open decision is NO_RESULT, not
+	// AGENT_CRASHED (docs/adr/0070 §3, owner answer 6).
+	cleanID, err := invoke(bot, "d", "say nothing", "k-clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPodPhase(ctx, cleanID, "POD_PHASE_TERMINATED", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, cleanID); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := wait(bot, cleanID, 0); err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "NO_RESULT" {
+		t.Fatalf("clean exit without a result: %v %v", r, err)
 	}
 
 	// Only the owning client reads a run, and members call neither method.

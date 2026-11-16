@@ -367,11 +367,11 @@ func (s *Store) OpenThreads(ctx context.Context, owner string) (int, error) {
 // UnfinishedRuns counts owner's open single-shot sessions with no result
 // entry yet, for Invoke's cap.
 //
-// ponytail: "has a result" stands in for finished until docs/adr/0070 build
-// order slice 7 makes the exit result the final one. Until then endRuns
-// archives a finished run only once its pod is gone (the idle timeout),
-// which would hold the cap that long; after slice 7 this can count the
-// unarchived ones.
+// ponytail: "has a result" stands in for finished, so a parked run (whose
+// parked turn wrote one) does not hold the cap; maxParked bounds those. An
+// ended run is archived within a tick of its pod's exit (endRuns), so
+// counting the unarchived ones instead is the upgrade if a parked run should
+// hold the cap too.
 func (s *Store) UnfinishedRuns(ctx context.Context, owner string) (int, error) {
 	var n int
 	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions s WHERE s.owner = $1 AND s.archived_at IS NULL
@@ -380,32 +380,99 @@ func (s *Store) UnfinishedRuns(ctx context.Context, owner string) (int, error) {
 	return n, err
 }
 
+// exitResultOf selects the seq, consumedSeq and text of the latest exit
+// result (the worker's last result before its pod exits, docs/adr/0070 §3)
+// of the session s.id. A result entry is the worker's JSON; IS JSON guards
+// the casts, inside CASE, which evaluates in order, so one unreadable row
+// never fails the query. A missing consumedSeq reads as -1: every
+// turn-starting entry is then above it.
+const exitResultOf = `(SELECT r.seq, r.text,
+	        COALESCE(CASE WHEN r.text IS JSON OBJECT THEN
+	                   CASE WHEN jsonb_typeof(r.text::jsonb -> 'consumedSeq') = 'number'
+	                        THEN floor((r.text::jsonb ->> 'consumedSeq')::numeric)::bigint END END, -1) AS consumed
+	   FROM transcript r
+	  WHERE r.session_id = s.id AND r.type = 'result'
+	    AND CASE WHEN r.text IS JSON OBJECT THEN r.text::jsonb -> 'exit' = 'true'::jsonb ELSE false END
+	  ORDER BY r.seq DESC LIMIT 1)`
+
+// inputAfterExit is "a human entry that starts a turn lies above the latest
+// exit result's consumedSeq" (docs/adr/0070 §3 rule 1): the pod that wrote it
+// never took that entry in, so the run is not final, and core re-warms it
+// once the pod is gone (§6, the exit window). False with no exit result.
+const inputAfterExit = `EXISTS (SELECT 1 FROM transcript h
+	WHERE h.session_id = s.id AND h."from" = 'human' AND NOT h.context_only
+	  AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response')
+	  AND h.seq > (SELECT e.consumed FROM ` + exitResultOf + ` e))`
+
 // endedRun is the WHERE fragment for a single-shot session s that reached a
 // terminal state (docs/adr/0070 §7) and has no live pod ($1 = livePhases):
 // already claimed (archived, not yet swept); or a stop was asked for; or,
-// with no open decision, its pod crashed or its latest result has no
-// turn-starting input after it (the finality rule agentsvc's WaitForResult
-// reads, by seq until build order slice 7 moves it to the exit result). An
-// open decision without a stop is a parked run: never listed, so it keeps
-// its PVC.
-//
-// ponytail: "no live pod" is what makes the interim seq rule safe to act
-// on. A continuously running worker can hold a result while its next turn
-// (a live answer, a queued message) is under way; only once the idle sweep,
-// the stop grace or a crash has removed the pod is that result the end.
-// Slice 7's exit result lets a run end as soon as its pod exits.
+// with no open decision, its pod crashed, or exited (TERMINATED) with no
+// input above its exit result's consumedSeq: a final exit result, or a clean
+// exit with none (NO_RESULT, which WaitForResult reports). An open decision
+// without a stop is a parked run, and input above the exit result waits for
+// its re-warm (ListRewarmRuns): neither is listed, so both keep their PVC.
 const endedRun = `s.lifecycle = 'single-shot' AND s.swept_at IS NULL
 	AND COALESCE(s.pod_phase, '') <> ALL($1)
 	AND (s.archived_at IS NOT NULL
 	     OR s.stop_requested_at IS NOT NULL
 	     OR (NOT EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open')
 	         AND (s.pod_phase = 'POD_PHASE_CRASHED'
-	              OR EXISTS (SELECT 1 FROM transcript r
-	                          WHERE r.session_id = s.id AND r.type = 'result'
-	                            AND NOT EXISTS (SELECT 1 FROM transcript h
-	                                             WHERE h.session_id = s.id AND h.seq > r.seq AND h."from" = 'human'
-	                                               AND NOT h.context_only
-	                                               AND COALESCE(h.type, '') IN ('', 'discussion', 'answer', 'permission_response'))))))`
+	              OR (s.pod_phase = 'POD_PHASE_TERMINATED' AND NOT ` + inputAfterExit + `))))`
+
+// ListRewarmRuns is every single-shot run in the exit window (docs/adr/0070
+// §6): its pod exited cleanly, it is neither archived nor stopping, and a
+// human or answer entry lies above its exit result's consumedSeq. Each comes
+// with that consumedSeq: the next pod's cursor goes just past it, not to the
+// latest seq, or the entry would sit below the cursor and never arrive.
+func (s *Store) ListRewarmRuns(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.pool.Query(ctx, `SELECT s.id::text, (SELECT e.consumed FROM `+exitResultOf+` e)
+		FROM sessions s
+		WHERE s.lifecycle = 'single-shot' AND s.swept_at IS NULL AND s.archived_at IS NULL
+		  AND s.stop_requested_at IS NULL AND s.pod_phase = 'POD_PHASE_TERMINATED'
+		  AND `+inputAfterExit)
+	if err != nil {
+		return nil, fmt.Errorf("list rewarm runs: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var id string
+		var consumed int64
+		if err := rows.Scan(&id, &consumed); err != nil {
+			return nil, fmt.Errorf("list rewarm runs: %w", err)
+		}
+		out[id] = consumed
+	}
+	return out, rows.Err()
+}
+
+// ExitResult is what WaitForResult reads of a run's end (docs/adr/0070 §3).
+type ExitResult struct {
+	// Text is the latest exit result's JSON; Found is false with none.
+	Text  string
+	Found bool
+	// InputAfter: a turn-starting entry lies above its consumedSeq, so it is
+	// not final (rule 1).
+	InputAfter bool
+	// Stopped: a stop was asked for.
+	Stopped bool
+}
+
+// LastExitResult reads the session's latest exit result (ExitResult).
+func (s *Store) LastExitResult(ctx context.Context, sessionID string) (ExitResult, error) {
+	var out ExitResult
+	var text *string
+	err := s.pool.QueryRow(ctx, `SELECT (SELECT e.text FROM `+exitResultOf+` e), `+inputAfterExit+`, s.stop_requested_at IS NOT NULL
+		FROM sessions s WHERE s.id = $1`, sessionID).Scan(&text, &out.InputAfter, &out.Stopped)
+	if err != nil {
+		return out, fmt.Errorf("last exit result: %w", err)
+	}
+	if text != nil {
+		out.Text, out.Found = *text, true
+	}
+	return out, nil
+}
 
 // ListEndedRuns is every session endedRun matches, oldest first.
 func (s *Store) ListEndedRuns(ctx context.Context) ([]string, error) {

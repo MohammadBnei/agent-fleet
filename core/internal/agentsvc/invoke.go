@@ -222,20 +222,19 @@ type resultEntry struct {
 	StructuredOutput json.RawMessage `json:"structured_output"`
 }
 
-// result is §3's final-turn rule. Until the worker writes an exit result
-// (build order slice 7), rules 2 to 4 apply to the latest result:
+// result is §3's final-turn rule. Only an exit result (the pod's last,
+// `exit: true`) is judged, in this order:
+//  1. a human or answer entry above its consumedSeq: not final (running);
+//     core re-warms the run for it (sessions.Loop's exit-window re-warm);
 //  2. an open question, permission or plan: waiting, whatever the result
-//     says (a parked turn's structured output is never the result);
+//     says (a parked turn's structured output is never the result), and
+//     checked first, since it outranks every result;
 //  3. success: done;
 //  4. any other subtype: failed.
 //
-// ponytail: rule 1 (input above the exit result's consumedSeq) is read by
-// seq order for now: a result with turn-starting input after it is not
-// final, since a continuously running worker answers that input with a later
-// result. Slice 7 moves it to consumedSeq on the exit result.
-//
-// A run archived without a final result ended another way (§7: a crash or
-// a Stop): failed, never running.
+// A run archived without a final result ended another way (§7): a crash is
+// AGENT_CRASHED, a clean exit with no exit result is NO_RESULT, a Stop is
+// failed; never running.
 func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1.WaitForResultResponse, error) {
 	sessionID := t.ID
 	open, err := s.decisions.List(ctx, decisions.Filter{
@@ -253,22 +252,27 @@ func (s *Server) result(ctx context.Context, t *sessions.Session) (*agentfleetv1
 		}
 		return out, nil
 	}
-	text, inputAfter, found, err := s.sessions.LastResult(ctx, sessionID)
+	ex, err := s.sessions.LastExitResult(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if (!found || inputAfter) && t.ArchivedAt != nil {
+	if (!ex.Found || ex.InputAfter) && t.ArchivedAt != nil {
 		e := &agentfleetv1.Status{State: "error", Message: "the run ended without a result"}
-		if deref(t.PodPhase, "") == agentfleetv1.PodPhase_POD_PHASE_CRASHED.String() {
+		switch phase := deref(t.PodPhase, ""); {
+		case phase == agentfleetv1.PodPhase_POD_PHASE_CRASHED.String():
 			e = &agentfleetv1.Status{State: "error", Code: "AGENT_CRASHED", Message: "the run's pod crashed"}
+		case !ex.Found && !ex.Stopped && phase == agentfleetv1.PodPhase_POD_PHASE_TERMINATED.String():
+			// docs/adr/0066 §10 as amended: AGENT_CRASHED is a non-zero exit
+			// only; a pod that exited cleanly without its result is this.
+			e = &agentfleetv1.Status{State: "error", Code: "NO_RESULT", Message: "the run's pod exited without a result"}
 		}
 		return &agentfleetv1.WaitForResultResponse{State: "failed", Error: e}, nil
 	}
-	if !found || inputAfter {
+	if !ex.Found || ex.InputAfter {
 		return &agentfleetv1.WaitForResultResponse{State: "running"}, nil
 	}
 	var r resultEntry
-	if err := json.Unmarshal([]byte(text), &r); err != nil {
+	if err := json.Unmarshal([]byte(ex.Text), &r); err != nil {
 		return &agentfleetv1.WaitForResultResponse{State: "failed", Error: &agentfleetv1.Status{State: "error", Message: "the result entry is unreadable"}}, nil
 	}
 	out := &agentfleetv1.WaitForResultResponse{State: "failed", Subtype: r.Subtype, ResultText: r.ResultText}

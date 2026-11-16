@@ -331,6 +331,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
 	// prevent.
 	coreSvc.SetWarmFunc(dashboardSvc.WarmForAppend)
+	// The exit-window re-warm (docs/adr/0070 §6) goes through the same
+	// warm-then-append entry point, with its explicit cursor.
+	sessionLoop.SetRewarm(func(ctx context.Context, id string, fromSeq int64) error {
+		_, release, err := dashboardSvc.WarmForAppendAt(ctx, id, fromSeq)
+		release()
+		return err
+	})
 	// One parking lot, both servers. The dashboard drops "diff this path" in;
 	// the sidecar's telemetry call — which lands on coreSvc, not here — is the
 	// only channel core has for asking a pod anything, so it is what carries

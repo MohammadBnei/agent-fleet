@@ -33,10 +33,12 @@ import { activeRecorder, SpanRecorder, setActiveRecorder } from "./spans.js";
 
 const SESSION_ID = process.env.SESSION_ID ?? "";
 
-// docs/adr/0070 §3: the highest seq of a human or answer entry this pod has
-// pushed into the query, and how many results it has written. With the
-// session they key each result entry, so a retried append is one row and the
-// next turn's result is another.
+// docs/adr/0070 §3: the highest seq of a human or session entry this pod has
+// taken in (pushed as a turn, or answered a call it held), and how many
+// results it has written. With the session they key each result entry, so a
+// retried append is one row and the next turn's result is another. On the
+// exit result, core reads consumedSeq: any turn-starting entry above it never
+// reached this pod, and the next one must get it (§6, the exit window).
 let consumedSeq = 0;
 let resultCount = 0;
 // The operator's override, reached only when the session row carries no model.
@@ -695,6 +697,26 @@ export function decisionWaitMs(fromSession: number | undefined): number {
 // carries none and keeps today's.
 const NON_BLOCKING_STAMP = { nb: 1 } as const;
 
+// The sidecar's question tool, and whether its tool_result is the "still
+// pending" reply (sidecar/internal/mcpserver pendingQuestionBody): the
+// question is then an open decision the turn ends on (docs/adr/0070 §6).
+const SIDECAR_ASK = "mcp__agent-fleet-sidecar__AskUserQuestion";
+export function questionPending(content: unknown): boolean {
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .map((b) => (typeof b?.text === "string" ? b.text : ""))
+            .join("")
+        : "";
+  try {
+    return JSON.parse(text)?.status === "pending";
+  } catch {
+    return false;
+  }
+}
+
 function sidecarMcpServer() {
   return {
     type: "http" as const,
@@ -752,9 +774,18 @@ class InputQueue {
   private queue: SDKUserMessage[] = [];
   private waiters: ((msg: SDKUserMessage) => void)[] = [];
   private sessionId = "";
+  // Every push so far, and what to call on one: a single-shot worker's exit
+  // check (docs/adr/0070 §6) compares the count across a turn's end.
+  pushes = 0;
+  onPush: () => void = () => {};
 
   setSessionId(id: string): void {
     this.sessionId = id;
+  }
+
+  // Pushed, not yet pulled by the SDK.
+  get pending(): number {
+    return this.queue.length;
   }
 
   push(text: string): void {
@@ -764,9 +795,11 @@ class InputQueue {
       parent_tool_use_id: null,
       session_id: this.sessionId,
     };
+    this.pushes++;
     const waiter = this.waiters.shift();
     if (waiter) waiter(msg);
     else this.queue.push(msg);
+    this.onPush();
   }
 
   async *stream(): AsyncIterable<SDKUserMessage> {
@@ -1186,43 +1219,58 @@ async function logSdkMessage(
       cacheCreationInputTokens: usage?.cache_creation_input_tokens,
       ...(sumModelUsage(msg.modelUsage) ?? {}),
     });
-    // The result entry (docs/adr/0070 §3). Retried until core takes it; the
-    // key makes a repeat one row, so a retry never doubles the result.
-    const key = `result:${SESSION_ID}:${consumedSeq}:${++resultCount}`;
-    const body = JSON.stringify({
-      subtype: msg.subtype,
-      result_text: typeof msg.result === "string" ? msg.result : undefined,
-      structured_output: msg.structured_output,
-      consumedSeq,
-      numTurns: msg.num_turns,
-      totalCostUsd: msg.total_cost_usd,
-      durationMs: msg.duration_ms,
-      durationApiMs: msg.duration_api_ms,
-      isError: msg.is_error,
-      usage: msg.usage,
-      modelUsage: msg.modelUsage,
-      permissionDenials: msg.permission_denials,
-      errors: msg.errors,
-    });
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await sidecar.pushMessage(actor, body, "result", undefined, key);
-        break;
-      } catch (err) {
-        log("warn", "pushMessage failed", {
-          actor,
-          type: "result",
-          error: String(err),
-        });
-        if (attempt >= 5) break;
-        await new Promise((r) => setTimeout(r, 1000 * attempt));
-      }
-    }
+    // The result entry itself is pushResult's, once the caller knows whether
+    // it is this pod's last (docs/adr/0070 §3).
   }
   // ponytail: `user` text/image content blocks and `stream_event` stay
   // unrelayed. The former is the echo of a prompt the dashboard already
   // posted as a discussion entry; the latter is per-token and belongs on a
   // live-only channel, not in a durable Postgres transcript.
+}
+
+// pushResult writes a turn's result entry (docs/adr/0070 §3), keyed
+// result:<session>:<consumedSeq>:<k>, so a retried append is one row. exit
+// marks the pod's last result, and that one is retried until core takes it:
+// the pod exits next, and core judges only that entry. Any other result is
+// retried up to 5 times.
+async function pushResult(
+  actor: string,
+  msg: { [key: string]: unknown },
+  consumed: number,
+  exit: boolean,
+): Promise<void> {
+  const key = `result:${SESSION_ID}:${consumed}:${++resultCount}`;
+  const body = JSON.stringify({
+    ...(exit ? { exit: true } : {}),
+    subtype: msg.subtype,
+    result_text: typeof msg.result === "string" ? msg.result : undefined,
+    structured_output: msg.structured_output,
+    consumedSeq: consumed,
+    numTurns: msg.num_turns,
+    totalCostUsd: msg.total_cost_usd,
+    durationMs: msg.duration_ms,
+    durationApiMs: msg.duration_api_ms,
+    isError: msg.is_error,
+    usage: msg.usage,
+    modelUsage: msg.modelUsage,
+    permissionDenials: msg.permission_denials,
+    errors: msg.errors,
+  });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await sidecar.pushMessage(actor, body, "result", undefined, key);
+      return;
+    } catch (err) {
+      log("warn", "pushMessage failed", {
+        actor,
+        type: "result",
+        exit,
+        error: String(err),
+      });
+      if (!exit && attempt >= 5) return;
+      await new Promise((r) => setTimeout(r, 1000 * Math.min(attempt, 10)));
+    }
+  }
 }
 
 export type SessionResult = { aborted: boolean; summary: string };
@@ -1354,6 +1402,26 @@ export async function runSession(): Promise<SessionResult> {
   // records its deny).
   const nonBlocking = waitMs > 0;
 
+  // docs/adr/0070 §6: a single-shot worker exits once its input is used up.
+  // A resident one (lifecycle "") and a repo session never do.
+  const singleShot = spec?.lifecycle === "single-shot";
+  // Set the moment this pod decides to exit: no entry is taken in after it,
+  // so consumedSeq on the exit result is exactly what this pod consumed.
+  let exiting = false;
+  // Human entries being handled right now: one may be about to push a turn.
+  let handling = 0;
+  // Questions whose AskUserQuestion call came back pending (its id while the
+  // call runs): the turn that ends after one ends on an open decision.
+  const askCalls = new Set<string>();
+  let openQuestions = 0;
+  // Wakes exitWhenDone on a push or a finished entry.
+  let wakeExit: (() => void) | undefined;
+  const wake = () => {
+    const w = wakeExit;
+    wakeExit = undefined;
+    w?.();
+  };
+
   // Takes a parked call out of the map before anything else happens to it, so
   // a timer, an abort and an answer can never resolve one call twice.
   function claim(seq: number) {
@@ -1467,6 +1535,7 @@ export async function runSession(): Promise<SessionResult> {
   }
 
   const input = new InputQueue();
+  input.onPush = wake;
   // Deliberately NOT seeded. The queue is fed exclusively by
   // streamHumanMessages below, so the session's first message reaches the
   // model as an ordinary human turn rather than a fleet-authored wrapper
@@ -1926,13 +1995,34 @@ export async function runSession(): Promise<SessionResult> {
   // built and launched by now, which is what "applied" means. Until then core
   // delivers a definition session nothing (docs/adr/0066 §8).
   const humanMessagesAbort = new AbortController();
+  // Every human or session entry passes here (docs/adr/0070 §6). While
+  // leaving, none is taken in: it stays above the exit result's
+  // consumedSeq, and core re-warms the run so the next pod gets it. One taken
+  // in moves consumedSeq whatever it turns out to need, and while it is
+  // handled the pod does not exit: it may be about to push a turn.
+  function takeIn(
+    onEntry: (entry: sidecar.TranscriptEntry) => Promise<void>,
+  ): (entry: sidecar.TranscriptEntry) => Promise<void> {
+    return async (entry) => {
+      // "session" is another session's prompt, relayed by core
+      // (docs/adr/0041). Our own output is from="agent" and must never be
+      // fed back in — that is what this filter is for.
+      if (entry.from !== "human" && entry.from !== "session") return;
+      if (exiting) return;
+      consumedSeq = Math.max(consumedSeq, entry.seq);
+      handling++;
+      try {
+        await onEntry(entry);
+      } finally {
+        handling--;
+        wake();
+      }
+    };
+  }
+
   const humanMessagesDone = sidecar
     .streamHumanMessages(
-      async (entry) => {
-        // "session" is another session's prompt, relayed by core
-        // (docs/adr/0041). Our own output is from="agent" and must never be
-        // fed back in — that is what this filter is for.
-        if (entry.from !== "human" && entry.from !== "session") return;
+      takeIn(async (entry) => {
         // An "answer" to an AskUserQuestion. While a pod is live and its
         // AskUserQuestion tool call is mid-flight, core's own poll loop
         // consumes the answer and returns it as the tool_result — nothing to
@@ -1949,7 +2039,7 @@ export async function runSession(): Promise<SessionResult> {
         // redundant turn the agent has already acted on; dedup by replyTo if
         // it ever actually bites.
         if (entry.type === "answer") {
-          consumedSeq = Math.max(consumedSeq, entry.seq);
+          openQuestions = Math.max(0, openQuestions - 1);
           input.push(
             formatAnswerTurn(
               entry.text,
@@ -2009,6 +2099,7 @@ export async function runSession(): Promise<SessionResult> {
             grant?: string;
             decisionId?: string;
             kind?: string;
+            planInput?: Record<string, unknown>;
           } = {};
           try {
             decision = JSON.parse(entry.text);
@@ -2073,17 +2164,31 @@ export async function runSession(): Promise<SessionResult> {
           if (decisionId && spentDecisions.has(decisionId)) return;
           const call = released.get(seq);
           released.delete(seq);
-          // Both outcomes below push a turn: it is input this pod consumed
-          // (docs/adr/0070 §6), so the result key must move past it.
-          if (decision.behavior === "allow" || decision.behavior === "deny") {
-            consumedSeq = Math.max(consumedSeq, entry.seq);
-          }
           if (decision.behavior === "allow") {
             // core marks a plan's answer "kind":"plan"; anything else is a
             // permission.
             const plan = decision.kind === "plan";
+            // The approved plan as core carried it (docs/adr/0070 §6), for a
+            // pod that never held the call: a fresh one, on the resume path.
+            const carried =
+              plan &&
+              decision.planInput &&
+              typeof decision.planInput === "object" &&
+              !Array.isArray(decision.planInput)
+                ? decision.planInput
+                : undefined;
             if (plan && currentMode === "plan") {
-              await approvePlanLate(seq, call?.input);
+              await approvePlanLate(seq, call?.input ?? carried);
+              return;
+            }
+            // The session already left plan mode (the approval named a mode),
+            // so there is nothing left to approve: go ahead, no second ask. An
+            // ExitPlanMode the agent still sends with this plan runs unasked.
+            if (plan && !call && carried) {
+              planRetry = carried;
+              input.push(
+                `Plan approved (request seq ${seq}); now in ${currentMode} mode. Go ahead with the plan.`,
+              );
               return;
             }
             // Only a plan this pod held: its input is what the retry must match.
@@ -2221,13 +2326,12 @@ export async function runSession(): Promise<SessionResult> {
             `${sender ?? "Mohammad"} replied (not an approval): ${sender ? quoteEnvelopes(entry.text) : entry.text}`,
           );
         }
-        consumedSeq = Math.max(consumedSeq, entry.seq);
         input.push(
           entry.from === "session"
             ? peerTurn(entry.text)
             : humanTurn(entry.text, senderOf(entry.authorName, !!spec)),
         );
-      },
+      }),
       humanMessagesAbort.signal,
       RESUME_FROM_SEQ,
       session.agentSpecSha ?? "",
@@ -2238,6 +2342,50 @@ export async function runSession(): Promise<SessionResult> {
         error: String(err),
       }),
     );
+
+  // docs/adr/0070 §6: whether a single-shot pod exits after the result just
+  // in, with queuedTurns its queued_turn_count. It exits only when its input
+  // is used up: nothing queued in the SDK (absent counts as not 0), nothing
+  // pushed since the result or still unpulled, and no entry mid-handling.
+  // When the turn ended on an open decision it first holds up to the decision
+  // wait for a live answer, so a quick answer costs no new pod. true sets
+  // `exiting`, in the same tick as the last check: no entry is taken in
+  // after it.
+  async function exitWhenDone(
+    queuedTurns: number | undefined,
+  ): Promise<boolean> {
+    const pushes = input.pushes;
+    const holdUntil = Date.now() + waitMs;
+    for (;;) {
+      if (
+        aborted ||
+        queuedTurns !== 0 ||
+        input.pushes !== pushes ||
+        input.pending > 0
+      )
+        return false;
+      const open = released.size > 0 || openQuestions > 0;
+      const hold = open ? holdUntil - Date.now() : 0;
+      if (handling === 0 && hold <= 0) {
+        exiting = true;
+        return true;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          wakeExit = resolve;
+        }),
+        ...(hold > 0
+          ? [
+              new Promise<void>(
+                (resolve) => (timer = setTimeout(resolve, hold)),
+              ),
+            ]
+          : []),
+      ]);
+      clearTimeout(timer);
+    }
+  }
 
   let sessionId = "";
   // The SDK re-emits init every turn; only the first one says what launch got.
@@ -2359,13 +2507,47 @@ export async function runSession(): Promise<SessionResult> {
       if (msg.type === "assistant") {
         for (const block of msg.message.content ?? []) {
           if (block.type === "text") finalText = block.text;
+          if (block.type === "tool_use" && block.name === SIDECAR_ASK)
+            askCalls.add(block.id);
+        }
+      }
+      if (msg.type === "user" && Array.isArray(msg.message.content)) {
+        for (const block of msg.message.content) {
+          if (
+            block.type !== "tool_result" ||
+            !askCalls.delete(block.tool_use_id)
+          )
+            continue;
+          if (questionPending(block.content)) openQuestions++;
         }
       }
 
       if (msg.type === "result") {
+        // docs/adr/0070 §6: a single-shot pod's last result says so, and is
+        // written only once this pod is sure it is the last.
+        const exit =
+          singleShot && !aborted && !softInterrupted
+            ? await exitWhenDone(msg.queued_turn_count)
+            : false;
+        await pushResult(
+          "agent",
+          msg as unknown as Record<string, unknown>,
+          consumedSeq,
+          exit,
+        );
         if (aborted) break;
         if (softInterrupted) {
           softInterrupted = false;
+          continue;
+        }
+        if (exit) {
+          // The pod's input is used up: end the query, then index.ts exits
+          // explicitly. A non-success exit still fails the pod (the throw
+          // below); core judges the run on the exit result either way.
+          if (msg.subtype === "success") break;
+        } else if (singleShot) {
+          // Not the last result: a queued turn (a live answer) runs next,
+          // whatever this one's subtype. Its own result decides.
           continue;
         }
         // Uniform non-success handling (reliability-findings.md #8) — no
