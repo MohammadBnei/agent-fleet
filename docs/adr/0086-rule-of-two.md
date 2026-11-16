@@ -117,7 +117,7 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
     `(dispatcher, alert:<groupKey>)` (amends ADR-0070 §1). A repeat inside the run's life is the same run.
   - `<groupKey>` is a stable hash over `alertname`, `namespace` and `service`.
   - A cooldown of 10 min per key holds further firings and coalesces them, without dropping them. A `resolved`
-    alert passes once the alert has been firing for at least `group_interval`. **Default, owner may change.**
+    alert passes once the alert has been firing for at least `group_interval`.
   - This amends ADR-0082 §1 for those definitions only. Every other definition still never wakes on an event type.
   - Its set is **A·B**: it reads logs, metrics and cluster state.
   - It holds no C method, and its vault carries no GitHub write (§7).
@@ -160,7 +160,7 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   **Owner to confirm**: cordon could return only by amending `infra-bootstrap` ADR-0032 there first.
 - **No rollback action.** Under `selfHeal: true` (16 Applications in `infra-bootstrap/gitops`) ArgoCD refuses a
   rollback, and a manual change drifts back. A rollback is therefore a revert PR, filed as a card.
-- **Bounds, checked by core.** **Owner to confirm.**
+- **Bounds, checked by core:**
   - one action per target per 10 min;
   - 6 actions per responder definition per hour;
   - a target denylist from `infra-bootstrap`: core, the provisioner, Agent Vault, authentik, the databases, the
@@ -170,8 +170,7 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   - Allowed: a patch limited to a field allowlist (`spec.replicas`, container `resources`, non-secret `env` values, the
     restart annotation), `delete pod`, and a restart.
   - Each such namespace carries the PodSecurity `restricted` label.
-  - A namespace is low-stakes only by an owner commit to that file. **Owner to confirm**: the game and dev apps start
-    there.
+  - A namespace is low-stakes only by an owner commit to that file. The game and dev apps start there.
 - **Anything else** becomes a card (§4): a code fix, an Ansible step, an unknown failure.
 - **The catalogue grows through the owner.** When a card fix keeps being chosen, the owner promotes it into the
   catalogue as a reviewed change. Agents never write catalogue files (§5).
