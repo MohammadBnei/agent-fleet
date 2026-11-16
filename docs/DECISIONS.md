@@ -336,11 +336,11 @@ Any doc, code, comment, or memory that contradicts this file or an
 - [`0083`](adr/0083-remote-mcp-for-definitions.md) — a definition may name remote MCP
   servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
   for a named user; not built).
-- [`0084`](adr/0084-long-lived-agents.md) — long-lived agents: standing roles beside the
-  workers, core the only control plane; Claude Code only in stage 1 (other runtimes later);
-  one pod per trust tier per agent, threads as SDK sessions inside it; effects only from a
-  T0/T1 cause in the trusted pod; one read-only kube ServiceAccount, the ops agent's untrusted
-  pod only; no credential in any pod's env (Proposed 2026-11-16; not built).
+- [`0084`](adr/0084-long-lived-agents.md) — long-lived characters: one pod and one session
+  per character, started by the owner and kept up by core; one trigger per turn, its trust set by
+  ADR-0086's Rule of Two; a read-only kube ServiceAccount only as a per-definition grant; the game
+  reaches characters on its own connection, the owner T0 only with an ID token core verifies
+  (Proposed 2026-11-16; not built). Depends on [`0086`](adr/0086-rule-of-two.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
