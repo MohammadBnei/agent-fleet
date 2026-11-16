@@ -6,6 +6,8 @@ kind: AgentClient
 metadata: { name: qa-invoke }
 spec:
   tokenRef: FLEET_CLIENT_TOKEN_QA_INVOKE
+  # Required non-empty; only Open's wake path reads it (docs/adr/0066 §6),
+  # and Invoke has none, so for this client it limits nothing.
   actors: { allow: [MohammadBnei] }
   definitions: [qa-invoke]
   maxParked: 2

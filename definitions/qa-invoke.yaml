@@ -17,6 +17,7 @@ spec:
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: agent-fleet }
   git: { mode: pr, identity: { name: fleet-qa-agent, email: fleet-qa-agent@bnei.dev } }
+  sidecarTools: [AskUserQuestion]
   tools:
     allow: [Read, Glob, Grep]
     deny: [Edit, Write, Bash]
