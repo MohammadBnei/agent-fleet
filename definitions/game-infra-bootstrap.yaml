@@ -1,0 +1,14 @@
+# ukubi-game's resident of infra-bootstrap (game-base.yaml): it reads the repo and answers
+# the player. Only the api.anthropic.com service: pr mode holds no GitHub key.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: game-infra-bootstrap }
+spec:
+  extends: game-base
+  invokers: [ukubi-game]
+  credentials:
+    vault: game-infra-bootstrap
+    services:
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: infra-bootstrap }
+  git: { mode: pr, identity: { name: game-infra-bootstrap, email: game-infra-bootstrap@bnei.dev } }

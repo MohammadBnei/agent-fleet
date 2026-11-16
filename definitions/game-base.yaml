@@ -1,0 +1,36 @@
+# Abstract base for ukubi-game's residents in production: every building the
+# game draws has one, the agent of its code repo, under game-<repo> (the game
+# reads the name: ukubi-game fleet/client.go Prefix). The player talks to it
+# through the game's client (clients/ukubi-game.yaml); the game opens a
+# resident thread that may ask (docs/adr/0066 §6).
+#
+# Read-only on purpose: a resident explains its repo, it does not change it.
+# git.mode pr keeps no GitHub credential (docs/adr/0065 §7), and tools hold no
+# Edit, Write or push. The game's agent steps open these same definitions, so a
+# step can read and plan but not land work until a child moves to push mode.
+#
+# The offline stack's push-mode game-base and game-ukubi-game stay in
+# local/kind/definitions/ (docs/adr/0080 §4), which replace this directory
+# whole in the local mirror. A child's top-level key REPLACES the value here,
+# so credentials, workspace, git and invokers live in each child.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: game-base }
+spec:
+  abstract: true
+  audience: { group: platform-admins }
+  thinking: { default: medium }
+  mode: { default: auto, allow: [auto, default, plan] }
+  tools:
+    # TodoWrite: the game reads a step's progress from it.
+    allow: [Read, Glob, Grep, TodoWrite, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)"]
+    deny: [Edit, Write, "Bash(git push:*)", "Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
+  # AskUserQuestion: the game shows a resident's question as a need on its building.
+  sidecarTools: [AskUserQuestion]
+  lifecycle: { allow: [resident] }
+  resources: { cpu: "1", memory: 2Gi }
+  # timeout is the idle sweep's: a quiet resident frees its pod after 15 minutes.
+  # 5m idle timeout: a resident's pod counts against MAX_EXTERNAL_SESSIONS (2),
+  # the pool the agent reviewer and bridge sessions share, so a long idle hold
+  # after a talk would block them (raise the pool before raising this).
+  limits: { maxTurns: 40, timeout: 5m, concurrency: 1, startupBudget: 3m }
