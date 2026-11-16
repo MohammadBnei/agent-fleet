@@ -64,6 +64,12 @@ type Manager struct {
 	// lastUsed is when a warm or manual sync last touched each repo's cache
 	// (in memory: a restart forgets it, see PrefetchRepos). Guarded by mu.
 	lastUsed map[string]time.Time
+	// start is when this Manager was made: the last-used time of a repo no
+	// warm has touched yet, so it gets one idle window of grace.
+	start time.Time
+	// prefetchFails counts each repo's prefetch failures in a row, for its own
+	// log backoff. Guarded by mu.
+	prefetchFails map[string]int
 }
 
 type prefixKey struct{}
@@ -78,7 +84,7 @@ func spanPrefix(ctx context.Context) string {
 }
 
 func NewManager(root string) *Manager {
-	return &Manager{root: root, locks: make(map[string]*sync.Mutex), lastUsed: make(map[string]time.Time)}
+	return &Manager{root: root, locks: make(map[string]*sync.Mutex), lastUsed: make(map[string]time.Time), start: time.Now(), prefetchFails: make(map[string]int)}
 }
 
 func (m *Manager) repoLock(repo string) *sync.Mutex {
@@ -847,15 +853,20 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 //
 // Selection: a cache directory exists (never clone here: a cache exists only
 // because a warm or sync already wanted the repo) AND it was not last used
-// more than idle ago. Caches not used since this process started count as
-// active: lastUsed is in memory, and a restart must not park every repo.
-// Only repos that sat idle through a whole window of this process's life drop
-// out; a warm on one of those fetches synchronously, as before.
+// more than idle ago. A cache not used since this process started counts as
+// last used at start: lastUsed is in memory, so a fresh pod gives every repo
+// one idle window of grace, then repos nobody warmed drop out; a warm on one
+// of those fetches synchronously, as before.
 //
 // Each fetch is EnsureRepoFetched's exact fetch (same lock, refspec,
 // credentials, origin check, gc.auto), on a context detached from ctx and
-// bounded by perFetch, so shutdown does not SIGKILL git mid-write. A repo's
-// failure is joined into the result and never stops the others.
+// bounded by perFetch, so cancelling ctx does not kill a fetch mid-way (on
+// process exit the git child can still be orphaned, as with refreshDetached).
+// It fetches from the cache's own origin, not repos.url; the warm's origin
+// check still catches a mismatch, and pods mount the cache read-only.
+// A repo's failure is logged here with that repo's own backoff (1st, 2nd,
+// 4th... in a row) and never stops or hides the others, so the cycle itself
+// returns nil.
 func (m *Manager) PrefetchRepos(ctx context.Context, idle, perFetch time.Duration) error {
 	ctx = context.WithValue(ctx, prefixKey{}, "prefetch")
 	entries, err := os.ReadDir(filepath.Join(m.root, "repos"))
@@ -865,7 +876,6 @@ func (m *Manager) PrefetchRepos(ctx context.Context, idle, perFetch time.Duratio
 		}
 		return err
 	}
-	var errs []error
 	for _, e := range entries {
 		repo := e.Name()
 		if ctx.Err() != nil {
@@ -874,11 +884,23 @@ func (m *Manager) PrefetchRepos(ctx context.Context, idle, perFetch time.Duratio
 		if !e.IsDir() || !m.prefetchWanted(repo, idle) {
 			continue
 		}
-		if err := m.prefetchOne(ctx, repo, perFetch); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", repo, err))
+		err := m.prefetchOne(ctx, repo, perFetch)
+		m.mu.Lock()
+		n := m.prefetchFails[repo]
+		if err == nil {
+			delete(m.prefetchFails, repo)
+		} else {
+			n++
+			m.prefetchFails[repo] = n
+		}
+		m.mu.Unlock()
+		if err != nil && n&(n-1) == 0 {
+			slog.Warn("repo prefetch failed; warms fetch it themselves", "repo", repo, "error", err, "failuresInARow", n)
+		} else if err == nil && n > 0 {
+			slog.Info("repo prefetch recovered", "repo", repo, "failuresInARow", n)
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 // prefetchWanted: a real clone (has .git) not idle past the window.
@@ -888,8 +910,11 @@ func (m *Manager) prefetchWanted(repo string, idle time.Duration) bool {
 	}
 	m.mu.Lock()
 	t, seen := m.lastUsed[repo]
+	if !seen {
+		t = m.start
+	}
 	m.mu.Unlock()
-	return !seen || time.Since(t) <= idle
+	return time.Since(t) <= idle
 }
 
 func (m *Manager) prefetchOne(ctx context.Context, repo string, perFetch time.Duration) error {
