@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.21.0](https://github.com/MohammadBnei/agent-fleet/compare/7.20.0...7.21.0) (2026-11-16)
+
+### Features
+
+* **core:** answerTimeout expires parked runs; a moved definition ends them (ADR-0070 slice 11) ([#388](https://github.com/MohammadBnei/agent-fleet/issues/388)) ([c3e6976](https://github.com/MohammadBnei/agent-fleet/commit/c3e6976b57850c01e45c96f5888b83ccd8069159))
+
 # [7.20.0](https://github.com/MohammadBnei/agent-fleet/compare/7.19.0...7.20.0) (2026-11-16)
 
 ### Features
