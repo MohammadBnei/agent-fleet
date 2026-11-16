@@ -47,6 +47,12 @@ func TestValidate_SchemaPerAction(t *testing.T) {
 		{"cordon", Selection{Action: "cordon", Name: "node1"}, false},
 		{"rollback", Selection{Action: "rollback", Namespace: "x", Name: "a"}, false},
 		{"bad name", Selection{Action: "sync_app", Name: "a;rm"}, false},
+		{"dotted namespace", Selection{Action: "restart", Kind: "deployment", Namespace: "a.b", Name: "a"}, false},
+		{"restart with container", Selection{Action: "restart", Kind: "deployment", Namespace: "x", Name: "a", Container: "c"}, false},
+		{"restart with env", Selection{Action: "restart", Kind: "deployment", Namespace: "x", Name: "a", EnvName: "A"}, false},
+		{"scale with cpu", Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(2), CPU: "1"}, false},
+		{"delete pod with memory", Selection{Action: "delete_pod", Namespace: "x", Name: "a-1", Memory: "1Gi"}, false},
+		{"sync with envValue", Selection{Action: "sync_app", Name: "game", EnvValue: "x"}, false},
 	}
 	for _, c := range cases {
 		err := c.s.Validate(b, false)
@@ -56,6 +62,24 @@ func TestValidate_SchemaPerAction(t *testing.T) {
 	}
 	if err := (Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(2)}).Validate(Bounds{Min: 1, Max: 99}, false); !errors.Is(err, ErrInvalid) {
 		t.Errorf("bounds above the cap: %v", err)
+	}
+}
+
+func TestValidate_UnsetBoundsRefuseReplicas(t *testing.T) {
+	scale := Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(0)}
+	patch := Selection{Action: "patch", Kind: "deployment", Namespace: "x", Name: "a", Field: "replicas", Replicas: ip(0)}
+	for _, b := range []Bounds{{}, {Min: 0, Max: 3}} {
+		if err := scale.Validate(b, true); !errors.Is(err, ErrInvalid) {
+			t.Errorf("scale to zero with %+v: %v", b, err)
+		}
+		if err := patch.Validate(b, true); !errors.Is(err, ErrInvalid) {
+			t.Errorf("patch to zero with %+v: %v", b, err)
+		}
+	}
+	one := 1
+	scale.Replicas, patch.Replicas = &one, &one
+	if scale.Validate(Bounds{}, true) == nil || patch.Validate(Bounds{}, true) == nil {
+		t.Error("unset bounds admitted replicas")
 	}
 }
 
@@ -70,14 +94,41 @@ func TestValidate_PatchIsLowStakesAndAllowlisted(t *testing.T) {
 		t.Fatalf("outside low-stakes: %v", err)
 	}
 	bad := map[string]Selection{
-		"field off the list":  p(func(s *Selection) { s.Field = "image" }),
-		"secretish name":      p(func(s *Selection) { s.EnvName = "API_TOKEN" }),
-		"secretish value":     p(func(s *Selection) { s.EnvValue = "postgres://u:p@h/db?password=x" }),
-		"newline value":       p(func(s *Selection) { s.EnvValue = "a\nb" }),
-		"long value":          p(func(s *Selection) { s.EnvValue = strings.Repeat("a", 129) }),
-		"replicas over":       p(func(s *Selection) { s.Field, s.Replicas = "replicas", ip(9) }),
-		"resources not quant": p(func(s *Selection) { s.Field, s.CPU, s.Memory = "resources", "lots", "1Gi" }),
+		"field off the list": p(func(s *Selection) { s.Field = "image" }),
+		"secretish name":     p(func(s *Selection) { s.EnvName = "API_TOKEN" }),
+		"secretish value":    p(func(s *Selection) { s.EnvValue = "postgres://u:p@h/db?password=x" }),
+		"newline value":      p(func(s *Selection) { s.EnvValue = "a\nb" }),
+		"long value":         p(func(s *Selection) { s.EnvValue = strings.Repeat("a", 129) }),
+		"replicas over": p(func(s *Selection) {
+			s.Field, s.Container, s.EnvName, s.EnvValue, s.Replicas = "replicas", "", "", "", ip(9)
+		}),
+		"resources not quant": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "lots", "1Gi"
+		}),
 		"pod kind":            p(func(s *Selection) { s.Kind = "pod" }),
+		"env with replicas":   p(func(s *Selection) { s.Replicas = ip(2) }),
+		"env with cpu":        p(func(s *Selection) { s.CPU = "500m" }),
+		"resources with env":  p(func(s *Selection) { s.Field, s.CPU, s.Memory, s.EnvName = "resources", "500m", "256Mi", "A" }),
+		"restart with extras": p(func(s *Selection) { s.Field = "restart" }),
+		"memory zero":         p(func(s *Selection) { s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "0" }),
+		"memory millibytes": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "1m"
+		}),
+		"memory tiny": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "1Mi"
+		}),
+		"memory huge": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "999999Gi"
+		}),
+		"cpu zero": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "0", "256Mi"
+		}),
+		"cpu huge": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "100000", "256Mi"
+		}),
+		"cpu tiny": p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "1m", "256Mi"
+		}),
 	}
 	for name, s := range bad {
 		if err := s.Validate(b, true); !errors.Is(err, ErrInvalid) {
@@ -86,9 +137,14 @@ func TestValidate_PatchIsLowStakesAndAllowlisted(t *testing.T) {
 	}
 	good := []Selection{
 		p(func(*Selection) {}),
-		p(func(s *Selection) { s.Field, s.Replicas = "replicas", ip(2) }),
-		p(func(s *Selection) { s.Field, s.CPU, s.Memory = "resources", "500m", "256Mi" }),
-		p(func(s *Selection) { s.Field = "restart" }),
+		p(func(s *Selection) {
+			s.Field, s.Container, s.EnvName, s.EnvValue, s.Replicas = "replicas", "", "", "", ip(2)
+		}),
+		p(func(s *Selection) {
+			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "256Mi"
+		}),
+		p(func(s *Selection) { s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "2", "1Gi" }),
+		p(func(s *Selection) { s.Field, s.Container, s.EnvName, s.EnvValue = "restart", "", "", "" }),
 	}
 	for i, s := range good {
 		if err := s.Validate(b, true); err != nil {
@@ -109,6 +165,10 @@ func TestDenied(t *testing.T) {
 		{Action: "sync_app", Name: "agent-fleet"},
 		{Action: "sync_app", Name: "authentik"},
 		{Action: "sync_app", Name: "agent-vault"},
+		{Action: "sync_app", Name: "agent-fleet-core"},
+		{Action: "sync_app", Name: "platform-provisioner"},
+		{Action: "sync_app", Name: "platform-thot"},
+		{Action: "sync_app", Name: "bootstrap"},
 	}
 	for _, s := range deny {
 		if !s.Denied() {
@@ -182,10 +242,23 @@ func (f *fakePuller) Pull(context.Context, string) (Row, error) {
 }
 func (f *fakePuller) Report(context.Context, string, Outcome) error { return nil }
 
+func TestHandler_MalformedIDIs404(t *testing.T) {
+	f := &fakePuller{}
+	for _, op := range []string{"pull", "report"} {
+		req := httptest.NewRequest("POST", Path+"not-a-uuid/"+op, strings.NewReader(`{"status":"done"}`))
+		req.Header.Set("Authorization", "Bearer secret")
+		rec := httptest.NewRecorder()
+		Handler(f, "secret").ServeHTTP(rec, req)
+		if rec.Code != 404 || f.pulls != 0 {
+			t.Errorf("%s: %d", op, rec.Code)
+		}
+	}
+}
+
 func TestHandler_BearerOnly(t *testing.T) {
 	f := &fakePuller{}
 	do := func(h http.Handler, method, tok string) int {
-		req := httptest.NewRequest(method, Path+"abc/pull", nil)
+		req := httptest.NewRequest(method, Path+"0b5f8c1e-2f3a-4c55-9a52-1d3a7c2f8e10/pull", nil)
 		if tok != "" {
 			req.Header.Set("Authorization", "Bearer "+tok)
 		}

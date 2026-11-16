@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // Path is the executor's endpoint: POST Path+"<id>/pull" and Path+"<id>/report".
@@ -27,7 +29,7 @@ func Handler(st Puller, token string) http.Handler {
 			return
 		}
 		id, op, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, Path), "/")
-		if !ok || id == "" {
+		if _, err := uuid.Parse(id); err != nil || !ok {
 			http.NotFound(w, r)
 			return
 		}

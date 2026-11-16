@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -64,11 +65,78 @@ func Parse(raw []byte) (Selection, error) {
 
 var (
 	dns1123 = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
-	quant   = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(m|Mi|Gi|Ki)?$`)
-	envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// A namespace and a container name are DNS labels: no dots, 63 at most.
+	dnsLabel = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	cpuQty   = regexp.MustCompile(`^([1-9][0-9]{0,5})(m?)$`)
+	memQty   = regexp.MustCompile(`^([1-9][0-9]{0,5})(Mi|Gi)$`)
+	envName  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	// An env value is not a secret's home: the name must not look like one, and the value stays short and plain.
 	secretish = regexp.MustCompile(`(?i)(key|token|secret|pass|credential|cert|auth|dsn|url)`)
 )
+
+// Resource floors and caps: a patch cannot starve a pod (0, 1m, 1Mi) or ask for a node (100000 cores).
+const (
+	minMilliCPU, maxMilliCPU = 10, 16000
+	minMiB, maxMiB           = 16, 65536
+)
+
+func validCPU(q string) bool {
+	m := cpuQty.FindStringSubmatch(q)
+	if m == nil {
+		return false
+	}
+	n, _ := strconv.Atoi(m[1])
+	if m[2] == "" {
+		n *= 1000
+	}
+	return n >= minMilliCPU && n <= maxMilliCPU
+}
+
+func validMemory(q string) bool {
+	m := memQty.FindStringSubmatch(q)
+	if m == nil {
+		return false
+	}
+	n, _ := strconv.Atoi(m[1])
+	if m[2] == "Gi" {
+		n *= 1024
+	}
+	return n >= minMiB && n <= maxMiB
+}
+
+// inBounds: the definition must have set a range (Max >= 1), and never admits zero replicas, which is an outage.
+func inBounds(b Bounds, n int) bool {
+	return b.Min >= 1 && b.Max >= b.Min && b.Max <= maxScaleReplicas && n >= b.Min && n <= b.Max
+}
+
+// only keeps the named fields of s (and action and name); a selection that differs carried a parameter its
+// action does not take.
+func only(s Selection, fields ...string) Selection {
+	k := Selection{Action: s.Action, Name: s.Name}
+	for _, f := range fields {
+		switch f {
+		case "kind":
+			k.Kind = s.Kind
+		case "namespace":
+			k.Namespace = s.Namespace
+		case "replicas":
+			k.Replicas = s.Replicas
+		case "field":
+			k.Field = s.Field
+		case "container":
+			k.Container = s.Container
+		case "envName":
+			k.EnvName = s.EnvName
+		case "envValue":
+			k.EnvValue = s.EnvValue
+		case "cpu":
+			k.CPU = s.CPU
+		case "memory":
+			k.Memory = s.Memory
+		}
+	}
+	return k
+}
 
 func (s Selection) target() string {
 	if s.Action == ActionSyncApp {
@@ -86,29 +154,29 @@ func (s Selection) Validate(b Bounds, lowStakes bool) error {
 		return invalid("name")
 	}
 	if s.Action == ActionSyncApp {
-		if s.Namespace != "" || s.Kind != "" || s.Replicas != nil || s.Field != "" {
+		if s != only(s) {
 			return invalid("sync_app takes only a name")
 		}
 		return nil
 	}
-	if !dns1123.MatchString(s.Namespace) {
+	if !dnsLabel.MatchString(s.Namespace) || len(s.Namespace) > 63 {
 		return invalid("namespace")
 	}
 	workload := s.Kind == "deployment" || s.Kind == "statefulset"
 	switch s.Action {
 	case ActionRestart:
-		if !workload || s.Replicas != nil || s.Field != "" {
+		if !workload || s != only(s, "kind", "namespace") {
 			return invalid("restart takes a deployment or statefulset")
 		}
 	case ActionScale:
-		if s.Kind != "deployment" || s.Replicas == nil || s.Field != "" {
+		if s.Kind != "deployment" || s.Replicas == nil || s != only(s, "kind", "namespace", "replicas") {
 			return invalid("scale takes a deployment and replicas")
 		}
-		if b.Min < 0 || b.Max < b.Min || b.Max > maxScaleReplicas || *s.Replicas < b.Min || *s.Replicas > b.Max {
+		if !inBounds(b, *s.Replicas) {
 			return invalid("replicas outside the definition's bounds")
 		}
 	case ActionDeletePod:
-		if s.Kind != "" || s.Replicas != nil || s.Field != "" {
+		if s != only(s, "namespace") {
 			return invalid("delete_pod takes only a namespace and name")
 		}
 	case ActionPatch:
@@ -127,21 +195,27 @@ func (s Selection) Validate(b Bounds, lowStakes bool) error {
 
 // validatePatch is the field allowlist: replicas, container resources, a non-secret env value, the restart annotation.
 func (s Selection) validatePatch(b Bounds) error {
+	base := []string{"kind", "namespace", "field"}
 	switch s.Field {
 	case "replicas":
-		if s.Replicas == nil || b.Min < 0 || b.Max < b.Min || b.Max > maxScaleReplicas || *s.Replicas < b.Min || *s.Replicas > b.Max {
+		if s.Replicas == nil || !inBounds(b, *s.Replicas) || s != only(s, append(base, "replicas")...) {
 			return invalid("replicas outside the definition's bounds")
 		}
 	case "resources":
-		if !dns1123.MatchString(s.Container) || !quant.MatchString(s.CPU) || !quant.MatchString(s.Memory) {
+		if !dnsLabel.MatchString(s.Container) || !validCPU(s.CPU) || !validMemory(s.Memory) ||
+			s != only(s, append(base, "container", "cpu", "memory")...) {
 			return invalid("resources take a container, cpu and memory quantities")
 		}
 	case "env":
-		if !dns1123.MatchString(s.Container) || !envName.MatchString(s.EnvName) || secretish.MatchString(s.EnvName) ||
-			len(s.EnvValue) > 128 || strings.ContainsAny(s.EnvValue, "\n\r\x00") || secretish.MatchString(s.EnvValue) {
+		if !dnsLabel.MatchString(s.Container) || !envName.MatchString(s.EnvName) || secretish.MatchString(s.EnvName) ||
+			len(s.EnvValue) > 128 || strings.ContainsAny(s.EnvValue, "\n\r\x00") || secretish.MatchString(s.EnvValue) ||
+			s != only(s, append(base, "container", "envName", "envValue")...) {
 			return invalid("env takes a container and a non-secret name and value")
 		}
 	case "restart":
+		if s != only(s, base...) {
+			return invalid("restart takes no parameters")
+		}
 	default:
 		return invalid("field %q is not on the allowlist", s.Field)
 	}
@@ -157,17 +231,19 @@ var (
 	}
 	denyNameTokens = []string{
 		"postgres", "mysql", "mariadb", "redis", "mongo", "cnpg", "etcd",
-		"provisioner", "agent-vault", "authentik", "argocd", "remediation", "thot-executor",
+		"provisioner", "agent-vault", "authentik", "argocd", "remediation", "thot",
+		// Core's own Application is agent-fleet-core; the app-of-apps is bootstrap.
+		"agent-fleet", "bootstrap",
 	}
 )
 
-// Denied reports whether the target is one remediation never touches. Applications are named by app, so a denied
-// component's own Application is refused by name.
+// Denied reports whether the target is one remediation never touches. A sync_app names an Application, not a namespace,
+// so a denied component's own Application is refused by name token (agent-fleet-core, platform-thot, bootstrap).
 func (s Selection) Denied() bool {
 	if s.Action != ActionSyncApp && denyNamespaces[s.Namespace] {
 		return true
 	}
-	if s.Action == ActionSyncApp && (denyNamespaces[s.Name] || s.Name == "agent-fleet") {
+	if s.Action == ActionSyncApp && denyNamespaces[s.Name] {
 		return true
 	}
 	for _, t := range denyNameTokens {

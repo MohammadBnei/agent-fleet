@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,12 @@ type Row struct {
 	Namespace   string `json:"namespace,omitempty"`
 	Name        string `json:"name"`
 	Replicas    int    `json:"replicas,omitempty"`
+	Field       string `json:"field,omitempty"`
+	Container   string `json:"container,omitempty"`
+	EnvName     string `json:"envName,omitempty"`
+	EnvValue    string `json:"envValue,omitempty"`
+	CPU         string `json:"cpu,omitempty"`
+	Memory      string `json:"memory,omitempty"`
 	MinReplicas int    `json:"minReplicas,omitempty"`
 	MaxReplicas int    `json:"maxReplicas,omitempty"`
 }
@@ -92,7 +99,7 @@ func (s *Store) Pull(ctx context.Context, id string) (Row, error) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return Row{}, err
 	}
-	r := Row{ID: id, Action: p.Action, Kind: p.Kind, Namespace: p.Namespace, Name: p.Name, MinReplicas: p.Bounds.Min, MaxReplicas: p.Bounds.Max}
+	r := Row{ID: id, Action: p.Action, Kind: p.Kind, Namespace: p.Namespace, Name: p.Name, Field: p.Field, Container: p.Container, EnvName: p.EnvName, EnvValue: p.EnvValue, CPU: p.CPU, Memory: p.Memory, MinReplicas: p.Bounds.Min, MaxReplicas: p.Bounds.Max}
 	if p.Replicas != nil {
 		r.Replicas = *p.Replicas
 	}
@@ -114,6 +121,18 @@ func (s *Store) Report(ctx context.Context, id string, o Outcome) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SweepLost marks rows pulled but never reported within maxAge as lost: the action may or may not have run, and the
+// state says so instead of sitting in 'pulled' forever. It returns the ids.
+func (s *Store) SweepLost(ctx context.Context, maxAge time.Duration) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `UPDATE remediations SET state = 'lost', finished_at = now(),
+		outcome = '{"status":"lost","detail":"pulled, no report: outcome unknown"}'
+		WHERE state = 'pulled' AND pulled_at < now() - $1::interval RETURNING id`, fmt.Sprintf("%d seconds", int(maxAge.Seconds())))
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // Inserter is the store's write side, so Select is testable without Postgres.

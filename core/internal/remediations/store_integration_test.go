@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 )
@@ -50,6 +51,59 @@ func TestStore_RateLimits(t *testing.T) {
 	}
 	if _, err := st.Insert(ctx, "r1", restartOf("g"), Bounds{}); err != nil {
 		t.Fatalf("after the hour: %v", err)
+	}
+}
+
+func TestStore_PullKeepsPatchFields(t *testing.T) {
+	ctx := context.Background()
+	st := NewStore(dbtest.NewPool(t))
+	sel := Selection{Action: ActionPatch, Kind: "deployment", Namespace: "game", Name: "a", Field: "env", Container: "app", EnvName: "LOG_LEVEL", EnvValue: "debug"}
+	id, err := st.Insert(ctx, "r", sel, Bounds{Min: 1, Max: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := st.Pull(ctx, id)
+	if err != nil || row.Field != "env" || row.Container != "app" || row.EnvName != "LOG_LEVEL" || row.EnvValue != "debug" {
+		t.Fatalf("env: %+v %v", row, err)
+	}
+	res := Selection{Action: ActionPatch, Kind: "deployment", Namespace: "game", Name: "b", Field: "resources", Container: "app", CPU: "500m", Memory: "256Mi"}
+	id, _ = st.Insert(ctx, "r", res, Bounds{})
+	if row, err = st.Pull(ctx, id); err != nil || row.CPU != "500m" || row.Memory != "256Mi" || row.Container != "app" {
+		t.Fatalf("resources: %+v %v", row, err)
+	}
+}
+
+func TestStore_SweepLost(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	st := NewStore(pool)
+	pulled, _ := st.Insert(ctx, "r", restartOf("a"), Bounds{})
+	pending, _ := st.Insert(ctx, "r", restartOf("b"), Bounds{})
+	reported, _ := st.Insert(ctx, "r", restartOf("c"), Bounds{})
+	for _, id := range []string{pulled, reported} {
+		if _, err := st.Pull(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.Report(ctx, reported, Outcome{Status: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := st.SweepLost(ctx, 15*time.Minute); err != nil || len(ids) != 0 {
+		t.Fatalf("fresh pull swept: %v %v", ids, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE remediations SET pulled_at = now() - interval '20 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := st.SweepLost(ctx, 15*time.Minute)
+	if err != nil || len(ids) != 1 || ids[0] != pulled {
+		t.Fatalf("sweep: %v %v", ids, err)
+	}
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM remediations WHERE id = $1`, pending).Scan(&state); err != nil || state != "pending" {
+		t.Fatalf("pending touched: %s %v", state, err)
+	}
+	if err := st.Report(ctx, pulled, Outcome{Status: "done"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("late report on a lost row: %v", err)
 	}
 }
 

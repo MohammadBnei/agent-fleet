@@ -7,8 +7,8 @@ CREATE TABLE remediations (
   target      text        NOT NULL,
   action      text        NOT NULL CHECK (action IN ('restart', 'scale', 'delete_pod', 'sync_app', 'patch')),
   params      jsonb       NOT NULL,
-  -- pending -> pulled (single use) -> done | refused
-  state       text        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'pulled', 'done', 'refused')),
+  -- pending -> pulled (single use) -> done | refused | lost (pulled, never reported)
+  state       text        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'pulled', 'done', 'refused', 'lost')),
   outcome     jsonb,
   created_at  timestamptz NOT NULL DEFAULT now(),
   pulled_at   timestamptz,
