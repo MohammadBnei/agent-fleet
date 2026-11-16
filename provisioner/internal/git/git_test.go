@@ -468,7 +468,7 @@ func failLsRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	shim := "#!/bin/sh\n[ \"$1\" = ls-remote ] && { echo 'fatal: unable to access remote' >&2; exit 128; }\nexec " + real + " \"$@\"\n"
+	shim := "#!/bin/sh\n[ \"$1\" = ls-remote ] && { echo 'fatal: unable to access remote' >&2; exit 128; }\nexec '" + real + "' \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -488,6 +488,12 @@ func TestEnsureRepoFetched_FetchesOnlyWhenTheRemoteMoved(t *testing.T) {
 		{"head differs: fetch", func(t *testing.T, o string) { commitIn(t, o) }, true},
 		{"new branch: fetch", func(t *testing.T, o string) { gitIn(t, o, "branch", "feature") }, true},
 		{"new tag, no branch moved: fetch", func(t *testing.T, o string) { gitIn(t, o, "tag", "v2") }, true},
+		{"tag on no branch: fetch", func(t *testing.T, o string) {
+			gitIn(t, o, "checkout", "-q", "--detach")
+			commitIn(t, o)
+			gitIn(t, o, "tag", "loose")
+			gitIn(t, o, "checkout", "-q", "main")
+		}, true},
 		{"ls-remote fails, head differs: fetch", func(t *testing.T, o string) { failLsRemote(t); commitIn(t, o) }, true},
 		{"ls-remote fails, nothing moved: still fetch", func(t *testing.T, _ string) { failLsRemote(t) }, true},
 	}

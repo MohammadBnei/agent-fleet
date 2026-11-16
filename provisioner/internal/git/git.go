@@ -168,10 +168,12 @@ type SyncResult struct {
 	// origin/HEAD is not the commit it was before the fetch. A force-push that
 	// rewinds the branch changes it while advancing it by nothing.
 	Changed bool
+	// ls-remote showed nothing to fetch, so no fetch ran (remoteUnchanged).
+	Skipped bool
 }
 
 // EnsureRepoCloned clones repoURL into <root>/repos/<repo> if missing, else
-// fetches. Serialized per-repo (Manager.repoLock) so two concurrent
+// fetches when ls-remote shows the remote moved (remoteUnchanged). Serialized per-repo (Manager.repoLock) so two concurrent
 // CreateWorkerPod calls for the same never-before-seen repo can never race
 // a clone into the same not-yet-existing path — the data-race risk flagged
 // during ADR-0019's doubt-driven review.
@@ -226,7 +228,8 @@ func (m *Manager) ensureFetched(ctx context.Context, repo, repoURL string) (err 
 		!strings.EqualFold(strings.TrimSuffix(origin, ".git"), strings.TrimSuffix(repoURL, ".git")) {
 		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; delete %s on the provisioner's workspace PVC and the next warm re-clones from repos.url (the console's sync only fetches)", repo, origin, repoURL, m.repoPath(repo))
 	}
-	_, err = m.ensureLocked(ctx, repo, repoURL)
+	res, err := m.ensureLocked(ctx, repo, repoURL)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("skipped", res.Skipped))
 	return err
 }
 
@@ -235,10 +238,8 @@ func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncR
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
 		before := m.originHead(ctx, path)
-		unchanged := m.remoteUnchanged(ctx, path)
-		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("skipped", unchanged))
-		if unchanged {
-			return SyncResult{Head: before}, m.disableAutoGC(ctx, path)
+		if m.remoteUnchanged(ctx, path) {
+			return SyncResult{Head: before, Skipped: true}, m.disableAutoGC(ctx, path)
 		}
 		if _, err := m.run(ctx, path, "fetch", "origin"); err != nil {
 			return SyncResult{}, err
