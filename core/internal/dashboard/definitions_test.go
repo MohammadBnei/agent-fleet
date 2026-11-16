@@ -282,7 +282,7 @@ func leaseValid(t *testing.T, store *sessions.Store, prov *definitionsProvisione
 	prov.mu.Lock()
 	req := prov.creates[i]
 	prov.mu.Unlock()
-	ok, _, err := store.VerifyLease(context.Background(), req.GetSessionId(), req.GetLeaseId())
+	ok, _, _, err := store.VerifyLease(context.Background(), req.GetSessionId(), req.GetLeaseId())
 	if err != nil {
 		t.Fatal(err)
 	}

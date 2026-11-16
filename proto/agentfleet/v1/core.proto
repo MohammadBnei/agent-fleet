@@ -279,6 +279,9 @@ message Session {
   // worker_image/sidecar_image from CreateWorkerPodResponse.fleet_version.
   // Unset for a pod created before the provisioner reported it.
   optional string fleet_version = 28;
+  // docs/adr/0086 §2: the letters of the Rule of Two this session may use, A (untrusted trigger), B (sensitive
+  // reads), C (effects): "BC", "AB", "AC" or "ABC" (supervised). Stored once at create, never widened.
+  string trust_set = 29;
 }
 
 // What one agent can see of another session. Deliberately not the full

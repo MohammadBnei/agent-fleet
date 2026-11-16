@@ -981,7 +981,10 @@ type Session struct {
 	// The release that built this session's pod, recorded next to
 	// worker_image/sidecar_image from CreateWorkerPodResponse.fleet_version.
 	// Unset for a pod created before the provisioner reported it.
-	FleetVersion  *string `protobuf:"bytes,28,opt,name=fleet_version,json=fleetVersion,proto3,oneof" json:"fleet_version,omitempty"`
+	FleetVersion *string `protobuf:"bytes,28,opt,name=fleet_version,json=fleetVersion,proto3,oneof" json:"fleet_version,omitempty"`
+	// docs/adr/0086 §2: the letters of the Rule of Two this session may use, A (untrusted trigger), B (sensitive
+	// reads), C (effects): "BC", "AB", "AC" or "ABC" (supervised). Stored once at create, never widened.
+	TrustSet      string `protobuf:"bytes,29,opt,name=trust_set,json=trustSet,proto3" json:"trust_set,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1159,6 +1162,13 @@ func (x *Session) GetEffort() string {
 func (x *Session) GetFleetVersion() string {
 	if x != nil && x.FleetVersion != nil {
 		return *x.FleetVersion
+	}
+	return ""
+}
+
+func (x *Session) GetTrustSet() string {
+	if x != nil {
+		return x.TrustSet
 	}
 	return ""
 }
@@ -3904,7 +3914,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\"*\n" +
 	"\x16RequestServiceResponse\x12\x10\n" +
-	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\xf5\b\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\x92\t\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -3931,7 +3941,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x0fdefinition_name\x18\x19 \x01(\tH\fR\x0edefinitionName\x88\x01\x01\x12*\n" +
 	"\x0edefinition_sha\x18\x1a \x01(\tH\rR\rdefinitionSha\x88\x01\x01\x12\x1b\n" +
 	"\x06effort\x18\x1b \x01(\tH\x0eR\x06effort\x88\x01\x01\x12(\n" +
-	"\rfleet_version\x18\x1c \x01(\tH\x0fR\ffleetVersion\x88\x01\x01B\b\n" +
+	"\rfleet_version\x18\x1c \x01(\tH\x0fR\ffleetVersion\x88\x01\x01\x12\x1b\n" +
+	"\ttrust_set\x18\x1d \x01(\tR\btrustSetB\b\n" +
 	"\x06_titleB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +

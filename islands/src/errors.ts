@@ -54,6 +54,8 @@ const keyText: Record<Keyed, string> = {
   PARKED_LIMIT:
     "Too many runs are waiting on an answer. Answer one to start another.",
   PARKED: "This run is waiting on a decision. Answer it to resume the run.",
+  RULE_OF_TWO:
+    "This session is not allowed that. The owner can approve it through a card.",
 };
 
 // The key's text, or "" for a key with none (server.internal, or one a newer core added).

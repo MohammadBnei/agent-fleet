@@ -52,6 +52,8 @@ const (
 	KeyParkedLimit errs.Key = "agent.parked_limit"
 	// KeyParked: a parked single-shot run takes only its answer (docs/adr/0070 §6); nothing was appended.
 	KeyParked errs.Key = "agent.parked"
+	// KeyRuleOfTwo: the session's stored trust set lacks the letter the method is tagged with (docs/adr/0086 §2).
+	KeyRuleOfTwo errs.Key = "agent.rule_of_two"
 	// KeyCardBudget: the definition drafted its 10 cards of the last 24 hours (CoreService.DraftCard).
 	KeyCardBudget errs.Key = "core.card_budget"
 )

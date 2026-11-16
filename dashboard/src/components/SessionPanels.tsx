@@ -1,4 +1,5 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { trustLabel } from "../trustLabel";
 import { imageTag } from "../imageTag";
 import { shortId } from "../sessionState";
 import type {
@@ -266,6 +267,10 @@ export function SessionPanel({
         {/* Only when picked at creation (docs/adr/0077); otherwise the CLI's
             own, or a definition's thinking.default. */}
         {session.effort && <Fact label="effort" value={session.effort} />}
+        {/* The Rule of Two set, stored at create (docs/adr/0086 §2). */}
+        {session.trustSet && (
+          <Fact label="trust" value={trustLabel(session.trustSet)} />
+        )}
         {session.podPhase && (
           <Fact
             label="pod"

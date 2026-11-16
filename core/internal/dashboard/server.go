@@ -1827,6 +1827,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		Model:          t.Model,
 		PermissionMode: t.PermissionMode,
 		Effort:         t.Effort,
+		TrustSet:       t.TrustSet,
 		LastActiveAt:   rfc3339(t.LastActiveAt),
 		SweptAt:        rfc3339(t.SweptAt),
 		ArchivedAt:     rfc3339(t.ArchivedAt),
