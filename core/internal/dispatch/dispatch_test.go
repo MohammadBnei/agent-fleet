@@ -968,7 +968,7 @@ func TestTwoRespondersAndARefusedInvoke(t *testing.T) {
 
 	// Data that is not an alert object falls through to the proposal path, not into silence.
 	before := al.filed
-	bad := &bridgev1.CloudEvent{Id: "a3", Type: typeAlertFiring, Data: []byte(`[1]`)}
+	bad := &bridgev1.CloudEvent{Id: "a3", Type: typeAlertFiring, Data: []byte(`["fingerprint"]`)}
 	if err := d.Handle(context.Background(), bad); err != nil || al.filed != before+1 {
 		t.Fatalf("err %v filed %d->%d", err, before, al.filed)
 	}
