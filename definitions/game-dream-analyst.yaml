@@ -1,0 +1,14 @@
+# ukubi-game's resident of dream-analyst (game-base.yaml): it reads the repo and answers
+# the player. Only the api.anthropic.com service: pr mode holds no GitHub key.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: game-dream-analyst }
+spec:
+  extends: game-base
+  invokers: [ukubi-game]
+  credentials:
+    vault: game-dream-analyst
+    services:
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: dream-analyst }
+  git: { mode: pr, identity: { name: game-dream-analyst, email: game-dream-analyst@bnei.dev } }

@@ -1,0 +1,32 @@
+# ukubi-game as a client of core's :9091 (docs/adr/0066 §3): its residents
+# talk through it (definitions/game-base.yaml). Its bearer is
+# FLEET_CLIENT_TOKEN_UKUBI_GAME in Infisical project agent-fleet-nygh, read by
+# core at start; the game holds the same value as UKUBI_GAME_FLEET_TOKEN. Unset
+# or shorter than 32 bytes, the client is disabled and every resident sleeps.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentClient
+metadata: { name: ukubi-game }
+spec:
+  tokenRef: FLEET_CLIENT_TOKEN_UKUBI_GAME
+  # The game's --actor: the player a wake is on behalf of.
+  actors: { allow: [MohammadBnei] }
+  # One per repo a drawn building stands for: mountain realms/realms.yaml
+  # sources, plus ukubi-meet (an app of infra-bootstrap's registry).
+  definitions:
+    - game-agent-fleet
+    - game-dream-analyst
+    - game-drop
+    - game-editable-blog
+    - game-has-journal
+    - game-hq
+    - game-infra-bootstrap
+    - game-mountain
+    - game-pi-lab
+    - game-ukubi-bridge
+    - game-ukubi-game
+    - game-ukubi-go
+    - game-ukubi-kit
+    - game-ukubi-meet
+    - game-ukubi-stt
+    - game-vos-monolith
+    - game-wird

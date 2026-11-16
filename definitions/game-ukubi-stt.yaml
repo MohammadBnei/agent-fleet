@@ -1,0 +1,14 @@
+# ukubi-game's resident of ukubi-stt (game-base.yaml): it reads the repo and answers
+# the player. Only the api.anthropic.com service: pr mode holds no GitHub key.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: game-ukubi-stt }
+spec:
+  extends: game-base
+  invokers: [ukubi-game]
+  credentials:
+    vault: game-ukubi-stt
+    services:
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: ukubi-stt }
+  git: { mode: pr, identity: { name: game-ukubi-stt, email: game-ukubi-stt@bnei.dev } }
