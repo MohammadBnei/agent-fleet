@@ -30,7 +30,12 @@
   hub, `waiting` with `pending` on any open question, permission or plan,
   else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
   order: a result with turn-starting input after it is not final.
-  `expired` is declared, reported from slice 11).
+  `expired` is declared, reported from slice 11); slice 10 (a client file's
+  `maxParked`, a positive int, default 20; `Invoke` refuses a new run
+  `ResourceExhausted` keyed `agent.parked_limit` while the client has that
+  many parked runs, counted by `sessions.Store.ParkedRuns`: single-shot, not
+  archived, no live pod, an open question, permission or plan. Its
+  `parkedWhere` is the one SQL spelling of parked, for slice 9 to reuse).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

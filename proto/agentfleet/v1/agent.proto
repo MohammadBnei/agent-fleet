@@ -28,6 +28,9 @@ enum AgentErrorKey {
   // A surface (FLEET_ADMIN_ORIGINS) chose own words or an option not reversible "yes": nothing was done; the
   // message carries core's confirm page URL (docs/adr/0082 §7).
   AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED = 6 [(ukubi.errors.v1.key) = "agent.decision_confirm_required"];
+  // The client has its maxParked single-shot runs waiting on a decision (docs/adr/0070 §1): answer one first. Not
+  // the warm-time capacity: nothing was claimed, and a retry is refused until a parked run moves.
+  AGENT_ERROR_KEY_PARKED_LIMIT = 7 [(ukubi.errors.v1.key) = "agent.parked_limit"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients
@@ -83,7 +86,11 @@ service AgentService {
     option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
   }
   rpc CloseThread(CloseThreadRequest) returns (CloseThreadResponse);
-  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+  rpc Invoke(InvokeRequest) returns (InvokeResponse) {
+    option (ukubi.errors.v1.keys) = "agent.thread_cap";
+    option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
+    option (ukubi.errors.v1.keys) = "agent.parked_limit";
+  }
   rpc WaitForResult(WaitForResultRequest) returns (WaitForResultResponse);
 }
 
