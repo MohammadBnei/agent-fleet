@@ -199,6 +199,12 @@ not around it.
   `gen_ai.tool.name`, `gen_ai.tool.call.id` and an error flag, subagent calls nested under
   their Task call by `parent_tool_use_id`. Names, ids and numbers only: no prompt, tool
   input or output. The worker flushes at the end of `runSession` and on SIGTERM.
+- **Startup (2026-11-16).** Before the first turn, `worker.startup` covers process start
+  to the session id being known, with one child per step (`worker.boot`,
+  `worker.get_session`, `worker.setup`, `worker.query_start`, `worker.first_sdk_message`,
+  `worker.session_id`, `worker.save_session_id`). It has no result uuid, so its turn key is
+  `startup-<pod name>` (the container's `HOSTNAME`): one trace per warm, since a pod is one
+  warm. Sent once the session id is saved; a pod that ends first sends it unfinished.
 
 ## Alternatives considered
 

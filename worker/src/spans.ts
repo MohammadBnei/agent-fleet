@@ -17,6 +17,14 @@
 // Token and cost figures are DELTAS: the SDK's total_cost_usd and modelUsage
 // are cumulative across the turns of one streaming-input process, and a pod
 // that resumes a session starts its process at zero.
+//
+// Before the first turn, one `worker.startup` span covers the pod's start:
+// process start to the session id being known, with a child per step
+// (worker.boot, worker.get_session, worker.setup, worker.query_start,
+// worker.first_sdk_message, worker.session_id). It has no result uuid to key
+// it, so its key is `startup-<pod name>`: one trace per warm (a pod is one
+// warm), the same if the container restarts in that pod, and found in Tempo by
+// `{ name = "worker.startup" && span.fleet.session.id = "<id>" }`.
 import { log } from "./log.js";
 
 export type WireSpan = {
@@ -72,11 +80,56 @@ export class SpanRecorder {
     cacheCreation: 0,
   };
   private inflight = new Set<Promise<unknown>>();
+  private boot: {
+    id: string;
+    key: string;
+    startNs: number;
+    spans: Pending[];
+  } | null = null;
 
   constructor(
     private post: PostSpans,
     private clock: () => number = nowNs,
   ) {}
+
+  /** Opens the startup trace at process start (see the file comment). */
+  startupBegin(startNs: number, key: string): void {
+    this.boot = { id: localId(), key, startNs, spans: [] };
+  }
+
+  /** One step of startup, ending now unless endNs is given. */
+  startupStep(
+    name: string,
+    startNs: number,
+    endNs = this.clock(),
+    attrs: WireSpan["attrs"] = {},
+  ): void {
+    this.boot?.spans.push({
+      name,
+      id: localId(),
+      parent: this.boot.id,
+      startNs,
+      endNs,
+      status: "ok",
+      attrs,
+    });
+  }
+
+  /** Closes startup and sends its spans, root first. "" = cut short. */
+  startupEnd(status: WireSpan["status"] = "ok"): void {
+    const b = this.boot;
+    if (!b) return;
+    this.boot = null;
+    const root: Pending = {
+      name: "worker.startup",
+      id: b.id,
+      startNs: b.startNs,
+      endNs: this.clock(),
+      status,
+      attrs: status === "" ? { unfinished: true } : {},
+    };
+    this.send([root, ...b.spans].map((s) => ({ ...s, turn: b.key })));
+  }
 
   /** Starts the turn at the first SDK message after the previous result. */
   begin(): void {
@@ -221,6 +274,7 @@ export class SpanRecorder {
 
   /** Sends a turn still in progress (the pod is ending) and waits for every post. */
   async flush(): Promise<void> {
+    this.startupEnd("");
     if (this.turn)
       this.finish(undefined, "", {
         "gen_ai.operation.name": "invoke_agent",
