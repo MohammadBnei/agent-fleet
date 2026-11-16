@@ -163,3 +163,46 @@ func (a *App) PostReview(ctx context.Context, r Review) (Posted, error) {
 	}
 	return Posted{URL: out.HTMLURL, Event: event, Status: status}, nil
 }
+
+// openPRPermissions is OpenPR's token: read the branch, open a PR, nothing else.
+var openPRPermissions = map[string]string{"contents": "read", "pull_requests": "write", "metadata": "read"}
+
+// OpenPR opens a pull request from a pushed branch (docs/adr/0086 §4 open_pr). The owner approved one
+// commit: a branch that has moved past it is ErrStaleHead and nothing is opened. The base is the repo's
+// default branch, read here, never named by the caller.
+// branch is validated by the caller (letters, digits, ._/-): safe in a path unescaped.
+func (a *App) OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, body string) (string, error) {
+	full := owner + "/" + repo
+	tok, err := a.cached(ctx, "openpr:"+strings.ToLower(full), func(ctx context.Context) (token, error) {
+		return a.mint(ctx, owner, repo, openPRPermissions)
+	})
+	if err != nil {
+		return "", err
+	}
+	base := "/repos/" + full
+	var ref struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := request(ctx, a.HTTP, a.API, tok, http.MethodGet, base+"/git/ref/heads/"+branch, nil, &ref); err != nil {
+		return "", err
+	}
+	if !strings.EqualFold(ref.Object.SHA, headSHA) {
+		return "", fmt.Errorf("%s branch %s is at %s, approved %s: %w", full, branch, ref.Object.SHA, headSHA, ErrStaleHead)
+	}
+	var r struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := request(ctx, a.HTTP, a.API, tok, http.MethodGet, base, nil, &r); err != nil {
+		return "", err
+	}
+	var pr struct {
+		HTMLURL string `json:"html_url"`
+	}
+	if err := request(ctx, a.HTTP, a.API, tok, http.MethodPost, base+"/pulls",
+		map[string]any{"title": title, "head": branch, "base": r.DefaultBranch, "body": body}, &pr); err != nil {
+		return "", err
+	}
+	return pr.HTMLURL, nil
+}

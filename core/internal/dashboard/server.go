@@ -2014,3 +2014,35 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 
 // ProtoType is stringToProtoType for AgentService's own Entry.
 func ProtoType(s string) agentfleetv1.TranscriptEntryType { return stringToProtoType(s) }
+
+// OpenSupervised starts a session on repo from an owner-approved card (docs/adr/0086 §4 open_session): T0
+// trust, B.C at most, and body goes in as an agent-authored entry, never as the owner's own words.
+func (s *Server) OpenSupervised(ctx context.Context, repo, title, body string) (string, error) {
+	if _, err := s.startableRepo(ctx, repo); err != nil {
+		return "", err
+	}
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: repo, Title: title, Description: title, Model: s.fallbackModel(), TrustSet: sessions.TrustFor(sessions.TierOwner)})
+	if err != nil {
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	rollback := func() {
+		if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.WarnContext(ctx, "dashboard OpenSupervised: rollback teardown failed", "sessionId", id, "error", err)
+		}
+		if err := s.sessions.Delete(ctx, id); err != nil {
+			slog.WarnContext(ctx, "dashboard OpenSupervised: rollback delete failed", "sessionId", id, "error", err)
+		}
+	}
+	// Warm before appending, as OpenFromProposal does: the pod's cursor is read at provisioning.
+	_, release, err := s.WarmForAppend(ctx, id)
+	defer release()
+	if err != nil {
+		rollback()
+		return "", err
+	}
+	if _, err := s.transcr.Append(ctx, id, "agent", body, "discussion", uuid.NewString()); err != nil {
+		rollback()
+		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	return id, nil
+}

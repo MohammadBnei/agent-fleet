@@ -75,6 +75,46 @@ func TestOpenFromProposal_StoresNoModelAndAutoMode(t *testing.T) {
 	}
 }
 
+// docs/adr/0086 §4 open_session: a T0 (B.C) session whose seed is an agent-authored entry, never a human one.
+func TestOpenSupervised_SeedsAnAgentEntry(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := grpc.NewServer()
+	agentfleetv1.RegisterProvisionerServiceServer(gs, &recordingProvisioner{})
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(gs.Stop)
+	provClient, err := provisionerclient.New(lis.Addr().String(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provClient.Close() })
+	store := sessions.NewStore(pool)
+	tr := transcript.NewPostgresStore(pool, decisions.OnAppend)
+	s := &Server{sessions: store, repos: repos.NewStore(pool), transcr: tr, e2e: provClient, caps: sessions.Caps{MaxLive: 5}}
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/x.git')`); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.OpenSupervised(ctx, "notes", "Look at web", "typed brief")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(ctx, id)
+	if err != nil || got.TrustSet != "BC" {
+		t.Fatalf("session: %+v %v", got, err)
+	}
+	e, _, err := tr.ReadSince(ctx, id, 0, 10)
+	if err != nil || len(e) != 1 || e[0].From != "agent" || e[0].Text != "typed brief" {
+		t.Fatalf("seed: %+v %v", e, err)
+	}
+	if _, err := s.OpenSupervised(ctx, "nope", "t", "b"); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("unknown repo: %v", err)
+	}
+}
+
 // docs/adr/0078 §5: an event proposal opens its definition's thread as the
 // clicking admin, through the injected opener, and only once.
 func TestOpenFromProposal_EventProposal(t *testing.T) {

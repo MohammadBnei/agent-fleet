@@ -206,8 +206,12 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 			if o.GetReversible() != "no" {
 				return bad(`option %d: close_threads is reversible "no"`, i+1)
 			}
+		case VerbCatalogue, VerbOpenPR, VerbOpenSession, VerbExecutorStep:
+			if err := bindEffect(o.GetEffect()); err != nil {
+				return "", err
+			}
 		default:
-			return bad(`option %d: effect.verb must be "handoff" or "close_threads"`, i+1)
+			return bad(`option %d: effect.verb must be "handoff", "close_threads", "catalogue", "open_pr" or "open_session"`, i+1)
 		}
 		if o.GetRecommended() {
 			recommended++
@@ -272,8 +276,12 @@ func onCard(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry
 		return fmt.Errorf("card lock: %w", err)
 	}
 	var def *string
-	if err := tx.QueryRow(ctx, `SELECT definition_name FROM sessions WHERE id = $1`, sessionID).Scan(&def); err != nil {
+	var trust string
+	if err := tx.QueryRow(ctx, `SELECT definition_name, trust_set FROM sessions WHERE id = $1`, sessionID).Scan(&def, &trust); err != nil {
 		return fmt.Errorf("card writer: %w", err)
+	}
+	if err := checkCoreVerbs(&c, draftedBy, trust); err != nil {
+		return err
 	}
 	if draftedBy == "agent" {
 		var n int
@@ -308,6 +316,22 @@ func onCard(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry
 		VALUES ($1, $2, 'card', $3, $4::jsonb, $5, $6)`,
 		sessionID, e.Seq, clip(c.GetAsk(), maxAsk), string(payload), subject, expires)
 	return err
+}
+
+// checkCoreVerbs: a card carrying a core-run verb is core's own (docs/adr/0086 §4), and open_pr
+// only for a B.C writer: a session that holds A never files one.
+func checkCoreVerbs(c *agentfleetv1.Card, draftedBy, trust string) error {
+	for _, o := range c.GetOptions() {
+		v := o.GetEffect().GetVerb()
+		switch {
+		case !IsCoreVerb(v):
+		case draftedBy != "core":
+			return fmt.Errorf("%w: only core files a card with a %s option", ErrInvalid, v)
+		case v == VerbOpenPR && trust != "BC":
+			return fmt.Errorf("%w: open_pr needs a B.C writer, this one holds %q", ErrInvalid, trust)
+		}
+	}
+	return nil
 }
 
 // cardReply refuses a reply to a card that would not answer it: one a human

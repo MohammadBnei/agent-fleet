@@ -263,6 +263,16 @@ func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string 
 	if t, ok := verbText[v]; ok {
 		return t
 	}
+	switch v {
+	case "catalogue":
+		return "Core runs the bound remediation, hash " + hashHead(o)
+	case "open_pr":
+		return "Core opens a pull request from the pushed branch, hash " + hashHead(o)
+	case "open_session":
+		return "Core starts a supervised session seeded with the typed brief, hash " + hashHead(o)
+	case "executor_step":
+		return "Refused: ADR-0072's executor does not exist yet"
+	}
 	// choose, handoff and any other verb.
 	if v != "close_threads" {
 		return "Sends your choice to the agent"
@@ -271,6 +281,11 @@ func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string 
 		return "Closes every thread on " + s.GetRepo()
 	}
 	return "Closes every thread on " + s.GetRepo() + " " + s.GetKind() + " #" + strconv.FormatInt(s.GetNumber(), 10)
+}
+
+func hashHead(o *agentfleetv1.CardOption) string {
+	h := o.GetEffect().GetPayloadHash()
+	return h[:min(len(h), 12)]
 }
 
 type view struct {

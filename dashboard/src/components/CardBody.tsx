@@ -34,8 +34,20 @@ function subjectText(s: CardSubject | undefined): string {
   return s.kind === "repo" ? s.repo : `${s.repo} ${s.kind} #${s.number}`;
 }
 
+// Core-run verbs (docs/adr/0086 §4): the hash is what the approval binds to.
+const coreVerbText: Record<string, string> = {
+  catalogue: "Core runs the bound remediation",
+  open_pr: "Core opens a pull request from the pushed branch",
+  open_session: "Core starts a supervised session seeded with the typed brief",
+  executor_step: "Refused: the executor does not exist yet",
+};
+
 function effectText(o: CardOption, subject: string): string {
-  return o.effect?.verb === "close_threads"
+  const v = o.effect?.verb ?? "";
+  if (v in coreVerbText) {
+    return `${coreVerbText[v]} (hash ${(o.effect?.payloadHash ?? "").slice(0, 12)})`;
+  }
+  return v === "close_threads"
     ? `Closes every thread on ${subject}`
     : "Sends your choice to the agent";
 }

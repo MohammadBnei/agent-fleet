@@ -72,6 +72,9 @@ const (
 	// ProvisionerServicePostReviewProcedure is the fully-qualified name of the ProvisionerService's
 	// PostReview RPC.
 	ProvisionerServicePostReviewProcedure = "/agentfleet.v1.ProvisionerService/PostReview"
+	// ProvisionerServiceOpenPullRequestProcedure is the fully-qualified name of the
+	// ProvisionerService's OpenPullRequest RPC.
+	ProvisionerServiceOpenPullRequestProcedure = "/agentfleet.v1.ProvisionerService/OpenPullRequest"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -116,6 +119,9 @@ type ProvisionerServiceClient interface {
 	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
 	// CoreService.SubmitReview here once it has authorized the session.
 	PostReview(context.Context, *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error)
+	// Opens a pull request from a pushed branch, for an owner-approved card
+	// (docs/adr/0086 §4 open_pr).
+	OpenPullRequest(context.Context, *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -207,6 +213,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("PostReview")),
 			connect.WithClientOptions(opts...),
 		),
+		openPullRequest: connect.NewClient[v1.OpenPullRequestRequest, v1.OpenPullRequestResponse](
+			httpClient,
+			baseURL+ProvisionerServiceOpenPullRequestProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("OpenPullRequest")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -225,6 +237,7 @@ type provisionerServiceClient struct {
 	reconcileVaults     *connect.Client[v1.ReconcileVaultsRequest, v1.ReconcileVaultsResponse]
 	listGitHubRepos     *connect.Client[v1.ListGitHubReposRequest, v1.ListGitHubReposResponse]
 	postReview          *connect.Client[v1.PostReviewRequest, v1.PostReviewResponse]
+	openPullRequest     *connect.Client[v1.OpenPullRequestRequest, v1.OpenPullRequestResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -292,6 +305,11 @@ func (c *provisionerServiceClient) PostReview(ctx context.Context, req *connect.
 	return c.postReview.CallUnary(ctx, req)
 }
 
+// OpenPullRequest calls agentfleet.v1.ProvisionerService.OpenPullRequest.
+func (c *provisionerServiceClient) OpenPullRequest(ctx context.Context, req *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error) {
+	return c.openPullRequest.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
@@ -334,6 +352,9 @@ type ProvisionerServiceHandler interface {
 	// (docs/adr/0082 §9): core holds no GitHub credential, so it relays
 	// CoreService.SubmitReview here once it has authorized the session.
 	PostReview(context.Context, *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error)
+	// Opens a pull request from a pushed branch, for an owner-approved card
+	// (docs/adr/0086 §4 open_pr).
+	OpenPullRequest(context.Context, *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -421,6 +442,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("PostReview")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceOpenPullRequestHandler := connect.NewUnaryHandler(
+		ProvisionerServiceOpenPullRequestProcedure,
+		svc.OpenPullRequest,
+		connect.WithSchema(provisionerServiceMethods.ByName("OpenPullRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceCreateWorkerPodProcedure:
@@ -449,6 +476,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceListGitHubReposHandler.ServeHTTP(w, r)
 		case ProvisionerServicePostReviewProcedure:
 			provisionerServicePostReviewHandler.ServeHTTP(w, r)
+		case ProvisionerServiceOpenPullRequestProcedure:
+			provisionerServiceOpenPullRequestHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -508,4 +537,8 @@ func (UnimplementedProvisionerServiceHandler) ListGitHubRepos(context.Context, *
 
 func (UnimplementedProvisionerServiceHandler) PostReview(context.Context, *connect.Request[v1.PostReviewRequest]) (*connect.Response[v1.PostReviewResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.PostReview is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) OpenPullRequest(context.Context, *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.OpenPullRequest is not implemented"))
 }

@@ -169,6 +169,14 @@ func (c *Client) ProvisionService(ctx context.Context, sessionID, repo, kind str
 	return resp.GetDsn(), nil
 }
 
+// OpenPullRequest opens an owner-approved card's PR (docs/adr/0086 §4); the provisioner holds the GitHub
+// credential and checks the branch is still at the approved commit.
+func (c *Client) OpenPullRequest(ctx context.Context, req *agentfleetv1.OpenPullRequestRequest) (*agentfleetv1.OpenPullRequestResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	return c.rpc.OpenPullRequest(ctx, req)
+}
+
 // PostReview posts a review and its agent-review status on a PR
 // (docs/adr/0082 slice 5). The caller has checked the session may review that
 // PR; the provisioner holds the GitHub credential and decides the event.

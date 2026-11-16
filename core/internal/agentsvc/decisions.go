@@ -285,6 +285,12 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 	// The owner's choice can stand while its writer cannot resume to read it
 	// (decisions.ErrNotDelivered): the answer, with "not delivered" and the
 	// warm's own words (swept, definition gone or changed) as the reason.
+	fx := coreEffect(r, m.GetOptionId())
+	if fx != nil {
+		if err := s.checkEffect(ctx, r, fx); err != nil {
+			return nil, err
+		}
+	}
 	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, decisions.Reply{By: p.author(), OptionID: m.GetOptionId(), OwnText: m.GetOwnText()})
 	res := &agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}
 	if nd := new(decisions.NotDelivered); errors.As(err, &nd) {
@@ -299,6 +305,11 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 			return nil, err
 		}
 	}
+	if fx != nil {
+		if err := s.runEffect(ctx, r, fx); err != nil {
+			return nil, err
+		}
+	}
 	return connect.NewResponse(res), nil
 }
 
@@ -307,7 +318,7 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 // confirm URL. The page shows the surface's own words exactly, so they ride
 // the URL.
 func confirmFirst(p Principal, r decisions.Record, optionID, ownText string) error {
-	if !p.Surface || (ownText == "" && reversible(r, optionID) == "yes") {
+	if !p.Surface || (ownText == "" && reversible(r, optionID) == "yes" && coreEffect(r, optionID) == nil) {
 		return nil
 	}
 	q := url.Values{"id": {r.ID}, "option": {optionID}, "v": {strconv.FormatInt(r.Version, 10)}}
