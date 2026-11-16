@@ -1,16 +1,13 @@
 package coreserver
 
-// methodTags is docs/adr/0086 §1's tag for every method core or an executor serves: "B" (sensitive reads), "C"
-// (effects core or an executor runs) or "" (neither). A method outside the session's stored trust set is refused
+// methodTags is docs/adr/0086 §1's tag for every method core serves: "B" (sensitive reads), "C"
+// (effects core runs) or "" (neither). A method outside the session's stored trust set is refused
 // with agent.rule_of_two. Every CoreService method is listed, "" included, so tagging a new RPC is a decision
 // (TestMethodTagsCoverCoreService). Tool reads stay outside the rule: no read-taint (docs/adr/0082 §3).
 var methodTags = map[string]string{
 	// B: fleet-wide reads of private memory and logs.
 	"/agentfleet.v1.CoreService/ViewLogs":      "B",
 	"/agentfleet.v1.CoreService/SearchJournal": "B",
-	// The executor's read path (thot-executor is read-only once ADR-0086 §3 moves the mutate verbs out). Enforced
-	// when the sidecar's kubectl_read asks core first; the tag is the decision.
-	"/agentfleet.v1.ExecutorService/Exec": "B",
 
 	// C: effects core runs: memory writes, exposure, peer prompts, events, GitHub reviews.
 	"/agentfleet.v1.CoreService/AppendJournal":  "C",
@@ -42,3 +39,7 @@ var methodTags = map[string]string{
 	"/agentfleet.v1.CoreService/ConsumeGrant":        "",
 	"/agentfleet.v1.CoreService/DraftCard":           "",
 }
+
+// ponytail: ExecutorService/Exec is not tagged. Core never serves it; the executor authenticates with the shared
+// bearer and sees no lease or trust set, so nothing enforces a tag there. Until the executor slice (ADR-0086 §3)
+// moves the mutate verbs out and adds a core check, Exec's mutating path is B+C and runs unenforced.

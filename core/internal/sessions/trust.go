@@ -32,5 +32,11 @@ func TrustSetFor(t Tier, untrusted string) (string, error) {
 	return "A" + untrusted, nil
 }
 
+// TrustFor is TrustSetFor for the tiers that cannot be refused (T0 and T1), so every create path names its tier.
+func TrustFor(t Tier) string {
+	s, _ := TrustSetFor(t, "")
+	return s
+}
+
 // HoldsTrust reports whether set holds letter.
 func HoldsTrust(set, letter string) bool { return strings.Contains(set, letter) }

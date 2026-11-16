@@ -64,4 +64,16 @@ func TestTrustSet_StoredAtCreateKeptByWarmAndOnlyNarrows(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET trust_set = 'AB' WHERE id = $1`, id); err != nil {
 		t.Errorf("same set: %v", err)
 	}
+
+	// A is a taint: dropping it is refused, dropping another letter is not.
+	sup, err := store.Create(ctx, CreateParams{Repo: "dream-analyst", TrustSet: "ABC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET trust_set = 'BC' WHERE id = $1`, sup); err == nil || !strings.Contains(err.Error(), "only narrows") {
+		t.Errorf("dropping A (ABC to BC): %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET trust_set = 'AB' WHERE id = $1`, sup); err != nil {
+		t.Errorf("ABC to AB: %v", err)
+	}
 }

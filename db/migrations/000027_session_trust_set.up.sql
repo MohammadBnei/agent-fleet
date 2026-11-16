@@ -10,6 +10,10 @@ BEGIN
   IF translate(NEW.trust_set, OLD.trust_set, '') <> '' THEN
     RAISE EXCEPTION 'sessions.trust_set only narrows: % -> %', OLD.trust_set, NEW.trust_set;
   END IF;
+  -- A is a taint, not a capability: dropping it would relabel an untrusted session as trusted.
+  IF position('A' in OLD.trust_set) > 0 AND position('A' in NEW.trust_set) = 0 THEN
+    RAISE EXCEPTION 'sessions.trust_set only narrows: % -> %', OLD.trust_set, NEW.trust_set;
+  END IF;
   RETURN NEW;
 END $$;
 

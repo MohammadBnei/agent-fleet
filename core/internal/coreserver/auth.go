@@ -312,7 +312,7 @@ func authorize(method string, c caller, req any) error {
 	if letter := methodTags[method]; letter != "" && !sessions.HoldsTrust(c.trustSet, letter) {
 		slog.Warn("coreserver refused a method outside the session's trust set", "method", method, "session", c.session, "trustSet", c.trustSet)
 		return errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,
-			"method "+letter+" is outside this session's trust set "+c.trustSet+" (docs/adr/0086): ask the owner through a decision card")
+			method+" needs "+letter+", outside this session's trust set "+c.trustSet+" (docs/adr/0086): ask the owner through a decision card")
 	}
 	// Every pod writer authors as "agent" or "worker". "human" is written only
 	// by DashboardService and "session" only by core's own PromptSession, and

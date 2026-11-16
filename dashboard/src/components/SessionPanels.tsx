@@ -1,7 +1,7 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { trustLabel } from "../trustLabel";
 import { imageTag } from "../imageTag";
 import { shortId } from "../sessionState";
+import { trustLabel } from "../trustLabel";
 import type {
   BackgroundTask,
   SubagentRun,

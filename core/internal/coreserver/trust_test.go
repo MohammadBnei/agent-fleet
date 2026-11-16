@@ -14,7 +14,7 @@ import (
 // that does not exist.
 func TestMethodTagsCoverCoreService(t *testing.T) {
 	svc := agentfleetv1.File_agentfleet_v1_core_proto.Services().ByName("CoreService")
-	seen := map[string]bool{"/agentfleet.v1.ExecutorService/Exec": true}
+	seen := map[string]bool{}
 	for i := 0; i < svc.Methods().Len(); i++ {
 		full := "/agentfleet.v1.CoreService/" + string(svc.Methods().Get(i).Name())
 		seen[full] = true
