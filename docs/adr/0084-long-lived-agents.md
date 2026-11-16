@@ -298,7 +298,7 @@ Each is its own PR, with its acceptance tests.
    - The spawn depth is 1, `limits.spawns` is enforced, and `OpenIssue` refuses a repo outside `owns.repos`.
 9. **Memory.**
    - The sidecar memory tool, a read-only worker mount, and the quarantine branch.
-   - The directory reuses the explicit chmod in `provisioner/internal/git/git.go:320-326`; no chown claim.
+   - The directory reuses the explicit chmod in `EnsureClaudeHome` (`provisioner/internal/git/git.go:320-330`); no chown claim.
    - An untrusted-turn write lands on the quarantine branch.
    - A replacement pod waits for the old lease before opening the repo.
 10. **Pin change, and replacement before the token cap.**
