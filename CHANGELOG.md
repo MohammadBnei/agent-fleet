@@ -1,5 +1,15 @@
 # Changelog
 
+# [7.23.0](https://github.com/MohammadBnei/agent-fleet/compare/7.22.1...7.23.0) (2026-11-16)
+
+### Bug Fixes
+
+* ADR-0070 leftovers (decision error wording, rollout-order trap) ([#392](https://github.com/MohammadBnei/agent-fleet/issues/392)) ([fb04dbf](https://github.com/MohammadBnei/agent-fleet/commit/fb04dbf8e1c532d17fb0f3aebe1326eaa6ee3119))
+
+### Features
+
+* **definitions:** qa-invoke definition and client for ADR-0070's live QA ([#393](https://github.com/MohammadBnei/agent-fleet/issues/393)) ([a248c67](https://github.com/MohammadBnei/agent-fleet/commit/a248c67b721d454861b0371e31409fe52986b41d))
+
 ## [7.22.1](https://github.com/MohammadBnei/agent-fleet/compare/7.22.0...7.22.1) (2026-11-16)
 
 # [7.22.0](https://github.com/MohammadBnei/agent-fleet/compare/7.21.0...7.22.0) (2026-11-16)
