@@ -33,7 +33,7 @@ spec:
       serviceAccountName: provisioner
       containers:
       - name: provisioner
-        image: registry.bnei.lan:5000/agent-fleet-provisioner:src-40f074983c52
+        image: registry.bnei.lan:5000/agent-fleet-provisioner:src-17e8c47d3fbe
         ports:
         - containerPort: 8080
           name: http
@@ -62,7 +62,7 @@ spec:
         # definitions-only release changes only this value, which is what
         # rolls the pod onto the new definitions.
         - name: FLEET_VERSION
-          value: "7.27.0"
+          value: "7.28.0"
         - name: NAMESPACE
           value: agent-fleet
         # OTLP/HTTP traces URL in full (docs/adr/0081 §4). Unset = no export.
@@ -92,7 +92,7 @@ spec:
         - name: WORKER_IMAGE
           value: registry.bnei.lan:5000/agent-fleet-worker:src-f266fe5d0293
         - name: SIDECAR_IMAGE
-          value: registry.bnei.lan:5000/agent-fleet-sidecar:src-7dab81527e54
+          value: registry.bnei.lan:5000/agent-fleet-sidecar:src-71c1d1b02fcc
         - name: WORKSPACE_PVC
           value: agent-fleet-workspace
         - name: WORKSPACE_ROOT
