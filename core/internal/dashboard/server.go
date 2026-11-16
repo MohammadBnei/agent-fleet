@@ -1561,6 +1561,8 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	}
 	if r := eff.Resources; r != nil {
 		profile.Cpu, profile.Memory = r.CPU, r.Memory
+		// Guaranteed QoS is for standing definitions only (ADR-0084 §9).
+		profile.Guaranteed = eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
 	}
 	return profile, nil
 }

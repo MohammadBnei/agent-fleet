@@ -267,6 +267,8 @@ type DefinitionProfile struct {
 	// Both set makes the pod Guaranteed QoS: worker, sidecar and clone all
 	// carry requests == limits. Empty keeps the ordinary burstable sizing.
 	CPU, Memory string
+	// Guaranteed is set for standing definitions only.
+	Guaranteed bool
 }
 
 // guaranteedResources is requests == limits, which is what Guaranteed QoS needs.
@@ -281,7 +283,7 @@ func guaranteedResources(cpu, memory string) corev1.ResourceRequirements {
 // guaranteed reports whether spec's definition asks for Guaranteed QoS.
 func (spec WorkerPodSpec) guaranteed() bool {
 	d := spec.Definition
-	return d != nil && d.CPU != "" && d.Memory != ""
+	return d != nil && d.Guaranteed && d.CPU != "" && d.Memory != ""
 }
 
 // VaultLabelAnnotation carries DefinitionProfile.VaultLabel on the Job.
@@ -1056,4 +1058,23 @@ func (c *Client) ensureVaultCA(ctx context.Context, data map[string]string) erro
 	cm.Data = data
 	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
 	return err
+}
+
+// ValidateGuaranteed checks a guaranteed profile's cpu and memory at the wire
+// boundary: both set, parseable, and within limitRange.max (a pod over it is
+// rejected at admission and never appears).
+func ValidateGuaranteed(cpu, memory string) error {
+	if cpu == "" || memory == "" {
+		return errors.New("guaranteed definition profile needs both cpu and memory")
+	}
+	for _, q := range []struct{ name, v, max string }{{"cpu", cpu, workerMaxCPU}, {"memory", memory, workerMaxMemory}} {
+		got, err := resource.ParseQuantity(q.v)
+		if err != nil {
+			return fmt.Errorf("definition profile %s %q: %w", q.name, q.v, err)
+		}
+		if got.Cmp(resource.MustParse(q.max)) > 0 {
+			return fmt.Errorf("definition profile %s %q is over %s", q.name, q.v, q.max)
+		}
+	}
+	return nil
 }

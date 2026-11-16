@@ -70,7 +70,7 @@ func TestCreateWorkerPod_ResourcesWithinLimitRange(t *testing.T) {
 		ctx := context.Background()
 		if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
 			SessionID: "task-g", Repo: "r", LeaseID: "l",
-			Definition: &DefinitionProfile{Name: "d", ProxyURL: "http://p", DeadlineSeconds: 60, CPU: d.cpu, Memory: d.mem},
+			Definition: &DefinitionProfile{Name: "d", ProxyURL: "http://p", DeadlineSeconds: 60, CPU: d.cpu, Memory: d.mem, Guaranteed: true},
 		}); err != nil {
 			t.Fatalf("CreateWorkerPod: %v", err)
 		}

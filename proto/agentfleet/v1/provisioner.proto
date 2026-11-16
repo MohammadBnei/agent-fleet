@@ -130,11 +130,14 @@ message DefinitionPodProfile {
   // timeout (docs/adr/0065, amended); still sent because an older provisioner
   // refuses a profile without it. The pod's lifetime is a fixed cap.
   int64 timeout_seconds = 5;
-  // The definition's validated `resources` (ADR-0084 §9). Both set makes the
-  // pod Guaranteed QoS: worker = these, sidecar and clone requests == limits.
+  // The definition's validated `resources` (ADR-0084 §9). With `guaranteed`
+  // the pod is Guaranteed QoS: worker = these, sidecar and clone requests == limits.
   // Empty keeps the ordinary sizing.
   string cpu = 6;
   string memory = 7;
+  // Standing definitions only (ADR-0084 §9): cpu and memory then apply as
+  // Guaranteed QoS. Other definitions keep the ordinary sizing.
+  bool guaranteed = 8;
 }
 
 // A vault's desired state, from a definition's validated effective spec
