@@ -448,6 +448,23 @@ func (s *Store) ClaimEndedRun(ctx context.Context, id string) (bool, error) {
 	return true, tx.Commit(ctx)
 }
 
+// ParkedRuns counts owner's parked single-shot runs (docs/adr/0070 §6, "No
+// migration"): not archived, no live pod, and an open question, permission
+// or plan. Invoke's maxParked reads it; it is the one SQL spelling of parked
+// (build order slice 9 reuses parkedWhere for its refusals).
+func (s *Store) ParkedRuns(ctx context.Context, owner string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions s WHERE s.owner = $1 AND s.archived_at IS NULL AND `+parkedWhere,
+		owner, livePhases).Scan(&n)
+	return n, err
+}
+
+// parkedWhere is "s is a parked run", with the live pod phases as $2.
+const parkedWhere = `s.lifecycle = 'single-shot'
+	AND NOT (COALESCE(s.pod_phase, '') = ANY($2))
+	AND EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id AND d.state = 'open'
+		AND d.kind IN ('question', 'permission', 'plan'))`
+
 // Get returns ErrNotFound when no such session exists.
 func (s *Store) Get(ctx context.Context, id string) (*Session, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+selectCols+` FROM sessions s WHERE s.id = $1`, id)

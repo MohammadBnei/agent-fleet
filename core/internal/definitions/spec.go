@@ -172,6 +172,21 @@ type ClientSpec struct {
 	// fleet/client/<name>/ (docs/adr/0078, core/internal/announce). Never for
 	// anyone else's sessions.
 	AnnounceSessions bool `yaml:"announceSessions,omitempty" json:"announceSessions,omitempty"`
+	// MaxParked caps this client's parked single-shot runs: Invoke refuses a
+	// new run with PARKED_LIMIT while that many wait on a decision
+	// (docs/adr/0070 §1). Unset is DefaultMaxParked.
+	MaxParked *int `yaml:"maxParked,omitempty" json:"maxParked,omitempty"`
+}
+
+// DefaultMaxParked is a client's maxParked when its file sets none.
+const DefaultMaxParked = 20
+
+// ParkedCap is s.MaxParked, or DefaultMaxParked when unset.
+func (s ClientSpec) ParkedCap() int {
+	if s.MaxParked == nil {
+		return DefaultMaxParked
+	}
+	return *s.MaxParked
 }
 
 // Client is a valid client registration after a sync.

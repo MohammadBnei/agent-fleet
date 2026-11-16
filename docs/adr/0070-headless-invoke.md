@@ -30,19 +30,36 @@
   hub, `waiting` with `pending` on any open question, permission or plan,
   else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
   order: a result with turn-starting input after it is not final.
-  `expired` is declared, reported from slice 11); slice 8 (§7: each
+  `expired` is declared, reported from slice 11); slice 6 (`outputFormat`:
+  the worker's `outputFormatFor` sets `{type: json_schema, schema}` only for
+  `lifecycle: single-shot` with `outputSchema` set, never for a resident or
+  repo session, and `definitionDecision` allows `StructuredOutput` before the
+  ceiling only then. Checked against SDK 0.3.325 with a local `query()`:
+  `tools: [...]` does not filter `StructuredOutput` (`system/init` lists it)
+  and the CLI never routes it through `canUseTool`, even a deny-all one; the
+  `/kind-local` `Invoke` run in "Build order" slice 6 is **still
+  outstanding**: no live pod has yet shown `system/init` listing
+  `StructuredOutput` or `WaitForResult` returning schema-valid JSON through
+  sidecar protojson. It needs a single-shot test definition with
+  `output.schema` and a model token, and is tracked as the ADR's end-to-end
+  live QA after slice 7); slice 10 (a client file's `maxParked`, a positive
+  int, default 20; `Invoke` refuses a new run `ResourceExhausted` keyed
+  `agent.parked_limit` while the client has that many parked runs, counted by
+  `sessions.Store.ParkedRuns`: single-shot, not archived, no live pod, an
+  open question, permission or plan. Its `parkedWhere` is the one SQL
+  spelling of parked, for slice 9 to reuse); slice 8 (§7: each
   `sessions.Loop` tick, `endRuns` takes every single-shot run with no live
   pod that was stopped, or, with no open decision, crashed or holds a final
   result by the rule above, claims it by archiving it with that condition
-  re-checked in the same UPDATE (so a warm and a claim serialize on the
-  row), then calls `TearDownSession`, then `SweepSession`, then marks it
-  swept; a parked run keeps its PVC. Until slice 7 "no live pod" means a
-  finished run ends only after the idle timeout reaps its pod, since a
-  running worker's result can be followed by a turn already under way, and
-  Invoke's run cap keeps counting runs with no result; `WaitForResult`
-  still reads an archived run for its owner, `failed` with
-  `AGENT_CRASHED` or "ended without a result" when it has no final result,
-  and re-reads the row at least every 5 s while it waits).
+  re-checked in the same UPDATE (so a warm and a claim serialize on the row),
+  then calls `TearDownSession`, then `SweepSession`, then marks it swept; a
+  parked run keeps its PVC. Until slice 7 "no live pod" means a finished run
+  ends only after the idle timeout reaps its pod, since a running worker's
+  result can be followed by a turn already under way, and Invoke's run cap
+  keeps counting runs with no result; `WaitForResult` still reads an archived
+  run for its owner, `failed` with `AGENT_CRASHED` or "ended without a
+  result" when it has no final result, and re-reads the row at least every 5
+  s while it waits).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

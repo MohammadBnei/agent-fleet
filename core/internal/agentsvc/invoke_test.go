@@ -5,6 +5,7 @@ package agentsvc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -286,5 +288,117 @@ func TestInvoke(t *testing.T) {
 	}
 	if th, err := store.Get(ctx, utf8ID); err != nil || deref(th.Title, "") != strings.Repeat("a", maxTitle-1) {
 		t.Fatalf("title: %+v %v", th, err)
+	}
+}
+
+// docs/adr/0070 build order slice 10: with maxParked unset (20), the
+// twenty-first parked run is refused with PARKED_LIMIT, not queued; runs with
+// a live pod or no open decision, and resident threads, do not count; a
+// client's own maxParked replaces the default.
+func TestInvoke_ParkedLimit(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	transcr := transcript.NewPostgresStore(pool, decisions.OnAppend)
+	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	two := 2
+	testClients = []definitions.Client{
+		{Name: "bot", Spec: definitions.ClientSpec{Definitions: []string{"d"}}},
+		{Name: "small", Spec: definitions.ClientSpec{Definitions: []string{"d"}, MaxParked: &two}},
+	}
+	t.Cleanup(func() { testClients = nil })
+	dash := &noWarm{store: store, Server: dashboard.NewServer(store, nil, transcr, nil, repos.NewStore(pool), nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test", "")}
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: &definitions.Spec{
+		Invokers:  []string{"bot", "small"},
+		Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
+		Model:     &definitions.Model{Default: "claude-opus-5", Allow: []string{"claude-opus-5"}},
+		Mode:      &definitions.Mode{Default: "auto", Allow: []string{"auto"}},
+		Lifecycle: &definitions.AllowList{Allow: []string{"resident", "single-shot"}},
+	}}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub(), decisions: decisions.NewStore(pool)}
+
+	invoke := func(client, key string) (string, error) {
+		res, err := s.Invoke(withPrincipal(ctx, Principal{Client: client}), connect.NewRequest(&agentfleetv1.InvokeRequest{Definition: "d", Input: "go", IdempotencyKey: key}))
+		if err != nil {
+			return "", err
+		}
+		return res.Msg.GetThreadId(), nil
+	}
+	park := func(id string) {
+		if _, err := transcr.Append(ctx, id, "agent", `{"tool":"Bash","input":{"command":"ls"},"nb":1}`, "permission_request", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refused := func(err error) bool {
+		return connect.CodeOf(err) == connect.CodeResourceExhausted && errkeys.Of(err) == errkeys.KeyParkedLimit
+	}
+	runs := func(owner string) int {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE owner = $1`, owner).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// A resident thread of the same owner waiting on a decision is not a run.
+	var resident string
+	if err := pool.QueryRow(ctx, `INSERT INTO sessions (repo, description, definition_name, definition_sha, owner, invoker, visibility, lifecycle)
+		VALUES ('notes', '', 'd', 'sha1', 'client:bot', 'bot', 'private', 'resident') RETURNING id`).Scan(&resident); err != nil {
+		t.Fatal(err)
+	}
+	park(resident)
+
+	var parked []string
+	for i := range definitions.DefaultMaxParked {
+		id, err := invoke("bot", fmt.Sprintf("p%d", i))
+		if err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		park(id)
+		parked = append(parked, id)
+	}
+	before := runs("client:bot")
+	if _, err := invoke("bot", "p21"); !refused(err) {
+		t.Fatalf("the twenty-first parked run: %v", err)
+	}
+	if _, err := invoke("bot", "p21"); !refused(err) || runs("client:bot") != before {
+		t.Fatalf("refused, not queued: %v, runs %d want %d", err, runs("client:bot"), before)
+	}
+
+	// A run with a live pod is not parked: the same key now runs, once.
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING' WHERE id = $1`, parked[0]); err != nil {
+		t.Fatal(err)
+	}
+	id21, err := invoke("bot", "p21")
+	if err != nil {
+		t.Fatalf("a live-pod run counted as parked: %v", err)
+	}
+	if entries, _, _ := transcr.ReadSince(ctx, id21, 0, 10); len(entries) != 1 {
+		t.Fatalf("p21's input: %+v", entries)
+	}
+	// p21 has no open decision: not parked either, so one more fits; parked, it fills the cap again.
+	id22, err := invoke("bot", "p22")
+	if err != nil {
+		t.Fatalf("a run with no open decision counted as parked: %v", err)
+	}
+	park(id22)
+	if _, err := invoke("bot", "p23"); !refused(err) {
+		t.Fatalf("back at the cap: %v", err)
+	}
+
+	// The client's own maxParked replaces the default.
+	for i := range two {
+		id, err := invoke("small", fmt.Sprintf("s%d", i))
+		if err != nil {
+			t.Fatalf("small run %d: %v", i, err)
+		}
+		park(id)
+	}
+	if _, err := invoke("small", "s2"); !refused(err) {
+		t.Fatalf("over maxParked 2: %v", err)
 	}
 }

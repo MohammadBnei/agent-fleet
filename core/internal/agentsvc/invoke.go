@@ -84,6 +84,15 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		t = nil
 	}
 	if t == nil {
+		// Refused, not queued: the claim stays pending, so the same key runs
+		// once a parked run moves (docs/adr/0070 §1). Admission-time only: runs
+		// still live when admitted may park later and exceed maxParked;
+		// maxClientRuns is the hard bound.
+		if n, err := s.sessions.ParkedRuns(ctx, owner); err != nil {
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		} else if limit := s.maxParked(p.Client); n >= limit {
+			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyParkedLimit, fmt.Errorf("this client has %d runs waiting on a decision (maxParked %d); answer one first", n, limit))
+		}
 		if n, err := s.sessions.UnfinishedRuns(ctx, owner); err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		} else if n >= maxClientRuns {
@@ -124,6 +133,17 @@ func (s *Server) Invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.InvokeResponse{ThreadId: t.ID}), nil
+}
+
+// maxParked is client's ParkedCap, or the default when the registry no
+// longer lists it (MayOpen has just let it through: only a sync in between).
+func (s *Server) maxParked(client string) int {
+	for _, c := range s.definitions.Clients() {
+		if c.Name == client {
+			return c.Spec.ParkedCap()
+		}
+	}
+	return definitions.DefaultMaxParked
 }
 
 // capacity is the full fleet's answer: ResourceExhausted with the thread id

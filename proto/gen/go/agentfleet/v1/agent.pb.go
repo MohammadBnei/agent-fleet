@@ -47,6 +47,10 @@ const (
 	// A surface (FLEET_ADMIN_ORIGINS) chose own words or an option not reversible "yes": nothing was done; the
 	// message carries core's confirm page URL (docs/adr/0082 §7).
 	AgentErrorKey_AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED AgentErrorKey = 6
+	// The client has its maxParked single-shot runs waiting on a decision (docs/adr/0070 §1): answer one first. Not
+	// the warm-time capacity: nothing was started (no session is created) and the claim stays pending, so a retry with
+	// the same key runs once a parked run moves.
+	AgentErrorKey_AGENT_ERROR_KEY_PARKED_LIMIT AgentErrorKey = 7
 )
 
 // Enum value maps for AgentErrorKey.
@@ -59,6 +63,7 @@ var (
 		4: "AGENT_ERROR_KEY_DECISION_EXPIRED",
 		5: "AGENT_ERROR_KEY_DECISION_STALE",
 		6: "AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED",
+		7: "AGENT_ERROR_KEY_PARKED_LIMIT",
 	}
 	AgentErrorKey_value = map[string]int32{
 		"AGENT_ERROR_KEY_UNSPECIFIED":               0,
@@ -68,6 +73,7 @@ var (
 		"AGENT_ERROR_KEY_DECISION_EXPIRED":          4,
 		"AGENT_ERROR_KEY_DECISION_STALE":            5,
 		"AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED": 6,
+		"AGENT_ERROR_KEY_PARKED_LIMIT":              7,
 	}
 )
 
@@ -3268,7 +3274,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1f\n" +
 	"\vchanged_ids\x18\x02 \x03(\tR\n" +
-	"changedIds*\xce\x03\n" +
+	"changedIds*\x88\x04\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
@@ -3276,7 +3282,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"&AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE\x10\x03\x1a \xc2\xf3\x18\x1cagent.definition_unavailable\x12@\n" +
 	" AGENT_ERROR_KEY_DECISION_EXPIRED\x10\x04\x1a\x1a\xc2\xf3\x18\x16agent.decision_expired\x12<\n" +
 	"\x1eAGENT_ERROR_KEY_DECISION_STALE\x10\x05\x1a\x18\xc2\xf3\x18\x14agent.decision_stale\x12R\n" +
-	")AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED\x10\x06\x1a#\xc2\xf3\x18\x1fagent.decision_confirm_required*\x97\x01\n" +
+	")AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED\x10\x06\x1a#\xc2\xf3\x18\x1fagent.decision_confirm_required\x128\n" +
+	"\x1cAGENT_ERROR_KEY_PARKED_LIMIT\x10\a\x1a\x16\xc2\xf3\x18\x12agent.parked_limit*\x97\x01\n" +
 	"\fDecisionKind\x12\x1d\n" +
 	"\x19DECISION_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DECISION_KIND_QUESTION\x10\x01\x12\x1c\n" +
@@ -3289,7 +3296,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\xdd\x10\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\xaa\x11\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
@@ -3308,8 +3315,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +
 	"\tGetStatus\x12\x1f.agentfleet.v1.GetStatusRequest\x1a .agentfleet.v1.GetStatusResponse\x12u\n" +
 	"\x04Open\x12\x1a.agentfleet.v1.OpenRequest\x1a\x1b.agentfleet.v1.OpenResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12T\n" +
-	"\vCloseThread\x12!.agentfleet.v1.CloseThreadRequest\x1a\".agentfleet.v1.CloseThreadResponse\x12E\n" +
-	"\x06Invoke\x12\x1c.agentfleet.v1.InvokeRequest\x1a\x1d.agentfleet.v1.InvokeResponse\x12Z\n" +
+	"\vCloseThread\x12!.agentfleet.v1.CloseThreadRequest\x1a\".agentfleet.v1.CloseThreadResponse\x12\x91\x01\n" +
+	"\x06Invoke\x12\x1c.agentfleet.v1.InvokeRequest\x1a\x1d.agentfleet.v1.InvokeResponse\"J\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\xca\xf3\x18\x12agent.parked_limit\x12Z\n" +
 	"\rWaitForResult\x12#.agentfleet.v1.WaitForResultRequest\x1a$.agentfleet.v1.WaitForResultResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (

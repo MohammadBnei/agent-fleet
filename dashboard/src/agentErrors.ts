@@ -19,6 +19,8 @@ const keyText: Record<Keyed, string> = {
   DECISION_STALE: "This card was replaced by a newer one.",
   DECISION_CONFIRM_REQUIRED:
     "This answer needs a fresh confirmation. Confirm it on the confirm page; nothing was done.",
+  PARKED_LIMIT:
+    "This agent's client has too many runs waiting on an answer. Answer one, then try again.",
 };
 
 // agentErrorText is the key's text, or the error's own message for a key with none (server.internal, a key a newer
