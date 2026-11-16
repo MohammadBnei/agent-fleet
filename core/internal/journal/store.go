@@ -27,14 +27,16 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Append inserts one event. payloadJSON must be a valid JSON document (or
 // empty, which stores '{}' — matches the column's own DEFAULT).
-func (s *Store) Append(ctx context.Context, repo, actor, eventType, payloadJSON string) error {
+// quarantined hides the row from Search until the owner promotes it
+// (docs/adr/0086 §5).
+func (s *Store) Append(ctx context.Context, repo, actor, eventType, payloadJSON string, quarantined bool) error {
 	if payloadJSON == "" {
 		payloadJSON = "{}"
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO knowledge_journal (repo, actor, event_type, payload)
-		VALUES ($1, $2, $3, $4)
-	`, repo, actor, eventType, payloadJSON)
+		INSERT INTO knowledge_journal (repo, actor, event_type, payload, quarantined)
+		VALUES ($1, $2, $3, $4, $5)
+	`, repo, actor, eventType, payloadJSON, quarantined)
 	if err != nil {
 		slog.Error("journal Append", "repo", repo, "actor", actor, "eventType", eventType, "error", err)
 		return fmt.Errorf("append journal: %w", err)
@@ -129,7 +131,7 @@ func (s *Store) Search(ctx context.Context, o SearchOpts) ([]Entry, error) {
 	// args[0] is always repo; every other bind is appended as it applies, so
 	// the placeholder numbers follow len(args) rather than a fixed layout.
 	args := []any{o.Repo}
-	where := []string{`($1 = '' OR repo = $1)`}
+	where := []string{`($1 = '' OR repo = $1)`, `NOT quarantined`}
 	// id DESC is a real tie-break, not decoration: ts_rank ties were
 	// previously returned in whatever order the plan happened to produce.
 	order := `created_at DESC, id DESC`

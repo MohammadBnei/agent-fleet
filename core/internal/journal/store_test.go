@@ -4,6 +4,7 @@ package journal
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,5 +163,32 @@ func TestSearch_LimitApplies(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("limit 2 should return 2, got %d", len(got))
+	}
+}
+
+// docs/adr/0086 §5: a quarantined note is written but never found by Search.
+func TestSearch_HidesQuarantined(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{"note":"visible"}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{"note":"hidden"}`, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"", "hidden"} {
+		got, err := s.Search(ctx, SearchOpts{Repo: "r", Query: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range got {
+			if strings.Contains(e.PayloadJSON, "hidden") {
+				t.Errorf("query %q returned a quarantined row", q)
+			}
+		}
+	}
+	got, _ := s.Search(ctx, SearchOpts{Repo: "r"})
+	if len(got) != 1 {
+		t.Errorf("want only the visible row, got %d", len(got))
 	}
 }

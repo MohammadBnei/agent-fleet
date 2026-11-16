@@ -15,16 +15,17 @@ func TestLoad(t *testing.T) {
 		"LOG_LEVEL": "debug", "SESSION_ID": "s1", "LEASE_ID": "l1", "CORE_GRPC_ADDR": "core:1", "WORKTREE_PATH": "/wt",
 		"MCP_PORT": "2", "LOCAL_API_PORT": "3", "HEALTH_PORT": "4", "FLEET_VAULT_PROXY": "http://t:p@v:5", "FLEET_VAULT_HOSTS": "a.test,b.test",
 		"EGRESS_PORT": "6", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces",
+		"FLEET_TRUST_SET": "AB", "FLEET_AGENT_NAME": "kai", "FLEET_MEMORY_ROOT": "/m",
 	}))
 	want := Config{LogLevel: "debug", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "core:1", WorktreePath: "/wt", MCPPort: "2",
 		LocalAPIPort: "3", HealthPort: "4", VaultProxy: "http://t:p@v:5", VaultHosts: "a.test,b.test", EgressPort: "6",
-		TracesEndpoint: "http://otel:4318/v1/traces"}
+		TracesEndpoint: "http://otel:4318/v1/traces", TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m"}
 	if err != nil || c != want {
 		t.Errorf("set: %+v, %v\nwant %+v", c, err, want)
 	}
 
 	defaults := Config{LogLevel: "info", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "agent-fleet-core.agent-fleet.svc.cluster.local:9090",
-		WorktreePath: "/workspace", MCPPort: "9090", LocalAPIPort: "9091", HealthPort: "9092", EgressPort: "9093"}
+		WorktreePath: "/workspace", MCPPort: "9090", LocalAPIPort: "9091", HealthPort: "9092", EgressPort: "9093", MemoryRoot: "/memory"}
 	// Through getenv a blank variable and an unset one are the same "", so there is one case.
 	if c, err := Load(getenv(map[string]string{"SESSION_ID": "s1", "LEASE_ID": "l1"})); err != nil || c != defaults {
 		t.Errorf("unset: %+v, %v\nwant %+v", c, err, defaults)

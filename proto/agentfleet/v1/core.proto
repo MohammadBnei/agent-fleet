@@ -521,6 +521,9 @@ message AppendJournalRequest {
   string actor = 2;
   string event_type = 3;
   string payload_json = 4;
+  // The writing session's set holds A (ADR-0086 §5): the row stays hidden from
+  // journal_search until the owner promotes it.
+  bool quarantined = 5;
 }
 
 message AppendJournalResponse {}

@@ -26,7 +26,7 @@ func (f *fakePublisher) PublishEvent(_ context.Context, typ, subject, text, key 
 
 func TestPublishEvent(t *testing.T) {
 	var listed bool
-	for _, tl := range newMCPServer(nil).ListTools() {
+	for _, tl := range newMCPServer(nil, nil).ListTools() {
 		if tl.Tool.Name == "publish_event" {
 			listed = true
 			for _, k := range []string{"actor", "trusted", "hops", "causationId"} {

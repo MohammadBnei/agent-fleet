@@ -155,3 +155,32 @@ func TestJournalSearch_SmallResultIsNotMarkedTruncated(t *testing.T) {
 		t.Error("a result that fits must not claim to be truncated")
 	}
 }
+
+type fakeMem struct{ path, content string }
+
+func (f *fakeMem) Write(p, c string) (string, error) { f.path, f.content = p, c; return "", nil }
+
+// memory_write exists only when the pod has a memory repo, and reaches the store.
+func TestMemoryWrite(t *testing.T) {
+	has := func(m MemoryWriter) bool {
+		for _, tl := range newMCPServer(nil, m).ListTools() {
+			if tl.Tool.Name == "memory_write" {
+				return true
+			}
+		}
+		return false
+	}
+	if has(nil) || !has(&fakeMem{}) {
+		t.Fatal("memory_write must be registered exactly when a store exists")
+	}
+	f := &fakeMem{}
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"path": "a.md", "content": "x"}
+	if res, _ := memoryWriteHandler(f)(context.Background(), req); res.IsError || f.path != "a.md" || f.content != "x" {
+		t.Errorf("%+v %+v", res, f)
+	}
+	req.Params.Arguments = map[string]any{"content": "x"}
+	if res, _ := memoryWriteHandler(f)(context.Background(), req); !res.IsError {
+		t.Error("missing path accepted")
+	}
+}

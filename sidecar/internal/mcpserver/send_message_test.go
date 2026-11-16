@@ -30,7 +30,7 @@ func (f *sendRecorder) SendMessage(_ context.Context, req *agentfleetv1.SendMess
 // worker obeys human and session entries), so the tool no longer takes a
 // `from` the agent could set to "human": it stamps "agent".
 func TestSendMessage_StampsAgent(t *testing.T) {
-	for _, tl := range newMCPServer(nil).ListTools() {
+	for _, tl := range newMCPServer(nil, nil).ListTools() {
 		if tl.Tool.Name == "send_message" {
 			if _, ok := tl.Tool.InputSchema.Properties["from"]; ok {
 				t.Fatal("send_message still advertises a from parameter")

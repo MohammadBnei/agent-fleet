@@ -564,7 +564,7 @@ is the reason.
 - **Fleet-wide shared files** on Garage S3 (`docs/adr/0031`): core mints
   presigned URLs only; agents use the `*_shared_file*` MCP tools and `curl`.
 - **The journal is agent knowledge** (`adr/0055`): `journal_write` /
-  `journal_search`; nothing writes to it automatically.
+  `journal_search`; nothing writes to it automatically. A note from a pod whose `FLEET_TRUST_SET` holds A is stored `quarantined` and hidden from `journal_search` until the owner promotes it (`adr/0086` §5). A long-lived agent's pod (`FLEET_AGENT_NAME`) also has `memory_write`: one git commit per write to `agent-<name>-memory`, or to `agent-<name>-quarantine` when the set holds A, tagged with session and set; the worker mounts memory read-only and never the quarantine.
 - **Peer sessions**: `prompt_agent` through core (`adr/0041`), plus Claude
   Code's own cross-session channel, closed for definition pods (`adr/0060`,
   `adr/0064`).

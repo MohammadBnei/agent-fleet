@@ -602,7 +602,7 @@ func (s *Server) UpdateSessionMeta(ctx context.Context, req *agentfleetv1.Update
 // idle/stall sweeps, and ArchiveSession.
 
 func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJournalRequest) (*agentfleetv1.AppendJournalResponse, error) {
-	if err := s.journal.Append(ctx, req.GetRepo(), req.GetActor(), req.GetEventType(), req.GetPayloadJson()); err != nil {
+	if err := s.journal.Append(ctx, req.GetRepo(), req.GetActor(), req.GetEventType(), req.GetPayloadJson(), req.GetQuarantined()); err != nil {
 		return nil, fmt.Errorf("AppendJournal: %w", err)
 	}
 	return &agentfleetv1.AppendJournalResponse{}, nil

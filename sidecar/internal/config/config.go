@@ -59,6 +59,16 @@ type Config struct {
 	// a malformed one refuses the start, in cmd/sidecar where telemetry.New
 	// checks it.
 	TracesEndpoint string
+	// TrustSet is the session's Rule of Two set, e.g. "AB" or "BC"
+	// (FLEET_TRUST_SET, ADR-0086 §2). Empty means unknown: memory writes
+	// refuse and journal rows are not flagged.
+	TrustSet string
+	// AgentName is the long-lived agent whose memory this pod writes
+	// (FLEET_AGENT_NAME). Empty registers no memory tool.
+	AgentName string
+	// MemoryRoot is the directory holding agent-<name>-memory and
+	// agent-<name>-quarantine (FLEET_MEMORY_ROOT, default /memory).
+	MemoryRoot string
 }
 
 // FromProcess is the sidecar's configuration from its environment: the one call
@@ -91,6 +101,9 @@ func Load(getenv func(string) string) (Config, error) {
 		VaultHosts:     getenv("FLEET_VAULT_HOSTS"),
 		EgressPort:     env("EGRESS_PORT", "9093"),
 		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+		TrustSet:       getenv("FLEET_TRUST_SET"),
+		AgentName:      getenv("FLEET_AGENT_NAME"),
+		MemoryRoot:     env("FLEET_MEMORY_ROOT", "/memory"),
 	}
 	var errs []error
 	if c.SessionID == "" {

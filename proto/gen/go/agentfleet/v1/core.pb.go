@@ -2628,11 +2628,14 @@ func (x *SubmitReviewResponse) GetEvent() string {
 }
 
 type AppendJournalRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
-	EventType     string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
-	PayloadJson   string                 `protobuf:"bytes,4,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Repo        string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Actor       string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	EventType   string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	PayloadJson string                 `protobuf:"bytes,4,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	// The writing session's set holds A (ADR-0086 §5): the row stays hidden from
+	// journal_search until the owner promotes it.
+	Quarantined   bool `protobuf:"varint,5,opt,name=quarantined,proto3" json:"quarantined,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2693,6 +2696,13 @@ func (x *AppendJournalRequest) GetPayloadJson() string {
 		return x.PayloadJson
 	}
 	return ""
+}
+
+func (x *AppendJournalRequest) GetQuarantined() bool {
+	if x != nil {
+		return x.Quarantined
+	}
+	return false
 }
 
 type AppendJournalResponse struct {
@@ -4070,13 +4080,14 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x14SubmitReviewResponse\x12\x1d\n" +
 	"\n" +
 	"review_url\x18\x01 \x01(\tR\treviewUrl\x12\x14\n" +
-	"\x05event\x18\x02 \x01(\tR\x05event\"\x82\x01\n" +
+	"\x05event\x18\x02 \x01(\tR\x05event\"\xa4\x01\n" +
 	"\x14AppendJournalRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x1d\n" +
 	"\n" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12!\n" +
-	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\"\x17\n" +
+	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12 \n" +
+	"\vquarantined\x18\x05 \x01(\bR\vquarantined\"\x17\n" +
 	"\x15AppendJournalResponse\"\xa9\x01\n" +
 	"\fJournalEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +

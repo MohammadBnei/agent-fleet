@@ -124,13 +124,13 @@ const blockingWaitMs int32 = 45_000
 //
 // The e2e directDialer parameter is gone with the sandbox it dialed
 // (docs/adr/0048 §6) — this sidecar now talks only to core.
-func New(core *coreclient.Client) http.Handler {
-	return server.NewStreamableHTTPServer(newMCPServer(core))
+func New(core *coreclient.Client, mem MemoryWriter) http.Handler {
+	return server.NewStreamableHTTPServer(newMCPServer(core, mem))
 }
 
 // newMCPServer is New without the transport, so a test can read the tool
 // list the agent will see.
-func newMCPServer(core *coreclient.Client) *server.MCPServer {
+func newMCPServer(core *coreclient.Client, mem MemoryWriter) *server.MCPServer {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
@@ -211,6 +211,15 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 		mcp.WithString("until", mcp.Description("Upper bound on entry time: RFC3339 or YYYY-MM-DD. A bare date covers that whole day; a full RFC3339 timestamp is an exclusive instant")),
 		mcp.WithNumber("limit", mcp.Description("Max entries to return; default 20, capped at 500")),
 	), journalSearchHandler(core))
+
+	// Only a long-lived agent has a memory repo (ADR-0086 §5).
+	if mem != nil {
+		s.AddTool(mcp.NewTool("memory_write",
+			mcp.WithDescription("Write a file into this agent's memory repo: one git commit per write, tagged with this session. A session triggered by untrusted input writes to a quarantine location the owner reviews, never to memory other sessions read."),
+			mcp.WithString("path", mcp.Required(), mcp.Description("Relative path inside the memory repo")),
+			mcp.WithString("content", mcp.Required()),
+		), memoryWriteHandler(mem))
+	}
 
 	s.AddTool(mcp.NewTool("set_session_meta",
 		mcp.WithDescription("Set your OWN session's human-facing title and/or description (the label shown in the dashboard session list). Both optional; an omitted or empty field is left unchanged. Applies to this session only — you cannot relabel another session."),
@@ -377,6 +386,26 @@ func waitForMessagesHandler(core MessageWaiter) server.ToolHandlerFunc {
 		}
 		body, _ := json.Marshal(map[string]any{"messages": messages, "nextIndex": nextSeq})
 		return mcp.NewToolResultText(string(body)), nil
+	}
+}
+
+// MemoryWriter is *memory.Store's slice, so a test needs no git.
+type MemoryWriter interface {
+	Write(rel, content string) (string, error)
+}
+
+func memoryWriteHandler(mem MemoryWriter) server.ToolHandlerFunc {
+	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		path, content := req.GetString("path", ""), req.GetString("content", "")
+		if path == "" {
+			return mcp.NewToolResultError("path is required"), nil
+		}
+		slog.Info("mcp memory_write", "path", path)
+		if _, err := mem.Write(path, content); err != nil {
+			slog.Error("mcp memory_write", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(`{"status":"committed"}`), nil
 	}
 }
 
