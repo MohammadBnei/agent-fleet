@@ -26,6 +26,7 @@ const pushedMessages: {
 const resultAttempts: (string | undefined)[] = [];
 let failResultPushes = 0;
 const savedSessionIds: string[] = [];
+let failSaveSessionId = false;
 const savedModels: string[] = [];
 // The row's model and effort as GET /task returns them (docs/adr/0077).
 let sessionModel: string | undefined;
@@ -100,6 +101,7 @@ mock.module("./sidecarClient.js", () => ({
     },
   ),
   saveSessionId: mock(async (id: string, model: string) => {
+    if (failSaveSessionId) throw new Error("sidecar refused");
     savedSessionIds.push(id);
     savedModels.push(model);
   }),
@@ -3609,6 +3611,25 @@ test("startup exports one batch: process start to the session id, steps in order
     "sdk.message.type": "system",
     "sdk.message.subtype": "init",
   });
+});
+
+test("startup is keyed by the pod name, and a failed session-id save is an error step", async () => {
+  const host = process.env.HOSTNAME;
+  process.env.HOSTNAME = "fleet-worker-abc-x1";
+  failSaveSessionId = true;
+  try {
+    roundScripts = [[{ type: "result", subtype: "success", uuid: "r1" }]];
+    await runTurns(1);
+  } finally {
+    failSaveSessionId = false;
+    if (host === undefined) delete process.env.HOSTNAME;
+    else process.env.HOSTNAME = host;
+  }
+  const [batch] = startupBatches();
+  expect(batch[0].turn).toBe("startup-fleet-worker-abc-x1");
+  const save = batch.find((s) => s.name === "worker.save_session_id") as Wire;
+  expect(save.status).toBe("error");
+  expect(save.attrs["error.type"]).toBe("save_failed");
 });
 
 test("a session that ends before its id is known sends startup as unfinished", async () => {

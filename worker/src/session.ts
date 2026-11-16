@@ -2468,13 +2468,21 @@ export async function runSession(): Promise<SessionResult> {
         if (msg.type === "system" && msg.subtype === "init")
           initModel = msg.model;
         const saveStartNs = nowNs();
-        await sidecar.saveSessionId(sessionId, initModel).catch((err) =>
+        let saved = true;
+        await sidecar.saveSessionId(sessionId, initModel).catch((err) => {
+          saved = false;
           log("warn", "saveSessionId failed", {
             taskId: SESSION_ID,
             error: String(err),
-          }),
+          });
+        });
+        spans.startupStep(
+          "worker.save_session_id",
+          saveStartNs,
+          undefined,
+          saved ? {} : { "error.type": "save_failed" },
+          saved ? "ok" : "error",
         );
-        spans.startupStep("worker.save_session_id", saveStartNs);
         spans.startupEnd();
         // Also persist the initial permission mode if not already set. This
         // ensures the mode shows up in the dashboard instead of "?".

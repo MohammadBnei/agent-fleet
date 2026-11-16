@@ -204,7 +204,9 @@ not around it.
   `worker.get_session`, `worker.setup`, `worker.query_start`, `worker.first_sdk_message`,
   `worker.session_id`, `worker.save_session_id`). It has no result uuid, so its turn key is
   `startup-<pod name>` (the container's `HOSTNAME`): one trace per warm, since a pod is one
-  warm. Sent once the session id is saved; a pod that ends first sends it unfinished.
+  warm. Sent once the session id is saved; a pod that ends first (abort, SIGTERM, a throw
+  before the query) sends it unfinished. `first_sdk_message` includes the first input's
+  delivery: in streaming-input mode the CLI says nothing until one is queued.
 
 ## Alternatives considered
 

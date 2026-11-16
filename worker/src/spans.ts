@@ -21,9 +21,11 @@
 // Before the first turn, one `worker.startup` span covers the pod's start:
 // process start to the session id being known, with a child per step
 // (worker.boot, worker.get_session, worker.setup, worker.query_start,
-// worker.first_sdk_message, worker.session_id). It has no result uuid to key
-// it, so its key is `startup-<pod name>`: one trace per warm (a pod is one
-// warm), the same if the container restarts in that pod, and found in Tempo by
+// worker.first_sdk_message, worker.session_id, worker.save_session_id). In
+// streaming-input mode the CLI says nothing until the first input is queued,
+// so first_sdk_message includes that message's delivery. It has no result uuid
+// to key it, so its key is `startup-<pod name>`: one trace per warm (a pod is
+// one warm: RestartPolicy Never, BackoffLimit 0), and found in Tempo by
 // `{ name = "worker.startup" && span.fleet.session.id = "<id>" }`.
 import { log } from "./log.js";
 
@@ -103,6 +105,7 @@ export class SpanRecorder {
     startNs: number,
     endNs = this.clock(),
     attrs: WireSpan["attrs"] = {},
+    status: WireSpan["status"] = "ok",
   ): void {
     this.boot?.spans.push({
       name,
@@ -110,7 +113,7 @@ export class SpanRecorder {
       parent: this.boot.id,
       startNs,
       endNs,
-      status: "ok",
+      status,
       attrs,
     });
   }
