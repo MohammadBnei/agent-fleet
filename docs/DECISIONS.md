@@ -337,9 +337,10 @@ Any doc, code, comment, or memory that contradicts this file or an
   servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
   for a named user; not built).
 - [`0084`](adr/0084-long-lived-agents.md) — long-lived agents: standing roles beside the
-  workers, a pluggable runtime behind the sidecar, core the only control plane; started
-  once, re-warmed by core, reach only through core, side effects only from a T0/T1 cause,
-  the vault token rotated into a file (Proposed 2026-11-16, revised after doubt; not built).
+  workers, core the only control plane; Claude Code only in stage 1 (other runtimes later);
+  one pod per trust tier per agent, threads as SDK sessions inside it; effects only from a
+  T0/T1 cause in the trusted pod; one read-only kube ServiceAccount, the ops agent's untrusted
+  pod only; no credential in any pod's env (Proposed 2026-11-16; not built).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
