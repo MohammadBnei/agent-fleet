@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -199,6 +200,9 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 			// that resolution existed only in the worker's memory and every
 			// dashboard surface went on showing the request as pending.
 			ReplyTo int64 `json:"replyTo"`
+			// Core dedups an append on this key (docs/adr/0070 §3); empty
+			// means never deduplicated.
+			IdempotencyKey string `json:"idempotencyKey"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -208,12 +212,19 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errors.New("from and text are required"))
 			return
 		}
+		// The local API has no auth, so any process in the pod reaches it. The
+		// only key a caller may choose is its own session's result key; core's
+		// other keys (dispatch, stale-decision) must stay out of reach.
+		if body.IdempotencyKey != "" && !strings.HasPrefix(body.IdempotencyKey, "result:"+core.TaskID()+":") {
+			writeError(w, http.StatusBadRequest, errors.New("idempotencyKey must be a result key of this session"))
+			return
+		}
 		var seq int64
 		var err error
 		if body.ReplyTo > 0 {
-			seq, err = core.AppendReplyMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "", body.ReplyTo)
+			seq, err = core.AppendReplyMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey, body.ReplyTo)
 		} else {
-			seq, err = core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "")
+			seq, err = core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey)
 		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)

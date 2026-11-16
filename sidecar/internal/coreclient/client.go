@@ -97,6 +97,9 @@ func withLease(ctx context.Context, sessionID, leaseID string) context.Context {
 	)
 }
 
+// TaskID is the session this sidecar serves.
+func (c *Client) TaskID() string { return c.taskID }
+
 func New(addr, taskID, leaseID string) (*Client, error) {
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),

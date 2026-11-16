@@ -15,7 +15,11 @@
   hold the per-tool subset's canon); slice 4 (`interaction`, release one:
   optional and ignored by the loader and every reader, a constant in the
   request hash, `AskUserQuestion` added to every effective `sidecarTools`, the
-  worker's deny branch gone).
+  worker's deny branch gone); slice 2 (the result entry and its key: `POST
+  /message` takes `idempotencyKey`, the worker writes
+  `result_text`/`structured_output`/`consumedSeq` on every result keyed
+  `result:<session>:<consumedSeq>:<k>`, retried up to 5 times;
+  retry-until-ack before exit lands with slice 7).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

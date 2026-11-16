@@ -31,6 +31,13 @@ import { activeRecorder, SpanRecorder, setActiveRecorder } from "./spans.js";
 // Job goes Failed, and a human sees CRASHED with the error attached.
 
 const SESSION_ID = process.env.SESSION_ID ?? "";
+
+// docs/adr/0070 §3: the highest seq of a human or answer entry this pod has
+// pushed into the query, and how many results it has written. With the
+// session they key each result entry, so a retried append is one row and the
+// next turn's result is another.
+let consumedSeq = 0;
+let resultCount = 0;
 // The operator's override, reached only when the session row carries no model.
 // Unset too, query() gets no model and Claude Code picks (docs/adr/0077).
 // `||` not `??`: the provisioner always sets CLAUDE_MODEL, empty when core has
@@ -1162,21 +1169,38 @@ async function logSdkMessage(
       cacheCreationInputTokens: usage?.cache_creation_input_tokens,
       ...(sumModelUsage(msg.modelUsage) ?? {}),
     });
-    await push(
-      JSON.stringify({
-        subtype: msg.subtype,
-        numTurns: msg.num_turns,
-        totalCostUsd: msg.total_cost_usd,
-        durationMs: msg.duration_ms,
-        durationApiMs: msg.duration_api_ms,
-        isError: msg.is_error,
-        usage: msg.usage,
-        modelUsage: msg.modelUsage,
-        permissionDenials: msg.permission_denials,
-        errors: msg.errors,
-      }),
-      "result",
-    );
+    // The result entry (docs/adr/0070 §3). Retried until core takes it; the
+    // key makes a repeat one row, so a retry never doubles the result.
+    const key = `result:${SESSION_ID}:${consumedSeq}:${++resultCount}`;
+    const body = JSON.stringify({
+      subtype: msg.subtype,
+      result_text: typeof msg.result === "string" ? msg.result : undefined,
+      structured_output: msg.structured_output,
+      consumedSeq,
+      numTurns: msg.num_turns,
+      totalCostUsd: msg.total_cost_usd,
+      durationMs: msg.duration_ms,
+      durationApiMs: msg.duration_api_ms,
+      isError: msg.is_error,
+      usage: msg.usage,
+      modelUsage: msg.modelUsage,
+      permissionDenials: msg.permission_denials,
+      errors: msg.errors,
+    });
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await sidecar.pushMessage(actor, body, "result", undefined, key);
+        break;
+      } catch (err) {
+        log("warn", "pushMessage failed", {
+          actor,
+          type: "result",
+          error: String(err),
+        });
+        if (attempt >= 5) break;
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
   }
   // ponytail: `user` text/image content blocks and `stream_event` stay
   // unrelayed. The former is the echo of a prompt the dashboard already
@@ -1904,6 +1928,7 @@ export async function runSession(): Promise<SessionResult> {
         // redundant turn the agent has already acted on; dedup by replyTo if
         // it ever actually bites.
         if (entry.type === "answer") {
+          consumedSeq = Math.max(consumedSeq, entry.seq);
           input.push(
             formatAnswerTurn(
               entry.text,
@@ -2027,6 +2052,11 @@ export async function runSession(): Promise<SessionResult> {
           if (decisionId && spentDecisions.has(decisionId)) return;
           const call = released.get(seq);
           released.delete(seq);
+          // Both outcomes below push a turn: it is input this pod consumed
+          // (docs/adr/0070 §6), so the result key must move past it.
+          if (decision.behavior === "allow" || decision.behavior === "deny") {
+            consumedSeq = Math.max(consumedSeq, entry.seq);
+          }
           if (decision.behavior === "allow") {
             // core marks a plan's answer "kind":"plan"; anything else is a
             // permission.
@@ -2170,6 +2200,7 @@ export async function runSession(): Promise<SessionResult> {
             `${sender ?? "Mohammad"} replied (not an approval): ${sender ? quoteEnvelopes(entry.text) : entry.text}`,
           );
         }
+        consumedSeq = Math.max(consumedSeq, entry.seq);
         input.push(
           entry.from === "session"
             ? peerTurn(entry.text)
