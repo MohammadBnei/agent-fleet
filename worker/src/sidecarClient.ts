@@ -169,6 +169,9 @@ export type AgentSpec = {
   maxTurns: number;
   interaction: string;
   lifecycle: string;
+  // docs/adr/0070 §3: the definition's output.schema as compact JSON, set by
+  // core for a single-shot session only. Absent from an older sidecar's JSON.
+  outputSchema?: string;
   // docs/adr/0068 §4: the workspace is served to an island host. Absent from
   // an older sidecar's JSON, which reads as false.
   scriptAsk?: boolean;

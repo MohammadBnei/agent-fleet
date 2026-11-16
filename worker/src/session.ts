@@ -11,6 +11,7 @@ import {
 import { isDeepStrictEqual } from "node:util";
 import {
   type EffortLevel,
+  type OutputFormat,
   type PermissionMode,
   type PermissionResult,
   type Query,
@@ -459,6 +460,17 @@ export const DEFINITION_BUILTIN_TOOLS = [
   "ExitPlanMode",
 ];
 
+// docs/adr/0070 §3: query()'s outputFormat, for a single-shot session with a
+// schema only. A resident session (lifecycle "") and a repo session (no spec)
+// never get one. core validated the schema at load, so a parse failure is a
+// bug and throws.
+export function outputFormatFor(
+  spec: AgentSpec | undefined,
+): OutputFormat | undefined {
+  if (spec?.lifecycle !== "single-shot" || !spec.outputSchema) return undefined;
+  return { type: "json_schema", schema: JSON.parse(spec.outputSchema) };
+}
+
 export function definitionDecision(
   spec: AgentSpec,
   toolName: string,
@@ -470,6 +482,11 @@ export function definitionDecision(
   const allow: DefinitionDecision = { behavior: "allow" };
   const ask: DefinitionDecision = { behavior: "ask" };
   if (toolName === "ExitPlanMode") return ask;
+  // The SDK's end-turn tool when outputFormat is set, before the ceiling it
+  // is not part of. Checked on SDK 0.3.325: `tools` does not filter it out
+  // (system/init lists it) and the CLI does not route it through canUseTool,
+  // so this is the gate's answer should a later SDK ever ask.
+  if (toolName === "StructuredOutput" && outputFormatFor(spec)) return allow;
   // The ceiling first: tools.allow cannot widen it.
   if (!DEFINITION_TOOL_CEILING.has(toolName))
     return { behavior: "deny", message: "not available to definitions" };
@@ -1262,6 +1279,7 @@ export async function runSession(): Promise<SessionResult> {
   // docs/adr/0067 §4: set for a definition session only. Everything below
   // that reads it narrows; a repo session (no spec) runs exactly as before.
   const spec = session.agentSpec;
+  const outputFormat = outputFormatFor(spec);
   // Remembered approvals (docs/adr/0076 §3): this session's and its
   // definition's live grants at warm, plus any a human makes while it runs.
   const grants = new Set(session.grants ?? []);
@@ -1614,6 +1632,9 @@ export async function runSession(): Promise<SessionResult> {
       // DEFINITION_BUILTIN_TOOLS): denied in canUseTool is not enough, since a
       // tool the model can see is one it keeps reaching for.
       ...(spec ? { tools: DEFINITION_BUILTIN_TOOLS } : {}),
+      // docs/adr/0070 §3: single-shot with a schema only; the SDK adds its
+      // StructuredOutput end-turn tool, which `tools` above does not filter.
+      ...(outputFormat ? { outputFormat } : {}),
       // Still no tool classification here — the SDK's own permission mode
       // decides when canUseTool gets invoked (acceptEdits skips it for file
       // edits, plan blocks mutation without invoking it, default invokes it
