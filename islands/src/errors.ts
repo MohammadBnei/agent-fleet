@@ -46,8 +46,9 @@ const keyText: Record<Keyed, string> = {
   DEFINITION_CHANGED: "This agent was updated. Start a new thread to continue.",
   THREAD_CAP: "You have too many open threads. Close one to start another.",
   DEFINITION_UNAVAILABLE: "This agent is not available to you.",
-  DECISION_EXPIRED: "This card expired; nothing was done.",
-  DECISION_STALE: "This card was replaced by a newer one.",
+  DECISION_EXPIRED:
+    "This decision expired before it was answered; nothing was done.",
+  DECISION_STALE: "This decision was replaced by a newer one.",
   DECISION_CONFIRM_REQUIRED:
     "This answer needs a fresh confirmation. Confirm it on the confirm page; nothing was done.",
   PARKED_LIMIT:

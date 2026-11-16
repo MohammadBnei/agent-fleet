@@ -256,3 +256,9 @@ since the feature was written.
   window. The number measured absence of traffic. For anything gated, the check
   is a call that *should* be refused actually being refused: from a worker pod,
   `CoreService` with **another session's** valid lease.
+- **A core release whose definitions loader rejects a field older definition files still
+  carry must reach the cluster with the provisioner first.** The provisioner serves
+  definition files at its release tag; if core rolls first, for one sync tick it reads the
+  old tag's files with the new loader and marks every definition invalid (seen deploying
+  7.22.0, ADR-0070 slice 12). Harmless that time because valid stored rows are kept, but
+  warms would fail closed meanwhile.
