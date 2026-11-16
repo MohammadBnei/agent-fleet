@@ -23,11 +23,14 @@ spec:
   mode: { default: auto, allow: [auto, default, plan] }
   tools:
     # TodoWrite: the game reads a step's progress from it.
-    allow: [Read, Glob, Grep, TodoWrite, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"]
+    allow: [Read, Glob, Grep, TodoWrite, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)"]
     deny: [Edit, Write, "Bash(git push:*)", "Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
   # AskUserQuestion: the game shows a resident's question as a need on its building.
   sidecarTools: [AskUserQuestion]
   lifecycle: { allow: [resident] }
   resources: { cpu: "1", memory: 2Gi }
   # timeout is the idle sweep's: a quiet resident frees its pod after 15 minutes.
-  limits: { maxTurns: 40, timeout: 15m, concurrency: 1, startupBudget: 3m }
+  # 5m idle timeout: a resident's pod counts against MAX_EXTERNAL_SESSIONS (2),
+  # the pool the agent reviewer and bridge sessions share, so a long idle hold
+  # after a talk would block them (raise the pool before raising this).
+  limits: { maxTurns: 40, timeout: 5m, concurrency: 1, startupBudget: 3m }
