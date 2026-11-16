@@ -6,7 +6,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 )
 
 // ErrNoSessionID and ErrNoLeaseID are the two refusals, with the words the
@@ -78,16 +80,30 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		return fallback
 	}
+	var fileErrs []error
+	// docs/adr/0086 §6: a credential is the file KEY_FILE names; the bare key
+	// is the fallback for a local run. An unreadable file is a refusal.
+	secret := func(key string) string {
+		path := getenv(key + "_FILE")
+		if path == "" {
+			return getenv(key)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			fileErrs = append(fileErrs, fmt.Errorf("%s_FILE: %w", key, err))
+		}
+		return strings.TrimSpace(string(b))
+	}
 	c := Config{
 		LogLevel:       env("LOG_LEVEL", "info"),
 		SessionID:      getenv("SESSION_ID"),
-		LeaseID:        getenv("LEASE_ID"),
+		LeaseID:        secret("LEASE_ID"),
 		CoreGRPCAddr:   env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
 		WorktreePath:   env("WORKTREE_PATH", "/workspace"),
 		MCPPort:        env("MCP_PORT", "9090"),
 		LocalAPIPort:   env("LOCAL_API_PORT", "9091"),
 		HealthPort:     env("HEALTH_PORT", "9092"),
-		VaultProxy:     getenv("FLEET_VAULT_PROXY"),
+		VaultProxy:     secret("FLEET_VAULT_PROXY"),
 		VaultHosts:     getenv("FLEET_VAULT_HOSTS"),
 		EgressPort:     env("EGRESS_PORT", "9093"),
 		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
@@ -99,5 +115,5 @@ func Load(getenv func(string) string) (Config, error) {
 	if c.LeaseID == "" {
 		errs = append(errs, ErrNoLeaseID)
 	}
-	return c, errors.Join(errs...)
+	return c, errors.Join(append(errs, fileErrs...)...)
 }

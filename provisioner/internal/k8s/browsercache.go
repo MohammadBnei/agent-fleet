@@ -126,7 +126,8 @@ func (c *Client) EnsureBrowserCache(ctx context.Context) error {
 					Labels: map[string]string{ComponentLabel: "browser-cache"},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					AutomountServiceAccountToken: boolPtr(false),
+					RestartPolicy:                corev1.RestartPolicyNever,
 					// Same fsGroup as worker pods (pod.go): kubelet chgrps the
 					// subPath to gid 1000 and adds g+w, which is what lets this
 					// Job write a mount root it does not own. Without it the

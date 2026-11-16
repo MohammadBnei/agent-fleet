@@ -210,8 +210,9 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{container},
-					Volumes:    volumes,
+					AutomountServiceAccountToken: boolPtr(false),
+					Containers:                   []corev1.Container{container},
+					Volumes:                      volumes,
 				},
 			},
 		},

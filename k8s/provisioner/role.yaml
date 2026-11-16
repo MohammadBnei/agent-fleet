@@ -41,6 +41,11 @@ rules:
 - apiGroups: [""]
   resources: ["secrets", "persistentvolumeclaims"]
   verbs: ["create", "get", "list", "watch", "delete"]
+# docs/adr/0086 §6: a pod's credential Secret is created before its Job
+# (create, or update over a leftover) and adopted by it after (patch).
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["update", "patch"]
 - apiGroups: ["apps"]
   resources: ["deployments"]
   # update (not just create/get/list/watch/delete): EnsureSharedInstance's
