@@ -157,7 +157,14 @@ type Limits struct {
 	Timeout       string `yaml:"timeout"       json:"timeout"`
 	Concurrency   int    `yaml:"concurrency"   json:"concurrency"`
 	StartupBudget string `yaml:"startupBudget" json:"startupBudget"`
+	// MaxParks: a single-shot run that parks more than this many times ends
+	// failed, PARK_LIMIT (docs/adr/0070 §6, "Re-park cap"). Unset is
+	// DefaultMaxParks; sessions.Store reads it out of `effective` in SQL.
+	MaxParks *int `yaml:"maxParks,omitempty" json:"maxParks,omitempty"`
 }
+
+// DefaultMaxParks is limits.maxParks when a definition sets none.
+const DefaultMaxParks = 10
 
 type ClientSpec struct {
 	// TokenRef names core's env var holding the client's bearer for :9091.

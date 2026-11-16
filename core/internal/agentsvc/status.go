@@ -13,6 +13,15 @@ import (
 // provisioner does not report until the client-listener PR.
 func status(t *sessions.Session) *agentfleetv1.Status {
 	if !sessions.IsPodPhaseLive(t.PodPhase) {
+		// docs/adr/0070 §4: a single-shot run's unanswered decision reads
+		// waiting with or without a pod (a parked run holds none).
+		//
+		// ponytail: single-shot only (build order slice 9 leaves resident
+		// threads untouched); §4 says any thread, drop the lifecycle check
+		// when a resident thread with no pod should read waiting too.
+		if t.PendingDecisions > 0 && t.Lifecycle != nil && *t.Lifecycle == singleShot {
+			return &agentfleetv1.Status{State: "waiting"}
+		}
 		// Never last_error itself: it is the provisioner's text (pod names,
 		// images) and a shared thread's members are not admins.
 		if t.LastError != nil && *t.LastError != "" {

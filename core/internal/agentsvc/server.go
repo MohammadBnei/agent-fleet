@@ -34,6 +34,9 @@ type Server struct {
 type console interface {
 	// WarmIfIdle, SetMode and RememberGrant: what an answer does.
 	decisions.Effects
+	// WarmForAppend: every non-answer warm, which a parked run refuses
+	// (docs/adr/0070 §6).
+	WarmForAppend(ctx context.Context, sessionID string) (podName string, release func(), err error)
 	CreateThread(ctx context.Context, head definitions.Head, title string, thread sessions.CreateParams) (*sessions.Session, error)
 	ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error)
 	SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error)

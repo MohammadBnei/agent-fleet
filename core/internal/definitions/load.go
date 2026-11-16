@@ -676,6 +676,9 @@ func validate(name string, s *Spec) error {
 		if l.Concurrency < 1 {
 			bad("limits.concurrency %d must be >= 1", l.Concurrency)
 		}
+		if l.MaxParks != nil && *l.MaxParks < 1 {
+			bad("limits.maxParks %d must be a positive integer", *l.MaxParks)
+		}
 	}
 	return errors.Join(errs...)
 }

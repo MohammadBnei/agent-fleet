@@ -48,6 +48,8 @@ const (
 	KeyDecisionConfirmRequired errs.Key = "agent.decision_confirm_required"
 	// KeyParkedLimit: the client has maxParked single-shot runs waiting on a decision (docs/adr/0070 §1).
 	KeyParkedLimit errs.Key = "agent.parked_limit"
+	// KeyParked: a parked single-shot run takes only its answer (docs/adr/0070 §6); nothing was appended.
+	KeyParked errs.Key = "agent.parked"
 	// KeyCardBudget: the definition drafted its 10 cards of the last 24 hours (CoreService.DraftCard).
 	KeyCardBudget errs.Key = "core.card_budget"
 )

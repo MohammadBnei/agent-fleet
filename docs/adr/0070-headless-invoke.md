@@ -94,7 +94,24 @@
   `tool_result`. The decision side is the worker test "an allow for a call a
   dead pod held": the answer arrives as a message and the retry spends the
   grant. Not run live on a pod: the `/kind-local` `Invoke` QA above still
-  covers it; and the re-warm runs on the 60 s tick, not on the pod event).
+  covers it; and the re-warm runs on the 60 s tick, not on the pod event);
+  slice 9 (parked is respected: `WarmForAppend`, so `WarmIfIdle`, the
+  console's Warm and `PostMessage`, AgentService `PostMessage`, `PromptSession`
+  and every other append, refuses a parked run (`parkedWhere`, read by
+  `sessions.Store.ParkState`) `FailedPrecondition` keyed `agent.parked`;
+  an answer warms it through `WarmForAnswer`, the one warm
+  `decisions.Effects` holds, which the exit-window re-warm also uses since it
+  delivers input already appended. `limits.maxParks` is a positive int,
+  default 10, absent from `effective` when unset, so frozen rows read the
+  default; the park count is `parkCount` in SQL, the exit results at whose
+  `created_at` a question, permission or plan was open (created earlier,
+  still open or answered later), no column. A run over its cap with no live
+  pod is in `endedRun` (claimed, torn down, swept), `WaitForResult` reads it
+  `failed` with `PARK_LIMIT` before the open-decision rule, and every warm,
+  an answer's included, refuses it. AgentService `GetStatus` reads
+  `waiting` with no pod for a single-shot run with an open decision;
+  resident threads keep `idle`, as §4's "whenever" is left to a later
+  slice).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
