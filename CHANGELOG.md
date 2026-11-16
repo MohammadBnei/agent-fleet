@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.25.0](https://github.com/MohammadBnei/agent-fleet/compare/7.24.0...7.25.0) (2026-11-16)
+
+### Features
+
+* **worker:** export startup spans from process start to the session id ([#399](https://github.com/MohammadBnei/agent-fleet/issues/399)) ([c3db588](https://github.com/MohammadBnei/agent-fleet/commit/c3db58879f8e9af158d50dfa90e4b30a44697626))
+
 # [7.24.0](https://github.com/MohammadBnei/agent-fleet/compare/7.23.2...7.24.0) (2026-11-16)
 
 ### Features

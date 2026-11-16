@@ -103,6 +103,10 @@ export async function main(
       // and core reconciles against them.
       process.exitCode = 1;
     }
+  } finally {
+    // runSession flushes once its query runs; one that threw before that (a
+    // failed GetSession, a setup error) still holds its startup spans.
+    await Promise.race([flushActiveSpans(), Bun.sleep(3000)]);
   }
 }
 

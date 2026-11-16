@@ -157,3 +157,24 @@ test("a session ending normally writes no status, no journal entry, and exits ze
   expect(journal).toEqual([]);
   expect(pushed).toEqual([]);
 });
+
+// A session that throws before its query runs (GetSession failed) never
+// reaches runSession's own flush; main() still sends its startup spans.
+test("startup spans of a session that fails before its query are still sent", async () => {
+  const { SpanRecorder, setActiveRecorder } = await import("./spans.js");
+  const sent: { name: string; status: string }[][] = [];
+  const failing = async () => {
+    const rec = new SpanRecorder(async (b) => {
+      sent.push(b);
+    });
+    setActiveRecorder(rec);
+    rec.startupBegin(1, "startup-pod");
+    rec.startupStep("worker.boot", 1);
+    throw new Error("GetSession failed");
+  };
+  await main(fakeSidecar([]) as never, failing as never);
+  setActiveRecorder(null);
+  expect(sent).toHaveLength(1);
+  expect(sent[0].map((s) => s.name)).toEqual(["worker.startup", "worker.boot"]);
+  expect(sent[0][0].status).toBe("");
+});
