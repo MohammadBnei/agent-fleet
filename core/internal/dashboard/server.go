@@ -6,6 +6,7 @@
 package dashboard
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -252,6 +253,8 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		Lifecycle:      thread.Lifecycle,
 		Invoker:        thread.Invoker,
 		ThreadKey:      thread.ThreadKey,
+		// A client thread names its tier; the console and every other caller is the owner.
+		TrustSet: cmp.Or(thread.TrustSet, sessions.TrustFor(sessions.TierOwner)),
 	}
 	// No capacity check for either kind: a create provisions nothing
 	// (docs/adr/0048 §1), so ReserveSlot at warm is the one capacity gate
@@ -374,7 +377,7 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// No permission mode: a proposal-opened session takes the column default,
 	// "auto" (docs/adr/0061) — so this body runs unattended except `rm`/`sudo`.
 	// That was a deliberate call, ADR records the prompt-injection trade-off.
-	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: s.fallbackModel()})
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: s.fallbackModel(), TrustSet: sessions.TrustFor(sessions.TierOwner)})
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
@@ -1833,6 +1836,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		Model:          t.Model,
 		PermissionMode: t.PermissionMode,
 		Effort:         t.Effort,
+		TrustSet:       t.TrustSet,
 		LastActiveAt:   rfc3339(t.LastActiveAt),
 		SweptAt:        rfc3339(t.SweptAt),
 		ArchivedAt:     rfc3339(t.ArchivedAt),

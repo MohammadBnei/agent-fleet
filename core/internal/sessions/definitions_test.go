@@ -56,7 +56,7 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("this core leases a definition session: %v", err)
 	}
-	if ok, name, err := store.VerifyLease(ctx, def, lease); err != nil || !ok || name != "a" {
+	if ok, name, _, err := store.VerifyLease(ctx, def, lease); err != nil || !ok || name != "a" {
 		t.Fatalf("VerifyLease = %v %q %v, want the definition's name", ok, name, err)
 	}
 	// An older core's VerifyLease query.
@@ -72,7 +72,7 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL, pod_phase = 'POD_PHASE_TERMINATED' WHERE id = $1`, def); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _, err := store.VerifyLease(ctx, def, lease); err != nil || ok {
+	if ok, _, _, err := store.VerifyLease(ctx, def, lease); err != nil || ok {
 		t.Fatalf("a definition lease outlived its pod: %v %v", ok, err)
 	}
 	if ok, err := store.SaveAgentSessionID(ctx, def, "sdk-2", "", lease); err != nil || ok {
@@ -84,7 +84,7 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	if err := store.ClearLease(ctx, def); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _, err := store.VerifyLease(ctx, def, lease); err != nil || ok {
+	if ok, _, _, err := store.VerifyLease(ctx, def, lease); err != nil || ok {
 		t.Fatalf("a cleared definition lease still verifies: %v %v", ok, err)
 	}
 	repo := newSession(t, ctx, store)
@@ -92,7 +92,7 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, name, err := store.VerifyLease(ctx, repo, repoLease); err != nil || !ok || name != "" {
+	if ok, name, _, err := store.VerifyLease(ctx, repo, repoLease); err != nil || !ok || name != "" {
 		t.Fatalf("a repo lease: %v %q %v", ok, name, err)
 	}
 	// A repo session never holds a definition lease: it would verify with no
@@ -100,7 +100,7 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET profile_lease_id = gen_random_uuid() WHERE id = $1`, repo); err == nil || !strings.Contains(err.Error(), "sessions_profile_lease_definition_only") {
 		t.Fatalf("want the CHECK to refuse a repo session's definition lease, got %v", err)
 	}
-	if ok, _, err := store.VerifyLease(ctx, repo, "not-a-lease"); err != nil || ok {
+	if ok, _, _, err := store.VerifyLease(ctx, repo, "not-a-lease"); err != nil || ok {
 		t.Fatalf("a wrong lease: %v %v", ok, err)
 	}
 }

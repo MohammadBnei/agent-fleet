@@ -12,6 +12,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -39,7 +41,7 @@ const (
 // definition is the session's definition name, "" for a repo session, read in
 // the same lookup (docs/adr/0064).
 type LeaseVerifier interface {
-	VerifyLease(ctx context.Context, sessionID, leaseID string) (ok bool, definition string, err error)
+	VerifyLease(ctx context.Context, sessionID, leaseID string) (ok bool, definition, trustSet string, err error)
 }
 
 // callerSessionOf reports which field of a request identifies the CALLER's own
@@ -234,6 +236,7 @@ func NewAuthenticator(leases LeaseVerifier, provisionerToken string) *Authentica
 type caller struct {
 	session    string
 	definition string
+	trustSet   string // docs/adr/0086 §2: the session's stored letters
 }
 
 // authenticate establishes who is calling.
@@ -260,7 +263,7 @@ func (a *Authenticator) authenticate(ctx context.Context, method string) (caller
 	if sid == "" || lease == "" {
 		return caller{}, errNoCredential
 	}
-	ok, definition, err := a.leases.VerifyLease(ctx, sid, lease)
+	ok, definition, trustSet, err := a.leases.VerifyLease(ctx, sid, lease)
 	if err != nil {
 		// Deliberately not Unauthenticated: a database blip is not a rejected
 		// credential, and the caller should retry rather than give up.
@@ -269,7 +272,7 @@ func (a *Authenticator) authenticate(ctx context.Context, method string) (caller
 	if !ok {
 		return caller{}, errBadLease
 	}
-	return caller{session: sid, definition: definition}, nil
+	return caller{session: sid, definition: definition, trustSet: trustSet}, nil
 }
 
 func (a *Authenticator) checkProvisioner(md metadata.MD) bool {
@@ -304,6 +307,12 @@ func authorize(method string, c caller, req any) error {
 	if c.definition != "" && !definitionMethods[method] {
 		slog.Warn("coreserver refused a definition session's call", "method", method, "session", c.session, "definition", c.definition)
 		return errDefinition
+	}
+	// docs/adr/0086 §2: a method tagged B or C needs that letter in the session's stored set.
+	if letter := methodTags[method]; letter != "" && !sessions.HoldsTrust(c.trustSet, letter) {
+		slog.Warn("coreserver refused a method outside the session's trust set", "method", method, "session", c.session, "trustSet", c.trustSet)
+		return errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,
+			method+" needs "+letter+", outside this session's trust set "+c.trustSet+" (docs/adr/0086): ask the owner through a decision card")
 	}
 	// Every pod writer authors as "agent" or "worker". "human" is written only
 	// by DashboardService and "session" only by core's own PromptSession, and

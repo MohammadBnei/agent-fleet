@@ -77,6 +77,8 @@ type Session struct {
 	// Effort is the repo session's chosen effort level; NULL = Claude Code's
 	// default (docs/adr/0077).
 	Effort *string `json:"effort,omitempty"`
+	// TrustSet is the Rule of Two letters (docs/adr/0086 §2), stored at create. Read it, never recompute it.
+	TrustSet string `json:"trustSet"`
 
 	// Liveness inputs (docs/adr/0040), maintained by the activity-tracking
 	// decorator in cmd/core, so DeriveLiveState can be a pure function of
@@ -201,7 +203,7 @@ const selectCols = `
 	s.last_active_at, s.swept_at, s.archived_at,
 	s.worker_image, s.sidecar_image, s.fleet_version,
 	s.definition_name, s.definition_sha,
-	s.owner, s.visibility, s.invoker, s.lifecycle, s.created_at,
+	s.owner, s.visibility, s.invoker, s.lifecycle, s.created_at, s.trust_set,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
 	(SELECT count(*) FROM decisions d
@@ -221,7 +223,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
-		&s.Owner, &s.Visibility, &s.Invoker, &s.Lifecycle, &s.CreatedAt,
+		&s.Owner, &s.Visibility, &s.Invoker, &s.Lifecycle, &s.CreatedAt, &s.TrustSet,
 		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions,
 	)
 	if err != nil {
@@ -275,6 +277,8 @@ type CreateParams struct {
 	// Invoker and ThreadKey name a client's thread (docs/adr/0066 §6).
 	Invoker   string
 	ThreadKey string
+	// TrustSet is TrustSetFor's answer for the trigger; empty is BC (an owner or fleet trigger).
+	TrustSet string
 }
 
 func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
@@ -295,12 +299,12 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort,
-		                      owner, visibility, lifecycle, invoker, thread_key)
+		                      owner, visibility, lifecycle, invoker, thread_key, trust_set)
 		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''),
-		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''))
+		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), COALESCE(NULLIF($14, ''), 'BC'))
 		RETURNING id
 	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort,
-		p.Owner, p.Visibility, p.Lifecycle, p.Invoker, p.ThreadKey).Scan(&id)
+		p.Owner, p.Visibility, p.Lifecycle, p.Invoker, p.ThreadKey, p.TrustSet).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
@@ -1141,6 +1145,8 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 // the same lookup: it is what narrows a definition lease to its allowlist
 // (docs/adr/0064).
 //
+// trustSet is the session's stored Rule of Two letters, read in the same lookup (docs/adr/0086 §2).
+//
 // A definition lease (profile_lease_id) counts only while the row says a pod
 // is live. An older core (image rollback, rollout overlap) tears a definition
 // pod down with a ClearLease that nulls lease_id alone, so profile_lease_id
@@ -1151,18 +1157,18 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 // drift: $2 is the lease, $3 livePhases.
 const leaseMatch = `(lease_id::text = $2 OR (profile_lease_id::text = $2 AND pod_phase = ANY($3)))`
 
-func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (ok bool, definition string, err error) {
+func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (ok bool, definition, trustSet string, err error) {
 	err = s.pool.QueryRow(ctx, `
-		SELECT COALESCE(definition_name, '') FROM sessions
-		WHERE id = $1 AND `+leaseMatch, id, leaseID, livePhases).Scan(&definition)
+		SELECT COALESCE(definition_name, ''), trust_set FROM sessions
+		WHERE id = $1 AND `+leaseMatch, id, leaseID, livePhases).Scan(&definition, &trustSet)
 	if err == pgx.ErrNoRows {
-		return false, "", nil
+		return false, "", "", nil
 	}
 	if err != nil {
 		slog.Error("sessions VerifyLease", "sessionId", id, "error", err)
-		return false, "", fmt.Errorf("verify lease: %w", err)
+		return false, "", "", fmt.Errorf("verify lease: %w", err)
 	}
-	return true, definition, nil
+	return true, definition, trustSet, nil
 }
 
 // ClearLease revokes a session's credential at teardown.
