@@ -1,7 +1,9 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -93,14 +95,47 @@ func TestCreateWorkerPod_DefinitionMintsVaultToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var proxy string
-	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
-		if e.Name == "HTTPS_PROXY" {
-			proxy = e.Value
+	// ADR-0086 §6: the worker proxies through the sidecar; the token is in the
+	// pod's Secret, owned by the Job, and in no env.
+	sec, err := k8sc.Core.CoreV1().Secrets("agent-fleet").Get(context.Background(), k8s.CredSecretName("def-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sec.StringData["vault-proxy"]; got != "http://"+sess.Token+":dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
+		t.Errorf("secret vault-proxy %q does not carry the minted token", got)
+	}
+	if len(sec.OwnerReferences) != 1 || sec.OwnerReferences[0].Kind != "Job" || sec.OwnerReferences[0].Name != job.Name {
+		t.Errorf("secret owner %v, want the Job", sec.OwnerReferences)
+	}
+	sidecarEnv := map[string]string{}
+	for _, c := range job.Spec.Template.Spec.InitContainers {
+		if c.Name == "sidecar" {
+			for _, e := range c.Env {
+				sidecarEnv[e.Name] = e.Value
+			}
 		}
 	}
-	if proxy != "http://"+sess.Token+":dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
-		t.Errorf("HTTPS_PROXY %q does not carry the minted token", proxy)
+	for k, want := range map[string]string{
+		"FLEET_VAULT_HOSTS": "api.anthropic.com,github.com", "FLEET_VAULT_PROXY_FILE": "/run/fleet/cred/vault-proxy", "EGRESS_PORT": "9093",
+	} {
+		if sidecarEnv[k] != want {
+			t.Errorf("sidecar %s = %q, want %q", k, sidecarEnv[k], want)
+		}
+	}
+	// ADR-0086 §6: the token and lease are in no part of the Job (env, args,
+	// annotations, mounts), only in its Secret.
+	whole, _ := json.Marshal(job)
+	for _, secret := range []string{sess.Token, sec.StringData["lease"]} {
+		if secret != "" && bytes.Contains(whole, []byte(secret)) {
+			t.Errorf("the definition Job carries %q", secret)
+		}
+	}
+	for _, c := range append(job.Spec.Template.Spec.InitContainers, job.Spec.Template.Spec.Containers...) {
+		for _, e := range c.Env {
+			if strings.Contains(e.Value, sess.Token) {
+				t.Errorf("%s env %s holds the vault token", c.Name, e.Name)
+			}
+		}
 	}
 	if d := job.Spec.ActiveDeadlineSeconds; d == nil || *d != 43200 {
 		t.Errorf("deadline %v, want the 12h cap, not limits.timeout (1800)", d)
@@ -495,7 +530,11 @@ func TestCreateWorkerPod_RepoSessionUsesItsOwnerVault(t *testing.T) {
 			}
 		}
 	}
-	if sidecar["FLEET_VAULT_PROXY"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" ||
+	sec, err := k8sc.Core.CoreV1().Secrets("agent-fleet").Get(context.Background(), k8s.CredSecretName("repo-1"), metav1.GetOptions{})
+	if err != nil || sec.StringData["vault-proxy"] != "http://"+v.Sessions[0].Token+":owner-mohammadbnei@agent-vault.agent-vault.svc.cluster.local:14322" {
+		t.Errorf("secret %+v, %v", sec, err)
+	}
+	if sidecar["FLEET_VAULT_PROXY_FILE"] != "/run/fleet/cred/vault-proxy" || sidecar["FLEET_VAULT_PROXY"] != "" ||
 		sidecar["FLEET_VAULT_HOSTS"] != "api.anthropic.com,github.com,api.github.com" || sidecar["EGRESS_PORT"] != "9093" {
 		t.Errorf("sidecar env %v", sidecar)
 	}

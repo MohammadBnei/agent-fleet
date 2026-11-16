@@ -1,11 +1,13 @@
-// Package egress is a repo pod's HTTPS_PROXY (docs/adr/0075 §7): a CONNECT
+// Package egress is the HTTPS_PROXY of every pod, repo and definition (docs/adr/0075 §7): a CONNECT
 // router on loopback. The vault's hosts go on to Agent Vault, which injects
 // the real credential; every other host is tunnelled direct, untouched.
 //
 // Agent Vault's MITM speaks HTTP/1.1 only and drops trailers, so sending
 // everything through it broke HTTP/2 and gRPC to every external host, showed
 // the vault all of the pod's HTTPS in plaintext, and spent its rate limit on
-// package installs. The token is in the sidecar's env, not the worker's. That
+// package installs. The token lives only in the sidecar's credential
+// file (FLEET_VAULT_PROXY_FILE, docs/adr/0086 §6), read once at sidecar start
+// (tokens are per warm and never rotated), not in the worker's env. That
 // is tidiness, not a boundary: the worker can use the vault through this
 // router anyway, and a stolen token works only from a pod the vault's
 // NetworkPolicy admits.

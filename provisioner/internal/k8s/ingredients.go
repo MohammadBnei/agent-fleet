@@ -72,10 +72,11 @@ func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientR
 	// token — least privilege by construction, not by convention.
 	for _, key := range toolKeys {
 		if key == "cluster-access" {
-			env = append(env,
-				corev1.EnvVar{Name: "EXECUTOR_ADDR", Value: cluster.ExecutorAddr},
-				corev1.EnvVar{Name: "THOT_AUTH_TOKEN", Value: cluster.AuthToken},
-			)
+			env = append(env, corev1.EnvVar{Name: "EXECUTOR_ADDR", Value: cluster.ExecutorAddr})
+			// docs/adr/0086 §6: a path to the pod's Secret, never the token.
+			if cluster.AuthToken != "" {
+				env = append(env, corev1.EnvVar{Name: ThotAuthTokenFileEnv, Value: credDir + "/" + credKeyThot})
+			}
 		}
 	}
 
