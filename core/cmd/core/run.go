@@ -52,6 +52,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -465,6 +466,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	})
 	alertHandler.SetInactive(repoStore.Inactive)
 	mux.Handle("/webhook/alertmanager", alertHandler)
+	mux.Handle(remediations.Path, remediations.Handler(remediations.NewStore(pool), cfg.RemediationToken))
 	mux.Handle(dashboardPath, dashboardHandler)
 	// With FLEET_AUTH_DISABLED=1 the identity is devIdentity (above).
 	memberInterceptors = connectInterceptors(tr, true,
