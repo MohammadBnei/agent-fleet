@@ -129,14 +129,14 @@ type Session struct {
 	DefinitionSHA  *string `json:"definitionSha,omitempty"`
 
 	// docs/adr/0067 §1, AgentService sessions only. A nil Owner (every
-	// console-created session) reads as admin-only; nil Interaction and
-	// Lifecycle read as ask and resident.
-	Owner       *string   `json:"owner,omitempty"`
-	Visibility  *string   `json:"visibility,omitempty"`
-	Invoker     *string   `json:"invoker,omitempty"`
-	Interaction *string   `json:"interaction,omitempty"`
-	Lifecycle   *string   `json:"lifecycle,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
+	// console-created session) reads as admin-only; a nil Lifecycle reads
+	// as resident. The interaction column is no longer read or written
+	// (docs/adr/0070 §2).
+	Owner      *string   `json:"owner,omitempty"`
+	Visibility *string   `json:"visibility,omitempty"`
+	Invoker    *string   `json:"invoker,omitempty"`
+	Lifecycle  *string   `json:"lifecycle,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // Caps is the pair of ceilings ReserveSlot enforces. A struct, not two ints:
@@ -201,7 +201,7 @@ const selectCols = `
 	s.last_active_at, s.swept_at, s.archived_at,
 	s.worker_image, s.sidecar_image, s.fleet_version,
 	s.definition_name, s.definition_sha,
-	s.owner, s.visibility, s.invoker, s.interaction, s.lifecycle, s.created_at,
+	s.owner, s.visibility, s.invoker, s.lifecycle, s.created_at,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
 	(SELECT count(*) FROM decisions d
@@ -221,7 +221,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
-		&s.Owner, &s.Visibility, &s.Invoker, &s.Interaction, &s.Lifecycle, &s.CreatedAt,
+		&s.Owner, &s.Visibility, &s.Invoker, &s.Lifecycle, &s.CreatedAt,
 		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions,
 	)
 	if err != nil {
@@ -267,12 +267,11 @@ type CreateParams struct {
 	// (docs/adr/0062). Both or neither; empty writes NULL.
 	DefinitionName string
 	DefinitionSHA  string
-	// Owner, Visibility, Interaction and Lifecycle are set for AgentService
-	// threads only (docs/adr/0067 §1); empty writes NULL.
-	Owner       string
-	Visibility  string
-	Interaction string
-	Lifecycle   string
+	// Owner, Visibility and Lifecycle are set for AgentService threads only
+	// (docs/adr/0067 §1); empty writes NULL.
+	Owner      string
+	Visibility string
+	Lifecycle  string
 	// Invoker and ThreadKey name a client's thread (docs/adr/0066 §6).
 	Invoker   string
 	ThreadKey string
@@ -296,12 +295,12 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort,
-		                      owner, visibility, interaction, lifecycle, invoker, thread_key)
+		                      owner, visibility, lifecycle, invoker, thread_key)
 		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''),
-		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), NULLIF($14, ''))
+		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''))
 		RETURNING id
 	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort,
-		p.Owner, p.Visibility, p.Interaction, p.Lifecycle, p.Invoker, p.ThreadKey).Scan(&id)
+		p.Owner, p.Visibility, p.Lifecycle, p.Invoker, p.ThreadKey).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)

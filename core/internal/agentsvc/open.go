@@ -104,8 +104,9 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("actor or causation_id is too long"))
 	case m.GetVisibility() != "shared" && m.GetVisibility() != "private":
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New(`visibility must be "shared" or "private"`))
-	case m.GetInteraction() != "ask" || m.GetLifecycle() != "resident":
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New(`Open takes interaction "ask" and lifecycle "resident": a single-shot run is Invoke's`))
+	// interaction is ignored (docs/adr/0070 §2): every session can ask.
+	case m.GetLifecycle() != "resident":
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New(`Open takes lifecycle "resident": a single-shot run is Invoke's`))
 	}
 	head, ok := s.usable(p, m.GetDefinition())
 	if !ok {
@@ -155,7 +156,7 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("this client has %d open threads; close some first", n))
 		}
 		if t, err = s.dash.CreateThread(ctx, head, m.GetThreadKey(), sessions.CreateParams{
-			Owner: owner, Visibility: m.GetVisibility(), Interaction: m.GetInteraction(), Lifecycle: m.GetLifecycle(),
+			Owner: owner, Visibility: m.GetVisibility(), Lifecycle: m.GetLifecycle(),
 			Invoker: p.Client, ThreadKey: m.GetThreadKey(),
 		}); err != nil {
 			return nil, err
@@ -285,8 +286,8 @@ func (s *Server) resolveThread(ctx context.Context, p Principal, head definition
 	if t == nil {
 		return nil, "", nil
 	}
-	if deref(t.Interaction, "ask") != m.GetInteraction() || deref(t.Lifecycle, "resident") != m.GetLifecycle() || deref(t.Visibility, "") != m.GetVisibility() {
-		return nil, "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this thread was opened with a different interaction, lifecycle or visibility"))
+	if deref(t.Lifecycle, "resident") != m.GetLifecycle() || deref(t.Visibility, "") != m.GetVisibility() {
+		return nil, "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this thread was opened with a different lifecycle or visibility"))
 	}
 	// Only a waking message replaces a thread; context must neither end the
 	// thread nor open a new one.
@@ -341,7 +342,8 @@ func (s *Server) mayClaim(client, actor string) bool {
 
 // requestInteraction stands in the request hash where interaction was
 // (docs/adr/0070 §2): Open only ever took "ask", so claims stored with the
-// real value still match.
+// real value still match. Kept after release two dropped the field: a
+// claim is never deleted, so the hash's shape is frozen.
 const requestInteraction = "ask"
 
 // requestSHA is §7's request identity: the same key with another request is

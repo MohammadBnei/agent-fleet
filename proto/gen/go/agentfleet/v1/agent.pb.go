@@ -231,12 +231,15 @@ func (DecisionState) EnumDescriptor() ([]byte, []int) {
 }
 
 type AgentDefinitionInfo struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	ModelAllow       []string               `protobuf:"bytes,2,rep,name=model_allow,json=modelAllow,proto3" json:"model_allow,omitempty"`
-	ModeAllow        []string               `protobuf:"bytes,3,rep,name=mode_allow,json=modeAllow,proto3" json:"mode_allow,omitempty"`
-	InteractionAllow []string               `protobuf:"bytes,4,rep,name=interaction_allow,json=interactionAllow,proto3" json:"interaction_allow,omitempty"`
-	LifecycleAllow   []string               `protobuf:"bytes,5,rep,name=lifecycle_allow,json=lifecycleAllow,proto3" json:"lifecycle_allow,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Name       string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	ModelAllow []string               `protobuf:"bytes,2,rep,name=model_allow,json=modelAllow,proto3" json:"model_allow,omitempty"`
+	ModeAllow  []string               `protobuf:"bytes,3,rep,name=mode_allow,json=modeAllow,proto3" json:"mode_allow,omitempty"`
+	// Unused: interaction is gone (docs/adr/0070 §2). Always empty.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
+	InteractionAllow []string `protobuf:"bytes,4,rep,name=interaction_allow,json=interactionAllow,proto3" json:"interaction_allow,omitempty"`
+	LifecycleAllow   []string `protobuf:"bytes,5,rep,name=lifecycle_allow,json=lifecycleAllow,proto3" json:"lifecycle_allow,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -292,6 +295,7 @@ func (x *AgentDefinitionInfo) GetModeAllow() []string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 func (x *AgentDefinitionInfo) GetInteractionAllow() []string {
 	if x != nil {
 		return x.InteractionAllow
@@ -395,7 +399,9 @@ type Thread struct {
 	Visibility string `protobuf:"bytes,4,opt,name=visibility,proto3" json:"visibility,omitempty"`
 	// True when the caller owns the thread.
 	Mine bool `protobuf:"varint,5,opt,name=mine,proto3" json:"mine,omitempty"`
-	// "ask" or "deny".
+	// Unused: interaction is gone (docs/adr/0070 §2). Always empty.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 	Interaction string `protobuf:"bytes,6,opt,name=interaction,proto3" json:"interaction,omitempty"`
 	// "resident" or "single-shot".
 	Lifecycle string `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
@@ -477,6 +483,7 @@ func (x *Thread) GetMine() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 func (x *Thread) GetInteraction() string {
 	if x != nil {
 		return x.Interaction
@@ -1816,7 +1823,10 @@ type OpenRequest struct {
 	// Ignored: taint is gone (docs/adr/0082 §3); wake alone decides.
 	//
 	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
-	Tainted        bool   `protobuf:"varint,5,opt,name=tainted,proto3" json:"tainted,omitempty"`
+	Tainted bool `protobuf:"varint,5,opt,name=tainted,proto3" json:"tainted,omitempty"`
+	// Ignored: interaction is gone (docs/adr/0070 §2); every session can ask.
+	//
+	// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 	Interaction    string `protobuf:"bytes,6,opt,name=interaction,proto3" json:"interaction,omitempty"`
 	Lifecycle      string `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
 	Visibility     string `protobuf:"bytes,8,opt,name=visibility,proto3" json:"visibility,omitempty"`
@@ -1893,6 +1903,7 @@ func (x *OpenRequest) GetTainted() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in agentfleet/v1/agent.proto.
 func (x *OpenRequest) GetInteraction() string {
 	if x != nil {
 		return x.Interaction
@@ -3057,18 +3068,18 @@ var File_agentfleet_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x19agentfleet/v1/agent.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1dukubi/errors/v1/options.proto\"\xbf\x01\n" +
+	"\x19agentfleet/v1/agent.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1dukubi/errors/v1/options.proto\"\xc3\x01\n" +
 	"\x13AgentDefinitionInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
 	"\vmodel_allow\x18\x02 \x03(\tR\n" +
 	"modelAllow\x12\x1d\n" +
 	"\n" +
-	"mode_allow\x18\x03 \x03(\tR\tmodeAllow\x12+\n" +
-	"\x11interaction_allow\x18\x04 \x03(\tR\x10interactionAllow\x12'\n" +
+	"mode_allow\x18\x03 \x03(\tR\tmodeAllow\x12/\n" +
+	"\x11interaction_allow\x18\x04 \x03(\tB\x02\x18\x01R\x10interactionAllow\x12'\n" +
 	"\x0flifecycle_allow\x18\x05 \x03(\tR\x0elifecycleAllow\"$\n" +
 	"\"AgentServiceListDefinitionsRequest\"k\n" +
 	"#AgentServiceListDefinitionsResponse\x12D\n" +
-	"\vdefinitions\x18\x01 \x03(\v2\".agentfleet.v1.AgentDefinitionInfoR\vdefinitions\"\xfe\x02\n" +
+	"\vdefinitions\x18\x01 \x03(\v2\".agentfleet.v1.AgentDefinitionInfoR\vdefinitions\"\x82\x03\n" +
 	"\x06Thread\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1e\n" +
 	"\n" +
@@ -3078,8 +3089,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"visibility\x18\x04 \x01(\tR\n" +
 	"visibility\x12\x12\n" +
-	"\x04mine\x18\x05 \x01(\bR\x04mine\x12 \n" +
-	"\vinteraction\x18\x06 \x01(\tR\vinteraction\x12\x1c\n" +
+	"\x04mine\x18\x05 \x01(\bR\x04mine\x12$\n" +
+	"\vinteraction\x18\x06 \x01(\tB\x02\x18\x01R\vinteraction\x12\x1c\n" +
 	"\tlifecycle\x18\a \x01(\tR\tlifecycle\x12\x14\n" +
 	"\x05model\x18\b \x01(\tR\x05model\x12\x12\n" +
 	"\x04mode\x18\t \x01(\tR\x04mode\x12\x1c\n" +
@@ -3171,7 +3182,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x10GetStatusRequest\x12\x1b\n" +
 	"\tthread_id\x18\x01 \x01(\tR\bthreadId\"B\n" +
 	"\x11GetStatusResponse\x12-\n" +
-	"\x06status\x18\x01 \x01(\v2\x15.agentfleet.v1.StatusR\x06status\"\xda\x02\n" +
+	"\x06status\x18\x01 \x01(\v2\x15.agentfleet.v1.StatusR\x06status\"\xde\x02\n" +
 	"\vOpenRequest\x12\x1e\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\tR\n" +
@@ -3180,8 +3191,8 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"thread_key\x18\x02 \x01(\tR\tthreadKey\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x12\n" +
 	"\x04wake\x18\x04 \x01(\bR\x04wake\x12\x1c\n" +
-	"\atainted\x18\x05 \x01(\bB\x02\x18\x01R\atainted\x12 \n" +
-	"\vinteraction\x18\x06 \x01(\tR\vinteraction\x12\x1c\n" +
+	"\atainted\x18\x05 \x01(\bB\x02\x18\x01R\atainted\x12$\n" +
+	"\vinteraction\x18\x06 \x01(\tB\x02\x18\x01R\vinteraction\x12\x1c\n" +
 	"\tlifecycle\x18\a \x01(\tR\tlifecycle\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\b \x01(\tR\n" +

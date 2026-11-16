@@ -53,7 +53,7 @@ func (s *Server) agentSpecOf(ctx context.Context, sessionID string) (*agentfleet
 }
 
 // agentSpec flattens an effective spec into what the worker applies.
-// Interaction stays "": nothing reads it (ADR-0070 §2). Lifecycle is the
+// Interaction stays "": it left the spec (ADR-0070 §2). Lifecycle is the
 // session row's, passed in, and is sent for single-shot only (with the
 // definition's output schema): a resident session keeps both empty, which
 // proto's deterministic encoding omits, so its agent_spec_sha is the one it

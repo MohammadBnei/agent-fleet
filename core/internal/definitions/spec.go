@@ -56,7 +56,6 @@ type Spec struct {
 	Skills       []string      `yaml:"skills,omitempty"       json:"skills,omitempty"`
 	Tools        *Tools        `yaml:"tools,omitempty"        json:"tools,omitempty"`
 	SidecarTools []string      `yaml:"sidecarTools,omitempty" json:"sidecarTools,omitempty"`
-	Interaction  *AllowList    `yaml:"interaction,omitempty"  json:"interaction,omitempty"`
 	Lifecycle    *AllowList    `yaml:"lifecycle,omitempty"    json:"lifecycle,omitempty"`
 	Output       *Output       `yaml:"output,omitempty"       json:"output,omitempty"`
 	Owns         *Owns         `yaml:"owns,omitempty"         json:"owns,omitempty"`

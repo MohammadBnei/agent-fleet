@@ -118,7 +118,6 @@ func threadToProto(p Principal, t *sessions.Session) *agentfleetv1.Thread {
 		Title:        deref(t.Title, ""),
 		Visibility:   deref(t.Visibility, "private"),
 		Mine:         t.Owner != nil && *t.Owner == p.owner(),
-		Interaction:  deref(t.Interaction, "ask"),
 		Lifecycle:    deref(t.Lifecycle, "resident"),
 		Model:        deref(t.Model, ""),
 		Mode:         deref(t.PermissionMode, ""),
@@ -167,7 +166,7 @@ func (s *Server) ListThreads(ctx context.Context, req *connect.Request[agentflee
 }
 
 // CreateThread provisions nothing (docs/adr/0048 §1): the first PostMessage
-// warms. A member's thread is interaction ask and lifecycle resident
+// warms. A member's thread is lifecycle resident
 // (docs/adr/0067 §1).
 func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfleetv1.CreateThreadRequest]) (*connect.Response[agentfleetv1.CreateThreadResponse], error) {
 	p, err := principal(ctx)
@@ -208,7 +207,7 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition takes no resident threads"))
 	}
 	t, err := s.dash.CreateThread(ctx, h, req.Msg.GetTitle(), sessions.CreateParams{
-		Owner: p.owner(), Visibility: vis, Interaction: "ask", Lifecycle: "resident",
+		Owner: p.owner(), Visibility: vis, Lifecycle: "resident",
 	})
 	if err != nil {
 		return nil, err

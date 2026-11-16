@@ -73,7 +73,7 @@ func TestOpen(t *testing.T) {
 	open := func(c context.Context, key, msg string, wake bool, actor string) (*agentfleetv1.OpenResponse, error) {
 		r, err := s.Open(c, connect.NewRequest(&agentfleetv1.OpenRequest{
 			Definition: "d", ThreadKey: "pr-1", Message: msg, Wake: wake,
-			Interaction: "ask", Lifecycle: "resident", Visibility: "private", IdempotencyKey: key, Actor: actor,
+			Lifecycle: "resident", Visibility: "private", IdempotencyKey: key, Actor: actor,
 		}))
 		if err != nil {
 			return nil, err
@@ -102,6 +102,14 @@ func TestOpen(t *testing.T) {
 	again, err := open(bot, "k1", "review this", true, "MohammadBnei")
 	if err != nil || again.GetThreadId() != first.GetThreadId() || again.GetSeq() != first.GetSeq() || len(dash.warms) != 1 {
 		t.Fatalf("retry: %v %v warms=%v", again, err, dash.warms)
+	}
+	// interaction is ignored (docs/adr/0070 §2): a retry that sends one is
+	// the same request.
+	legacy, err := s.Open(bot, connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "pr-1", Message: "review this", Wake: true,
+		Interaction: "deny", //nolint:staticcheck // the deprecated field, sent on purpose
+		Lifecycle:   "resident", Visibility: "private", IdempotencyKey: "k1", Actor: "MohammadBnei"}))
+	if err != nil || legacy.Msg.GetThreadId() != first.GetThreadId() || len(dash.warms) != 1 {
+		t.Fatalf("retry with an interaction: %v %v warms=%v", legacy, err, dash.warms)
 	}
 	if _, err := open(bot, "k1", "something else", true, "MohammadBnei"); code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("same key, different request: %v", err)
@@ -135,7 +143,7 @@ func TestOpen(t *testing.T) {
 	}
 	// A different visibility on resume is refused.
 	if _, err := s.Open(bot, connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "pr-1", Message: "x", Wake: true,
-		Interaction: "ask", Lifecycle: "resident", Visibility: "shared", IdempotencyKey: "k4", Actor: "MohammadBnei"})); code(err) != connect.CodeFailedPrecondition {
+		Lifecycle: "resident", Visibility: "shared", IdempotencyKey: "k4", Actor: "MohammadBnei"})); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("visibility change on resume: %v", err)
 	}
 	// The definition moved on: a waking Open replaces the thread.
@@ -199,7 +207,7 @@ func TestOpen_DelistedClient(t *testing.T) {
 	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec}}, dash: dash, sessions: store, transcr: transcr, hub: dashboard.NewHub()}
 	bot := withPrincipal(ctx, Principal{Client: "bot"})
 	r, err := s.Open(bot, connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "t", Message: "x", Wake: true,
-		Interaction: "ask", Lifecycle: "resident", Visibility: "private", IdempotencyKey: "k", Actor: "MohammadBnei"}))
+		Lifecycle: "resident", Visibility: "private", IdempotencyKey: "k", Actor: "MohammadBnei"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +263,7 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 	}
 	req := func(key string, wake bool) *agentfleetv1.OpenRequest {
 		return &agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "github/o/notes/pr/1", Message: "event", Wake: wake,
-			Interaction: "ask", Lifecycle: "resident", Visibility: "shared", IdempotencyKey: key, Actor: "MohammadBnei"}
+			Lifecycle: "resident", Visibility: "shared", IdempotencyKey: key, Actor: "MohammadBnei"}
 	}
 
 	// No thread and not waking: the typed error the dispatcher proposes on.

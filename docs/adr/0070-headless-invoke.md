@@ -1,6 +1,6 @@
 # ADR-0070 — Headless invoke: any session can ask, one structured result
 
-- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3. Amended 2026-11-15: §6 is rebuilt on ADR-0082's one-time grants and the `defer` spike is dropped; §3's result key is per result; a build order is added. Approved by the owner (merged as #369); the six open questions were answered 2026-11-16 (see "Owner answers" at the end of §6).
+- **Status:** Accepted (2026-10-25); taint (`tainted` on `Open` and `Thread`, the admin-only tainted thread) is removed by [ADR-0082](0082-decision-cards.md) §3. Amended 2026-11-15: §6 is rebuilt on ADR-0082's one-time grants and the `defer` spike is dropped; §3's result key is per result; a build order is added. Approved by the owner (merged as #369); the six open questions were answered 2026-11-16 (see "Owner answers" at the end of §6). All twelve build-order slices built (2026-11-16); the live `/kind-local` QA is still outstanding.
 - **Date:** 2026-10-20, amended 2026-10-25 (the owner's rule: "absolutely
   any session, headless or not, must be able to ask a question"), amended
   2026-11-15 (§6 on ADR-0082, §3's key, build order)
@@ -128,8 +128,21 @@
   the open-decision rule, and every warm, an answer's included, refuses it.
   AgentService `GetStatus` reads `waiting` with no pod for a single-shot run
   with an open question, permission or plan (never a card alone); resident
-  threads keep `idle`, as §4's "whenever" is left to a later slice).
-  **Not yet built:** everything else, in the order of "Build order" below.
+  threads keep `idle`, as §4's "whenever" is left to a later slice);
+  slice 12 (`interaction`, release two: gone from `definitions/`,
+  `local/kind/definitions/` and the loader's `Spec`, so the strict decode
+  refuses an `interaction:` key as unknown, and every definition's pin
+  moved; a stored row whose effective still holds it is not understood by
+  this core, as for any row an older ceiling wrote, and is left as it is.
+  `Open` ignores the request's `interaction` and checks only `lifecycle`;
+  the request hash keeps the `"ask"` constant, since claims are never
+  deleted; `sessions.interaction` is neither written nor read (the column
+  stays, NULL); `ListDefinitions` no longer fills `interaction_allow`, and a
+  `Thread`'s `interaction` is empty. The proto fields stay, `[deprecated =
+  true]` and documented as ignored, so `buf breaking` passes).
+  **All twelve build-order slices are built.** Still outstanding: the
+  `/kind-local` `Invoke` QA named in slice 6 and the QA list under
+  "Consequences", on a live pod.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
   exits with an open decision is parked, not crashed; a clean exit with

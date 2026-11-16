@@ -17,7 +17,6 @@ spec:
   mode: { default: default, allow: [default, plan] }
   tools: { allow: [Read], deny: ["Edit(.git/**)"] }
   sidecarTools: [AskUserQuestion]
-  interaction: { allow: [ask] }
   lifecycle: { allow: [resident] }
   limits: { maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m }
 `
@@ -104,7 +103,6 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"Bash exact command ok", map[string]string{"tools": `{ allow: ["Bash(git status)"] }`}, ""},
 		// erasing a parent's bound: null and absence both fail
 		{"tools null", map[string]string{"tools": "~"}, "spec.tools: null is not allowed"},
-		{"interaction null", map[string]string{"interaction": "~"}, "spec.interaction: null"},
 		{"lifecycle null", map[string]string{"lifecycle": "null"}, "spec.lifecycle: null"},
 		{"resources null", map[string]string{"resources": "~"}, "spec.resources: null"},
 		{"tools empty allow", map[string]string{"tools": "{ allow: [] }"}, "tools.allow must not be empty"},
@@ -195,7 +193,8 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"answerTimeout past retention", map[string]string{"limits": "{ maxTurns: 10, timeout: 1h, concurrency: 1, startupBudget: 3m, answerTimeout: 121h }"}, "limits.answerTimeout"},
 		{"maxTurns too high", map[string]string{"limits": "{ maxTurns: 501, timeout: 1h, concurrency: 1, startupBudget: 3m }"}, "limits.maxTurns"},
 		{"bad skill", map[string]string{"skills": "[Bad_Skill]"}, "skills"},
-		{"interaction outside ceiling", map[string]string{"interaction": "{ allow: [ask, approve] }"}, "interaction"},
+		// docs/adr/0070 §2, release two: interaction is gone from the spec.
+		{"interaction key unknown", map[string]string{"interaction": "{ allow: [ask] }"}, "field interaction not found"},
 		{"lifecycle outside ceiling", map[string]string{"lifecycle": "{ allow: [forever] }"}, "lifecycle"},
 		{"agents key unknown", map[string]string{"agents": "[x]"}, "field agents not found"},
 		{"output key unknown", map[string]string{"output": "{ x: y }"}, "field x not found"},
@@ -471,12 +470,11 @@ func TestValidServicePath(t *testing.T) {
 	}
 }
 
-// A non-abstract spec with no tool, interaction or lifecycle bound has no
+// A non-abstract spec with no tool or lifecycle bound has no
 // bound at all (nil tools = the SDK's default tool set), so absence fails.
 func TestLoad_RequiresBounds(t *testing.T) {
 	bare := strings.NewReplacer(
 		"  tools: { allow: [Read], deny: [\"Edit(.git/**)\"] }\n", "",
-		"  interaction: { allow: [ask] }\n", "",
 		"  lifecycle: { allow: [resident] }\n", "",
 	).Replace(baseYAML)
 	got, fileErrs := load(t, map[string]string{"definitions/base.yaml": bare, "definitions/cee.yaml": childYAML("cee", nil)})

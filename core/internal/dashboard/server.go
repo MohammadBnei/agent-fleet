@@ -172,8 +172,8 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 
 // CreateThread is CreateSession's definition path for AgentService
 // (docs/adr/0066), pinned to the head the caller already resolved and
-// judged: the same repo checks, plus the thread's owner, visibility,
-// interaction and lifecycle.
+// judged: the same repo checks, plus the thread's owner, visibility and
+// lifecycle.
 func (s *Server) CreateThread(ctx context.Context, head definitions.Head, title string, thread sessions.CreateParams) (*sessions.Session, error) {
 	return s.createSession(ctx, &agentfleetv1.CreateSessionRequest{Title: &title}, &head, thread)
 }
@@ -249,7 +249,6 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		Effort:         effort,
 		Owner:          thread.Owner,
 		Visibility:     thread.Visibility,
-		Interaction:    thread.Interaction,
 		Lifecycle:      thread.Lifecycle,
 		Invoker:        thread.Invoker,
 		ThreadKey:      thread.ThreadKey,

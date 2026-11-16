@@ -29,7 +29,6 @@ spec:
   tools:
     allow: [Read, Edit, Write, Glob, Grep, "Bash(git add:*)", "Bash(git commit:*)", "Bash(git pull --rebase:*)", "Bash(git push:*)"]
     deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)", "Write(_plug/**)"]
-  interaction: { allow: [ask, deny] }
   lifecycle: { allow: [resident, single-shot] }
   owns: { repos: [opus-workspace], components: [], subjects: [], types: [] }
   limits: { maxTurns: 60, timeout: 30m, concurrency: 2, startupBudget: 3m }

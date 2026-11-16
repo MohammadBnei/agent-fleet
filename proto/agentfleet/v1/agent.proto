@@ -103,7 +103,8 @@ message AgentDefinitionInfo {
   string name = 1;
   repeated string model_allow = 2;
   repeated string mode_allow = 3;
-  repeated string interaction_allow = 4;
+  // Unused: interaction is gone (docs/adr/0070 §2). Always empty.
+  repeated string interaction_allow = 4 [deprecated = true];
   repeated string lifecycle_allow = 5;
 }
 
@@ -121,8 +122,8 @@ message Thread {
   string visibility = 4;
   // True when the caller owns the thread.
   bool mine = 5;
-  // "ask" or "deny".
-  string interaction = 6;
+  // Unused: interaction is gone (docs/adr/0070 §2). Always empty.
+  string interaction = 6 [deprecated = true];
   // "resident" or "single-shot".
   string lifecycle = 7;
   string model = 8;
@@ -274,7 +275,8 @@ message OpenRequest {
   bool wake = 4;
   // Ignored: taint is gone (docs/adr/0082 §3); wake alone decides.
   bool tainted = 5 [deprecated = true];
-  string interaction = 6;
+  // Ignored: interaction is gone (docs/adr/0070 §2); every session can ask.
+  string interaction = 6 [deprecated = true];
   string lifecycle = 7;
   string visibility = 8;
   string idempotency_key = 9;
