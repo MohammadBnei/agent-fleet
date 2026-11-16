@@ -4,23 +4,28 @@
 - **Date:** 2026-11-16
 - **Would amend:**
   - [ADR-0082](0082-decision-cards.md):
-    - §1 (an alert wakes a first-responder definition, §3 below);
-    - §2 (the tier table gains alerts, schedules and Invoke, §2 below);
-    - §6 (new card effect verbs, §4);
-    - §8 (the card budget is split by trigger tier);
-    - §9 (the merge right excludes protected paths, §5).
-    - §3's "no taint" **stands**: this ADR adds no read-taint.
+    - §1: an alert wakes a first-responder definition (§3);
+    - §2: the tier table gains alerts, schedules and Invoke (§2);
+    - §3's Publish rule: T1 also needs the publisher's set to lack A (§2). §3's "no taint" otherwise **stands**, and
+      this ADR adds no read-taint;
+    - §6: new card effect verbs (§4);
+    - §8: the card budget is split by trigger tier;
+    - §9: the merge right excludes protected paths (§5).
+  - [ADR-0070](0070-headless-invoke.md) §1: the dispatcher, an in-process principal, may `Invoke` a first-responder
+    definition, keyed `(dispatcher, alert:<groupKey>)` (§3).
   - [ADR-0072](0072-approval-gated-executor.md):
     - §6 widens its playbook list to the catalogue's named playbooks;
     - §1, its approval becomes an ADR-0082 card option bound to the row (already so by ADR-0082 §8).
   - [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md) §3–§4: no credential in any pod's env (§6).
-  - [ADR-0037](0037-thot-is-a-worker-task.md), and the `CLAUDE.md` executor row (`CLAUDE.md:62`): a second executor
-    holds cluster RBAC for agents (§3).
+  - [ADR-0037](0037-thot-is-a-worker-task.md) and [ADR-0035](0035-thot-cluster-agent.md), and the `CLAUDE.md` executor
+    row (`CLAUDE.md:62`):
+    - the mutate verbs leave `thot-executor` for a remediation executor, so `thot-executor` becomes read-only;
+    - the remediation executor is a second process holding cluster RBAC for agents (§3).
   - `CLAUDE.md`'s forbidden "Fleet-managed `infra-bootstrap` cluster ops" (`CLAUDE.md:231`, `docs/DECISIONS.md:467-470`),
     together with `infra-bootstrap`'s own `CLAUDE.md` rule that a human runs Ansible, as ADR-0072 §6 already requires.
     The change is scoped to the catalogue's named playbooks run through ADR-0072.
-- **Related:** [ADR-0062](0062-defined-agents.md), [ADR-0070](0070-headless-invoke.md),
-  [ADR-0071](0071-events-reach-sessions-through-the-bridge.md), [ADR-0075](0075-github-app-identity-and-vault-credentials.md)
+- **Related:** [ADR-0062](0062-defined-agents.md), [ADR-0071](0071-events-reach-sessions-through-the-bridge.md),
+  [ADR-0075](0075-github-app-identity-and-vault-credentials.md)
 
 ## Context
 
@@ -46,12 +51,17 @@ vault and any other host directly (ADR-0075 §7). `gh`, `curl`, `WebFetch` and t
 (ADR-0082 §3). A rule that claimed to follow what a session reads would be false. The owner already rejected that
 kind of rule: "not truly securing anything but will be really annoying" (ADR-0082 §3, 2026-11-02).
 
+**Guests never reach the fleet.** The owner: "Guest will have pre conceived direct LLM call, 0 access to repos or
+anything!" Game guests talk through the game's own voice path. The fleet's untrusted inputs are therefore:
+- alerts and similar machine events;
+- T2/T3 subjects (ADR-0082 §2).
+
 ## Decision
 
 ### 1. The rule, and what it governs
 
 In one session an agent holds at most two of:
-- **A**, untrusted input as the session's trigger: an alert, a game guest's line, a T2/T3 subject;
+- **A**, untrusted input as the session's trigger: an alert or similar event, a T2/T3 subject;
 - **B**, sensitive reads that core or an executor serves: cluster reads, `ViewLogs`, `QueryMetrics`, private memory;
 - **C**, effects that core or an executor runs: catalogue actions, executor steps, `OpenIssue`, `SpawnWorker`,
   `Speak`, memory writes.
@@ -72,13 +82,12 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   - **T0, the owner:** the `actors.allow` GitHub login (label or @mention, ADR-0082 §1), console and admin-origin
     surfaces (`FLEET_ADMIN_ORIGINS`, `core/internal/config/config.go:341`), islands for platform-admins, an
     owner-created schedule, and the owner's choice of a card option.
-  - **T1:** a fleet `PublishEvent` whose cause was T0 or T1 (ADR-0082 §3), and an `Invoke` from a client or a fleet
-    session. A call takes its caller's tier.
+  - **T1:** a fleet `PublishEvent` whose cause was T0 or T1 and whose publisher's set lacks A (amends ADR-0082 §3's
+    Publish rule). Also an `Invoke` from a client or from a fleet session whose set lacks A.
   - **Untrusted:**
-    - an Alertmanager alert through the bridge;
-    - a game guest;
+    - an Alertmanager alert or similar machine event through the bridge;
     - a T2/T3 subject;
-    - a T1 `PublishEvent` or `Invoke` from a session whose own set holds A.
+    - a `PublishEvent` or `Invoke` from a session whose set holds A.
 - **The set.** Core computes it once, when it creates the session, from the trigger's tier and the definition's
   ceiling, and stores it on the row (migration: `sessions.trust_set`).
   - A warm reads it and never recomputes it, so a re-warm cannot widen it.
@@ -101,48 +110,68 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
 
 ### 3. First responders and the catalogue
 
+- **The Alertmanager route.** A dedicated route sends to the bridge with `group_wait 30s`, `group_interval 5m` and
+  `repeat_interval 4h`.
 - **A first responder is a single-shot run** (ADR-0070) of a definition with `trust.untrusted: B`.
-  - The dispatcher starts one per Alertmanager alert group: `groupKey`, deduplicated by the run's idempotency key.
+  - The dispatcher, an in-process principal, `Invoke`s one per alert group with the key
+    `(dispatcher, alert:<groupKey>)` (amends ADR-0070 §1). A repeat inside the run's life is the same run.
+  - `<groupKey>` is a stable hash over `alertname`, `namespace` and `service`.
+  - A cooldown of 10 min per key holds further firings and coalesces them, without dropping them. A `resolved`
+    alert passes once the alert has been firing for at least `group_interval`. **Default, owner may change.**
   - This amends ADR-0082 §1 for those definitions only. Every other definition still never wakes on an event type.
   - Its set is **A·B**: it reads logs, metrics and cluster state.
-  - Its only effect is a **typed catalogue selection**, returned as its structured result (ADR-0070 `output.schema`).
   - It holds no C method, and its vault carries no GitHub write (§7).
-- **Core validates the selection; an executor runs it.**
-  - Core checks it: the action exists, its parameters resolve to real objects, and the bounds hold. Core then
-    writes a single-use `remediations` row.
-  - The **remediation executor** pulls the row by id under its own ServiceAccount, runs it once, and records the
-    inverse. That is ADR-0072 §2's shape.
-  - Core holds no cluster RBAC (`CLAUDE.md:56`). The executor is the second process with cluster RBAC for agents,
-    which amends `CLAUDE.md:62` and ADR-0037.
-- **The executor's role** is a new ClusterRole in `infra-bootstrap` beside `thot-executor`:
-  - `apps/deployments`, `statefulsets`: `get`, `patch` (restart annotation, `spec.replicas`);
-  - `apps/deployments/scale`: `get`, `update`;
-  - `pods`: `delete`;
-  - `nodes`: `get`, `patch` (`spec.unschedulable` only, checked by the executor);
-  - `argoproj.io/applications`: `get`, `patch` (the `operation` field, sync only).
-  - Nothing else: no `secrets`, no RBAC objects, no `*/exec`, no `*/proxy`.
+- **Its output is a typed union** (ADR-0070 `output.schema`):
+  - a **catalogue selection**: an action plus its parameters;
+  - a **card request**: a kind from a fixed enum, plus typed findings (enums, numbers, object ids);
+  - **nothing to do**.
+  Core turns a selection into a `remediations` row and a card request into an ADR-0082 card it files itself. The
+  responder never drafts a card.
+- **Checks are split.**
+  - **Core checks** the schema, the rate limits and the denylist, then writes a single-use `remediations` row.
+  - The **remediation executor** pulls the row by id under its own ServiceAccount (ADR-0072 §2's shape). At pull time
+    it checks that the object exists, the node count, and that the target's Application is not under `selfHeal` where
+    that matters. It then runs the action once and records the inverse.
+  - Core holds no cluster RBAC (`CLAUDE.md:56`).
+- **The executors' roles in `infra-bootstrap`:**
+  - The remediation executor takes the mutate verbs `thot-executor` holds today, plus what the catalogue needs:
+    - `apps/deployments`, `statefulsets`, `daemonsets`: `get`, `patch` (restart annotation, `spec.replicas`, the
+      low-stakes field allowlist below);
+    - `apps/deployments/scale`: `get`, `update`;
+    - `pods`: `get`, `delete`;
+    - `argoproj.io/applications`: `get`, `patch` (the `operation` field, sync only).
+    - Nothing else: no `nodes` writes, no `secrets`, no RBAC objects, no `*/exec`, no `*/proxy`.
+  - `thot-executor` keeps only its read rules. RBAC becomes its boundary.
+- **A live gap today, closed by the first executor slice.** The kubectl shim sends `ReadOnly: false` for every call
+  (`executor/cmd/kubectlshim/main.go:54-59`). The executor runs that path as a dumb pipe
+  (`executor/cmd/executor/main.go:44-53`), on the premise that a human approved the argv through `canUseTool`. In
+  `auto` (ADR-0053, ADR-0061) nobody does, so a cluster-access session can patch or delete unattended. Moving the
+  mutate verbs to the remediation executor closes this.
 - **The actions, each with its real check and inverse:**
 
   | Action | Dry-run | Inverse | Note |
   |---|---|---|---|
   | restart a Deployment or StatefulSet | server-side dry-run of the patch | none needed | reversible "yes": a rolling restart is its own undo |
-  | scale within the definition's bounds | server-side dry-run | scale back to the recorded count | blocked on an Application with `selfHeal`, which would revert it |
+  | scale within the definition's bounds | server-side dry-run | scale back to the recorded count | refused on a `selfHeal` Application, which would revert it |
   | delete a crash-looping pod | `get` shows owner and phase | its controller recreates it | only pods owned by a ReplicaSet or StatefulSet |
-  | cordon or uncordon a node | `get` shows the count of schedulable nodes | the opposite patch | at most one cordoned node, and never the last schedulable one |
   | re-sync an ArgoCD Application | `get` shows the diff state | none | sync to git's current revision, **without** prune; reversible "partial" |
 
+- **No cordon.** Node writes stay `node-drainer`'s alone (`infra-bootstrap` ADR-0032, agent-fleet ADR-0035).
+  **Owner to confirm**: cordon could return only by amending `infra-bootstrap` ADR-0032 there first.
 - **No rollback action.** Under `selfHeal: true` (16 Applications in `infra-bootstrap/gitops`) ArgoCD refuses a
-  rollback, and a manual change drifts back. A rollback is therefore a PR that reverts the git commit, filed as a card.
-- **Bounds, checked by core:**
+  rollback, and a manual change drifts back. A rollback is therefore a revert PR, filed as a card.
+- **Bounds, checked by core.** **Owner to confirm.**
   - one action per target per 10 min;
   - 6 actions per responder definition per hour;
   - a target denylist from `infra-bootstrap`: core, the provisioner, Agent Vault, authentik, the databases, the
-    ArgoCD controller, the remediation executor itself, and the last schedulable node.
+    ArgoCD controller and the remediation executor itself.
 - **Low-stakes namespaces.** A reviewed list in `infra-bootstrap` (`gitops/bootstrap/fleet-low-stakes.yaml`) names the
-  namespaces where the catalogue also takes free-form fixes: a scoped `kubectl patch` on a workload, `delete pod`, a
-  restart.
-  - They go through the same executor and the same bounds. Their verbs are the role's verbs above.
-  - A namespace is low-stakes only by an owner commit to that file. The game and dev apps start there.
+  namespaces where a catalogue selection may also be a free-form fix.
+  - Allowed: a patch limited to a field allowlist (`spec.replicas`, container `resources`, non-secret `env` values, the
+    restart annotation), `delete pod`, and a restart.
+  - Each such namespace carries the PodSecurity `restricted` label.
+  - A namespace is low-stakes only by an owner commit to that file. **Owner to confirm**: the game and dev apps start
+    there.
 - **Anything else** becomes a card (§4): a code fix, an Ansible step, an unknown failure.
 - **The catalogue grows through the owner.** When a card fix keeps being chosen, the owner promotes it into the
   catalogue as a reviewed change. Agents never write catalogue files (§5).
@@ -153,7 +182,7 @@ The owner's "proposal" is an ADR-0082 card: a durable entry in the decision deck
 interface and one deck stay.
 - **Context is typed and written by core.** The card's `verified` and `pinned` fields carry the alert name and
   labels, numbers, and object ids that core resolved (ADR-0082 §5).
-  - The responder's findings are typed fields of its `output.schema`: enums, numbers and ids that core checks.
+  - Findings are typed fields: enums, numbers and ids that core checks.
   - Any free text is labelled "agent claim" (ADR-0082 §5) and capped at 280 characters.
   - Raw log lines and alert text never go in.
 - **New effect verbs** (ADR-0082 §6, `core/internal/decisions/card.go:188-197`):
@@ -165,19 +194,26 @@ interface and one deck stay.
     - SSH steps get a per-step authentik JWT in the `netbird-agent` pattern (`infra-bootstrap` ADR-0055).
     - No SSH key is held anywhere.
     - Only playbooks the catalogue names. ADR-0072 §6's first one is `build-runner-configure.yml`.
-  - **`open_pr`:** a branch the agent pushed, shown with its diff.
+  - **`open_pr`:** a branch pushed by a B·C session, shown with its diff. A session holding A never files one.
   - **`open_session`:** an optional follow-up session, seeded with the card's typed context posted as an `agent`-authored
     context entry, never as a `human` one. It holds only the letters the owner ticks on the confirm page, so B·C at most.
     It is marked **supervised** in the console and the cockpit, and the owner steers or stops it from the console.
+- **The alert webhook.** `/webhook/alertmanager` keeps filing alert proposals.
+  - Today `OpenFromProposal` posts the proposal's body as a `human` entry (`core/internal/dashboard/server.go:419`).
+    For an alert proposal, the body is posted as an `agent`-authored context entry labelled with its source instead,
+    and the opened session is marked supervised: the owner's click with alert text inside.
+  - Once responders ship, the webhook skips any alert that a responder definition subscribes to, so nothing is filed
+    twice.
 - **Choosing runs exactly the bound effect.** Core re-checks the target when the owner answers and again before
   running; a moved target makes the card stale (ADR-0082 §6).
-- **The game** stays an ADR-0082 §7 surface: list, watch and answer cards, with only reversible "yes" answered in
-  place. Steer and stop stay in the console, behind a link. No amendment to §7.
-- **Load.** ADR-0082 §8's daily card budget is split per trigger tier, so untrusted-triggered cards cannot spend the
-  owner's own.
-  - A card subject for an alert is `alert/<groupKey hash>`, a new `CardSubject` kind (proto).
-  - ADR-0071's event proposals keep their own meaning: an event no session took. They stay a separate row kind, so
-    `proposals.source` needs no new value.
+- **The game** stays an ADR-0082 §7 surface for cards: list, watch and answer, with only reversible "yes" answered in
+  place. Steer and stop stay in the console, behind a link.
+- **Load.**
+  - ADR-0082 §8's daily card budget is split per trigger tier, so cards filed for untrusted triggers cannot spend the
+    owner's own.
+  - A card subject for an alert is `alert/<groupKey>`, a new `CardSubject` kind (proto).
+  - ADR-0071's event proposals keep their meaning, an event no session took, and `proposals.source` needs no new
+    value.
 
 ### 5. Memory and skills are code
 
@@ -185,19 +221,21 @@ interface and one deck stay.
   session and its set.
   - It lives at `claude-home/agent-<name>-memory` on the shared volume.
   - It has no remote and no credential.
-  - The worker mounts it read-only.
-- **Untrusted-set sessions write to a separate directory:** `claude-home/agent-<name>-quarantine`.
-  - That directory is never mounted into a session whose set holds B or C.
-  - The owner promotes from it by reviewing a diff in the console, once a day or on demand. The console's promote and
-    revert run through the sidecar tool, the single writer.
+  - It is mounted read-only, and only into a session whose set holds B.
+- **A session whose set holds A writes only to the quarantine directory**, `claude-home/agent-<name>-quarantine`.
+  - That write is tagged neither B nor C.
+  - The directory is never mounted into a session whose set holds B or C.
+  - The owner promotes from it by reviewing a diff in the console, once a day or on demand. Promote and revert run
+    through the sidecar tool, the single writer.
 - **`knowledge_journal`** (ADR-0055) is fleet-wide shared memory too. A session whose set holds A writes its notes
-  with `quarantined = true` (migration). `journal_search` hides quarantined rows from B or C sessions until the owner
-  promotes them.
-- **Skills, prompts and pack content** from an untrusted-set session arrive only as a PR.
-- **Protected paths, by `CODEOWNERS` and a ruleset that requires the owner's review:**
-  - `definitions/`, `packs/`, the catalogue, and the vault, egress and low-stakes files in `infra-bootstrap`;
-  - these paths are excluded from ADR-0082 §9's merge right;
-  - no agent changes its own set, tier, catalogue, vault or egress.
+  with `quarantined = true` (migration). `journal_search` hides quarantined rows until the owner promotes them.
+- **Skills, prompts and pack content** from a session whose set holds A arrive only as a PR.
+- **Protected paths.** `CODEOWNERS` plus a ruleset require the owner's review on:
+  - `definitions/`, `packs/`, `fleet-shared/`, `.claude/`, `.github/CODEOWNERS`, the ruleset itself and the catalogue;
+  - in `infra-bootstrap`, the vault, egress, low-stakes and RBAC files.
+  - The `ukubi-fleet` App sits in no bypass list.
+  - These paths are excluded from ADR-0082 §9's merge right.
+  - No agent changes its own set, tier, catalogue, vault or egress.
 
 ### 6. Credentials: no secret in any pod's env
 
@@ -221,9 +259,9 @@ interface and one deck stay.
 - **First responders' definitions** have a vault with no GitHub write. Their outputs reach the owner only through
   core (§3, §4).
 - **Every other definition** keeps one vault for every session class, GitHub write included.
-  - **Accepted risk:** an untrusted-triggered session with `trust.untrusted: C` can write to GitHub as its
+  - **Accepted risk:** a session triggered untrusted with `trust.untrusted: C` can write to GitHub as its
     definition, and a repo pod can send data to any host.
-  - **Revisit trigger:** §1's trigger, or the first public-facing input class beyond the owner's game.
+  - **Revisit trigger:** §1's trigger, or the first public-facing input class.
 
 ### 8. What is never the boundary
 
@@ -238,8 +276,9 @@ interface and one deck stay.
 - **Read-taint or a one-way switch on reads.** Core cannot see a pod's own reads, and the owner rejected taint
   (ADR-0082 §3).
 - **Pods per trust tier.** The pods shared a vault and a definition, and doubled the memory. Rejected.
-- **Free-form remediation from alerts.** It is A+B+C. Kept only for the owner's low-stakes namespaces, bounded by the
-  same executor.
+- **Free-form remediation from alerts.** It is A+B+C. Kept only for the owner's low-stakes namespaces, with a field
+  allowlist and the same executor.
+- **Cordon in the catalogue.** It would breach `infra-bootstrap` ADR-0032's node rule. Left out.
 - **CaMeL-style value tracking:** the principled end state, research-grade for one owner.
 - **Per-action approval:** people approve nearly everything they are asked. Cards are kept for what the catalogue
   does not cover.
@@ -249,6 +288,7 @@ interface and one deck stay.
 - Trust is one stored field per session, visible in the console and the cockpit.
 - Self-healing runs unattended inside the catalogue's bounds. Anything else is a card whose option runs exactly what
   it shows.
+- `thot-executor` becomes read-only, which closes today's unattended-mutation gap.
 - New pieces:
   - core: method tags, `sessions.trust_set`, the `remediations` table, three card verbs, the `alert` card subject;
   - the remediation executor and its ClusterRole in `infra-bootstrap`;
@@ -267,6 +307,7 @@ most alerts, so the owner's attention goes to the cards that matter.
 - Read-taint.
 - A classifier gate as a boundary.
 - Agent-editable policy.
-- A rollback action against ArgoCD self-heal.
+- Cordon, or a rollback against ArgoCD self-heal.
+- Guests in the fleet.
 - Vault rule sets per session class beyond responders.
 - Standing SSH keys.
