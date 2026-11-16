@@ -1,5 +1,11 @@
 # Changelog
 
+## [7.23.2](https://github.com/MohammadBnei/agent-fleet/compare/7.23.1...7.23.2) (2026-11-16)
+
+### Performance Improvements
+
+* **provisioner:** prefetch repo clone caches in the background ([#395](https://github.com/MohammadBnei/agent-fleet/issues/395)) ([ae91173](https://github.com/MohammadBnei/agent-fleet/commit/ae91173e0dd0a384f36ecbe0a84b7b0d34d8e44c))
+
 ## [7.23.1](https://github.com/MohammadBnei/agent-fleet/compare/7.23.0...7.23.1) (2026-11-16)
 
 # [7.23.0](https://github.com/MohammadBnei/agent-fleet/compare/7.22.1...7.23.0) (2026-11-16)
