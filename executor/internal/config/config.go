@@ -78,7 +78,12 @@ type Remediation struct {
 
 // RemediationFromProcess is the remediation executor's configuration from its
 // environment: the one call that reads it.
-func RemediationFromProcess() Remediation { return Remediation{ID: os.Getenv("REMEDIATION_ID")} }
+func RemediationFromProcess() Remediation { return LoadRemediation(os.Getenv) }
+
+// LoadRemediation is the remediation executor's configuration from getenv.
+func LoadRemediation(getenv func(string) string) Remediation {
+	return Remediation{ID: getenv("REMEDIATION_ID")}
+}
 
 // ShimFromProcess is the shim's configuration from its environment: the one
 // call that reads it.

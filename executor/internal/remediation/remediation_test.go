@@ -62,10 +62,39 @@ func TestRestartDryRunFailureRunsNothing(t *testing.T) {
 }
 
 func TestScaleRecordsInverse(t *testing.T) {
-	f := &fake{gets: map[string]string{"spec.replicas": "2", "instance": "", "metadata.labels": ""}}
+	f := &fake{gets: map[string]string{"spec.replicas": "2", "annotations.argocd": "web-app:apps/Deployment:ns/web", "selfHeal": "false"}}
 	o := execute(context.Background(), f.run, Row{Action: ActionScale, Kind: "deployment", Namespace: "ns", Name: "web", Replicas: 4, MinReplicas: 1, MaxReplicas: 5})
 	if o.Status != "done" || strings.Join(o.Inverse, " ") != "scale deployment/web -n ns --replicas=2" {
 		t.Fatalf("%+v", o)
+	}
+	// get+update on deployments/scale needs the precondition (no PATCH grant).
+	var scaled string
+	for _, c := range f.calls {
+		if c[0] == "scale" {
+			scaled = strings.Join(c, " ")
+		}
+	}
+	if !strings.Contains(scaled, "--current-replicas=2") {
+		t.Errorf("scale argv lacks --current-replicas: %q", scaled)
+	}
+}
+
+func TestScaleTrackingInfo(t *testing.T) {
+	row := Row{Action: ActionScale, Kind: "deployment", Namespace: "ns", Name: "web", Replicas: 3, MinReplicas: 1, MaxReplicas: 5}
+	// Annotation path (ArgoCD 3.x), selfHeal on: refused.
+	f := &fake{gets: map[string]string{"spec.replicas": "2", "annotations.argocd": "web-app:apps/Deployment:ns/web", "selfHeal": "true"}}
+	if o := execute(context.Background(), f.run, row); o.Status != "refused" || f.mutations() != 0 {
+		t.Fatalf("annotation selfHeal: %+v %v", o, f.calls)
+	}
+	// Label fallback, selfHeal on: refused.
+	f = &fake{gets: map[string]string{"spec.replicas": "2", "labels.argocd": "web-app", "selfHeal": "true"}}
+	if o := execute(context.Background(), f.run, row); o.Status != "refused" || f.mutations() != 0 {
+		t.Fatalf("label selfHeal: %+v %v", o, f.calls)
+	}
+	// Neither present: fail closed.
+	f = &fake{gets: map[string]string{"spec.replicas": "2", "annotations.argocd": "", "labels.argocd": ""}}
+	if o := execute(context.Background(), f.run, row); o.Status != "refused" || f.mutations() != 0 || !strings.Contains(o.Detail, "tracking") {
+		t.Fatalf("no tracking info: %+v %v", o, f.calls)
 	}
 }
 
@@ -87,7 +116,7 @@ func TestScaleBoundsAndSelfHeal(t *testing.T) {
 
 func TestDeletePodOwner(t *testing.T) {
 	for owner, want := range map[string]string{"ReplicaSet": "done", "StatefulSet": "done", "Job": "refused", "": "refused"} {
-		f := &fake{gets: map[string]string{"ownerReferences": owner}}
+		f := &fake{gets: map[string]string{"ownerReferences": owner, "waiting.reason": "CrashLoopBackOff"}}
 		o := execute(context.Background(), f.run, Row{Action: ActionDeletePod, Namespace: "ns", Name: "p"})
 		if o.Status != want {
 			t.Errorf("owner %q: %+v", owner, o)
@@ -98,8 +127,44 @@ func TestDeletePodOwner(t *testing.T) {
 	}
 }
 
+func TestDeletePodMustBeCrashLooping(t *testing.T) {
+	f := &fake{gets: map[string]string{"ownerReferences": "ReplicaSet", "waiting.reason": ""}}
+	o := execute(context.Background(), f.run, Row{Action: ActionDeletePod, Namespace: "ns", Name: "p"})
+	if o.Status != "refused" || f.mutations() != 0 {
+		t.Fatalf("healthy pod: %+v %v", o, f.calls)
+	}
+}
+
+func TestSyncPreconditions(t *testing.T) {
+	for name, gets := range map[string]map[string]string{
+		"running": {"metadata.name": "app", "operationState.phase": "Running", "sync.status": "OutOfSync"},
+		"in sync": {"metadata.name": "app", "operationState.phase": "Succeeded", "sync.status": "Synced"},
+	} {
+		f := &fake{gets: gets}
+		if o := execute(context.Background(), f.run, Row{Action: ActionSyncApp, Name: "app"}); o.Status != "refused" || f.mutations() != 0 {
+			t.Errorf("%s: %+v %v", name, o, f.calls)
+		}
+	}
+}
+
+func TestEmptyNamespaceRefused(t *testing.T) {
+	f := &fake{gets: map[string]string{"metadata.name": "x"}}
+	for _, r := range []Row{
+		{Action: ActionRestart, Kind: "deployment", Name: "x"},
+		{Action: ActionScale, Kind: "deployment", Name: "x", Replicas: 1, MinReplicas: 1, MaxReplicas: 2},
+		{Action: ActionDeletePod, Name: "x"},
+	} {
+		if o := execute(context.Background(), f.run, r); o.Status != "refused" {
+			t.Errorf("%+v: %+v", r, o)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("kubectl ran: %v", f.calls)
+	}
+}
+
 func TestSyncNeverPrunes(t *testing.T) {
-	f := &fake{gets: map[string]string{"metadata.name": "app"}}
+	f := &fake{gets: map[string]string{"metadata.name": "app", "operationState.phase": "Succeeded", "sync.status": "OutOfSync"}}
 	o := execute(context.Background(), f.run, Row{Action: ActionSyncApp, Name: "app"})
 	last := strings.Join(f.calls[len(f.calls)-1], " ")
 	if o.Status != "done" || !strings.Contains(last, `"prune":false`) || !strings.Contains(last, "-n argocd") {
@@ -139,7 +204,7 @@ func (s *src) Report(_ context.Context, _ string, o Outcome) error {
 }
 
 func TestRunPullsExecutesReports(t *testing.T) {
-	f := &fake{gets: map[string]string{"metadata.name": "app"}}
+	f := &fake{gets: map[string]string{"metadata.name": "app", "operationState.phase": "", "sync.status": "OutOfSync"}}
 	s := &src{row: Row{Action: ActionSyncApp, Name: "app"}}
 	if err := Run(context.Background(), s, f.run, "r1"); err != nil || s.got == nil || s.got.Status != "done" {
 		t.Fatalf("%v %+v", err, s.got)

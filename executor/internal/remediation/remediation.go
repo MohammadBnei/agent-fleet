@@ -4,7 +4,12 @@
 // action once under its own ServiceAccount, and reports the outcome and the
 // inverse. Core already checked schema, rate limits and the denylist; the
 // checks here are the ones only the cluster can answer: the object exists,
-// the owner kind, the replica bounds, selfHeal.
+// the owner kind and crash-loop state, the replica bounds, selfHeal, and that a
+// sync has something to do and nothing running.
+//
+// Deferred: ADR-0086 §3's node-count check. No catalogue action here can
+// remove a node, and the executor holds no nodes grant; add it with the first
+// action that needs it.
 //
 // The argv shapes are fixed here. Nothing from the row reaches kubectl except
 // as a validated name in a slot, so the row cannot choose a verb.
@@ -14,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -49,7 +55,8 @@ type Outcome struct {
 }
 
 // Source is core's remediations API, as the executor needs it. The endpoint is
-// S05's; this is the narrow seam it plugs into.
+// S05's; this is the narrow seam it plugs into. Pull must consume the row
+// (single use), so a Job retry cannot run it twice; S05's core enforces that.
 type Source interface {
 	Pull(ctx context.Context, id string) (Row, error)
 	Report(ctx context.Context, id string, o Outcome) error
@@ -70,6 +77,9 @@ func Run(ctx context.Context, src Source, run Runner, id string) error {
 		return fmt.Errorf("pull remediation %s: %w", id, err)
 	}
 	o := execute(ctx, run, row)
+	// Logged first: if Report fails the mutation has already run, and the
+	// outcome and inverse must not be lost.
+	slog.Info("remediation executed", "id", id, "action", row.Action, "status", o.Status, "detail", o.Detail, "inverse", o.Inverse)
 	return src.Report(ctx, id, o)
 }
 
@@ -78,8 +88,13 @@ func refuse(f string, a ...any) Outcome {
 }
 
 func execute(ctx context.Context, run Runner, r Row) Outcome {
-	if !dns1123.MatchString(r.Name) || (r.Namespace != "" && !dns1123.MatchString(r.Namespace)) {
+	if !dns1123.MatchString(r.Name) {
 		return refuse("invalid target name")
+	}
+	// Every action but sync_app names its namespace; an empty one would
+	// resolve to the executor's own.
+	if r.Action != ActionSyncApp && !dns1123.MatchString(r.Namespace) {
+		return refuse("invalid namespace")
 	}
 	switch r.Action {
 	case ActionRestart:
@@ -121,14 +136,28 @@ func do(ctx context.Context, run Runner, argv []string, dry bool) *Outcome {
 	return nil
 }
 
-// selfHealed reports whether the workload's Application would revert a manual change.
+// selfHealed reports whether the workload's Application would revert a manual
+// change. ArgoCD 3.x tracks by the tracking-id annotation
+// (<app>:<group>/<kind>:<ns>/<name>) and no longer sets the instance label, so
+// the annotation comes first and the label is the fallback. With neither it
+// fails closed: it cannot tell, so scale is refused.
 func selfHealed(ctx context.Context, run Runner, kind string, r Row) (bool, *Outcome) {
-	app, o := get(ctx, run, `{.metadata.labels.argocd\.argoproj\.io/instance}`, kind, r.Name, "-n", r.Namespace)
-	if o != nil || app == "" {
+	app, o := get(ctx, run, `{.metadata.annotations.argocd\.argoproj\.io/tracking-id}`, kind, r.Name, "-n", r.Namespace)
+	if o != nil {
 		return false, o
 	}
+	app, _, _ = strings.Cut(app, ":")
+	if app == "" {
+		if app, o = get(ctx, run, `{.metadata.labels.argocd\.argoproj\.io/instance}`, kind, r.Name, "-n", r.Namespace); o != nil {
+			return false, o
+		}
+	}
+	if app == "" {
+		o := refuse("no Argo tracking info on the workload; cannot check selfHeal")
+		return false, &o
+	}
 	if !dns1123.MatchString(app) {
-		o := refuse("invalid application label")
+		o := refuse("invalid application name")
 		return false, &o
 	}
 	v, o := get(ctx, run, `{.spec.syncPolicy.automated.selfHeal}`, "application", app, "-n", argocdNS)
@@ -152,7 +181,10 @@ func restart(ctx context.Context, run Runner, r Row) Outcome {
 }
 
 func scale(ctx context.Context, run Runner, r Row) Outcome {
-	// deployments/scale is the only scale grant (ADR-0086 §3).
+	// deployments/scale is the only scale grant (ADR-0086 §3). It is get+update,
+	// so scale must send --current-replicas: with it kubectl does Get+Update on
+	// the scale subresource; without it, a PATCH the role does not grant. The
+	// precondition also fails the scale if the count moved since we read it.
 	kind := r.Kind
 	if kind != "deployment" {
 		return refuse("scale takes a deployment")
@@ -169,7 +201,7 @@ func scale(ctx context.Context, run Runner, r Row) Outcome {
 	} else if sh {
 		return refuse("application has selfHeal; a scale would be reverted")
 	}
-	if o := do(ctx, run, []string{"scale", kind + "/" + r.Name, "-n", r.Namespace, fmt.Sprintf("--replicas=%d", r.Replicas)}, true); o != nil {
+	if o := do(ctx, run, []string{"scale", kind + "/" + r.Name, "-n", r.Namespace, "--current-replicas=" + cur, fmt.Sprintf("--replicas=%d", r.Replicas)}, true); o != nil {
 		return *o
 	}
 	return Outcome{Status: "done", Detail: fmt.Sprintf("scaled from %s to %d", cur, r.Replicas),
@@ -184,6 +216,13 @@ func deletePod(ctx context.Context, run Runner, r Row) Outcome {
 	if owner != "ReplicaSet" && owner != "StatefulSet" {
 		return refuse("pod owner %q is not a ReplicaSet or StatefulSet", owner)
 	}
+	waiting, o := get(ctx, run, `{.status.containerStatuses[*].state.waiting.reason}`, "pod", r.Name, "-n", r.Namespace)
+	if o != nil {
+		return *o
+	}
+	if !strings.Contains(waiting, "CrashLoopBackOff") {
+		return refuse("pod is not crash-looping")
+	}
 	if o := do(ctx, run, []string{"delete", "pod", r.Name, "-n", r.Namespace}, false); o != nil {
 		return *o
 	}
@@ -193,6 +232,16 @@ func deletePod(ctx context.Context, run Runner, r Row) Outcome {
 func syncApp(ctx context.Context, run Runner, r Row) Outcome {
 	if _, o := get(ctx, run, `{.metadata.name}`, "application", r.Name, "-n", argocdNS); o != nil {
 		return *o
+	}
+	if phase, o := get(ctx, run, `{.status.operationState.phase}`, "application", r.Name, "-n", argocdNS); o != nil {
+		return *o
+	} else if phase == "Running" {
+		return refuse("a sync is already running")
+	}
+	if st, o := get(ctx, run, `{.status.sync.status}`, "application", r.Name, "-n", argocdNS); o != nil {
+		return *o
+	} else if st != "OutOfSync" {
+		return refuse("application is %q, not OutOfSync", st)
 	}
 	// No revision: git's current one. No prune: partial reversibility, by design.
 	patch := `{"operation":{"sync":{"prune":false}}}`

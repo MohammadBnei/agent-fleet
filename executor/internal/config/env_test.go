@@ -267,3 +267,12 @@ func TestEnvUses(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRemediation(t *testing.T) {
+	if got := LoadRemediation(func(k string) string { return map[string]string{"REMEDIATION_ID": "r1"}[k] }); got.ID != "r1" {
+		t.Fatalf("%+v", got)
+	}
+	if got := LoadRemediation(func(string) string { return "" }); got.ID != "" {
+		t.Fatalf("%+v", got)
+	}
+}
