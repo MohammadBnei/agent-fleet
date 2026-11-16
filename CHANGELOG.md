@@ -1,5 +1,12 @@
 # Changelog
 
+# [7.26.0](https://github.com/MohammadBnei/agent-fleet/compare/7.25.0...7.26.0) (2026-11-16)
+
+### Features
+
+* **executor:** thot-executor read-only; remediation executor takes the mutate verbs ([#402](https://github.com/MohammadBnei/agent-fleet/issues/402)) ([5a16426](https://github.com/MohammadBnei/agent-fleet/commit/5a164268f41ee33e655df06f06dd2cc8bda37acd))
+* **provisioner:** apply definition resources, Guaranteed QoS (ADR-0084 slice 1) ([#403](https://github.com/MohammadBnei/agent-fleet/issues/403)) ([94ae440](https://github.com/MohammadBnei/agent-fleet/commit/94ae4403e0159202d29764c259e3449341fb81c6))
+
 # [7.25.0](https://github.com/MohammadBnei/agent-fleet/compare/7.24.0...7.25.0) (2026-11-16)
 
 ### Features
