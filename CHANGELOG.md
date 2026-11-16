@@ -1,5 +1,7 @@
 # Changelog
 
+## [7.23.1](https://github.com/MohammadBnei/agent-fleet/compare/7.23.0...7.23.1) (2026-11-16)
+
 # [7.23.0](https://github.com/MohammadBnei/agent-fleet/compare/7.22.1...7.23.0) (2026-11-16)
 
 ### Bug Fixes
