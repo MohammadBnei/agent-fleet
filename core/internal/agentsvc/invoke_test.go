@@ -39,7 +39,7 @@ func TestInvoke(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO repos (name, url) VALUES ('notes', 'https://example.invalid/notes.git')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true), ('r', 'sha1', '{}', '{}', true)`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('d', 'sha1', '{}', '{}', true), ('r', 'sha1', '{}', '{}', true), ('resp', 'sha1', '{}', '{}', true)`); err != nil {
 		t.Fatal(err)
 	}
 	spec := func(lifecycles ...string) *definitions.Spec {
@@ -52,7 +52,7 @@ func TestInvoke(t *testing.T) {
 		}
 	}
 	testClients = []definitions.Client{
-		{Name: "bot", Spec: definitions.ClientSpec{TokenRef: "BOT", Definitions: []string{"d", "r"}}},
+		{Name: "bot", Spec: definitions.ClientSpec{TokenRef: "BOT", Definitions: []string{"d", "r", "resp"}}},
 		{Name: "other", Spec: definitions.ClientSpec{TokenRef: "OTHER", Definitions: []string{"d", "r"}}},
 	}
 	t.Cleanup(func() { testClients = nil })
@@ -62,7 +62,7 @@ func TestInvoke(t *testing.T) {
 	pollCtx, stop := context.WithCancel(ctx)
 	t.Cleanup(stop)
 	go hub.PollLoop(pollCtx, transcr, 20*time.Millisecond)
-	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec("resident", "single-shot")}, {Name: "r", SHA: "sha1", Effective: spec("resident")}},
+	s := &Server{definitions: fakeHeads{{Name: "d", SHA: "sha1", Effective: spec("resident", "single-shot")}, {Name: "r", SHA: "sha1", Effective: spec("resident")}, {Name: "resp", SHA: "sha1", Effective: responderSpec(spec)}},
 		dash: dash, sessions: store, transcr: transcr, hub: hub, decisions: decisions.NewStore(pool)}
 
 	serve := func(ics ...connect.Interceptor) agentfleetv1connect.AgentServiceClient {
@@ -114,6 +114,26 @@ func TestInvoke(t *testing.T) {
 
 	if _, err := invoke(bot, "r", "x", "k0"); code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("a definition without single-shot: %v", err)
+	}
+	// docs/adr/0086 §3: a first responder is started by an alert, never by a client's own Invoke; the alert path
+	// gives it A·B, and a definition with no trust.untrusted refuses an untrusted trigger.
+	if _, err := invoke(bot, "resp", "x", "kr"); code(err) != connect.CodePermissionDenied {
+		t.Fatalf("a client's Invoke of a responder: %v", err)
+	}
+	asBridge := withPrincipal(ctx, Principal{Client: "bot"})
+	ur, err := s.InvokeUntrusted(asBridge, connect.NewRequest(&agentfleetv1.InvokeRequest{Definition: "resp", Input: "alert", IdempotencyKey: "alert:g:1"}))
+	if err != nil {
+		t.Fatalf("InvokeUntrusted of a responder: %v", err)
+	}
+	if rs, err := store.Get(ctx, ur.Msg.GetThreadId()); err != nil || rs.TrustSet != "AB" {
+		t.Fatalf("a responder's run is A·B: %+v %v", rs, err)
+	}
+	if _, err := s.InvokeUntrusted(asBridge, connect.NewRequest(&agentfleetv1.InvokeRequest{Definition: "d", Input: "alert", IdempotencyKey: "alert:g:2"})); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("an untrusted trigger of a definition with no trust.untrusted: %v", err)
+	}
+	dash.warms = nil // the checks below count their own, and so do the caps
+	if err := store.Delete(ctx, ur.Msg.GetThreadId()); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := s.Open(withPrincipal(ctx, Principal{Client: "bot"}), connect.NewRequest(&agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "t", Message: "x", Wake: true,
 		Lifecycle: "single-shot", Visibility: "private", IdempotencyKey: "o1"})); code(err) != connect.CodeFailedPrecondition {
@@ -521,4 +541,10 @@ func TestInvoke_ParkedLimit(t *testing.T) {
 	if _, err := invoke("small", "s2"); !refused(err) {
 		t.Fatalf("over maxParked 2: %v", err)
 	}
+}
+
+func responderSpec(spec func(...string) *definitions.Spec) *definitions.Spec {
+	s := spec("single-shot")
+	s.Trust = &definitions.Trust{Untrusted: "B"}
+	return s
 }

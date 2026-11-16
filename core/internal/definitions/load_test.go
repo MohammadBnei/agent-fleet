@@ -680,3 +680,54 @@ func TestLoad_LimitsMaxParks(t *testing.T) {
 		}
 	}
 }
+
+// docs/adr/0086 §3: a first responder (trust.untrusted: B) is single-shot, typed, subscribed, and holds no GitHub write.
+func TestLoad_FirstResponder(t *testing.T) {
+	responder := func(over map[string]string) map[string]string {
+		kv := map[string]string{
+			"lifecycle":  "{ allow: [single-shot] }",
+			"git":        "{ mode: none, identity: { name: a, email: a@b.c } }",
+			"trust":      "{ untrusted: B, scale: { min: 1, max: 3 } }",
+			"subscribes": "{ types: [dev.bnei.alert.] }",
+			"output":     "{ schema: { type: object } }",
+		}
+		for k, v := range over {
+			kv[k] = v
+		}
+		return kv
+	}
+	cases := []struct {
+		name string
+		kv   map[string]string
+		want string
+	}{
+		{"valid", responder(nil), ""},
+		{"C needs nothing more", map[string]string{"trust": "{ untrusted: C }"}, ""},
+		{"a letter that is not B or C", responder(map[string]string{"trust": "{ untrusted: A }"}), "must be B or C"},
+		{"resident too", responder(map[string]string{"lifecycle": "{ allow: [resident, single-shot] }"}), "exactly [single-shot]"},
+		{"push mode", responder(map[string]string{"git": "{ mode: push, branch: main, identity: { name: a, email: a@b.c } }"}), "no GitHub write"},
+		{"pr mode", responder(map[string]string{"git": "{ mode: pr, identity: { name: a, email: a@b.c } }"}), "no GitHub write"},
+		{"no output schema", responder(map[string]string{"output": ""}), "output.schema is required"},
+		{"no subscribes", responder(map[string]string{"subscribes": ""}), "subscribes is required"},
+		{"scale inverted", responder(map[string]string{"trust": "{ untrusted: B, scale: { min: 3, max: 1 } }"}), "trust.scale"},
+		{"scale too wide", responder(map[string]string{"trust": "{ untrusted: B, scale: { min: 1, max: 51 } }"}), "trust.scale"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := load(t, map[string]string{"definitions/base.yaml": baseYAML, "definitions/resp.yaml": childYAML("resp", tc.kv)})
+			r := got["resp"]
+			if tc.want == "" {
+				if r.Err != nil {
+					t.Fatalf("want valid: %v", r.Err)
+				}
+				if tc.kv["trust"] == "{ untrusted: C }" == r.Effective.Responder() {
+					t.Fatalf("Responder() is true only for B: %+v", r.Effective.Trust)
+				}
+				return
+			}
+			if !strings.Contains(errText(r.Err), tc.want) {
+				t.Fatalf("want error containing %q, got %q", tc.want, errText(r.Err))
+			}
+		})
+	}
+}

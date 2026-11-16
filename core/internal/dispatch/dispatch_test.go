@@ -22,15 +22,17 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
+	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	bridgev1 "github.com/MohammadBnei/ukubi-bridge/proto/gen/go/bridge/v1"
 )
 
 type fakeAgents struct {
-	opens  []*agentfleetv1.OpenRequest
-	closes []string
-	err    map[string]error // by definition
+	opens   []*agentfleetv1.OpenRequest
+	invokes []*agentfleetv1.InvokeRequest
+	closes  []string
+	err     map[string]error // by definition
 }
 
 func (f *fakeAgents) AsClient(ctx context.Context, client string) (context.Context, error) {
@@ -46,6 +48,15 @@ func (f *fakeAgents) Open(_ context.Context, req *connect.Request[agentfleetv1.O
 		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.OpenResponse{ThreadId: "t"}), nil
+}
+
+func (f *fakeAgents) InvokeUntrusted(_ context.Context, req *connect.Request[agentfleetv1.InvokeRequest]) (*connect.Response[agentfleetv1.InvokeResponse], error) {
+	f.invokes = append(f.invokes, req.Msg)
+	return connect.NewResponse(&agentfleetv1.InvokeResponse{ThreadId: "th"}), nil
+}
+
+func (f *fakeAgents) WaitForResult(context.Context, *connect.Request[agentfleetv1.WaitForResultRequest]) (*connect.Response[agentfleetv1.WaitForResultResponse], error) {
+	return connect.NewResponse(&agentfleetv1.WaitForResultResponse{State: "failed"}), nil
 }
 
 func (f *fakeAgents) CloseThread(_ context.Context, req *connect.Request[agentfleetv1.CloseThreadRequest]) (*connect.Response[agentfleetv1.CloseThreadResponse], error) {
@@ -874,5 +885,44 @@ func TestRenderIsStorable(t *testing.T) {
 	}
 	if Render(e, false) != m {
 		t.Fatal("Render is not deterministic")
+	}
+}
+
+// docs/adr/0086 §3-§4: an alert a first responder subscribes to starts its run through InvokeUntrusted, keyed by the
+// alert group, and files no proposal; an alert no responder answers still goes to the alert handler.
+func TestAlertsGoToAFirstResponder(t *testing.T) {
+	d, agents, defs, _ := setup(t)
+	al := d.alerts.(*fakeAlerts)
+	resp := head("resp", nil, &definitions.Subscribes{Types: []string{"dev.bnei.alert."}}, Client)
+	resp.Effective.Trust = &definitions.Trust{Untrusted: "B"}
+	defs.heads = append(defs.heads, resp)
+	defs.clients[0].Spec.Definitions = append(defs.clients[0].Spec.Definitions, "resp")
+	d.SetResponders(&responder.Runner{
+		Ctx: context.Background(), Client: Client, Agents: agents, Defs: defs,
+		Wait: func(run func()) { run() },
+	})
+
+	fire := func(id string) *bridgev1.CloudEvent {
+		return &bridgev1.CloudEvent{Id: id, Source: "alertmanager", Type: typeAlertFiring, Subject: "alert/fp", Actor: "machine",
+			Data: []byte(`{"status":"firing","fingerprint":"fp","labels":{"alertname":"Down","namespace":"game","service":"api"}}`)}
+	}
+	if err := d.Handle(context.Background(), fire("a1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Handle(context.Background(), fire("a2")); err != nil {
+		t.Fatal(err)
+	}
+	if al.filed != 0 {
+		t.Fatalf("an alert a responder answers files no proposal, filed=%d", al.filed)
+	}
+	if len(agents.invokes) != 1 || agents.invokes[0].GetDefinition() != "resp" || !strings.HasPrefix(agents.invokes[0].GetIdempotencyKey(), "alert:") ||
+		!strings.Contains(agents.invokes[0].GetInput(), "<untrusted-alert>") {
+		t.Fatalf("the first firing starts one run, the repeat is held by the cooldown: %+v", agents.invokes)
+	}
+
+	// Without a responder (the bridge client no longer lists it) the proposal path is back.
+	defs.clients[0].Spec.Definitions = defs.clients[0].Spec.Definitions[:len(defs.clients[0].Spec.Definitions)-1]
+	if err := d.Handle(context.Background(), fire("a3")); err != nil || al.filed != 1 {
+		t.Fatalf("no responder: err %v filed %d", err, al.filed)
 	}
 }

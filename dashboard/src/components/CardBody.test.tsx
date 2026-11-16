@@ -96,6 +96,25 @@ test("a card shows its ask as an agent claim, its subject link and its expiry", 
   expect(html).toMatch(/expires/i);
 });
 
+// docs/adr/0086 §4: an alert group has no repo or number, only its group key.
+test("a responder's alert-group card names the group, not a repo and a number", () => {
+  const html = render(
+    card({
+      draftedBy: "core",
+      subject: {
+        $typeName: "agentfleet.v1.CardSubject",
+        repo: "",
+        kind: "alert_group",
+        number: 0n,
+        url: "",
+        groupKey: "0123456789abcdef",
+      },
+    }),
+  );
+  expect(html).toContain("alert 0123456789abcdef");
+  expect(html).not.toContain("#0");
+});
+
 // Core's own cards (dispatch's close-threads card) are not an agent's words.
 test("a card core drafted says so instead of agent claim", () => {
   const html = render(card({ draftedBy: "core" }));

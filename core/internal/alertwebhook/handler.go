@@ -66,7 +66,12 @@ type Handler struct {
 	discord   Notifier
 	cfg       Config
 	inactive  func(ctx context.Context, repo string) bool
+	skip      func(raw json.RawMessage) bool
 }
+
+// SetSkip installs the responder gate: an alert skip reports true for is the first responders' (docs/adr/0086 §4),
+// so no proposal is filed for it. Nil means no gate.
+func (h *Handler) SetSkip(fn func(raw json.RawMessage) bool) { h.skip = fn }
 
 // SetInactive installs the repo gate: while cfg.Repo is inactive, firing
 // alerts file no proposal. Nil means no gate.
@@ -171,6 +176,9 @@ func (h *Handler) file(ctx context.Context, raw json.RawMessage) (bool, error) {
 	var a alert
 	if err := json.Unmarshal(raw, &a); err != nil {
 		slog.Warn("alertwebhook: undecodable alert, skipping", "error", err)
+		return false, ErrSkipped
+	}
+	if h.skip != nil && h.skip(raw) {
 		return false, ErrSkipped
 	}
 	// Only firing. A resolved notification needs no investigation, and
@@ -293,3 +301,7 @@ func truncate(s string, n int) string {
 	}
 	return s[:n]
 }
+
+// Untrusted is untrusted for the first responders' input (docs/adr/0086 §3): one alert field, flattened to a
+// single line that cannot leave its fence.
+func Untrusted(s string) string { return untrusted(s) }

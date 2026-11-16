@@ -647,6 +647,9 @@ func validate(name string, s *Spec) error {
 		}
 		humanFacing(&errs, "subscribes", sub.Types, sub.Subjects)
 	}
+	if t := s.Trust; t != nil {
+		validateTrust(&errs, s, t)
+	}
 	if r := s.Resources; r != nil {
 		if m := cpuRe.FindStringSubmatch(r.CPU); m == nil {
 			bad("resources.cpu %q must be cores or millicores", r.CPU)
@@ -909,5 +912,33 @@ func islandWorkspaces(results []Result) {
 			results[i].Err = fmt.Errorf("workspace.repo %q is served to an island host by %q: list embed.origins here too, or use another repo", e.Workspace.Repo, owner)
 			results[i].Effective = nil
 		}
+	}
+}
+
+// validateTrust: trust.untrusted is B or C, and a first responder (B) is what ADR-0086 §3 says it is: single-shot
+// only, a typed output, subscribing to alerts, and no GitHub write in its git mode.
+func validateTrust(errs *[]error, s *Spec, t *Trust) {
+	bad := func(format string, a ...any) { *errs = append(*errs, fmt.Errorf(format, a...)) }
+	switch t.Untrusted {
+	case "", "C":
+	case "B":
+		if s.Lifecycle == nil || len(s.Lifecycle.Allow) != 1 || s.Lifecycle.Allow[0] != "single-shot" {
+			bad("trust.untrusted B: lifecycle.allow must be exactly [single-shot]")
+		}
+		if s.Output == nil {
+			bad("trust.untrusted B: output.schema is required (the responder's typed union)")
+		}
+		if s.Subscribes == nil {
+			bad("trust.untrusted B: subscribes is required (the alerts it answers)")
+		}
+		// git.mode none mints a read-only github.com key (docs/adr/0075); push and pr hold a write.
+		if s.Git == nil || s.Git.Mode != "none" {
+			bad("trust.untrusted B: git.mode must be none, a responder holds no GitHub write")
+		}
+	default:
+		bad("trust.untrusted %q must be B or C", t.Untrusted)
+	}
+	if t.Scale != nil && (t.Scale.Min < 0 || t.Scale.Max < t.Scale.Min || t.Scale.Max > 50) {
+		bad("trust.scale: need 0 <= min <= max <= 50")
 	}
 }

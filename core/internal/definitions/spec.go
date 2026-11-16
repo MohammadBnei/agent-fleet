@@ -62,7 +62,25 @@ type Spec struct {
 	Subscribes   *Subscribes   `yaml:"subscribes,omitempty"   json:"subscribes,omitempty"`
 	Resources    *Resources    `yaml:"resources,omitempty"    json:"resources,omitempty"`
 	Limits       *Limits       `yaml:"limits,omitempty"       json:"limits,omitempty"`
+	Trust        *Trust        `yaml:"trust,omitempty"        json:"trust,omitempty"`
 }
+
+// Trust is the definition's half of docs/adr/0086 §2. Untrusted names the one letter (B or C) a session keeps
+// beside A when an untrusted trigger starts it; empty means untrusted input cannot start it. B makes the
+// definition a first responder (§3): single-shot, no GitHub write, its `subscribes` the alerts it answers.
+type Trust struct {
+	Untrusted string `yaml:"untrusted,omitempty" json:"untrusted,omitempty"`
+	// Scale is the replica range a responder's scale selection must stay in (§3); core checks it.
+	Scale *ScaleBounds `yaml:"scale,omitempty" json:"scale,omitempty"`
+}
+
+type ScaleBounds struct {
+	Min int `yaml:"min" json:"min"`
+	Max int `yaml:"max" json:"max"`
+}
+
+// Responder reports whether s is a first responder.
+func (s *Spec) Responder() bool { return s != nil && s.Trust != nil && s.Trust.Untrusted == "B" }
 
 type Audience struct {
 	Group string `yaml:"group" json:"group"`

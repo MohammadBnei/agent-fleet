@@ -313,3 +313,22 @@ func TestDescribeFencesAlertText(t *testing.T) {
 		t.Errorf("prompt does not mark the block as data:\n%s", body)
 	}
 }
+
+// docs/adr/0086 §4: an alert a first responder subscribes to files no proposal, so nothing is filed twice.
+func TestSkipFilesNothingForAResponder(t *testing.T) {
+	tasks := &fakeTasks{}
+	h := New(tasks, nil, Config{Token: "t", Repo: "infra-bootstrap"})
+	skip := true
+	h.SetSkip(func(json.RawMessage) bool { return skip })
+	if rec := post(t, h, "t", firing); rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rec.Code)
+	}
+	if len(tasks.calls) != 0 {
+		t.Fatalf("filed %v for an alert a responder answers", tasks.calls)
+	}
+	skip = false
+	post(t, h, "t", firing)
+	if len(tasks.calls) != 1 {
+		t.Fatalf("with no responder the alert files as before: %v", tasks.calls)
+	}
+}

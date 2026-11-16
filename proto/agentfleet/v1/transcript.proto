@@ -125,12 +125,15 @@ message ReadTranscriptSinceResponse {
 message CardSubject {
   // owner/name.
   string repo = 1;
-  // "pr", "issue", "alert" or "repo".
+  // "pr", "issue", "alert", "repo" or "alert_group".
   string kind = 2;
   // Required for pr, issue and alert; 0 for repo.
   int64 number = 3;
   // Filled by core from the rest; empty for an alert.
   string url = 4;
+  // An "alert_group" subject (docs/adr/0086 §4): the first responder's alert group, 16 lowercase hex. It has no
+  // GitHub repo or number; the thread key is alert/<group_key>.
+  string group_key = 5;
 }
 
 // What answering with an option does. Nothing writes to GitHub.

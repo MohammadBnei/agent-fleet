@@ -419,7 +419,13 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 		s.rollbackOpen(ctx, p.ID, id)
 		return nil, err
 	}
-	if _, err := s.transcr.Append(ctx, id, "human", p.Body, "discussion", uuid.NewString()); err != nil {
+	// An alert's body is attacker-shaped text (docs/adr/0086 §4): the owner's click opens the session, the words in it
+	// are not the owner's. It goes in as an agent-authored entry labelled with its source, never as "human".
+	from, body := "human", p.Body
+	if p.Source == "alert" {
+		from, body = "session", "[alert proposal "+p.ID+", untrusted alert text]\n"+p.Body
+	}
+	if _, err := s.transcr.Append(ctx, id, from, body, "discussion", uuid.NewString()); err != nil {
 		slog.ErrorContext(ctx, "dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
 		s.rollbackOpen(ctx, p.ID, id)
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
