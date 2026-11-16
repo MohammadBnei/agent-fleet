@@ -337,12 +337,11 @@ Any doc, code, comment, or memory that contradicts this file or an
   servers, through the vault, with an explicit tool list (Proposed 2026-11-15, waiting
   for a named user; not built).
 - [`0084`](adr/0084-long-lived-agents.md) — long-lived characters: one pod and one session
-  per character, started by the owner and kept up by core, with a trust tier fixed for life
-  (trusted characters never receive untrusted entries; untrusted ones never hold private memory or
-  cluster reads), no Bash, one turn-starting entry at a time tracked per entry; alerts go to
-  ADR-0086's single-shot first responders, not to characters; the owner reaches a character from
-  the game browser straight to core, the game server carries guests only
-  (Proposed 2026-11-16; not built). Depends on [`0086`](adr/0086-rule-of-two.md).
+  per character, started by the owner and kept up by core; every character is the owner's and
+  trusted (guests never reach the fleet, alerts go to ADR-0086's single-shot first responders and
+  reach a character only as typed outcomes it reads); the worker's cursor in strict order, resumed
+  from the last result; Bash within the definition's ceiling; the owner talks from the game browser
+  straight to core (Proposed 2026-11-16; not built). Depends on [`0086`](adr/0086-rule-of-two.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -385,7 +384,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   inferred from anything else. `/approve` no
   longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
 - **Appending to a session that has no live pod without warming first** (except a
-  long-lived character, which tracks delivery per entry, `adr/0084` §4). The
+  long-lived character, which resumes from its last result's cursor, `adr/0084` §4). The
   resume cursor is `MAX(seq)+1` read at provisioning time, so an entry written
   to a cold session lands *below* the next pod's cursor and is undeliverable
   forever — not delivered late. `PostMessage`, `OpenFromProposal`,
