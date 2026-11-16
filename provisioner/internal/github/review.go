@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -170,7 +171,7 @@ var openPRPermissions = map[string]string{"contents": "read", "pull_requests": "
 // OpenPR opens a pull request from a pushed branch (docs/adr/0086 §4 open_pr). The owner approved one
 // commit: a branch that has moved past it is ErrStaleHead and nothing is opened. The base is the repo's
 // default branch, read here, never named by the caller.
-// branch is validated by the caller (letters, digits, ._/-): safe in a path unescaped.
+// branch is validated by the caller (grpcserver.validBranch); each segment is escaped here as well.
 func (a *App) OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, body string) (string, error) {
 	full := owner + "/" + repo
 	tok, err := a.cached(ctx, "openpr:"+strings.ToLower(full), func(ctx context.Context) (token, error) {
@@ -185,7 +186,7 @@ func (a *App) OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, b
 			SHA string `json:"sha"`
 		} `json:"object"`
 	}
-	if err := request(ctx, a.HTTP, a.API, tok, http.MethodGet, base+"/git/ref/heads/"+branch, nil, &ref); err != nil {
+	if err := request(ctx, a.HTTP, a.API, tok, http.MethodGet, base+"/git/ref/heads/"+escapeRef(branch), nil, &ref); err != nil {
 		return "", err
 	}
 	if !strings.EqualFold(ref.Object.SHA, headSHA) {
@@ -205,4 +206,13 @@ func (a *App) OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, b
 		return "", err
 	}
 	return pr.HTMLURL, nil
+}
+
+// escapeRef path-escapes each segment of a branch, keeping its "/" separators.
+func escapeRef(b string) string {
+	parts := strings.Split(b, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }

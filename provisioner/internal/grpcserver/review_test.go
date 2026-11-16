@@ -118,6 +118,10 @@ func TestOpenPullRequest(t *testing.T) {
 		"repo":      func(r *agentfleetv1.OpenPullRequestRequest) { r.Repo = "../x" },
 		"branch":    func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "" },
 		"flag-like": func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "--x" },
+		"dotdot":    func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a/../../../x" },
+		"lock":      func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a/x.lock" },
+		"slashes":   func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a//x" },
+		"trailing":  func(r *agentfleetv1.OpenPullRequestRequest) { r.Branch = "a/" },
 		"sha":       func(r *agentfleetv1.OpenPullRequestRequest) { r.HeadSha = "abc" },
 		"title":     func(r *agentfleetv1.OpenPullRequestRequest) { r.Title = "" },
 	} {

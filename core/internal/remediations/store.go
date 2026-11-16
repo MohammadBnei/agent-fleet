@@ -66,15 +66,8 @@ func (s *Store) Insert(ctx context.Context, responder string, sel Selection, b B
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('remediations'))`); err != nil {
 		return "", err
 	}
-	var perTarget, perResponder int
-	if err := tx.QueryRow(ctx, `SELECT
-		count(*) FILTER (WHERE target = $2 AND created_at > now() - interval '`+targetWindow+`'),
-		count(*) FILTER (WHERE responder = $1 AND created_at > now() - interval '`+responderWindow+`')
-		FROM remediations`, responder, sel.target()).Scan(&perTarget, &perResponder); err != nil {
+	if err := limited(ctx, tx, responder, sel); err != nil {
 		return "", err
-	}
-	if perTarget >= 1 || perResponder >= responderMax {
-		return "", ErrRateLimited
 	}
 	var id string
 	if err := tx.QueryRow(ctx, `INSERT INTO remediations (responder, target, action, params) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -82,6 +75,30 @@ func (s *Store) Insert(ctx context.Context, responder string, sel Selection, b B
 		return "", err
 	}
 	return id, tx.Commit(ctx)
+}
+
+type queryer interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// limited is ErrRateLimited when responder or the selection's target is over its window.
+func limited(ctx context.Context, q queryer, responder string, sel Selection) error {
+	var perTarget, perResponder int
+	if err := q.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE target = $2 AND created_at > now() - interval '`+targetWindow+`'),
+		count(*) FILTER (WHERE responder = $1 AND created_at > now() - interval '`+responderWindow+`')
+		FROM remediations`, responder, sel.target()).Scan(&perTarget, &perResponder); err != nil {
+		return err
+	}
+	if perTarget >= 1 || perResponder >= responderMax {
+		return ErrRateLimited
+	}
+	return nil
+}
+
+// Limited previews Insert's rate limit without writing, for a check before an approval is spent.
+func (s *Store) Limited(ctx context.Context, responder string, sel Selection) error {
+	return limited(ctx, s.pool, responder, sel)
 }
 
 // Pull consumes the row: pending becomes pulled in one statement, so a second pull, or a Job retry, finds nothing.
@@ -172,15 +189,38 @@ func (s *Service) lowStakes(ns string) bool {
 // Select checks the responder's raw selection against the schema, the denylist and the low-stakes list, then
 // writes the row (rate limits are the store's). It returns the row id.
 func (s *Service) Select(ctx context.Context, responder string, raw []byte, b Bounds) (string, error) {
-	sel, err := Parse(raw)
+	sel, err := s.check(raw, b)
 	if err != nil {
 		return "", err
 	}
+	return s.Store.Insert(ctx, responder, sel, b)
+}
+
+func (s *Service) check(raw []byte, b Bounds) (Selection, error) {
+	sel, err := Parse(raw)
+	if err != nil {
+		return sel, err
+	}
 	if err := sel.Validate(b, s.lowStakes(sel.Namespace)); err != nil {
-		return "", err
+		return sel, err
 	}
 	if sel.Denied() {
-		return "", ErrDenied
+		return sel, ErrDenied
 	}
-	return s.Store.Insert(ctx, responder, sel, b)
+	return sel, nil
+}
+
+// Check is Select's refusals, and the rate limit when the store can preview it, with nothing written:
+// what can fail before an approval is spent.
+func (s *Service) Check(ctx context.Context, responder string, raw []byte, b Bounds) error {
+	sel, err := s.check(raw, b)
+	if err != nil {
+		return err
+	}
+	if l, ok := s.Store.(interface {
+		Limited(context.Context, string, Selection) error
+	}); ok {
+		return l.Limited(ctx, responder, sel)
+	}
+	return nil
 }

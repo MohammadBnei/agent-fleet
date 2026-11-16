@@ -106,6 +106,10 @@ func TestOpenSupervised_SeedsAnAgentEntry(t *testing.T) {
 	if err != nil || got.TrustSet != "BC" {
 		t.Fatalf("session: %+v %v", got, err)
 	}
+	// Supervised: not the unattended "auto" default, marked.
+	if got.PermissionMode == nil || *got.PermissionMode != "default" || got.Title == nil || !strings.HasPrefix(*got.Title, "[supervised] ") {
+		t.Errorf("not supervised: %+v", got)
+	}
 	e, _, err := tr.ReadSince(ctx, id, 0, 10)
 	if err != nil || len(e) != 1 || e[0].From != "agent" || e[0].Text != "typed brief" {
 		t.Fatalf("seed: %+v %v", e, err)

@@ -198,8 +198,12 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 			return bad(`option %d: reversible must be "yes", "partial" or "no"`, i+1)
 		}
 		switch o.GetEffect().GetVerb() {
-		case "handoff":
-		case "close_threads":
+		case "handoff", "close_threads":
+			// Not a core verb: a payload and hash an agent sent are never kept.
+			o.GetEffect().Payload, o.GetEffect().PayloadHash = "", ""
+			if o.GetEffect().GetVerb() == "handoff" {
+				break
+			}
 			if k := sub.GetKind(); k != "pr" && k != "issue" {
 				return bad("option %d: close_threads needs a pr or issue subject", i+1)
 			}

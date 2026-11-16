@@ -52,6 +52,33 @@ function effectText(o: CardOption, subject: string): string {
     : "Sends your choice to the agent";
 }
 
+// The bound payload as the owner reads it, so an approval runs bytes that were
+// shown (docs/adr/0086 §4): its typed fields, the title labelled an agent claim,
+// and for open_pr the diff of the approved commit. Mirrors decisions.EffectLines.
+export function payloadLines(o: CardOption): string[] {
+  const e = o.effect;
+  if (!e || !(e.verb in coreVerbText) || !e.payload) return [];
+  let m: Record<string, unknown>;
+  try {
+    m = JSON.parse(e.payload);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const k of Object.keys(m).sort()) {
+    const v = m[k];
+    if (Array.isArray(v)) {
+      for (const f of v as { name?: unknown; value?: unknown }[])
+        out.push(`${k}: ${f.name} = ${f.value}`);
+    } else {
+      out.push(`${k === "title" ? "title (agent claim)" : k}: ${v}`);
+    }
+  }
+  if (e.verb === "open_pr")
+    out.push(`diff: https://github.com/${m.repo}/compare/${m.headSha}`);
+  return out;
+}
+
 // The not-delivered notice. agentsvc owns the reason's words; this only
 // names the card, by its subject (the ask can run to 280 characters, too
 // long for a banner above the deck).
@@ -206,6 +233,14 @@ export function CardBody({
             <span className="block text-xs text-dim [overflow-wrap:anywhere]">
               {effectText(o, subject)}
             </span>
+            {payloadLines(o).map((l) => (
+              <span
+                key={l}
+                className="block text-xs text-dim2 font-mono [overflow-wrap:anywhere]"
+              >
+                {l}
+              </span>
+            ))}
           </ActionButton>
         ))}
       </div>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
@@ -53,6 +54,21 @@ var (
 	findingName = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
 )
 
+// ValidBranch: a branch name git accepts (git check-ref-format's rules for what we allow): no "..", "//",
+// "./" segment starting with ".", trailing "/" or ".", or ".lock" suffix.
+func ValidBranch(b string) bool {
+	if !branchName.MatchString(b) || strings.Contains(b, "..") || strings.Contains(b, "//") ||
+		strings.HasSuffix(b, "/") || strings.HasSuffix(b, ".") || strings.HasSuffix(b, ".lock") {
+		return false
+	}
+	for _, seg := range strings.Split(b, "/") {
+		if strings.HasPrefix(seg, ".") || strings.HasSuffix(seg, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
 // PayloadHash binds an approval to the verb and its payload.
 func PayloadHash(verb, payload string) string {
 	h := sha256.Sum256([]byte(verb + "\n" + payload))
@@ -86,7 +102,7 @@ func bindEffect(e *agentfleetv1.CardEffect) error {
 		if err := checkRepo(t.Repo); err != nil {
 			return bad("%v", err)
 		}
-		if !branchName.MatchString(t.Branch) || !headSHA.MatchString(t.HeadSHA) {
+		if !ValidBranch(t.Branch) || !headSHA.MatchString(t.HeadSHA) {
 			return bad("a branch name and a 40 hex head sha")
 		}
 		if err := text("title", t.Title, 80, false); err != nil {
@@ -119,6 +135,48 @@ func bindEffect(e *agentfleetv1.CardEffect) error {
 	b, _ := json.Marshal(canon)
 	e.Payload, e.PayloadHash = string(b), PayloadHash(e.GetVerb(), string(b))
 	return nil
+}
+
+// DiffURL is where the owner reads open_pr's branch at the approved commit.
+func DiffURL(repo, headSHA string) string {
+	return "https://github.com/" + repo + "/compare/" + headSHA
+}
+
+// EffectLines is a core verb's canonical payload as the owner reads it, one "field: value" per line, so
+// an approval runs bytes that were shown: the title is labelled an agent claim, open_pr adds its diff.
+func EffectLines(e *agentfleetv1.CardEffect) []string {
+	var m map[string]any
+	if !IsCoreVerb(e.GetVerb()) || json.Unmarshal([]byte(e.GetPayload()), &m) != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out []string
+	for _, k := range keys {
+		label := k
+		if k == "title" {
+			label = "title (agent claim)"
+		}
+		if fs, ok := m[k].([]any); ok {
+			for _, f := range fs {
+				if fm, ok := f.(map[string]any); ok {
+					out = append(out, fmt.Sprintf("%s: %v = %v", k, fm["name"], fm["value"]))
+				}
+			}
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s: %v", label, m[k]))
+	}
+	if e.GetVerb() == VerbOpenPR {
+		var t PRTarget
+		if json.Unmarshal([]byte(e.GetPayload()), &t) == nil {
+			out = append(out, "diff: "+DiffURL(t.Repo, t.HeadSHA))
+		}
+	}
+	return out
 }
 
 // VerifyEffect is the check before an effect runs: the stored payload still hashes to what the card

@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"connectrpc.com/connect"
-	"github.com/MohammadBnei/ukubi-go/errs"
 
 	"encoding/json"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -21,6 +22,8 @@ import (
 type CardEffects struct {
 	// Remediate is remediations.Service.Select: the schema, denylist and rate limits, then a pending row.
 	Remediate func(ctx context.Context, responder string, raw []byte, b remediations.Bounds) (string, error)
+	// Check is remediations.Service.Check: Select's refusals and rate limit, nothing written.
+	Check func(ctx context.Context, responder string, raw []byte, b remediations.Bounds) error
 	// OpenPR is the provisioner's OpenPullRequest.
 	OpenPR func(ctx context.Context, req *agentfleetv1.OpenPullRequestRequest) (*agentfleetv1.OpenPullRequestResponse, error)
 }
@@ -30,6 +33,7 @@ func (s *Server) SetCardEffects(fx CardEffects) { s.cardFx = fx }
 
 // sessionOpener starts open_session's session (*dashboard.Server).
 type sessionOpener interface {
+	StartableRepo(ctx context.Context, name string) (*repos.Repo, error)
 	OpenSupervised(ctx context.Context, repo, title, body string) (string, error)
 }
 
@@ -43,34 +47,94 @@ func coreEffect(r decisions.Record, optionID string) *agentfleetv1.CardEffect {
 	return nil
 }
 
-func refuse(key errs.Key, err error) error {
-	return errkeys.Connect(connect.CodeFailedPrecondition, key, err)
+func refuse(err error) error {
+	return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 }
 
 // checkEffect runs before the answer is recorded: a refusal leaves the card open. The approval binds to
 // the payload hash, and open_pr's writer must still be a B.C session.
 func (s *Server) checkEffect(ctx context.Context, r decisions.Record, e *agentfleetv1.CardEffect) error {
 	if e.GetVerb() == decisions.VerbExecutorStep {
-		return refuse(errkeys.KeyInternal, errors.New("executor_step is declared but refused until ADR-0072's executor exists"))
+		return refuse(errors.New("executor_step is declared but refused until ADR-0072's executor exists"))
 	}
 	if err := decisions.VerifyEffect(e); err != nil {
-		return refuse(errkeys.KeyDecisionStale, err)
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, err)
 	}
 	if e.GetVerb() == decisions.VerbOpenPR {
-		return s.writerIsBC(ctx, r)
+		return s.writerIsBC(ctx, r, e)
 	}
 	return nil
 }
 
-func (s *Server) writerIsBC(ctx context.Context, r decisions.Record) error {
-	w, err := s.sessions.Get(ctx, r.SessionID)
-	if err != nil || w == nil {
-		return refuse(errkeys.KeyInternal, fmt.Errorf("open_pr: the writer %s is gone", r.SessionID))
-	}
-	if w.TrustSet != "BC" {
-		return refuse(errkeys.KeyInternal, fmt.Errorf("open_pr needs a B.C writer, this one holds %q", w.TrustSet))
+// preflight is what can fail in the effect, checked before the answer is recorded so a refusal spends no
+// approval: the catalogue's own checks and rate limit, the repo startable, the PR's repo the writer's own.
+func (s *Server) preflight(ctx context.Context, r decisions.Record, e *agentfleetv1.CardEffect) error {
+	switch e.GetVerb() {
+	case decisions.VerbCatalogue:
+		if s.cardFx.Check != nil {
+			if err := s.cardFx.Check(ctx, cardOf(r).GetWriterDefinition(), []byte(e.GetPayload()), s.boundsOf(ctx, r)); err != nil {
+				return refuse(err)
+			}
+		}
+	case decisions.VerbOpenSession:
+		var b decisions.Brief
+		if err := json.Unmarshal([]byte(e.GetPayload()), &b); err != nil {
+			return refuse(err)
+		}
+		if s.opener != nil {
+			if _, err := s.opener.StartableRepo(ctx, b.Repo); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func (s *Server) boundsOf(ctx context.Context, r decisions.Record) (b remediations.Bounds) {
+	if raw, _, err := s.sessions.PinnedEffective(ctx, r.SessionID); err == nil {
+		var eff definitions.Spec
+		if json.Unmarshal(raw, &eff) == nil && eff.Trust != nil && eff.Trust.Scale != nil {
+			b = remediations.Bounds{Min: eff.Trust.Scale.Min, Max: eff.Trust.Scale.Max}
+		}
+	}
+	return b
+}
+
+// writerIsBC: open_pr's writer is still a B.C session, and the PR's repo is the repo it works on
+// (a branch pushed by a B.C session, docs/adr/0086 §4), so a filer's bug cannot open one elsewhere.
+func (s *Server) writerIsBC(ctx context.Context, r decisions.Record, e *agentfleetv1.CardEffect) error {
+	w, err := s.sessions.Get(ctx, r.SessionID)
+	if err != nil || w == nil {
+		return refuse(fmt.Errorf("open_pr: the writer %s is gone", r.SessionID))
+	}
+	if w.TrustSet != "BC" {
+		return refuse(fmt.Errorf("open_pr needs a B.C writer, this one holds %q", w.TrustSet))
+	}
+	var t decisions.PRTarget
+	if err := json.Unmarshal([]byte(e.GetPayload()), &t); err != nil {
+		return refuse(err)
+	}
+	if s.opener == nil {
+		return refuse(errors.New("open_pr: no console"))
+	}
+	rp, err := s.opener.StartableRepo(ctx, w.Repo)
+	if err != nil {
+		return err
+	}
+	if u := strings.TrimSuffix(rp.URL, ".git"); !strings.HasSuffix(u, "/"+t.Repo) && !strings.HasSuffix(u, ":"+t.Repo) {
+		return refuse(fmt.Errorf("open_pr: %s is not the repo the writer works on", t.Repo))
+	}
+	return nil
+}
+
+// effectFailed records on the card's thread that an answered card's effect did not run (the card is
+// closed, so the owner cannot retry it: core files a new one), so the failure is on the card and not
+// only in the RPC error.
+func (s *Server) effectFailed(ctx context.Context, r decisions.Record, e *agentfleetv1.CardEffect, cause error) {
+	note := fmt.Sprintf("The owner answered card %s, but its %s effect did not run: %v", r.ID, e.GetVerb(), cause)
+	if _, err := s.transcr.Append(ctx, r.SessionID, "system", note, "discussion", "effect-failed/"+r.ID); err != nil {
+		slog.ErrorContext(ctx, "agentsvc: recording a failed card effect", "decisionId", r.ID, "error", err)
+	}
 }
 
 // runEffect runs exactly the bound payload, after the answer stands. The target is checked again here:
@@ -83,19 +147,12 @@ func (s *Server) runEffect(ctx context.Context, r decisions.Record, e *agentflee
 	switch e.GetVerb() {
 	case decisions.VerbCatalogue:
 		if s.cardFx.Remediate == nil {
-			return refuse(errkeys.KeyInternal, errors.New("catalogue: no remediation service"))
+			return refuse(errors.New("catalogue: no remediation service"))
 		}
-		var b remediations.Bounds
-		if raw, _, perr := s.sessions.PinnedEffective(ctx, r.SessionID); perr == nil {
-			var eff definitions.Spec
-			if json.Unmarshal(raw, &eff) == nil && eff.Trust != nil && eff.Trust.Scale != nil {
-				b = remediations.Bounds{Min: eff.Trust.Scale.Min, Max: eff.Trust.Scale.Max}
-			}
-		}
-		_, err = s.cardFx.Remediate(ctx, cardOf(r).GetWriterDefinition(), []byte(e.GetPayload()), b)
+		_, err = s.cardFx.Remediate(ctx, cardOf(r).GetWriterDefinition(), []byte(e.GetPayload()), s.boundsOf(ctx, r))
 	case decisions.VerbOpenPR:
 		if s.cardFx.OpenPR == nil {
-			return refuse(errkeys.KeyInternal, errors.New("open_pr: no provisioner"))
+			return refuse(errors.New("open_pr: no provisioner"))
 		}
 		var t decisions.PRTarget
 		if err := json.Unmarshal([]byte(e.GetPayload()), &t); err != nil {
@@ -107,7 +164,7 @@ func (s *Server) runEffect(ctx context.Context, r decisions.Record, e *agentflee
 		})
 	case decisions.VerbOpenSession:
 		if s.opener == nil {
-			return refuse(errkeys.KeyInternal, errors.New("open_session: no console"))
+			return refuse(errors.New("open_session: no console"))
 		}
 		var b decisions.Brief
 		if err := json.Unmarshal([]byte(e.GetPayload()), &b); err != nil {
@@ -116,7 +173,7 @@ func (s *Server) runEffect(ctx context.Context, r decisions.Record, e *agentflee
 		_, err = s.opener.OpenSupervised(ctx, b.Repo, b.Title, briefBody(r.ID, b))
 	}
 	if err != nil && connect.CodeOf(err) == connect.CodeUnknown {
-		err = refuse(errkeys.KeyInternal, err)
+		err = refuse(err)
 	}
 	return err
 }

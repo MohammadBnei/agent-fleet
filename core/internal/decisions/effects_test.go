@@ -93,3 +93,46 @@ func TestCheckCoreVerbs(t *testing.T) {
 		}
 	}
 }
+
+func TestValidBranch(t *testing.T) {
+	for b, ok := range map[string]bool{
+		"fix/x": true, "a.b/c-d_e": true, "a/../../../x": false, "a..b": false, "a//b": false, "a/": false,
+		"a.": false, "x.lock": false, "a/x.lock": false, "a/.hidden": false, "-x": false, "": false,
+	} {
+		if ValidBranch(b) != ok {
+			t.Errorf("ValidBranch(%q) = %v", b, !ok)
+		}
+	}
+	if _, err := normalize(&agentfleetv1.Card{Ask: "x", Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef"},
+		Options: []*agentfleetv1.CardOption{{Label: "a", Reversible: "yes", Effect: eff(VerbOpenPR, `{"repo":"o/r","branch":"a/../x","headSha":"`+sha40+`","title":"t"}`)},
+			{Label: "b", Reversible: "yes", Effect: eff("handoff", "")}}}); err == nil {
+		t.Error("open_pr with a .. branch was filed")
+	}
+}
+
+// A handoff or close_threads option keeps nothing an agent put in payload: it is no core verb's.
+func TestNormalizeClearsForeignPayload(t *testing.T) {
+	c := &agentfleetv1.Card{Ask: "x", Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef"},
+		Options: []*agentfleetv1.CardOption{{Label: "a", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff", Payload: "free\x00text", PayloadHash: "h"}},
+			{Label: "b", Reversible: "yes", Effect: eff("handoff", "")}}}
+	if _, err := normalize(c); err != nil {
+		t.Fatal(err)
+	}
+	if e := c.GetOptions()[0].GetEffect(); e.GetPayload() != "" || e.GetPayloadHash() != "" {
+		t.Errorf("kept %q %q", e.GetPayload(), e.GetPayloadHash())
+	}
+}
+
+func TestEffectLines(t *testing.T) {
+	got := strings.Join(EffectLines(eff(VerbOpenSession, `{"repo":"notes","title":"Look","findings":[{"name":"restarts","value":4}]}`)), "|")
+	if got != "findings: restarts = 4|repo: notes|title (agent claim): Look" {
+		t.Errorf("open_session: %s", got)
+	}
+	pr := strings.Join(EffectLines(eff(VerbOpenPR, `{"repo":"o/r","branch":"fix/x","headSha":"`+sha40+`","title":"Fix"}`)), "|")
+	if !strings.HasSuffix(pr, "|diff: https://github.com/o/r/compare/"+sha40) {
+		t.Errorf("open_pr: %s", pr)
+	}
+	if EffectLines(eff("handoff", `{"a":1}`)) != nil {
+		t.Error("a non-core verb shows a payload")
+	}
+}

@@ -884,6 +884,23 @@ func (s *Server) PostReview(ctx context.Context, req *agentfleetv1.PostReviewReq
 	return &agentfleetv1.PostReviewResponse{ReviewUrl: p.URL, Event: p.Event, StatusState: p.Status}, nil
 }
 
+var branchRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
+
+// validBranch: letters, digits, ._/- and git check-ref-format's rules (no "..", "//", a segment starting
+// with "." or ending ".lock", a trailing "/" or "."), so it is safe in an API path unescaped.
+func validBranch(b string) bool {
+	if !branchRe.MatchString(b) || strings.Contains(b, "..") || strings.Contains(b, "//") ||
+		strings.HasSuffix(b, "/") || strings.HasSuffix(b, ".") {
+		return false
+	}
+	for _, seg := range strings.Split(b, "/") {
+		if strings.HasPrefix(seg, ".") || strings.HasSuffix(seg, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
 // OpenPullRequest opens an owner-approved card's PR (docs/adr/0086 §4). core has checked the card, its
 // hash and the writer's trust; the shape is re-checked here, the trust boundary, and the branch must still
 // be at the approved commit.
@@ -892,8 +909,8 @@ func (s *Server) OpenPullRequest(ctx context.Context, req *agentfleetv1.OpenPull
 	switch {
 	case !reviewRepoRe.MatchString(req.GetRepo()) || strings.Trim(owner, ".") == "" || strings.Trim(repo, ".") == "":
 		return nil, status.Errorf(codes.InvalidArgument, "repo %q is not owner/name", req.GetRepo())
-	case req.GetBranch() == "" || strings.HasPrefix(req.GetBranch(), "-"):
-		return nil, status.Error(codes.InvalidArgument, "branch is required")
+	case !validBranch(req.GetBranch()):
+		return nil, status.Error(codes.InvalidArgument, "branch is not a valid branch name")
 	case !headSHARe.MatchString(req.GetHeadSha()):
 		return nil, status.Error(codes.InvalidArgument, "head_sha must be 40 lowercase hex")
 	case req.GetTitle() == "":

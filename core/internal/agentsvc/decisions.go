@@ -290,6 +290,9 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 		if err := s.checkEffect(ctx, r, fx); err != nil {
 			return nil, err
 		}
+		if err := s.preflight(ctx, r, fx); err != nil {
+			return nil, err
+		}
 	}
 	n, err := s.decisions.Answer(ctx, s.dash, s.transcr, r, decisions.Reply{By: p.author(), OptionID: m.GetOptionId(), OwnText: m.GetOwnText()})
 	res := &agentfleetv1.AnswerDecisionResponse{Seq: n, Delivered: true}
@@ -307,6 +310,7 @@ func (s *Server) answerCard(ctx context.Context, p Principal, r decisions.Record
 	}
 	if fx != nil {
 		if err := s.runEffect(ctx, r, fx); err != nil {
+			s.effectFailed(ctx, r, fx, err)
 			return nil, err
 		}
 	}
