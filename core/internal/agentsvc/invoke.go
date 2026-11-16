@@ -22,6 +22,10 @@ const (
 	maxWait    = 60 * time.Second
 )
 
+// endRecheck bounds how late WaitForResult sees an end that appends
+// nothing; a var for tests.
+var endRecheck = 5 * time.Second
+
 // Invoke is Open with fixed choices (docs/adr/0070 §1): a private
 // single-shot thread the client owns, claimed on (invoker, idempotency_key)
 // as Open is (docs/adr/0066 §7), warmed through WarmForAppend, then the
@@ -160,7 +164,15 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 	defer cancel()
 	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
+	// An end that appends nothing (endRuns archiving a crashed or stopped
+	// run) wakes no subscriber, so the row is re-read every pass and a pass
+	// runs at least every recheck.
+	recheck := time.NewTicker(endRecheck)
+	defer recheck.Stop()
 	for {
+		if t, err = s.sessions.Get(ctx, t.ID); err != nil {
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
 		out, err := s.result(ctx, t)
 		if err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
@@ -173,6 +185,7 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 			return connect.NewResponse(out), nil
 		case <-deadline.C:
 			return connect.NewResponse(out), nil
+		case <-recheck.C:
 		case _, ok := <-wake:
 			if !ok {
 				return connect.NewResponse(out), nil

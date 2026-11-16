@@ -204,14 +204,21 @@ func TestInvoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetPodPhase(ctx, crashedID, "POD_PHASE_CRASHED", "OOMKilled"); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Archive(ctx, crashedID); err != nil {
-		t.Fatal(err)
-	}
+	// The crash and the archive land during the wait and append nothing:
+	// the wait still answers failed well before its deadline.
+	endRecheck = 50 * time.Millisecond
+	t.Cleanup(func() { endRecheck = 5 * time.Second })
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_ = store.SetPodPhase(ctx, crashedID, "POD_PHASE_CRASHED", "OOMKilled")
+		_ = store.Archive(ctx, crashedID)
+	}()
+	start = time.Now()
 	if r, err := wait(bot, crashedID, 30); err != nil || r.GetState() != "failed" || r.GetError().GetCode() != "AGENT_CRASHED" {
 		t.Fatalf("crashed run: %v %v", r, err)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("the wait saw the crash after %v", d)
 	}
 
 	// Only the owning client reads a run, and members call neither method.
@@ -273,10 +280,6 @@ func TestInvoke(t *testing.T) {
 		t.Fatalf("over the run cap: %v", err)
 	}
 	appendEntry(capID, "worker", "result", `{"subtype":"success","result_text":"ok","consumedSeq":1}`)
-	// What sessions.Loop's endRuns does to a final result (docs/adr/0070 §7).
-	if err := store.Archive(ctx, capID); err != nil {
-		t.Fatal(err)
-	}
 	utf8ID, err := invoke(bot, "d", "one more", utf8Key)
 	if err != nil {
 		t.Fatalf("a finished run frees the cap, multi-byte key: %v", err)

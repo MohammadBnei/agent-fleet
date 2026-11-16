@@ -31,13 +31,18 @@
   else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
   order: a result with turn-starting input after it is not final.
   `expired` is declared, reported from slice 11); slice 8 (§7: each
-  `sessions.Loop` tick, `endRuns` takes every unarchived single-shot run
-  that was stopped, or, with no open decision, crashed or holds a final
-  result by the rule above, and calls `TearDownSession`, then
-  `SweepSession`, then marks it swept and archives it; a parked run keeps
-  its PVC; Invoke's run cap now counts unarchived runs; `WaitForResult`
+  `sessions.Loop` tick, `endRuns` takes every single-shot run with no live
+  pod that was stopped, or, with no open decision, crashed or holds a final
+  result by the rule above, claims it by archiving it with that condition
+  re-checked in the same UPDATE (so a warm and a claim serialize on the
+  row), then calls `TearDownSession`, then `SweepSession`, then marks it
+  swept; a parked run keeps its PVC. Until slice 7 "no live pod" means a
+  finished run ends only after the idle timeout reaps its pod, since a
+  running worker's result can be followed by a turn already under way, and
+  Invoke's run cap keeps counting runs with no result; `WaitForResult`
   still reads an archived run for its owner, `failed` with
-  `AGENT_CRASHED` or "ended without a result" when it has no final result).
+  `AGENT_CRASHED` or "ended without a result" when it has no final result,
+  and re-reads the row at least every 5 s while it waits).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that

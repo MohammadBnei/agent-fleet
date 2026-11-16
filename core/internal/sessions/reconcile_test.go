@@ -509,8 +509,10 @@ func endRunsFixture(t *testing.T) (*Store, transcript.Store, func(lifecycle stri
 }
 
 // docs/adr/0070 §7: a single-shot run is torn down and then swept on every
-// terminal path (final result, crash, Stop), then archived; a parked run, a
-// run still going and a resident session keep their pod and PVC.
+// terminal path (final result, crash, Stop) once its pod is gone, after it
+// is archived; a parked run, a run still going, a run whose pod is still up
+// after a result (its next turn may be under way, ADR §6's interim rule) and
+// a resident session keep their pod and PVC.
 func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 	ctx := context.Background()
 	store, tr, create := endRunsFixture(t)
@@ -541,6 +543,21 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := create("single-shot")
+	// A result with the pod still up: the queued turn of a live answer may
+	// be running. Not final until the pod is gone (slice 7's exit result).
+	livePod := create("single-shot")
+	result(livePod)
+	if err := store.SetPodPhase(ctx, livePod, "POD_PHASE_RUNNING", ""); err != nil {
+		t.Fatal(err)
+	}
+	// A stop whose pod is still in its stop grace: enforceStopGrace ends it.
+	stopping := create("single-shot")
+	if err := store.MarkStopRequested(ctx, stopping); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPodPhase(ctx, stopping, "POD_PHASE_RUNNING", ""); err != nil {
+		t.Fatal(err)
+	}
 	resident := create("resident")
 	result(resident)
 
@@ -561,14 +578,14 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 			t.Errorf("ended run %s: %+v %v, want archived and swept", id, s, err)
 		}
 	}
-	for _, id := range []string{parked, running, resident} {
+	for _, id := range []string{parked, running, livePod, stopping, resident} {
 		s, err := store.Get(ctx, id)
 		if err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
 			t.Errorf("session %s lost its PVC or row: %+v %v", id, s, err)
 		}
 	}
 	if n, err := store.UnfinishedRuns(ctx, "client:bot"); err != nil || n != 2 {
-		t.Errorf("unfinished runs = %d %v, want the parked and the running one", n, err)
+		t.Errorf("unfinished runs = %d %v, want the running and the stopping one", n, err)
 	}
 
 	// Ended runs are archived, so the next pass touches nothing.
@@ -579,8 +596,8 @@ func TestEndRuns_TearDownThenSweepPerTerminalPath(t *testing.T) {
 	}
 }
 
-// A failed sweep leaves the run unarchived for the next tick: its disk is
-// still there.
+// A failed sweep leaves the run archived and unswept for the next tick:
+// its disk is still there.
 func TestEndRuns_FailedSweepRetries(t *testing.T) {
 	ctx := context.Background()
 	store, tr, create := endRunsFixture(t)
@@ -591,12 +608,43 @@ func TestEndRuns_FailedSweepRetries(t *testing.T) {
 	fake := &fakeProvisioner{sweepErr: errors.New("disk busy")}
 	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
 	loop.endRuns(ctx)
-	if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt != nil || s.SweptAt != nil {
-		t.Fatalf("a failed sweep archived the run: %+v %v", s, err)
+	if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt == nil || s.SweptAt != nil {
+		t.Fatalf("a failed sweep: %+v %v, want archived (claimed) and unswept", s, err)
 	}
 	fake.sweepErr = nil
 	loop.endRuns(ctx)
 	if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt == nil || s.SweptAt == nil {
 		t.Fatalf("the retry never finished the run: %+v %v", s, err)
+	}
+}
+
+// The ended condition is re-checked when the run is claimed: input that
+// lands after ListEndedRuns, or a warm that reserved a pod, keeps the run.
+func TestClaimEndedRun_RechecksTheEnd(t *testing.T) {
+	ctx := context.Background()
+	store, tr, create := endRunsFixture(t)
+	answered, warmed := create("single-shot"), create("single-shot")
+	for _, id := range []string{answered, warmed} {
+		if _, err := tr.Append(ctx, id, "worker", `{"subtype":"success"}`, "result", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids, err := store.ListEndedRuns(ctx)
+	if err != nil || !slices.Contains(ids, answered) || !slices.Contains(ids, warmed) {
+		t.Fatalf("listed %v %v", ids, err)
+	}
+	if _, err := tr.Append(ctx, answered, "human", "one more thing", "discussion", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPodPhase(ctx, warmed, "POD_PHASE_PROVISIONING", ""); err != nil { // what ReserveSlot writes
+		t.Fatal(err)
+	}
+	for _, id := range []string{answered, warmed} {
+		if ok, err := store.ClaimEndedRun(ctx, id); err != nil || ok {
+			t.Errorf("claimed %s after it moved on: %v %v", id, ok, err)
+		}
+		if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt != nil {
+			t.Errorf("%s archived: %+v %v", id, s, err)
+		}
 	}
 }
