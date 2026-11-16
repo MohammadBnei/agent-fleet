@@ -69,6 +69,22 @@ func LoadExecutor(getenv func(string) string) Executor {
 	}
 }
 
+// Remediation is what the remediation executor runs with (ADR-0086 §3): the
+// id of the one approved row to run.
+type Remediation struct {
+	// ID is the remediations row to pull (REMEDIATION_ID, required).
+	ID string
+}
+
+// RemediationFromProcess is the remediation executor's configuration from its
+// environment: the one call that reads it.
+func RemediationFromProcess() Remediation { return LoadRemediation(os.Getenv) }
+
+// LoadRemediation is the remediation executor's configuration from getenv.
+func LoadRemediation(getenv func(string) string) Remediation {
+	return Remediation{ID: getenv("REMEDIATION_ID")}
+}
+
 // ShimFromProcess is the shim's configuration from its environment: the one
 // call that reads it.
 func ShimFromProcess() (Shim, error) { return LoadShim(os.Getenv) }

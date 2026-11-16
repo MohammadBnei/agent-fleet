@@ -100,3 +100,14 @@ func TestGRPCServer_Matrix(t *testing.T) {
 		})
 	}
 }
+
+// ADR-0086 §3: read_only=false used to skip validation, so an auto-mode
+// session could mutate through the shim. Every call is validated now.
+func TestExec_RefusesMutationWhateverReadOnlySays(t *testing.T) {
+	for _, ro := range []bool{true, false} {
+		resp, err := (&server{}).Exec(context.Background(), &agentfleetv1.ExecRequest{Args: []string{"delete", "pod", "x"}, ReadOnly: ro})
+		if err != nil || resp.GetRefused() == "" || resp.GetExitCode() != -1 {
+			t.Errorf("read_only=%v: resp=%v err=%v", ro, resp, err)
+		}
+	}
+}

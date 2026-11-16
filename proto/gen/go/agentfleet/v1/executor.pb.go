@@ -29,17 +29,8 @@ type ExecRequest struct {
 	// shell somewhere in this path, which is not a risk worth taking on the
 	// fleet's most privileged process.
 	Args []string `protobuf:"bytes,1,rep,name=args,proto3" json:"args,omitempty"`
-	// read_only selects the validated path.
-	//
-	// true  — for unattended callers (the kubectl_read tool bypasses
-	//         canUseTool by design, so no human sees these). Rejected
-	//         unless the verb is a known read verb and no credential or
-	//         impersonation flags are present.
-	// false — for human-gated calls. Deliberately a dumb pipe: the human
-	//         already approved this exact argv through canUseTool, and a
-	//         second allowlist here would only duplicate that gate while
-	//         constraining what a human is permitted to decide. The
-	//         ClusterRole remains the outer boundary either way.
+	// read_only is ignored: the executor validates every call as read-only
+	// (ADR-0086 §3). Mutation is the remediation executor's, not this RPC's.
 	ReadOnly      bool `protobuf:"varint,2,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

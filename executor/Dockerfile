@@ -25,6 +25,8 @@ RUN --mount=type=cache,id=agent-fleet-gobuild,target=/root/.cache/go-build --mou
 # and service are always the same build (docs/adr/0037).
 RUN --mount=type=cache,id=agent-fleet-gobuild,target=/root/.cache/go-build --mount=type=cache,id=agent-fleet-gomod,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -o /out/kubectl-shim ./cmd/kubectlshim
+RUN --mount=type=cache,id=agent-fleet-gobuild,target=/root/.cache/go-build --mount=type=cache,id=agent-fleet-gomod,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /out/remediation ./cmd/remediation
 
 # kubectl is the whole point of this image: the executor is the only
 # process in the fleet holding cluster RBAC, and it reaches the API server
@@ -41,5 +43,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/executor /usr/local/bin/executor
 COPY --from=build /out/kubectl-shim /usr/local/bin/kubectl-shim
+COPY --from=build /out/remediation /usr/local/bin/remediation
 USER 65532:65532
 CMD ["executor"]
