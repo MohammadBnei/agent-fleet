@@ -19,7 +19,18 @@
   /message` takes `idempotencyKey`, the worker writes
   `result_text`/`structured_output`/`consumedSeq` on every result keyed
   `result:<session>:<consumedSeq>:<k>`, retried up to 5 times;
-  retry-until-ack before exit lands with slice 7).
+  retry-until-ack before exit lands with slice 7); slice 5 (`Invoke` and
+  `WaitForResult` in `core/internal/agentsvc/invoke.go`: Open's claim flow
+  on `(invoker, idempotency_key)` with the request hash over definition and
+  input, a private single-shot thread warmed through `WarmForAppend`, a full
+  fleet answered `ResourceExhausted` with an `InvokeCapacity` detail
+  carrying the `thread_id`; runs kept out of Open's thread cap and capped
+  on their own at 500 without a result per client, under their own
+  one-slot claim semaphore; `WaitForResult` a long poll on the transcript
+  hub, `waiting` with `pending` on any open question, permission or plan,
+  else rules 3-4 on the latest result. Until slice 7, rule 1 reads by seq
+  order: a result with turn-starting input after it is not final.
+  `expired` is declared, reported from slice 11).
   **Not yet built:** everything else, in the order of "Build order" below.
 - **Amends:** [ADR-0067](0067-shared-and-private-sessions.md)
   (`interaction` goes), [ADR-0066](0066-agent-service.md) §10 (a pod that
