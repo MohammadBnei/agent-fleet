@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -38,6 +39,14 @@ func TestRepoDefinitions(t *testing.T) {
 		// schedules and nothing reports it (docs/verification-traps.md). Drop this guard once it has synced.
 		if r.Err == nil && r.Effective.Cluster != nil && r.Effective.Cluster.Read {
 			t.Errorf("%s sets cluster.read before infra-bootstrap#462 (fleet-read ServiceAccount) has synced", r.Name)
+		}
+		// OpenIssue matches owns.repos against an <owner>/<repo> (coreserver/reach.go); a bare name never matches.
+		if r.Err == nil && slices.Contains(r.Effective.SidecarTools, "open_issue") {
+			for _, repo := range r.Effective.Owns.Repos {
+				if !strings.Contains(repo, "/") {
+					t.Errorf("%s: owns.repos %q must be <owner>/<repo> for open_issue", r.Name, repo)
+				}
+			}
 		}
 		if r.Name == "alert-responder" && r.Err == nil && !r.Effective.Responder() {
 			t.Errorf("alert-responder must be a first responder (trust.untrusted B): %+v", r.Effective.Trust)

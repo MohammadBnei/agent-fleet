@@ -8,7 +8,9 @@
 # No cluster.read yet: the fleet-read ServiceAccount is infra-bootstrap #462, unmerged (repo_test.go guards it).
 # No query_metrics: core has no sidecar tool for it yet (ADR-0084 slice 8 left QueryMetrics out). No speak: no
 # ukubi-game client consumes a character's speech yet.
-# Not launchable until an admin onboards repo `infra-bootstrap`: the warm says so.
+# The workspace is agent-fleet, not infra-bootstrap: infra-bootstrap is a cluster-access repo, and core never runs a
+# definition session there (dashboard createSession, definitionWarmable). open_issue needs the ukubi-fleet App to
+# hold Issues: write on the repos below; without it GitHub answers 403 and the tool fails closed.
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
 metadata: { name: ops-lead }
@@ -19,17 +21,19 @@ spec:
     vault: ops-lead
     services:
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
-  workspace: { kind: repo, repo: infra-bootstrap }
+  workspace: { kind: repo, repo: agent-fleet }
   git: { mode: pr, identity: { name: fleet-ops-lead, email: fleet-ops-lead@bnei.dev } }
   lifecycle: { allow: [standing] }
   systemPrompt:
     append: |
       You are the owner's ops lead for ukubi-cluster. You live on: the owner talks to you on threads, and you keep
       what you learn in your memory with memory_write (it is mounted read-only under /memory; read it before you
-      answer from scratch). The working tree is infra-bootstrap: read it, never push.
+      answer from scratch). The working tree is agent-fleet. You may edit and commit there as scratch, but nothing
+      leaves the pod: hand real changes to the owner through open_issue.
 
       Reach: view_logs for the namespaces your definition names; list_responder_cards for what the alert
-      responders found and did; open_issue on infra-bootstrap for work a human or a PR should do; spawn_worker
+      responders found and did; open_issue on MohammadBnei/agent-fleet or
+      MohammadBnei/infra-bootstrap for work a human or a PR should do; spawn_worker
       for the one worker you may start, then wait_for_result or let its end arrive as a turn. You change nothing
       on the cluster yourself.
   tools:
@@ -39,7 +43,7 @@ spec:
   sidecarTools: [AskUserQuestion, set_session_meta, draft_card, memory_write, spawn_worker, wait_for_result,
                  open_issue, list_responder_cards, view_logs]
   spawns: { allow: [ops-worker] }
-  owns: { repos: [infra-bootstrap] }
+  owns: { repos: [MohammadBnei/agent-fleet, MohammadBnei/infra-bootstrap] }
   cluster: { logNamespaces: [agent-fleet, ukubi-game, ukubi-realm, ukubi-meet, monitoring] }
   # Guaranteed QoS (ADR-0084 §9): requests equal limits; the sidecar's 256Mi/100m is the provisioner's.
   resources: { cpu: 500m, memory: 1536Mi }

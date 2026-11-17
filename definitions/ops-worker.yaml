@@ -1,7 +1,7 @@
-# The ops lead's worker (docs/adr/0084 §6): a single-shot, read-only run on infra-bootstrap that ops-lead starts
+# The ops lead's worker (docs/adr/0084 §6): a single-shot, read-only run on agent-fleet that ops-lead starts
 # with spawn_worker. A spawn target must be single-shot only and not a first responder, and no existing definition
 # is, so this one exists for it. spawns.allow replaces invokers, so no client lists it.
-# git.mode pr with the model credential only: it cannot push.
+# Not infra-bootstrap: a cluster-access repo never runs a definition session. git.mode pr with the model credential only: it cannot push.
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
 metadata: { name: ops-worker }
@@ -12,12 +12,12 @@ spec:
     vault: ops-worker
     services:
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
-  workspace: { kind: repo, repo: infra-bootstrap }
+  workspace: { kind: repo, repo: agent-fleet }
   git: { mode: pr, identity: { name: fleet-ops-worker, email: fleet-ops-worker@bnei.dev } }
   lifecycle: { allow: [single-shot] }
   systemPrompt:
     append: |
-      You answer one question from the ops lead about infra-bootstrap, then stop. Read the code, answer in a few
+      You answer one question from the ops lead about the agent-fleet code, then stop. Read the code, answer in a few
       lines, and change nothing.
   tools:
     allow: [Read, Glob, Grep, TodoWrite, "Bash(git log:*)", "Bash(git show:*)", "Bash(git diff:*)"]
