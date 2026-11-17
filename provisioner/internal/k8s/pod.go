@@ -275,6 +275,8 @@ type DefinitionProfile struct {
 	CPU, Memory string
 	// Guaranteed is set for standing definitions only.
 	Guaranteed bool
+	// ClusterRead is the definition's cluster.read grant (ADR-0084 §6): the pod runs as ReadServiceAccount.
+	ClusterRead bool
 }
 
 // guaranteedResources is requests == limits, which is what Guaranteed QoS needs.
@@ -925,6 +927,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		if err := applyMemory(&job.Spec.Template.Spec, *m); err != nil {
 			return err
 		}
+	}
+	if d := spec.Definition; d != nil && d.ClusterRead {
+		applyClusterRead(&job.Spec.Template)
 	}
 	if d := spec.Definition; d != nil {
 		// docs/adr/0065: a fixed lifetime cap, and its token's TTL is longer,

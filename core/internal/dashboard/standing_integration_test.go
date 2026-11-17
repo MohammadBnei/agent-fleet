@@ -169,7 +169,7 @@ func TestStandingProfileCarriesMemoryGate(t *testing.T) {
 	prov.set(func(p *definitionsProvisioner) {
 		p.files["definitions/dev-stander.yaml"] = []byte(strings.NewReplacer("name: dev-dream-analyst }", "name: dev-stander }",
 			"vault: dev-dream-analyst", "vault: dev-stander").Replace(string(p.files["definitions/dev-dream-analyst.yaml"])) +
-			"  lifecycle: { allow: [standing] }\n")
+			"  lifecycle: { allow: [standing] }\n  cluster: { read: true }\n")
 	})
 	if err := reg.Sync(context.Background()); err != nil {
 		t.Fatal(err)
@@ -187,5 +187,9 @@ func TestStandingProfileCarriesMemoryGate(t *testing.T) {
 	prov.mu.Unlock()
 	if !d.GetStanding() || d.GetTrustSet() != "BC" {
 		t.Errorf("profile standing %v set %q, want standing with the stored set BC", d.GetStanding(), d.GetTrustSet())
+	}
+	// ADR-0084 §6: cluster.read reaches the profile.
+	if !d.GetClusterRead() {
+		t.Error("cluster.read did not reach the profile")
 	}
 }

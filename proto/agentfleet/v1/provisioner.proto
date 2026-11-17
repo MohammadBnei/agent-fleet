@@ -143,6 +143,9 @@ message DefinitionPodProfile {
   string trust_set = 9;
   // The definition allows lifecycle "standing": a long-lived agent, so it has memory (ADR-0084).
   bool standing = 10;
+  // The definition's `cluster.read` grant (ADR-0084 §6): the pod runs as the read ServiceAccount, its token mounted
+  // in the sidecar only.
+  bool cluster_read = 11;
 }
 
 // A vault's desired state, from a definition's validated effective spec
