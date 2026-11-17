@@ -27,14 +27,16 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Append inserts one event. payloadJSON must be a valid JSON document (or
 // empty, which stores '{}' — matches the column's own DEFAULT).
-func (s *Store) Append(ctx context.Context, repo, actor, eventType, payloadJSON string) error {
+// quarantined hides the row from Search until the owner promotes it
+// (docs/adr/0086 §5).
+func (s *Store) Append(ctx context.Context, repo, actor, eventType, payloadJSON string, quarantined bool) error {
 	if payloadJSON == "" {
 		payloadJSON = "{}"
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO knowledge_journal (repo, actor, event_type, payload)
-		VALUES ($1, $2, $3, $4)
-	`, repo, actor, eventType, payloadJSON)
+		INSERT INTO knowledge_journal (repo, actor, event_type, payload, quarantined)
+		VALUES ($1, $2, $3, $4, $5)
+	`, repo, actor, eventType, payloadJSON, quarantined)
 	if err != nil {
 		slog.Error("journal Append", "repo", repo, "actor", actor, "eventType", eventType, "error", err)
 		return fmt.Errorf("append journal: %w", err)
@@ -52,6 +54,7 @@ type Entry struct {
 	EventType   string
 	PayloadJSON string
 	CreatedAt   time.Time
+	Quarantined bool // hidden from Search; List shows it so the owner can label it
 }
 
 // List returns entries with id > sinceID, ascending (insertion order) —
@@ -67,7 +70,7 @@ type Entry struct {
 // repo is built on.
 func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int) ([]Entry, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at
+		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at, quarantined
 		FROM knowledge_journal
 		WHERE id > $1 AND ($2 = '' OR repo = $2)
 		ORDER BY id
@@ -85,7 +88,7 @@ func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int)
 	entries := []Entry{}
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt, &e.Quarantined); err != nil {
 			slog.Error("journal List: scan", "error", err)
 			return nil, fmt.Errorf("scan journal entry: %w", err)
 		}
@@ -129,7 +132,7 @@ func (s *Store) Search(ctx context.Context, o SearchOpts) ([]Entry, error) {
 	// args[0] is always repo; every other bind is appended as it applies, so
 	// the placeholder numbers follow len(args) rather than a fixed layout.
 	args := []any{o.Repo}
-	where := []string{`($1 = '' OR repo = $1)`}
+	where := []string{`($1 = '' OR repo = $1)`, `NOT quarantined`}
 	// id DESC is a real tie-break, not decoration: ts_rank ties were
 	// previously returned in whatever order the plan happened to produce.
 	order := `created_at DESC, id DESC`

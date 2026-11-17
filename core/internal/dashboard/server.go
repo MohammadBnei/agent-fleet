@@ -1570,12 +1570,15 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	id := eff.Git.Identity
 	profile := &agentfleetv1.DefinitionPodProfile{
 		Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email,
-		Vault: definitions.VaultSpec(eff), TimeoutSeconds: int64(timeout.Seconds()),
+		Vault: definitions.VaultSpec(eff), TimeoutSeconds: int64(timeout.Seconds()), TrustSet: t.TrustSet,
 	}
+	// Memory is for the standing session itself, not any session of the definition: ADR-0084 §8's single writer.
+	profile.Standing = t.Lifecycle != nil && *t.Lifecycle == "standing" &&
+		eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
 	if r := eff.Resources; r != nil {
 		profile.Cpu, profile.Memory = r.CPU, r.Memory
 		// Guaranteed QoS is for standing definitions only (ADR-0084 §9).
-		profile.Guaranteed = eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
+		profile.Guaranteed = profile.Standing
 	}
 	return profile, nil
 }
@@ -1814,6 +1817,7 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 		EventType:   e.EventType,
 		PayloadJson: e.PayloadJSON,
 		CreatedAt:   e.CreatedAt.Format(time.RFC3339),
+		Quarantined: e.Quarantined,
 	}
 }
 

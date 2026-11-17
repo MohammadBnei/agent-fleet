@@ -10,13 +10,14 @@ var methodTags = map[string]string{
 	"/agentfleet.v1.CoreService/SearchJournal": "B",
 
 	// C: effects core runs: memory writes, exposure, peer prompts, events, GitHub reviews.
-	"/agentfleet.v1.CoreService/AppendJournal":  "C",
-	"/agentfleet.v1.CoreService/Expose":         "C",
-	"/agentfleet.v1.CoreService/Unexpose":       "C",
-	"/agentfleet.v1.CoreService/RequestService": "C",
-	"/agentfleet.v1.CoreService/PromptSession":  "C",
-	"/agentfleet.v1.CoreService/PublishEvent":   "C",
-	"/agentfleet.v1.CoreService/SubmitReview":   "C",
+	"/agentfleet.v1.CoreService/AppendJournal":        "A|C", // a set holding A writes quarantined rows (ADR-0086 §5)
+	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": "A|C", // A: quarantine repo; C: memory repo; B alone: refused
+	"/agentfleet.v1.CoreService/Expose":               "C",
+	"/agentfleet.v1.CoreService/Unexpose":             "C",
+	"/agentfleet.v1.CoreService/RequestService":       "C",
+	"/agentfleet.v1.CoreService/PromptSession":        "C",
+	"/agentfleet.v1.CoreService/PublishEvent":         "C",
+	"/agentfleet.v1.CoreService/SubmitReview":         "C",
 
 	// Neither: the session's own plumbing, files, cards (the way to ask the owner), pod lifecycle.
 	"/agentfleet.v1.CoreService/ReportPodEvents":     "",

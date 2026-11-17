@@ -52,7 +52,7 @@ func TestBlockingTools_IgnoreACallerTimeoutAndSendTheFixedWait(t *testing.T) {
 // timeoutMs)" for a month after the argument was deleted.
 func TestBlockingTools_NoDescriptionOffersATimeout(t *testing.T) {
 	// A nil client is fine: registration never dials core.
-	for _, tool := range newMCPServer(nil).ListTools() {
+	for _, tool := range newMCPServer(nil, nil).ListTools() {
 		desc := tool.Tool.Description
 		if strings.Contains(desc, "timeoutMs") {
 			t.Errorf("%s description still mentions timeoutMs: %q", tool.Tool.Name, desc)

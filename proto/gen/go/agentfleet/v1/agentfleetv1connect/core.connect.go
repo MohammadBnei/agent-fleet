@@ -62,6 +62,9 @@ const (
 	// CoreServiceAppendJournalProcedure is the fully-qualified name of the CoreService's AppendJournal
 	// RPC.
 	CoreServiceAppendJournalProcedure = "/agentfleet.v1.CoreService/AppendJournal"
+	// CoreServiceAuthorizeMemoryWriteProcedure is the fully-qualified name of the CoreService's
+	// AuthorizeMemoryWrite RPC.
+	CoreServiceAuthorizeMemoryWriteProcedure = "/agentfleet.v1.CoreService/AuthorizeMemoryWrite"
 	// CoreServiceSearchJournalProcedure is the fully-qualified name of the CoreService's SearchJournal
 	// RPC.
 	CoreServiceSearchJournalProcedure = "/agentfleet.v1.CoreService/SearchJournal"
@@ -163,6 +166,7 @@ type CoreServiceClient interface {
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
+	AuthorizeMemoryWrite(context.Context, *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error)
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
@@ -280,6 +284,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("AppendJournal")),
 			connect.WithClientOptions(opts...),
 		),
+		authorizeMemoryWrite: connect.NewClient[v1.AuthorizeMemoryWriteRequest, v1.AuthorizeMemoryWriteResponse](
+			httpClient,
+			baseURL+CoreServiceAuthorizeMemoryWriteProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("AuthorizeMemoryWrite")),
+			connect.WithClientOptions(opts...),
+		),
 		searchJournal: connect.NewClient[v1.SearchJournalRequest, v1.SearchJournalResponse](
 			httpClient,
 			baseURL+CoreServiceSearchJournalProcedure,
@@ -387,34 +397,35 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // coreServiceClient implements CoreServiceClient.
 type coreServiceClient struct {
-	reportPodEvents     *connect.Client[v1.PodEvent, v1.ReportPodEventsResponse]
-	sendMessage         *connect.Client[v1.SendMessageRequest, v1.AppendResponse]
-	waitForMessages     *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
-	askUserQuestion     *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
-	expose              *connect.Client[v1.ExposeRequest, v1.ExposeResponse]
-	unexpose            *connect.Client[v1.UnexposeRequest, v1.UnexposeResponse]
-	requestService      *connect.Client[v1.RequestServiceRequest, v1.RequestServiceResponse]
-	getSession          *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
-	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	updateSessionMeta   *connect.Client[v1.UpdateSessionMetaRequest, v1.UpdateSessionMetaResponse]
-	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
-	searchJournal       *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
-	saveAgentSessionId  *connect.Client[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse]
-	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
-	exportSpans         *connect.Client[v1.ExportSpansRequest, v1.ExportSpansResponse]
-	streamHumanMessages *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
-	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
-	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
-	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
-	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
-	viewLogs            *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
-	listPeerSessions    *connect.Client[v1.ListPeerSessionsRequest, v1.ListPeerSessionsResponse]
-	promptSession       *connect.Client[v1.PromptSessionRequest, v1.PromptSessionResponse]
-	waitForSessionState *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
-	publishEvent        *connect.Client[v1.PublishEventRequest, v1.PublishEventResponse]
-	consumeGrant        *connect.Client[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse]
-	draftCard           *connect.Client[v1.DraftCardRequest, v1.DraftCardResponse]
-	submitReview        *connect.Client[v1.SubmitReviewRequest, v1.SubmitReviewResponse]
+	reportPodEvents      *connect.Client[v1.PodEvent, v1.ReportPodEventsResponse]
+	sendMessage          *connect.Client[v1.SendMessageRequest, v1.AppendResponse]
+	waitForMessages      *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
+	askUserQuestion      *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
+	expose               *connect.Client[v1.ExposeRequest, v1.ExposeResponse]
+	unexpose             *connect.Client[v1.UnexposeRequest, v1.UnexposeResponse]
+	requestService       *connect.Client[v1.RequestServiceRequest, v1.RequestServiceResponse]
+	getSession           *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
+	setPermissionMode    *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
+	updateSessionMeta    *connect.Client[v1.UpdateSessionMetaRequest, v1.UpdateSessionMetaResponse]
+	appendJournal        *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
+	authorizeMemoryWrite *connect.Client[v1.AuthorizeMemoryWriteRequest, v1.AuthorizeMemoryWriteResponse]
+	searchJournal        *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
+	saveAgentSessionId   *connect.Client[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse]
+	pushToolTelemetry    *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
+	exportSpans          *connect.Client[v1.ExportSpansRequest, v1.ExportSpansResponse]
+	streamHumanMessages  *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
+	listFiles            *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	getFileUploadUrl     *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
+	getFileDownloadUrl   *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
+	deleteFile           *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
+	viewLogs             *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
+	listPeerSessions     *connect.Client[v1.ListPeerSessionsRequest, v1.ListPeerSessionsResponse]
+	promptSession        *connect.Client[v1.PromptSessionRequest, v1.PromptSessionResponse]
+	waitForSessionState  *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
+	publishEvent         *connect.Client[v1.PublishEventRequest, v1.PublishEventResponse]
+	consumeGrant         *connect.Client[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse]
+	draftCard            *connect.Client[v1.DraftCardRequest, v1.DraftCardResponse]
+	submitReview         *connect.Client[v1.SubmitReviewRequest, v1.SubmitReviewResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -470,6 +481,11 @@ func (c *coreServiceClient) UpdateSessionMeta(ctx context.Context, req *connect.
 // AppendJournal calls agentfleet.v1.CoreService.AppendJournal.
 func (c *coreServiceClient) AppendJournal(ctx context.Context, req *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error) {
 	return c.appendJournal.CallUnary(ctx, req)
+}
+
+// AuthorizeMemoryWrite calls agentfleet.v1.CoreService.AuthorizeMemoryWrite.
+func (c *coreServiceClient) AuthorizeMemoryWrite(ctx context.Context, req *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error) {
+	return c.authorizeMemoryWrite.CallUnary(ctx, req)
 }
 
 // SearchJournal calls agentfleet.v1.CoreService.SearchJournal.
@@ -610,6 +626,7 @@ type CoreServiceHandler interface {
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
+	AuthorizeMemoryWrite(context.Context, *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error)
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
@@ -721,6 +738,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceAppendJournalProcedure,
 		svc.AppendJournal,
 		connect.WithSchema(coreServiceMethods.ByName("AppendJournal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceAuthorizeMemoryWriteHandler := connect.NewUnaryHandler(
+		CoreServiceAuthorizeMemoryWriteProcedure,
+		svc.AuthorizeMemoryWrite,
+		connect.WithSchema(coreServiceMethods.ByName("AuthorizeMemoryWrite")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceSearchJournalHandler := connect.NewUnaryHandler(
@@ -849,6 +872,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceUpdateSessionMetaHandler.ServeHTTP(w, r)
 		case CoreServiceAppendJournalProcedure:
 			coreServiceAppendJournalHandler.ServeHTTP(w, r)
+		case CoreServiceAuthorizeMemoryWriteProcedure:
+			coreServiceAuthorizeMemoryWriteHandler.ServeHTTP(w, r)
 		case CoreServiceSearchJournalProcedure:
 			coreServiceSearchJournalHandler.ServeHTTP(w, r)
 		case CoreServiceSaveAgentSessionIdProcedure:
@@ -934,6 +959,10 @@ func (UnimplementedCoreServiceHandler) UpdateSessionMeta(context.Context, *conne
 
 func (UnimplementedCoreServiceHandler) AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AppendJournal is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) AuthorizeMemoryWrite(context.Context, *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AuthorizeMemoryWrite is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error) {

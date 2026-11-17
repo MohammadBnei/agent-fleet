@@ -229,6 +229,8 @@ type WorkerPodSpec struct {
 	// (docs/adr/0075 §7). The provisioner always sets it; nil (tests only)
 	// leaves the pod with no credential at all.
 	RepoVault *RepoVault
+	// Memory gives a long-lived agent's pod its memory repos (docs/adr/0086 §5).
+	Memory *MemoryProfile
 }
 
 // RepoVault is the vault half of the definition profile, for a repo session:
@@ -918,6 +920,11 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(r.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: r.VaultLabel}
 		mountVaultCA(&job.Spec.Template.Spec)
+	}
+	if m := spec.Memory; m != nil {
+		if err := applyMemory(&job.Spec.Template.Spec, *m); err != nil {
+			return err
+		}
 	}
 	if d := spec.Definition; d != nil {
 		// docs/adr/0065: a fixed lifetime cap, and its token's TTL is longer,

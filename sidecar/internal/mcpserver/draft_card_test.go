@@ -27,7 +27,7 @@ func (f *fakeDrafter) DraftCard(_ context.Context, req *agentfleetv1.DraftCardRe
 
 func TestDraftCardListed(t *testing.T) {
 	var raw json.RawMessage
-	for _, tl := range newMCPServer(nil).ListTools() {
+	for _, tl := range newMCPServer(nil, nil).ListTools() {
 		if tl.Tool.Name == "draft_card" {
 			raw = tl.Tool.RawInputSchema
 		}

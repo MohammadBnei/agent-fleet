@@ -138,6 +138,11 @@ message DefinitionPodProfile {
   // Standing definitions only (ADR-0084 §9): cpu and memory then apply as
   // Guaranteed QoS. Other definitions keep the ordinary sizing.
   bool guaranteed = 8;
+  // The session's stored Rule of Two set (ADR-0086 §2), e.g. "AB". A standing definition's pod gets its memory repos
+  // from it (§5): quarantine write when it holds A, read-only memory when it holds B.
+  string trust_set = 9;
+  // The definition allows lifecycle "standing": a long-lived agent, so it has memory (ADR-0084).
+  bool standing = 10;
 }
 
 // A vault's desired state, from a definition's validated effective spec

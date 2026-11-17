@@ -16,6 +16,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/egress"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/memory"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
 	uktel "github.com/MohammadBnei/ukubi-go/telemetry"
 )
@@ -82,6 +83,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = core.Close() }()
+	var mem mcpserver.MemoryWriter
+	core.Quarantine, mem = memoryWiring(cfg, taskID)
 
 	// Backs /readyz: the provisioner's StartupProbe waits on this before
 	// unblocking the worker container, so a core outage/rollout blocks the
@@ -126,7 +129,7 @@ func main() {
 	// direct-dial decision is not reversed — it is moot: there is no second pod
 	// to dial. The sidecar's outbound connections are the one to core it always
 	// had and, in a repo pod, the egress router's tunnels.
-	mcpServer, localAPIServer, healthServer := servers(tr, core, mcpPort, localAPIPort, healthPort)
+	mcpServer, localAPIServer, healthServer := servers(tr, core, mem, mcpPort, localAPIPort, healthPort)
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)
@@ -159,6 +162,15 @@ func main() {
 	}
 }
 
+// memoryWiring is the journal's quarantine flag and, for a long-lived agent,
+// the memory tool's writer (nil otherwise).
+func memoryWiring(cfg config.Config, sessionID string) (quarantine bool, mem mcpserver.MemoryWriter) {
+	if cfg.AgentName != "" {
+		mem = &memory.Store{Root: cfg.MemoryRoot, Name: cfg.AgentName, SessionID: sessionID, Set: cfg.TrustSet}
+	}
+	return memory.Quarantined(cfg.TrustSet), mem
+}
+
 // servers builds the sidecar's three listeners. Split out of main purely so
 // the bind addresses are assertable — the ":" that used to be on the first two
 // is the entire reason this function exists, and nothing else in the process
@@ -177,8 +189,8 @@ func main() {
 //
 // tr spans the two agent-facing listeners, outside the access log so its line
 // carries the trace id. Not health: a probe every few seconds is noise.
-func servers(tr *uktel.Tracing, core *coreclient.Client, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
-	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: tr.Handler("sidecar mcp", withAccessLog("sidecar mcp", mcpserver.New(core))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
+func servers(tr *uktel.Tracing, core *coreclient.Client, mem mcpserver.MemoryWriter, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
+	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: tr.Handler("sidecar mcp", withAccessLog("sidecar mcp", mcpserver.New(core, mem))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: tr.Handler("sidecar local api", withAccessLog("sidecar local api", localapi.New(core))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 }

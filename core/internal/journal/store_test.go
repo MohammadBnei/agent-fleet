@@ -4,6 +4,7 @@ package journal
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,5 +163,48 @@ func TestSearch_LimitApplies(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("limit 2 should return 2, got %d", len(got))
+	}
+}
+
+// docs/adr/0086 §5: a quarantined note is written but never found by Search.
+func TestSearch_HidesQuarantined(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{"note":"visible"}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{"note":"hidden"}`, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"", "hidden"} {
+		got, err := s.Search(ctx, SearchOpts{Repo: "r", Query: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range got {
+			if strings.Contains(e.PayloadJSON, "hidden") {
+				t.Errorf("query %q returned a quarantined row", q)
+			}
+		}
+	}
+	got, _ := s.Search(ctx, SearchOpts{Repo: "r"})
+	if len(got) != 1 {
+		t.Errorf("want only the visible row, got %d", len(got))
+	}
+}
+
+// List is the owner's view: it shows quarantined rows, flagged, so the console can label them.
+func TestList_FlagsQuarantined(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(ctx, "r", "worker", "agent_note", `{}`, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.List(ctx, "r", 0, 10)
+	if err != nil || len(got) != 2 || got[0].Quarantined || !got[1].Quarantined {
+		t.Errorf("want [false true], got %+v, %v", got, err)
 	}
 }

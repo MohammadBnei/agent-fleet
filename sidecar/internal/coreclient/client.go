@@ -27,7 +27,10 @@ type Client struct {
 	// well as the metadata: the worker no longer holds a copy
 	// (docs/adr/0064).
 	leaseID string
-	ready   atomic.Bool
+	// Quarantine marks every journal row this pod writes quarantined: its
+	// session's set holds A (ADR-0086 §5).
+	Quarantine bool
+	ready      atomic.Bool
 	// specSHA is the agent_spec_sha the worker says it applied, registered
 	// each time it opens /human-messages (SetAgentSpecSHA) and sent on every
 	// StreamHumanMessages and WaitForMessages. Stored here rather than passed
@@ -284,12 +287,22 @@ func (c *Client) DeleteFile(ctx context.Context, key string) error {
 
 func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payloadJSON string) error {
 	_, err := c.rpc.AppendJournal(ctx, &agentfleetv1.AppendJournalRequest{
-		Repo: repo, Actor: actor, EventType: eventType, PayloadJson: payloadJSON,
+		Repo: repo, Actor: actor, EventType: eventType, PayloadJson: payloadJSON, Quarantined: c.Quarantine,
 	})
 	if err != nil {
 		return fmt.Errorf("AppendJournal: %w", err)
 	}
 	return nil
+}
+
+// AuthorizeMemoryWrite asks core whether this session may write memory and where, from its stored set (ADR-0086 §2,
+// §5). quarantine is true when the write goes to the quarantine repo. Any error means refuse: the tool fails closed.
+func (c *Client) AuthorizeMemoryWrite(ctx context.Context) (quarantine bool, err error) {
+	r, err := c.rpc.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: c.taskID})
+	if err != nil {
+		return false, fmt.Errorf("AuthorizeMemoryWrite: %w", err)
+	}
+	return r.GetQuarantine(), nil
 }
 
 // JournalSearch mirrors journal.SearchOpts on core's side — a struct, not

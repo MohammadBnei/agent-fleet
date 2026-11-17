@@ -54,6 +54,8 @@ var envReadsAllowed = map[string][]string{
 	// git runs with the process's environment plus GIT_ALLOW_PROTOCOL=none, on
 	// purpose: PATH to find git, HOME for its config. A child process, not config.
 	"internal/telemetry/loop.go": {"import os/exec", "os.Environ"},
+	// git for the memory repo (docs/adr/0086 §5) inherits the process's environment: a child process, not config.
+	"internal/memory/memory.go": {"import os/exec"},
 }
 
 // envUses lists the names in src that read the environment, as "pkg.Name" or

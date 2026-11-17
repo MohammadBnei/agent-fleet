@@ -1,0 +1,8 @@
+# ADR-0086 §5: the owner reviews every change to what steers the fleet.
+# No agent changes its own set, tier, catalogue, vault or egress.
+/definitions/        @MohammadBnei
+/packs/              @MohammadBnei
+/fleet-shared/       @MohammadBnei
+/.claude/            @MohammadBnei
+/.github/CODEOWNERS  @MohammadBnei
+# The remediation catalogue (ADR-0086 §3) does not exist yet: list its file here when it lands.

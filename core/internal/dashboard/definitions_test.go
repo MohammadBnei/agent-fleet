@@ -389,6 +389,11 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	if d := got.GetDefinition(); d.GetCpu() != "1" || d.GetMemory() != "2Gi" || d.GetGuaranteed() {
 		t.Errorf("profile resources = cpu %q memory %q guaranteed %v, want 1 / 2Gi / false", d.GetCpu(), d.GetMemory(), d.GetGuaranteed())
 	}
+	// ADR-0086 §5: the profile carries the session's stored set, and only a standing row gets memory
+	// (a non-standing definition; the standing case is TestStandingProfileCarriesMemoryGate).
+	if sess0, err := store.Get(ctx, sess.GetId()); err != nil || got.GetDefinition().GetTrustSet() != sess0.TrustSet || got.GetDefinition().GetStanding() {
+		t.Errorf("profile trust set %q standing %v, want the stored set and not standing", got.GetDefinition().GetTrustSet(), got.GetDefinition().GetStanding())
+	}
 	if got.GetImage() != "" || len(got.GetToolKeys()) != 0 {
 		t.Errorf("image %q tool keys %v: a definition pod takes the default image and no keys", got.GetImage(), got.GetToolKeys())
 	}

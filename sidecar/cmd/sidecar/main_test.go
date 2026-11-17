@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/config"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +42,7 @@ func TestResolveLogLevel(t *testing.T) {
 // thing between another pod and this session's human-message feed. The health
 // listener is the deliberate exception: kubelet dials probes at the pod IP.
 func TestServers_OnlyHealthBindsBeyondLoopback(t *testing.T) {
-	mcp, localAPI, health := servers(nil, nil, "9090", "9091", "9092")
+	mcp, localAPI, health := servers(nil, nil, nil, "9090", "9091", "9092")
 
 	for _, c := range []struct {
 		name string
@@ -62,7 +63,7 @@ func TestServers_OnlyHealthBindsBeyondLoopback(t *testing.T) {
 // nothing but readiness. Adding a route to localapi.New is free; adding one to
 // localapi.NewHealth publishes it to the whole namespace.
 func TestNewHealth_ServesNothingButReadyz(t *testing.T) {
-	_, _, health := servers(nil, nil, "9090", "9091", "9092")
+	_, _, health := servers(nil, nil, nil, "9090", "9091", "9092")
 
 	for _, path := range []string{"/message", "/human-messages", "/permission-mode", "/session-id", "/journal", "/task", "/telemetry"} {
 		rec := httptest.NewRecorder()
@@ -81,7 +82,7 @@ func TestServers_TracesAllButHealth(t *testing.T) {
 	prev := slog.Default()
 	slog.SetDefault(uktel.NewLogger(&logs))
 	t.Cleanup(func() { slog.SetDefault(prev) })
-	mcp, localAPI, health := servers(uktel.WithExporter(nil, "agent-fleet-sidecar"), nil, "9090", "9091", "9092")
+	mcp, localAPI, health := servers(uktel.WithExporter(nil, "agent-fleet-sidecar"), nil, nil, "9090", "9091", "9092")
 
 	for _, c := range []struct {
 		name   string
@@ -101,5 +102,19 @@ func TestServers_TracesAllButHealth(t *testing.T) {
 		if _, ok := line["trace_id"]; ok != c.traced {
 			t.Errorf("%s: trace_id on the line %v, want %v", c.name, ok, c.traced)
 		}
+	}
+}
+
+func TestMemoryWiring(t *testing.T) {
+	q, mem := memoryWiring(config.Config{TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m"}, "s1")
+	if !q || mem == nil {
+		t.Errorf("AB: quarantine %v, mem %v; want true and a writer", q, mem)
+	}
+	q, mem = memoryWiring(config.Config{TrustSet: "BC", AgentName: "kai", MemoryRoot: "/m"}, "s1")
+	if q || mem == nil {
+		t.Errorf("BC: quarantine %v, mem %v; want false and a writer", q, mem)
+	}
+	if _, mem = memoryWiring(config.Config{}, "s1"); mem != nil {
+		t.Error("a pod without an agent got a memory writer")
 	}
 }

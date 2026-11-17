@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -153,5 +154,62 @@ func TestJournalSearch_SmallResultIsNotMarkedTruncated(t *testing.T) {
 	}}}, map[string]any{})
 	if strings.Contains(res.Content[0].(mcp.TextContent).Text, "truncated") {
 		t.Error("a result that fits must not claim to be truncated")
+	}
+}
+
+type fakeMem struct {
+	path, content string
+	quarantine    bool
+}
+
+func (f *fakeMem) WriteAs(q bool, p, c string) (string, error) {
+	f.path, f.content, f.quarantine = p, c, q
+	return "", nil
+}
+
+// fakeAuth is core's answer to AuthorizeMemoryWrite.
+type fakeAuth struct {
+	quarantine bool
+	err        error
+}
+
+func (f fakeAuth) AuthorizeMemoryWrite(context.Context) (bool, error) { return f.quarantine, f.err }
+
+// memory_write exists only when the pod has a memory repo, and reaches the store.
+func TestMemoryWrite(t *testing.T) {
+	has := func(m MemoryWriter) bool {
+		for _, tl := range newMCPServer(nil, m).ListTools() {
+			if tl.Tool.Name == "memory_write" {
+				return true
+			}
+		}
+		return false
+	}
+	if has(nil) || !has(&fakeMem{}) {
+		t.Fatal("memory_write must be registered exactly when a store exists")
+	}
+	f := &fakeMem{}
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"path": "a.md", "content": "x"}
+	if res, _ := memoryWriteHandler(fakeAuth{}, f)(context.Background(), req); res.IsError || f.path != "a.md" || f.content != "x" {
+		t.Errorf("%+v %+v", res, f)
+	}
+	req.Params.Arguments = map[string]any{"content": "x"}
+	if res, _ := memoryWriteHandler(fakeAuth{}, f)(context.Background(), req); !res.IsError {
+		t.Error("missing path accepted")
+	}
+}
+
+// Core decides: its quarantine answer reaches the store, and its refusal means nothing is written.
+func TestMemoryWrite_AsksCoreFirst(t *testing.T) {
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"path": "a.md", "content": "x"}
+	f := &fakeMem{}
+	if res, _ := memoryWriteHandler(fakeAuth{quarantine: true}, f)(context.Background(), req); res.IsError || !f.quarantine || f.path != "a.md" {
+		t.Errorf("quarantine answer not passed on: %+v %+v", res, f)
+	}
+	f = &fakeMem{}
+	if res, _ := memoryWriteHandler(fakeAuth{err: errors.New("agent.rule_of_two")}, f)(context.Background(), req); !res.IsError || f.path != "" {
+		t.Errorf("core refusal still wrote: %+v %+v", res, f)
 	}
 }

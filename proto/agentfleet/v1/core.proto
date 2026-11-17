@@ -524,9 +524,22 @@ message AppendJournalRequest {
   string actor = 2;
   string event_type = 3;
   string payload_json = 4;
+  // The writing session's set holds A (ADR-0086 §5): the row stays hidden from
+  // journal_search until the owner promotes it.
+  bool quarantined = 5;
 }
 
 message AppendJournalResponse {}
+
+// AuthorizeMemoryWrite is the sidecar's memory_write asking core first (ADR-0086 §2, §5). Core reads the session's
+// stored set: A writes only to quarantine, C without A writes to memory, B alone is refused (agent.rule_of_two).
+message AuthorizeMemoryWriteRequest {
+  string session_id = 1;
+}
+
+message AuthorizeMemoryWriteResponse {
+  bool quarantine = 1; // the write goes to the quarantine repo
+}
 
 // JournalEntry also backs dashboard.proto's GetJournal (imported from
 // here, same reuse pattern as Session/GetSessionRequest/GetSessionResponse below).
@@ -537,6 +550,9 @@ message JournalEntry {
   string event_type = 4;
   string payload_json = 5;
   string created_at = 6; // RFC3339
+  // Written by a session whose set holds A: hidden from journal_search until
+  // the owner promotes it (ADR-0086 §5). The console label and the promote path are a follow-up slice.
+  bool quarantined = 7;
 }
 
 // SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred
@@ -771,6 +787,7 @@ service CoreService {
   // are deleted in docs/adr/0048 — see their message definitions above for
   // why each stopped being a question worth asking.
   rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
+  rpc AuthorizeMemoryWrite(AuthorizeMemoryWriteRequest) returns (AuthorizeMemoryWriteResponse);
   rpc SearchJournal(SearchJournalRequest) returns (SearchJournalResponse);
   rpc SaveAgentSessionId(SaveAgentSessionIdRequest) returns (SaveAgentSessionIdResponse);
   rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);

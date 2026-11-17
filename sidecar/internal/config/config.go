@@ -8,8 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
+
+var setRe = regexp.MustCompile(`^(A|AB|AC|ABC|B|BC|C)$`)
+
+// ValidSet reports whether set is a Rule of Two set: a non-empty, uppercase
+// subset of ABC, in that order.
+func ValidSet(set string) bool { return setRe.MatchString(set) }
 
 // ErrNoSessionID and ErrNoLeaseID are the two refusals, with the words the
 // sidecar has always logged for them.
@@ -62,6 +69,17 @@ type Config struct {
 	// a malformed one refuses the start, in cmd/sidecar where telemetry.New
 	// checks it.
 	TracesEndpoint string
+	// TrustSet is the session's Rule of Two set, e.g. "AB" or "BC"
+	// (FLEET_TRUST_SET, ADR-0086 §2). Required, and valid per ValidSet, when
+	// FLEET_AGENT_NAME or FLEET_TRUST_SET is set: the sidecar refuses to start
+	// otherwise, so a malformed set never turns quarantine off.
+	TrustSet string
+	// AgentName is the long-lived agent whose memory this pod writes
+	// (FLEET_AGENT_NAME). Empty registers no memory tool.
+	AgentName string
+	// MemoryRoot is the directory holding agent-<name>-memory and
+	// agent-<name>-quarantine (FLEET_MEMORY_ROOT, default /memory).
+	MemoryRoot string
 }
 
 // FromProcess is the sidecar's configuration from its environment: the one call
@@ -108,6 +126,9 @@ func Load(getenv func(string) string) (Config, error) {
 		VaultHosts:     getenv("FLEET_VAULT_HOSTS"),
 		EgressPort:     env("EGRESS_PORT", "9093"),
 		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+		TrustSet:       getenv("FLEET_TRUST_SET"),
+		AgentName:      getenv("FLEET_AGENT_NAME"),
+		MemoryRoot:     env("FLEET_MEMORY_ROOT", "/memory"),
 	}
 	var errs []error
 	if c.SessionID == "" {
@@ -115,6 +136,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.LeaseID == "" {
 		errs = append(errs, ErrNoLeaseID)
+	}
+	if (c.AgentName != "" || c.TrustSet != "") && !ValidSet(c.TrustSet) {
+		errs = append(errs, fmt.Errorf("FLEET_TRUST_SET %q is not a set like AB or BC", c.TrustSet))
 	}
 	return c, errors.Join(append(errs, fileErrs...)...)
 }
