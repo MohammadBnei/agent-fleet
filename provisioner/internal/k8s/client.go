@@ -34,6 +34,10 @@ type Client struct {
 	// ukubi-cluster is longhorn, not a node-local class, so this must be set
 	// explicitly to get the measured node-local behaviour.
 	SessionStorageClass string
+	// StandingStorageClass is the class for a standing character's working
+	// volume (docs/adr/0084 §3): Longhorn RWO, so the tree survives a node
+	// loss. Empty falls back to SessionStorageClass.
+	StandingStorageClass string
 	// SessionNodeSelector constrains session pods to a node carrying this
 	// "key=value" label. Empty means unconstrained.
 	SessionNodeSelector map[string]string
@@ -97,10 +101,11 @@ func newClient(core kubernetes.Interface, dyn dynamic.Interface, namespace strin
 		Core: core, Dynamic: dyn, Namespace: namespace,
 		WorkerImage:  cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
-		Version:             cfg.Version,
-		SessionStorageClass: cfg.SessionStorageClass,
-		SessionNodeSelector: cfg.SessionNodeSelector,
-		LogLevel:            cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
+		Version:              cfg.Version,
+		SessionStorageClass:  cfg.SessionStorageClass,
+		StandingStorageClass: cfg.StandingStorageClass,
+		SessionNodeSelector:  cfg.SessionNodeSelector,
+		LogLevel:             cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
 		ExecutorAddr:  cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
@@ -121,6 +126,7 @@ type Images struct {
 	Version               string
 	WorkspacePVC          string
 	SessionStorageClass   string
+	StandingStorageClass  string
 	SessionNodeSelector   map[string]string
 	LogLevel              string
 	CoreGRPCAddr          string

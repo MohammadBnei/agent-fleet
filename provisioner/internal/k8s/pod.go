@@ -503,8 +503,12 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	// affinity forces every later warm of this session back to the node that
 	// already holds its tree and its warm dependency cache, with no affinity
 	// rules to write and no re-clone.
+	class := c.SessionStorageClass
+	if spec.Memory != nil && c.StandingStorageClass != "" { // standing, not Guaranteed: that needs a resources block
+		class = c.StandingStorageClass
+	}
 	if err := spans.Do(ctx, "warm.ensure_session_pvc", func(ctx context.Context) error {
-		return c.EnsureSessionPVC(ctx, taskID, repo)
+		return c.ensureSessionPVC(ctx, taskID, repo, class)
 	}, attribute.String("session_id", taskID), attribute.String("repo", repo)); err != nil {
 		return fmt.Errorf("ensure session pvc: %w", err)
 	}

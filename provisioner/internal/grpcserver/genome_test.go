@@ -8,8 +8,10 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 )
 
 // docs/adr/0063: the genome is checked before anything happens, written only
@@ -53,5 +55,28 @@ func TestCreateWorkerPod_Genome(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(s.git.GenomePath("task-1"), ".claude/rules/20-style.md")); err != nil {
 		t.Fatalf("the live pod's genome was replaced: %v", err)
+	}
+}
+
+// A terminating Job still refuses the warm; core's restart_after re-warm retries it (ADR-0084 §8).
+func TestCreateWorkerPod_TerminatingJobRefused(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	ctx := context.Background()
+	origin := newTestOriginRepo(t)
+	req := &agentfleetv1.CreateWorkerPodRequest{SessionId: "task-t", Repo: "r", RepoUrl: origin, BaseBranch: "main"}
+	if _, err := s.CreateWorkerPod(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	job, err := k8sc.Core.BatchV1().Jobs(k8sc.Namespace).Get(ctx, k8s.WorkerResourceName("task-t"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := metav1.Now()
+	job.DeletionTimestamp = &now
+	if _, err := k8sc.Core.BatchV1().Jobs(k8sc.Namespace).Update(ctx, job, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateWorkerPod(ctx, req); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("warm with a terminating Job = %v, want FailedPrecondition", err)
 	}
 }

@@ -102,3 +102,45 @@ func TestMemoryBadName(t *testing.T) {
 		t.Error("bad agent name accepted")
 	}
 }
+
+func standingSpec(id string) WorkerPodSpec {
+	return WorkerPodSpec{SessionID: id, Repo: "r", LeaseID: "l", Memory: &MemoryProfile{Agent: "kai", Set: "BC"},
+		Definition: &DefinitionProfile{Name: "kai", ProxyURL: "http://p", DeadlineSeconds: 60, CPU: "500m", Memory: "1536Mi", Guaranteed: true}}
+}
+
+// ADR-0084 §3: a standing character's volume is Longhorn RWO; an ordinary session keeps the session class.
+func TestStandingPVCClass(t *testing.T) {
+	c := newTestClient()
+	c.SessionStorageClass, c.StandingStorageClass = "local-path", "longhorn"
+	ctx := context.Background()
+	if err := c.CreateWorkerPod(ctx, standingSpec("s1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "o1", Repo: "r", LeaseID: "l"}); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"s1": "longhorn", "o1": "local-path"} {
+		pvc, err := c.Core.CoreV1().PersistentVolumeClaims("agent-fleet").Get(ctx, SessionPVCName(id), metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := *pvc.Spec.StorageClassName; got != want || pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+			t.Errorf("%s: class %q modes %v, want %q RWO", id, got, pvc.Spec.AccessModes, want)
+		}
+	}
+}
+
+// A standing character without a resources block (Guaranteed=false) still gets the Longhorn class.
+func TestStandingPVCClassWithoutResources(t *testing.T) {
+	c := newTestClient()
+	c.SessionStorageClass, c.StandingStorageClass = "local-path", "longhorn"
+	ctx := context.Background()
+	spec := WorkerPodSpec{SessionID: "s2", Repo: "r", LeaseID: "l", Memory: &MemoryProfile{Agent: "kai", Set: "BC"}}
+	if err := c.CreateWorkerPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	pvc, err := c.Core.CoreV1().PersistentVolumeClaims("agent-fleet").Get(ctx, SessionPVCName("s2"), metav1.GetOptions{})
+	if err != nil || *pvc.Spec.StorageClassName != "longhorn" {
+		t.Fatalf("pvc %v, %v; want longhorn", pvc, err)
+	}
+}

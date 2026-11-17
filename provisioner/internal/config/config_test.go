@@ -128,7 +128,7 @@ func TestLoad_WarningsNeverEchoAnAt(t *testing.T) {
 // an optional variable that is invalid warns instead of refusing.
 func TestLoad(t *testing.T) {
 	env := map[string]string{
-		"NAMESPACE": "ns", "WORKER_IMAGE": "w:1", "SIDECAR_IMAGE": "s:1", "WORKSPACE_PVC": "pvc", "SESSION_STORAGE_CLASS": "fast",
+		"NAMESPACE": "ns", "WORKER_IMAGE": "w:1", "SIDECAR_IMAGE": "s:1", "WORKSPACE_PVC": "pvc", "SESSION_STORAGE_CLASS": "fast", "STANDING_STORAGE_CLASS": "lh",
 		"SESSION_NODE_SELECTOR": "a/b=c", "WORKSPACE_ROOT": "/ws", "E2E_HOST": "e2e.test", "PORT": "1", "GRPC_PORT": "2",
 		"CORE_GRPC_ADDR": "core:3", "FLEET_PROVISIONER_TOKEN": "to-core", "FLEET_CORE_PROVISIONER_TOKEN": "from-core",
 		"THOT_AUTH_TOKEN": "thot", "EXECUTOR_ADDR": "exec:4", "RECONCILE_INTERVAL_MS": "5", "LOG_LEVEL": "debug",
@@ -144,7 +144,7 @@ func TestLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{
-		Namespace: "ns", WorkerImage: "w:1", SidecarImage: "s:1", WorkspacePVC: "pvc", SessionStorageClass: "fast",
+		Namespace: "ns", WorkerImage: "w:1", SidecarImage: "s:1", WorkspacePVC: "pvc", SessionStorageClass: "fast", StandingStorageClass: "lh",
 		SessionNodeSelector: "a/b=c", WorkspaceRoot: "/ws", E2eHost: "e2e.test", Port: "1", GRPCPort: "2", CoreGRPCAddr: "core:3",
 		CoreToken: "to-core", CoreProvisionerToken: "from-core", ThotAuthToken: "thot", ExecutorAddr: "exec:4", ReconcileInterval: 5 * time.Millisecond,
 		LogLevel: "debug", FleetSharedRepoURL: "https://x/y.git", FleetSharedBranch: "dev", FleetDefinitionsRef: "ref",

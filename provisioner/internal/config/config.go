@@ -60,6 +60,8 @@ type Config struct {
 	// SessionStorageClass is the StorageClass for per-session working volumes
 	// (SESSION_STORAGE_CLASS).
 	SessionStorageClass string
+	// StandingStorageClass is the class for standing characters' volumes (STANDING_STORAGE_CLASS, ADR-0084 §3).
+	StandingStorageClass string
 	// SessionNodeSelector constrains where session pods may be scheduled,
 	// as a single "key=value" label. Empty means no constraint
 	// (SESSION_NODE_SELECTOR).
@@ -252,6 +254,7 @@ func Load(getenv func(string) string) (Config, error) {
 		SidecarImage:              env("SIDECAR_IMAGE", "registry.bnei.lan:5000/agent-fleet-sidecar:latest"),
 		WorkspacePVC:              env("WORKSPACE_PVC", "agent-fleet-workspace"),
 		SessionStorageClass:       env("SESSION_STORAGE_CLASS", ""),
+		StandingStorageClass:      env("STANDING_STORAGE_CLASS", ""),
 		SessionNodeSelector:       env("SESSION_NODE_SELECTOR", ""),
 		WorkspaceRoot:             env("WORKSPACE_ROOT", "/workspace"),
 		E2eHost:                   env("E2E_HOST", "bnei.dev"),
