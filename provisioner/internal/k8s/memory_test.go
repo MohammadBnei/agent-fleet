@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -100,5 +102,58 @@ func TestMemoryBadName(t *testing.T) {
 	err := c.CreateWorkerPod(context.Background(), WorkerPodSpec{SessionID: "t2", Repo: "r", LeaseID: "l", Memory: &MemoryProfile{Agent: "../x", Set: "BC"}})
 	if err == nil {
 		t.Error("bad agent name accepted")
+	}
+}
+
+func standingSpec(id string) WorkerPodSpec {
+	return WorkerPodSpec{SessionID: id, Repo: "r", LeaseID: "l", Memory: &MemoryProfile{Agent: "kai", Set: "BC"},
+		Definition: &DefinitionProfile{Name: "kai", ProxyURL: "http://p", DeadlineSeconds: 60, CPU: "500m", Memory: "1536Mi", Guaranteed: true}}
+}
+
+// ADR-0084 §3: a standing character's volume is Longhorn RWO; an ordinary session keeps the session class.
+func TestStandingPVCClass(t *testing.T) {
+	c := newTestClient()
+	c.SessionStorageClass, c.StandingStorageClass = "local-path", "longhorn"
+	ctx := context.Background()
+	if err := c.CreateWorkerPod(ctx, standingSpec("s1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "o1", Repo: "r", LeaseID: "l"}); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"s1": "longhorn", "o1": "local-path"} {
+		pvc, err := c.Core.CoreV1().PersistentVolumeClaims("agent-fleet").Get(ctx, SessionPVCName(id), metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := *pvc.Spec.StorageClassName; got != want || pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+			t.Errorf("%s: class %q modes %v, want %q RWO", id, got, pvc.Spec.AccessModes, want)
+		}
+	}
+}
+
+// ADR-0084 §8: the replacement pod is created only after the terminating Job is gone.
+func TestReplacementWaitsForOldJob(t *testing.T) {
+	jobGonePoll = 5 * time.Millisecond
+	defer func() { jobGonePoll = time.Second }()
+	c := newTestClient()
+	ctx := context.Background()
+	now := metav1.Now()
+	old := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: WorkerResourceName("w1"), Namespace: "agent-fleet", DeletionTimestamp: &now}}
+	if _, err := c.Core.BatchV1().Jobs("agent-fleet").Create(ctx, old, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.CreateWorkerPod(ctx, standingSpec("w1")) }()
+	select {
+	case err := <-done:
+		t.Fatalf("created while the old job was terminating: %v", err)
+	case <-time.After(60 * time.Millisecond):
+	}
+	if err := c.Core.BatchV1().Jobs("agent-fleet").Delete(ctx, old.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

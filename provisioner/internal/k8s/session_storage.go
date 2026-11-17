@@ -62,6 +62,10 @@ func SessionPVCName(sessionID string) string {
 // against 1069 MB/s node-local — so leaving this unset in production is not a
 // neutral choice, it is a 107x one.
 func (c *Client) EnsureSessionPVC(ctx context.Context, sessionID, repo string) error {
+	return c.ensureSessionPVC(ctx, sessionID, repo, c.SessionStorageClass)
+}
+
+func (c *Client) ensureSessionPVC(ctx context.Context, sessionID, repo, class string) error {
 	name := SessionPVCName(sessionID)
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -80,8 +84,8 @@ func (c *Client) EnsureSessionPVC(ctx context.Context, sessionID, repo string) e
 			},
 		},
 	}
-	if c.SessionStorageClass != "" {
-		pvc.Spec.StorageClassName = &c.SessionStorageClass
+	if class != "" {
+		pvc.Spec.StorageClassName = &class
 	}
 
 	_, err := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Create(ctx, pvc, metav1.CreateOptions{})

@@ -307,6 +307,7 @@ func images(cfg config.Config, version string) k8s.Images {
 		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,
 		SessionStorageClass:   cfg.SessionStorageClass,
+		StandingStorageClass:  cfg.StandingStorageClass,
 		SessionNodeSelector:   cfg.NodeSelectorMap(),
 		LogLevel:              cfg.LogLevel,
 		CoreGRPCAddr:          cfg.CoreGRPCAddr,

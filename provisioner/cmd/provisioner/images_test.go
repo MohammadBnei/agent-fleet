@@ -30,6 +30,7 @@ func TestImages(t *testing.T) {
 		"SidecarImage":          "SidecarImage",
 		"WorkspacePVC":          "WorkspacePVC",
 		"SessionStorageClass":   "SessionStorageClass",
+		"StandingStorageClass":  "StandingStorageClass",
 		"LogLevel":              "LogLevel",
 		"CoreGRPCAddr":          "CoreGRPCAddr",
 		"ThotAuthToken":         "ThotAuthToken",

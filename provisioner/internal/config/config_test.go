@@ -128,7 +128,7 @@ func TestLoad_WarningsNeverEchoAnAt(t *testing.T) {
 // an optional variable that is invalid warns instead of refusing.
 func TestLoad(t *testing.T) {
 	env := map[string]string{
-		"NAMESPACE": "ns", "WORKER_IMAGE": "w:1", "SIDECAR_IMAGE": "s:1", "WORKSPACE_PVC": "pvc", "SESSION_STORAGE_CLASS": "fast",
+		"NAMESPACE": "ns", "WORKER_IMAGE": "w:1", "SIDECAR_IMAGE": "s:1", "WORKSPACE_PVC": "pvc", "SESSION_STORAGE_CLASS": "fast", "STANDING_STORAGE_CLASS": "lh",
 		"SESSION_NODE_SELECTOR": "a/b=c", "WORKSPACE_ROOT": "/ws", "E2E_HOST": "e2e.test", "PORT": "1", "GRPC_PORT": "2",
 		"CORE_GRPC_ADDR": "core:3", "FLEET_PROVISIONER_TOKEN": "to-core", "FLEET_CORE_PROVISIONER_TOKEN": "from-core",
 		"THOT_AUTH_TOKEN": "thot", "EXECUTOR_ADDR": "exec:4", "RECONCILE_INTERVAL_MS": "5", "LOG_LEVEL": "debug",
@@ -144,7 +144,7 @@ func TestLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{
-		Namespace: "ns", WorkerImage: "w:1", SidecarImage: "s:1", WorkspacePVC: "pvc", SessionStorageClass: "fast",
+		Namespace: "ns", WorkerImage: "w:1", SidecarImage: "s:1", WorkspacePVC: "pvc", SessionStorageClass: "fast", StandingStorageClass: "lh",
 		SessionNodeSelector: "a/b=c", WorkspaceRoot: "/ws", E2eHost: "e2e.test", Port: "1", GRPCPort: "2", CoreGRPCAddr: "core:3",
 		CoreToken: "to-core", CoreProvisionerToken: "from-core", ThotAuthToken: "thot", ExecutorAddr: "exec:4", ReconcileInterval: 5 * time.Millisecond,
 		LogLevel: "debug", FleetSharedRepoURL: "https://x/y.git", FleetSharedBranch: "dev", FleetDefinitionsRef: "ref",
@@ -160,7 +160,7 @@ func TestLoad(t *testing.T) {
 
 	defaults := Config{
 		Namespace: "agent-fleet", WorkerImage: "registry.bnei.lan:5000/agent-fleet-worker:latest",
-		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest", WorkspacePVC: "agent-fleet-workspace", WorkspaceRoot: "/workspace",
+		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest", WorkspacePVC: "agent-fleet-workspace", StandingStorageClass: "longhorn", WorkspaceRoot: "/workspace",
 		E2eHost: "bnei.dev", Port: "8080", GRPCPort: "9090", CoreGRPCAddr: DefaultCoreGRPCAddr,
 		ExecutorAddr: "thot-executor.thot.svc.cluster.local:9090", ReconcileInterval: 10 * time.Second, LogLevel: "info",
 		FleetSharedRepoURL: "https://github.com/MohammadBnei/agent-fleet.git", FleetSharedBranch: "main", PostgresImage: "postgres:16-alpine",
