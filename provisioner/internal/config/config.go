@@ -254,7 +254,7 @@ func Load(getenv func(string) string) (Config, error) {
 		SidecarImage:              env("SIDECAR_IMAGE", "registry.bnei.lan:5000/agent-fleet-sidecar:latest"),
 		WorkspacePVC:              env("WORKSPACE_PVC", "agent-fleet-workspace"),
 		SessionStorageClass:       env("SESSION_STORAGE_CLASS", ""),
-		StandingStorageClass:      env("STANDING_STORAGE_CLASS", "longhorn"),
+		StandingStorageClass:      env("STANDING_STORAGE_CLASS", ""),
 		SessionNodeSelector:       env("SESSION_NODE_SELECTOR", ""),
 		WorkspaceRoot:             env("WORKSPACE_ROOT", "/workspace"),
 		E2eHost:                   env("E2E_HOST", "bnei.dev"),

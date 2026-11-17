@@ -160,7 +160,7 @@ func TestLoad(t *testing.T) {
 
 	defaults := Config{
 		Namespace: "agent-fleet", WorkerImage: "registry.bnei.lan:5000/agent-fleet-worker:latest",
-		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest", WorkspacePVC: "agent-fleet-workspace", StandingStorageClass: "longhorn", WorkspaceRoot: "/workspace",
+		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest", WorkspacePVC: "agent-fleet-workspace", WorkspaceRoot: "/workspace",
 		E2eHost: "bnei.dev", Port: "8080", GRPCPort: "9090", CoreGRPCAddr: DefaultCoreGRPCAddr,
 		ExecutorAddr: "thot-executor.thot.svc.cluster.local:9090", ReconcileInterval: 10 * time.Second, LogLevel: "info",
 		FleetSharedRepoURL: "https://github.com/MohammadBnei/agent-fleet.git", FleetSharedBranch: "main", PostgresImage: "postgres:16-alpine",

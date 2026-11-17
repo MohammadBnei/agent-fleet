@@ -4,9 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -132,28 +130,17 @@ func TestStandingPVCClass(t *testing.T) {
 	}
 }
 
-// ADR-0084 §8: the replacement pod is created only after the terminating Job is gone.
-func TestReplacementWaitsForOldJob(t *testing.T) {
-	jobGonePoll = 5 * time.Millisecond
-	defer func() { jobGonePoll = time.Second }()
+// A standing character without a resources block (Guaranteed=false) still gets the Longhorn class.
+func TestStandingPVCClassWithoutResources(t *testing.T) {
 	c := newTestClient()
+	c.SessionStorageClass, c.StandingStorageClass = "local-path", "longhorn"
 	ctx := context.Background()
-	now := metav1.Now()
-	old := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: WorkerResourceName("w1"), Namespace: "agent-fleet", DeletionTimestamp: &now}}
-	if _, err := c.Core.BatchV1().Jobs("agent-fleet").Create(ctx, old, metav1.CreateOptions{}); err != nil {
+	spec := WorkerPodSpec{SessionID: "s2", Repo: "r", LeaseID: "l", Memory: &MemoryProfile{Agent: "kai", Set: "BC"}}
+	if err := c.CreateWorkerPod(ctx, spec); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- c.CreateWorkerPod(ctx, standingSpec("w1")) }()
-	select {
-	case err := <-done:
-		t.Fatalf("created while the old job was terminating: %v", err)
-	case <-time.After(60 * time.Millisecond):
-	}
-	if err := c.Core.BatchV1().Jobs("agent-fleet").Delete(ctx, old.Name, metav1.DeleteOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-done; err != nil {
-		t.Fatal(err)
+	pvc, err := c.Core.CoreV1().PersistentVolumeClaims("agent-fleet").Get(ctx, SessionPVCName("s2"), metav1.GetOptions{})
+	if err != nil || *pvc.Spec.StorageClassName != "longhorn" {
+		t.Fatalf("pvc %v, %v; want longhorn", pvc, err)
 	}
 }

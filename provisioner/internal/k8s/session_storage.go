@@ -90,6 +90,11 @@ func (c *Client) ensureSessionPVC(ctx context.Context, sessionID, repo, class st
 
 	_, err := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
+		// A PVC made under another class stays on it (class is immutable): say so.
+		if old, gerr := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Get(ctx, name, metav1.GetOptions{}); gerr == nil && class != "" &&
+			(old.Spec.StorageClassName == nil || *old.Spec.StorageClassName != class) {
+			slog.Warn("k8s EnsureSessionPVC: existing pvc has a different storage class", "sessionId", sessionID, "pvc", name, "want", class)
+		}
 		return nil
 	}
 	if err != nil {

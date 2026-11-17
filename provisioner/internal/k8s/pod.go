@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -505,15 +504,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	// already holds its tree and its warm dependency cache, with no affinity
 	// rules to write and no re-clone.
 	class := c.SessionStorageClass
-	if spec.guaranteed() && c.StandingStorageClass != "" {
+	if spec.Memory != nil && c.StandingStorageClass != "" { // standing, not Guaranteed: that needs a resources block
 		class = c.StandingStorageClass
-	}
-	// docs/adr/0086 §5 + 0084 §8: a replacement pod's sidecar opens the memory
-	// repo only after the old Job is gone.
-	if spec.Memory != nil {
-		if err := c.waitJobGone(ctx, taskID); err != nil {
-			return err
-		}
 	}
 	if err := spans.Do(ctx, "warm.ensure_session_pvc", func(ctx context.Context) error {
 		return c.ensureSessionPVC(ctx, taskID, repo, class)
@@ -1148,29 +1140,4 @@ func ValidateGuaranteed(cpu, memory string) error {
 		}
 	}
 	return nil
-}
-
-var (
-	jobGonePoll = time.Second
-	jobGoneMax  = 2 * time.Minute
-)
-
-// waitJobGone blocks while the session's previous Job is terminating.
-func (c *Client) waitJobGone(ctx context.Context, taskID string) error {
-	ctx, cancel := context.WithTimeout(ctx, jobGoneMax)
-	defer cancel()
-	for {
-		j, err := c.Core.BatchV1().Jobs(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
-		if apierrors.IsNotFound(err) || (err == nil && j.DeletionTimestamp == nil) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("wait for old job: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("old job of %s still terminating: %w", taskID, ctx.Err())
-		case <-time.After(jobGonePoll):
-		}
-	}
 }

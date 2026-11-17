@@ -113,6 +113,11 @@ spec:
         # resumed session is pulled back to its own node by the PV's affinity.
         - name: SESSION_STORAGE_CLASS
           value: local-path
+        # Standing characters' volumes survive a node loss (ADR-0084 §3), so
+        # they use replicated Longhorn instead of the node-local class above.
+        # Empty (kind-local) falls back to SESSION_STORAGE_CLASS.
+        - name: STANDING_STORAGE_CLASS
+          value: longhorn
         # ...and because local-path is a hostPath on the node's OS disk,
         # sessions are confined to the two nodes that can afford it. The
         # control-plane nodes have ~33 GiB allocatable; filling one is a
