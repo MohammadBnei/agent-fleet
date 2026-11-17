@@ -34,6 +34,11 @@ func TestRepoDefinitions(t *testing.T) {
 		}
 	}
 	for _, r := range results {
+		// ServiceAccount fleet-read lives in infra-bootstrap#462; a Job naming a missing account never
+		// schedules and nothing reports it (docs/verification-traps.md). Drop this guard once it has synced.
+		if r.Err == nil && r.Effective.Cluster != nil && r.Effective.Cluster.Read {
+			t.Errorf("%s sets cluster.read before infra-bootstrap#462 (fleet-read ServiceAccount) has synced", r.Name)
+		}
 		if r.Name == "alert-responder" && r.Err == nil && !r.Effective.Responder() {
 			t.Errorf("alert-responder must be a first responder (trust.untrusted B): %+v", r.Effective.Trust)
 		}

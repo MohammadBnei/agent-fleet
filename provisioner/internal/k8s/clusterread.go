@@ -11,9 +11,11 @@ import (
 const ReadServiceAccount = "fleet-read"
 
 // ClusterReadLabel marks a granted pod; infra-bootstrap's CiliumNetworkPolicy admits the API server for it.
+// The policy selects the whole pod, so the worker can reach the API port too, without a token: anonymous
+// endpoints only, accepted.
 const ClusterReadLabel = "fleet.bnei.dev/cluster-read"
 
-// clusterReadTokenTTL is the projected token's life, the minimum the kubelet accepts; it rotates the file.
+// clusterReadTokenTTL is the projected token's life, a choice (the API floor is 600); the kubelet rotates the file.
 const clusterReadTokenTTL = 3600
 
 // applyClusterRead names the read ServiceAccount and mounts its token in the sidecar only. The pod keeps

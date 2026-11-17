@@ -57,6 +57,24 @@ func TestClusterReadServiceAccount(t *testing.T) {
 	if !sidecar {
 		t.Error("sidecar lacks the read token")
 	}
+	for _, ic := range ps.InitContainers {
+		for _, m := range ic.VolumeMounts {
+			if ic.Name == "sidecar" && m.Name == "kube-read" &&
+				(m.MountPath != "/var/run/secrets/kubernetes.io/serviceaccount" || !m.ReadOnly) {
+				t.Errorf("sidecar kube-read mount = %q readOnly %v", m.MountPath, m.ReadOnly)
+			}
+		}
+	}
+	for _, v := range ps.Volumes {
+		if v.Name != "kube-read" {
+			continue
+		}
+		src := v.Projected.Sources
+		if len(src) != 2 || src[0].ServiceAccountToken == nil || src[1].ConfigMap == nil ||
+			src[1].ConfigMap.Name != "kube-root-ca.crt" || src[1].ConfigMap.Items[0].Key != "ca.crt" {
+			t.Errorf("kube-read projection = %+v", src)
+		}
+	}
 	for _, c := range ps.Containers {
 		if hasMount(c, "kube-read") {
 			t.Errorf("%s mounts the read token", c.Name)
