@@ -15,6 +15,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -60,8 +61,19 @@ func (s *Server) checkEffect(ctx context.Context, r decisions.Record, e *agentfl
 	if err := decisions.VerifyEffect(e); err != nil {
 		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyDecisionStale, err)
 	}
-	if e.GetVerb() == decisions.VerbOpenPR {
+	switch e.GetVerb() {
+	case decisions.VerbOpenPR:
 		return s.writerIsBC(ctx, r, e)
+	case decisions.VerbRaiseBudget:
+		// The override is the writer's own: a card cannot raise another character's budget.
+		w, err := s.sessions.Get(ctx, r.SessionID)
+		var b decisions.Budget
+		if err := json.Unmarshal([]byte(e.GetPayload()), &b); err != nil {
+			return refuse(err)
+		}
+		if err != nil || w == nil || w.DefinitionName == nil || *w.DefinitionName != b.Character || deref(w.Lifecycle, "") != sessions.Standing {
+			return refuse(fmt.Errorf("raise_budget: %s is not this card's character", b.Character))
+		}
 	}
 	return nil
 }
@@ -162,6 +174,8 @@ func (s *Server) runEffect(ctx context.Context, r decisions.Record, e *agentflee
 			Repo: t.Repo, Branch: t.Branch, HeadSha: t.HeadSHA, Title: t.Title,
 			Body: "Opened by the owner's answer to decision card " + r.ID + ".",
 		})
+	case decisions.VerbRaiseBudget:
+		err = s.sessions.RaiseBudget(ctx, r.SessionID)
 	case decisions.VerbOpenSession:
 		if s.opener == nil {
 			return refuse(errors.New("open_session: no console"))

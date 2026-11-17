@@ -811,6 +811,10 @@ func TestLoad_Reach(t *testing.T) {
 		{"bad namespace", standing(map[string]string{"cluster": "{ logNamespaces: [\"A b\"] }"}), "not a namespace name"},
 		{"limits without spawns", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 1 } }"}), "limits.spawns needs spawns.allow"},
 		{"limits too wide", standing(map[string]string{"spawns": "{ allow: [worker] }", "limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 11 } }"}), "limits.spawns"},
+		{"budget", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, turnsPerDay: 50 }"}), ""},
+		{"budget on a worker", map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, turnsPerDay: 50 }"}, "only a standing definition has a daily turn budget"},
+		{"budget too wide", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, turnsPerDay: 10001 }"}), "limits.turnsPerDay"},
+		{"budget negative", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, turnsPerDay: -1 }"}), "limits.turnsPerDay"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -846,5 +850,22 @@ func TestSpawnCaps(t *testing.T) {
 	}
 	if (&Spec{Limits: &Limits{Spawns: &SpawnLimits{Concurrent: 3}}}).SpawnSubPool() != 0 {
 		t.Fatal("no spawns.allow, no sub-pool")
+	}
+}
+
+func TestSpec_TurnBudget(t *testing.T) {
+	var nilSpec *Spec
+	for _, tc := range []struct {
+		s    *Spec
+		want int
+	}{
+		{nilSpec, DefaultTurnsPerDay},
+		{&Spec{}, DefaultTurnsPerDay},
+		{&Spec{Limits: &Limits{}}, DefaultTurnsPerDay},
+		{&Spec{Limits: &Limits{TurnsPerDay: 7}}, 7},
+	} {
+		if got := tc.s.TurnBudget(); got != tc.want {
+			t.Errorf("TurnBudget = %d, want %d", got, tc.want)
+		}
 	}
 }

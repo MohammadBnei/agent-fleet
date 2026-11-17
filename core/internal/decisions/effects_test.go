@@ -19,6 +19,7 @@ func TestBindEffect(t *testing.T) {
 		eff(VerbCatalogue, `{"action":"restart","kind":"deployment","namespace":"game","name":"web"}`),
 		eff(VerbOpenPR, `{"repo":"o/r","branch":"fix/x","headSha":"`+sha40+`","title":"Fix x"}`),
 		eff(VerbOpenSession, `{"repo":"r","title":"Look","findings":[{"name":"restarts","value":4}]}`),
+		eff(VerbRaiseBudget, `{"character":"dream-keeper"}`),
 	}
 	for _, e := range good {
 		if err := bindEffect(e); err != nil {
@@ -45,6 +46,8 @@ func TestBindEffect(t *testing.T) {
 		"not a repo":    eff(VerbOpenSession, `{"repo":"o/r","title":"T"}`),
 		"trailing data": eff(VerbOpenSession, `{"repo":"o/r","title":"T"} {}`),
 		"empty":         eff(VerbOpenPR, ``),
+		"budget name":   eff(VerbRaiseBudget, `{"character":"A b"}`),
+		"budget extra":  eff(VerbRaiseBudget, `{"character":"a","hours":999}`),
 	}
 	for name, e := range bad {
 		if err := bindEffect(e); !errors.Is(err, ErrInvalid) {
@@ -134,5 +137,25 @@ func TestEffectLines(t *testing.T) {
 	}
 	if EffectLines(eff("handoff", `{"a":1}`)) != nil {
 		t.Error("a non-core verb shows a payload")
+	}
+}
+
+// docs/adr/0084 §9: a character subject is the definition name alone, and only core files its card.
+func TestNormalize_CharacterSubject(t *testing.T) {
+	card := func(repo string, n int64) *agentfleetv1.Card {
+		return &agentfleetv1.Card{Ask: "x", Subject: &agentfleetv1.CardSubject{Kind: "character", Repo: repo, Number: n},
+			Options: []*agentfleetv1.CardOption{{Label: "a", Reversible: "yes", Effect: eff(VerbRaiseBudget, `{"character":"keeper"}`)},
+				{Label: "b", Reversible: "yes", Effect: eff("handoff", "")}}}
+	}
+	if key, err := normalize(card("keeper", 0)); err != nil || key != "character/keeper" {
+		t.Errorf("good: %q %v", key, err)
+	}
+	for _, c := range []*agentfleetv1.Card{card("o/r", 0), card("", 0), card("keeper", 3)} {
+		if _, err := normalize(c); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%v: %v", c.GetSubject(), err)
+		}
+	}
+	if !IsCoreVerb(VerbRaiseBudget) {
+		t.Error("raise_budget is a core verb: only core files it")
 	}
 }

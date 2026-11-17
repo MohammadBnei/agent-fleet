@@ -503,3 +503,48 @@ func TestStreamHumanMessages_DrainEndDeliversHeldEntries(t *testing.T) {
 		t.Fatalf("delivered %v; the held turn must reach the pod when the drain ends", rec.texts)
 	}
 }
+
+// docs/adr/0084 §9: past its day's turns a character's thread waits at its head for what is not the owner's, and
+// nothing jumps a held entry; the owner's own message, an answer and an abort pass a thread with nothing held. A
+// raise_budget override lifts the hold.
+func TestStreamHumanMessages_BudgetHold(t *testing.T) {
+	s, store, pool, id := newCharacter(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET effective = jsonb_set(effective, '{limits}', '{"turnsPerDay":2}') WHERE name = 'a'`); err != nil {
+		t.Fatal(err)
+	}
+	thread(t, pool, id, "a", 0)
+	thread(t, pool, id, "b", 0)
+	put(t, pool, id, 1, "main", "worker", "result", `{"subtype":"success","consumedSeq":0}`)
+	put(t, pool, id, 2, "main", "worker", "result", `{"subtype":"success","consumedSeq":0}`)
+	put(t, pool, id, 3, "main", "fleet", "result", `{"subtype":"success","crash":true}`) // a crash is no turn
+	put(t, pool, id, 4, "a", "session", "discussion", "peer head")
+	put(t, pool, id, 5, "a", "human", "discussion", "owner behind")
+	put(t, pool, id, 6, "a", "human", "answer", "an answer")
+	put(t, pool, id, 7, "b", "human", "discussion", "owner on b")
+	put(t, pool, id, 8, "b", "session", "discussion", "peer on b")
+	put(t, pool, id, 9, "b", "human", "discussion", "owner after peer")
+
+	_, sha, err := s.agentSpecOf(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := func() []string {
+		c, cancel := context.WithTimeout(ctx, 900*time.Millisecond)
+		defer cancel()
+		rec := &streamRecorder{ctx: c}
+		_ = s.StreamHumanMessages(&agentfleetv1.StreamHumanMessagesRequest{SessionId: id, AgentSpecSha: sha}, rec)
+		return rec.texts
+	}
+	want := []string{"a:an answer", "b:owner on b"}
+	if got := stream(); !slices.Equal(got, want) {
+		t.Fatalf("held: streamed %v, want %v", got, want)
+	}
+	if err := store.RaiseBudget(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"a:peer head", "a:owner behind", "a:an answer", "b:owner on b", "b:peer on b", "b:owner after peer"}
+	if got := stream(); !slices.Equal(got, want) {
+		t.Fatalf("overridden: streamed %v, want %v", got, want)
+	}
+}

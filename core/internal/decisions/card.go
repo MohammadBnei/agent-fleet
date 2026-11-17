@@ -145,7 +145,13 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 		return bad("a card needs a subject")
 	}
 	var key string
-	if sub.GetKind() == "alert_group" {
+	if sub.GetKind() == "character" {
+		// ADR-0084 §9: a character's budget card. The subject is the character's definition name, in repo.
+		if !characterName.MatchString(sub.GetRepo()) || sub.GetNumber() != 0 || sub.GetGroupKey() != "" {
+			return bad("a character subject is its definition name alone")
+		}
+		key = "character/" + sub.GetRepo()
+	} else if sub.GetKind() == "alert_group" {
 		// docs/adr/0086 §4: a responder's alert group has no GitHub subject. The key is core's, 16 hex.
 		if !groupKey.MatchString(sub.GetGroupKey()) || sub.GetRepo() != "" || sub.GetNumber() != 0 {
 			return bad("an alert_group subject is its group_key alone, 16 lowercase hex")
@@ -210,12 +216,12 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 			if o.GetReversible() != "no" {
 				return bad(`option %d: close_threads is reversible "no"`, i+1)
 			}
-		case VerbCatalogue, VerbOpenPR, VerbOpenSession, VerbExecutorStep:
+		case VerbCatalogue, VerbOpenPR, VerbOpenSession, VerbExecutorStep, VerbRaiseBudget:
 			if err := bindEffect(o.GetEffect()); err != nil {
 				return "", err
 			}
 		default:
-			return bad(`option %d: effect.verb must be "handoff", "close_threads", "catalogue", "open_pr" or "open_session"`, i+1)
+			return bad(`option %d: effect.verb must be "handoff", "close_threads", "catalogue", "open_pr", "open_session" or "raise_budget"`, i+1)
 		}
 		if o.GetRecommended() {
 			recommended++
@@ -273,8 +279,8 @@ func onCard(ctx context.Context, tx pgx.Tx, sessionID string, e transcript.Entry
 	if err != nil {
 		return err
 	}
-	if c.GetSubject().GetKind() == "alert_group" && draftedBy != "core" {
-		return fmt.Errorf("%w: only core files an alert_group card", ErrInvalid)
+	if k := c.GetSubject().GetKind(); (k == "alert_group" || k == "character") && draftedBy != "core" {
+		return fmt.Errorf("%w: only core files an %s card", ErrInvalid, k)
 	}
 	if _, err := tx.Exec(ctx, cardLock); err != nil {
 		return fmt.Errorf("card lock: %w", err)

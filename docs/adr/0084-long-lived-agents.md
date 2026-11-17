@@ -37,6 +37,16 @@
     `alert_group` cards and the remediations (kind, state, core's card text, action, target, responder): never the
     agent claim, labels, annotations or alert text.
   - Not in this slice: `QueryMetrics` (§6).
+- **Built:** appendix slice 13: budget and alert (migration 000036: `sessions.budget_override_until`).
+  - `limits.turnsPerDay` (standing only, 1-10000, default 200 applied where read). A turn is a worker result entry
+    (core's crash results are not), counted per character across its threads since midnight Europe/Paris.
+  - The hold is in `StreamHumanMessages`: with the day's turns spent and no override standing, a thread's head that is
+    T1 (from a session) waits, and every turn-starting entry behind it on that thread waits in order, never skipped. The
+    owner's message passes a thread with nothing held; answers, permission responses and aborts always pass.
+  - `agentsvc.RunBudgets` (every minute) publishes `agentfleet_character_turns_last_hour` and
+    `agentfleet_character_turns_per_day`, and files one core card a day per spent character (subject kind `character`,
+    its definition name). Its `raise_budget` option, a core verb bound to the writer's own name, sets the 24h override.
+  - The alert rule (`turns_last_hour * 24 >= turnsPerDay / 2`) is a draft PR on infra-bootstrap.
 - **Built:** appendix slice 12: the game channel (no migration).
   - `AgentService.PostToCharacter(character, text, thread_key)`: an admin on the console or an admin origin (the
     surface list gains it), an owner (T0) message appended as the console's `PostMessage` does, warming a character

@@ -851,15 +851,33 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 				entries, held = append(held, entries...), nil
 			}
 		}
+		// The budget hold (docs/adr/0084 §9): past its day's turns a character's thread waits at its head for
+		// anything that is not the owner's, and an entry never jumps one held before it. Read once per batch.
+		var overBudget *bool
+		blocked := map[string]bool{}
 		for _, e := range entries {
 			if standing {
 				th, ok := threads[e.ThreadKey]
 				if !ok || (th.Closed && e.Type != "abort") || (!th.Closed && e.Seq < th.Cursor) {
 					continue
 				}
-				if draining && (e.Type == "" || e.Type == "discussion") {
-					held = append(held, e)
-					continue
+				if e.Type == "" || e.Type == "discussion" {
+					if draining {
+						held = append(held, e)
+						continue
+					}
+					if !blocked[e.ThreadKey] && e.From == "session" && overBudget == nil {
+						b, err := s.sessions.BudgetHeld(ctx, taskID)
+						if err != nil {
+							return fmt.Errorf("StreamHumanMessages: %w", err)
+						}
+						overBudget = &b
+					}
+					if blocked[e.ThreadKey] || (e.From == "session" && *overBudget) {
+						blocked[e.ThreadKey] = true
+						held = append(held, e)
+						continue
+					}
 				}
 			}
 			// "human" is the operator; "session" is another session's

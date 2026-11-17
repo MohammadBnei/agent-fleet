@@ -755,6 +755,14 @@ func validateReach(errs *[]error, s *Spec) {
 			}
 		}
 	}
+	if l := s.Limits; l != nil && l.TurnsPerDay != 0 {
+		if !standing {
+			bad("limits.turnsPerDay: only a standing definition has a daily turn budget")
+		}
+		if l.TurnsPerDay < 0 || l.TurnsPerDay > 10000 {
+			bad("limits.turnsPerDay must be 1-10000 (0 is the default)")
+		}
+	}
 	if l := s.Limits; l != nil && l.Spawns != nil {
 		if s.Spawns == nil {
 			bad("limits.spawns needs spawns.allow")

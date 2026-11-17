@@ -278,3 +278,63 @@ func TestRestartStanding_FreshSessionsAndCursorsAtTheEnd(t *testing.T) {
 		t.Fatalf("crashes = %d (%v)", crashes, err)
 	}
 }
+
+// docs/adr/0084 §9: turns are the worker's results since Paris midnight; a crash result is no turn, and
+// yesterday's do not count. The hold is the budget spent with no override standing.
+func TestBudgetHeld(t *testing.T) {
+	ctx := context.Background()
+	store, pool, id := newCharacter(t)
+	res := func(seq int64, text, age string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key, created_at)
+			VALUES ($1, $2, 'worker', $3, 'result', gen_random_uuid()::text, 'main', now() - $4::interval)`, id, seq, text, age); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := func(want bool) {
+		t.Helper()
+		if got, err := store.BudgetHeld(ctx, id); err != nil || got != want {
+			t.Fatalf("BudgetHeld = %v, %v; want %v", got, err, want)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET effective = jsonb_set(effective, '{limits}', '{"turnsPerDay":2}')`); err != nil {
+		t.Fatal(err)
+	}
+	res(1, `{"subtype":"success"}`, "30 hours")
+	res(2, `{"subtype":"success","crash":true}`, "0 seconds")
+	res(3, `{"subtype":"success"}`, "0 seconds")
+	held(false)
+	res(4, `{"subtype":"success"}`, "0 seconds")
+	today, _, _, err := store.Turns(ctx, id)
+	if err != nil || today != 2 {
+		t.Fatalf("Turns today = %d, %v; want 2", today, err)
+	}
+	held(true)
+	if err := store.RaiseBudget(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	held(false)
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET budget_override_until = now() - interval '1 second' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	held(true)
+}
+
+// The day is Europe/Paris's: a result a second after its midnight is today's, one a second before is not.
+func TestTurns_ParisDay(t *testing.T) {
+	ctx := context.Background()
+	store, pool, id := newCharacter(t)
+	var start time.Time
+	if err := pool.QueryRow(ctx, `SELECT date_trunc('day', now() AT TIME ZONE 'Europe/Paris') AT TIME ZONE 'Europe/Paris'`).Scan(&start); err != nil {
+		t.Fatal(err)
+	}
+	for i, off := range []string{"-1 second", "+1 second"} {
+		if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key, created_at)
+			VALUES ($1, $2, 'worker', '{"subtype":"success"}', 'result', gen_random_uuid()::text, 'main', $3::timestamptz + $4::interval)`, id, i+1, start, off); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if today, _, _, err := store.Turns(ctx, id); err != nil || today != 1 {
+		t.Fatalf("today = %d, %v; want 1", today, err)
+	}
+}
