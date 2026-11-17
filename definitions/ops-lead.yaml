@@ -5,7 +5,8 @@
 #
 # git.mode pr: the model credential only, so the pod holds no GitHub write (the existing CLAUDE_CODE_OAUTH_TOKEN
 # mapping, as dev-notes). Its memory is claude-home/agent-ops-lead-memory, written by the sidecar (memory_write).
-# No cluster.read yet: the fleet-read ServiceAccount is infra-bootstrap #462, unmerged (repo_test.go guards it).
+# cluster.read: the fleet-read ServiceAccount (infra-bootstrap #462). Its token reaches the sidecar only, and no
+# sidecar tool reads it yet, so the grant is in place for that tool.
 # No query_metrics: core has no sidecar tool for it yet (ADR-0084 slice 8 left QueryMetrics out). No speak: no
 # ukubi-game client consumes a character's speech yet.
 # The workspace is agent-fleet, not infra-bootstrap: infra-bootstrap is a cluster-access repo, and core never runs a
@@ -44,7 +45,7 @@ spec:
                  open_issue, list_responder_cards, view_logs]
   spawns: { allow: [ops-worker] }
   owns: { repos: [MohammadBnei/agent-fleet, MohammadBnei/infra-bootstrap] }
-  cluster: { logNamespaces: [agent-fleet, ukubi-game, ukubi-realm, ukubi-meet, monitoring] }
+  cluster: { read: true, logNamespaces: [agent-fleet, ukubi-game, ukubi-realm, ukubi-meet, monitoring] }
   # Guaranteed QoS (ADR-0084 §9): requests equal limits; the sidecar's 256Mi/100m is the provisioner's.
   resources: { cpu: 500m, memory: 1536Mi }
   limits:
