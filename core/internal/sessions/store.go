@@ -320,6 +320,12 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
 	}
+	if p.Lifecycle == Standing {
+		// The character's one starting thread (docs/adr/0084 §4); further threads open on the owner's messages.
+		if _, err := s.pool.Exec(ctx, `INSERT INTO session_threads (session_id, thread_key) VALUES ($1, $2)`, id, MainThread); err != nil {
+			return "", fmt.Errorf("create session: main thread: %w", err)
+		}
+	}
 	slog.Info("sessions Create", "sessionId", id, "repo", p.Repo, "permissionMode", p.PermissionMode, "definition", p.DefinitionName)
 	return id, nil
 }
@@ -1664,7 +1670,12 @@ func (s *Store) StandingByDefinition(ctx context.Context, name string) (*Session
 // False when the row is not stopped or its old pod is still live: a Stop's grace-period teardown must run first,
 // else Start would disarm it (ListOverdueStopIDs) and the old pod could write its SDK session id back.
 func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("restart standing: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `
 		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
 		       agent_session_id = NULL, updated_at = now()
 		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL AND COALESCE(pod_phase, '') <> ALL($4)`,
@@ -1672,7 +1683,16 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 	if err != nil {
 		return false, fmt.Errorf("restart standing: %w", err)
 	}
-	return tag.RowsAffected() == 1, nil
+	if tag.RowsAffected() != 1 {
+		return false, nil
+	}
+	// A fresh SDK session per thread (docs/adr/0084 §2): their cursors move to the end, so nothing the stopped
+	// pod left is replayed into it, and every thread's SDK session id is dropped.
+	if _, err := tx.Exec(ctx, `UPDATE session_threads SET agent_session_id = NULL, crash_seq = NULL, crashes = 0,
+		cursor = (SELECT COALESCE(MAX(seq) + 1, 0) FROM transcript WHERE session_id = $1) WHERE session_id = $1`, id); err != nil {
+		return false, fmt.Errorf("restart standing: %w", err)
+	}
+	return true, tx.Commit(ctx)
 }
 
 // MarkStandingStopped is Stop (docs/adr/0084 §2): the cooperative stop request, plus the mark that keeps the row

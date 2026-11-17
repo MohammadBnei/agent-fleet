@@ -11,6 +11,20 @@
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
+- **Built:** appendix slice 4: threads and delivery per thread (migration 000031).
+  - `transcript.thread_key` and `session_threads` (cursor, SDK session id, last activity, effect and crash marks). The
+    owner's message to a new key opens a thread (`PostMessage.thread_key`); `CloseStandingThread` or 7 idle days close
+    it. Main never closes and keeps its SDK session id in `sessions.agent_session_id`.
+  - Core delivers per thread from each thread's own cursor, the last result's `consumedSeq`, never from `LatestSeq`
+    (`StreamHumanMessages`, `sessions.ResumeFrom`). A closed thread gets only the abort that ends its SDK session.
+  - The worker runs one SDK session per thread and one running thread per pod. A waiting message holds its thread's
+    cursor back. Answers, permission responses and Stop pass. A turn passes its 15-minute deadline and is interrupted.
+  - The sidecar files every call under the running turn's thread (`x-fleet-thread`, set by `POST /turn`), and keys
+    `publish_event` and `draft_card` by (session, thread, entry seq, call ordinal).
+  - A CRASHED pod settles a thread's head entry when an effect of it ran or it crashed three times in a row: core
+    appends a crash result, which moves the cursor, and a poison entry alerts the owner.
+  - Not in this slice: the budget hold (slice 13 owns the budget), the crash entry for every thread and the re-warm
+    itself (slice 5).
 - **Depends on:** [ADR-0086](0086-rule-of-two.md) (PR #401) for trust sets, cards, memory and the per-pod Secret
   file. ADR-0086 does not depend on this ADR.
 - **Would amend:**

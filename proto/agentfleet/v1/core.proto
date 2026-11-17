@@ -371,6 +371,10 @@ message GetSessionResponse {
   // plan decision before answering "pending" (core's DECISION_WAIT_MS).
   // 0 means the worker's own default, 45 s.
   int32 decision_wait_ms = 5;
+  // docs/adr/0084 §4: a standing character's open threads other than main,
+  // thread key -> the SDK session id to resume it with. A thread with no id
+  // yet is absent. Main resumes with session.agent_session_id.
+  map<string, string> thread_session_ids = 6;
 }
 
 // What a definition pod's worker applies to its query() (docs/adr/0067 §4).
@@ -585,6 +589,10 @@ message SaveAgentSessionIdRequest {
   // sidecar fills it from its own lease (docs/adr/0064); an empty one matches
   // no session (sessions.leaseMatch), so the write is dropped.
   string lease_id = 4;
+  // docs/adr/0084 §4: the thread this SDK session id belongs to. Empty or
+  // "main" is the session's own agent_session_id; any other thread keeps its
+  // own, and an empty agent_session_id clears it.
+  string thread_key = 5;
 }
 
 message SaveAgentSessionIdResponse {}

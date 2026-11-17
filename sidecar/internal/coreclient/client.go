@@ -40,6 +40,59 @@ type Client struct {
 	// before then core refuses both (docs/adr/0066 §8). "" for a repo session
 	// or an older worker.
 	specSHA atomic.Value // string
+	// turn is the thread the worker is running a turn for (docs/adr/0084 §4): one at a time per pod, so every
+	// call made meanwhile belongs to it. nil outside a standing character's turn.
+	turn atomic.Pointer[turnState]
+}
+
+// turnState is one running turn: its thread, the entry it answers, and how many effect calls it has made.
+type turnState struct {
+	thread  string
+	seq     int64
+	ordinal atomic.Int64
+}
+
+// SetTurn names the thread and entry the worker's running turn answers, restarting the effect ordinal. An
+// empty thread ends the turn.
+func (c *Client) SetTurn(thread string, entrySeq int64) {
+	if thread == "" {
+		c.turn.Store(nil)
+		return
+	}
+	c.turn.Store(&turnState{thread: thread, seq: entrySeq})
+}
+
+type threadCtx struct{}
+
+// WithThread files the calls under ctx in thread, whatever turn is running: a result a thread's SDK session
+// writes after its deadline belongs to that thread, not to the one running now.
+func WithThread(ctx context.Context, thread string) context.Context {
+	if thread == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, threadCtx{}, thread)
+}
+
+// threadKey is the thread of a call: the one its ctx names, else the running turn's, "" outside one.
+func (c *Client) threadKey(ctx context.Context) string {
+	if k, ok := ctx.Value(threadCtx{}).(string); ok {
+		return k
+	}
+	if t := c.turn.Load(); t != nil {
+		return t.thread
+	}
+	return ""
+}
+
+// effectKey is the idempotency key of an effect method (docs/adr/0084 §4): (session, thread, entry seq, call
+// ordinal) inside a standing turn, replacing whatever key the agent chose, since a replayed turn does not
+// repeat the agent's keys but does repeat the ordinals. Outside a turn the caller's key stands.
+func (c *Client) effectKey(key string) string {
+	t := c.turn.Load()
+	if t == nil {
+		return key
+	}
+	return fmt.Sprintf("eff:%s:%s:%d:%d", c.taskID, t.thread, t.seq, t.ordinal.Add(1))
 }
 
 func (c *Client) SetAgentSpecSHA(sha string) { c.specSHA.Store(sha) }
@@ -81,44 +134,47 @@ const retryServiceConfig = `{
 // session but this one, which is what makes leaking it through a pod's own env
 // an acceptable risk. The agent can already read every env var in its
 // container.
-func leaseCredentials(sessionID, leaseID string) grpc.DialOption {
+func leaseCredentials(sessionID, leaseID string, thread func(context.Context) string) grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		return invoker(withLease(ctx, sessionID, leaseID), method, req, reply, cc, opts...)
+		return invoker(withLease(ctx, sessionID, leaseID, thread(ctx)), method, req, reply, cc, opts...)
 	})
 }
 
-func leaseStreamCredentials(sessionID, leaseID string) grpc.DialOption {
+func leaseStreamCredentials(sessionID, leaseID string, thread func(context.Context) string) grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		return streamer(withLease(ctx, sessionID, leaseID), desc, cc, method, opts...)
+		return streamer(withLease(ctx, sessionID, leaseID, thread(ctx)), desc, cc, method, opts...)
 	})
 }
 
-func withLease(ctx context.Context, sessionID, leaseID string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx,
+// withLease also names the running turn's thread, when there is one (core's mdThread): every transcript
+// entry a call appends then lands in it.
+func withLease(ctx context.Context, sessionID, leaseID, thread string) context.Context {
+	ctx = metadata.AppendToOutgoingContext(ctx,
 		"x-fleet-session-id", sessionID,
 		"x-fleet-lease-id", leaseID,
 	)
+	if thread != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-fleet-thread", thread)
+	}
+	return ctx
 }
 
 // TaskID is the session this sidecar serves.
 func (c *Client) TaskID() string { return c.taskID }
 
 func New(addr, taskID, leaseID string) (*Client, error) {
+	c := &Client{taskID: taskID, leaseID: leaseID}
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(retryServiceConfig),
-		leaseCredentials(taskID, leaseID),
-		leaseStreamCredentials(taskID, leaseID),
+		leaseCredentials(taskID, leaseID, c.threadKey),
+		leaseStreamCredentials(taskID, leaseID, c.threadKey),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial core: %w", err)
 	}
-	return &Client{
-		conn:    conn,
-		rpc:     agentfleetv1.NewCoreServiceClient(conn),
-		taskID:  taskID,
-		leaseID: leaseID,
-	}, nil
+	c.conn, c.rpc = conn, agentfleetv1.NewCoreServiceClient(conn)
+	return c, nil
 }
 
 func (c *Client) Close() error {
@@ -323,9 +379,10 @@ func (c *Client) SearchJournal(ctx context.Context, s JournalSearch) ([]*agentfl
 	return resp.GetEntries(), nil
 }
 
-func (c *Client) SaveSessionID(ctx context.Context, sessionID, model string) error {
+// SaveSessionID saves the SDK session id of thread ("" is main, the session's own) (docs/adr/0084 §4).
+func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, thread string) error {
 	_, err := c.rpc.SaveAgentSessionId(ctx, &agentfleetv1.SaveAgentSessionIdRequest{
-		SessionId: c.taskID, AgentSessionId: sessionID, Model: model, LeaseId: c.leaseID,
+		SessionId: c.taskID, AgentSessionId: sessionID, Model: model, LeaseId: c.leaseID, ThreadKey: thread,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)
@@ -470,7 +527,7 @@ func (c *Client) UpdateSessionMeta(ctx context.Context, title, description *stri
 // (docs/adr/0078 §8). Core sets the actor, causation, hops and trust.
 func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key string) (*agentfleetv1.PublishEventResponse, error) {
 	res, err := c.rpc.PublishEvent(ctx, &agentfleetv1.PublishEventRequest{
-		SessionId: c.taskID, Type: typ, Subject: subject, Text: text, IdempotencyKey: key,
+		SessionId: c.taskID, Type: typ, Subject: subject, Text: text, IdempotencyKey: c.effectKey(key),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("PublishEvent: %w", err)
@@ -483,6 +540,7 @@ func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key strin
 // session id is this pod's, overwriting whatever the caller set.
 func (c *Client) DraftCard(ctx context.Context, req *agentfleetv1.DraftCardRequest) (*agentfleetv1.DraftCardResponse, error) {
 	req.SessionId = c.taskID
+	req.IdempotencyKey = c.effectKey(req.IdempotencyKey)
 	res, err := c.rpc.DraftCard(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("DraftCard: %w", err)

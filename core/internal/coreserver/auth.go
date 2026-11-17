@@ -384,6 +384,9 @@ func (a *Authenticator) UnaryInterceptor(ctx context.Context, req any, info *grp
 	if err := authorize(info.FullMethod, c, req); err != nil {
 		return nil, err
 	}
+	if c.session != "" {
+		ctx = withThread(ctx)
+	}
 	return handler(ctx, req)
 }
 
