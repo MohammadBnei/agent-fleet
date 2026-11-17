@@ -1159,7 +1159,7 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 // there is no losing writer to guard against.
 func (s *Store) SetPodImages(ctx context.Context, id, workerImage, sidecarImage, fleetVersion string) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE sessions SET worker_image = $2, sidecar_image = $3, fleet_version = $4, updated_at = now() WHERE id = $1
+		UPDATE sessions SET worker_image = $2, sidecar_image = $3, fleet_version = $4, pod_started_at = now(), updated_at = now() WHERE id = $1
 	`, id, workerImage, sidecarImage, fleetVersion)
 	if err != nil {
 		slog.Error("sessions SetPodImages", "sessionId", id, "error", err)
