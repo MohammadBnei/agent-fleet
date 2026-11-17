@@ -390,7 +390,7 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		t.Errorf("profile resources = cpu %q memory %q guaranteed %v, want 1 / 2Gi / false", d.GetCpu(), d.GetMemory(), d.GetGuaranteed())
 	}
 	// ADR-0086 §5: the profile carries the session's stored set, and only a standing row gets memory
-	// (no definition on main allows the standing lifecycle yet, so Standing is false here).
+	// (a non-standing definition; the standing case is TestStandingProfileCarriesMemoryGate).
 	if sess0, err := store.Get(ctx, sess.GetId()); err != nil || got.GetDefinition().GetTrustSet() != sess0.TrustSet || got.GetDefinition().GetStanding() {
 		t.Errorf("profile trust set %q standing %v, want the stored set and not standing", got.GetDefinition().GetTrustSet(), got.GetDefinition().GetStanding())
 	}

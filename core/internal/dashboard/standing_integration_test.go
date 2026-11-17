@@ -160,3 +160,32 @@ func TestStandingSchemaChecks(t *testing.T) {
 }
 
 func timeNow() time.Time { return time.Now() }
+
+// ADR-0086 §5: a loaded standing definition reaches the pod profile as Standing (memory, Guaranteed QoS) with the
+// row's stored set; the same definition's non-standing session would not.
+func TestStandingProfileCarriesMemoryGate(t *testing.T) {
+	s, prov, reg, _, _ := newDefinitionsServerPool(t)
+	ctx := auth.WithIdentity(context.Background(), auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup}})
+	prov.set(func(p *definitionsProvisioner) {
+		p.files["definitions/dev-stander.yaml"] = []byte(strings.NewReplacer("name: dev-dream-analyst }", "name: dev-stander }",
+			"vault: dev-dream-analyst", "vault: dev-stander").Replace(string(p.files["definitions/dev-dream-analyst.yaml"])) +
+			"  lifecycle: { allow: [standing] }\n")
+	})
+	if err := reg.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s.caps.MaxExternal, s.caps.MaxPerMember = 2, 2
+	res, err := s.StartStanding(ctx, connect.NewRequest(&agentfleetv1.StartStandingRequest{Definition: "dev-stander"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WarmSession(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: res.Msg.GetSession().GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	prov.mu.Lock()
+	d := prov.creates[len(prov.creates)-1].GetDefinition()
+	prov.mu.Unlock()
+	if !d.GetStanding() || d.GetTrustSet() != "BC" {
+		t.Errorf("profile standing %v set %q, want standing with the stored set BC", d.GetStanding(), d.GetTrustSet())
+	}
+}
