@@ -70,7 +70,16 @@ type Registry struct {
 	lastGood time.Time
 	// onFiles sees every good listing (docs/adr/0063: packs/ rides along).
 	onFiles func(ctx context.Context, files map[string][]byte, sha string)
+	// check judges the heads a sync would publish as a whole; a refusal fails the sync (ErrCheck), so the last good
+	// heads stay.
+	check func(heads []Head) error
 }
+
+// ErrCheck wraps a refusal by the check SetCheck installed.
+var ErrCheck = errors.New("definitions: refused by the config check")
+
+// SetCheck installs a whole-set check run on every sync's heads before they are stored.
+func (r *Registry) SetCheck(f func(heads []Head) error) { r.check = f }
 
 // SetOnFiles hands every listing whose definitions were stored to f, with its
 // own time budget.
@@ -213,6 +222,15 @@ func (r *Registry) sync(ctx context.Context) error {
 	for _, n := range gone {
 		if _, err := r.current(ctx, tx, n, ""); err != nil {
 			return err
+		}
+	}
+	if r.check != nil {
+		all := make([]Head, 0, len(heads))
+		for _, h := range heads {
+			all = append(all, h)
+		}
+		if err := r.check(all); err != nil {
+			return fmt.Errorf("%w: %w", ErrCheck, err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

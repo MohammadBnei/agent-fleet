@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -44,6 +45,9 @@ func (s *Server) character(ctx context.Context, id string) (*sessions.Session, *
 // the character's sub-pool (sessions.ReserveSlot), and capped per hour and per day here, on a NEW run only. Depth is
 // 1: a spawned run is a single-shot definition, and none holds a reach tool (the loader refuses it).
 func (s *Server) SpawnWorker(ctx context.Context, characterID, definition, input, key string) (string, error) {
+	if err := checkInvokeBounds(key, input); err != nil {
+		return "", err
+	}
 	t, spec, err := s.character(ctx, characterID)
 	if err != nil {
 		return "", err
@@ -73,6 +77,11 @@ func (s *Server) SpawnWorker(ctx context.Context, characterID, definition, input
 		}
 		return nil
 	}
+	// The caps count, then run creates the thread: one lock per character keeps parallel spawns from all passing
+	// the count. ponytail: in-process, core is a single replica; an advisory lock if it ever replicates.
+	mu, _ := s.spawnLocks.LoadOrStore(invoker, new(sync.Mutex))
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
 	p := Principal{Client: invoker}
 	res, err := s.run(ctx, p, &agentfleetv1.InvokeRequest{Definition: definition, Input: input, IdempotencyKey: key}, head, sessions.TierFleet, admit)
 	if err != nil {

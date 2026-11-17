@@ -108,6 +108,21 @@ func TestSpawnWorker_GrantAndAllowList(t *testing.T) {
 	}
 }
 
+// docs/adr/0084 §4: a create the provisioner answers Unavailable for may have landed, and the sidecar retries Unavailable,
+// so core must not pass that code on.
+func TestOpenIssue_UnavailableIsNotRetryable(t *testing.T) {
+	s, id, _ := reachCharacter(t, reachSpec)
+	calls := 0
+	s.SetIssueFunc(func(context.Context, *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error) {
+		calls++
+		return nil, status.Error(codes.Unavailable, "read: connection reset")
+	})
+	_, err := s.OpenIssue(context.Background(), &agentfleetv1.OpenIssueRequest{SessionId: id, Repo: "MohammadBnei/notes", Title: "T", IdempotencyKey: "k"})
+	if c := status.Code(err); c == codes.Unavailable || c == codes.Canceled || c == codes.OK || calls != 1 {
+		t.Fatalf("got %v after %d calls, want a non-retryable status", err, calls)
+	}
+}
+
 // docs/adr/0084 §6: OpenIssue is limited to owns.repos, and the provisioner is reached only after that check.
 func TestOpenIssue_OwnedReposOnly(t *testing.T) {
 	ctx := context.Background()

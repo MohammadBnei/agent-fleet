@@ -84,8 +84,11 @@ func (s *Server) SpawnWorker(ctx context.Context, req *agentfleetv1.SpawnWorkerR
 	if !spec.MaySpawn(req.GetDefinition()) {
 		return nil, status.Errorf(codes.PermissionDenied, "%s is not on this definition's spawns.allow", req.GetDefinition())
 	}
-	if req.GetInput() == "" || req.GetIdempotencyKey() == "" {
+	if req.GetInput() == "" {
 		return nil, status.Error(codes.InvalidArgument, "input is required")
+	}
+	if req.GetIdempotencyKey() == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
 	}
 	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 	id, err := s.spawner.SpawnWorker(ctx, req.GetSessionId(), req.GetDefinition(), req.GetInput(), req.GetIdempotencyKey())
@@ -139,6 +142,11 @@ func (s *Server) OpenIssue(ctx context.Context, req *agentfleetv1.OpenIssueReque
 	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 	res, err := s.createIssue(ctx, &agentfleetv1.CreateIssueRequest{Repo: req.GetRepo(), Title: req.GetTitle(), Body: req.GetBody()})
 	if err != nil {
+		// An Unavailable or a timeout can follow a create that landed, and the sidecar retries Unavailable: report it
+		// as Unknown so a possibly-made issue is never opened again by a retry (docs/adr/0084 §4).
+		if c := status.Code(err); c == codes.Unavailable || c == codes.DeadlineExceeded {
+			return nil, status.Errorf(codes.Unknown, "the issue may have been opened (%s: %s); check the repo before trying again", c, status.Convert(err).Message())
+		}
 		return nil, err // the provisioner's status as is, like SubmitReview
 	}
 	return &agentfleetv1.OpenIssueResponse{Url: res.GetUrl()}, nil

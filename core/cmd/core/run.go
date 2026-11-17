@@ -175,6 +175,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// Defined agents (docs/adr/0062) sync on the same pass, first run
 	// immediate. Its own timeout keeps a slow fetch inside the 60s interval.
 	defs := definitions.NewRegistry(pool, provisioner)
+	defs.SetCheck(func(heads []definitions.Head) error { return checkSpawnPool(heads, cfg.MaxDefinitionSessions) })
 	// After each GOOD sync, the full set of valid definitions' vaults goes to
 	// the provisioner, which makes the vaults match git (docs/adr/0065 §2).
 	// Core commands, the provisioner executes; core sends key names, never
@@ -210,10 +211,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			slog.Error("definitions: sync failed", "error", err)
 			return
 		}
-		heads, _ := defs.List()
-		if err := checkSpawnPool(heads, cfg.MaxDefinitionSessions); err != nil {
-			slog.Error("definitions: the spawn pool does not fit", "error", err)
-		}
 		if !vaultBusy.CompareAndSwap(false, true) {
 			return
 		}
@@ -223,18 +220,16 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			vaultErrs = reconcileVaults(ctx, provisioner, vaults, vaultErrs)
 		}()
 	})
-	// docs/adr/0084 §6: the characters' spawn sub-pools must fit the definition pool. Checked on a first sync that
-	// works, so a bad pair refuses to start; a provisioner that is not up yet is left to the per-sync log below.
-	if syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second); defs.Sync(syncCtx) == nil {
-		heads, _ := defs.List()
-		if err := checkSpawnPool(heads, cfg.MaxDefinitionSessions); err != nil {
-			cancel()
-			return err
-		}
-		cancel()
-	} else {
-		cancel()
-		slog.Warn("definitions: first sync failed, the spawn pool check waits for the loop")
+	// docs/adr/0084 §6: the characters' spawn sub-pools must fit the definition pool. The registry refuses a sync
+	// that breaks it (ErrCheck), so such a push never goes live; a bad pair at startup refuses to start. Until a
+	// first sync works nothing resolves, so nothing spawns.
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	err = defs.Sync(syncCtx)
+	cancel()
+	if errors.Is(err, definitions.ErrCheck) {
+		return err
+	} else if err != nil {
+		slog.Warn("definitions: first sync failed, the loop retries", "error", err)
 	}
 	go sessionLoop.Run(ctx, 60*time.Second)
 

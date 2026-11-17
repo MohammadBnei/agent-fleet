@@ -358,3 +358,22 @@ func TestRegistry_Vaults(t *testing.T) {
 		t.Fatalf("a deleted definition kept its vault: %v", v)
 	}
 }
+
+// A sync whose heads fail the config check is refused and the last good heads stay (docs/adr/0084 §6).
+func TestRegistry_CheckRefusesASync(t *testing.T) {
+	ctx := context.Background()
+	lister := &fakeLister{}
+	r := NewRegistry(dbtest.NewPool(t), lister)
+	lister.set("sha1", map[string]string{"definitions/base.yaml": baseYAML, "definitions/good.yaml": childYAML("good", nil)})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r.SetCheck(func([]Head) error { return errors.New("too many") })
+	lister.set("sha2", map[string]string{"definitions/base.yaml": baseYAML, "definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: plan, allow: [plan] }"})})
+	if err := r.Sync(ctx); !errors.Is(err, ErrCheck) {
+		t.Fatalf("want ErrCheck, got %v", err)
+	}
+	if h, err := r.Resolve("good"); err != nil || h.SHA != "sha1" {
+		t.Fatalf("the last good head must stay: %+v %v", h, err)
+	}
+}

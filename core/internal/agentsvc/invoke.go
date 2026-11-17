@@ -53,16 +53,26 @@ func (s *Server) invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 	switch {
 	case p.Client == "":
 		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only clients may invoke"))
-	case m.GetIdempotencyKey() == "" || len(m.GetIdempotencyKey()) > maxKey:
-		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("idempotency_key is required and at most %d bytes", maxKey))
-	case m.GetInput() == "" || len(m.GetInput()) > maxText:
-		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("input is required and at most %d bytes", maxText))
+	}
+	if err := checkInvokeBounds(m.GetIdempotencyKey(), m.GetInput()); err != nil {
+		return nil, err
 	}
 	head, ok := s.usable(p, m.GetDefinition())
 	if !ok {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
 	return s.run(ctx, p, m, head, tier, nil)
+}
+
+// checkInvokeBounds is Invoke's bound on a run's key and input, shared by a character's spawn.
+func checkInvokeBounds(key, input string) error {
+	switch {
+	case key == "" || len(key) > maxKey:
+		return errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("idempotency_key is required and at most %d bytes", maxKey))
+	case input == "" || len(input) > maxText:
+		return errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("input is required and at most %d bytes", maxText))
+	}
+	return nil
 }
 
 // run is invoke after the caller's right to the definition is settled. admit, when set, is a gate on starting a NEW

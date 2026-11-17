@@ -442,14 +442,21 @@ func TestReserveSlot_SpawnSubPool(t *testing.T) {
 		t.Fatalf("another invoker: %d", n)
 	}
 	// SpawnEnds lists unreported spawns only, and MarkSpawnReported removes one.
-	ends, err := store.SpawnEnds(ctx, 50)
-	if err != nil || len(ends) != 6 || ends[0].Character == "" || ends[0].Run != "worker" {
+	// Only an ended (archived) run is listed: unended ones, however many and however old, never crowd one out.
+	if ends, err := store.SpawnEnds(ctx, 1); err != nil || len(ends) != 0 {
+		t.Fatalf("no archived run yet: %+v %v", ends, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET archived_at = now() WHERE id IN ($1, $2)`, a, b); err != nil {
+		t.Fatal(err)
+	}
+	ends, err := store.SpawnEnds(ctx, 1)
+	if err != nil || len(ends) != 1 || ends[0].Character == "" || ends[0].Run != "worker" {
 		t.Fatalf("spawn ends: %+v %v", ends, err)
 	}
 	if err := store.MarkSpawnReported(ctx, a); err != nil {
 		t.Fatal(err)
 	}
-	if ends, _ = store.SpawnEnds(ctx, 50); len(ends) != 5 {
-		t.Fatalf("after a mark: %d", len(ends))
+	if ends, _ = store.SpawnEnds(ctx, 50); len(ends) != 1 || ends[0].ID != b {
+		t.Fatalf("after a mark: %+v", ends)
 	}
 }

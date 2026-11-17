@@ -925,7 +925,8 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 			return "", fmt.Errorf("%w: definition %q at its concurrency limit (%d)", ErrAtCapacity, *defName, *concurrency)
 		}
 		// A character's spawned run draws from the definition pool and its own sub-pool (docs/adr/0084 §6), never
-		// from the clients' MaxExternal: the config check guarantees the pool, so the clients' share must not eat it.
+		// from the clients' MaxExternal: the config check (a sync that would overfill MAX_DEFINITION_SESSIONS is refused) sizes the pool for the sub-pools, so
+		// the clients' share must not eat it; client runs can still fill MaxDefinition, and then a spawn waits at the pool check.
 		spawn := invoker != nil && strings.HasPrefix(*invoker, StandingPrefix)
 		if spawn {
 			var spawnLive, spawnCap int
@@ -1788,11 +1789,12 @@ type SpawnEnd struct {
 	Run       string // the run's definition name
 }
 
-// SpawnEnds lists the spawned runs of the last two days not yet reported, oldest first, up to limit. The caller
+// SpawnEnds lists the archived (ended) spawned runs of the last two days not yet reported, oldest first, up to
+// limit; a run still going never sits at the head. The caller
 // judges which ended (WaitForResult's rule) and reports each with MarkSpawnReported.
 func (s *Store) SpawnEnds(ctx context.Context, limit int) ([]SpawnEnd, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id::text, substring(invoker from char_length($1) + 1), COALESCE(definition_name, '')
-		FROM sessions WHERE lifecycle = 'single-shot' AND invoker LIKE $1 || '%' AND spawn_reported_at IS NULL
+		FROM sessions WHERE lifecycle = 'single-shot' AND invoker LIKE $1 || '%' AND spawn_reported_at IS NULL AND archived_at IS NOT NULL
 		AND created_at > now() - interval '2 days' ORDER BY created_at LIMIT $2`, StandingPrefix, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list spawn ends: %w", err)
