@@ -1053,7 +1053,11 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("reserve slot: commit: %w", err)
 	}
-	slog.Info("sessions ReserveSlot", "sessionId", id, "live", live+1, "cap", caps.MaxLive)
+	pool, n, limit := "live", live+1, caps.MaxLive
+	if standing {
+		pool, n, limit = "standing", standingLive+1, caps.MaxStanding
+	}
+	slog.Info("sessions ReserveSlot", "sessionId", id, "pool", pool, "count", n, "cap", limit)
 	return leaseID, nil
 }
 

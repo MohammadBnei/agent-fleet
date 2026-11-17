@@ -77,7 +77,7 @@ type Config struct {
 	// the actual human-followable ceiling, not a technical limit).
 	//
 	// It is no longer a queue depth — nothing queues. It is enforced in
-	// sessions.ReserveSlot against CountLivePods, under an advisory lock,
+	// sessions.ReserveSlot (standing rows leave this count; MaxStandingSessions holds them), under an advisory lock,
 	// and a session that cannot get a slot is refused outright rather than
 	// left pending.
 	MaxInFlight int

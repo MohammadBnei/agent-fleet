@@ -125,10 +125,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 			Status:  "healthy", // it answered this RPC
 			Label:   "sessions · transcript · dashboard",
 			Version: s.version,
-			Metrics: map[string]float64{
-				"live_pods":         float64(len(live)),
-				"max_live_sessions": float64(s.caps.MaxLive),
-			},
+			Metrics: coreMetrics(live, s.caps),
 		},
 		provisionerNode,
 	}
@@ -301,4 +298,21 @@ func (s *Server) scalarQuery(ctx context.Context, query string) (float64, error)
 		return 0, nil
 	}
 	return v, nil
+}
+
+// coreMetrics: standing characters count in their own pool, outside MaxLive (docs/adr/0084 §9), so live_pods leaves
+// them out and standing_pods reports them against max_standing_sessions.
+func coreMetrics(live []sessions.Session, caps sessions.Caps) map[string]float64 {
+	standing := 0
+	for _, t := range live {
+		if t.Lifecycle != nil && *t.Lifecycle == "standing" {
+			standing++
+		}
+	}
+	return map[string]float64{
+		"live_pods":             float64(len(live) - standing),
+		"max_live_sessions":     float64(caps.MaxLive),
+		"standing_pods":         float64(standing),
+		"max_standing_sessions": float64(caps.MaxStanding),
+	}
 }

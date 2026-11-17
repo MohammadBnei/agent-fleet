@@ -235,3 +235,15 @@ func TestPodVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestCoreMetricsSeparatesStanding(t *testing.T) {
+	st := "standing"
+	live := []sessions.Session{{ID: "a"}, {ID: "b"}, {ID: "c", Lifecycle: &st}}
+	m := coreMetrics(live, sessions.Caps{MaxLive: 5, MaxStanding: 2})
+	want := map[string]float64{"live_pods": 2, "max_live_sessions": 5, "standing_pods": 1, "max_standing_sessions": 2}
+	for k, v := range want {
+		if m[k] != v {
+			t.Errorf("%s = %v, want %v", k, m[k], v)
+		}
+	}
+}
