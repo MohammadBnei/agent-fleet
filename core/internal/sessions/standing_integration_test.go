@@ -4,6 +4,7 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -504,6 +505,8 @@ func TestReplaceBeforeTokenCap(t *testing.T) {
 		t.Fatalf("a pod inside the margin was replaced: %v", f.fake.tornWorkers)
 	}
 	f.podAge(t, "11 hours 45 minutes")
+	// A registry that cannot answer does not stop the replacement: it runs at the pinned version.
+	f.loop.SetStandingHead(func(string) (definitions.Head, error) { return definitions.Head{}, errors.New("registry down") })
 	openThread(t, f.pool, f.id, "busy", 0)
 	put(t, f.pool, f.id, 1, "busy", "human", "discussion", "go")
 	put(t, f.pool, f.id, 2, "busy", "agent", "assistant", "working")
@@ -518,6 +521,24 @@ func TestReplaceBeforeTokenCap(t *testing.T) {
 	}
 	if d, _ := f.store.Draining(ctx, f.id); d {
 		t.Fatal("the drain must end with the replacement")
+	}
+}
+
+// A pod with no start time (never stamped) is never Aged: the migration backfills live rows, nothing else is replaced.
+func TestStandingRows_NullPodStartNotAged(t *testing.T) {
+	ctx := context.Background()
+	store, pool, id := newCharacter(t)
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_started_at = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.StandingRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.ID == id && r.Aged {
+			t.Fatal("a NULL pod_started_at must not be Aged")
+		}
 	}
 }
 

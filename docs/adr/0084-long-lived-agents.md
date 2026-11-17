@@ -11,6 +11,11 @@
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
+- **Built:** appendix slice 10: token cap (migration 000035: `sessions.pod_started_at`, stamped by `SetPodImages`).
+  - `repinStanding` replaces a live pod older than `PodLifetime - ReplaceMargin` (12h - 30m) through the re-pin
+    drain, at the same version; it also runs when the registry cannot be read. The migration backfills running
+    characters as aged, so each is replaced once instead of dying undrained. A test pins `PodLifetime` to the
+    provisioner's constant. The vault label before the mint, and revocation at once, are the existing paths.
 - **Built:** appendix slice 8: reach (migration 000034: `sessions.spawn_reported_at`).
   - New spec: `spawns.allow` (a standing definition only; each entry a valid single-shot definition that is not a
     first responder), `limits.spawns` (`concurrent` default 1, `perHour` 6, `perDay` 24, applied where read) and
@@ -61,8 +66,7 @@
     that ends without a new pod (the head widens, reverts or cannot be read) ends the drain; entries it held back are
     delivered to the live pod. A character whose pin is revoked or widened is not re-warmed until Stop and Start.
     Alerts are remembered per session and kind: the stall alert clears when output arrives or the pod changes.
-  - Not in this slice: `spawns.allow` in the widening test (the spec has none yet) and the 12 h token-cap
-    replacement.
+  - Not in this slice: `spawns.allow` in the widening test (the spec has none yet).
 - **Built:** appendix slice 4: threads and delivery per thread (migration 000031).
   - `transcript.thread_key` and `session_threads` (cursor, SDK session id, last activity, effect and crash marks). The
     owner's message to a new key opens a thread (`PostMessage.thread_key`); `CloseStandingThread` or 7 idle days close

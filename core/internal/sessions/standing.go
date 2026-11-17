@@ -291,6 +291,10 @@ func (l *Loop) repinStanding(ctx context.Context) {
 			l.refused[r.ID] = true
 			l.alertOnce(ctx, r.ID, "revoked", "its definition was revoked; Stop it, or fix the definition")
 			continue
+		case err != nil && r.Live && r.Aged:
+			// The registry cannot tell, but the pod is about to hit its token cap: replace it at the version it
+			// already runs (the warm checks the pin again), rather than let the Job die undrained at its deadline.
+			head = definitions.Head{SHA: r.SHA}
 		case err != nil:
 			continue // the registry cannot tell: nothing moves
 		}
