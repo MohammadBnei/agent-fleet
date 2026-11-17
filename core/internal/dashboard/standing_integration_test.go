@@ -177,7 +177,7 @@ func TestStandingProfileCarriesMemoryGate(t *testing.T) {
 	if err := reg.Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	s.caps.MaxExternal, s.caps.MaxPerMember = 2, 2
+	s.caps.MaxStanding = 2
 	res, err := s.StartStanding(ctx, connect.NewRequest(&agentfleetv1.StartStandingRequest{Definition: "dev-stander"}))
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +234,7 @@ func TestStandingThreads_OpenCloseAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := res.Msg.GetSession().GetId()
-	s.caps = sessions.Caps{MaxLive: 5, MaxDefinition: 2, MaxExternal: 2, MaxPerMember: 2} // a character draws on the client pool until slice 6
+	s.caps = sessions.Caps{MaxLive: 5, MaxDefinition: 2, MaxExternal: 2, MaxPerMember: 2, MaxStanding: 2}
 	post := func(thread, text string) error {
 		_, err := s.PostMessage(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: id, Text: text, ThreadKey: thread}))
 		return err

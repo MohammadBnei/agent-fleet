@@ -23,7 +23,7 @@ func TestLoadDefaults(t *testing.T) {
 		PrometheusURL:       "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090",
 		ProvisionerGRPCAddr: "provisioner.agent-fleet.svc.cluster.local:9090",
 		STTAddr:             "ukubi-stt.ukubi-stt.svc.cluster.local:9090",
-		MaxInFlight:         5, MaxDefinitionSessions: 0, MaxExternalSessions: 0, MaxSessionsPerMember: 1,
+		MaxInFlight:         5, MaxDefinitionSessions: 0, MaxExternalSessions: 0, MaxSessionsPerMember: 1, MaxStandingSessions: 2,
 		StopGrace: 30 * time.Second, IdleTimeout: 30 * time.Minute, StartupStall: 3 * time.Minute, TurnStall: 90 * time.Second,
 		DecisionWait:     45 * time.Second,
 		SessionRetention: 240 * time.Hour,
@@ -152,7 +152,7 @@ func TestLoadDecisionWaitClamps(t *testing.T) {
 // turns all four back to the defaults (5, 0, 0, 1), which switches the inner pools off.
 func TestLoadPoolsWarn(t *testing.T) {
 	defaults := defaultsFor(t, nil)
-	for _, k := range []string{"MAX_IN_FLIGHT_TASKS", "MAX_DEFINITION_SESSIONS", "MAX_EXTERNAL_SESSIONS", "MAX_SESSIONS_PER_MEMBER"} {
+	for _, k := range []string{"MAX_IN_FLIGHT_TASKS", "MAX_DEFINITION_SESSIONS", "MAX_EXTERNAL_SESSIONS", "MAX_SESSIONS_PER_MEMBER", "MAX_STANDING_SESSIONS"} {
 		for _, v := range []string{"abc", "1.5", "2x", " 2"} {
 			c, err := Load(env(map[string]string{k: v}))
 			if err != nil || len(c.Warnings) != 1 || !strings.HasPrefix(c.Warnings[0], k+"=") {
@@ -391,7 +391,7 @@ func TestRefusalsCoverEveryRule(t *testing.T) {
 	for _, r := range refusals {
 		covered[r.key] = true
 	}
-	for _, k := range []string{"MAX_IN_FLIGHT_TASKS", "MAX_DEFINITION_SESSIONS", "MAX_EXTERNAL_SESSIONS", "MAX_SESSIONS_PER_MEMBER"} {
+	for _, k := range []string{"MAX_IN_FLIGHT_TASKS", "MAX_DEFINITION_SESSIONS", "MAX_EXTERNAL_SESSIONS", "MAX_SESSIONS_PER_MEMBER", "MAX_STANDING_SESSIONS"} {
 		covered[k] = true // TestLoadPoolsWarn
 	}
 	if !reflect.DeepEqual(validated, covered) {
@@ -471,5 +471,18 @@ func TestRefusalCarriesTheWarnings(t *testing.T) {
 	}
 	if _, err := Load(env(map[string]string{"CORE_PORT": "abc"})); err != nil {
 		t.Errorf("a warning alone refused: %v", err)
+	}
+}
+
+func TestMaxStandingSessions(t *testing.T) {
+	if c := mustLoad(t, nil); c.MaxStandingSessions != 2 {
+		t.Errorf("default %d, want 2", c.MaxStandingSessions)
+	}
+	if c := mustLoad(t, map[string]string{"MAX_STANDING_SESSIONS": "3"}); c.MaxStandingSessions != 3 || c.Warnings != nil {
+		t.Errorf("set: %d, warnings %v", c.MaxStandingSessions, c.Warnings)
+	}
+	c, err := Load(env(map[string]string{"MAX_STANDING_SESSIONS": "-1"}))
+	if err != nil || c.MaxStandingSessions != 2 || len(c.Warnings) != 1 {
+		t.Errorf("negative: %d, warnings %v, %v; want the default and one warning", c.MaxStandingSessions, c.Warnings, err)
 	}
 }

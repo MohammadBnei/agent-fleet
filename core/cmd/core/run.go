@@ -330,7 +330,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions, MaxExternal: cfg.MaxExternalSessions, MaxPerMember: cfg.MaxSessionsPerMember}, loki, prom, scheduleStore, version, cfg.ClaudeModel)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions, MaxExternal: cfg.MaxExternalSessions, MaxPerMember: cfg.MaxSessionsPerMember, MaxStanding: cfg.MaxStandingSessions}, loki, prom, scheduleStore, version, cfg.ClaudeModel)
 	dashboardSvc.SetDefinitions(defs)
 	packStore := packs.NewStore(pool)
 	defs.SetOnFiles(packStore.OnDefinitionFiles)

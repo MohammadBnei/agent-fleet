@@ -11,6 +11,9 @@
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
+- **Built:** appendix slice 6: counting. Standing rows count only in `MAX_STANDING_SESSIONS` (default 2) and leave
+  `MaxLive`, `MaxDefinition` and a definition's concurrency. Not in this slice: the spawn sub-pool and the pool-sum
+  config check, which need `limits.spawns` and so move to slice 8.
 - **Built:** appendix slice 5: sweeps, re-warm and re-pin (migration 000033: `sessions.restart_after`, `drain_started_at`, `warm_failures`).
   - The idle sweep skips a character; the stop-grace sweep skips it unless the owner stopped it; a startup stall alerts
     once and tears nothing down.
@@ -349,13 +352,13 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
    - Re-pin in place drains every thread, and is refused on a widening.
 6. **Counting.**
    - Standing rows count only in `MAX_STANDING_SESSIONS`.
-   - Spawns count in `MaxDefinition`, `MaxLive` and the sub-pool.
-   - The config check on the pool sum.
 7. **Set enforcement.**
    - An untrusted event never reaches a character.
    - Sidecar-local B and C tools are refused outside the set.
 8. **Reach.**
    - `SpawnWorker` only for `spawns.allow`; the run's end appends an entry.
+   - Spawns count in `MaxDefinition`, `MaxLive` and the character's sub-pool (`limits.spawns.concurrent`).
+   - The config check: `MAX_DEFINITION_SESSIONS` is not below the sum of the characters' sub-pools.
    - `OpenIssue` stays within `owns.repos`.
    - `ViewLogs` is scoped by namespace.
    - `ListResponderCards` returns typed fields only.

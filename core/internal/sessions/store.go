@@ -161,6 +161,9 @@ type Caps struct {
 	// MaxDefinition, so members and clients cannot take it from an admin.
 	MaxExternal  int
 	MaxPerMember int
+	// MaxStanding is the pool OUTSIDE MaxLive for standing characters (MAX_STANDING_SESSIONS, docs/adr/0084 §9):
+	// standing rows count only here, and never in MaxLive, MaxDefinition or a definition's concurrency.
+	MaxStanding int
 }
 
 // ErrAtCapacity is returned by ReserveSlot when the fleet already has
@@ -849,12 +852,9 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	var live int
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM sessions
-		WHERE pod_phase = ANY($1) AND archived_at IS NULL
+		WHERE pod_phase = ANY($1) AND archived_at IS NULL AND lifecycle IS DISTINCT FROM 'standing'
 	`, livePhases).Scan(&live); err != nil {
 		return "", fmt.Errorf("reserve slot: count: %w", err)
-	}
-	if live >= caps.MaxLive {
-		return "", fmt.Errorf("%w (%d live sessions) — stop one first", ErrAtCapacity, caps.MaxLive)
 	}
 
 	// Definition sessions also draw from the definition pool and their own
@@ -862,29 +862,34 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	var (
 		defName, owner          *string
 		stopped, defValid       bool
+		standing                bool
 		concurrency             *int
 		poolLive, defLive       int
 		externalLive, ownerLive int
+		standingLive            int
 	)
 	// defLive counts only external sessions of this definition when this one
 	// is external (docs/adr/0066 §8): limits.concurrency bounds members and
 	// clients, never an admin's console session.
 	err = tx.QueryRow(ctx, `
 		SELECT s.definition_name, s.owner, s.stopped_at IS NOT NULL, COALESCE(d.valid, false),
-		       (d.effective->'limits'->>'concurrency')::int,
+		       (d.effective->'limits'->>'concurrency')::int, s.lifecycle IS NOT DISTINCT FROM 'standing',
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.definition_name IS NOT NULL),
+		                                          AND o.definition_name IS NOT NULL AND o.lifecycle IS DISTINCT FROM 'standing'),
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.definition_name = s.definition_name
+		                                          AND o.definition_name = s.definition_name AND o.lifecycle IS DISTINCT FROM 'standing'
 		                                          AND (s.owner IS NULL OR o.owner IS NOT NULL)),
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.definition_name IS NOT NULL AND o.owner IS NOT NULL),
+		                                          AND o.definition_name IS NOT NULL AND o.owner IS NOT NULL
+		                                          AND o.lifecycle IS DISTINCT FROM 'standing'),
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.owner = s.owner)
+		                                          AND o.owner = s.owner AND o.lifecycle IS DISTINCT FROM 'standing'),
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.lifecycle = 'standing')
 		  FROM sessions s
 		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
 		 WHERE s.id = $1 AND s.archived_at IS NULL
-	`, id, livePhases).Scan(&defName, &owner, &stopped, &defValid, &concurrency, &poolLive, &defLive, &externalLive, &ownerLive)
+	`, id, livePhases).Scan(&defName, &owner, &stopped, &defValid, &concurrency, &standing, &poolLive, &defLive, &externalLive, &ownerLive, &standingLive)
 	if err == pgx.ErrNoRows {
 		return "", ErrNotFound
 	}
@@ -894,7 +899,17 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	if stopped {
 		return "", ErrStopped
 	}
-	if defName != nil {
+	if standing {
+		if !defValid {
+			return "", ErrDefinitionInvalid
+		}
+		if standingLive >= caps.MaxStanding {
+			return "", fmt.Errorf("%w: standing pool full (%d/%d)", ErrAtCapacity, standingLive, caps.MaxStanding)
+		}
+	} else if live >= caps.MaxLive {
+		return "", fmt.Errorf("%w (%d live sessions) — stop one first", ErrAtCapacity, caps.MaxLive)
+	}
+	if defName != nil && !standing {
 		// The revocation path proper is WarmIfIdle's pinned==current check;
 		// this catches a re-judge landing between that check and this
 		// transaction, and keeps a NULL concurrency out of the comparison.
@@ -1038,7 +1053,11 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("reserve slot: commit: %w", err)
 	}
-	slog.Info("sessions ReserveSlot", "sessionId", id, "live", live+1, "cap", caps.MaxLive)
+	pool, n, limit := "live", live+1, caps.MaxLive
+	if standing {
+		pool, n, limit = "standing", standingLive+1, caps.MaxStanding
+	}
+	slog.Info("sessions ReserveSlot", "sessionId", id, "pool", pool, "count", n, "cap", limit)
 	return leaseID, nil
 }
 

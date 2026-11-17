@@ -77,7 +77,7 @@ type Config struct {
 	// the actual human-followable ceiling, not a technical limit).
 	//
 	// It is no longer a queue depth — nothing queues. It is enforced in
-	// sessions.ReserveSlot against CountLivePods, under an advisory lock,
+	// sessions.ReserveSlot (standing rows leave this count; MaxStandingSessions holds them), under an advisory lock,
 	// and a session that cannot get a slot is refused outright rather than
 	// left pending.
 	MaxInFlight int
@@ -91,6 +91,9 @@ type Config struct {
 	// can warm.
 	MaxExternalSessions  int
 	MaxSessionsPerMember int
+	// MaxStandingSessions is the standing characters' pool OUTSIDE MaxInFlight (docs/adr/0084 §9). Default 2; 0 turns
+	// characters off.
+	MaxStandingSessions int
 	// RepoOverridesPath is FLEET_REPO_OVERRIDES, infra-bootstrap's
 	// fleet-repo-overrides file as mounted (docs/adr/0074). Empty turns the
 	// GitHub repos sync off, and repos keeps whatever rows it has (kind).
@@ -354,6 +357,11 @@ func Load(getenv func(string) string) (Config, error) {
 	c.MaxDefinitionSessions = l.count("MAX_DEFINITION_SESSIONS", 0)
 	c.MaxExternalSessions = l.count("MAX_EXTERNAL_SESSIONS", 0)
 	c.MaxSessionsPerMember = l.count("MAX_SESSIONS_PER_MEMBER", 1)
+	c.MaxStandingSessions = l.count("MAX_STANDING_SESSIONS", 2)
+	if c.MaxStandingSessions < 0 {
+		l.warn("MAX_STANDING_SESSIONS", strconv.Itoa(c.MaxStandingSessions), "must be 0 or more")
+		c.MaxStandingSessions = 2
+	}
 	if err := checkCapacity(c.MaxInFlight, c.MaxDefinitionSessions, c.MaxExternalSessions, c.MaxSessionsPerMember); err != nil {
 		// The relation is the pools' own rule, not one value's: a broken one turns the inner pools off (the defaults)
 		// rather than keep a cap the numbers contradict, and says why.
