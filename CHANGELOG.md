@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.36.0](https://github.com/MohammadBnei/agent-fleet/compare/7.35.0...7.36.0) (2026-11-17)
+
+### Features
+
+* **provisioner:** character memory mount and Longhorn volume (ADR-0084 slice 9) ([#419](https://github.com/MohammadBnei/agent-fleet/issues/419)) ([2a54130](https://github.com/MohammadBnei/agent-fleet/commit/2a541300a57e88611eebb37eb42c0fe79425488c))
+
 # [7.35.0](https://github.com/MohammadBnei/agent-fleet/compare/7.34.1...7.35.0) (2026-11-17)
 
 ### Features
