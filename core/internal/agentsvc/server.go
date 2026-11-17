@@ -1,9 +1,9 @@
 package agentsvc
 
 import (
-	"sync"
 	"context"
 	"slices"
+	"sync"
 
 	"connectrpc.com/connect"
 

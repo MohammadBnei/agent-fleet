@@ -50,8 +50,7 @@ func (s *Server) invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		return nil, err
 	}
 	m := req.Msg
-	switch {
-	case p.Client == "":
+	if p.Client == "" {
 		return nil, errkeys.Connect(connect.CodePermissionDenied, errkeys.KeyInternal, errors.New("only clients may invoke"))
 	}
 	if err := checkInvokeBounds(m.GetIdempotencyKey(), m.GetInput()); err != nil {
