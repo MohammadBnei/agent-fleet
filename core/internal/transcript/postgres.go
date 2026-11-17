@@ -110,17 +110,18 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 			return 0, fmt.Errorf("reply thread: %w", err)
 		}
 	}
+	contextOnly, _ := ctx.Value(contextOnlyCtx{}).(bool)
 	var seq int64
 	var msgTypePtr *string
 	if msgType != "" {
 		msgTypePtr = &msgType
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq, author_sub, author_name, thread_key)
-		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq, author_sub, author_name, thread_key, context_only)
+		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9, $10
 		FROM transcript WHERE session_id = $1
 		RETURNING seq
-	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq, author.Sub, author.Name, thread).Scan(&seq)
+	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq, author.Sub, author.Name, thread, contextOnly).Scan(&seq)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "transcript_one_reply_idx" {
@@ -128,7 +129,7 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		}
 		return 0, fmt.Errorf("insert: %w", err)
 	}
-	e := Entry{Seq: seq, From: from, Text: text, Type: msgType, ReplyTo: replyToSeq, AuthorName: author.Name, AuthorSub: author.Sub, ThreadKey: thread}
+	e := Entry{Seq: seq, From: from, Text: text, Type: msgType, ReplyTo: replyToSeq, AuthorName: author.Name, AuthorSub: author.Sub, ThreadKey: thread, ContextOnly: contextOnly}
 	if err := noteThread(ctx, tx, taskID, e); err != nil {
 		return 0, err
 	}

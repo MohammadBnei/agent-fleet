@@ -25,6 +25,7 @@ type Server struct {
 	dash        console
 	sessions    *sessions.Store
 	transcr     transcript.Store
+	budgetSeen  map[string]bool // characters whose budget gauges ReportBudgets set last pass
 	hub         *dashboard.Hub
 	decisions   *decisions.Store
 	cardFx      CardEffects

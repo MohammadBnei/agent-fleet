@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -67,6 +69,13 @@ func TestReportBudgets_CardAndRaise(t *testing.T) {
 	if n, _ := cards(d); n != 1 {
 		t.Fatalf("a character at its budget has %d cards, want 1", n)
 	}
+	// The alert's two gauges: d spent one result in the hour against a budget of 1.
+	if g := testutil.ToFloat64(metrics.CharacterTurnsLastHour.WithLabelValues("d")); g != 1 {
+		t.Errorf("turns_last_hour = %v, want 1", g)
+	}
+	if g := testutil.ToFloat64(metrics.CharacterTurnsPerDay.WithLabelValues("d")); g != 1 {
+		t.Errorf("turns_per_day = %v, want 1", g)
+	}
 	if n, _ := cards(e); n != 0 {
 		t.Fatalf("a character under its budget has %d cards, want 0", n)
 	}
@@ -79,6 +88,13 @@ func TestReportBudgets_CardAndRaise(t *testing.T) {
 	}
 	if held, _ := store.BudgetHeld(ctx, d); held {
 		t.Fatal("still held after raise_budget")
+	}
+	if dash.warms != nil {
+		t.Errorf("answering a budget card woke %v", dash.warms)
+	}
+	var ctxOnly bool
+	if err := pool.QueryRow(ctx, `SELECT context_only FROM transcript WHERE session_id = $1 AND type = 'answer'`, d).Scan(&ctxOnly); err != nil || !ctxOnly {
+		t.Errorf("the budget answer reaches the character: context_only = %v, %v", ctxOnly, err)
 	}
 	if err := s.ReportBudgets(ctx); err != nil {
 		t.Fatal(err)
@@ -111,5 +127,33 @@ func TestReportBudgets_CardAndRaise(t *testing.T) {
 	_ = pool.QueryRow(ctx, `SELECT budget_override_until::text FROM sessions WHERE id = $1`, e).Scan(&until)
 	if until != nil {
 		t.Errorf("e's override = %v, want none", *until)
+	}
+
+	// "Keep the hold" leaves the character held, wakes nothing and starts no turn for it.
+	keep, err := decs.Draft(ctx, transcr, decisions.Draft{SessionID: d, From: "system", Ask: "Lift it?", IdempotencyKey: "keep",
+		Subject: &agentfleetv1.CardSubject{Kind: "character", Repo: "d"},
+		Options: []*agentfleetv1.CardOption{
+			{Label: "Keep the hold", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
+			{Label: "Other", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET budget_override_until = NULL WHERE id = $1`, d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.AnswerDecision(ctx, as("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: keep.ID, OptionId: "1"})); err != nil {
+		t.Fatal(err)
+	}
+	if held, _ := store.BudgetHeld(ctx, d); !held {
+		t.Error("not held after Keep the hold")
+	}
+	if dash.warms != nil {
+		t.Errorf("Keep the hold woke %v", dash.warms)
+	}
+	var turns int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM transcript WHERE session_id = $1 AND type = 'answer' AND NOT context_only`, d).Scan(&turns)
+	if turns != 0 {
+		t.Errorf("%d answers reach the character", turns)
 	}
 }
