@@ -180,7 +180,7 @@ func TestSettleCrash_EffectRanPoisonAndTheRest(t *testing.T) {
 
 	settle := func() map[string]Settled {
 		t.Helper()
-		got, err := store.SettleCrash(ctx, id)
+		got, _, err := store.SettleCrash(ctx, id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +235,7 @@ func TestSettleCrash_ADifferentHeadRestartsTheCount(t *testing.T) {
 		if i > 0 {
 			put(t, pool, id, int64(10+i), "t", "agent", "assistant", "working again")
 		}
-		if got, err := store.SettleCrash(ctx, id); err != nil || len(got) != 0 {
+		if got, _, err := store.SettleCrash(ctx, id); err != nil || len(got) != 0 {
 			t.Fatalf("settled early: %+v %v", got, err)
 		}
 	}
@@ -245,7 +245,7 @@ func TestSettleCrash_ADifferentHeadRestartsTheCount(t *testing.T) {
 	}
 	put(t, pool, id, 3, "t", "human", "discussion", "two")
 	put(t, pool, id, 20, "t", "agent", "assistant", "working")
-	if got, err := store.SettleCrash(ctx, id); err != nil || len(got) != 0 {
+	if got, _, err := store.SettleCrash(ctx, id); err != nil || len(got) != 0 {
 		t.Fatalf("a new head settled on its first crash: %+v %v", got, err)
 	}
 }

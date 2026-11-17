@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"google.golang.org/grpc/metadata"
 
@@ -37,15 +40,23 @@ func (s *Server) noteEffect(ctx context.Context, sessionID, key string) {
 	}
 }
 
-// settleCrash closes, with a crash result, each thread head entry a CRASHED pod settled (docs/adr/0084 §4): one
-// an effect ran for, or the third crash in a row. The result advances the thread's cursor past the entry, so
-// the re-warm delivers what is behind it and never replays it; a poison entry also alerts the owner.
-func (s *Server) settleCrash(ctx context.Context, sessionID string) {
+// plannedLoss is a CRASHED report for a pod the node took away (Evicted, Preempted): no crash entry, no crash
+// count against a thread's head entry, and no back-off (docs/adr/0084 §3).
+func plannedLoss(reason string) bool {
+	return strings.HasPrefix(reason, "Evicted") || strings.HasPrefix(reason, "Preempted")
+}
+
+// settleCrash handles a CRASHED pod of a standing character (docs/adr/0084 §3, §4). Each thread head entry it
+// settled (an effect of it ran, or the third crash in a row) is closed with a crash result, which moves the
+// thread's cursor so the re-warm never replays it; a poison entry also alerts the owner. Every thread that had a
+// turn running gets a crash entry, or main when none did, and the third crash entry in an hour alerts the owner:
+// the re-warm stops there. The entry's key is the pod's, so the same crash seen twice is one entry.
+func (s *Server) settleCrash(ctx context.Context, sessionID, podName, reason string) {
 	t, err := s.sessions.Get(ctx, sessionID)
-	if err != nil || t == nil || t.Lifecycle == nil || *t.Lifecycle != sessions.Standing {
+	if err != nil || t == nil || t.Lifecycle == nil || *t.Lifecycle != sessions.Standing || plannedLoss(reason) {
 		return
 	}
-	settled, err := s.sessions.SettleCrash(ctx, sessionID)
+	settled, running, err := s.sessions.SettleCrash(ctx, sessionID)
 	if err != nil {
 		slog.ErrorContext(ctx, "coreserver: settling a crash", "sessionId", sessionID, "error", err)
 		return
@@ -60,5 +71,21 @@ func (s *Server) settleCrash(ctx context.Context, sessionID string) {
 		if st.Reason == "poison" {
 			s.announceBlocked(ctx, sessionID, fmt.Sprintf("entry %d of thread %q crashed its turn %d times and was skipped", st.Seq, st.Key, sessions.PoisonCrashes))
 		}
+	}
+	key := "podcrash:" + sessionID + ":" + podName
+	if podName == "" {
+		key = "podcrash:" + sessionID + ":" + uuid.NewString()
+	}
+	if len(running) == 0 {
+		running = []string{sessions.MainThread}
+	}
+	// One pod, one entry: the key is the pod's, so a thread named later by a re-sighting adds none.
+	if _, err := s.transcr.Append(transcript.WithThread(ctx, running[0]), sessionID, "fleet", sessions.CrashEntry(reason), "system", key); err != nil {
+		slog.ErrorContext(ctx, "coreserver: crash entry", "sessionId", sessionID, "error", err)
+		return
+	}
+	// ponytail: a pod runs one thread at a time (§4), so one entry covers "each thread with a turn running".
+	if n, err := s.sessions.CrashesInWindow(ctx, sessionID); err == nil && n >= sessions.MaxCrashes {
+		s.announceBlocked(ctx, sessionID, fmt.Sprintf("crashed %d times in an hour: core stopped re-warming it", n))
 	}
 }

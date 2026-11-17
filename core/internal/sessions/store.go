@@ -1097,7 +1097,11 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 		msg = &message
 	}
 	_, err := s.pool.Exec(ctx, `
-		UPDATE sessions SET pod_phase = $2, pod_message = $3, updated_at = now() WHERE id = $1
+		UPDATE sessions SET pod_phase = $2, pod_message = $3, updated_at = now(),
+		       -- docs/adr/0084 §3: every terminal path of a character stamps its re-warm clock.
+		       restart_after = CASE WHEN lifecycle = 'standing' AND $2 IN ('POD_PHASE_TERMINATED', 'POD_PHASE_CRASHED')
+		                            THEN now() ELSE restart_after END
+		WHERE id = $1
 	`, id, phase, msg)
 	if err != nil {
 		slog.Error("sessions SetPodPhase", "sessionId", id, "phase", phase, "error", err)
@@ -1400,6 +1404,8 @@ func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]
 		WHERE stop_requested_at IS NOT NULL
 		  AND stop_requested_at < now() - $1::interval
 		  AND pod_phase = ANY($2)
+		  -- docs/adr/0084 §3: a character is exempt, but the owner's Stop (stopped_at) still ends its pod.
+		  AND (lifecycle IS DISTINCT FROM 'standing' OR stopped_at IS NOT NULL)
 	`, grace, livePhases)
 }
 
@@ -1407,13 +1413,20 @@ func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]
 // anything (docs/adr/0040). Gated on activity_seen, which ReserveSlot
 // resets per pod — see the comment there for why it cannot be derived.
 func (s *Store) ListStartupStalledIDs(ctx context.Context, startupStall time.Duration) ([]string, error) {
-	return s.listIDs(ctx, `
+	return s.listIDs(ctx, startupStalled+` AND lifecycle IS DISTINCT FROM 'standing'`, startupStall, livePhases)
+}
+
+// ListStalledStandingIDs is ListStartupStalledIDs for the characters it skips: core alerts for these, it does not
+// tear them down (docs/adr/0084 §3).
+func (s *Store) ListStalledStandingIDs(ctx context.Context, startupStall time.Duration) ([]string, error) {
+	return s.listIDs(ctx, startupStalled+` AND lifecycle = 'standing' AND stopped_at IS NULL`, startupStall, livePhases)
+}
+
+const startupStalled = `
 		SELECT id FROM sessions
 		WHERE NOT activity_seen
 		  AND pod_phase = ANY($2)
-		  AND updated_at < now() - $1::interval
-	`, startupStall, livePhases)
-}
+		  AND updated_at < now() - $1::interval`
 
 // ListIdleSessionIDs finds sessions with a live pod nobody is talking to:
 // idle past idleTimeout, or for a definition session past its pinned
@@ -1457,6 +1470,7 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
 		WHERE s.pod_phase = ANY($1)
 		  AND s.last_active_at IS NOT NULL
+		  AND s.lifecycle IS DISTINCT FROM 'standing' -- docs/adr/0084 §3: a character is kept up, never idled out
 		  AND NOT EXISTS (
 		    SELECT 1 FROM decisions d
 		     WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
@@ -1685,7 +1699,7 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 	defer tx.Rollback(ctx) //nolint:errcheck
 	tag, err := tx.Exec(ctx, `
 		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
-		       agent_session_id = NULL, updated_at = now()
+		       agent_session_id = NULL, restart_after = NULL, drain_started_at = NULL, updated_at = now()
 		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL AND COALESCE(pod_phase, '') <> ALL($4)`,
 		id, sha, by, livePhases)
 	if err != nil {
@@ -1707,7 +1721,8 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 // down. False when the row is not standing or is already stopped.
 func (s *Store) MarkStandingStopped(ctx context.Context, id string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE sessions SET stopped_at = now(), stop_requested_at = COALESCE(stop_requested_at, now()), updated_at = now()
+		UPDATE sessions SET stopped_at = now(), stop_requested_at = COALESCE(stop_requested_at, now()), restart_after = NULL,
+		       drain_started_at = NULL, updated_at = now()
 		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NULL`, id)
 	if err != nil {
 		return false, fmt.Errorf("stop standing: %w", err)

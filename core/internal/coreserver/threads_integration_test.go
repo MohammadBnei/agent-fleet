@@ -166,7 +166,9 @@ func TestCrash_SettlesWithACrashResultAndAlertsOnPoison(t *testing.T) {
 	ctx := context.Background()
 	var alerts []string
 	s.SetNotifyBlockedFunc(func(_ context.Context, sessionID, _, _, summary string) error {
-		alerts = append(alerts, sessionID+": "+summary)
+		if strings.Contains(summary, "skipped") { // the poison alert; the crash-loop alert has its own test
+			alerts = append(alerts, sessionID+": "+summary)
+		}
 		return nil
 	})
 	thread(t, pool, id, "fx", 0)
@@ -178,9 +180,9 @@ func TestCrash_SettlesWithACrashResultAndAlertsOnPoison(t *testing.T) {
 	if err := store.NoteEffect(ctx, id, "fx", 1); err != nil {
 		t.Fatal(err)
 	}
-	crash := func() {
+	crash := func(pod string) {
 		t.Helper()
-		if err := s.applyPodEvent(ctx, &agentfleetv1.PodEvent{SessionId: id, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_CRASHED}); err != nil {
+		if err := s.applyPodEvent(ctx, &agentfleetv1.PodEvent{SessionId: id, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_CRASHED, PodName: pod}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -196,26 +198,26 @@ func TestCrash_SettlesWithACrashResultAndAlertsOnPoison(t *testing.T) {
 		}
 		return m
 	}
-	crash()
+	crash("p1")
 	if c := cursors(); c["fx"] != 2 || c["poison"] != 0 || len(alerts) != 0 {
 		t.Fatalf("after crash 1: cursors %v alerts %v; the effect-run entry should be done, poison not yet", c, alerts)
 	}
 	// The same crash reported again (a provisioner restart, a re-warm that failed before dispatch) is not a second
 	// attempt: no agent output above the last settle.
-	crash()
-	crash()
+	crash("p1")
+	crash("p1")
 	if c := cursors(); c["poison"] != 0 || len(alerts) != 0 {
 		t.Fatalf("repeated reports of one crash: cursors %v alerts %v; poison was counted twice", c, alerts)
 	}
-	put(t, pool, id, 50, "poison", "agent", "assistant", "working again")
-	crash()
-	put(t, pool, id, 51, "poison", "agent", "assistant", "and again")
-	crash()
+	put(t, pool, id, 60, "poison", "agent", "assistant", "working again")
+	crash("p2")
+	put(t, pool, id, 70, "poison", "agent", "assistant", "and again")
+	crash("p3")
 	if c := cursors(); c["poison"] != 4 || len(alerts) != 1 {
 		t.Fatalf("after crash 3: cursors %v alerts %v; the poison entry should be done and alerted", c, alerts)
 	}
 	// Replayed events settle nothing twice: the cursors have moved past both heads.
-	crash()
+	crash("p3")
 	if len(alerts) != 1 {
 		t.Fatalf("alerts after a fourth crash: %v", alerts)
 	}
@@ -325,4 +327,102 @@ func TestSubmitReview_NotesItsEntryBeforePosting(t *testing.T) {
 
 func metadataThread(ctx context.Context, th string) context.Context {
 	return withThread(metadata.NewIncomingContext(ctx, metadata.Pairs(mdThread, th)))
+}
+
+func crashEvent(id, pod, msg string) *agentfleetv1.PodEvent {
+	return &agentfleetv1.PodEvent{SessionId: id, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_CRASHED, PodName: pod, Message: msg}
+}
+
+func crashEntries(t *testing.T, pool *pgxpool.Pool, id string) (n int, threads []string) {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), `SELECT thread_key FROM transcript WHERE session_id = $1 AND "from" = 'fleet' AND type = 'system'
+		AND text LIKE $2 ORDER BY seq`, id, sessions.CrashEntryPrefix+"%")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var th string
+		if err := rows.Scan(&th); err != nil {
+			t.Fatal(err)
+		}
+		threads = append(threads, th)
+	}
+	return len(threads), threads
+}
+
+// docs/adr/0084 §3: every CRASHED path appends a crash entry with the pod's reason, to the thread whose turn was
+// running (main when none was); the same crash seen twice is one entry; Evicted and Preempted get none; the third
+// in an hour alerts the owner, and the re-warm stops.
+func TestCrash_AppendsACrashEntryPerPod(t *testing.T) {
+	ctx := context.Background()
+	s, store, pool, id := newCharacter(t)
+	var alerts []string
+	s.SetNotifyBlockedFunc(func(_ context.Context, _, _, _, summary string) error {
+		alerts = append(alerts, summary)
+		return nil
+	})
+	thread(t, pool, id, "busy", 0)
+	put(t, pool, id, 1, "busy", "human", "discussion", "go")
+	put(t, pool, id, 2, "busy", "agent", "assistant", "working")
+	apply := func(pod, msg string) {
+		t.Helper()
+		if err := s.applyPodEvent(ctx, crashEvent(id, pod, msg)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply("p1", "OOMKilled")
+	apply("p1", "OOMKilled") // re-sighting after a core restart
+	if n, th := crashEntries(t, pool, id); n != 1 || th[0] != "busy" {
+		t.Fatalf("entries %d in %v; want one, in the thread whose turn was running", n, th)
+	}
+	var text string
+	if err := pool.QueryRow(ctx, `SELECT text FROM transcript WHERE session_id = $1 AND text LIKE $2`, id, sessions.CrashEntryPrefix+"%").Scan(&text); err != nil || !strings.Contains(text, "OOMKilled") {
+		t.Fatalf("the entry must carry the pod's reason: %q %v", text, err)
+	}
+	apply("p2", "Evicted: node pressure")
+	apply("p3", "Preempted by a higher priority pod")
+	if n, _ := crashEntries(t, pool, id); n != 1 {
+		t.Fatalf("a node taking the pod away is not a crash: %d entries", n)
+	}
+	apply("p4", "Error") // nothing was running: main
+	if n, th := crashEntries(t, pool, id); n != 2 || th[1] != "main" {
+		t.Fatalf("entries %d in %v; want the second in main", n, th)
+	}
+	if len(alerts) != 0 {
+		t.Fatalf("alerted before the third crash: %v", alerts)
+	}
+	apply("p5", "Error")
+	if len(alerts) != 1 {
+		t.Fatalf("the third crash in an hour must alert the owner once: %v", alerts)
+	}
+	if n, err := store.CrashesInWindow(ctx, id); err != nil || n != 3 {
+		t.Fatalf("window = %d, %v", n, err)
+	}
+	if ids, err := store.ListRewarmStanding(ctx); err != nil || slices.Contains(ids, id) {
+		t.Fatalf("three crashes must stop the re-warm: %v %v", ids, err)
+	}
+}
+
+// A drain stops intake of new turns on every thread of a live pod; answers and aborts pass (docs/adr/0084 §3).
+func TestStreamHumanMessages_DrainHoldsNewTurnsBack(t *testing.T) {
+	s, store, pool, id := newCharacter(t)
+	thread(t, pool, id, "a", 0)
+	put(t, pool, id, 1, "a", "human", "discussion", "new turn")
+	put(t, pool, id, 2, "a", "human", "answer", "an answer")
+	put(t, pool, id, 3, "a", "human", "abort", "stop")
+	if _, err := store.Drain(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+	defer cancel()
+	_, sha, err := s.agentSpecOf(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &streamRecorder{ctx: ctx}
+	_ = s.StreamHumanMessages(&agentfleetv1.StreamHumanMessagesRequest{SessionId: id, AgentSpecSha: sha}, rec)
+	if !slices.Equal(rec.texts, []string{"a:an answer", "a:stop"}) {
+		t.Fatalf("delivered %v; want the answer and the abort, not the new turn", rec.texts)
+	}
 }

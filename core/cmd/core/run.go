@@ -191,6 +191,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		h, err := defs.Resolve(name)
 		return h.SHA, err == nil
 	})
+	// A character follows its definition (docs/adr/0084 §3).
+	sessionLoop.SetStandingHead(defs.Resolve)
 	sessionLoop.SetOnTick(func(ctx context.Context) {
 		// Before the sync, which returns early on failure: an expired card
 		// must not wait on a healthy registry.
@@ -381,6 +383,18 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// is findable only by someone already watching the dashboard.
 	if dc != nil {
 		coreSvc.SetNotifyBlockedFunc(dc.NotifyBlocked)
+		sessionLoop.SetAlert(func(ctx context.Context, id, summary string) {
+			repo, title := "", ""
+			if t, err := sessionStore.Get(ctx, id); err == nil && t != nil {
+				repo = t.Repo
+				if t.Title != nil {
+					title = *t.Title
+				}
+			}
+			if err := dc.NotifyBlocked(ctx, id, repo, title, summary); err != nil {
+				slog.Warn("sessions: character alert failed", "sessionId", id, "error", err)
+			}
+		})
 	}
 	// The console federates to authentik (infra-bootstrap ADR-0041).
 	//

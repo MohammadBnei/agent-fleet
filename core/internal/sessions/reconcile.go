@@ -68,6 +68,11 @@ type Loop struct {
 
 	// head is a definition's current version (SetDefinitionHead).
 	head func(name string) (sha string, ok bool)
+
+	// standingHead, alert and alerted serve a character's re-pin and alerts (standing.go).
+	standingHead StandingHeadFunc
+	alert        func(ctx context.Context, sessionID, summary string)
+	alerted      map[string]string
 }
 
 // defaultAnswerTimeout is limits.answerTimeout unset (docs/adr/0070 §6).
@@ -102,6 +107,7 @@ func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, 
 		turnStall:    turnStall,
 
 		jobMissingSince: map[string]time.Time{},
+		alerted:         map[string]string{},
 	}
 }
 
@@ -130,8 +136,10 @@ func (l *Loop) tick(ctx context.Context) {
 	l.reconcilePodPhases(ctx)
 	l.expireRuns(ctx)
 	l.endRuns(ctx)
+	l.keepStanding(ctx)
 	l.enforceStopGrace(ctx)
 	l.enforceStartupStall(ctx)
+	l.stalledStanding(ctx)
 	l.enforceIdleTimeout(ctx)
 	l.collectExpired(ctx)
 	l.publishLiveStateGauge(ctx)

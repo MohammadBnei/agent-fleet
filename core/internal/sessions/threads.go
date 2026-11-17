@@ -116,31 +116,46 @@ type Settled struct {
 	Reason string // "effect" or "poison"
 }
 
-// SettleCrash runs once per CRASHED pod of a standing session (docs/adr/0084 §4). A thread whose head entry
-// (the first turn-starting one at or above its cursor) had a turn running, shown by agent output above it and
-// above the thread's last result, has crashed on that entry. A crash counts once per attempt: agent output
-// above the one the last settle saw. A report with none (the same crash seen twice, a re-warm that failed
-// before the pod ran) changes nothing. The entry is settled, for the caller to close
-// with a crash result, when an effect of it ran (replaying would run it twice) or it has now crashed
-// PoisonCrashes times in a row. Any other crash leaves it for the re-warm.
-func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("settle crash: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-	rows, err := tx.Query(ctx, `SELECT st.thread_key, head.seq, COALESCE(st.effect_seq, -1), COALESCE(st.crash_seq, -1), st.crashes, top.seq
+// runningThreads selects the open threads of session $1 with a turn running: the head entry (the first
+// turn-starting one at or above the cursor) has agent output above it and above the thread's last result. top
+// is that output's highest seq.
+const runningThreads = `SELECT st.thread_key, head.seq, COALESCE(st.effect_seq, -1), COALESCE(st.crash_seq, -1), st.crashes, top.seq
 		FROM session_threads st
 		CROSS JOIN LATERAL (SELECT MIN(h.seq) AS seq FROM transcript h WHERE h.session_id = st.session_id
-		                      AND h.thread_key = st.thread_key AND h.seq >= st.cursor AND `+turnStarting+`) head
+		                      AND h.thread_key = st.thread_key AND h.seq >= st.cursor AND ` + turnStarting + `) head
 		CROSS JOIN LATERAL (SELECT MAX(t.seq) AS seq FROM transcript t WHERE t.session_id = st.session_id
 		              AND t.thread_key = st.thread_key AND t."from" = 'agent' AND t.seq > head.seq
 		              AND t.seq > COALESCE((SELECT MAX(r.seq) FROM transcript r WHERE r.session_id = st.session_id
 		                                      AND r.thread_key = st.thread_key AND r.type = 'result'), -1)) top
-		WHERE st.session_id = $1 AND st.closed_at IS NULL AND head.seq IS NOT NULL
-		  AND top.seq IS NOT NULL AND top.seq > COALESCE(st.crash_agent_seq, -1)`, id)
+		WHERE st.session_id = $1 AND st.closed_at IS NULL AND head.seq IS NOT NULL AND top.seq IS NOT NULL`
+
+// RunningThreads names the open threads of a standing session with a turn running (docs/adr/0084 §3): a re-pin
+// drain waits for them.
+func (s *Store) RunningThreads(ctx context.Context, id string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT q.thread_key FROM (`+runningThreads+`) q`, id)
 	if err != nil {
-		return nil, fmt.Errorf("settle crash: %w", err)
+		return nil, fmt.Errorf("running threads: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// SettleCrash runs once per CRASHED pod of a standing session (docs/adr/0084 §4). A thread whose head entry
+// (the first turn-starting one at or above its cursor) had a turn running, shown by agent output above it and
+// above the thread's last result, has crashed on that entry. A crash counts once per attempt: agent output
+// above the one the last settle saw. A report with none (the same crash seen twice, a re-warm that failed
+// before the pod ran) changes nothing. The second result names the threads with a turn running on this attempt, for
+// their crash entries. The entry is settled, for the caller to close
+// with a crash result, when an effect of it ran (replaying would run it twice) or it has now crashed
+// PoisonCrashes times in a row. Any other crash leaves it for the re-warm.
+func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, []string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("settle crash: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	rows, err := tx.Query(ctx, runningThreads+` AND top.seq > COALESCE(st.crash_agent_seq, -1)`, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("settle crash: %w", err)
 	}
 	type head struct {
 		key                           string
@@ -152,17 +167,19 @@ func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, error) {
 		return
 	})
 	if err != nil {
-		return nil, fmt.Errorf("settle crash: %w", err)
+		return nil, nil, fmt.Errorf("settle crash: %w", err)
 	}
 	var out []Settled
+	var running []string
 	for _, h := range heads {
+		running = append(running, h.key)
 		crashes := 1
 		if h.crashSeq == h.seq {
 			crashes = h.crashes + 1
 		}
 		if _, err := tx.Exec(ctx, `UPDATE session_threads SET crash_seq = $3, crashes = $4, crash_agent_seq = $5 WHERE session_id = $1 AND thread_key = $2`,
 			id, h.key, h.seq, crashes, h.topSeq); err != nil {
-			return nil, fmt.Errorf("settle crash: %w", err)
+			return nil, nil, fmt.Errorf("settle crash: %w", err)
 		}
 		switch {
 		case h.effect >= h.seq:
@@ -172,9 +189,9 @@ func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, error) {
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("settle crash: %w", err)
+		return nil, nil, fmt.Errorf("settle crash: %w", err)
 	}
-	return out, nil
+	return out, running, nil
 }
 
 // EffectKey is the idempotency key every effect method carries in a standing character's turn (docs/adr/0084

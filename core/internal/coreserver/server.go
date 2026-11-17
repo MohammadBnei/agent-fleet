@@ -825,7 +825,15 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 		}
 		cursor = nextSeq
 		var threads map[string]sessions.Thread
+		draining := false
 		if standing && len(entries) > 0 {
+			// A re-pin drain (docs/adr/0084 §3) stops intake: no new turn starts, while answers, permission
+			// responses and aborts pass. What it holds back reaches the new pod, from the thread's cursor.
+			// ponytail: this stream's own cursor moves past a held entry, so a drain that ends without a new pod
+			// leaves it for the next warm; the sweep re-pins or tears down, so that does not happen in practice.
+			if draining, err = s.sessions.Draining(ctx, taskID); err != nil {
+				return fmt.Errorf("StreamHumanMessages: %w", err)
+			}
 			ts, err := s.sessions.Threads(ctx, taskID)
 			if err != nil {
 				return fmt.Errorf("StreamHumanMessages: %w", err)
@@ -839,6 +847,9 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 			if standing {
 				th, ok := threads[e.ThreadKey]
 				if !ok || (th.Closed && e.Type != "abort") || (!th.Closed && e.Seq < th.Cursor) {
+					continue
+				}
+				if draining && (e.Type == "" || e.Type == "discussion") {
 					continue
 				}
 			}
@@ -927,7 +938,7 @@ func (s *Server) applyPodEvent(ctx context.Context, event *agentfleetv1.PodEvent
 			slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
 		}
 		if event.GetPhase() == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
-			s.settleCrash(ctx, event.GetSessionId())
+			s.settleCrash(ctx, event.GetSessionId(), event.GetPodName(), event.GetMessage())
 		}
 	}
 	return nil
