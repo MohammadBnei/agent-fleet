@@ -35,7 +35,7 @@ and trusted hand-offs (set B·C). `ops-lead.yaml` is the first: memory (`memory_
 `cluster.logNamespaces`, `list_responder_cards`, `open_issue` on `owns.repos`, each `<owner>/<repo>`) and `spawn_worker` for the one
 definition its `spawns.allow` names, `ops-worker.yaml` (a spawn target must be single-shot only and not a first
 responder). No client lists a character or its spawn target: Start is the admin's, and `spawns.allow` replaces
-`invokers`. `cluster.read` waits for infra-bootstrap #462 (`repo_test.go`).
+`invokers`. `cluster.read` mounts the fleet-read token (infra-bootstrap #462) in the sidecar.
 
 ## Credentials and onboarding (`docs/adr/0065`)
 
