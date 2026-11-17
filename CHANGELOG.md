@@ -1,5 +1,11 @@
 # Changelog
 
+## [7.34.1](https://github.com/MohammadBnei/agent-fleet/compare/7.34.0...7.34.1) (2026-11-17)
+
+### Bug Fixes
+
+* **remediation:** scale inverse carries --current-replicas; ADR-0084 log namespaces confirmed ([#418](https://github.com/MohammadBnei/agent-fleet/issues/418)) ([4f7aa76](https://github.com/MohammadBnei/agent-fleet/commit/4f7aa76b07e2862c4b5c04f09a9309a5a0956035))
+
 # [7.34.0](https://github.com/MohammadBnei/agent-fleet/compare/7.33.0...7.34.0) (2026-11-17)
 
 ### Features
