@@ -103,6 +103,13 @@ type fakeApp struct {
 	err    error
 	posted []github.Review
 	post   func(github.Review) (github.Posted, error)
+	prs    []string
+	prErr  error
+}
+
+func (f *fakeApp) OpenPR(_ context.Context, owner, repo, branch, headSHA, title, _ string) (string, error) {
+	f.prs = append(f.prs, owner+"/"+repo+" "+branch+" "+headSHA+" "+title)
+	return "https://x/pull/1", f.prErr
 }
 
 func (f *fakeApp) PostReview(_ context.Context, r github.Review) (github.Posted, error) {

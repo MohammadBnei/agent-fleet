@@ -243,3 +243,36 @@ func TestPostReview_StatusFailureKeepsTheReview(t *testing.T) {
 		t.Errorf("posted %+v, %d reviews", got, len(g.reviews))
 	}
 }
+
+// OpenPR opens against the default branch only while the branch is still at the approved commit.
+func TestOpenPR(t *testing.T) {
+	var opened []map[string]any
+	head := sha
+	a, f := newApp(t, false)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/MohammadBnei/notes/git/ref/heads/fix%2Fx" || r.URL.Path == "/repos/MohammadBnei/notes/git/ref/heads/fix/x":
+			_ = json.NewEncoder(w).Encode(map[string]any{"object": map[string]any{"sha": head}})
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/MohammadBnei/notes":
+			_ = json.NewEncoder(w).Encode(map[string]any{"default_branch": "trunk"})
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/MohammadBnei/notes/pulls":
+			var b map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			opened = append(opened, b)
+			_ = json.NewEncoder(w).Encode(map[string]any{"html_url": "https://github.com/MohammadBnei/notes/pull/9"})
+		default:
+			f.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	a.API = srv.URL
+	u, err := a.OpenPR(context.Background(), "MohammadBnei", "notes", "fix/x", sha, "Fix x", "body")
+	if err != nil || u != "https://github.com/MohammadBnei/notes/pull/9" || len(opened) != 1 ||
+		opened[0]["base"] != "trunk" || opened[0]["head"] != "fix/x" || opened[0]["title"] != "Fix x" {
+		t.Fatalf("open: %v %v %v", u, err, opened)
+	}
+	head = strings.Repeat("b", 40)
+	if _, err := a.OpenPR(context.Background(), "MohammadBnei", "notes", "fix/x", sha, "Fix x", "body"); !errors.Is(err, ErrStaleHead) || len(opened) != 1 {
+		t.Errorf("moved branch: %v opened %d", err, len(opened))
+	}
+}

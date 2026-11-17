@@ -201,6 +201,28 @@ interface and one deck stay.
   - **`open_session`:** an optional follow-up session, seeded with the card's typed context posted as an `agent`-authored
     context entry, never as a `human` one. It holds only the letters the owner ticks on the confirm page, so B·C at most.
     It is marked **supervised** in the console and the cockpit, and the owner steers or stops it from the console.
+- **Built in S07:** the card verbs are filed by core alone, so the sidecar's `draft_card` still offers `handoff` and
+  `close_threads` only.
+  - Each carries a canonical `payload` and its `payload_hash` (sha256 of verb and payload). Core checks the hash
+    again when the owner answers; a payload that moved is stale and the card stays open.
+  - A surface never answers one in place, even if reversible "yes": it goes through the confirm page.
+  - `catalogue` runs `remediations.Service.Select` for the writer's definition (the schema, denylist and rate limits
+    again, the executor's checks at pull). `open_pr` is the provisioner's `OpenPullRequest`: it refuses a branch that
+    moved past the approved commit, and core files and runs it only for a `BC` writer.
+  - `open_session` starts a session at T0 trust (`BC`) with the typed brief as an `agent` entry, the title labelled an
+    agent claim. The letter ticking on the confirm page is not built: it gets `BC`. It launches in `default` permission
+    mode (every tool asks, never the unattended `auto`), with `[supervised]` on its title. A console session is
+    admin-only, so every admin is its owner; `sessions.owner` is a definition-thread field (a DB check), so no per-owner
+    field is set until a migration adds one.
+  - Before the answer is recorded, core checks what can fail: `Check` (the catalogue's refusals and rate limit), the
+    target repo startable, and for `open_pr` that the PR's repo is the writer's own. An effect that still fails
+    after the answer (a busy fleet, a provisioner outage) is written to the card's thread as a note; the card is closed,
+    so core files a new one.
+  - The confirm page and the console show the canonical payload's fields beside the hash, the title labelled an agent
+    claim, and for `open_pr` the diff link for the approved commit. Branch names follow git's ref-name rules in core and
+    in the provisioner.
+  - `executor_step` is declared and refused, in the error "until ADR-0072's executor exists".
+  - The `alert` subject is the `alert_group` kind S06 added (thread key `alert/<groupKey>`).
 - **The alert webhook.** `/webhook/alertmanager` keeps filing alert proposals.
   - Today `OpenFromProposal` posts the proposal's body as a `human` entry (`core/internal/dashboard/server.go:419`).
     For an alert proposal, the body is posted as an `agent`-authored context entry labelled with its source instead,

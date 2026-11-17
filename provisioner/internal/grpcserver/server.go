@@ -83,6 +83,8 @@ type GitHub interface {
 	Owners(ctx context.Context) ([]string, error)
 	// PostReview posts an agent review and its agent-review status.
 	PostReview(ctx context.Context, r github.Review) (github.Posted, error)
+	// OpenPR opens a pull request from a pushed branch at an approved commit.
+	OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, body string) (string, error)
 }
 
 // SetGitHub wires the App (docs/adr/0074, 0075). Unset, ListGitHubRepos and
@@ -887,6 +889,53 @@ func (s *Server) PostReview(ctx context.Context, req *agentfleetv1.PostReviewReq
 	}
 	slog.Info("grpcserver PostReview", "repo", req.GetRepo(), "pr", req.GetPr(), "verdict", req.GetVerdict(), "event", p.Event, "status", p.Status, "url", p.URL)
 	return &agentfleetv1.PostReviewResponse{ReviewUrl: p.URL, Event: p.Event, StatusState: p.Status}, nil
+}
+
+var branchRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
+
+// validBranch: letters, digits, ._/- and git check-ref-format's rules (no "..", "//", a segment starting
+// with "." or ending ".lock", a trailing "/" or "."), so it is safe in an API path unescaped.
+func validBranch(b string) bool {
+	if !branchRe.MatchString(b) || strings.Contains(b, "..") || strings.Contains(b, "//") ||
+		strings.HasSuffix(b, "/") || strings.HasSuffix(b, ".") {
+		return false
+	}
+	for _, seg := range strings.Split(b, "/") {
+		if strings.HasPrefix(seg, ".") || strings.HasSuffix(seg, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
+// OpenPullRequest opens an owner-approved card's PR (docs/adr/0086 §4). core has checked the card, its
+// hash and the writer's trust; the shape is re-checked here, the trust boundary, and the branch must still
+// be at the approved commit.
+func (s *Server) OpenPullRequest(ctx context.Context, req *agentfleetv1.OpenPullRequestRequest) (*agentfleetv1.OpenPullRequestResponse, error) {
+	owner, repo, _ := strings.Cut(req.GetRepo(), "/")
+	switch {
+	case !reviewRepoRe.MatchString(req.GetRepo()) || strings.Trim(owner, ".") == "" || strings.Trim(repo, ".") == "":
+		return nil, status.Errorf(codes.InvalidArgument, "repo %q is not owner/name", req.GetRepo())
+	case !validBranch(req.GetBranch()):
+		return nil, status.Error(codes.InvalidArgument, "branch is not a valid branch name")
+	case !headSHARe.MatchString(req.GetHeadSha()):
+		return nil, status.Error(codes.InvalidArgument, "head_sha must be 40 lowercase hex")
+	case req.GetTitle() == "":
+		return nil, status.Error(codes.InvalidArgument, "title is required")
+	}
+	if s.gh == nil {
+		return nil, status.Error(codes.FailedPrecondition, "no GitHub App: a pull request cannot be opened")
+	}
+	u, err := s.gh.OpenPR(ctx, owner, repo, req.GetBranch(), req.GetHeadSha(), req.GetTitle(), req.GetBody())
+	var se *github.StatusError
+	if errors.Is(err, github.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	slog.Info("grpcserver OpenPullRequest", "repo", req.GetRepo(), "branch", req.GetBranch(), "url", u)
+	return &agentfleetv1.OpenPullRequestResponse{Url: u}, nil
 }
 
 // ListGitHubRepos is core's repos sync source (docs/adr/0074, amended by

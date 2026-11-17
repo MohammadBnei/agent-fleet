@@ -37,6 +37,10 @@ func setup() (Config, *fake) {
 	card := &agentfleetv1.Card{Ask: "Close it?", WriteOwn: true, Subject: &agentfleetv1.CardSubject{Repo: "o/r", Kind: "pr", Number: 7}, Options: []*agentfleetv1.CardOption{
 		{Id: "1", Label: "keep", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
 		{Id: "2", Label: "close all", Reversible: "no", Effect: &agentfleetv1.CardEffect{Verb: "close_threads"}},
+		{Id: "3", Label: "restart", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "catalogue", PayloadHash: "abcdef0123456789",
+			Payload: `{"action":"restart","kind":"deployment","namespace":"game","name":"web"}`}},
+		{Id: "4", Label: "open it", Reversible: "partial", Effect: &agentfleetv1.CardEffect{Verb: "open_pr", PayloadHash: "abcdef0123456789",
+			Payload: `{"repo":"o/r","branch":"fix/x","headSha":"` + strings.Repeat("a", 40) + `","title":"Fix x"}`}},
 	}}
 	perm := &agentfleetv1.Card{Ask: "Run Bash?", Detail: `{"command":"<script>alert(1)</script>"}`, Options: []*agentfleetv1.CardOption{
 		{Id: "allow", Label: "Allow once", Reversible: "no", Effect: &agentfleetv1.CardEffect{Verb: "grant"}},
@@ -330,5 +334,30 @@ func TestEffectText(t *testing.T) {
 		if got := effectText(&agentfleetv1.CardOption{Effect: &agentfleetv1.CardEffect{Verb: verb}}, s); got != want {
 			t.Errorf("%s: %q", verb, got)
 		}
+	}
+}
+
+// A reversible "yes" core verb is not answered in place (a surface is sent here by agentsvc.confirmFirst), and
+// the owner is shown the bound payload's fields, the title labelled an agent claim, and open_pr's diff.
+func TestGetCoreVerbShowsPayload(t *testing.T) {
+	c, _ := setup()
+	w := get(c, owner, "id=d1&option=3&v=3")
+	b := w.Body.String()
+	for _, want := range []string{"action: restart", "name: web", "namespace: game", "hash abcdef012345"} {
+		if w.Code != http.StatusOK || !strings.Contains(b, want) {
+			t.Errorf("catalogue lacks %q: %d %s", want, w.Code, b)
+		}
+	}
+	w = get(c, owner, "id=d1&option=4&v=3")
+	b = w.Body.String()
+	for _, want := range []string{"repo: o/r", "branch: fix/x", "title (agent claim): Fix x", "diff: https://github.com/o/r/compare/" + strings.Repeat("a", 40)} {
+		if w.Code != http.StatusOK || !strings.Contains(b, want) {
+			t.Errorf("open_pr lacks %q: %d %s", want, w.Code, b)
+		}
+	}
+	// And the form posts: the answer reaches Answer.
+	c2, f := setup()
+	if w := post(c2, owner, form(t, c2, "id=d1&option=3&v=3"), fleet); w.Code != http.StatusOK || f.calls != 1 {
+		t.Errorf("post: %d calls %d", w.Code, f.calls)
 	}
 }

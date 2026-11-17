@@ -489,6 +489,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	memberInterceptors = connectInterceptors(tr, true,
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.AdminOrigins, cfg.DevOrigins...))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
+	remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
+	agentSvc.SetCardEffects(agentsvc.CardEffects{
+		Remediate: remSvc.Select,
+		Check:     remSvc.Check,
+		OpenPR:    provisioner.OpenPullRequest,
+	})
 	// The confirm page for a card answer from a surface (docs/adr/0082 §7). Behind the gate, not exempt: it reads
 	// the gate's identity, and an unauthenticated visit is sent to login and back. Gate off: not mounted.
 	if confirmKey != nil {

@@ -1,5 +1,13 @@
 # Changelog
 
+# [7.31.0](https://github.com/MohammadBnei/agent-fleet/compare/7.30.1...7.31.0) (2026-11-16)
+
+### Features
+
+* **core:** card verbs catalogue, open_pr, open_session, executor_step (ADR-0086 §4) ([#410](https://github.com/MohammadBnei/agent-fleet/issues/410)) ([c15e5c1](https://github.com/MohammadBnei/agent-fleet/commit/c15e5c13c4ec58f399b15a4fded5ac8cd4f53fe9))
+
+## [7.30.1](https://github.com/MohammadBnei/agent-fleet/compare/7.30.0...7.30.1) (2026-11-16)
+
 # [7.30.0](https://github.com/MohammadBnei/agent-fleet/compare/7.29.0...7.30.0) (2026-11-16)
 
 ### Features
