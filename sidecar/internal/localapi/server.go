@@ -45,6 +45,7 @@ func New(core *coreclient.Client) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /journal", journalHandler(core))
 	mux.HandleFunc("POST /session-id", sessionIDHandler(core))
+	mux.HandleFunc("POST /turn", turnHandler(core))
 	mux.HandleFunc("POST /telemetry", telemetryHandler(core))
 	mux.HandleFunc("POST /message", messageHandler(core))
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
@@ -131,11 +132,31 @@ func journalHandler(core *coreclient.Client) http.HandlerFunc {
 	}
 }
 
+// turnHandler is how the worker names the thread and entry its one running turn answers (docs/adr/0084 §4): from
+// then on every call this sidecar makes to core carries the thread, and every effect method a key of
+// (session, thread, entry seq, call ordinal). An empty thread ends the turn.
+func turnHandler(core *coreclient.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Thread string `json:"thread"`
+			Seq    int64  `json:"seq"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		core.SetTurn(body.Thread, body.Seq)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
 func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			SessionID string `json:"sessionId"`
 			Model     string `json:"model"`
+			// The thread this SDK session id belongs to (docs/adr/0084 §4); "" is main.
+			ThreadKey string `json:"threadKey"`
 			// No leaseId: the sidecar sends its own lease, so core can still
 			// reject the write if this pod was replaced (docs/adr/0041), and
 			// the worker holds no copy (docs/adr/0064). An older worker's
@@ -145,7 +166,7 @@ func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := core.SaveSessionID(r.Context(), body.SessionID, body.Model); err != nil {
+		if err := core.SaveSessionID(r.Context(), body.SessionID, body.Model, body.ThreadKey); err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
@@ -203,6 +224,9 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 			// Core dedups an append on this key (docs/adr/0070 §3); empty
 			// means never deduplicated.
 			IdempotencyKey string `json:"idempotencyKey"`
+			// The thread of a standing character's turn that wrote this (docs/adr/0084 §4), when it is not the
+			// turn running now. Empty files it under the running turn's.
+			ThreadKey string `json:"threadKey"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -221,10 +245,11 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 		}
 		var seq int64
 		var err error
+		ctx := coreclient.WithThread(r.Context(), body.ThreadKey)
 		if body.ReplyTo > 0 {
-			seq, err = core.AppendReplyMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey, body.ReplyTo)
+			seq, err = core.AppendReplyMessage(ctx, body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey, body.ReplyTo)
 		} else {
-			seq, err = core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey)
+			seq, err = core.SendMessage(ctx, body.From, body.Text, stringToProtoType(body.Type), body.IdempotencyKey)
 		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
@@ -280,7 +305,7 @@ func humanMessagesHandler(core *coreclient.Client) http.HandlerFunc {
 			done <- core.StreamHumanMessages(r.Context(), sinceSeq, func(entry *agentfleetv1.TranscriptEntry) {
 				payload, _ := json.Marshal(map[string]any{
 					"seq": entry.GetSeq(), "from": entry.GetFrom(), "text": entry.GetText(), "type": protoTypeToString(entry.GetType()),
-					"replyTo": entry.ReplyTo, "authorName": entry.GetAuthorName(),
+					"replyTo": entry.ReplyTo, "authorName": entry.GetAuthorName(), "threadKey": entry.GetThreadKey(),
 				})
 				write([]byte("data: " + string(payload) + "\n\n"))
 			})
@@ -415,6 +440,11 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 		// How long the gate waits on a decision (docs/adr/0082 §5); 0 is
 		// the worker's own default.
 		response["decisionWaitMs"] = resp.GetDecisionWaitMs()
+		// A standing character's other threads' SDK session ids (docs/adr/0084 §4); main resumes from the
+		// worker's own RESUME_SESSION_ID.
+		if ids := resp.GetThreadSessionIds(); len(ids) > 0 {
+			response["threadSessionIds"] = ids
+		}
 		// For the commit hook's Agent-Definition trailer (worker/git-hooks).
 		if session.DefinitionSha != nil {
 			response["definitionSha"] = *session.DefinitionSha

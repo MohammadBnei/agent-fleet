@@ -81,6 +81,12 @@ func agentSpec(eff *definitions.Spec, lifecycle string) (*agentfleetv1.AgentSpec
 	// docs/adr/0068 §4: a workspace an island host serves gets the
 	// script-write ask in the worker.
 	a.ScriptAsk = eff.Embed != nil && len(eff.Embed.Origins) > 0
+	if lifecycle == sessions.Standing {
+		// docs/adr/0084 §4: the worker runs one SDK session per thread. A standing row's agent_spec_sha differs
+		// from the one a resident session of the same definition would have, which is only fair: it is a
+		// different worker mode.
+		a.Lifecycle = lifecycle
+	}
 	if lifecycle == "single-shot" {
 		a.Lifecycle = lifecycle
 		schema, err := definitions.OutputSchemaJSON(eff)

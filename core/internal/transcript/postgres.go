@@ -98,17 +98,29 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		return 0, fmt.Errorf("check idempotency: %w", err)
 	}
 
+	thread, named := threadOf(ctx)
+	if !ValidThread(thread) {
+		return 0, ErrBadThread
+	}
+	if !named && replyToSeq != nil {
+		// An answer, a permission response or the worker's own resolution belongs to the thread of the entry it
+		// replies to, whoever appends it (docs/adr/0084 §4).
+		err := tx.QueryRow(ctx, `SELECT thread_key FROM transcript WHERE session_id = $1 AND seq = $2`, taskID, *replyToSeq).Scan(&thread)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("reply thread: %w", err)
+		}
+	}
 	var seq int64
 	var msgTypePtr *string
 	if msgType != "" {
 		msgTypePtr = &msgType
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq, author_sub, author_name)
-		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, '')
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq, author_sub, author_name, thread_key)
+		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9
 		FROM transcript WHERE session_id = $1
 		RETURNING seq
-	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq, author.Sub, author.Name).Scan(&seq)
+	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq, author.Sub, author.Name, thread).Scan(&seq)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "transcript_one_reply_idx" {
@@ -116,7 +128,10 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		}
 		return 0, fmt.Errorf("insert: %w", err)
 	}
-	e := Entry{Seq: seq, From: from, Text: text, Type: msgType, ReplyTo: replyToSeq, AuthorName: author.Name, AuthorSub: author.Sub}
+	e := Entry{Seq: seq, From: from, Text: text, Type: msgType, ReplyTo: replyToSeq, AuthorName: author.Name, AuthorSub: author.Sub, ThreadKey: thread}
+	if err := noteThread(ctx, tx, taskID, e); err != nil {
+		return 0, err
+	}
 	if err := s.hook(ctx, tx, taskID, e); err != nil {
 		return 0, fmt.Errorf("append hook: %w", err)
 	}
@@ -133,7 +148,7 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) ([]Entry, int64, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq, created_at,
-		       COALESCE(author_name, ''), COALESCE(author_sub, ''), context_only
+		       COALESCE(author_name, ''), COALESCE(author_sub, ''), context_only, thread_key
 		FROM transcript
 		WHERE session_id = $1 AND seq >= $2
 		ORDER BY seq
@@ -151,7 +166,7 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 	nextSeq := sinceSeq
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo, &e.CreatedAt, &e.AuthorName, &e.AuthorSub, &e.ContextOnly); err != nil {
+		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo, &e.CreatedAt, &e.AuthorName, &e.AuthorSub, &e.ContextOnly, &e.ThreadKey); err != nil {
 			return nil, sinceSeq, fmt.Errorf("scan: %w", err)
 		}
 		entries = append(entries, e)

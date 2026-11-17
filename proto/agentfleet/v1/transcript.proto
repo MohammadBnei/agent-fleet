@@ -84,6 +84,9 @@ message TranscriptEntry {
   // member's email, or "client:<name>"). Empty for console entries. The
   // worker shows it to the model; it is never parsed from text.
   string author_name = 8;
+  // docs/adr/0084 §4: the standing character's thread this entry belongs to;
+  // "main" for every entry of any other session.
+  string thread_key = 9;
 }
 
 message AppendTranscriptEntryRequest {

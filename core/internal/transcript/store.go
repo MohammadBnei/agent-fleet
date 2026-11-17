@@ -43,6 +43,8 @@ type Entry struct {
 	// AuthorSub is read back for "is this mine" only, and never serialized.
 	AuthorSub   string `json:"-"`
 	ContextOnly bool   `json:"contextOnly,omitempty"`
+	// ThreadKey is the standing character's thread the entry belongs to (docs/adr/0084 §4); "main" for every other row.
+	ThreadKey string `json:"threadKey,omitempty"`
 }
 
 // Author is who wrote an AgentService entry: a member's sub and display name,

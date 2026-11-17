@@ -544,6 +544,19 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 			return nil, err
 		}
 	}
+	if t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
+		// docs/adr/0084 §4: the SDK session ids the pod resumes its other threads with (main's is session.agent_session_id).
+		threads, err := s.sessions.Threads(ctx, req.GetId())
+		if err != nil {
+			return nil, err
+		}
+		resp.ThreadSessionIds = map[string]string{}
+		for _, th := range threads {
+			if th.Key != sessions.MainThread && !th.Closed && th.AgentSessionID != "" {
+				resp.ThreadSessionIds[th.Key] = th.AgentSessionID
+			}
+		}
+	}
 	return resp, nil
 }
 
@@ -614,8 +627,10 @@ func (s *Server) AuthorizeMemoryWrite(ctx context.Context, req *agentfleetv1.Aut
 	}
 	switch {
 	case sessions.HoldsTrust(t.TrustSet, "A"):
+		s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 		return &agentfleetv1.AuthorizeMemoryWriteResponse{Quarantine: true}, nil
 	case sessions.HoldsTrust(t.TrustSet, "C"):
+		s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 		return &agentfleetv1.AuthorizeMemoryWriteResponse{}, nil
 	}
 	return nil, errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,
@@ -708,7 +723,13 @@ func (s *Server) SaveAgentSessionId(ctx context.Context, req *agentfleetv1.SaveA
 	// silently — the pod starts, the SDK just begins a fresh conversation,
 	// and the only symptom is an agent with no memory of what was said before
 	// the Stop.
-	saved, err := s.sessions.SaveAgentSessionID(ctx, req.GetSessionId(), req.GetAgentSessionId(), req.GetModel(), req.GetLeaseId())
+	var saved bool
+	var err error
+	if k := req.GetThreadKey(); k != "" && k != sessions.MainThread {
+		saved, err = s.sessions.SaveThreadSessionID(ctx, req.GetSessionId(), k, req.GetAgentSessionId(), req.GetLeaseId())
+	} else {
+		saved, err = s.sessions.SaveAgentSessionID(ctx, req.GetSessionId(), req.GetAgentSessionId(), req.GetModel(), req.GetLeaseId())
+	}
 	if err == nil && !saved {
 		// The pod that sent this no longer holds the lease — it was torn
 		// down and another pod owns the session now. Dropping the write is
@@ -790,13 +811,37 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 		return err
 	}
 
+	// A standing character's entries are delivered per thread (docs/adr/0084 §4): none below its own thread's
+	// cursor (the stream starts at the lowest of them), none of a closed thread but the abort that ends its
+	// SDK session. Read per batch, since a thread opens and a result moves a cursor while this runs.
+	standing := false
+	if t, err := s.sessions.Get(ctx, taskID); err == nil && t != nil && t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
+		standing = true
+	}
 	for {
 		entries, nextSeq, err := s.transcr.ReadSince(ctx, taskID, cursor, 100)
 		if err != nil {
 			return fmt.Errorf("StreamHumanMessages: %w", err)
 		}
 		cursor = nextSeq
+		var threads map[string]sessions.Thread
+		if standing && len(entries) > 0 {
+			ts, err := s.sessions.Threads(ctx, taskID)
+			if err != nil {
+				return fmt.Errorf("StreamHumanMessages: %w", err)
+			}
+			threads = make(map[string]sessions.Thread, len(ts))
+			for _, t := range ts {
+				threads[t.Key] = t
+			}
+		}
 		for _, e := range entries {
+			if standing {
+				th, ok := threads[e.ThreadKey]
+				if !ok || (th.Closed && e.Type != "abort") || (!th.Closed && e.Seq < th.Cursor) {
+					continue
+				}
+			}
 			// "human" is the operator; "session" is another session's
 			// prompt (docs/adr/0041). Everything else — crucially the
 			// target's own from="agent" output — must not be streamed back,
@@ -881,6 +926,9 @@ func (s *Server) applyPodEvent(ctx context.Context, event *agentfleetv1.PodEvent
 		if err := s.sessions.SetPodPhase(ctx, event.GetSessionId(), event.GetPhase().String(), event.GetMessage()); err != nil {
 			slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
 		}
+		if event.GetPhase() == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
+			s.settleCrash(ctx, event.GetSessionId())
+		}
 	}
 	return nil
 }
@@ -921,6 +969,7 @@ func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEnt
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt),
 		// The worker's author envelope (docs/adr/0067 §3).
 		AuthorName: e.AuthorName,
+		ThreadKey:  e.ThreadKey,
 	}
 }
 

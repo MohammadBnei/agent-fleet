@@ -164,7 +164,10 @@ type TranscriptEntry struct {
 	// docs/adr/0067 §3: who wrote a human entry, as a display name (the
 	// member's email, or "client:<name>"). Empty for console entries. The
 	// worker shows it to the model; it is never parsed from text.
-	AuthorName    string `protobuf:"bytes,8,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
+	AuthorName string `protobuf:"bytes,8,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
+	// docs/adr/0084 §4: the standing character's thread this entry belongs to;
+	// "main" for every entry of any other session.
+	ThreadKey     string `protobuf:"bytes,9,opt,name=thread_key,json=threadKey,proto3" json:"thread_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -251,6 +254,13 @@ func (x *TranscriptEntry) GetCreatedAt() string {
 func (x *TranscriptEntry) GetAuthorName() string {
 	if x != nil {
 		return x.AuthorName
+	}
+	return ""
+}
+
+func (x *TranscriptEntry) GetThreadKey() string {
+	if x != nil {
+		return x.ThreadKey
 	}
 	return ""
 }
@@ -832,7 +842,7 @@ var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
-	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\x8f\x02\n" +
+	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xae\x02\n" +
 	"\x0fTranscriptEntry\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
@@ -844,7 +854,9 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x1f\n" +
 	"\vauthor_name\x18\b \x01(\tR\n" +
-	"authorNameB\v\n" +
+	"authorName\x12\x1d\n" +
+	"\n" +
+	"thread_key\x18\t \x01(\tR\tthreadKeyB\v\n" +
 	"\t_reply_to\"\xc6\x01\n" +
 	"\x1cAppendTranscriptEntryRequest\x12\x1d\n" +
 	"\n" +
