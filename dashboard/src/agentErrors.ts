@@ -26,6 +26,8 @@ const keyText: Record<Keyed, string> = {
     "This run is waiting on a decision. Answer it to resume the run; nothing was sent.",
   RULE_OF_TWO:
     "This session's trust set does not allow that. Ask the owner through a decision card; nothing was done.",
+  STANDING_ONLY:
+    "This agent is a standing character: only an admin's Start opens it. Nothing was done.",
 };
 
 // agentErrorText is the key's text, or the error's own message for a key with none (server.internal, a key a newer

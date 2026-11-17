@@ -203,6 +203,9 @@ func (s *Server) CreateThread(ctx context.Context, req *connect.Request[agentfle
 	if !mayUse(p, h.Effective) {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
+	if err := dashboard.StandingOnly(h.Effective); err != nil {
+		return nil, err
+	}
 	if !allows(h.Effective.Lifecycle, "resident") {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition takes no resident threads"))
 	}

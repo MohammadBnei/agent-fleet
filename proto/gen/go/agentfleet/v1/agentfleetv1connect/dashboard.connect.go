@@ -108,6 +108,12 @@ const (
 	// DashboardServiceListDefinitionsProcedure is the fully-qualified name of the DashboardService's
 	// ListDefinitions RPC.
 	DashboardServiceListDefinitionsProcedure = "/agentfleet.v1.DashboardService/ListDefinitions"
+	// DashboardServiceStartStandingProcedure is the fully-qualified name of the DashboardService's
+	// StartStanding RPC.
+	DashboardServiceStartStandingProcedure = "/agentfleet.v1.DashboardService/StartStanding"
+	// DashboardServiceStopStandingProcedure is the fully-qualified name of the DashboardService's
+	// StopStanding RPC.
+	DashboardServiceStopStandingProcedure = "/agentfleet.v1.DashboardService/StopStanding"
 	// DashboardServiceListReposProcedure is the fully-qualified name of the DashboardService's
 	// ListRepos RPC.
 	DashboardServiceListReposProcedure = "/agentfleet.v1.DashboardService/ListRepos"
@@ -240,6 +246,8 @@ type DashboardServiceClient interface {
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
+	StartStanding(context.Context, *connect.Request[v1.StartStandingRequest]) (*connect.Response[v1.StartStandingResponse], error)
+	StopStanding(context.Context, *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
@@ -440,6 +448,18 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("ListDefinitions")),
 			connect.WithClientOptions(opts...),
 		),
+		startStanding: connect.NewClient[v1.StartStandingRequest, v1.StartStandingResponse](
+			httpClient,
+			baseURL+DashboardServiceStartStandingProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("StartStanding")),
+			connect.WithClientOptions(opts...),
+		),
+		stopStanding: connect.NewClient[v1.StopStandingRequest, v1.StopStandingResponse](
+			httpClient,
+			baseURL+DashboardServiceStopStandingProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("StopStanding")),
+			connect.WithClientOptions(opts...),
+		),
 		listRepos: connect.NewClient[v1.ListReposRequest, v1.ListReposResponse](
 			httpClient,
 			baseURL+DashboardServiceListReposProcedure,
@@ -596,6 +616,8 @@ type dashboardServiceClient struct {
 	deleteSession       *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
 	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
+	startStanding       *connect.Client[v1.StartStandingRequest, v1.StartStandingResponse]
+	stopStanding        *connect.Client[v1.StopStandingRequest, v1.StopStandingResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
 	setReposActive      *connect.Client[v1.SetReposActiveRequest, v1.SetReposActiveResponse]
@@ -742,6 +764,16 @@ func (c *dashboardServiceClient) GetJournal(ctx context.Context, req *connect.Re
 // ListDefinitions calls agentfleet.v1.DashboardService.ListDefinitions.
 func (c *dashboardServiceClient) ListDefinitions(ctx context.Context, req *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
 	return c.listDefinitions.CallUnary(ctx, req)
+}
+
+// StartStanding calls agentfleet.v1.DashboardService.StartStanding.
+func (c *dashboardServiceClient) StartStanding(ctx context.Context, req *connect.Request[v1.StartStandingRequest]) (*connect.Response[v1.StartStandingResponse], error) {
+	return c.startStanding.CallUnary(ctx, req)
+}
+
+// StopStanding calls agentfleet.v1.DashboardService.StopStanding.
+func (c *dashboardServiceClient) StopStanding(ctx context.Context, req *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error) {
+	return c.stopStanding.CallUnary(ctx, req)
 }
 
 // ListRepos calls agentfleet.v1.DashboardService.ListRepos.
@@ -916,6 +948,8 @@ type DashboardServiceHandler interface {
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
+	StartStanding(context.Context, *connect.Request[v1.StartStandingRequest]) (*connect.Response[v1.StartStandingResponse], error)
+	StopStanding(context.Context, *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
@@ -1112,6 +1146,18 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("ListDefinitions")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceStartStandingHandler := connect.NewUnaryHandler(
+		DashboardServiceStartStandingProcedure,
+		svc.StartStanding,
+		connect.WithSchema(dashboardServiceMethods.ByName("StartStanding")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceStopStandingHandler := connect.NewUnaryHandler(
+		DashboardServiceStopStandingProcedure,
+		svc.StopStanding,
+		connect.WithSchema(dashboardServiceMethods.ByName("StopStanding")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListReposHandler := connect.NewUnaryHandler(
 		DashboardServiceListReposProcedure,
 		svc.ListRepos,
@@ -1290,6 +1336,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceGetJournalHandler.ServeHTTP(w, r)
 		case DashboardServiceListDefinitionsProcedure:
 			dashboardServiceListDefinitionsHandler.ServeHTTP(w, r)
+		case DashboardServiceStartStandingProcedure:
+			dashboardServiceStartStandingHandler.ServeHTTP(w, r)
+		case DashboardServiceStopStandingProcedure:
+			dashboardServiceStopStandingHandler.ServeHTTP(w, r)
 		case DashboardServiceListReposProcedure:
 			dashboardServiceListReposHandler.ServeHTTP(w, r)
 		case DashboardServiceSyncRepoProcedure:
@@ -1439,6 +1489,14 @@ func (UnimplementedDashboardServiceHandler) GetJournal(context.Context, *connect
 
 func (UnimplementedDashboardServiceHandler) ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListDefinitions is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) StartStanding(context.Context, *connect.Request[v1.StartStandingRequest]) (*connect.Response[v1.StartStandingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StartStanding is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) StopStanding(context.Context, *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StopStanding is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {

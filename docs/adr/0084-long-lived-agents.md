@@ -8,7 +8,9 @@
   - **Owner to confirm** marks a consequence the owner has not yet seen.
   - Mechanisms live in the build-slice appendix.
 - **Date:** 2026-11-16
-- **Built:** nothing.
+- **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
+  (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
+  warms it, until slice 5's re-warm.
 - **Depends on:** [ADR-0086](0086-rule-of-two.md) (PR #401) for trust sets, cards, memory and the per-pod Secret
   file. ADR-0086 does not depend on this ADR.
 - **Would amend:**

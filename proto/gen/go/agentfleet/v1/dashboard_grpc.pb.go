@@ -44,6 +44,8 @@ const (
 	DashboardService_DeleteSession_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteSession"
 	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
 	DashboardService_ListDefinitions_FullMethodName     = "/agentfleet.v1.DashboardService/ListDefinitions"
+	DashboardService_StartStanding_FullMethodName       = "/agentfleet.v1.DashboardService/StartStanding"
+	DashboardService_StopStanding_FullMethodName        = "/agentfleet.v1.DashboardService/StopStanding"
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
 	DashboardService_SyncRepo_FullMethodName            = "/agentfleet.v1.DashboardService/SyncRepo"
 	DashboardService_SetReposActive_FullMethodName      = "/agentfleet.v1.DashboardService/SetReposActive"
@@ -136,6 +138,8 @@ type DashboardServiceClient interface {
 	GetJournal(ctx context.Context, in *GetJournalRequest, opts ...grpc.CallOption) (*GetJournalResponse, error)
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error)
+	StartStanding(ctx context.Context, in *StartStandingRequest, opts ...grpc.CallOption) (*StartStandingResponse, error)
+	StopStanding(ctx context.Context, in *StopStandingRequest, opts ...grpc.CallOption) (*StopStandingResponse, error)
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
 	SyncRepo(ctx context.Context, in *SyncRepoRequest, opts ...grpc.CallOption) (*SyncRepoResponse, error)
 	SetReposActive(ctx context.Context, in *SetReposActiveRequest, opts ...grpc.CallOption) (*SetReposActiveResponse, error)
@@ -442,6 +446,26 @@ func (c *dashboardServiceClient) ListDefinitions(ctx context.Context, in *ListDe
 	return out, nil
 }
 
+func (c *dashboardServiceClient) StartStanding(ctx context.Context, in *StartStandingRequest, opts ...grpc.CallOption) (*StartStandingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartStandingResponse)
+	err := c.cc.Invoke(ctx, DashboardService_StartStanding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) StopStanding(ctx context.Context, in *StopStandingRequest, opts ...grpc.CallOption) (*StopStandingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopStandingResponse)
+	err := c.cc.Invoke(ctx, DashboardService_StopStanding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListReposResponse)
@@ -721,6 +745,8 @@ type DashboardServiceServer interface {
 	GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error)
 	// Defined agents (docs/adr/0062). Admin-only like every method here.
 	ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error)
+	StartStanding(context.Context, *StartStandingRequest) (*StartStandingResponse, error)
+	StopStanding(context.Context, *StopStandingRequest) (*StopStandingResponse, error)
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
 	SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error)
 	SetReposActive(context.Context, *SetReposActiveRequest) (*SetReposActiveResponse, error)
@@ -842,6 +868,12 @@ func (UnimplementedDashboardServiceServer) GetJournal(context.Context, *GetJourn
 }
 func (UnimplementedDashboardServiceServer) ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDefinitions not implemented")
+}
+func (UnimplementedDashboardServiceServer) StartStanding(context.Context, *StartStandingRequest) (*StartStandingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartStanding not implemented")
+}
+func (UnimplementedDashboardServiceServer) StopStanding(context.Context, *StopStandingRequest) (*StopStandingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopStanding not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRepos not implemented")
@@ -1370,6 +1402,42 @@ func _DashboardService_ListDefinitions_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_StartStanding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartStandingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).StartStanding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_StartStanding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).StartStanding(ctx, req.(*StartStandingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_StopStanding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopStandingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).StopStanding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_StopStanding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).StopStanding(ctx, req.(*StopStandingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListRepos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListReposRequest)
 	if err := dec(in); err != nil {
@@ -1850,6 +1918,14 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDefinitions",
 			Handler:    _DashboardService_ListDefinitions_Handler,
+		},
+		{
+			MethodName: "StartStanding",
+			Handler:    _DashboardService_StartStanding_Handler,
+		},
+		{
+			MethodName: "StopStanding",
+			Handler:    _DashboardService_StopStanding_Handler,
 		},
 		{
 			MethodName: "ListRepos",

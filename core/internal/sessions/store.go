@@ -139,6 +139,10 @@ type Session struct {
 	Invoker    *string   `json:"invoker,omitempty"`
 	Lifecycle  *string   `json:"lifecycle,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
+	// StartedBy and StoppedAt belong to a standing row (docs/adr/0084 §2): the admin who started it, and when it was
+	// stopped (nil while it runs).
+	StartedBy *string    `json:"startedBy,omitempty"`
+	StoppedAt *time.Time `json:"stoppedAt,omitempty"`
 }
 
 // Caps is the pair of ceilings ReserveSlot enforces. A struct, not two ints:
@@ -163,6 +167,9 @@ type Caps struct {
 // maxLive pods. Callers surface it as a FailedPrecondition — it is a real
 // answer ("stop one first"), not an internal error.
 var ErrAtCapacity = fmt.Errorf("fleet is at its live-session cap")
+
+// ErrStopped: a standing character the owner stopped takes no pod until Start (docs/adr/0084 §2).
+var ErrStopped = errors.New("this character is stopped: Start it first")
 
 // ErrNotFound distinguishes "no such session" from a database failure, so
 // callers can map it to NotFound rather than Internal.
@@ -204,6 +211,7 @@ const selectCols = `
 	s.worker_image, s.sidecar_image, s.fleet_version,
 	s.definition_name, s.definition_sha,
 	s.owner, s.visibility, s.invoker, s.lifecycle, s.created_at, s.trust_set,
+	s.started_by, s.stopped_at,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open') AS pending_decisions,
 	(SELECT count(*) FROM decisions d
@@ -224,6 +232,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.WorkerImage, &s.SidecarImage, &s.FleetVersion,
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Lifecycle, &s.CreatedAt, &s.TrustSet,
+		&s.StartedBy, &s.StoppedAt,
 		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions,
 	)
 	if err != nil {
@@ -279,6 +288,8 @@ type CreateParams struct {
 	ThreadKey string
 	// TrustSet is TrustSetFor's answer for the trigger; empty is BC (an owner or fleet trigger).
 	TrustSet string
+	// StartedBy is the admin who started a standing character; set only with Lifecycle "standing".
+	StartedBy string
 }
 
 func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
@@ -299,12 +310,12 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha, effort,
-		                      owner, visibility, lifecycle, invoker, thread_key, trust_set)
+		                      owner, visibility, lifecycle, invoker, thread_key, trust_set, started_by)
 		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''),
-		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), COALESCE(NULLIF($14, ''), 'BC'))
+		        NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), COALESCE(NULLIF($14, ''), 'BC'), NULLIF($15, ''))
 		RETURNING id
 	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA, p.Effort,
-		p.Owner, p.Visibility, p.Lifecycle, p.Invoker, p.ThreadKey, p.TrustSet).Scan(&id)
+		p.Owner, p.Visibility, p.Lifecycle, p.Invoker, p.ThreadKey, p.TrustSet, p.StartedBy).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
@@ -836,7 +847,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	// limits.concurrency (docs/adr/0062), counted under the same lock.
 	var (
 		defName, owner          *string
-		defValid                bool
+		stopped, defValid       bool
 		concurrency             *int
 		poolLive, defLive       int
 		externalLive, ownerLive int
@@ -845,7 +856,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	// is external (docs/adr/0066 §8): limits.concurrency bounds members and
 	// clients, never an admin's console session.
 	err = tx.QueryRow(ctx, `
-		SELECT s.definition_name, s.owner, COALESCE(d.valid, false),
+		SELECT s.definition_name, s.owner, s.stopped_at IS NOT NULL, COALESCE(d.valid, false),
 		       (d.effective->'limits'->>'concurrency')::int,
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
 		                                          AND o.definition_name IS NOT NULL),
@@ -859,12 +870,15 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		  FROM sessions s
 		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
 		 WHERE s.id = $1 AND s.archived_at IS NULL
-	`, id, livePhases).Scan(&defName, &owner, &defValid, &concurrency, &poolLive, &defLive, &externalLive, &ownerLive)
+	`, id, livePhases).Scan(&defName, &owner, &stopped, &defValid, &concurrency, &poolLive, &defLive, &externalLive, &ownerLive)
 	if err == pgx.ErrNoRows {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("reserve slot: definition: %w", err)
+	}
+	if stopped {
+		return "", ErrStopped
 	}
 	if defName != nil {
 		// The revocation path proper is WarmIfIdle's pinned==current check;
@@ -1622,4 +1636,51 @@ func (s *Store) CountByRepoLiveState(ctx context.Context, turnStall time.Duratio
 		out[[2]string{sess.Repo, string(state)}]++
 	}
 	return out, nil
+}
+
+// Standing is the lifecycle of a character (docs/adr/0084 §1), and StandingPrefix the principal prefix its row is
+// owned under.
+const (
+	Standing       = "standing"
+	StandingPrefix = "standing:"
+)
+
+// StandingByDefinition is the one live standing row of a character, ErrNotFound when none was ever started.
+func (s *Store) StandingByDefinition(ctx context.Context, name string) (*Session, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+selectCols+` FROM sessions s
+		WHERE s.lifecycle = 'standing' AND s.definition_name = $1 AND s.archived_at IS NULL`, name)
+	sess, err := scanSession(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("standing session: %w", err)
+	}
+	return sess, nil
+}
+
+// RestartStanding is Start on a stopped character (docs/adr/0084 §2): the row is un-stopped and re-pinned to sha, and
+// its SDK session id is dropped, so the next warm opens a fresh SDK session. The transcript and the memory stay.
+// False when the row is not stopped.
+func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
+		       agent_session_id = NULL, updated_at = now()
+		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL`, id, sha, by)
+	if err != nil {
+		return false, fmt.Errorf("restart standing: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkStandingStopped is Stop (docs/adr/0084 §2): the cooperative stop request, plus the mark that keeps the row
+// down. False when the row is not standing or is already stopped.
+func (s *Store) MarkStandingStopped(ctx context.Context, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE sessions SET stopped_at = now(), stop_requested_at = COALESCE(stop_requested_at, now()), updated_at = now()
+		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NULL`, id)
+	if err != nil {
+		return false, fmt.Errorf("stop standing: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }

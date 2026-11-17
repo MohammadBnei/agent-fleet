@@ -49,8 +49,12 @@ var (
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review"}
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
-	lifecycles     = []string{"resident", "single-shot"}
+	lifecycles     = []string{"resident", "single-shot", "standing"}
 )
+
+// standingPrincipal is the prefix of a standing character's principal (docs/adr/0084 §2); sessions.StandingPrefix
+// is the same string, which this package cannot import.
+const standingPrincipal = "standing:"
 
 const (
 	maxSystemPrompt  = 16 << 10
@@ -134,6 +138,9 @@ func LoadAll(files map[string][]byte) (results []Result, valid []Client, fileErr
 		switch {
 		case isYAML && dir == "definitions/":
 			defs[stem] = parseDefinition(p, stem, files[p])
+		case isYAML && dir == "definitions/clients/" && strings.HasPrefix(stem, standingPrincipal):
+			// docs/adr/0084 §2: standing:<name> is a character's own principal, never a client's.
+			fileErrs = append(fileErrs, fmt.Errorf("%s: the %q prefix is reserved for standing characters", p, standingPrincipal))
 		case isYAML && dir == "definitions/clients/":
 			var cf clientFile
 			err := decodeStrict(files[p], &cf)
@@ -623,6 +630,9 @@ func validate(name string, s *Spec) error {
 	}
 	if need(s.Lifecycle != nil, "lifecycle") {
 		checkList(&errs, "lifecycle", s.Lifecycle.Allow, lifecycles)
+		if slices.Contains(s.Lifecycle.Allow, "standing") {
+			validateStanding(&errs, s)
+		}
 	}
 	if s.Output != nil {
 		if err := checkOutputSchema(s.Output.Schema); err != nil {
@@ -686,6 +696,30 @@ func validate(name string, s *Spec) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateStanding is docs/adr/0084 §2: a character is trusted for life, so it is never mixed with another
+// lifecycle, declares no trust.untrusted, and neither owns nor subscribes to an untrusted event type.
+func validateStanding(errs *[]error, s *Spec) {
+	bad := func(format string, a ...any) { *errs = append(*errs, fmt.Errorf(format, a...)) }
+	if len(s.Lifecycle.Allow) != 1 {
+		bad("lifecycle: standing must be the only lifecycle, got %v", s.Lifecycle.Allow)
+	}
+	if s.Trust != nil && s.Trust.Untrusted != "" {
+		bad("trust.untrusted: a standing definition receives only trusted input (docs/adr/0084 §2)")
+	}
+	var types []string
+	if s.Subscribes != nil {
+		types = append(types, s.Subscribes.Types...)
+	}
+	if s.Owns != nil {
+		types = append(types, s.Owns.Types...)
+	}
+	for _, t := range types {
+		if events.UntrustedReaches(t) {
+			bad("a standing definition's event types: %q reaches the untrusted types %v", t, events.UntrustedTypes)
+		}
+	}
 }
 
 // OutputSchemaJSON is the compact JSON of a definition's output.schema, "" when
