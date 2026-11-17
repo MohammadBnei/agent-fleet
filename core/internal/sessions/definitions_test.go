@@ -321,3 +321,47 @@ func TestListIdleSessionIDs_ADefinitionIdlesAtItsOwnTimeout(t *testing.T) {
 		}
 	}
 }
+
+// Standing rows count only in the standing pool (docs/adr/0084 §9): a full MaxLive and a full definition pool do not
+// refuse a character, and a character fills neither.
+func TestReserveSlot_StandingPoolIsOutsideTheCap(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	insertDefinition(t, pool, "a", "sha-a", 1)
+	insertDefinition(t, pool, "b", "sha-b", 1)
+	caps := Caps{MaxLive: 2, MaxDefinition: 0, MaxStanding: 1}
+	char := func(def string) string {
+		id, err := store.Create(ctx, CreateParams{Repo: "r", PermissionMode: "default", DefinitionName: def, DefinitionSHA: "sha-" + def,
+			Owner: "client:standing:" + def, Visibility: "private", Lifecycle: Standing, Invoker: "standing:" + def, ThreadKey: "main", StartedBy: "root"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	if _, err := store.ReserveSlot(ctx, newSession(t, ctx, store), caps); err != nil {
+		t.Fatal(err)
+	}
+	first := char("a")
+	if _, err := store.ReserveSlot(ctx, first, caps); err != nil {
+		t.Fatalf("a character draws on the standing pool, not MaxLive: %v", err)
+	}
+	second := char("b")
+	if _, err := store.ReserveSlot(ctx, second, caps); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "standing pool full (1/1)") {
+		t.Fatalf("want the standing pool refusal, got %v", err)
+	}
+	assertUntouched(t, pool, second)
+	// The character is in no other count: it leaves a second repo slot, and the third is refused by MaxLive alone.
+	if _, err := store.ReserveSlot(ctx, newSession(t, ctx, store), caps); err != nil {
+		t.Fatalf("a live character must not fill MaxLive: %v", err)
+	}
+	if _, err := store.ReserveSlot(ctx, newSession(t, ctx, store), caps); !errors.Is(err, ErrAtCapacity) || strings.Contains(err.Error(), "standing") {
+		t.Fatalf("want the MaxLive refusal, got %v", err)
+	}
+	// And a spawn of the same definition is not blocked by the character in its concurrency limit.
+	caps = Caps{MaxLive: 9, MaxDefinition: 1, MaxStanding: 1}
+	if _, err := store.ReserveSlot(ctx, newDefinitionSession(t, store, "a", "sha-a"), caps); err != nil {
+		t.Fatalf("a live character is outside the definition pool and concurrency: %v", err)
+	}
+}

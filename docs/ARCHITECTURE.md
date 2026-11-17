@@ -844,7 +844,8 @@ cannot say.
 `MAX_EXTERNAL_SESSIONS` (members and clients); each pool must be smaller than
 the one around it (0 turns an inner pool off). A set of counts that breaks that
 logs a warning and falls back to all four defaults (5, 0, 0, 1), which turns the
-inner pools off; core still starts.
+inner pools off; core still starts. `MAX_STANDING_SESSIONS` (default 2) is a separate pool outside
+`MAX_IN_FLIGHT_TASKS`: standing characters count only there (`adr/0084` §9).
 
 **Validated once, at start.** `config.Load` reads every variable below and
 checks each one that is *set* against its rule. Unset, or empty (the two cannot
@@ -898,6 +899,7 @@ the proxy variables) are theirs and not listed.
 | `MAX_DEFINITION_SESSIONS` | `0` | whole number, `0` to below `MAX_IN_FLIGHT_TASKS` | defined-agent pool inside the cap (`adr/0062`) |
 | `MAX_EXTERNAL_SESSIONS` | `0` | whole number, `0` to below `MAX_DEFINITION_SESSIONS` | member and client pool inside that (`adr/0066` §8) |
 | `MAX_SESSIONS_PER_MEMBER` | `1` | whole number, at least 1 when `MAX_EXTERNAL_SESSIONS` is above 0 | one member's share of it |
+| `MAX_STANDING_SESSIONS` | `2` | whole number, `0` or more | standing characters' pool, outside `MAX_IN_FLIGHT_TASKS` (`adr/0084` §9) |
 | `STOP_GRACE_MS` | `30000` | whole milliseconds, above 0 | how long a Stop waits before a forced teardown |
 | `IDLE_TIMEOUT_MS` | `1800000` | whole milliseconds, above 0 | no transcript activity for this long tears the pod down |
 | `STARTUP_STALL_MS` | `180000` | whole milliseconds, above 0 | pod scheduled to first sign of life (`adr/0040`) |
