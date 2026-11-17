@@ -204,6 +204,9 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		case err != nil:
 			return nil, errkeys.Connect(connect.CodeUnavailable, errkeys.KeyInternal, err)
 		}
+		if err := StandingOnly(h.Effective); err != nil {
+			return nil, err
+		}
 		head = &h
 		repo, model, mode = h.Effective.Workspace.Repo, defaultModelOf(h.Effective), h.Effective.Mode.Default
 	}
@@ -253,6 +256,7 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		Lifecycle:      thread.Lifecycle,
 		Invoker:        thread.Invoker,
 		ThreadKey:      thread.ThreadKey,
+		StartedBy:      thread.StartedBy,
 		// A client thread names its tier; the console and every other caller is the owner.
 		TrustSet: cmp.Or(thread.TrustSet, sessions.TrustFor(sessions.TierOwner)),
 	}
@@ -1309,7 +1313,7 @@ func (s *Server) warm(ctx context.Context, sessionID string, answer bool) (podNa
 		switch {
 		case errors.Is(err, sessions.ErrAtCapacity):
 			return "", errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyInternal, err)
-		case errors.Is(err, sessions.ErrDefinitionInvalid):
+		case errors.Is(err, sessions.ErrDefinitionInvalid), errors.Is(err, sessions.ErrStopped):
 			return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, err)
 		case errors.Is(err, sessions.ErrNotFound):
 			return "", errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, decisions.CannotResume(errors.New("session is archived")))

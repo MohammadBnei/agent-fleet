@@ -733,3 +733,44 @@ func TestLoad_FirstResponder(t *testing.T) {
 		})
 	}
 }
+
+// docs/adr/0084 §2: a standing definition is the only lifecycle it has, takes no untrusted letter, and neither owns
+// nor subscribes to an untrusted event type.
+func TestLoad_Standing(t *testing.T) {
+	cases := []struct {
+		name string
+		kv   map[string]string
+		want string
+	}{
+		{"valid", map[string]string{"lifecycle": "{ allow: [standing] }"}, ""},
+		{"valid with a fleet subscription", map[string]string{"lifecycle": "{ allow: [standing] }", "subscribes": "{ types: [dev.bnei.github.] }"}, ""},
+		{"mixed with resident", map[string]string{"lifecycle": "{ allow: [standing, resident] }"}, "standing must be the only lifecycle"},
+		{"untrusted letter", map[string]string{"lifecycle": "{ allow: [standing] }", "trust": "{ untrusted: C }"}, "trust.untrusted"},
+		{"alert subscription", map[string]string{"lifecycle": "{ allow: [standing] }", "subscribes": "{ types: [dev.bnei.alert.] }"}, "untrusted types"},
+		{"broad subscription reaches alerts", map[string]string{"lifecycle": "{ allow: [standing] }", "subscribes": "{ types: [dev.bnei.a] }"}, "untrusted types"},
+		{"alert ownership", map[string]string{"lifecycle": "{ allow: [standing] }", "owns": "{ types: [dev.bnei.alert.firing] }"}, "untrusted types"},
+		{"not standing keeps its alert subscription", map[string]string{"subscribes": "{ types: [dev.bnei.alert.] }"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := load(t, map[string]string{"definitions/base.yaml": baseYAML, "definitions/cee.yaml": childYAML("cee", tc.kv)})
+			err := got["cee"].Err
+			if tc.want == "" && err != nil {
+				t.Fatalf("want valid: %v", err)
+			}
+			if tc.want != "" && !strings.Contains(errText(err), tc.want) {
+				t.Fatalf("want error containing %q, got %q", tc.want, errText(err))
+			}
+		})
+	}
+}
+
+// docs/adr/0084 §2: the standing: prefix is a character's principal, never a client's.
+func TestLoad_StandingPrefixReservedInClientFiles(t *testing.T) {
+	_, errs := load(t, map[string]string{
+		"definitions/clients/standing:ops.yaml": "apiVersion: fleet.bnei.dev/v1alpha1\nkind: AgentClient\nmetadata: { name: \"standing:ops\" }\nspec:\n  actors: { allow: [MohammadBnei] }\n",
+	})
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "reserved for standing characters") {
+		t.Fatalf("want the reserved-prefix error, got %v", errs)
+	}
+}

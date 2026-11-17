@@ -56,6 +56,9 @@ const (
 	// Core returns it from CoreService methods though the enum lives in agent.proto: the contract check requires a
 	// listed key to be declared in the same file, so the tagged RPCs do not list it.
 	KeyRuleOfTwo errs.Key = "agent.rule_of_two"
+	// KeyStandingOnly: the definition is a standing character (docs/adr/0084 §2): only an admin's Start opens it, so
+	// Open, Invoke and CreateThread are refused.
+	KeyStandingOnly errs.Key = "agent.standing_only"
 	// KeyCardBudget: the definition drafted its 10 cards of the last 24 hours (CoreService.DraftCard).
 	KeyCardBudget errs.Key = "core.card_budget"
 )

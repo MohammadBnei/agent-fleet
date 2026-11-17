@@ -57,21 +57,25 @@ const (
 	// The session's trust set (docs/adr/0086 §2) holds no letter for this method: core refuses it, nothing was done.
 	// The guidance names the card path.
 	AgentErrorKey_AGENT_ERROR_KEY_RULE_OF_TWO AgentErrorKey = 9
+	// The definition is a standing character (docs/adr/0084 §2): only an admin's Start opens it. Open, Invoke and
+	// CreateThread refuse it, FailedPrecondition, and nothing was created.
+	AgentErrorKey_AGENT_ERROR_KEY_STANDING_ONLY AgentErrorKey = 10
 )
 
 // Enum value maps for AgentErrorKey.
 var (
 	AgentErrorKey_name = map[int32]string{
-		0: "AGENT_ERROR_KEY_UNSPECIFIED",
-		1: "AGENT_ERROR_KEY_DEFINITION_CHANGED",
-		2: "AGENT_ERROR_KEY_THREAD_CAP",
-		3: "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
-		4: "AGENT_ERROR_KEY_DECISION_EXPIRED",
-		5: "AGENT_ERROR_KEY_DECISION_STALE",
-		6: "AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED",
-		7: "AGENT_ERROR_KEY_PARKED_LIMIT",
-		8: "AGENT_ERROR_KEY_PARKED",
-		9: "AGENT_ERROR_KEY_RULE_OF_TWO",
+		0:  "AGENT_ERROR_KEY_UNSPECIFIED",
+		1:  "AGENT_ERROR_KEY_DEFINITION_CHANGED",
+		2:  "AGENT_ERROR_KEY_THREAD_CAP",
+		3:  "AGENT_ERROR_KEY_DEFINITION_UNAVAILABLE",
+		4:  "AGENT_ERROR_KEY_DECISION_EXPIRED",
+		5:  "AGENT_ERROR_KEY_DECISION_STALE",
+		6:  "AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED",
+		7:  "AGENT_ERROR_KEY_PARKED_LIMIT",
+		8:  "AGENT_ERROR_KEY_PARKED",
+		9:  "AGENT_ERROR_KEY_RULE_OF_TWO",
+		10: "AGENT_ERROR_KEY_STANDING_ONLY",
 	}
 	AgentErrorKey_value = map[string]int32{
 		"AGENT_ERROR_KEY_UNSPECIFIED":               0,
@@ -84,6 +88,7 @@ var (
 		"AGENT_ERROR_KEY_PARKED_LIMIT":              7,
 		"AGENT_ERROR_KEY_PARKED":                    8,
 		"AGENT_ERROR_KEY_RULE_OF_TWO":               9,
+		"AGENT_ERROR_KEY_STANDING_ONLY":             10,
 	}
 )
 
@@ -3295,7 +3300,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x16WatchDecisionsResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1f\n" +
 	"\vchanged_ids\x18\x02 \x03(\tR\n" +
-	"changedIds*\xee\x04\n" +
+	"changedIds*\xaa\x05\n" +
 	"\rAgentErrorKey\x12\x1f\n" +
 	"\x1bAGENT_ERROR_KEY_UNSPECIFIED\x10\x00\x12D\n" +
 	"\"AGENT_ERROR_KEY_DEFINITION_CHANGED\x10\x01\x1a\x1c\xc2\xf3\x18\x18agent.definition_changed\x124\n" +
@@ -3306,7 +3311,9 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	")AGENT_ERROR_KEY_DECISION_CONFIRM_REQUIRED\x10\x06\x1a#\xc2\xf3\x18\x1fagent.decision_confirm_required\x128\n" +
 	"\x1cAGENT_ERROR_KEY_PARKED_LIMIT\x10\a\x1a\x16\xc2\xf3\x18\x12agent.parked_limit\x12,\n" +
 	"\x16AGENT_ERROR_KEY_PARKED\x10\b\x1a\x10\xc2\xf3\x18\fagent.parked\x126\n" +
-	"\x1bAGENT_ERROR_KEY_RULE_OF_TWO\x10\t\x1a\x15\xc2\xf3\x18\x11agent.rule_of_two*\x97\x01\n" +
+	"\x1bAGENT_ERROR_KEY_RULE_OF_TWO\x10\t\x1a\x15\xc2\xf3\x18\x11agent.rule_of_two\x12:\n" +
+	"\x1dAGENT_ERROR_KEY_STANDING_ONLY\x10\n" +
+	"\x1a\x17\xc2\xf3\x18\x13agent.standing_only*\x97\x01\n" +
 	"\fDecisionKind\x12\x1d\n" +
 	"\x19DECISION_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16DECISION_KIND_QUESTION\x10\x01\x12\x1c\n" +
@@ -3319,11 +3326,11 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\xba\x11\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\x80\x12\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
-	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\x8d\x01\n" +
-	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12\x9a\x01\n" +
+	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\xa4\x01\n" +
+	"\fCreateThread\x12\".agentfleet.v1.CreateThreadRequest\x1a#.agentfleet.v1.CreateThreadResponse\"K\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\xca\xf3\x18\x13agent.standing_only\x12\x9a\x01\n" +
 	"\vPostMessage\x12-.agentfleet.v1.AgentServicePostMessageRequest\x1a..agentfleet.v1.AgentServicePostMessageResponse\",\xca\xf3\x18\x18agent.definition_changed\xca\xf3\x18\fagent.parked\x12r\n" +
 	"\rGetTranscript\x12/.agentfleet.v1.AgentServiceGetTranscriptRequest\x1a0.agentfleet.v1.AgentServiceGetTranscriptResponse\x12}\n" +
 	"\x10StreamTranscript\x122.agentfleet.v1.AgentServiceStreamTranscriptRequest\x1a3.agentfleet.v1.AgentServiceStreamTranscriptResponse0\x01\x12\x84\x01\n" +
@@ -3336,10 +3343,10 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x0eWatchDecisions\x12$.agentfleet.v1.WatchDecisionsRequest\x1a%.agentfleet.v1.WatchDecisionsResponse0\x01\x12N\n" +
 	"\tSetConfig\x12\x1f.agentfleet.v1.SetConfigRequest\x1a .agentfleet.v1.SetConfigResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12N\n" +
-	"\tGetStatus\x12\x1f.agentfleet.v1.GetStatusRequest\x1a .agentfleet.v1.GetStatusResponse\x12u\n" +
-	"\x04Open\x12\x1a.agentfleet.v1.OpenRequest\x1a\x1b.agentfleet.v1.OpenResponse\"4\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\x12T\n" +
-	"\vCloseThread\x12!.agentfleet.v1.CloseThreadRequest\x1a\".agentfleet.v1.CloseThreadResponse\x12\x91\x01\n" +
-	"\x06Invoke\x12\x1c.agentfleet.v1.InvokeRequest\x1a\x1d.agentfleet.v1.InvokeResponse\"J\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\xca\xf3\x18\x12agent.parked_limit\x12Z\n" +
+	"\tGetStatus\x12\x1f.agentfleet.v1.GetStatusRequest\x1a .agentfleet.v1.GetStatusResponse\x12\x8c\x01\n" +
+	"\x04Open\x12\x1a.agentfleet.v1.OpenRequest\x1a\x1b.agentfleet.v1.OpenResponse\"K\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\xca\xf3\x18\x13agent.standing_only\x12T\n" +
+	"\vCloseThread\x12!.agentfleet.v1.CloseThreadRequest\x1a\".agentfleet.v1.CloseThreadResponse\x12\xa8\x01\n" +
+	"\x06Invoke\x12\x1c.agentfleet.v1.InvokeRequest\x1a\x1d.agentfleet.v1.InvokeResponse\"a\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\xca\xf3\x18\x12agent.parked_limit\xca\xf3\x18\x13agent.standing_only\x12Z\n" +
 	"\rWaitForResult\x12#.agentfleet.v1.WaitForResultRequest\x1a$.agentfleet.v1.WaitForResultResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (

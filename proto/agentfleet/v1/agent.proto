@@ -38,6 +38,9 @@ enum AgentErrorKey {
   // The session's trust set (docs/adr/0086 §2) holds no letter for this method: core refuses it, nothing was done.
   // The guidance names the card path.
   AGENT_ERROR_KEY_RULE_OF_TWO = 9 [(ukubi.errors.v1.key) = "agent.rule_of_two"];
+  // The definition is a standing character (docs/adr/0084 §2): only an admin's Start opens it. Open, Invoke and
+  // CreateThread refuse it, FailedPrecondition, and nothing was created.
+  AGENT_ERROR_KEY_STANDING_ONLY = 10 [(ukubi.errors.v1.key) = "agent.standing_only"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients
@@ -55,6 +58,7 @@ service AgentService {
   rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse) {
     option (ukubi.errors.v1.keys) = "agent.thread_cap";
     option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
+    option (ukubi.errors.v1.keys) = "agent.standing_only";
   }
   rpc PostMessage(AgentServicePostMessageRequest) returns (AgentServicePostMessageResponse) {
     option (ukubi.errors.v1.keys) = "agent.definition_changed";
@@ -92,12 +96,14 @@ service AgentService {
   rpc Open(OpenRequest) returns (OpenResponse) {
     option (ukubi.errors.v1.keys) = "agent.thread_cap";
     option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
+    option (ukubi.errors.v1.keys) = "agent.standing_only";
   }
   rpc CloseThread(CloseThreadRequest) returns (CloseThreadResponse);
   rpc Invoke(InvokeRequest) returns (InvokeResponse) {
     option (ukubi.errors.v1.keys) = "agent.thread_cap";
     option (ukubi.errors.v1.keys) = "agent.definition_unavailable";
     option (ukubi.errors.v1.keys) = "agent.parked_limit";
+    option (ukubi.errors.v1.keys) = "agent.standing_only";
   }
   rpc WaitForResult(WaitForResultRequest) returns (WaitForResultResponse);
 }

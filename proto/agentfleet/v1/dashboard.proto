@@ -146,6 +146,23 @@ message StopSessionRequest {
 
 message StopSessionResponse {}
 
+// StartStanding and StopStanding (docs/adr/0084 §2, admin console only): a character is the one session of a
+// definition whose lifecycle is "standing". Start makes the row, or resumes a stopped one with a fresh SDK session
+// and the current definition version; Stop marks it stopped. Neither warms a pod.
+message StartStandingRequest {
+  string definition = 1;
+}
+
+message StartStandingResponse {
+  Session session = 1;
+}
+
+message StopStandingRequest {
+  string definition = 1;
+}
+
+message StopStandingResponse {}
+
 // Interrupt stops only the current turn (the in-flight API exchange/tool
 // call) via the SDK's own q.interrupt() — unlike Kill, the session and pod
 // survive and stay ready for the next message. Posted as a distinct
@@ -693,6 +710,8 @@ service DashboardService {
   rpc GetJournal(GetJournalRequest) returns (GetJournalResponse);
   // Defined agents (docs/adr/0062). Admin-only like every method here.
   rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+  rpc StartStanding(StartStandingRequest) returns (StartStandingResponse);
+  rpc StopStanding(StopStandingRequest) returns (StopStandingResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc SyncRepo(SyncRepoRequest) returns (SyncRepoResponse);
   rpc SetReposActive(SetReposActiveRequest) returns (SetReposActiveResponse);

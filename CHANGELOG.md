@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.32.0](https://github.com/MohammadBnei/agent-fleet/compare/7.31.0...7.32.0) (2026-11-17)
+
+### Features
+
+* **core:** standing lifecycle, principal, Start and Stop (ADR-0084 slice 3) ([#411](https://github.com/MohammadBnei/agent-fleet/issues/411)) ([9918abb](https://github.com/MohammadBnei/agent-fleet/commit/9918abb3e1180db0f5025caaef82b288bf3a90a4))
+
 # [7.31.0](https://github.com/MohammadBnei/agent-fleet/compare/7.30.1...7.31.0) (2026-11-16)
 
 ### Features
