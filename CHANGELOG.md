@@ -1,5 +1,15 @@
 # Changelog
 
+# [7.39.0](https://github.com/MohammadBnei/agent-fleet/compare/7.38.0...7.39.0) (2026-11-17)
+
+### Bug Fixes
+
+* **core:** budget turns by author, quiet budget card answers, Paris-day card key, steady gauges (ADR-0084 slice 13 review) ([#424](https://github.com/MohammadBnei/agent-fleet/issues/424)) ([6a9d55b](https://github.com/MohammadBnei/agent-fleet/commit/6a9d55b1a111dc8ebcd94d00964ec074bbf4827b))
+
+### Features
+
+* **core:** daily turn budget, hold and raise_budget card (ADR-0084 slice 13) ([#423](https://github.com/MohammadBnei/agent-fleet/issues/423)) ([62b5d91](https://github.com/MohammadBnei/agent-fleet/commit/62b5d91b8ca5f95e85a0fc89fda356adc170183c))
+
 # [7.38.0](https://github.com/MohammadBnei/agent-fleet/compare/7.37.0...7.38.0) (2026-11-17)
 
 ### Features
