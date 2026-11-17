@@ -64,7 +64,7 @@ func TestRestartDryRunFailureRunsNothing(t *testing.T) {
 func TestScaleRecordsInverse(t *testing.T) {
 	f := &fake{gets: map[string]string{"spec.replicas": "2", "annotations.argocd": "web-app:apps/Deployment:ns/web", "selfHeal": "false"}}
 	o := execute(context.Background(), f.run, Row{Action: ActionScale, Kind: "deployment", Namespace: "ns", Name: "web", Replicas: 4, MinReplicas: 1, MaxReplicas: 5})
-	if o.Status != "done" || strings.Join(o.Inverse, " ") != "scale deployment/web -n ns --replicas=2" {
+	if o.Status != "done" || strings.Join(o.Inverse, " ") != "scale deployment/web -n ns --current-replicas=4 --replicas=2" {
 		t.Fatalf("%+v", o)
 	}
 	// get+update on deployments/scale needs the precondition (no PATCH grant).

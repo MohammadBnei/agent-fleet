@@ -228,7 +228,8 @@ What is left is a trusted agent that lives on.
     - `apps/deployments`, `statefulsets`, `daemonsets`, `replicasets`;
     - `batch/jobs`, `cronjobs`;
     - `argoproj.io/applications`.
-  - `pods/log` comes only through Roles in a named namespace list (**owner to confirm**: the list).
+  - `pods/log` comes only through Roles in a named namespace list: `agent-fleet`, `ukubi-game`, `ukubi-realm`,
+    `ukubi-meet` and `monitoring`.
   - Never `secrets`, `configmaps`, RBAC objects, `*/exec`, `*/proxy` or `nodes/proxy`.
   - The egress lock admits the API server for granted pods.
 
