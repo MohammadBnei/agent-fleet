@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.37.0](https://github.com/MohammadBnei/agent-fleet/compare/7.36.0...7.37.0) (2026-11-17)
+
+### Features
+
+* **core:** replace a character's pod before the vault token cap (ADR-0084 slice 10) ([#420](https://github.com/MohammadBnei/agent-fleet/issues/420)) ([b10e63f](https://github.com/MohammadBnei/agent-fleet/commit/b10e63fe03f8f099f9dbae78f0be5e6b64665661))
+
 # [7.36.0](https://github.com/MohammadBnei/agent-fleet/compare/7.35.0...7.36.0) (2026-11-17)
 
 ### Features
