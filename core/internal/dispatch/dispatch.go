@@ -131,6 +131,10 @@ type Dispatcher struct {
 	// close's threads as before (SetCards).
 	cards *decisions.Store
 	tr    transcript.Store
+	// warm provisions a character's pod before an append and holds its send lock until release (SetCharacters);
+	// source is the bridge client source core's own publishes carry. Both unset: no hand-off reaches a character.
+	warm   func(ctx context.Context, sessionID string) (podName string, release func(), err error)
+	source string
 	// responders runs the alert groups first-responder definitions subscribe to; nil: every alert is a proposal.
 	responders *responder.Runner
 	router     *responder.Router
@@ -145,6 +149,12 @@ func New(pool *pgxpool.Pool, bridge Bridge, agents Agents, defs Definitions, pro
 // SetCards turns the fleet bot's close of a PR it did not merge into the
 // default branch into a card for the owner (closeCard) instead of a close.
 func (d *Dispatcher) SetCards(c *decisions.Store, tr transcript.Store) { d.cards, d.tr = c, tr }
+
+// SetCharacters wires the T1 hand-off to standing characters: warm is the shared warm path
+// (dashboard.WarmForAppend), source the bridge source of core's own publishes ("client/" + the client name).
+func (d *Dispatcher) SetCharacters(warm func(context.Context, string) (string, func(), error), source string) {
+	d.warm, d.source = warm, source
+}
 
 // SetResponders turns on docs/adr/0086 §3: an alert a first responder subscribes to starts its run (r) instead of
 // filing a proposal.
@@ -325,12 +335,16 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 		!e.GetReplayed() && !mergedIntoDefault(e) {
 		return d.closeCard(ctx, e, repo, n)
 	}
+	// A character-side failure must not block resident delivery: collect it, deliver, join.
+	var errs []error
+	if err := d.characters(ctx, e); err != nil {
+		errs = append(errs, err)
+	}
 	targets := d.route(e)
 	if len(targets) == 0 {
 		slog.Debug("dispatch: no definition owns or subscribes to this event", "type", e.GetType(), "subject", e.GetSubject())
-		return nil
+		return errors.Join(errs...)
 	}
-	var errs []error
 	for _, h := range targets {
 		if err := d.deliver(ctx, e, h); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", h.Name, err))
@@ -1089,4 +1103,71 @@ func OpenProposal(ctx context.Context, agents Agents, p *proposals.Proposal, adm
 		return "", err
 	}
 	return res.GetThreadId(), nil
+}
+
+// characters appends e to each started standing character that owns or subscribes to it, only when e is T1
+// (docs/adr/0084 §5, docs/adr/0086 §2): a trusted PublishEvent hand-off that names the character, from a session
+// whose stored set lacks A. Anything else never reaches a character: an untrusted type, a human or GitHub event, an
+// unaddressed or unverified publish. The loader's refusal of untrusted subscriptions is not the check.
+//
+// ponytail: the entry carries no causation, so the character's own publish about it is unvouched (untrusted
+// downstream) until a later slice records one.
+func (d *Dispatcher) characters(ctx context.Context, e *bridgev1.CloudEvent) error {
+	if d.tr == nil || d.warm == nil {
+		return nil
+	}
+	heads, _ := d.defs.List()
+	var errs []error
+	for _, h := range heads {
+		if h.SHA == "" || h.Effective == nil || h.Effective.Lifecycle == nil || !slices.Contains(h.Effective.Lifecycle.Allow, sessions.Standing) ||
+			(!owns(h.Effective.Owns, e) && !subscribes(h.Effective.Subscribes, e)) {
+			continue
+		}
+		ok, err := d.t1(ctx, e, h)
+		if err == nil && ok {
+			var id string
+			err = d.pool.QueryRow(ctx, `SELECT id::text FROM sessions WHERE lifecycle = 'standing' AND definition_name = $1
+				AND stopped_at IS NULL AND archived_at IS NULL`, h.Name).Scan(&id)
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue // not started: nothing to deliver to
+			}
+			if err == nil {
+				err = d.appendWarm(ctx, id, e)
+			}
+		} else if err == nil {
+			slog.Debug("dispatch: not T1, never delivered to a character", "definition", h.Name, "type", e.GetType())
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", h.Name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// appendWarm warms the character BEFORE appending and holds the release until the append lands: a pod's resume
+// cursor is MAX(seq)+1, so an entry appended to a cold character would sit below it and never be read. A failed
+// warm is an error (nack), never a silent drop.
+func (d *Dispatcher) appendWarm(ctx context.Context, id string, e *bridgev1.CloudEvent) error {
+	_, release, err := d.warm(ctx, id)
+	defer release()
+	if err != nil {
+		return fmt.Errorf("warm character: %w", err)
+	}
+	_, err = d.tr.Append(ctx, id, "session", Render(e, true), "discussion", "event:"+Causation(e))
+	return err
+}
+
+// t1: e is a hand-off from a session whose stored trust set lacks A.
+func (d *Dispatcher) t1(ctx context.Context, e *bridgev1.CloudEvent, h definitions.Head) (bool, error) {
+	// Alerts never get here: Handle files them before any delivery.
+	if e.GetReplayed() || e.GetSource() != d.source || e.GetActor() != "agent" || !strings.HasPrefix(e.GetActorLogin(), "agent:") || !e.GetActorTrusted() || !handsOff(e, h) {
+		return false, nil
+	}
+	var set string
+	err := d.pool.QueryRow(ctx, `SELECT s.trust_set FROM published_events p JOIN sessions s ON s.id = p.session_id
+		WHERE p.event_id = $1`, e.GetId()).Scan(&set)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil // no known publisher: nothing vouches for it
+	}
+	return err == nil && !sessions.HoldsTrust(set, "A"), err
 }
