@@ -77,6 +77,7 @@ func (s *Server) SubmitReview(ctx context.Context, req *agentfleetv1.SubmitRevie
 	if !slices.ContainsFunc(open, func(r sessions.ThreadRef) bool { return r.ID == req.GetSessionId() }) {
 		return nil, status.Errorf(codes.PermissionDenied, "this session is not on thread %s", key)
 	}
+	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 	res, err := s.provisioner.PostReview(ctx, &agentfleetv1.PostReviewRequest{
 		Repo: req.GetRepo(), Pr: req.GetPr(), HeadSha: req.GetHeadSha(),
 		Verdict: req.GetVerdict(), Body: req.GetBody(), Comments: req.GetComments(),

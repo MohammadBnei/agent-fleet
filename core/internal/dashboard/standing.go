@@ -123,15 +123,22 @@ func (s *Server) CloseStandingThread(ctx context.Context, req *connect.Request[a
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	ok, err := s.sessions.CloseThread(ctx, row.ID, key)
+	// The abort goes first and the close after, so a failed append leaves the thread open for a retry instead of
+	// closed under a live SDK session.
+	threads, err := s.sessions.Threads(ctx, row.ID)
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	if !ok {
+	if !slices.ContainsFunc(threads, func(t sessions.Thread) bool { return t.Key == key && !t.Closed && key != sessions.MainThread }) {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("thread %q of %q is main, unknown or already closed", key, name))
 	}
 	if _, err := s.transcr.Append(transcript.WithThread(ctx, key), row.ID, "human", "closed by "+adminSub(ctx), "abort", uuid.NewString()); err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	if ok, err := s.sessions.CloseThread(ctx, row.ID, key); err != nil {
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	} else if !ok {
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("thread %q of %q is main, unknown or already closed", key, name))
 	}
 	slog.InfoContext(ctx, "dashboard CloseStandingThread", "definition", name, "sessionId", row.ID, "thread", key)
 	return connect.NewResponse(&agentfleetv1.CloseStandingThreadResponse{}), nil

@@ -108,12 +108,19 @@ func TestCloseIdleThreads_SevenDaysAndNeverMain(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE session_threads SET last_active_at = now() - interval '8 days' WHERE session_id = $1 AND thread_key IN ('old', 'main')`, id); err != nil {
 		t.Fatal(err)
 	}
-	closed, err := store.CloseIdleThreads(ctx, 7*24*time.Hour)
-	if err != nil || len(closed) != 1 || closed[0].Key != "old" || closed[0].SessionID != id {
-		t.Fatalf("closed = %+v, %v; want only old (main never closes, fresh is active)", closed, err)
+	idle, err := store.IdleThreads(ctx, 7*24*time.Hour)
+	if err != nil || len(idle) != 1 || idle[0].Key != "old" || idle[0].SessionID != id {
+		t.Fatalf("idle = %+v, %v; want only old (main never closes, fresh is active)", idle, err)
 	}
-	if again, _ := store.CloseIdleThreads(ctx, 7*24*time.Hour); len(again) != 0 {
-		t.Fatalf("closed again: %+v", again)
+	// Listing closes nothing: the caller sends the abort first, so a failed append leaves the thread for the next sweep.
+	if again, _ := store.IdleThreads(ctx, 7*24*time.Hour); len(again) != 1 {
+		t.Fatalf("listing closed a thread: %+v", again)
+	}
+	if ok, err := store.CloseThread(ctx, id, "old"); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if again, _ := store.IdleThreads(ctx, 7*24*time.Hour); len(again) != 0 {
+		t.Fatalf("closed thread listed again: %+v", again)
 	}
 }
 
@@ -190,10 +197,20 @@ func TestSettleCrash_EffectRanPoisonAndTheRest(t *testing.T) {
 	if got := settle(); len(got) != 1 || got["fx"].Seq != 1 || got["fx"].Reason != "effect" {
 		t.Fatalf("crash 1 settled %+v, want fx@1 by effect", got)
 	}
+	// The same crash reported again (the provisioner restarted, or a re-warm failed before the pod ran) has no
+	// new agent output above the last settle: it is not a second crash.
+	for range 3 {
+		if got := settle(); got["poison"].Reason != "" {
+			t.Fatalf("a repeated report settled poison: %+v", got)
+		}
+	}
+	// Crash 2: the re-warmed pod ran the entry again and died.
+	put(t, pool, id, 11, "poison", "agent", "assistant", "working again")
 	if got := settle(); got["poison"].Reason != "" {
 		t.Fatalf("crash 2 settled poison: %+v", got)
 	}
 	// Crash 3 of the same head.
+	put(t, pool, id, 12, "poison", "agent", "assistant", "and again")
 	if got := settle(); got["poison"].Seq != 3 || got["poison"].Reason != "poison" {
 		t.Fatalf("crash 3 settled %+v, want poison@3", got)
 	}
@@ -214,7 +231,10 @@ func TestSettleCrash_ADifferentHeadRestartsTheCount(t *testing.T) {
 	openThread(t, pool, id, "t", 0)
 	put(t, pool, id, 1, "t", "human", "discussion", "one")
 	put(t, pool, id, 2, "t", "agent", "assistant", "working")
-	for range PoisonCrashes - 1 {
+	for i := range PoisonCrashes - 1 {
+		if i > 0 {
+			put(t, pool, id, int64(10+i), "t", "agent", "assistant", "working again")
+		}
 		if got, err := store.SettleCrash(ctx, id); err != nil || len(got) != 0 {
 			t.Fatalf("settled early: %+v %v", got, err)
 		}
@@ -224,7 +244,7 @@ func TestSettleCrash_ADifferentHeadRestartsTheCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	put(t, pool, id, 3, "t", "human", "discussion", "two")
-	put(t, pool, id, 4, "t", "agent", "assistant", "working")
+	put(t, pool, id, 20, "t", "agent", "assistant", "working")
 	if got, err := store.SettleCrash(ctx, id); err != nil || len(got) != 0 {
 		t.Fatalf("a new head settled on its first crash: %+v %v", got, err)
 	}

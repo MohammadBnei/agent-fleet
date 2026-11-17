@@ -68,19 +68,19 @@ func (s *Store) CloseThread(ctx context.Context, sessionID, key string) (bool, e
 	return tag.RowsAffected() == 1, nil
 }
 
-// ClosedThread is one thread CloseIdleThreads closed.
-type ClosedThread struct{ SessionID, Key string }
+// IdleThread is one open thread IdleThreads found.
+type IdleThread struct{ SessionID, Key string }
 
-// CloseIdleThreads closes every open non-main thread whose last owner message is older than idle: 7 days
-// (docs/adr/0084 §4).
-func (s *Store) CloseIdleThreads(ctx context.Context, idle time.Duration) ([]ClosedThread, error) {
-	rows, err := s.pool.Query(ctx, `UPDATE session_threads SET closed_at = now(), agent_session_id = NULL
-		WHERE closed_at IS NULL AND thread_key <> $1 AND last_active_at < now() - make_interval(secs => $2)
-		RETURNING session_id::text, thread_key`, MainThread, idle.Seconds())
+// IdleThreads lists every open non-main thread whose last owner message is older than idle: 7 days
+// (docs/adr/0084 §4). The caller sends the thread's abort entry first and closes it after (CloseThread), so a
+// failed append leaves the thread open for the next sweep rather than closed under a live SDK session.
+func (s *Store) IdleThreads(ctx context.Context, idle time.Duration) ([]IdleThread, error) {
+	rows, err := s.pool.Query(ctx, `SELECT session_id::text, thread_key FROM session_threads
+		WHERE closed_at IS NULL AND thread_key <> $1 AND last_active_at < now() - make_interval(secs => $2)`, MainThread, idle.Seconds())
 	if err != nil {
-		return nil, fmt.Errorf("close idle threads: %w", err)
+		return nil, fmt.Errorf("idle threads: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (c ClosedThread, err error) {
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (c IdleThread, err error) {
 		err = r.Scan(&c.SessionID, &c.Key)
 		return
 	})
@@ -118,7 +118,9 @@ type Settled struct {
 
 // SettleCrash runs once per CRASHED pod of a standing session (docs/adr/0084 §4). A thread whose head entry
 // (the first turn-starting one at or above its cursor) had a turn running, shown by agent output above it and
-// above the thread's last result, has crashed on that entry. The entry is settled, for the caller to close
+// above the thread's last result, has crashed on that entry. A crash counts once per attempt: agent output
+// above the one the last settle saw. A report with none (the same crash seen twice, a re-warm that failed
+// before the pod ran) changes nothing. The entry is settled, for the caller to close
 // with a crash result, when an effect of it ran (replaying would run it twice) or it has now crashed
 // PoisonCrashes times in a row. Any other crash leaves it for the re-warm.
 func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, error) {
@@ -127,25 +129,26 @@ func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, error) {
 		return nil, fmt.Errorf("settle crash: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	rows, err := tx.Query(ctx, `SELECT st.thread_key, head.seq, COALESCE(st.effect_seq, -1), COALESCE(st.crash_seq, -1), st.crashes
+	rows, err := tx.Query(ctx, `SELECT st.thread_key, head.seq, COALESCE(st.effect_seq, -1), COALESCE(st.crash_seq, -1), st.crashes, top.seq
 		FROM session_threads st
 		CROSS JOIN LATERAL (SELECT MIN(h.seq) AS seq FROM transcript h WHERE h.session_id = st.session_id
 		                      AND h.thread_key = st.thread_key AND h.seq >= st.cursor AND `+turnStarting+`) head
-		WHERE st.session_id = $1 AND st.closed_at IS NULL AND head.seq IS NOT NULL
-		  AND EXISTS (SELECT 1 FROM transcript t WHERE t.session_id = st.session_id AND t.thread_key = st.thread_key
-		              AND t."from" = 'agent' AND t.seq > head.seq
+		CROSS JOIN LATERAL (SELECT MAX(t.seq) AS seq FROM transcript t WHERE t.session_id = st.session_id
+		              AND t.thread_key = st.thread_key AND t."from" = 'agent' AND t.seq > head.seq
 		              AND t.seq > COALESCE((SELECT MAX(r.seq) FROM transcript r WHERE r.session_id = st.session_id
-		                                      AND r.thread_key = st.thread_key AND r.type = 'result'), -1))`, id)
+		                                      AND r.thread_key = st.thread_key AND r.type = 'result'), -1)) top
+		WHERE st.session_id = $1 AND st.closed_at IS NULL AND head.seq IS NOT NULL
+		  AND top.seq IS NOT NULL AND top.seq > COALESCE(st.crash_agent_seq, -1)`, id)
 	if err != nil {
 		return nil, fmt.Errorf("settle crash: %w", err)
 	}
 	type head struct {
-		key                   string
-		seq, effect, crashSeq int64
-		crashes               int
+		key                           string
+		seq, effect, crashSeq, topSeq int64
+		crashes                       int
 	}
 	heads, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (h head, err error) {
-		err = r.Scan(&h.key, &h.seq, &h.effect, &h.crashSeq, &h.crashes)
+		err = r.Scan(&h.key, &h.seq, &h.effect, &h.crashSeq, &h.crashes, &h.topSeq)
 		return
 	})
 	if err != nil {
@@ -157,8 +160,8 @@ func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, error) {
 		if h.crashSeq == h.seq {
 			crashes = h.crashes + 1
 		}
-		if _, err := tx.Exec(ctx, `UPDATE session_threads SET crash_seq = $3, crashes = $4 WHERE session_id = $1 AND thread_key = $2`,
-			id, h.key, h.seq, crashes); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE session_threads SET crash_seq = $3, crashes = $4, crash_agent_seq = $5 WHERE session_id = $1 AND thread_key = $2`,
+			id, h.key, h.seq, crashes, h.topSeq); err != nil {
 			return nil, fmt.Errorf("settle crash: %w", err)
 		}
 		switch {

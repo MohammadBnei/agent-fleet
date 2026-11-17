@@ -55,6 +55,16 @@ func threadOf(ctx context.Context) (key string, named bool) {
 // A thread other than main on a row that is not standing is refused. Main on such a row touches nothing: the
 // UPDATE below matches no row.
 func noteThread(ctx context.Context, tx pgx.Tx, sessionID string, e Entry) error {
+	if e.ThreadKey == MainThread {
+		// A standing row always has its main thread, whatever made the row: one an older core created after the
+		// migration's backfill gets it from its first entry. StreamHumanMessages drops entries of a thread it
+		// has no row for.
+		if _, err := tx.Exec(ctx, `INSERT INTO session_threads (session_id, thread_key, cursor)
+			SELECT id, $2, $3 FROM sessions WHERE id = $1 AND lifecycle = 'standing' ON CONFLICT DO NOTHING`,
+			sessionID, MainThread, e.Seq); err != nil {
+			return fmt.Errorf("main thread: %w", err)
+		}
+	}
 	if e.ThreadKey != MainThread {
 		var standing bool
 		if err := tx.QueryRow(ctx, `SELECT lifecycle IS NOT DISTINCT FROM 'standing' FROM sessions WHERE id = $1`, sessionID).Scan(&standing); err != nil {
@@ -85,6 +95,7 @@ func noteThread(ctx context.Context, tx pgx.Tx, sessionID string, e Entry) error
 			  effect_seq = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.effect_seq END,
 			  crash_seq = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.crash_seq END,
 			  crashes = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.crashes ELSE 0 END,
+			  crash_agent_seq = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.crash_agent_seq END,
 			  closed_at = NULL`, sessionID, e.ThreadKey, e.Seq)
 		return err
 	}

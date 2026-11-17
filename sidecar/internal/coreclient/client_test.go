@@ -45,3 +45,25 @@ func TestAppendJournal_Quarantine(t *testing.T) {
 		}
 	}
 }
+
+// docs/adr/0084 §4: inside a standing turn the key is core's, never the agent's. Outside one, on a standing pod,
+// an effect is refused, and a forged eff: key never passes.
+func TestEffectKey_StandingTurn(t *testing.T) {
+	c := &Client{taskID: "s1"}
+	if k, err := c.effectKey("mine"); err != nil || k != "mine" {
+		t.Fatalf("not standing: %q, %v", k, err)
+	}
+	if _, err := c.effectKey("eff:s1:a:1:1"); err == nil {
+		t.Fatal("a forged eff: key passed")
+	}
+	c.SetTurn("a", 7)
+	k1, err1 := c.effectKey("mine")
+	k2, err2 := c.effectKey("mine")
+	if err1 != nil || err2 != nil || k1 != "eff:s1:a:7:1" || k2 != "eff:s1:a:7:2" {
+		t.Fatalf("in a turn: %q %q, %v %v", k1, k2, err1, err2)
+	}
+	c.SetTurn("", 0)
+	if _, err := c.effectKey("mine"); err == nil {
+		t.Fatal("an effect outside a turn on a standing pod passed")
+	}
+}

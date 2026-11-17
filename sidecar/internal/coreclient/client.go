@@ -8,7 +8,9 @@ package coreclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"google.golang.org/grpc"
@@ -43,6 +45,9 @@ type Client struct {
 	// turn is the thread the worker is running a turn for (docs/adr/0084 §4): one at a time per pod, so every
 	// call made meanwhile belongs to it. nil outside a standing character's turn.
 	turn atomic.Pointer[turnState]
+	// standing is set by the first turn named: this is a standing character's pod, so an effect outside a turn
+	// has no entry to answer and is refused.
+	standing atomic.Bool
 }
 
 // turnState is one running turn: its thread, the entry it answers, and how many effect calls it has made.
@@ -59,6 +64,7 @@ func (c *Client) SetTurn(thread string, entrySeq int64) {
 		c.turn.Store(nil)
 		return
 	}
+	c.standing.Store(true)
 	c.turn.Store(&turnState{thread: thread, seq: entrySeq})
 }
 
@@ -86,13 +92,21 @@ func (c *Client) threadKey(ctx context.Context) string {
 
 // effectKey is the idempotency key of an effect method (docs/adr/0084 §4): (session, thread, entry seq, call
 // ordinal) inside a standing turn, replacing whatever key the agent chose, since a replayed turn does not
-// repeat the agent's keys but does repeat the ordinals. Outside a turn the caller's key stands.
-func (c *Client) effectKey(key string) string {
+// repeat the agent's keys but does repeat the ordinals. The agent can reach the worker's turn endpoint, so on a
+// standing pod an effect outside a turn is refused, and a caller key shaped like ours never passes: the agent
+// cannot name an entry as done. A pod that is not standing keeps the caller's key.
+func (c *Client) effectKey(key string) (string, error) {
+	if strings.HasPrefix(key, "eff:") {
+		return "", errors.New("idempotency keys starting with eff: are reserved")
+	}
 	t := c.turn.Load()
 	if t == nil {
-		return key
+		if c.standing.Load() {
+			return "", errors.New("no turn is running: an effect needs the entry it answers")
+		}
+		return key, nil
 	}
-	return fmt.Sprintf("eff:%s:%s:%d:%d", c.taskID, t.thread, t.seq, t.ordinal.Add(1))
+	return fmt.Sprintf("eff:%s:%s:%d:%d", c.taskID, t.thread, t.seq, t.ordinal.Add(1)), nil
 }
 
 func (c *Client) SetAgentSpecSHA(sha string) { c.specSHA.Store(sha) }
@@ -354,7 +368,11 @@ func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payl
 // AuthorizeMemoryWrite asks core whether this session may write memory and where, from its stored set (ADR-0086 §2,
 // §5). quarantine is true when the write goes to the quarantine repo. Any error means refuse: the tool fails closed.
 func (c *Client) AuthorizeMemoryWrite(ctx context.Context) (quarantine bool, err error) {
-	r, err := c.rpc.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: c.taskID})
+	ek, err := c.effectKey("")
+	if err != nil {
+		return false, fmt.Errorf("AuthorizeMemoryWrite: %w", err)
+	}
+	r, err := c.rpc.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: c.taskID, IdempotencyKey: ek})
 	if err != nil {
 		return false, fmt.Errorf("AuthorizeMemoryWrite: %w", err)
 	}
@@ -526,8 +544,12 @@ func (c *Client) UpdateSessionMeta(ctx context.Context, title, description *stri
 // PublishEvent publishes an event to the bridge as this session
 // (docs/adr/0078 §8). Core sets the actor, causation, hops and trust.
 func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key string) (*agentfleetv1.PublishEventResponse, error) {
+	ek, err := c.effectKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("PublishEvent: %w", err)
+	}
 	res, err := c.rpc.PublishEvent(ctx, &agentfleetv1.PublishEventRequest{
-		SessionId: c.taskID, Type: typ, Subject: subject, Text: text, IdempotencyKey: c.effectKey(key),
+		SessionId: c.taskID, Type: typ, Subject: subject, Text: text, IdempotencyKey: ek,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("PublishEvent: %w", err)
@@ -540,7 +562,11 @@ func (c *Client) PublishEvent(ctx context.Context, typ, subject, text, key strin
 // session id is this pod's, overwriting whatever the caller set.
 func (c *Client) DraftCard(ctx context.Context, req *agentfleetv1.DraftCardRequest) (*agentfleetv1.DraftCardResponse, error) {
 	req.SessionId = c.taskID
-	req.IdempotencyKey = c.effectKey(req.IdempotencyKey)
+	ek, err := c.effectKey(req.IdempotencyKey)
+	if err != nil {
+		return nil, fmt.Errorf("DraftCard: %w", err)
+	}
+	req.IdempotencyKey = ek
 	res, err := c.rpc.DraftCard(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("DraftCard: %w", err)
@@ -553,6 +579,11 @@ func (c *Client) DraftCard(ctx context.Context, req *agentfleetv1.DraftCardReque
 // session id is this pod's, overwriting whatever the caller set.
 func (c *Client) SubmitReview(ctx context.Context, req *agentfleetv1.SubmitReviewRequest) (*agentfleetv1.SubmitReviewResponse, error) {
 	req.SessionId = c.taskID
+	ek, err := c.effectKey("")
+	if err != nil {
+		return nil, fmt.Errorf("SubmitReview: %w", err)
+	}
+	req.IdempotencyKey = ek
 	res, err := c.rpc.SubmitReview(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("SubmitReview: %w", err)

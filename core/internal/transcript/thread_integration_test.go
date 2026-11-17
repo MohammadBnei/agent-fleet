@@ -138,3 +138,27 @@ func TestThreads_ClosedThreadReopensAfresh_BadThreadsRefused(t *testing.T) {
 		t.Errorf("main on a resident row: %v", err)
 	}
 }
+
+// A standing row an older core created after the migration's backfill has no main thread row. Its first entry
+// makes one, or every message to it is dropped by the stream (docs/adr/0084 §4).
+func TestThreads_MainRowIsMadeByTheFirstEntryWhenMissing(t *testing.T) {
+	ctx := context.Background()
+	store := NewPostgresStore(newTestPool(t), noHook)
+	id := newStanding(t, ctx, store)
+	if _, err := store.pool.Exec(ctx, `DELETE FROM session_threads WHERE session_id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	seq, err := store.Append(ctx, id, "human", "hello", "discussion", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, closed := cursor(t, ctx, store, id, "main"); c != seq || closed {
+		t.Fatalf("main cursor %d closed %v, want %d open", c, closed, seq)
+	}
+	if _, err := store.Append(ctx, id, "human", "again", "discussion", ""); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := cursor(t, ctx, store, id, "main"); c != seq {
+		t.Fatalf("a later entry moved main's cursor to %d", c)
+	}
+}

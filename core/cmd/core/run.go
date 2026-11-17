@@ -744,16 +744,21 @@ func reconcileVaults(ctx context.Context, p vaultReconciler, vaults []*agentflee
 const threadIdle = 7 * 24 * time.Hour
 
 // closeIdleThreads closes the threads idle for threadIdle. Each gets the abort entry an owner's close writes, so
-// a live pod ends that thread's SDK session.
+// a live pod ends that thread's SDK session, and only then is closed: an append that fails leaves the thread
+// open for the next sweep.
 func closeIdleThreads(ctx context.Context, sessionStore *sessions.Store, transcr transcript.Store) {
-	closed, err := sessionStore.CloseIdleThreads(ctx, threadIdle)
+	idle, err := sessionStore.IdleThreads(ctx, threadIdle)
 	if err != nil {
 		slog.Error("sessions: close idle threads failed", "error", err)
 		return
 	}
-	for _, c := range closed {
+	for _, c := range idle {
 		if _, err := transcr.Append(transcript.WithThread(ctx, c.Key), c.SessionID, "human", "closed: idle", "abort", uuid.NewString()); err != nil {
 			slog.Error("sessions: idle thread abort entry failed", "sessionId", c.SessionID, "thread", c.Key, "error", err)
+			continue
+		}
+		if _, err := sessionStore.CloseThread(ctx, c.SessionID, c.Key); err != nil {
+			slog.Error("sessions: closing an idle thread failed", "sessionId", c.SessionID, "thread", c.Key, "error", err)
 		}
 	}
 }

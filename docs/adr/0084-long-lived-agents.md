@@ -20,7 +20,8 @@
   - The worker runs one SDK session per thread and one running thread per pod. A waiting message holds its thread's
     cursor back. Answers, permission responses and Stop pass. A turn passes its 15-minute deadline and is interrupted.
   - The sidecar files every call under the running turn's thread (`x-fleet-thread`, set by `POST /turn`), and keys
-    `publish_event` and `draft_card` by (session, thread, entry seq, call ordinal).
+    `publish_event`, `draft_card`, `submit_review` and `memory_write` by (session, thread, entry seq, call ordinal).
+    On a standing pod an effect outside a turn is refused, and the agent cannot pass a key of its own shape.
   - A CRASHED pod settles a thread's head entry when an effect of it ran or it crashed three times in a row: core
     appends a crash result, which moves the cursor, and a poison entry alerts the owner.
   - Not in this slice: the budget hold (slice 13 owns the budget), the crash entry for every thread and the re-warm
@@ -317,7 +318,6 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
    - The turn deadline aborts a turn.
    - The idempotency key includes `thread_key`, and an entry whose effect ran is not replayed after a crash.
    - A poison entry is marked done in its thread after three crashes.
-   - The budget is per character and holds each thread only at its head.
 5. **Sweeps, re-warm and re-pin.**
    - The idle and stop-grace sweeps skip standing rows. A startup stall alerts.
    - Every terminal path sets `restart_after`.
@@ -352,5 +352,7 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
     - `PostToCharacter` from an admin origin is T0.
     - `Speak` reaches only the owner's browser, never the bridge, and is bounded.
 13. **Budget and alert.**
+    - The budget is per character and holds each thread only at its head (moved here from slice 4, which has no budget
+      to hold).
     - `raise_budget` sets a 24h override.
     - The alert formula fires.

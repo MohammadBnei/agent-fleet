@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -198,7 +200,16 @@ func TestCrash_SettlesWithACrashResultAndAlertsOnPoison(t *testing.T) {
 	if c := cursors(); c["fx"] != 2 || c["poison"] != 0 || len(alerts) != 0 {
 		t.Fatalf("after crash 1: cursors %v alerts %v; the effect-run entry should be done, poison not yet", c, alerts)
 	}
+	// The same crash reported again (a provisioner restart, a re-warm that failed before dispatch) is not a second
+	// attempt: no agent output above the last settle.
 	crash()
+	crash()
+	if c := cursors(); c["poison"] != 0 || len(alerts) != 0 {
+		t.Fatalf("repeated reports of one crash: cursors %v alerts %v; poison was counted twice", c, alerts)
+	}
+	put(t, pool, id, 50, "poison", "agent", "assistant", "working again")
+	crash()
+	put(t, pool, id, 51, "poison", "agent", "assistant", "and again")
 	crash()
 	if c := cursors(); c["poison"] != 4 || len(alerts) != 1 {
 		t.Fatalf("after crash 3: cursors %v alerts %v; the poison entry should be done and alerted", c, alerts)
@@ -264,7 +275,52 @@ func TestEffectMethods_NoteTheirEntry(t *testing.T) {
 	if effect() != 9 {
 		t.Fatalf("draft_card noted %d, want 9", effect())
 	}
+	// memory_write: core's grant is the effect's marker (the write follows it in the sidecar).
+	if _, err := s.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: id, IdempotencyKey: sessions.EffectKey(id, "t", 12, 1)}); err != nil {
+		t.Fatal(err)
+	}
+	if effect() != 12 {
+		t.Fatalf("memory_write noted %d, want 12", effect())
+	}
 	_ = store
+}
+
+// submit_review posts to GitHub through the provisioner: the entry is marked before the post, so a crash after
+// it never replays the review. The provisioner here is unreachable, which fails the post and still shows the mark.
+func TestSubmitReview_NotesItsEntryBeforePosting(t *testing.T) {
+	s, _, pool, id := newCharacter(t)
+	ctx := context.Background()
+	thread(t, pool, id, "t", 0)
+	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET effective = '{"sidecarTools":["submit_review"],"mode":{"default":"default","allow":["default"]},
+		"credentials":{"vault":"v","services":[{"host":"github.com","paths":["/o/r.git/*"],"secret":"x"}]}}'::jsonb WHERE name = 'a'`); err != nil {
+		t.Fatal(err)
+	}
+	// A real reviewer is a single-shot session on the PR's thread; the character stands in for it here, so the
+	// standing row's principal constraint (its thread is main) is dropped from this test's database.
+	if _, err := pool.Exec(ctx, `ALTER TABLE sessions DROP CONSTRAINT sessions_standing_principal`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET thread_key = 'github/o/r/pr/1' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	prov, err := provisionerclient.New("127.0.0.1:1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.provisioner = prov
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err = s.SubmitReview(cctx, &agentfleetv1.SubmitReviewRequest{
+		SessionId: id, Repo: "o/r", Pr: 1, HeadSha: strings.Repeat("a", 40), Verdict: "comment", Body: "looks fine",
+		IdempotencyKey: sessions.EffectKey(id, "t", 14, 1),
+	})
+	if err == nil {
+		t.Fatal("the unreachable provisioner posted a review")
+	}
+	var seq *int64
+	if err := pool.QueryRow(ctx, `SELECT effect_seq FROM session_threads WHERE session_id = $1 AND thread_key = 't'`, id).Scan(&seq); err != nil || seq == nil || *seq != 14 {
+		t.Fatalf("submit_review noted %v (%v), want 14: the entry would replay the review after a crash", seq, err)
+	}
 }
 
 func metadataThread(ctx context.Context, th string) context.Context {

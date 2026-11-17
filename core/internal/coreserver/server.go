@@ -627,8 +627,10 @@ func (s *Server) AuthorizeMemoryWrite(ctx context.Context, req *agentfleetv1.Aut
 	}
 	switch {
 	case sessions.HoldsTrust(t.TrustSet, "A"):
+		s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 		return &agentfleetv1.AuthorizeMemoryWriteResponse{Quarantine: true}, nil
 	case sessions.HoldsTrust(t.TrustSet, "C"):
+		s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 		return &agentfleetv1.AuthorizeMemoryWriteResponse{}, nil
 	}
 	return nil, errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,

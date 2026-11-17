@@ -4,6 +4,7 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -303,6 +304,20 @@ func TestStandingThreads_OpenCloseAndResume(t *testing.T) {
 	if _, ok, _ := store.ResumeFrom(ctx, id); ok {
 		t.Fatal("a closed thread's waiting entry still holds the resume point")
 	}
+	// An abort that cannot be written leaves the thread open: closed in the database under a live SDK session, the
+	// owner could not send the abort again.
+	real := s.transcr
+	s.transcr = abortFails{real}
+	if err := closeT("topic-a"); err == nil {
+		t.Fatal("a close whose abort failed reported success")
+	}
+	if th := threads()["topic-a"]; th.Closed {
+		t.Fatal("topic-a closed although its abort was never written")
+	}
+	s.transcr = real
+	if err := closeT("topic-a"); err != nil {
+		t.Fatalf("the retry of a close: %v", err)
+	}
 	// The key reopens afresh on the next message.
 	if err := post("topic-b", "back"); err != nil {
 		t.Fatal(err)
@@ -319,4 +334,14 @@ func TestStandingThreads_OpenCloseAndResume(t *testing.T) {
 	if _, err := s.PostMessage(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: plain.GetId(), Text: "x", ThreadKey: "topic-a"})); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("a thread on a resident session: %v", err)
 	}
+}
+
+// abortFails is a transcript whose abort entries cannot be written.
+type abortFails struct{ transcript.Store }
+
+func (a abortFails) Append(ctx context.Context, id, from, text, typ, key string) (int64, error) {
+	if typ == "abort" {
+		return 0, errors.New("append refused")
+	}
+	return a.Store.Append(ctx, id, from, text, typ, key)
 }

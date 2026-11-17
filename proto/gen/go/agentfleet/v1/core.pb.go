@@ -2510,10 +2510,12 @@ type SubmitReviewRequest struct {
 	// "approve" | "changes" | "comment".
 	Verdict string `protobuf:"bytes,5,opt,name=verdict,proto3" json:"verdict,omitempty"`
 	// At most 60000 characters.
-	Body          string           `protobuf:"bytes,6,opt,name=body,proto3" json:"body,omitempty"`
-	Comments      []*ReviewComment `protobuf:"bytes,7,rep,name=comments,proto3" json:"comments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Body     string           `protobuf:"bytes,6,opt,name=body,proto3" json:"body,omitempty"`
+	Comments []*ReviewComment `protobuf:"bytes,7,rep,name=comments,proto3" json:"comments,omitempty"`
+	// Set by the sidecar inside a standing character's turn (docs/adr/0084 §4): names the entry the review answers.
+	IdempotencyKey string `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SubmitReviewRequest) Reset() {
@@ -2593,6 +2595,13 @@ func (x *SubmitReviewRequest) GetComments() []*ReviewComment {
 		return x.Comments
 	}
 	return nil
+}
+
+func (x *SubmitReviewRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 type SubmitReviewResponse struct {
@@ -2765,10 +2774,12 @@ func (*AppendJournalResponse) Descriptor() ([]byte, []int) {
 // AuthorizeMemoryWrite is the sidecar's memory_write asking core first (ADR-0086 §2, §5). Core reads the session's
 // stored set: A writes only to quarantine, C without A writes to memory, B alone is refused (agent.rule_of_two).
 type AuthorizeMemoryWriteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// As SubmitReviewRequest's: the write that follows the grant is an effect of the turn's entry.
+	IdempotencyKey string `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AuthorizeMemoryWriteRequest) Reset() {
@@ -2804,6 +2815,13 @@ func (*AuthorizeMemoryWriteRequest) Descriptor() ([]byte, []int) {
 func (x *AuthorizeMemoryWriteRequest) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AuthorizeMemoryWriteRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
 	}
 	return ""
 }
@@ -4204,7 +4222,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x14PublishEventResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\atrusted\x18\x02 \x01(\bR\atrusted\x12\x12\n" +
-	"\x04hops\x18\x03 \x01(\x05R\x04hops\"\xdb\x01\n" +
+	"\x04hops\x18\x03 \x01(\x05R\x04hops\"\x84\x02\n" +
 	"\x13SubmitReviewRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -4213,7 +4231,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\bhead_sha\x18\x04 \x01(\tR\aheadSha\x12\x18\n" +
 	"\averdict\x18\x05 \x01(\tR\averdict\x12\x12\n" +
 	"\x04body\x18\x06 \x01(\tR\x04body\x128\n" +
-	"\bcomments\x18\a \x03(\v2\x1c.agentfleet.v1.ReviewCommentR\bcomments\"K\n" +
+	"\bcomments\x18\a \x03(\v2\x1c.agentfleet.v1.ReviewCommentR\bcomments\x12'\n" +
+	"\x0fidempotency_key\x18\b \x01(\tR\x0eidempotencyKey\"K\n" +
 	"\x14SubmitReviewResponse\x12\x1d\n" +
 	"\n" +
 	"review_url\x18\x01 \x01(\tR\treviewUrl\x12\x14\n" +
@@ -4225,10 +4244,11 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12 \n" +
 	"\vquarantined\x18\x05 \x01(\bR\vquarantined\"\x17\n" +
-	"\x15AppendJournalResponse\"<\n" +
+	"\x15AppendJournalResponse\"e\n" +
 	"\x1bAuthorizeMemoryWriteRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\">\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\">\n" +
 	"\x1cAuthorizeMemoryWriteResponse\x12\x1e\n" +
 	"\n" +
 	"quarantine\x18\x01 \x01(\bR\n" +

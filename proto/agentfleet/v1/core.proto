@@ -502,6 +502,8 @@ message SubmitReviewRequest {
   // At most 60000 characters.
   string body = 6;
   repeated ReviewComment comments = 7;
+  // Set by the sidecar inside a standing character's turn (docs/adr/0084 §4): names the entry the review answers.
+  string idempotency_key = 8;
 }
 
 message SubmitReviewResponse {
@@ -539,6 +541,8 @@ message AppendJournalResponse {}
 // stored set: A writes only to quarantine, C without A writes to memory, B alone is refused (agent.rule_of_two).
 message AuthorizeMemoryWriteRequest {
   string session_id = 1;
+  // As SubmitReviewRequest's: the write that follows the grant is an effect of the turn's entry.
+  string idempotency_key = 2;
 }
 
 message AuthorizeMemoryWriteResponse {
