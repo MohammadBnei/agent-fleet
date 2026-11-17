@@ -11,20 +11,28 @@
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
-- **Built:** appendix slice 5: sweeps, re-warm and re-pin (migration 000033: `sessions.restart_after`, `drain_started_at`).
+- **Built:** appendix slice 5: sweeps, re-warm and re-pin (migration 000033: `sessions.restart_after`, `drain_started_at`, `warm_failures`).
   - The idle sweep skips a character; the stop-grace sweep skips it unless the owner stopped it; a startup stall alerts
     once and tears nothing down.
   - `SetPodPhase` stamps `restart_after` on TERMINATED and CRASHED, and a failed warm stamps it. Core's loop warms a
     started character with no pod once `restart_after` plus the back-off has passed.
-  - A CRASHED report appends a crash entry (a `fleet` system entry, keyed by the pod) to the thread whose turn was
-    running, or main. Evicted and Preempted get none. The back-off is 10 s doubled per entry of the last hour, and
-    the third entry stops the re-warm and alerts the owner.
+  - A CRASHED report appends a crash entry (a `fleet` system entry, keyed by the Job UID, which a re-warm changes
+    while the Job name stays) to the thread whose turn was running, or main. The provisioner reads the pod's
+    Evicted or Preempted reason (pod status or DisruptionTarget condition) into `PodEvent.termination_reason`;
+    such a loss adds no crash entry and counts no poison crash, and still closes a head whose effect ran. The
+    back-off is 10 s doubled per crash entry of the last hour plus per failed warm since the last good one, capped at
+    an hour. A warm that fails (a provisioner or a core-side refusal) counts in `warm_failures` instead of a crash
+    entry. The third crash entry stops the re-warm and alerts the owner; the stop lapses by itself once the entries
+    are an hour old, so a crash-looping character is retried and alerted again about hourly.
   - Re-pin in place (`Loop.repinStanding`): a change that widens `tools.allow`, a deny, `sidecarTools`,
     `cluster.read` or the vault is refused with one alert (a vault widening also takes the pod down). A narrowing or
     a revocation takes the pod down at once. Anything else drains: intake of new turns stops on every thread, the
-    running turn gets its 15-minute deadline, then the Job is deleted, the row re-pinned and a new Job warmed.
-  - Not in this slice: `spawns.allow` in the widening test (the spec has none yet), the 12 h token-cap replacement, and
-    the provisioner telling Evicted or Preempted from Failed (core matches the report's message prefix).
+    running turn gets its 15-minute deadline, then the Job is deleted, the row re-pinned and a new Job warmed. A drain
+    that ends without a new pod (the head widens, reverts or cannot be read) ends the drain; entries it held back are
+    delivered to the live pod. A character whose pin is revoked or widened is not re-warmed until Stop and Start.
+    Alerts are remembered per session and kind: the stall alert clears when output arrives or the pod changes.
+  - Not in this slice: `spawns.allow` in the widening test (the spec has none yet) and the 12 h token-cap
+    replacement.
 - **Built:** appendix slice 4: threads and delivery per thread (migration 000031).
   - `transcript.thread_key` and `session_threads` (cursor, SDK session id, last activity, effect and crash marks). The
     owner's message to a new key opens a thread (`PostMessage.thread_key`); `CloseStandingThread` or 7 idle days close

@@ -367,3 +367,119 @@ func TestKeepStanding_FailedWarmDefersAndAStallAlertsOnce(t *testing.T) {
 		t.Fatalf("stall: torn %v alerts %v", f.fake.tornWorkers, f.alert)
 	}
 }
+
+// The stall alert fires once over several full ticks: a healthy pin must not wipe its memory (docs/adr/0084 §3).
+func TestKeepStanding_AStallAlertsOnceAcrossTicks(t *testing.T) {
+	ctx := context.Background()
+	f := newPinFixture(t, effTools, effTools)
+	f.head.SHA = "sha-a"
+	f.live(t)
+	if _, err := f.pool.Exec(ctx, `UPDATE sessions SET activity_seen = false, updated_at = now() - interval '1 hour' WHERE id = $1`, f.id); err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
+		f.loop.keepStanding(ctx)
+		f.loop.stalledStanding(ctx)
+	}
+	if len(f.alert) != 1 {
+		t.Fatalf("a stall alerted %d times over four ticks: %v", len(f.alert), f.alert)
+	}
+	// Output arrives, then a new stall: it alerts again.
+	if _, err := f.pool.Exec(ctx, `UPDATE sessions SET activity_seen = true WHERE id = $1`, f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.loop.stalledStanding(ctx)
+	if _, err := f.pool.Exec(ctx, `UPDATE sessions SET activity_seen = false WHERE id = $1`, f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.loop.stalledStanding(ctx)
+	if len(f.alert) != 2 {
+		t.Fatalf("a second stall must alert: %v", f.alert)
+	}
+}
+
+// A drain whose head then widens, or is reverted, ends: intake resumes on the live pod.
+func TestRepin_AWideningOrRevertMidDrainEndsTheDrain(t *testing.T) {
+	ctx := context.Background()
+	f := newPinFixture(t, effTools, effSame)
+	f.live(t)
+	openThread(t, f.pool, f.id, "busy", 0)
+	put(t, f.pool, f.id, 1, "busy", "human", "discussion", "go")
+	put(t, f.pool, f.id, 2, "busy", "agent", "assistant", "working")
+	f.loop.keepStanding(ctx)
+	if d, _ := f.store.Draining(ctx, f.id); !d {
+		t.Fatal("setup: no drain")
+	}
+	// The head moves on to a version that widens the ceiling.
+	if _, err := f.pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('a', 'sha-c', '{}', $1::jsonb, true)`, effWider); err != nil {
+		t.Fatal(err)
+	}
+	wide, err := f.store.DefinitionEffective(ctx, "a", "sha-c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.head = definitions.Head{Name: "a", SHA: "sha-c", Effective: wide}
+	f.loop.keepStanding(ctx)
+	if d, _ := f.store.Draining(ctx, f.id); d {
+		t.Fatal("a widening left intake stopped")
+	}
+	// Revert mid-drain: back to the pinned version.
+	f.head.SHA = "sha-a"
+	f.head.Effective = wide
+	if _, err := f.store.Drain(ctx, f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.loop.keepStanding(ctx)
+	if d, _ := f.store.Draining(ctx, f.id); d || len(f.fake.tornWorkers) != 0 {
+		t.Fatalf("a revert must end the drain and keep the pod: draining %v torn %v", d, f.fake.tornWorkers)
+	}
+}
+
+// A failed warm backs the re-warm off like a crash does, and a refused pin is not warmed at all.
+func TestKeepStanding_FailedWarmsBackOffAndARefusedPinIsNotWarmed(t *testing.T) {
+	ctx := context.Background()
+	f := newPinFixture(t, effTools, effTools)
+	f.head.SHA = "sha-a"
+	var warms int
+	f.loop.SetRewarm(func(context.Context, string) error { warms++; return context.DeadlineExceeded })
+	f.loop.keepStanding(ctx)
+	f.loop.keepStanding(ctx) // the same instant: backed off, not retried
+	if warms != 1 {
+		t.Fatalf("a failed warm was retried at once: %d warms", warms)
+	}
+	setRestart(t, f.pool, f.id, "11 seconds") // past the first back-off (10s), not the second (20s)
+	if !due(t, f.store, f.id) {
+		t.Fatal("one failure: due after 10s")
+	}
+	f.loop.keepStanding(ctx)
+	setRestart(t, f.pool, f.id, "11 seconds")
+	if due(t, f.store, f.id) {
+		t.Fatal("two failures: the back-off doubled to 20s")
+	}
+	// A widening is never warmed: only Stop and Start moves it.
+	g := newPinFixture(t, effTools, effWider)
+	var gw int
+	g.loop.SetRewarm(func(context.Context, string) error { gw++; return nil })
+	g.loop.keepStanding(ctx)
+	if gw != 0 {
+		t.Fatalf("a widened pin was warmed %d times", gw)
+	}
+}
+
+// ADR-0084 §3 as built: the three-crash stop holds for an hour, then the character is listed again.
+func TestListRewarmStanding_TheStopLapsesWhenTheCrashesAgeOut(t *testing.T) {
+	store, pool, id := newCharacter(t)
+	for i, age := range []string{"1 minute", "2 minutes", "3 minutes"} {
+		crash(t, pool, id, int64(10+i), age)
+	}
+	setRestart(t, pool, id, "1 day")
+	if due(t, store, id) {
+		t.Fatal("three crashes in the hour must stop the re-warm")
+	}
+	if _, err := pool.Exec(context.Background(), `UPDATE transcript SET created_at = now() - interval '2 hours' WHERE session_id = $1 AND "from" = 'fleet'`, id); err != nil {
+		t.Fatal(err)
+	}
+	if !due(t, store, id) {
+		t.Fatal("crashes older than the window no longer stop the re-warm")
+	}
+}

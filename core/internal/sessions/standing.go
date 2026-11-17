@@ -20,6 +20,8 @@ const (
 	MaxCrashes  = 3
 	// RewarmBackoff is the first back-off; it doubles per crash entry of the window.
 	RewarmBackoff = 10 * time.Second
+	// MaxBackoff caps the doubling, so a warm that keeps failing is tried hourly, not never and not every tick.
+	MaxBackoff = time.Hour
 	// DrainDeadline is a thread's turn deadline (15 minutes, docs/adr/0084 §4) plus a minute for the pod to
 	// report it: a drain waits no longer than this for a running turn.
 	DrainDeadline = 16 * time.Minute
@@ -60,20 +62,39 @@ func (s *Store) ListRewarmStanding(ctx context.Context) ([]string, error) {
 		WHERE s.lifecycle = 'standing' AND s.stopped_at IS NULL AND s.archived_at IS NULL AND s.swept_at IS NULL
 		  AND COALESCE(s.pod_phase, '') <> ALL($1)
 		  AND c.n < $3
-		  AND COALESCE(s.restart_after, '-infinity') + CASE WHEN c.n = 0 THEN interval '0'
-		        ELSE make_interval(secs => $2::float8 * power(2, c.n - 1)) END <= now()`,
-		livePhases, RewarmBackoff.Seconds(), MaxCrashes)
+		  AND COALESCE(s.restart_after, '-infinity') + CASE WHEN c.n + s.warm_failures = 0 THEN interval '0'
+		        ELSE make_interval(secs => LEAST($2::float8 * power(2, LEAST(c.n + s.warm_failures, 20) - 1), $4::float8)) END <= now()`,
+		livePhases, RewarmBackoff.Seconds(), MaxCrashes, MaxBackoff.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("list rewarm standing: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// DeferRestart stamps a character's re-warm clock after a warm that failed.
+// DeferRestart stamps a character's re-warm clock after a warm that failed, and counts the failure: it backs the
+// re-warm off like a crash does (docs/adr/0084 §3), whether the provisioner or core refused the pod.
 func (s *Store) DeferRestart(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET restart_after = now() WHERE id = $1 AND lifecycle = 'standing'`, id)
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET restart_after = now(), warm_failures = warm_failures + 1 WHERE id = $1 AND lifecycle = 'standing'`, id)
 	if err != nil {
 		return fmt.Errorf("defer restart: %w", err)
+	}
+	return nil
+}
+
+// WarmSucceeded clears a character's failed-warm count.
+func (s *Store) WarmSucceeded(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET warm_failures = 0 WHERE id = $1 AND lifecycle = 'standing' AND warm_failures <> 0`, id)
+	if err != nil {
+		return fmt.Errorf("warm succeeded: %w", err)
+	}
+	return nil
+}
+
+// EndDrain lets intake resume on a character whose drain will not end in a new pod (docs/adr/0084 §3).
+func (s *Store) EndDrain(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET drain_started_at = NULL WHERE id = $1 AND lifecycle = 'standing' AND drain_started_at IS NOT NULL`, id)
+	if err != nil {
+		return fmt.Errorf("end drain: %w", err)
 	}
 	return nil
 }
@@ -150,15 +171,28 @@ func (l *Loop) SetStandingHead(f StandingHeadFunc) { l.standingHead = f }
 // SetAlert wires the owner notification: a stalled start, a refused re-pin, a revoked character.
 func (l *Loop) SetAlert(f func(ctx context.Context, sessionID, summary string)) { l.alert = f }
 
-// alertOnce tells the owner once per distinct (session, key): the sweep runs every tick.
+// alertOnce tells the owner once per (session, key) until it is forgotten: the sweep runs every tick.
 func (l *Loop) alertOnce(ctx context.Context, id, key, summary string) {
-	if l.alerted[id] == key {
+	if l.alerted[id][key] {
 		return
 	}
-	l.alerted[id] = key
+	if l.alerted[id] == nil {
+		l.alerted[id] = map[string]bool{}
+	}
+	l.alerted[id][key] = true
 	slog.Warn("sessions loop: "+summary, "sessionId", id)
 	if l.alert != nil {
 		l.alert(ctx, id, summary)
+	}
+}
+
+// forgetRepinAlerts clears what a re-pin or a revocation alerted: its cause is gone. The stall alert is not one of
+// them (stalledStanding clears it).
+func (l *Loop) forgetRepinAlerts(id string) {
+	for k := range l.alerted[id] {
+		if k != "stall" {
+			delete(l.alerted[id], k)
+		}
 	}
 }
 
@@ -176,12 +210,18 @@ func (l *Loop) keepStanding(ctx context.Context) {
 		return
 	}
 	for _, id := range ids {
+		if l.refused[id] {
+			continue // its pin is revoked or widened: only Stop and Start moves it
+		}
 		if err := (*f)(ctx, id); err != nil {
 			slog.Warn("sessions loop: standing re-warm failed", "sessionId", id, "error", err)
 			if err := l.sessions.DeferRestart(ctx, id); err != nil {
 				slog.Error("sessions loop: deferring a standing re-warm failed", "sessionId", id, "error", err)
 			}
 			continue
+		}
+		if err := l.sessions.WarmSucceeded(ctx, id); err != nil {
+			slog.Error("sessions loop: clearing a standing warm failure count failed", "sessionId", id, "error", err)
 		}
 		slog.Info("sessions loop: re-warmed a standing character", "sessionId", id)
 	}
@@ -194,8 +234,22 @@ func (l *Loop) stalledStanding(ctx context.Context) {
 		slog.Error("sessions loop: list stalled characters failed", "error", err)
 		return
 	}
+	stalled := map[string]bool{}
 	for _, id := range ids {
+		stalled[id] = true
 		l.alertOnce(ctx, id, "stall", "pod started but never produced any output; a character is not torn down for it")
+	}
+	// The stall is over (output arrived, or the pod changed): the next one alerts again.
+	for id, m := range l.alerted {
+		if !stalled[id] {
+			delete(m, "stall")
+		}
+	}
+}
+
+func (l *Loop) endDrain(ctx context.Context, id string) {
+	if err := l.sessions.EndDrain(ctx, id); err != nil {
+		slog.Error("sessions loop: ending a drain failed", "sessionId", id, "error", err)
 	}
 }
 
@@ -226,6 +280,7 @@ func (l *Loop) repinStanding(ctx context.Context) {
 			if r.Live {
 				l.tearDown(ctx, r.ID)
 			}
+			l.refused[r.ID] = true
 			l.alertOnce(ctx, r.ID, "revoked", "its definition was revoked; Stop it, or fix the definition")
 			continue
 		case err != nil:
@@ -233,20 +288,27 @@ func (l *Loop) repinStanding(ctx context.Context) {
 		}
 		if r.SHA == head.SHA {
 			if r.Draining {
-				_ = l.sessions.Repin(ctx, r.ID, r.SHA)
+				// Reverted mid-drain: the pod stays, and intake resumes (what it held is read again from the cursor).
+				l.endDrain(ctx, r.ID)
 			}
-			delete(l.alerted, r.ID)
+			delete(l.refused, r.ID)
+			l.forgetRepinAlerts(r.ID)
 			continue
 		}
 		old, err := l.sessions.DefinitionEffective(ctx, r.Definition, r.SHA)
 		if err != nil {
 			slog.Warn("sessions loop: pinned version unreadable, not re-pinning", "sessionId", r.ID, "error", err)
+			l.endDrain(ctx, r.ID)
 			continue
 		}
 		if ceiling, vault := definitions.Widens(old, head.Effective); ceiling || vault {
+			if r.Draining {
+				l.endDrain(ctx, r.ID)
+			}
 			if vault && r.Live {
 				l.tearDown(ctx, r.ID)
 			}
+			l.refused[r.ID] = true
 			l.alertOnce(ctx, r.ID, "widens:"+head.SHA, "its definition widened the ceiling, vault or cluster read; Stop and Start it to take the change")
 			continue
 		}
@@ -282,7 +344,8 @@ func (l *Loop) repinStanding(ctx context.Context) {
 		if err := l.sessions.SetPodPhase(ctx, r.ID, "POD_PHASE_TERMINATED", "re-pinned to a new definition version"); err != nil {
 			slog.Error("sessions loop: re-pin phase failed", "sessionId", r.ID, "error", err)
 		}
-		delete(l.alerted, r.ID)
+		delete(l.refused, r.ID)
+		l.forgetRepinAlerts(r.ID)
 		slog.Info("sessions loop: re-pinned a character in place", "sessionId", r.ID, "from", r.SHA, "to", head.SHA)
 	}
 }

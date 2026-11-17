@@ -19,26 +19,32 @@ func Widens(old, next *Spec) (ceiling, vault bool) {
 	ceiling = !subset(newTools.Allow, oldTools.Allow) || !subset(oldTools.Deny, newTools.Deny) ||
 		!subset(next.SidecarTools, old.SidecarTools) ||
 		(next.Cluster != nil && next.Cluster.Read && (old.Cluster == nil || !old.Cluster.Read))
-	vault = !subset(serviceKeys(next.Credentials), serviceKeys(old.Credentials))
+	vault = !vaultCovers(old.Credentials, next.Credentials)
 	return ceiling, vault
 }
 
-// serviceKeys names a vault and each of its service paths; a service with no path names the whole host.
-func serviceKeys(c *Credentials) []string {
-	if c == nil {
-		return nil
+// vaultCovers: everything next names, old already did. A service with no path names the whole host, so it covers
+// any path of the same host and secret.
+func vaultCovers(old, next *Credentials) bool {
+	if next == nil {
+		return true
 	}
-	out := []string{"vault " + c.Vault}
-	for _, s := range c.Services {
-		paths := s.Paths
-		if len(paths) == 0 {
-			paths = []string{""}
+	if old == nil || old.Vault != next.Vault {
+		return false
+	}
+	for _, n := range next.Services {
+		ok := false
+		for _, o := range old.Services {
+			if o.Host == n.Host && o.Secret == n.Secret && (len(o.Paths) == 0 || (len(n.Paths) > 0 && subset(n.Paths, o.Paths))) {
+				ok = true
+				break
+			}
 		}
-		for _, p := range paths {
-			out = append(out, s.Host+" "+p+" "+s.Secret)
+		if !ok {
+			return false
 		}
 	}
-	return out
+	return true
 }
 
 // subset: every element of a is in b.

@@ -4,3 +4,5 @@
 -- drain_started_at: a re-pin in place has stopped intake on every thread and waits for the running turn.
 ALTER TABLE sessions ADD COLUMN restart_after TIMESTAMPTZ;
 ALTER TABLE sessions ADD COLUMN drain_started_at TIMESTAMPTZ;
+-- warm_failures: warms that failed since the last one that worked; they back the re-warm off like crash entries.
+ALTER TABLE sessions ADD COLUMN warm_failures INT NOT NULL DEFAULT 0;

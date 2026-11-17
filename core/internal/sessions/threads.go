@@ -146,8 +146,9 @@ func (s *Store) RunningThreads(ctx context.Context, id string) ([]string, error)
 // before the pod ran) changes nothing. The second result names the threads with a turn running on this attempt, for
 // their crash entries. The entry is settled, for the caller to close
 // with a crash result, when an effect of it ran (replaying would run it twice) or it has now crashed
-// PoisonCrashes times in a row. Any other crash leaves it for the re-warm.
-func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, []string, error) {
+// PoisonCrashes times in a row. Any other crash leaves it for the re-warm. A planned loss (the node took the pod
+// away) is no crash of the entry: it still settles an entry an effect of which ran, and counts nothing else.
+func (s *Store) SettleCrash(ctx context.Context, id string, planned bool) ([]Settled, []string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("settle crash: %w", err)
@@ -176,6 +177,12 @@ func (s *Store) SettleCrash(ctx context.Context, id string) ([]Settled, []string
 		crashes := 1
 		if h.crashSeq == h.seq {
 			crashes = h.crashes + 1
+		}
+		if planned {
+			crashes = 0
+			if h.crashSeq == h.seq {
+				crashes = h.crashes
+			}
 		}
 		if _, err := tx.Exec(ctx, `UPDATE session_threads SET crash_seq = $3, crashes = $4, crash_agent_seq = $5 WHERE session_id = $1 AND thread_key = $2`,
 			id, h.key, h.seq, crashes, h.topSeq); err != nil {

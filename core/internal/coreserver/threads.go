@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -40,23 +39,20 @@ func (s *Server) noteEffect(ctx context.Context, sessionID, key string) {
 	}
 }
 
-// plannedLoss is a CRASHED report for a pod the node took away (Evicted, Preempted): no crash entry, no crash
-// count against a thread's head entry, and no back-off (docs/adr/0084 §3).
-func plannedLoss(reason string) bool {
-	return strings.HasPrefix(reason, "Evicted") || strings.HasPrefix(reason, "Preempted")
-}
-
 // settleCrash handles a CRASHED pod of a standing character (docs/adr/0084 §3, §4). Each thread head entry it
 // settled (an effect of it ran, or the third crash in a row) is closed with a crash result, which moves the
 // thread's cursor so the re-warm never replays it; a poison entry also alerts the owner. Every thread that had a
 // turn running gets a crash entry, or main when none did, and the third crash entry in an hour alerts the owner:
-// the re-warm stops there. The entry's key is the pod's, so the same crash seen twice is one entry.
-func (s *Server) settleCrash(ctx context.Context, sessionID, podName, reason string) {
+// the re-warm stops there. The entry's key is the pod attempt's (its Job UID, which a re-warm changes while the Job
+// name stays), so the same crash seen twice is one entry and two crashes are two. loss is why the node took the
+// pod away ("Evicted", "Preempted"), else "": a planned loss adds no crash entry and no count against an entry,
+// and still settles a head whose effect ran.
+func (s *Server) settleCrash(ctx context.Context, sessionID, jobUID, loss, reason string) {
 	t, err := s.sessions.Get(ctx, sessionID)
-	if err != nil || t == nil || t.Lifecycle == nil || *t.Lifecycle != sessions.Standing || plannedLoss(reason) {
+	if err != nil || t == nil || t.Lifecycle == nil || *t.Lifecycle != sessions.Standing {
 		return
 	}
-	settled, running, err := s.sessions.SettleCrash(ctx, sessionID)
+	settled, running, err := s.sessions.SettleCrash(ctx, sessionID, loss != "")
 	if err != nil {
 		slog.ErrorContext(ctx, "coreserver: settling a crash", "sessionId", sessionID, "error", err)
 		return
@@ -72,8 +68,11 @@ func (s *Server) settleCrash(ctx context.Context, sessionID, podName, reason str
 			s.announceBlocked(ctx, sessionID, fmt.Sprintf("entry %d of thread %q crashed its turn %d times and was skipped", st.Seq, st.Key, sessions.PoisonCrashes))
 		}
 	}
-	key := "podcrash:" + sessionID + ":" + podName
-	if podName == "" {
+	if loss != "" {
+		return
+	}
+	key := "podcrash:" + sessionID + ":" + jobUID
+	if jobUID == "" { // a warm that failed before any Job existed
 		key = "podcrash:" + sessionID + ":" + uuid.NewString()
 	}
 	if len(running) == 0 {

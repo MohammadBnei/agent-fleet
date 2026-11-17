@@ -53,6 +53,10 @@ message PodEvent {
   string pod_name = 4;
   string message = 5; // human-readable detail — a crash reason, or (for
                        // POD_PHASE_PROVISIONING) the current sub-step
+  string job_uid = 6; // the Job's UID: one pod attempt, unlike pod_name, which is per session
+  // Why the node took the pod away ("Evicted", "Preempted"), empty for anything else. A planned loss is no crash
+  // (docs/adr/0084 §3).
+  string termination_reason = 7;
 }
 
 message ReportPodEventsResponse {}

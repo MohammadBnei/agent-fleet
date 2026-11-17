@@ -72,7 +72,8 @@ type Loop struct {
 	// standingHead, alert and alerted serve a character's re-pin and alerts (standing.go).
 	standingHead StandingHeadFunc
 	alert        func(ctx context.Context, sessionID, summary string)
-	alerted      map[string]string
+	alerted      map[string]map[string]bool // session -> alert kind
+	refused      map[string]bool            // sessions whose pin is revoked or widened: not re-warmed
 }
 
 // defaultAnswerTimeout is limits.answerTimeout unset (docs/adr/0070 §6).
@@ -107,7 +108,8 @@ func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, 
 		turnStall:    turnStall,
 
 		jobMissingSince: map[string]time.Time{},
-		alerted:         map[string]string{},
+		alerted:         map[string]map[string]bool{},
+		refused:         map[string]bool{},
 	}
 }
 
