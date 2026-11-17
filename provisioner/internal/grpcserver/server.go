@@ -258,7 +258,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 				return nil, status.Error(codes.InvalidArgument, err.Error())
 			}
 		}
-		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail(), CPU: d.GetCpu(), Memory: d.GetMemory(), Guaranteed: d.GetGuaranteed()}
+		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail(), CPU: d.GetCpu(), Memory: d.GetMemory(), Guaranteed: d.GetGuaranteed(), ClusterRead: d.GetClusterRead()}
 		// docs/adr/0086 §5: a long-lived agent's pod gets its memory repos by the session's stored set. A bad or
 		// missing set refuses the pod in applyMemory.
 		if d.GetStanding() {

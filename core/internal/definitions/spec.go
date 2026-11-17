@@ -63,6 +63,12 @@ type Spec struct {
 	Resources    *Resources    `yaml:"resources,omitempty"    json:"resources,omitempty"`
 	Limits       *Limits       `yaml:"limits,omitempty"       json:"limits,omitempty"`
 	Trust        *Trust        `yaml:"trust,omitempty"        json:"trust,omitempty"`
+	Cluster      *Cluster      `yaml:"cluster,omitempty"      json:"cluster,omitempty"`
+}
+
+// Cluster is the definition's cluster grant (ADR-0084 §6): Read names the read ServiceAccount for its pod.
+type Cluster struct {
+	Read bool `yaml:"read,omitempty" json:"read,omitempty"`
 }
 
 // Trust is the definition's half of docs/adr/0086 §2. Untrusted names the one letter (B or C) a session keeps

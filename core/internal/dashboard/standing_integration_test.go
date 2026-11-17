@@ -167,12 +167,12 @@ func timeNow() time.Time { return time.Now() }
 // ADR-0086 §5: a loaded standing definition reaches the pod profile as Standing (memory, Guaranteed QoS) with the
 // row's stored set; the same definition's non-standing session would not.
 func TestStandingProfileCarriesMemoryGate(t *testing.T) {
-	s, prov, reg, _, _ := newDefinitionsServerPool(t)
+	s, prov, reg, _, pool := newDefinitionsServerPool(t)
 	ctx := auth.WithIdentity(context.Background(), auth.Identity{Sub: "root", Groups: []string{auth.RequiredGroup}})
 	prov.set(func(p *definitionsProvisioner) {
 		p.files["definitions/dev-stander.yaml"] = []byte(strings.NewReplacer("name: dev-dream-analyst }", "name: dev-stander }",
 			"vault: dev-dream-analyst", "vault: dev-stander").Replace(string(p.files["definitions/dev-dream-analyst.yaml"])) +
-			"  lifecycle: { allow: [standing] }\n")
+			"  lifecycle: { allow: [standing] }\n  cluster: { read: true }\n")
 	})
 	if err := reg.Sync(context.Background()); err != nil {
 		t.Fatal(err)
@@ -190,6 +190,28 @@ func TestStandingProfileCarriesMemoryGate(t *testing.T) {
 	prov.mu.Unlock()
 	if !d.GetStanding() || d.GetTrustSet() != "BC" {
 		t.Errorf("profile standing %v set %q, want standing with the stored set BC", d.GetStanding(), d.GetTrustSet())
+	}
+	// ADR-0084 §6: cluster.read reaches the profile.
+	if !d.GetClusterRead() {
+		t.Error("cluster.read did not reach the profile")
+	}
+	// ADR-0086 §2: cluster reads are B; a set without it (A·C) gets no service account.
+	id := res.Msg.GetSession().GetId()
+	// The narrowing trigger refuses BC -> AC, so stage the row with it off (throwaway database).
+	if _, err := pool.Exec(ctx, `ALTER TABLE sessions DISABLE TRIGGER USER`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET trust_set = 'AC', pod_phase = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WarmSession(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: id})); err != nil {
+		t.Fatal(err)
+	}
+	prov.mu.Lock()
+	d = prov.creates[len(prov.creates)-1].GetDefinition()
+	prov.mu.Unlock()
+	if d.GetClusterRead() {
+		t.Error("a set without B got the cluster-read service account")
 	}
 }
 

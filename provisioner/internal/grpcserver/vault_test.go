@@ -711,3 +711,16 @@ func TestCreateWorkerPod_GuaranteedRejectsBadResources(t *testing.T) {
 		t.Errorf("%d jobs created for refused profiles", n)
 	}
 }
+
+// ADR-0084 §6: the profile's cluster_read names the read ServiceAccount on the Job.
+func TestCreateWorkerPod_ClusterReadNamesServiceAccount(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	p := profile("dev-x")
+	p.ClusterRead = true
+	workerJob(t, s, k8sc, "def-read", p)
+	job, err := k8sc.Core.BatchV1().Jobs("agent-fleet").Get(context.Background(), k8s.WorkerResourceName("def-read"), metav1.GetOptions{})
+	if err != nil || job.Spec.Template.Spec.ServiceAccountName != k8s.ReadServiceAccount {
+		t.Fatalf("serviceAccountName = %q (%v), want %q", job.Spec.Template.Spec.ServiceAccountName, err, k8s.ReadServiceAccount)
+	}
+}

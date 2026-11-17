@@ -344,7 +344,10 @@ type DefinitionPodProfile struct {
 	// from it (§5): quarantine write when it holds A, read-only memory when it holds B.
 	TrustSet string `protobuf:"bytes,9,opt,name=trust_set,json=trustSet,proto3" json:"trust_set,omitempty"`
 	// The definition allows lifecycle "standing": a long-lived agent, so it has memory (ADR-0084).
-	Standing      bool `protobuf:"varint,10,opt,name=standing,proto3" json:"standing,omitempty"`
+	Standing bool `protobuf:"varint,10,opt,name=standing,proto3" json:"standing,omitempty"`
+	// The definition's `cluster.read` grant (ADR-0084 §6): the pod runs as the read ServiceAccount, its token mounted
+	// in the sidecar only.
+	ClusterRead   bool `protobuf:"varint,11,opt,name=cluster_read,json=clusterRead,proto3" json:"cluster_read,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -445,6 +448,13 @@ func (x *DefinitionPodProfile) GetTrustSet() string {
 func (x *DefinitionPodProfile) GetStanding() bool {
 	if x != nil {
 		return x.Standing
+	}
+	return false
+}
+
+func (x *DefinitionPodProfile) GetClusterRead() bool {
+	if x != nil {
+		return x.ClusterRead
 	}
 	return false
 }
@@ -2403,7 +2413,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
 	"GenomeFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04body\x18\x02 \x01(\tR\x04body\"\xd8\x02\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\"\xfb\x02\n" +
 	"\x14DefinitionPodProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
 	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
@@ -2417,7 +2427,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"guaranteed\x12\x1b\n" +
 	"\ttrust_set\x18\t \x01(\tR\btrustSet\x12\x1a\n" +
 	"\bstanding\x18\n" +
-	" \x01(\bR\bstanding\"u\n" +
+	" \x01(\bR\bstanding\x12!\n" +
+	"\fcluster_read\x18\v \x01(\bR\vclusterRead\"u\n" +
 	"\tVaultSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
 	"\bservices\x18\x02 \x03(\v2\x1b.agentfleet.v1.VaultServiceR\bservices\x12\x1b\n" +
