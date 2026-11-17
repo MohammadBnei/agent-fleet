@@ -43,7 +43,7 @@ func TestRepoDefinitions(t *testing.T) {
 			t.Errorf("alert-responder must be a first responder (trust.untrusted B): %+v", r.Effective.Trust)
 		}
 	}
-	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes", "agent-reviewer-agent-fleet", "alert-responder"} {
+	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes", "agent-reviewer-agent-fleet", "alert-responder", "ops-lead", "ops-worker"} {
 		if !seen[want] {
 			t.Errorf("%s must be a valid, launchable definition", want)
 		}
