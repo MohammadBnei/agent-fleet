@@ -192,14 +192,19 @@ func (WorkerSpanStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type PodEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Kind          SessionKind            `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.SessionKind" json:"kind,omitempty"`
-	Phase         PodPhase               `protobuf:"varint,3,opt,name=phase,proto3,enum=agentfleet.v1.PodPhase" json:"phase,omitempty"`
-	PodName       string                 `protobuf:"bytes,4,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
-	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"` // human-readable detail — a crash reason, or (for
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Kind      SessionKind            `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.SessionKind" json:"kind,omitempty"`
+	Phase     PodPhase               `protobuf:"varint,3,opt,name=phase,proto3,enum=agentfleet.v1.PodPhase" json:"phase,omitempty"`
+	PodName   string                 `protobuf:"bytes,4,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
+	Message   string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"` // human-readable detail — a crash reason, or (for
+	// POD_PHASE_PROVISIONING) the current sub-step
+	JobUid string `protobuf:"bytes,6,opt,name=job_uid,json=jobUid,proto3" json:"job_uid,omitempty"` // the Job's UID: one pod attempt, unlike pod_name, which is per session
+	// Why the node took the pod away ("Evicted", "Preempted"), empty for anything else. A planned loss is no crash
+	// (docs/adr/0084 §3).
+	TerminationReason string `protobuf:"bytes,7,opt,name=termination_reason,json=terminationReason,proto3" json:"termination_reason,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PodEvent) Reset() {
@@ -263,6 +268,20 @@ func (x *PodEvent) GetPodName() string {
 func (x *PodEvent) GetMessage() string {
 	if x != nil {
 		return x.Message
+	}
+	return ""
+}
+
+func (x *PodEvent) GetJobUid() string {
+	if x != nil {
+		return x.JobUid
+	}
+	return ""
+}
+
+func (x *PodEvent) GetTerminationReason() string {
+	if x != nil {
+		return x.TerminationReason
 	}
 	return ""
 }
@@ -4015,14 +4034,16 @@ var File_agentfleet_v1_core_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
-	"\x18agentfleet/v1/core.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x19agentfleet/v1/files.proto\x1a\x1dukubi/errors/v1/options.proto\"\xbd\x01\n" +
+	"\x18agentfleet/v1/core.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x19agentfleet/v1/files.proto\x1a\x1dukubi/errors/v1/options.proto\"\x85\x02\n" +
 	"\bPodEvent\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1a.agentfleet.v1.SessionKindR\x04kind\x12-\n" +
 	"\x05phase\x18\x03 \x01(\x0e2\x17.agentfleet.v1.PodPhaseR\x05phase\x12\x19\n" +
 	"\bpod_name\x18\x04 \x01(\tR\apodName\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"\x19\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\x12\x17\n" +
+	"\ajob_uid\x18\x06 \x01(\tR\x06jobUid\x12-\n" +
+	"\x12termination_reason\x18\a \x01(\tR\x11terminationReason\"\x19\n" +
 	"\x17ReportPodEventsResponse\"\xf4\x01\n" +
 	"\x12SendMessageRequest\x12\x1d\n" +
 	"\n" +

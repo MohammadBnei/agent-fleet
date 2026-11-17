@@ -24,6 +24,7 @@ func (f *reconcileFake) ListWorkerJobsByLabel(context.Context) ([]k8s.LiveWorker
 	return nil, nil
 }
 func (f *reconcileFake) DeleteWorkerJob(context.Context, string) error { return nil }
+func (f *reconcileFake) WorkerPodLoss(context.Context, string) string  { return "" }
 func (f *reconcileFake) ListSharedInstances(context.Context) ([]k8s.LiveSharedInstance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

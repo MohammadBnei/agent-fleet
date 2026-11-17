@@ -815,6 +815,7 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 	// cursor (the stream starts at the lowest of them), none of a closed thread but the abort that ends its
 	// SDK session. Read per batch, since a thread opens and a result moves a cursor while this runs.
 	standing := false
+	var held []transcript.Entry // new turns a drain holds back
 	if t, err := s.sessions.Get(ctx, taskID); err == nil && t != nil && t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
 		standing = true
 	}
@@ -825,7 +826,14 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 		}
 		cursor = nextSeq
 		var threads map[string]sessions.Thread
-		if standing && len(entries) > 0 {
+		draining := false
+		if standing && (len(entries) > 0 || len(held) > 0) {
+			// A re-pin drain (docs/adr/0084 §3) stops intake: no new turn starts, while answers, permission
+			// responses and aborts pass. A held entry waits here, in order, and goes out when the drain ends
+			// without a new pod (a revert, a refused widening); a new pod starts from the thread's cursor.
+			if draining, err = s.sessions.Draining(ctx, taskID); err != nil {
+				return fmt.Errorf("StreamHumanMessages: %w", err)
+			}
 			ts, err := s.sessions.Threads(ctx, taskID)
 			if err != nil {
 				return fmt.Errorf("StreamHumanMessages: %w", err)
@@ -834,11 +842,18 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 			for _, t := range ts {
 				threads[t.Key] = t
 			}
+			if !draining {
+				entries, held = append(held, entries...), nil
+			}
 		}
 		for _, e := range entries {
 			if standing {
 				th, ok := threads[e.ThreadKey]
 				if !ok || (th.Closed && e.Type != "abort") || (!th.Closed && e.Seq < th.Cursor) {
+					continue
+				}
+				if draining && (e.Type == "" || e.Type == "discussion") {
+					held = append(held, e)
 					continue
 				}
 			}
@@ -927,7 +942,7 @@ func (s *Server) applyPodEvent(ctx context.Context, event *agentfleetv1.PodEvent
 			slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
 		}
 		if event.GetPhase() == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
-			s.settleCrash(ctx, event.GetSessionId())
+			s.settleCrash(ctx, event.GetSessionId(), event.GetJobUid(), event.GetTerminationReason(), event.GetMessage())
 		}
 	}
 	return nil

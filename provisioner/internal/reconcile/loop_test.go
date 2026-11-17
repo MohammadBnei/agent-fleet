@@ -15,6 +15,7 @@ import (
 type fakeK8s struct {
 	jobs             []k8s.LiveWorkerJob
 	deleted          []string
+	loss             string // WorkerPodLoss's answer
 	instances        []k8s.LiveSharedInstance
 	deletedInstances []string // "repo/serviceKey"
 }
@@ -26,6 +27,7 @@ func (f *fakeK8s) DeleteWorkerJob(ctx context.Context, taskID string) error {
 	f.deleted = append(f.deleted, taskID)
 	return nil
 }
+func (f *fakeK8s) WorkerPodLoss(ctx context.Context, jobName string) string { return f.loss }
 func (f *fakeK8s) ListSharedInstances(ctx context.Context) ([]k8s.LiveSharedInstance, error) {
 	return f.instances, nil
 }
@@ -278,5 +280,15 @@ func TestGcTerminalWorkerJobs_RewarmedJobIsRevokedAndReportedAgain(t *testing.T)
 	}
 	if !slices.Equal(o.log, want) {
 		t.Errorf("log %q, want %q", o.log, want)
+	}
+}
+
+// A Failed Job reports its UID, and the node's reason when it took the pod away (docs/adr/0084 §3).
+func TestGcTerminalWorkerJobs_ReportsJobUIDAndPodLoss(t *testing.T) {
+	kc := &fakeK8s{loss: "Evicted", jobs: []k8s.LiveWorkerJob{{TaskID: "c-1", JobName: "worker-c1", UID: "uid-1", Phase: "Failed"}}}
+	reporter := &fakeEventReporter{}
+	New(kc, reporter, nil, time.Hour).gcTerminalWorkerJobs(context.Background())
+	if len(reporter.events) != 1 || reporter.events[0].GetJobUid() != "uid-1" || reporter.events[0].GetTerminationReason() != "Evicted" {
+		t.Fatalf("events = %v", reporter.events)
 	}
 }

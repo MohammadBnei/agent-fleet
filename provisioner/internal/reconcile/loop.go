@@ -41,6 +41,8 @@ import (
 type JobLister interface {
 	ListWorkerJobsByLabel(ctx context.Context) ([]k8s.LiveWorkerJob, error)
 	DeleteWorkerJob(ctx context.Context, taskID string) error
+	// WorkerPodLoss is "Evicted" or "Preempted" when the node took the Job's pod away, else "".
+	WorkerPodLoss(ctx context.Context, jobName string) string
 	// ListSharedInstances/DeleteSharedInstance back gcIdleSharedInstances
 	// (docs/adr/0034) — same "narrow slice of k8s.Client" reasoning as the
 	// two worker-job methods above, just grown rather than split into a
@@ -163,12 +165,18 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 			// Succeeded Job below: there is no diagnosis to keep.
 			message = "pod lifetime cap reached"
 		}
+		loss := ""
+		if phase == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
+			loss = l.k8sc.WorkerPodLoss(ctx, job.JobName)
+		}
 		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-			SessionId: job.TaskID,
-			Kind:      agentfleetv1.SessionKind_SESSION_KIND_WORKER,
-			Phase:     phase,
-			PodName:   job.JobName,
-			Message:   message,
+			SessionId:         job.TaskID,
+			Kind:              agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+			Phase:             phase,
+			PodName:           job.JobName,
+			Message:           message,
+			JobUid:            job.UID,
+			TerminationReason: loss,
 		})
 		// A Failed Job is reported but deliberately NOT deleted: it is the
 		// only surviving evidence of why the worker died, and deleting it

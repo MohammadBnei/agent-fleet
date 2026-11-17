@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -131,4 +132,28 @@ func (c *Client) ListWorkerJobsByLabel(ctx context.Context) ([]LiveWorkerJob, er
 		out = append(out, liveJob(&job))
 	}
 	return out, nil
+}
+
+// WorkerPodLoss says why the node took a Job's pod away: "Evicted" or "Preempted", "" for anything else (a crash,
+// an unreadable list). It reads the pod's own status reason and its DisruptionTarget condition (docs/adr/0084 §3).
+func (c *Client) WorkerPodLoss(ctx context.Context, jobName string) string {
+	pods, err := c.Core.CoreV1().Pods(c.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + jobName})
+	if err != nil {
+		slog.Warn("k8s WorkerPodLoss", "jobName", jobName, "error", err)
+		return ""
+	}
+	for _, p := range pods.Items {
+		for _, cond := range p.Status.Conditions {
+			if cond.Type == corev1.DisruptionTarget && cond.Status == corev1.ConditionTrue {
+				if cond.Reason == "PreemptionByScheduler" {
+					return "Preempted"
+				}
+				return "Evicted"
+			}
+		}
+		if p.Status.Reason == "Evicted" || p.Status.Reason == "Preempted" {
+			return p.Status.Reason
+		}
+	}
+	return ""
 }
