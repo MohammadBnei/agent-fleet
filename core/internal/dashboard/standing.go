@@ -59,6 +59,10 @@ func (s *Server) StartStanding(ctx context.Context, req *connect.Request[agentfl
 			Invoker: principal, ThreadKey: "main", StartedBy: by, TrustSet: sessions.TrustFor(sessions.TierFleet),
 		})
 		if err != nil {
+			// A concurrent Start won the insert (sessions_open_thread_idx): report it as the clean error.
+			if _, rerr := s.sessions.StandingByDefinition(ctx, name); rerr == nil {
+				return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("%q is already started", name))
+			}
 			return nil, err
 		}
 	case err != nil:
@@ -70,7 +74,7 @@ func (s *Server) StartStanding(ctx context.Context, req *connect.Request[agentfl
 		if ok, err := s.sessions.RestartStanding(ctx, row.ID, head.SHA, by); err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		} else if !ok {
-			return nil, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, errors.New("the character changed under this Start; retry"))
+			return nil, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, errors.New("the character changed or its pod is still stopping; retry"))
 		}
 		if row, err = s.sessions.Get(ctx, row.ID); err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)

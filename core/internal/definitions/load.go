@@ -715,6 +715,8 @@ func validateStanding(errs *[]error, s *Spec) {
 	if s.Owns != nil {
 		types = append(types, s.Owns.Types...)
 	}
+	// ponytail: dev.bnei.github.* passes here, but T2/T3 GitHub subjects (strangers' text) must still be filtered at
+	// delivery (ADR-0084 §2 slice 4/5); this load-time check is not full trust enforcement.
 	for _, t := range types {
 		if events.UntrustedReaches(t) {
 			bad("a standing definition's event types: %q reaches the untrusted types %v", t, events.UntrustedTypes)

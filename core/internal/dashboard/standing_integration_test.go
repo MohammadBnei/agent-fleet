@@ -100,6 +100,21 @@ func TestStandingStartStop(t *testing.T) {
 		t.Fatalf("a stopped character warmed: %v (%d pods)", err, prov.createCount())
 	}
 
+	// A pod still live inside the stop-grace window: Start is refused and the teardown mark stays armed.
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING' WHERE id = $1`, row.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := start(ctx, "dev-stander"); code(err) != connect.CodeAborted {
+		t.Fatalf("Start over a live pod: %v", err)
+	}
+	var armed bool
+	if err := pool.QueryRow(ctx, `SELECT stopped_at IS NOT NULL AND stop_requested_at IS NOT NULL FROM sessions WHERE id = $1`, row.GetId()).Scan(&armed); err != nil || !armed {
+		t.Fatalf("a refused Start disarmed the stop: %v %v", armed, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = NULL WHERE id = $1`, row.GetId()); err != nil {
+		t.Fatal(err)
+	}
+
 	// Start resumes the same row with a fresh SDK session, and the transcript stays.
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET agent_session_id = 'old-sdk', definition_sha = definition_sha WHERE id = $1`, row.GetId()); err != nil {
 		t.Fatal(err)

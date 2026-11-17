@@ -1661,12 +1661,14 @@ func (s *Store) StandingByDefinition(ctx context.Context, name string) (*Session
 
 // RestartStanding is Start on a stopped character (docs/adr/0084 §2): the row is un-stopped and re-pinned to sha, and
 // its SDK session id is dropped, so the next warm opens a fresh SDK session. The transcript and the memory stay.
-// False when the row is not stopped.
+// False when the row is not stopped or its old pod is still live: a Stop's grace-period teardown must run first,
+// else Start would disarm it (ListOverdueStopIDs) and the old pod could write its SDK session id back.
 func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
 		       agent_session_id = NULL, updated_at = now()
-		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL`, id, sha, by)
+		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL AND COALESCE(pod_phase, '') <> ALL($4)`,
+		id, sha, by, livePhases)
 	if err != nil {
 		return false, fmt.Errorf("restart standing: %w", err)
 	}
