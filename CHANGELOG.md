@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.38.0](https://github.com/MohammadBnei/agent-fleet/compare/7.37.0...7.38.0) (2026-11-17)
+
+### Features
+
+* **core:** the game channel, PostToCharacter and Speak (ADR-0084 slice 12) ([#422](https://github.com/MohammadBnei/agent-fleet/issues/422)) ([1790f6e](https://github.com/MohammadBnei/agent-fleet/commit/1790f6e39fbb445a96c169dd00174a2b85b406f7))
+
 # [7.37.0](https://github.com/MohammadBnei/agent-fleet/compare/7.36.0...7.37.0) (2026-11-17)
 
 ### Features
