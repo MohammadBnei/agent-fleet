@@ -629,6 +629,20 @@ func (c *Client) OpenIssue(ctx context.Context, repo, title, body, key string) (
 	return res, nil
 }
 
+// Speak says one line to the owner's browser (docs/adr/0084 §7). Inside a standing turn the key is core's effect key,
+// which also names the turn core bounds the lines by. It reports whether a browser was watching.
+func (c *Client) Speak(ctx context.Context, text, face, key string) (bool, error) {
+	ek, err := c.effectKey(key)
+	if err != nil {
+		return false, fmt.Errorf("Speak: %w", err)
+	}
+	res, err := c.rpc.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: c.taskID, Text: text, Face: face, IdempotencyKey: ek})
+	if err != nil {
+		return false, fmt.Errorf("Speak: %w", err)
+	}
+	return res.GetDelivered(), nil
+}
+
 // ListResponderCards reads the first responders' cards and remediations, typed fields only.
 func (c *Client) ListResponderCards(ctx context.Context, since string, limit int32) (*agentfleetv1.ListResponderCardsResponse, error) {
 	res, err := c.rpc.ListResponderCards(ctx, &agentfleetv1.ListResponderCardsRequest{SessionId: c.taskID, Since: since, Limit: limit})

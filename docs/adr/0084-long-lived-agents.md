@@ -36,7 +36,17 @@
     `cluster.logNamespaces`; a repo session and the provisioner are unchanged. `ListResponderCards` reads the
     `alert_group` cards and the remediations (kind, state, core's card text, action, target, responder): never the
     agent claim, labels, annotations or alert text.
-  - Not in this slice: `QueryMetrics` (§6) and `Speak` (slice 12).
+  - Not in this slice: `QueryMetrics` (§6).
+- **Built:** appendix slice 12: the game channel (no migration).
+  - `AgentService.PostToCharacter(character, text, thread_key)`: an admin on the console or an admin origin (the
+    surface list gains it), an owner (T0) message appended as the console's `PostMessage` does, warming a character
+    whose pod is down. A stopped or unknown character takes nothing; an island or a client is refused.
+  - `CoreService.Speak(text, face)` (tag C, sidecar tool `speak`, a standing character's tool granted through
+    `sidecarTools`). Core hands the line to `AgentService.WatchSpeech`, a stream for the same admin principals
+    (`agentsvc/speech.go`). It is never stored, never on the bridge, wakes nothing, and a line spoken with nobody
+    watching is dropped (the tool says `delivered: false`). At most 20 lines per turn, counted from the turn the
+    effect key names; a replayed key is one line. Text is at most 1000 characters, a face `[a-z0-9_-]{0,32}`.
+  - The game server holds no connection to a character; the game's browser calls both RPCs under core's own session.
 - **Built:** appendix slice 7: set enforcement. The dispatcher appends an event to a started character
   (`Dispatcher.characters`) only when it is T1: a trusted `PublishEvent` hand-off naming the character, from a session
   whose stored set lacks A (looked up through `published_events`). Alerts, GitHub events, unaddressed, unverified or

@@ -39,6 +39,8 @@ const (
 	AgentService_CloseThread_FullMethodName         = "/agentfleet.v1.AgentService/CloseThread"
 	AgentService_Invoke_FullMethodName              = "/agentfleet.v1.AgentService/Invoke"
 	AgentService_WaitForResult_FullMethodName       = "/agentfleet.v1.AgentService/WaitForResult"
+	AgentService_PostToCharacter_FullMethodName     = "/agentfleet.v1.AgentService/PostToCharacter"
+	AgentService_WatchSpeech_FullMethodName         = "/agentfleet.v1.AgentService/WatchSpeech"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -85,6 +87,12 @@ type AgentServiceClient interface {
 	// CoreService.WaitForSpawn shares the response.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(ctx context.Context, in *WaitForResultRequest, opts ...grpc.CallOption) (*WaitForResultResponse, error)
+	// docs/adr/0084 §7: the owner talks to a standing character from the game, straight from the browser. An admin, from
+	// the console or an admin origin; the message is the owner's own (T0).
+	PostToCharacter(ctx context.Context, in *PostToCharacterRequest, opts ...grpc.CallOption) (*PostToCharacterResponse, error)
+	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
+	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
+	WatchSpeech(ctx context.Context, in *WatchSpeechRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchSpeechResponse], error)
 }
 
 type agentServiceClient struct {
@@ -313,6 +321,35 @@ func (c *agentServiceClient) WaitForResult(ctx context.Context, in *WaitForResul
 	return out, nil
 }
 
+func (c *agentServiceClient) PostToCharacter(ctx context.Context, in *PostToCharacterRequest, opts ...grpc.CallOption) (*PostToCharacterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PostToCharacterResponse)
+	err := c.cc.Invoke(ctx, AgentService_PostToCharacter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) WatchSpeech(ctx context.Context, in *WatchSpeechRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchSpeechResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[2], AgentService_WatchSpeech_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchSpeechRequest, WatchSpeechResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchSpeechClient = grpc.ServerStreamingClient[WatchSpeechResponse]
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -357,6 +394,12 @@ type AgentServiceServer interface {
 	// CoreService.WaitForSpawn shares the response.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(context.Context, *WaitForResultRequest) (*WaitForResultResponse, error)
+	// docs/adr/0084 §7: the owner talks to a standing character from the game, straight from the browser. An admin, from
+	// the console or an admin origin; the message is the owner's own (T0).
+	PostToCharacter(context.Context, *PostToCharacterRequest) (*PostToCharacterResponse, error)
+	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
+	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
+	WatchSpeech(*WatchSpeechRequest, grpc.ServerStreamingServer[WatchSpeechResponse]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -426,6 +469,12 @@ func (UnimplementedAgentServiceServer) Invoke(context.Context, *InvokeRequest) (
 }
 func (UnimplementedAgentServiceServer) WaitForResult(context.Context, *WaitForResultRequest) (*WaitForResultResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WaitForResult not implemented")
+}
+func (UnimplementedAgentServiceServer) PostToCharacter(context.Context, *PostToCharacterRequest) (*PostToCharacterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostToCharacter not implemented")
+}
+func (UnimplementedAgentServiceServer) WatchSpeech(*WatchSpeechRequest, grpc.ServerStreamingServer[WatchSpeechResponse]) error {
+	return status.Error(codes.Unimplemented, "method WatchSpeech not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -794,6 +843,35 @@ func _AgentService_WaitForResult_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_PostToCharacter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PostToCharacterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).PostToCharacter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_PostToCharacter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).PostToCharacter(ctx, req.(*PostToCharacterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_WatchSpeech_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchSpeechRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServiceServer).WatchSpeech(m, &grpc.GenericServerStream[WatchSpeechRequest, WatchSpeechResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchSpeechServer = grpc.ServerStreamingServer[WatchSpeechResponse]
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -873,6 +951,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "WaitForResult",
 			Handler:    _AgentService_WaitForResult_Handler,
 		},
+		{
+			MethodName: "PostToCharacter",
+			Handler:    _AgentService_PostToCharacter_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -883,6 +965,11 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchDecisions",
 			Handler:       _AgentService_WatchDecisions_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchSpeech",
+			Handler:       _AgentService_WatchSpeech_Handler,
 			ServerStreams: true,
 		},
 	},

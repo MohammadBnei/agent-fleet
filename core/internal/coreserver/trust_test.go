@@ -117,6 +117,9 @@ func TestAuth_ReachMethodsFollowTheirTags(t *testing.T) {
 		{"AC", "SpawnWorker", &agentfleetv1.SpawnWorkerRequest{SessionId: "s1"}, false},
 		{"AB", "ListResponderCards", &agentfleetv1.ListResponderCardsRequest{SessionId: "s1"}, false},
 		{"AB", "WaitForSpawn", &agentfleetv1.WaitForSpawnRequest{SessionId: "s1"}, false},
+		// ADR-0084 §7: Speak is an effect (C) too.
+		{"AB", "Speak", &agentfleetv1.SpeakRequest{SessionId: "s1"}, true},
+		{"AC", "Speak", &agentfleetv1.SpeakRequest{SessionId: "s1"}, false},
 	} {
 		a := NewAuthenticator(fakeLeases{session: "s1", lease: "L1", trustSet: tc.set, definition: "ops"}, "provtoken")
 		err := callUnary(t, a, ctxWith(mdSessionID, "s1", mdLeaseID, "L1"), "/agentfleet.v1.CoreService/"+tc.method, tc.req)

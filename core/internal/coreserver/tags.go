@@ -22,6 +22,7 @@ var methodTags = map[string]string{
 	"/agentfleet.v1.CoreService/SubmitReview":         "C",
 	"/agentfleet.v1.CoreService/SpawnWorker":          "C", // a run starts and acts (ADR-0084 §6)
 	"/agentfleet.v1.CoreService/OpenIssue":            "C",
+	"/agentfleet.v1.CoreService/Speak":                "C", // a line to the owner's browser (ADR-0084 §7)
 
 	// Neither: the session's own plumbing, files, cards (the way to ask the owner), pod lifecycle.
 	"/agentfleet.v1.CoreService/ReportPodEvents":     "",

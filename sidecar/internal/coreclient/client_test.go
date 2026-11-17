@@ -75,6 +75,7 @@ type reachRPC struct {
 	wait  *agentfleetv1.WaitForSpawnRequest
 	issue *agentfleetv1.OpenIssueRequest
 	cards *agentfleetv1.ListResponderCardsRequest
+	speak *agentfleetv1.SpeakRequest
 }
 
 func (f *reachRPC) SpawnWorker(_ context.Context, r *agentfleetv1.SpawnWorkerRequest, _ ...grpc.CallOption) (*agentfleetv1.SpawnWorkerResponse, error) {
@@ -97,6 +98,11 @@ func (f *reachRPC) ListResponderCards(_ context.Context, r *agentfleetv1.ListRes
 	return &agentfleetv1.ListResponderCardsResponse{}, nil
 }
 
+func (f *reachRPC) Speak(_ context.Context, r *agentfleetv1.SpeakRequest, _ ...grpc.CallOption) (*agentfleetv1.SpeakResponse, error) {
+	f.speak = r
+	return &agentfleetv1.SpeakResponse{Delivered: true}, nil
+}
+
 // docs/adr/0084 §6: the session is this pod's, and inside a standing turn a spawn and an issue carry core's effect
 // key, never the agent's.
 func TestReach_SessionAndEffectKey(t *testing.T) {
@@ -115,7 +121,13 @@ func TestReach_SessionAndEffectKey(t *testing.T) {
 	if _, err := c.ListResponderCards(ctx, "2026-01-01T00:00:00Z", 7); err != nil || f.cards.GetSessionId() != "s1" || f.cards.GetSince() != "2026-01-01T00:00:00Z" || f.cards.GetLimit() != 7 {
 		t.Fatalf("cards: %v %v", err, f.cards)
 	}
+	if d, err := c.Speak(ctx, "hi", "happy", "mine"); err != nil || !d || f.speak.GetSessionId() != "s1" || f.speak.GetText() != "hi" || f.speak.GetFace() != "happy" {
+		t.Fatalf("speak: %v %v", err, f.speak)
+	}
 	c.SetTurn("a", 7)
+	if _, err := c.Speak(ctx, "hi", "", "mine"); err != nil || !strings.HasPrefix(f.speak.GetIdempotencyKey(), "eff:s1:a:7:") {
+		t.Errorf("a line in a standing turn: %q %v", f.speak.GetIdempotencyKey(), err)
+	}
 	if _, err := c.SpawnWorker(ctx, "w", "go", "mine"); err != nil || !strings.HasPrefix(f.spawn.GetIdempotencyKey(), "eff:s1:a:7:") {
 		t.Errorf("a spawn in a standing turn: %q %v", f.spawn.GetIdempotencyKey(), err)
 	}

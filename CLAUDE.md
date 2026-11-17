@@ -194,7 +194,9 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   (only `spawns.allow`, T1, under the principal `standing:<name>`, in the definition pool and the
   character's `limits.spawns.concurrent` sub-pool), `wait_for_result` (its own runs), `open_issue` (only
   `owns.repos`, via the provisioner's `CreateIssue`), `list_responder_cards` (typed fields) and `view_logs`
-  (only `cluster.logNamespaces`). Every lease caller authors `SendMessage` as
+  (only `cluster.logNamespaces`). `speak` (`adr/0084` §7, tagged C) sends a line to the owner's browser through
+  `AgentService.WatchSpeech`, live only: no bridge, no transcript, no wake, 20 lines per turn. The owner's way
+  back is `AgentService.PostToCharacter` (T0, an admin from the console or an admin origin). Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.

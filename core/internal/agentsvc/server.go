@@ -29,6 +29,7 @@ type Server struct {
 	decisions   *decisions.Store
 	cardFx      CardEffects
 	opener      sessionOpener
+	speech      *speechHub
 	spawnLocks  sync.Map // character invoker -> *sync.Mutex, SpawnWorker's cap check and create
 }
 
@@ -60,7 +61,7 @@ var _ agentfleetv1connect.AgentServiceHandler = (*Server)(nil)
 // NewServer reuses the console's server for creates and warms, so every pod
 // still goes through WarmIfIdle (docs/adr/0066 §8).
 func NewServer(defs *definitions.Registry, dash *dashboard.Server, store *sessions.Store, transcr transcript.Store, hub *dashboard.Hub, decs *decisions.Store) *Server {
-	s := &Server{sessions: store, transcr: transcr, hub: hub, decisions: decs}
+	s := &Server{sessions: store, transcr: transcr, hub: hub, decisions: decs, speech: newSpeechHub()}
 	if dash != nil {
 		s.dash, s.opener = dash, dash
 	}

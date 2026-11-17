@@ -87,14 +87,19 @@ var table = map[string]access{
 	agentfleetv1connect.AgentServiceCloseThreadProcedure:         {client: true},
 	agentfleetv1connect.AgentServiceInvokeProcedure:              {client: true},
 	agentfleetv1connect.AgentServiceWaitForResultProcedure:       {client: true},
+	agentfleetv1connect.AgentServicePostToCharacterProcedure:     {member: true},
+	agentfleetv1connect.AgentServiceWatchSpeechProcedure:         {member: true},
 }
 
-// surfaceCalls are all a surface may call (docs/adr/0082 §7).
+// surfaceCalls are all a surface may call (docs/adr/0082 §7, docs/adr/0084 §7).
 var surfaceCalls = []string{
 	agentfleetv1connect.AgentServiceListDecisionsProcedure,
 	agentfleetv1connect.AgentServiceGetDecisionProcedure,
 	agentfleetv1connect.AgentServiceWatchDecisionsProcedure,
 	agentfleetv1connect.AgentServiceAnswerDecisionProcedure,
+	// The game channel (docs/adr/0084 §7): the owner talks to characters and hears them from an admin origin.
+	agentfleetv1connect.AgentServicePostToCharacterProcedure,
+	agentfleetv1connect.AgentServiceWatchSpeechProcedure,
 }
 
 func allowed(procedure string, p Principal) bool {

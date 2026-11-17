@@ -249,3 +249,36 @@ func TestViewLogs_DefinitionNamespaceScope(t *testing.T) {
 		t.Errorf("the provisioner is unchanged: %v", err)
 	}
 }
+
+type fakeSpeaker struct {
+	text, face, key string
+	err             error
+}
+
+func (f *fakeSpeaker) Speak(_ context.Context, _, text, face, key string) (bool, error) {
+	f.text, f.face, f.key = text, face, key
+	return f.err == nil, f.err
+}
+
+// docs/adr/0084 §7: Speak is granted per definition, reaches only the speaker (the owner's browser), and a refusal
+// of core's own (the per-turn bound) reaches the character as its gRPC code.
+func TestSpeak_Grant(t *testing.T) {
+	ctx := context.Background()
+	s, id, _ := reachCharacter(t, `{"sidecarTools":["speak"],"mode":{"default":"default","allow":["default"]}}`)
+	sp := &fakeSpeaker{}
+	s.SetSpeaker(sp)
+	res, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "hi", Face: "happy", IdempotencyKey: "k"})
+	if err != nil || !res.GetDelivered() || sp.text != "hi" || sp.face != "happy" || sp.key != "k" {
+		t.Fatalf("speak: %v %v %+v", res, err, sp)
+	}
+	sp.err = status.Error(codes.ResourceExhausted, "too many")
+	if _, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "hi", IdempotencyKey: "k2"}); code(err) != codes.ResourceExhausted {
+		t.Errorf("a refusal of core's own: %v", err)
+	}
+	s2, id2, _ := reachCharacter(t, `{"sidecarTools":["send_message"]}`)
+	sp2 := &fakeSpeaker{}
+	s2.SetSpeaker(sp2)
+	if _, err := s2.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id2, Text: "hi", IdempotencyKey: "k"}); code(err) != codes.PermissionDenied || sp2.text != "" {
+		t.Errorf("no grant, no line: %v %q", err, sp2.text)
+	}
+}

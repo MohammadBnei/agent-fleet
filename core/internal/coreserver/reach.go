@@ -30,6 +30,14 @@ type Spawner interface {
 
 func (s *Server) SetSpawner(sp Spawner) { s.spawner = sp }
 
+// Speaker is agentsvc.Server's game channel: the line goes to the owner's open browser streams, never anywhere else
+// (docs/adr/0084 §7). delivered is whether one was watching.
+type Speaker interface {
+	Speak(ctx context.Context, characterID, text, face, key string) (delivered bool, err error)
+}
+
+func (s *Server) SetSpeaker(sp Speaker) { s.speaker = sp }
+
 // SetIssueFunc is the provisioner's CreateIssue, injected so core holds no GitHub credential.
 func (s *Server) SetIssueFunc(f func(ctx context.Context, req *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error)) {
 	s.createIssue = f
@@ -215,4 +223,21 @@ func (s *Server) scopeLogs(ctx context.Context, namespace string) error {
 		return status.Errorf(codes.PermissionDenied, "namespace %q is not on this definition's cluster.logNamespaces", namespace)
 	}
 	return nil
+}
+
+// Speak is a character's line for the owner's browser (docs/adr/0084 §7), granted per definition through the speak
+// tool. It is an effect (C) with no store: a line spoken with nobody watching is dropped, and delivered says so.
+func (s *Server) Speak(ctx context.Context, req *agentfleetv1.SpeakRequest) (*agentfleetv1.SpeakResponse, error) {
+	if s.speaker == nil {
+		return nil, status.Error(codes.Unavailable, "the game channel is not wired")
+	}
+	if _, err := s.granted(ctx, req.GetSessionId(), "speak"); err != nil {
+		return nil, err
+	}
+	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
+	delivered, err := s.speaker.Speak(ctx, req.GetSessionId(), req.GetText(), req.GetFace(), req.GetIdempotencyKey())
+	if err != nil {
+		return nil, grpcErr(err)
+	}
+	return &agentfleetv1.SpeakResponse{Delivered: delivered}, nil
 }
