@@ -1,5 +1,15 @@
 # Changelog
 
+# [7.40.0](https://github.com/MohammadBnei/agent-fleet/compare/7.39.0...7.40.0) (2026-11-17)
+
+### Bug Fixes
+
+* **definitions:** grant ops-lead cluster.read now that fleet-read has synced ([#426](https://github.com/MohammadBnei/agent-fleet/issues/426)) ([d956bfb](https://github.com/MohammadBnei/agent-fleet/commit/d956bfb6a3e01266793ce6d198078ccab718052e)), closes [#462](https://github.com/MohammadBnei/agent-fleet/issues/462)
+
+### Features
+
+* **definitions:** ops-lead, the first standing character (ADR-0084) ([#425](https://github.com/MohammadBnei/agent-fleet/issues/425)) ([cf765d1](https://github.com/MohammadBnei/agent-fleet/commit/cf765d1cf6dafdbc95921b2d0f2c7192ed41dbce)), closes [#462](https://github.com/MohammadBnei/agent-fleet/issues/462)
+
 # [7.39.0](https://github.com/MohammadBnei/agent-fleet/compare/7.38.0...7.39.0) (2026-11-17)
 
 ### Bug Fixes
