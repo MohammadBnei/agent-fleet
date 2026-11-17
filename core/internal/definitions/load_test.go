@@ -806,6 +806,8 @@ func TestLoad_Reach(t *testing.T) {
 		{"open_issue", standing(map[string]string{"sidecarTools": "[AskUserQuestion, open_issue]", "owns": "{ repos: [a/b] }"}), ""},
 		{"view_logs needs namespaces", standing(map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]"}), "view_logs needs cluster.logNamespaces"},
 		{"view_logs", standing(map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]", "cluster": "{ logNamespaces: [agent-fleet] }"}), ""},
+		{"speak", standing(map[string]string{"sidecarTools": "[AskUserQuestion, speak]"}), ""},
+		{"speak on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, speak]"}, "standing character's tool"},
 		{"bad namespace", standing(map[string]string{"cluster": "{ logNamespaces: [\"A b\"] }"}), "not a namespace name"},
 		{"limits without spawns", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 1 } }"}), "limits.spawns needs spawns.allow"},
 		{"limits too wide", standing(map[string]string{"spawns": "{ allow: [worker] }", "limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 11 } }"}), "limits.spawns"},

@@ -52,6 +52,7 @@ const (
 	CoreService_WaitForSpawn_FullMethodName         = "/agentfleet.v1.CoreService/WaitForSpawn"
 	CoreService_OpenIssue_FullMethodName            = "/agentfleet.v1.CoreService/OpenIssue"
 	CoreService_ListResponderCards_FullMethodName   = "/agentfleet.v1.CoreService/ListResponderCards"
+	CoreService_Speak_FullMethodName                = "/agentfleet.v1.CoreService/Speak"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -159,6 +160,9 @@ type CoreServiceClient interface {
 	OpenIssue(ctx context.Context, in *OpenIssueRequest, opts ...grpc.CallOption) (*OpenIssueResponse, error)
 	// The first responders' cards and remediations, typed fields only.
 	ListResponderCards(ctx context.Context, in *ListResponderCardsRequest, opts ...grpc.CallOption) (*ListResponderCardsResponse, error)
+	// One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
+	// bridge, wakes nothing, at most 20 lines per turn.
+	Speak(ctx context.Context, in *SpeakRequest, opts ...grpc.CallOption) (*SpeakResponse, error)
 }
 
 type coreServiceClient struct {
@@ -511,6 +515,16 @@ func (c *coreServiceClient) ListResponderCards(ctx context.Context, in *ListResp
 	return out, nil
 }
 
+func (c *coreServiceClient) Speak(ctx context.Context, in *SpeakRequest, opts ...grpc.CallOption) (*SpeakResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SpeakResponse)
+	err := c.cc.Invoke(ctx, CoreService_Speak_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -616,6 +630,9 @@ type CoreServiceServer interface {
 	OpenIssue(context.Context, *OpenIssueRequest) (*OpenIssueResponse, error)
 	// The first responders' cards and remediations, typed fields only.
 	ListResponderCards(context.Context, *ListResponderCardsRequest) (*ListResponderCardsResponse, error)
+	// One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
+	// bridge, wakes nothing, at most 20 lines per turn.
+	Speak(context.Context, *SpeakRequest) (*SpeakResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -724,6 +741,9 @@ func (UnimplementedCoreServiceServer) OpenIssue(context.Context, *OpenIssueReque
 }
 func (UnimplementedCoreServiceServer) ListResponderCards(context.Context, *ListResponderCardsRequest) (*ListResponderCardsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListResponderCards not implemented")
+}
+func (UnimplementedCoreServiceServer) Speak(context.Context, *SpeakRequest) (*SpeakResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Speak not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1322,6 +1342,24 @@ func _CoreService_ListResponderCards_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_Speak_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SpeakRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).Speak(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_Speak_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).Speak(ctx, req.(*SpeakRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1452,6 +1490,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListResponderCards",
 			Handler:    _CoreService_ListResponderCards_Handler,
+		},
+		{
+			MethodName: "Speak",
+			Handler:    _CoreService_Speak_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

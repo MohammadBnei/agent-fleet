@@ -521,6 +521,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// A standing character's reach (docs/adr/0084 §6): spawns, issues and the responders' cards, each granted per
 	// definition. The sweep tells a character when a run it spawned ends.
 	coreSvc.SetSpawner(agentSvc)
+	coreSvc.SetSpeaker(agentSvc)
 	coreSvc.SetIssueFunc(provisioner.CreateIssue)
 	coreSvc.SetResponderCards(responder.Cards{Pool: pool}.List)
 	go agentSvc.RunSpawnReports(ctx, 15*time.Second)

@@ -275,6 +275,12 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter) *server.MCPServer {
 		mcp.WithNumber("limit", mcp.Description("Default 20, max 50")),
 	), listResponderCardsHandler(core))
 
+	s.AddTool(mcp.NewTool("speak",
+		mcp.WithDescription("Say one line to the owner in the game: it appears in their browser at once and is not stored or sent anywhere else, and it does not wake anything. At most 20 lines per turn. delivered is false when the owner was not watching, so the line was dropped: say it again in your reply if it matters. Only for definitions that grant it."),
+		mcp.WithString("text", mcp.Required(), mcp.Description("The line, at most 1000 characters")),
+		mcp.WithString("face", mcp.Description("A short portrait label such as happy or worried: a-z, 0-9, - and _, at most 32")),
+	), speakHandler(core))
+
 	// Inter-agent coordination (docs/adr/0041). Registered statically for
 	// the same reason run_command is: a resumed session must have them from
 	// turn one, not only after some other call happens to register them.
@@ -576,6 +582,7 @@ type Reach interface {
 	WaitForResult(ctx context.Context, threadID string, waitSeconds int32) (*agentfleetv1.WaitForResultResponse, error)
 	OpenIssue(ctx context.Context, repo, title, body, key string) (*agentfleetv1.OpenIssueResponse, error)
 	ListResponderCards(ctx context.Context, since string, limit int32) (*agentfleetv1.ListResponderCardsResponse, error)
+	Speak(ctx context.Context, text, face, key string) (bool, error)
 }
 
 func spawnWorkerHandler(core Reach) server.ToolHandlerFunc {
@@ -646,6 +653,22 @@ func listResponderCardsHandler(core Reach) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		b, _ := json.Marshal(map[string]any{"cards": res.GetCards()})
+		return mcp.NewToolResultText(string(b)), nil
+	}
+}
+
+func speakHandler(core Reach) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		text := req.GetString("text", "")
+		if text == "" {
+			return mcp.NewToolResultError("text is required"), nil
+		}
+		delivered, err := core.Speak(ctx, text, req.GetString("face", ""), "")
+		if err != nil {
+			slog.Error("mcp speak", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		b, _ := json.Marshal(map[string]bool{"delivered": delivered})
 		return mcp.NewToolResultText(string(b)), nil
 	}
 }

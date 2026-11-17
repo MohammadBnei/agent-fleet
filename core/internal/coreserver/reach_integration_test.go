@@ -5,6 +5,7 @@ package coreserver
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,12 @@ import (
 // reachCharacter is a started character whose pinned spec is effective, and a repo session beside it.
 func reachCharacter(t *testing.T, effective string) (*Server, string, string) {
 	t.Helper()
+	s, id, repoID, _ := reachCharacterDB(t, effective)
+	return s, id, repoID
+}
+
+func reachCharacterDB(t *testing.T, effective string) (*Server, string, string, *pgxpool.Pool) {
+	t.Helper()
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
@@ -41,7 +48,7 @@ func reachCharacter(t *testing.T, effective string) (*Server, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Server{sessions: store, transcr: transcript.NewPostgresStore(pool, decisions.OnAppend)}, id, repoID
+	return &Server{sessions: store, transcr: transcript.NewPostgresStore(pool, decisions.OnAppend)}, id, repoID, pool
 }
 
 func code(err error) codes.Code { return status.Code(err) }
@@ -247,5 +254,46 @@ func TestViewLogs_DefinitionNamespaceScope(t *testing.T) {
 	}
 	if err := view(context.Background(), ""); err != nil {
 		t.Errorf("the provisioner is unchanged: %v", err)
+	}
+}
+
+type fakeSpeaker struct {
+	text, face, key string
+	err             error
+}
+
+func (f *fakeSpeaker) Speak(_ context.Context, _, text, face, key string) (bool, error) {
+	f.text, f.face, f.key = text, face, key
+	return f.err == nil, f.err
+}
+
+// docs/adr/0084 §7: Speak is granted per definition, reaches only the speaker (the owner's browser), and a refusal
+// of core's own (the per-turn bound) reaches the character as its gRPC code.
+func TestSpeak_Grant(t *testing.T) {
+	ctx := context.Background()
+	s, id, _, pool := reachCharacterDB(t, `{"sidecarTools":["speak"],"mode":{"default":"default","allow":["default"]}}`)
+	sp := &fakeSpeaker{}
+	s.SetSpeaker(sp)
+	res, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "hi", Face: "happy", IdempotencyKey: "k"})
+	if err != nil || !res.GetDelivered() || sp.text != "hi" || sp.face != "happy" || sp.key != "k" {
+		t.Fatalf("speak: %v %v %+v", res, err, sp)
+	}
+	// A line is live-only and safe to replay: it never marks the turn's entry as "an effect ran" (docs/adr/0084 §4).
+	if _, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "again", IdempotencyKey: sessions.EffectKey(id, "main", 5, 1)}); err != nil {
+		t.Fatal(err)
+	}
+	var noted *int64
+	if err := pool.QueryRow(ctx, `SELECT effect_seq FROM session_threads WHERE session_id = $1 AND thread_key = 'main'`, id).Scan(&noted); err != nil || noted != nil {
+		t.Errorf("a spoken line noted an effect: %v %v", noted, err)
+	}
+	sp.err = status.Error(codes.ResourceExhausted, "too many")
+	if _, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "hi", IdempotencyKey: "k2"}); code(err) != codes.ResourceExhausted {
+		t.Errorf("a refusal of core's own: %v", err)
+	}
+	s2, id2, _ := reachCharacter(t, `{"sidecarTools":["send_message"]}`)
+	sp2 := &fakeSpeaker{}
+	s2.SetSpeaker(sp2)
+	if _, err := s2.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id2, Text: "hi", IdempotencyKey: "k"}); code(err) != codes.PermissionDenied || sp2.text != "" {
+		t.Errorf("no grant, no line: %v %q", err, sp2.text)
 	}
 }

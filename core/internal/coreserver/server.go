@@ -104,6 +104,7 @@ type Server struct {
 	spans *workerspans.Sink
 	// The reach of a standing character (docs/adr/0084 §6), wired after construction like publish.
 	spawner        Spawner
+	speaker        Speaker
 	createIssue    func(ctx context.Context, req *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error)
 	responderCards func(ctx context.Context, since time.Time, limit int) ([]*agentfleetv1.ResponderCard, error)
 }

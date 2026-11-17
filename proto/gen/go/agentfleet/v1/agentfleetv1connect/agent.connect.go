@@ -88,6 +88,12 @@ const (
 	// AgentServiceWaitForResultProcedure is the fully-qualified name of the AgentService's
 	// WaitForResult RPC.
 	AgentServiceWaitForResultProcedure = "/agentfleet.v1.AgentService/WaitForResult"
+	// AgentServicePostToCharacterProcedure is the fully-qualified name of the AgentService's
+	// PostToCharacter RPC.
+	AgentServicePostToCharacterProcedure = "/agentfleet.v1.AgentService/PostToCharacter"
+	// AgentServiceWatchSpeechProcedure is the fully-qualified name of the AgentService's WatchSpeech
+	// RPC.
+	AgentServiceWatchSpeechProcedure = "/agentfleet.v1.AgentService/WatchSpeech"
 )
 
 // AgentServiceClient is a client for the agentfleet.v1.AgentService service.
@@ -124,6 +130,12 @@ type AgentServiceClient interface {
 	// CoreService.WaitForSpawn shares the response.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(context.Context, *connect.Request[v1.WaitForResultRequest]) (*connect.Response[v1.WaitForResultResponse], error)
+	// docs/adr/0084 §7: the owner talks to a standing character from the game, straight from the browser. An admin, from
+	// the console or an admin origin; the message is the owner's own (T0).
+	PostToCharacter(context.Context, *connect.Request[v1.PostToCharacterRequest]) (*connect.Response[v1.PostToCharacterResponse], error)
+	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
+	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
+	WatchSpeech(context.Context, *connect.Request[v1.WatchSpeechRequest]) (*connect.ServerStreamForClient[v1.WatchSpeechResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the agentfleet.v1.AgentService service. By default,
@@ -257,6 +269,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("WaitForResult")),
 			connect.WithClientOptions(opts...),
 		),
+		postToCharacter: connect.NewClient[v1.PostToCharacterRequest, v1.PostToCharacterResponse](
+			httpClient,
+			baseURL+AgentServicePostToCharacterProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("PostToCharacter")),
+			connect.WithClientOptions(opts...),
+		),
+		watchSpeech: connect.NewClient[v1.WatchSpeechRequest, v1.WatchSpeechResponse](
+			httpClient,
+			baseURL+AgentServiceWatchSpeechProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("WatchSpeech")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -282,6 +306,8 @@ type agentServiceClient struct {
 	closeThread         *connect.Client[v1.CloseThreadRequest, v1.CloseThreadResponse]
 	invoke              *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
 	waitForResult       *connect.Client[v1.WaitForResultRequest, v1.WaitForResultResponse]
+	postToCharacter     *connect.Client[v1.PostToCharacterRequest, v1.PostToCharacterResponse]
+	watchSpeech         *connect.Client[v1.WatchSpeechRequest, v1.WatchSpeechResponse]
 }
 
 // ListDefinitions calls agentfleet.v1.AgentService.ListDefinitions.
@@ -384,6 +410,16 @@ func (c *agentServiceClient) WaitForResult(ctx context.Context, req *connect.Req
 	return c.waitForResult.CallUnary(ctx, req)
 }
 
+// PostToCharacter calls agentfleet.v1.AgentService.PostToCharacter.
+func (c *agentServiceClient) PostToCharacter(ctx context.Context, req *connect.Request[v1.PostToCharacterRequest]) (*connect.Response[v1.PostToCharacterResponse], error) {
+	return c.postToCharacter.CallUnary(ctx, req)
+}
+
+// WatchSpeech calls agentfleet.v1.AgentService.WatchSpeech.
+func (c *agentServiceClient) WatchSpeech(ctx context.Context, req *connect.Request[v1.WatchSpeechRequest]) (*connect.ServerStreamForClient[v1.WatchSpeechResponse], error) {
+	return c.watchSpeech.CallServerStream(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the agentfleet.v1.AgentService service.
 type AgentServiceHandler interface {
 	ListDefinitions(context.Context, *connect.Request[v1.AgentServiceListDefinitionsRequest]) (*connect.Response[v1.AgentServiceListDefinitionsResponse], error)
@@ -418,6 +454,12 @@ type AgentServiceHandler interface {
 	// CoreService.WaitForSpawn shares the response.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(context.Context, *connect.Request[v1.WaitForResultRequest]) (*connect.Response[v1.WaitForResultResponse], error)
+	// docs/adr/0084 §7: the owner talks to a standing character from the game, straight from the browser. An admin, from
+	// the console or an admin origin; the message is the owner's own (T0).
+	PostToCharacter(context.Context, *connect.Request[v1.PostToCharacterRequest]) (*connect.Response[v1.PostToCharacterResponse], error)
+	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
+	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
+	WatchSpeech(context.Context, *connect.Request[v1.WatchSpeechRequest], *connect.ServerStream[v1.WatchSpeechResponse]) error
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -547,6 +589,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("WaitForResult")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServicePostToCharacterHandler := connect.NewUnaryHandler(
+		AgentServicePostToCharacterProcedure,
+		svc.PostToCharacter,
+		connect.WithSchema(agentServiceMethods.ByName("PostToCharacter")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceWatchSpeechHandler := connect.NewServerStreamHandler(
+		AgentServiceWatchSpeechProcedure,
+		svc.WatchSpeech,
+		connect.WithSchema(agentServiceMethods.ByName("WatchSpeech")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceListDefinitionsProcedure:
@@ -589,6 +643,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceInvokeHandler.ServeHTTP(w, r)
 		case AgentServiceWaitForResultProcedure:
 			agentServiceWaitForResultHandler.ServeHTTP(w, r)
+		case AgentServicePostToCharacterProcedure:
+			agentServicePostToCharacterHandler.ServeHTTP(w, r)
+		case AgentServiceWatchSpeechProcedure:
+			agentServiceWatchSpeechHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -676,4 +734,12 @@ func (UnimplementedAgentServiceHandler) Invoke(context.Context, *connect.Request
 
 func (UnimplementedAgentServiceHandler) WaitForResult(context.Context, *connect.Request[v1.WaitForResultRequest]) (*connect.Response[v1.WaitForResultResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WaitForResult is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) PostToCharacter(context.Context, *connect.Request[v1.PostToCharacterRequest]) (*connect.Response[v1.PostToCharacterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.PostToCharacter is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) WatchSpeech(context.Context, *connect.Request[v1.WatchSpeechRequest], *connect.ServerStream[v1.WatchSpeechResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WatchSpeech is not implemented"))
 }

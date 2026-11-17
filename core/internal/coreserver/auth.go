@@ -139,6 +139,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/ListResponderCards": func(r any) string {
 		return r.(*agentfleetv1.ListResponderCardsRequest).GetSessionId()
 	},
+	"/agentfleet.v1.CoreService/Speak": func(r any) string {
+		return r.(*agentfleetv1.SpeakRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -209,6 +212,8 @@ var definitionMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/OpenIssue":          true,
 	"/agentfleet.v1.CoreService/ListResponderCards": true,
 	"/agentfleet.v1.CoreService/ViewLogs":           true,
+	// The game channel (docs/adr/0084 §7): granted per definition through sidecarTools (speak).
+	"/agentfleet.v1.CoreService/Speak": true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents
@@ -237,6 +242,7 @@ var sessionOnlyMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/WaitForSpawn":         true,
 	"/agentfleet.v1.CoreService/OpenIssue":            true,
 	"/agentfleet.v1.CoreService/ListResponderCards":   true,
+	"/agentfleet.v1.CoreService/Speak":                true,
 }
 
 var (

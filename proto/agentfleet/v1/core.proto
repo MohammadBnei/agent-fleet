@@ -582,6 +582,20 @@ message ResponderCard {
   string created_at = 8;
 }
 
+// SpeakRequest is a standing character's line for the owner's browser (docs/adr/0084 §7).
+message SpeakRequest {
+  string session_id = 1;
+  string text = 2;
+  // A short label (lowercase letters, digits, - and _; at most 32); may be empty.
+  string face = 3;
+  string idempotency_key = 4;
+}
+
+message SpeakResponse {
+  // False when no owner's browser was watching: the line is dropped, never stored.
+  bool delivered = 1;
+}
+
 message ListResponderCardsResponse {
   repeated ResponderCard cards = 1;
 }
@@ -932,5 +946,8 @@ service CoreService {
   rpc OpenIssue(OpenIssueRequest) returns (OpenIssueResponse);
   // The first responders' cards and remediations, typed fields only.
   rpc ListResponderCards(ListResponderCardsRequest) returns (ListResponderCardsResponse);
+  // One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
+  // bridge, wakes nothing, at most 20 lines per turn.
+  rpc Speak(SpeakRequest) returns (SpeakResponse);
 }
 
