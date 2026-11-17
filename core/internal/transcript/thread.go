@@ -33,6 +33,14 @@ func WithThread(ctx context.Context, key string) context.Context {
 	return context.WithValue(ctx, threadCtx{}, key)
 }
 
+type contextOnlyCtx struct{}
+
+// WithContextOnly makes the appends under ctx context-only: stored and shown, never delivered to the agent as input
+// (docs/adr/0067 §3).
+func WithContextOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, contextOnlyCtx{}, true)
+}
+
 // ThreadFrom is the thread WithThread named, else main.
 func ThreadFrom(ctx context.Context) string {
 	k, _ := threadOf(ctx)

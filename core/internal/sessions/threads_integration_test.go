@@ -284,13 +284,14 @@ func TestRestartStanding_FreshSessionsAndCursorsAtTheEnd(t *testing.T) {
 func TestBudgetHeld(t *testing.T) {
 	ctx := context.Background()
 	store, pool, id := newCharacter(t)
-	res := func(seq int64, text, age string) {
+	resBy := func(from string, seq int64, text, age string) {
 		t.Helper()
 		if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key, created_at)
-			VALUES ($1, $2, 'worker', $3, 'result', gen_random_uuid()::text, 'main', now() - $4::interval)`, id, seq, text, age); err != nil {
+			VALUES ($1, $2, $5, $3, 'result', gen_random_uuid()::text, 'main', now() - $4::interval)`, id, seq, text, age, from); err != nil {
 			t.Fatal(err)
 		}
 	}
+	res := func(seq int64, text, age string) { resBy("worker", seq, text, age) }
 	held := func(want bool) {
 		t.Helper()
 		if got, err := store.BudgetHeld(ctx, id); err != nil || got != want {
@@ -301,10 +302,11 @@ func TestBudgetHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	res(1, `{"subtype":"success"}`, "30 hours")
-	res(2, `{"subtype":"success","crash":true}`, "0 seconds")
+	resBy("fleet", 2, `{"subtype":"success","crash":true}`, "0 seconds")
 	res(3, `{"subtype":"success"}`, "0 seconds")
 	held(false)
-	res(4, `{"subtype":"success"}`, "0 seconds")
+	// A worker result whose agent-controlled tool input holds "crash":true is still a turn.
+	res(4, `{"subtype":"success","permission_denials":[{"tool_input":{"crash":true}}]}`, "0 seconds")
 	today, _, _, err := store.Turns(ctx, id)
 	if err != nil || today != 2 {
 		t.Fatalf("Turns today = %d, %v; want 2", today, err)

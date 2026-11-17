@@ -12,7 +12,7 @@ import (
 // BudgetOverride is how long the owner's raise_budget answer lifts a character's daily turn hold (docs/adr/0084 §9).
 const BudgetOverride = 24 * time.Hour
 
-// Turns counts a character's finished turns: the worker's result entries (not core's crash results) since
+// Turns counts a character's finished turns: the worker's result entries (not core's crash results, which core authors as 'fleet') since
 // midnight Europe/Paris and in the last hour. Overridden is true while a raise_budget answer stands.
 func (s *Store) Turns(ctx context.Context, id string) (today, lastHour int, overridden bool, err error) {
 	err = s.pool.QueryRow(ctx, `SELECT
@@ -20,7 +20,7 @@ func (s *Store) Turns(ctx context.Context, id string) (today, lastHour int, over
 		count(t.seq) FILTER (WHERE t.created_at > now() - interval '1 hour'),
 		COALESCE(max(s.budget_override_until) > now(), false)
 		FROM sessions s LEFT JOIN transcript t ON t.session_id = s.id AND t.type = 'result'
-		  AND t.text NOT LIKE '%"crash":true%' AND t.created_at > now() - interval '48 hours'
+		  AND t."from" <> 'fleet' AND t.created_at > now() - interval '48 hours'
 		WHERE s.id = $1`, id).Scan(&today, &lastHour, &overridden)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("turns: %w", err)

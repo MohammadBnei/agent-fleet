@@ -112,9 +112,10 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		return 0, transcript.ErrAlreadyAnswered
 	}
 	seq := r.RequestSeq
-	reply := func(text, typ string) (int64, error) {
+	replyIn := func(ctx context.Context, text, typ string) (int64, error) {
 		return tr.AppendAuthored(ctx, r.SessionID, a.By, text, typ, uuid.NewString(), &seq)
 	}
+	reply := func(text, typ string) (int64, error) { return replyIn(ctx, text, typ) }
 	// Warm, then append: the next pod streams from above the answer. The
 	// send lock the warm takes is held until Answer returns, so the append
 	// lands before any later sender's warm or append.
@@ -191,7 +192,7 @@ func (s *Store) Answer(ctx context.Context, fx Effects, tr transcript.Store, r R
 		}
 		return n, err
 	case Card:
-		return answerCard(ctx, r, a, reply, warm)
+		return answerCard(ctx, r, a, replyIn, warm)
 	}
 	return 0, fmt.Errorf("%w: a %s decision is not answered here", ErrInvalid, r.Kind)
 }
@@ -216,7 +217,7 @@ type cardAnswer struct {
 // its definition moved on) still gets the answer recorded, and Answer
 // returns its seq with ErrNotDelivered. No slot (any other warm error) is
 // that error, and the card stays open.
-func answerCard(ctx context.Context, r Record, a Reply, reply func(text, typ string) (int64, error), warm func() error) (int64, error) {
+func answerCard(ctx context.Context, r Record, a Reply, reply func(ctx context.Context, text, typ string) (int64, error), warm func() error) (int64, error) {
 	if (a.OptionID == "") == (a.OwnText == "") {
 		return 0, fmt.Errorf("%w: a card is answered with one option or the owner's own words", ErrInvalid)
 	}
@@ -226,6 +227,11 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(text, typ str
 	}
 	ans := cardAnswer{Card: r.ID}
 	handoff := true
+	// A card core filed about a character (its budget) is the owner's to answer, not the character's to read: the
+	// answer closes the card and stays in the transcript, but no turn starts, no pod wakes (docs/adr/0084 §9).
+	if c.GetSubject().GetKind() == "character" {
+		ctx = transcript.WithContextOnly(ctx)
+	}
 	if a.OwnText != "" {
 		if !c.GetWriteOwn() {
 			return 0, fmt.Errorf("%w: this card takes no answer of your own", ErrInvalid)
@@ -237,7 +243,7 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(text, typ str
 			return 0, fmt.Errorf("%w: card %s has no option %q", ErrInvalid, r.ID, a.OptionID)
 		}
 		o := c.GetOptions()[i]
-		handoff = o.GetEffect().GetVerb() == "handoff"
+		handoff = o.GetEffect().GetVerb() == "handoff" && c.GetSubject().GetKind() != "character"
 		ans.OptionID = o.GetId()
 		ans.Answers = map[string]string{c.GetAsk(): fmt.Sprintf("owner chose option %s of card %s: %s (agent claim, owner-chosen)", o.GetId(), r.ID, o.GetLabel())}
 	}
@@ -257,7 +263,7 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(text, typ str
 			return 0, err
 		}
 	}
-	n, err := reply(string(text), "answer")
+	n, err := reply(ctx, string(text), "answer")
 	if err != nil {
 		return 0, err
 	}
