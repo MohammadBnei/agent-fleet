@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   trailers:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - uses: actions/checkout@v5
         with:

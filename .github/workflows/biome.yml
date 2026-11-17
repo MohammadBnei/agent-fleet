@@ -7,7 +7,8 @@ name: Biome
 # friends: docker.yml's PR runs share a concurrency group with build-push,
 # which waits on the self-hosted build runner, and while that runner is down
 # a whole run can sit "pending" with no job started. A lint check must not
-# depend on the build box. GitHub-hosted only.
+# depend on the build box: it runs on the same self-hosted runner but is its own
+# workflow, so it never shares that concurrency group.
 
 on:
   pull_request:
@@ -22,7 +23,7 @@ jobs:
   # anyway on a push (always() + the event test), so main is always checked.
   changes:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     # Declaring any permission zeroes the rest; contents: read must be explicit.
     permissions:
       contents: read
@@ -47,12 +48,16 @@ jobs:
   biome:
     needs: changes
     if: always() && (github.event_name == 'push' || needs.changes.outputs.js == 'true')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v5
         with:
-          bun-version: 1.4.2
+          node-version: 22
+      - name: Bun 1.4.2
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/bun" bun@1.4.2
+          echo "$RUNNER_TEMP/bun/node_modules/.bin" >> "$GITHUB_PATH"
       # The root install is Biome plus release-it; no package's own
       # node_modules is needed to lint it.
       - name: Install dependencies

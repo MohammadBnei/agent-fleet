@@ -150,7 +150,7 @@ jobs:
       && github.event_name == 'push'
       && needs.worker-test.result != 'failure'
       && needs.dashboard-test.result != 'failure'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     # contents: write so release-it can push the version commit and tag with the built-in
     # token. release-it needs nothing beyond that here — github.release is false in its
     # config, so it never touches the Releases API.
@@ -223,12 +223,6 @@ jobs:
             echo "version=$last" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up Bun
-        if: steps.check.outputs.mode == 'release'
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-
       # release-it 21 and conventional-changelog 12 require Node
       # ^22.22.2 || ^24.15.0 || >=26. `bun run release` still executes
       # release-it under node (its bin has a node shebang), so the runner's
@@ -238,6 +232,13 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '24.15'
+
+      # Bun from npm: the build runner has no unzip, which oven-sh/setup-bun needs.
+      - name: Set up Bun
+        if: steps.check.outputs.mode == 'release'
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/bun" bun@1.4.2
+          echo "$RUNNER_TEMP/bun/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         if: steps.check.outputs.mode == 'release'
@@ -270,12 +271,11 @@ jobs:
   # dir "didn't change since this PR's diff" would leave deploy's k8s/*.yaml
   # tag-bump pointing at a tag some image was never actually pushed under.
   #
-  # Stays on ubuntu-latest deliberately: paths-filter needs no build tooling,
-  # and keeping it off the single serial build runner means it never queues
-  # behind an in-flight release.
+  # Runs on the same single serial build runner as everything else now (no
+  # hosted runners: the account's Actions minutes are not paid for).
   changes:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     # Setting ANY permissions here resets every other permission to `none`
     # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
     # read must be explicit or actions/checkout's own clone fails.
@@ -362,18 +362,20 @@ jobs:
   # merging a PR that rewrote those very tests: CI was green and had not
   # compiled them, let alone run them.
   #
-  # Mirrors dashboard-test deliberately, including staying off the build
-  # runner: it needs bun, not buildah, and the self-hosted runner takes one
-  # job at a time.
+  # Mirrors dashboard-test deliberately: it needs bun, not buildah.
   worker-test:
     needs: changes
     if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v5
         with:
-          bun-version: 1.4.2
+          node-version: 22
+      - name: Bun 1.4.2
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/bun" bun@1.4.2
+          echo "$RUNNER_TEMP/bun/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         working-directory: worker
         run: bun install --frozen-lockfile
@@ -392,17 +394,20 @@ jobs:
   # The dashboard ships inside core's image rather than one of its own, so it
   # has no leg in the build below (that builds an image per component).
   # core's Dockerfile already runs `bun run build`; this is the missing
-  # `bun test`, which otherwise never ran anywhere. Stays on ubuntu-latest —
-  # it needs bun, not buildah, and it should not occupy the build runner.
+  # `bun test`, which otherwise never ran anywhere. Needs bun (from npm), not buildah.
   dashboard-test:
     needs: changes
     if: always() && (github.event_name == 'push' || needs.changes.outputs.dashboard == 'true')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v5
         with:
-          bun-version: 1.4.2
+          node-version: 22
+      - name: Bun 1.4.2
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/bun" bun@1.4.2
+          echo "$RUNNER_TEMP/bun/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         working-directory: dashboard
         run: bun install --frozen-lockfile
@@ -422,12 +427,16 @@ jobs:
   islands-test:
     needs: changes
     if: always() && (github.event_name == 'push' || needs.changes.outputs.islands == 'true')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v5
         with:
-          bun-version: 1.4.2
+          node-version: 22
+      - name: Bun 1.4.2
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/bun" bun@1.4.2
+          echo "$RUNNER_TEMP/bun/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         working-directory: islands
         run: bun install --frozen-lockfile
@@ -845,7 +854,7 @@ jobs:
       always() && github.event_name == 'push' &&
       needs.release.result == 'success' &&
       needs.build-push.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     permissions:
       contents: write
     # One version for the whole run, from the release job. This was the tag name,

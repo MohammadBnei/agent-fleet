@@ -34,7 +34,7 @@ jobs:
   # docker.yml's equivalent (see that file's comment on why its filtering
   # is pull_request-only).
   changes:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     # Setting ANY permissions here resets every other permission to `none`
     # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
     # read must be explicit or actions/checkout's own clone fails.
@@ -117,7 +117,7 @@ jobs:
   buf:
     needs: changes
     if: needs.changes.outputs.proto == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -186,10 +186,14 @@ jobs:
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
           go install connectrpc.com/connect/cmd/protoc-gen-connect-go@${{ env.PROTOC_GEN_CONNECT_GO_VERSION }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      # Bun from npm: the build runner has no unzip (oven-sh/setup-bun) and no node.
+      - uses: actions/setup-node@v5
         with:
-          bun-version: 1.4.2
+          node-version: 22
+      - name: Setup Bun
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/bun" bun@1.4.2
+          echo "$RUNNER_TEMP/bun/node_modules/.bin" >> "$GITHUB_PATH"
 
       # An "Install ts-proto (worker's local TS plugin)" step used to sit here.
       # Deleted with worker/src/gen in docs/adr/0048 — the worker never
@@ -227,24 +231,11 @@ jobs:
   go:
     needs: changes
     if: needs.changes.outputs.go-modules != '[]'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     strategy:
       fail-fast: false
       matrix:
         module: ${{ fromJSON(needs.changes.outputs.go-modules) }}
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: agentfleet
-          POSTGRES_PASSWORD: agentfleet
-          POSTGRES_DB: agentfleetdb
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -255,6 +246,22 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+
+      # Postgres for the integration tests. The self-hosted runner has no docker `services:`; the one container tool its
+      # user has is `sudo buildah` (rootful), so postgres:18 (ECR mirror of the Docker Hub image: Hub rate-limits the
+      # LAN's one address) runs through it on the host network, on a loopback port picked per run and matrix leg, and is
+      # stopped and removed at the end.
+      - name: postgres (buildah)
+        run: |
+          port=$((20000 + (GITHUB_RUN_ID + GITHUB_RUN_ATTEMPT * 7 + ${{ strategy.job-index }}) % 20000))
+          ctr=$(sudo buildah from public.ecr.aws/docker/library/postgres:18)
+          echo "PG_CTR=$ctr" >> "$GITHUB_ENV"
+          echo "PG_PORT=$port" >> "$GITHUB_ENV"
+          nohup sudo buildah run --network host --env POSTGRES_USER=agentfleet --env POSTGRES_PASSWORD=agentfleet --env POSTGRES_DB=agentfleetdb "$ctr" -- \
+            docker-entrypoint.sh postgres -c listen_addresses=127.0.0.1 -p "$port" >"$RUNNER_TEMP/pg.log" 2>&1 &
+          echo "PG_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 60); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 2; done
+          (exec 3<>"/dev/tcp/127.0.0.1/$port") || { cat "$RUNNER_TEMP/pg.log"; exit 1; }
 
       - name: go vet
         working-directory: ${{ matrix.module }}
@@ -291,19 +298,26 @@ jobs:
       - name: go test (integration, real Postgres)
         working-directory: ${{ matrix.module }}
         env:
-          AGENTFLEET_DB_HOST: localhost
-          AGENTFLEET_DB_PORT: '5432'
+          AGENTFLEET_DB_HOST: 127.0.0.1
+          AGENTFLEET_DB_PORT: ${{ env.PG_PORT }}
           AGENTFLEET_DB_NAME: agentfleetdb
           AGENTFLEET_DB_USER: agentfleet
           AGENTFLEET_DB_PASSWORD: agentfleet
         run: go test -tags=integration ./... -count=1
+
+      - name: stop postgres
+        if: always()
+        run: |
+          kill "$PG_PID" 2>/dev/null || true # sudo relays the signal to buildah run, which stops the container
+          sleep 3
+          sudo buildah rm "$PG_CTR" || true
 
   # Unfiltered on purpose: the drift it catches (an ADR index row that
   # disagrees with its file, a skill citing a path that was renamed, a
   # workflow handing GITHUB_TOKEN a write scope) comes as often from a
   # code-only PR as from a docs-only one. One package, no Postgres, seconds.
   docs-check:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
