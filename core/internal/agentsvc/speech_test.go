@@ -3,8 +3,11 @@ package agentsvc
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -105,5 +108,88 @@ func TestSpeak_BoundsAndDelivery(t *testing.T) {
 	cancel()
 	if d, err := s.speech.say("c1", "main:2", key(2, 2), line); err != nil || d {
 		t.Errorf("nobody watching: delivered %v, %v", d, err)
+	}
+}
+
+// A character's own sidecar names the turn, so changing the turn over and over must not lift the bound.
+func TestSpeak_BoundHoldsAcrossTurns(t *testing.T) {
+	h := newSpeechHub()
+	line := &agentfleetv1.WatchSpeechResponse{Text: "hi"}
+	var err error
+	n := 0
+	for ; n < 2*maxSpeakPerWin && err == nil; n++ {
+		_, err = h.say("c1", fmt.Sprintf("main:%d", n), fmt.Sprintf("eff:c1:main:%d:1", n), line)
+	}
+	if connect.CodeOf(err) != connect.CodeResourceExhausted || n != maxSpeakPerWin+1 {
+		t.Fatalf("stopped at %d with %v, want the %dth line refused", n, err, maxSpeakPerWin+1)
+	}
+	if _, err := h.say("c2", "main:1", "eff:c2:main:1:1", line); err != nil {
+		t.Errorf("another character has its own cap: %v", err)
+	}
+}
+
+// A replay reports what the first try did: a line nobody saw is not "delivered" because a browser came after.
+func TestSpeak_ReplayKeepsFirstOutcome(t *testing.T) {
+	h := newSpeechHub()
+	line := &agentfleetv1.WatchSpeechResponse{Text: "hi"}
+	if d, err := h.say("c1", "main:1", "eff:c1:main:1:1", line); err != nil || d {
+		t.Fatalf("first try, nobody watching: %v %v", d, err)
+	}
+	lines, cancel := h.subscribe()
+	defer cancel()
+	if d, err := h.say("c1", "main:1", "eff:c1:main:1:1", line); err != nil || d || len(lines) != 0 {
+		t.Errorf("replay: delivered %v, %v, %d queued", d, err, len(lines))
+	}
+}
+
+// WatchSpeech over a real Connect stream: an owner receives a Speak line, and once it ends later lines say nobody heard.
+func TestWatchSpeech_Streams(t *testing.T) {
+	s := &Server{speech: newSpeechHub()}
+	admin := auth.Identity{Sub: "a", Groups: []string{auth.RequiredGroup}}
+	mux := http.NewServeMux()
+	mux.Handle(agentfleetv1connect.AgentServiceWatchSpeechProcedure, connect.NewServerStreamHandler(
+		agentfleetv1connect.AgentServiceWatchSpeechProcedure, s.WatchSpeech))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), Principal{Member: &admin})))
+	}))
+	defer srv.Close()
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	got := make(chan *agentfleetv1.WatchSpeechResponse, 1)
+	go func() { // the call returns once the first line makes the headers flow
+		st, err := connect.NewClient[agentfleetv1.WatchSpeechRequest, agentfleetv1.WatchSpeechResponse](
+			srv.Client(), srv.URL+agentfleetv1connect.AgentServiceWatchSpeechProcedure).CallServerStream(ctx, connect.NewRequest(&agentfleetv1.WatchSpeechRequest{}))
+		if err == nil && st.Receive() {
+			got <- st.Msg()
+		}
+	}()
+	line := &agentfleetv1.WatchSpeechResponse{Character: "ops", Text: "hi", Face: "happy"}
+	var d bool
+	for i := 0; i < 50 && !d; i++ { // retry until the handler is subscribed
+		d, _ = s.speech.say("c1", "main:1", fmt.Sprintf("eff:c1:main:1:%d", i+1), line)
+		if !d {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	select {
+	case m := <-got:
+		if m.GetCharacter() != "ops" || m.GetText() != "hi" || m.GetFace() != "happy" {
+			t.Errorf("received %v", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no line reached the stream")
+	}
+	stop()
+	for i := 0; i < 100; i++ { // the handler unsubscribes when the context ends
+		s.speech.mu.Lock()
+		n := len(s.speech.subs)
+		s.speech.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if d, _ := s.speech.say("c1", "main:2", "eff:c1:main:2:1", line); d {
+		t.Error("a line after the stream ended was delivered")
 	}
 }

@@ -5,6 +5,7 @@ package coreserver
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,12 @@ import (
 // reachCharacter is a started character whose pinned spec is effective, and a repo session beside it.
 func reachCharacter(t *testing.T, effective string) (*Server, string, string) {
 	t.Helper()
+	s, id, repoID, _ := reachCharacterDB(t, effective)
+	return s, id, repoID
+}
+
+func reachCharacterDB(t *testing.T, effective string) (*Server, string, string, *pgxpool.Pool) {
+	t.Helper()
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
@@ -41,7 +48,7 @@ func reachCharacter(t *testing.T, effective string) (*Server, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Server{sessions: store, transcr: transcript.NewPostgresStore(pool, decisions.OnAppend)}, id, repoID
+	return &Server{sessions: store, transcr: transcript.NewPostgresStore(pool, decisions.OnAppend)}, id, repoID, pool
 }
 
 func code(err error) codes.Code { return status.Code(err) }
@@ -264,12 +271,20 @@ func (f *fakeSpeaker) Speak(_ context.Context, _, text, face, key string) (bool,
 // of core's own (the per-turn bound) reaches the character as its gRPC code.
 func TestSpeak_Grant(t *testing.T) {
 	ctx := context.Background()
-	s, id, _ := reachCharacter(t, `{"sidecarTools":["speak"],"mode":{"default":"default","allow":["default"]}}`)
+	s, id, _, pool := reachCharacterDB(t, `{"sidecarTools":["speak"],"mode":{"default":"default","allow":["default"]}}`)
 	sp := &fakeSpeaker{}
 	s.SetSpeaker(sp)
 	res, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "hi", Face: "happy", IdempotencyKey: "k"})
 	if err != nil || !res.GetDelivered() || sp.text != "hi" || sp.face != "happy" || sp.key != "k" {
 		t.Fatalf("speak: %v %v %+v", res, err, sp)
+	}
+	// A line is live-only and safe to replay: it never marks the turn's entry as "an effect ran" (docs/adr/0084 §4).
+	if _, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "again", IdempotencyKey: sessions.EffectKey(id, "main", 5, 1)}); err != nil {
+		t.Fatal(err)
+	}
+	var noted *int64
+	if err := pool.QueryRow(ctx, `SELECT effect_seq FROM session_threads WHERE session_id = $1 AND thread_key = 'main'`, id).Scan(&noted); err != nil || noted != nil {
+		t.Errorf("a spoken line noted an effect: %v %v", noted, err)
 	}
 	sp.err = status.Error(codes.ResourceExhausted, "too many")
 	if _, err := s.Speak(ctx, &agentfleetv1.SpeakRequest{SessionId: id, Text: "hi", IdempotencyKey: "k2"}); code(err) != codes.ResourceExhausted {

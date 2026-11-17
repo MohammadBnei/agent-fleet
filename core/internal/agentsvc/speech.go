@@ -23,6 +23,8 @@ import (
 // nothing, and is dropped when no browser watches.
 const (
 	maxSpeakPerTurn = 20
+	maxSpeakPerWin  = 3 * maxSpeakPerTurn // per speakWindow, whatever turn ids the character's keys name
+	speakWindow     = time.Minute
 	maxSpeakText    = 1000
 	maxFace         = 32
 	speechBuffer    = 32
@@ -32,18 +34,19 @@ var faceRe = regexp.MustCompile(`^[a-z0-9_-]*$`)
 
 // speechHub fans a character's lines out to the owner's open WatchSpeech streams and counts them per turn.
 type speechHub struct {
-	mu    sync.Mutex
-	subs  map[chan *agentfleetv1.WatchSpeechResponse]struct{}
-	turns map[string]*turnLines // character session -> its current turn's lines
+	mu     sync.Mutex
+	subs   map[chan *agentfleetv1.WatchSpeechResponse]struct{}
+	turns  map[string]*turnLines  // character session -> its current turn's lines
+	recent map[string][]time.Time // character session -> when its recent lines went out
 }
 
 type turnLines struct {
 	id   string
-	keys map[string]struct{}
+	keys map[string]bool // key -> whether a browser got the line
 }
 
 func newSpeechHub() *speechHub {
-	return &speechHub{subs: map[chan *agentfleetv1.WatchSpeechResponse]struct{}{}, turns: map[string]*turnLines{}}
+	return &speechHub{subs: map[chan *agentfleetv1.WatchSpeechResponse]struct{}{}, turns: map[string]*turnLines{}, recent: map[string][]time.Time{}}
 }
 
 func (h *speechHub) subscribe() (<-chan *agentfleetv1.WatchSpeechResponse, func()) {
@@ -65,16 +68,29 @@ func (h *speechHub) say(session, turn, key string, line *agentfleetv1.WatchSpeec
 	defer h.mu.Unlock()
 	tl := h.turns[session]
 	if tl == nil || tl.id != turn {
-		tl = &turnLines{id: turn, keys: map[string]struct{}{}}
+		tl = &turnLines{id: turn, keys: map[string]bool{}}
 		h.turns[session] = tl
 	}
-	if _, dup := tl.keys[key]; dup {
-		return len(h.subs) > 0, nil
+	if got, dup := tl.keys[key]; dup {
+		return got, nil // what the first try reported, never a fresh guess
 	}
 	if len(tl.keys) >= maxSpeakPerTurn {
 		return false, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyInternal, fmt.Errorf("at most %d spoken lines per turn", maxSpeakPerTurn))
 	}
-	tl.keys[key] = struct{}{}
+	// The turn id comes from the character's own sidecar, so the per-turn count alone is not a bound: a rolling cap
+	// per character holds however often the id changes.
+	now := time.Now()
+	recent := h.recent[session][:0:0]
+	for _, at := range h.recent[session] {
+		if now.Sub(at) < speakWindow {
+			recent = append(recent, at)
+		}
+	}
+	if len(recent) >= maxSpeakPerWin {
+		h.recent[session] = recent
+		return false, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyInternal, fmt.Errorf("at most %d spoken lines per %s", maxSpeakPerWin, speakWindow))
+	}
+	h.recent[session] = append(recent, now)
 	for ch := range h.subs {
 		select {
 		case ch <- line:
@@ -82,6 +98,7 @@ func (h *speechHub) say(session, turn, key string, line *agentfleetv1.WatchSpeec
 		default: // a stalled browser loses the line, never blocks the character
 		}
 	}
+	tl.keys[key] = delivered
 	return delivered, nil
 }
 

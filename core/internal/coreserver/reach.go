@@ -234,7 +234,8 @@ func (s *Server) Speak(ctx context.Context, req *agentfleetv1.SpeakRequest) (*ag
 	if _, err := s.granted(ctx, req.GetSessionId(), "speak"); err != nil {
 		return nil, err
 	}
-	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
+	// No noteEffect: a line is live-only and a replayed key is dropped by the hub, so a crash replaying the turn is
+	// harmless, and a cosmetic line must not close the owner's turn with a crash result (docs/adr/0084 §4).
 	delivered, err := s.speaker.Speak(ctx, req.GetSessionId(), req.GetText(), req.GetFace(), req.GetIdempotencyKey())
 	if err != nil {
 		return nil, grpcErr(err)
