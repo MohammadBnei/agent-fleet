@@ -17,6 +17,21 @@ var ErrPublishRefused = errors.New("publish refused")
 // a game event's text would become a prompt.
 var ReservedTypes = []string{"dev.bnei.fleet.session.", "dev.bnei.game."}
 
+// UntrustedTypes are the machine-event type prefixes whose text is untrusted (docs/adr/0086 §2): an alert. A
+// standing character (docs/adr/0084 §2) never receives one.
+var UntrustedTypes = []string{"dev.bnei.alert."}
+
+// UntrustedReaches reports whether type prefix p (as a subscription filter) can match an untrusted type, as
+// TypeReaches does for the reserved ones.
+func UntrustedReaches(p string) bool {
+	for _, r := range UntrustedTypes {
+		if strings.HasPrefix(p, r) || strings.HasPrefix(r, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // ReservedSubjects are the subject prefixes those types live on.
 var ReservedSubjects = []string{"fleet/", "game/"}
 

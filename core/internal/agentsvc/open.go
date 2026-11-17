@@ -11,6 +11,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -111,6 +112,9 @@ func (s *Server) open(ctx context.Context, p Principal, m *agentfleetv1.OpenRequ
 	head, ok := s.usable(p, m.GetDefinition())
 	if !ok {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
+	}
+	if err := dashboard.StandingOnly(head.Effective); err != nil {
+		return nil, err
 	}
 	if !allows(head.Effective.Lifecycle, m.GetLifecycle()) {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition does not take that lifecycle"))

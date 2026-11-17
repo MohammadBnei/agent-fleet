@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
@@ -60,6 +61,9 @@ func (s *Server) invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 	head, ok := s.usable(p, m.GetDefinition())
 	if !ok {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
+	}
+	if err := dashboard.StandingOnly(head.Effective); err != nil {
+		return nil, err
 	}
 	if !allows(head.Effective.Lifecycle, singleShot) {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this definition does not take single-shot runs"))

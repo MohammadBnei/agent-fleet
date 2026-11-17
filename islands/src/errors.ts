@@ -56,6 +56,8 @@ const keyText: Record<Keyed, string> = {
   PARKED: "This run is waiting on a decision. Answer it to resume the run.",
   RULE_OF_TWO:
     "This session is not allowed that. The owner can approve it through a card.",
+  STANDING_ONLY:
+    "This agent is a standing character and cannot be opened from here.",
 };
 
 // The key's text, or "" for a key with none (server.internal, or one a newer core added).
