@@ -2852,7 +2852,7 @@ type JournalEntry struct {
 	PayloadJson string                 `protobuf:"bytes,5,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
 	CreatedAt   string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
 	// Written by a session whose set holds A: hidden from journal_search until
-	// the owner promotes it (ADR-0086 §5). The console labels these rows.
+	// the owner promotes it (ADR-0086 §5). The console label and the promote path are a follow-up slice.
 	Quarantined   bool `protobuf:"varint,7,opt,name=quarantined,proto3" json:"quarantined,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

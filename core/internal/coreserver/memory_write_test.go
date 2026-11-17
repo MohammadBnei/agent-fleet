@@ -6,6 +6,9 @@ import (
 	"context"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -33,7 +36,7 @@ func TestAuthorizeMemoryWrite_FollowsTheStoredSet(t *testing.T) {
 			t.Errorf("%s: %v %v, want quarantine %v", tc.set, resp, err, tc.quarantine)
 		}
 	}
-	if _, err := srv.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: "00000000-0000-0000-0000-000000000000"}); err == nil {
-		t.Error("unknown session authorized")
+	if _, err := srv.AuthorizeMemoryWrite(ctx, &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: "00000000-0000-0000-0000-000000000000"}); status.Code(err) != codes.NotFound {
+		t.Errorf("unknown session: got %v, want NotFound", err)
 	}
 }

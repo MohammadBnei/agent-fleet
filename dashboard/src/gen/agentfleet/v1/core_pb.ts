@@ -1463,7 +1463,7 @@ export type JournalEntry = Message<"agentfleet.v1.JournalEntry"> & {
 
   /**
    * Written by a session whose set holds A: hidden from journal_search until
-   * the owner promotes it (ADR-0086 §5). The console labels these rows.
+   * the owner promotes it (ADR-0086 §5). The console label and the promote path are a follow-up slice.
    *
    * @generated from field: bool quarantined = 7;
    */

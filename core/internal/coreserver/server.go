@@ -606,11 +606,11 @@ func (s *Server) UpdateSessionMeta(ctx context.Context, req *agentfleetv1.Update
 // to quarantine, C without A to memory, anything else is refused. Fails closed on a missing session.
 func (s *Server) AuthorizeMemoryWrite(ctx context.Context, req *agentfleetv1.AuthorizeMemoryWriteRequest) (*agentfleetv1.AuthorizeMemoryWriteResponse, error) {
 	t, err := s.sessions.Get(ctx, req.GetSessionId())
+	if errors.Is(err, sessions.ErrNotFound) {
+		return nil, status.Error(codes.NotFound, "session not found")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("AuthorizeMemoryWrite: %w", err)
-	}
-	if t == nil {
-		return nil, status.Error(codes.NotFound, "session not found")
 	}
 	switch {
 	case sessions.HoldsTrust(t.TrustSet, "A"):

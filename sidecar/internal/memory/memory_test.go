@@ -173,3 +173,20 @@ func TestWriteAs_RefusesDisagreement(t *testing.T) {
 		t.Errorf("agreeing write: %v", err)
 	}
 }
+
+// A sidecar killed mid-commit leaves index.lock; the next pod's first write clears it.
+func TestStaleIndexLockClearedOnFirstWrite(t *testing.T) {
+	root := t.TempDir()
+	first := &Store{Root: root, Name: "kai", SessionID: "s1", Set: "BC"}
+	if _, err := first.Write("a", "1"); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(root, "agent-kai-memory", ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next := &Store{Root: root, Name: "kai", SessionID: "s2", Set: "BC"}
+	if _, err := next.Write("b", "2"); err != nil {
+		t.Fatalf("stale lock not cleared: %v", err)
+	}
+}

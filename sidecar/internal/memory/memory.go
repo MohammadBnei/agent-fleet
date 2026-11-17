@@ -30,6 +30,7 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 type Store struct {
 	Root, Name, SessionID, Set string
 	mu                         sync.Mutex // one writer; git's index is not concurrent
+	lockChecked                bool       // the stale index.lock sweep ran
 }
 
 // Quarantined reports whether this session's writes go to quarantine.
@@ -89,6 +90,16 @@ func (s *Store) Write(rel, content string) (string, error) {
 			return "", err
 		}
 	}
+	// A sidecar killed mid-commit leaves .git/index.lock on the shared volume. This pod is the only writer
+	// (ADR-0084 §8, after the drain), so on the first write a leftover lock file is stale.
+	if !s.lockChecked {
+		s.lockChecked = true
+		lock := filepath.Join(dir, ".git", "index.lock")
+		if fi, err := os.Lstat(lock); err == nil && fi.Mode().IsRegular() {
+			_ = os.Remove(lock)
+		}
+	}
+	headBefore, _ := gitOut(dir, "rev-parse", "-q", "--verify", "HEAD")
 	// No existing component of the path may be a symlink, the last one included.
 	cur := dir
 	for _, part := range strings.Split(clean, "/") {
@@ -124,7 +135,10 @@ func (s *Store) Write(rel, content string) (string, error) {
 		err = git(dir, "-c", "user.name=ukubi-agent", "-c", "user.email=noreply@bnei.dev", "commit", "-q", "--allow-empty", "-m", msg, "--", clean)
 	}
 	if err != nil {
-		// Leave no content without its provenance commit.
+		// Leave no content without its provenance commit. A commit that landed anyway keeps its tree.
+		if headAfter, _ := gitOut(dir, "rev-parse", "-q", "--verify", "HEAD"); headAfter != headBefore {
+			return "", err
+		}
 		_ = git(dir, "reset", "-q", "--", clean)
 		if readErr == nil {
 			_ = os.WriteFile(full, prev, 0o644)
@@ -142,4 +156,9 @@ func git(dir string, args ...string) error {
 		return fmt.Errorf("git %s: %w: %s", args[0], err, out)
 	}
 	return nil
+}
+
+func gitOut(dir string, args ...string) (string, error) {
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	return strings.TrimSpace(string(out)), err
 }

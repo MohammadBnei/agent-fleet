@@ -65,6 +65,23 @@ func TestMemoryMounts(t *testing.T) {
 	}
 }
 
+func TestMemoryWorkerEnv(t *testing.T) {
+	env := func(set string) map[string]string {
+		m := map[string]string{}
+		for _, e := range memJob(t, set).Containers[0].Env {
+			m[e.Name] = e.Value
+		}
+		return m
+	}
+	m := env("BC")
+	if m["FLEET_MEMORY_DIR"] != "/memory/agent-kai-memory" || m["GIT_CONFIG_KEY_0"] != "safe.directory" || m["GIT_CONFIG_VALUE_0"] != "/memory/agent-kai-memory" {
+		t.Errorf("worker env = %v", m)
+	}
+	if env("C")["FLEET_MEMORY_DIR"] != "" {
+		t.Error("a worker without B was told where memory is")
+	}
+}
+
 func TestMemoryNeedsSidecarAndValidSet(t *testing.T) {
 	ps := &corev1.PodSpec{Containers: []corev1.Container{{Name: "worker"}}}
 	if err := applyMemory(ps, MemoryProfile{Agent: "kai", Set: "BC"}); err == nil {

@@ -3,6 +3,7 @@ package k8s
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -59,7 +60,26 @@ func applyMemory(ps *corev1.PodSpec, m MemoryProfile) error {
 		return fmt.Errorf("memory: pod has no sidecar init container")
 	}
 	if strings.Contains(m.Set, "B") {
-		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, vm(mem, true))
+		w := &ps.Containers[0]
+		w.VolumeMounts = append(w.VolumeMounts, vm(mem, true))
+		// The repo is root-owned and the worker is uid 1000: without safe.directory every git read of it
+		// fails "dubious ownership", which hides the per-commit provenance.
+		dir := memoryDir + "/" + mem
+		n := 0
+		for i := range w.Env {
+			if w.Env[i].Name == "GIT_CONFIG_COUNT" {
+				n, _ = strconv.Atoi(w.Env[i].Value)
+				w.Env[i].Value = strconv.Itoa(n + 1)
+				break
+			}
+		}
+		if n == 0 {
+			w.Env = append(w.Env, corev1.EnvVar{Name: "GIT_CONFIG_COUNT", Value: "1"})
+		}
+		w.Env = append(w.Env,
+			corev1.EnvVar{Name: "FLEET_MEMORY_DIR", Value: dir},
+			corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_KEY_%d", n), Value: "safe.directory"},
+			corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), Value: dir})
 	}
 	return nil
 }

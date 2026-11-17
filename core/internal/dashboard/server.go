@@ -1568,7 +1568,9 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 		Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email,
 		Vault: definitions.VaultSpec(eff), TimeoutSeconds: int64(timeout.Seconds()), TrustSet: t.TrustSet,
 	}
-	profile.Standing = eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
+	// Memory is for the standing session itself, not any session of the definition: ADR-0084 §8's single writer.
+	profile.Standing = t.Lifecycle != nil && *t.Lifecycle == "standing" &&
+		eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
 	if r := eff.Resources; r != nil {
 		profile.Cpu, profile.Memory = r.CPU, r.Memory
 		// Guaranteed QoS is for standing definitions only (ADR-0084 §9).
