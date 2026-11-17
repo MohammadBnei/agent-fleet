@@ -4,6 +4,7 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -481,5 +482,75 @@ func TestListRewarmStanding_TheStopLapsesWhenTheCrashesAgeOut(t *testing.T) {
 	}
 	if !due(t, store, id) {
 		t.Fatal("crashes older than the window no longer stop the re-warm")
+	}
+}
+
+func (f *pinFixture) podAge(t *testing.T, ago string) {
+	t.Helper()
+	if _, err := f.pool.Exec(context.Background(), `UPDATE sessions SET pod_started_at = now() - $2::interval WHERE id = $1`, f.id, ago); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A pod near the 12h token cap is replaced through the drain at the same version (docs/adr/0084 §9); a young pod,
+// and a stopped row, are left alone.
+func TestReplaceBeforeTokenCap(t *testing.T) {
+	ctx := context.Background()
+	f := newPinFixture(t, effTools, effSame)
+	f.head.SHA = "sha-a"
+	f.live(t)
+	f.podAge(t, "11 hours")
+	f.loop.keepStanding(ctx)
+	if len(f.fake.tornWorkers) != 0 {
+		t.Fatalf("a pod inside the margin was replaced: %v", f.fake.tornWorkers)
+	}
+	f.podAge(t, "11 hours 45 minutes")
+	// A registry that cannot answer does not stop the replacement: it runs at the pinned version.
+	f.loop.SetStandingHead(func(string) (definitions.Head, error) { return definitions.Head{}, errors.New("registry down") })
+	openThread(t, f.pool, f.id, "busy", 0)
+	put(t, f.pool, f.id, 1, "busy", "human", "discussion", "go")
+	put(t, f.pool, f.id, 2, "busy", "agent", "assistant", "working")
+	f.loop.keepStanding(ctx)
+	if d, _ := f.store.Draining(ctx, f.id); !d || len(f.fake.tornWorkers) != 0 {
+		t.Fatalf("the replacement must drain a running turn first: draining %v torn %v", d, f.fake.tornWorkers)
+	}
+	put(t, f.pool, f.id, 3, "busy", "agent", "result", `{"consumedSeq":1}`)
+	f.loop.keepStanding(ctx)
+	if !slices.Equal(f.fake.tornWorkers, []string{f.id}) || f.pin(t) != "sha-a" || !slices.Equal(f.warm, []string{f.id}) {
+		t.Fatalf("replace: torn %v pin %s warm %v", f.fake.tornWorkers, f.pin(t), f.warm)
+	}
+	if d, _ := f.store.Draining(ctx, f.id); d {
+		t.Fatal("the drain must end with the replacement")
+	}
+}
+
+// A pod with no start time (never stamped) is never Aged: the migration backfills live rows, nothing else is replaced.
+func TestStandingRows_NullPodStartNotAged(t *testing.T) {
+	ctx := context.Background()
+	store, pool, id := newCharacter(t)
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_started_at = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.StandingRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.ID == id && r.Aged {
+			t.Fatal("a NULL pod_started_at must not be Aged")
+		}
+	}
+}
+
+// SetPodImages, written when the pod is created, starts the pod's token-cap clock.
+func TestSetPodImages_StampsPodStart(t *testing.T) {
+	ctx := context.Background()
+	store, pool, id := newCharacter(t)
+	if err := store.SetPodImages(ctx, id, "w", "s", "v"); err != nil {
+		t.Fatal(err)
+	}
+	var fresh bool
+	if err := pool.QueryRow(ctx, `SELECT pod_started_at > now() - interval '1 minute' FROM sessions WHERE id = $1`, id).Scan(&fresh); err != nil || !fresh {
+		t.Fatalf("pod_started_at not stamped: %v %v", fresh, err)
 	}
 }

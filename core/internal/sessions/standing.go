@@ -25,6 +25,11 @@ const (
 	// DrainDeadline is a thread's turn deadline (15 minutes, docs/adr/0084 §4) plus a minute for the pod to
 	// report it: a drain waits no longer than this for a running turn.
 	DrainDeadline = 16 * time.Minute
+	// PodLifetime is the provisioner's cap on a pod's life, and so on its vault token (grpcserver podLifetime).
+	// A character is replaced through the re-pin drain once its pod is older than PodLifetime - ReplaceMargin:
+	// the margin is a drain deadline plus a warm, with room for a few missed ticks (docs/adr/0084 §9).
+	PodLifetime   = 12 * time.Hour
+	ReplaceMargin = 30 * time.Minute
 )
 
 // CrashEntryPrefix starts the text of every crash entry core appends for a CRASHED pod: a system entry from
@@ -103,18 +108,21 @@ func (s *Store) EndDrain(ctx context.Context, id string) error {
 type StandingRow struct {
 	ID, Definition, SHA string
 	Live, Draining      bool
+	// Aged: the live pod is near its token cap and is replaced, at the same version.
+	Aged bool
 }
 
 // StandingRows lists the started (not stopped, not archived) characters.
 func (s *Store) StandingRows(ctx context.Context) ([]StandingRow, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id::text, definition_name, definition_sha, COALESCE(pod_phase, '') = ANY($1),
-		drain_started_at IS NOT NULL FROM sessions
-		WHERE lifecycle = 'standing' AND stopped_at IS NULL AND archived_at IS NULL AND definition_name IS NOT NULL`, livePhases)
+		drain_started_at IS NOT NULL, COALESCE(pod_started_at < now() - make_interval(secs => $2), false) FROM sessions
+		WHERE lifecycle = 'standing' AND stopped_at IS NULL AND archived_at IS NULL AND definition_name IS NOT NULL`,
+		livePhases, (PodLifetime - ReplaceMargin).Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("standing rows: %w", err)
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (c StandingRow, err error) {
-		err = r.Scan(&c.ID, &c.Definition, &c.SHA, &c.Live, &c.Draining)
+		err = r.Scan(&c.ID, &c.Definition, &c.SHA, &c.Live, &c.Draining, &c.Aged)
 		return
 	})
 }
@@ -283,10 +291,16 @@ func (l *Loop) repinStanding(ctx context.Context) {
 			l.refused[r.ID] = true
 			l.alertOnce(ctx, r.ID, "revoked", "its definition was revoked; Stop it, or fix the definition")
 			continue
+		case err != nil && r.Live && r.Aged:
+			// The registry cannot tell, but the pod is about to hit its token cap: replace it at the version it
+			// already runs (the warm checks the pin again), rather than let the Job die undrained at its deadline.
+			head = definitions.Head{SHA: r.SHA}
 		case err != nil:
 			continue // the registry cannot tell: nothing moves
 		}
-		if r.SHA == head.SHA {
+		// The pod is near its token cap: replaced through the same drain, at the same version.
+		replace := r.SHA == head.SHA && r.Live && r.Aged
+		if r.SHA == head.SHA && !replace {
 			if r.Draining {
 				// Reverted mid-drain: the pod stays, and intake resumes (what it held is read again from the cursor).
 				l.endDrain(ctx, r.ID)
@@ -295,24 +309,27 @@ func (l *Loop) repinStanding(ctx context.Context) {
 			l.forgetRepinAlerts(r.ID)
 			continue
 		}
-		old, err := l.sessions.DefinitionEffective(ctx, r.Definition, r.SHA)
-		if err != nil {
-			slog.Warn("sessions loop: pinned version unreadable, not re-pinning", "sessionId", r.ID, "error", err)
-			l.endDrain(ctx, r.ID)
-			continue
-		}
-		if ceiling, vault := definitions.Widens(old, head.Effective); ceiling || vault {
-			if r.Draining {
+		var narrows, narrowsVault bool
+		if !replace {
+			old, err := l.sessions.DefinitionEffective(ctx, r.Definition, r.SHA)
+			if err != nil {
+				slog.Warn("sessions loop: pinned version unreadable, not re-pinning", "sessionId", r.ID, "error", err)
 				l.endDrain(ctx, r.ID)
+				continue
 			}
-			if vault && r.Live {
-				l.tearDown(ctx, r.ID)
+			if ceiling, vault := definitions.Widens(old, head.Effective); ceiling || vault {
+				if r.Draining {
+					l.endDrain(ctx, r.ID)
+				}
+				if vault && r.Live {
+					l.tearDown(ctx, r.ID)
+				}
+				l.refused[r.ID] = true
+				l.alertOnce(ctx, r.ID, "widens:"+head.SHA, "its definition widened the ceiling, vault or cluster read; Stop and Start it to take the change")
+				continue
 			}
-			l.refused[r.ID] = true
-			l.alertOnce(ctx, r.ID, "widens:"+head.SHA, "its definition widened the ceiling, vault or cluster read; Stop and Start it to take the change")
-			continue
+			narrows, narrowsVault = definitions.Widens(head.Effective, old)
 		}
-		narrows, narrowsVault := definitions.Widens(head.Effective, old)
 		if r.Live && !narrows && !narrowsVault {
 			since, err := l.sessions.Drain(ctx, r.ID)
 			if err != nil {
@@ -341,7 +358,7 @@ func (l *Loop) repinStanding(ctx context.Context) {
 			slog.Error("sessions loop: re-pin failed", "sessionId", r.ID, "error", err)
 			continue
 		}
-		if err := l.sessions.SetPodPhase(ctx, r.ID, "POD_PHASE_TERMINATED", "re-pinned to a new definition version"); err != nil {
+		if err := l.sessions.SetPodPhase(ctx, r.ID, "POD_PHASE_TERMINATED", "re-pinned to a new definition version, or replaced before its token cap"); err != nil {
 			slog.Error("sessions loop: re-pin phase failed", "sessionId", r.ID, "error", err)
 		}
 		delete(l.refused, r.ID)
