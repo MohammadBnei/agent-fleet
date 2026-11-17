@@ -205,7 +205,7 @@ func scale(ctx context.Context, run Runner, r Row) Outcome {
 		return *o
 	}
 	return Outcome{Status: "done", Detail: fmt.Sprintf("scaled from %s to %d", cur, r.Replicas),
-		Inverse: []string{"scale", kind + "/" + r.Name, "-n", r.Namespace, "--replicas=" + cur}}
+		Inverse: []string{"scale", kind + "/" + r.Name, "-n", r.Namespace, fmt.Sprintf("--current-replicas=%d", r.Replicas), "--replicas=" + cur}}
 }
 
 func deletePod(ctx context.Context, run Runner, r Row) Outcome {
