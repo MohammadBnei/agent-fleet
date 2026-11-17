@@ -11,6 +11,12 @@
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
+- **Built:** appendix slice 7: set enforcement. The dispatcher appends an event to a started character
+  (`Dispatcher.characters`) only when it is T1: a trusted `PublishEvent` hand-off naming the character, from a session
+  whose stored set lacks A (looked up through `published_events`). Alerts, GitHub events, unaddressed, unverified or
+  tainted publishes never reach it, and a stopped character takes nothing. The sidecar-local B and C tools already ask
+  core first (every sidecar tool is a tagged CoreService call, ADR-0086 §2); no new local tool exists to gate yet.
+  The appended entry carries no causation, so the character's own publishes about it are unvouched.
 - **Built:** appendix slice 6: counting. Standing rows count only in `MAX_STANDING_SESSIONS` (default 2) and leave
   `MaxLive`, `MaxDefinition` and a definition's concurrency. Not in this slice: the spawn sub-pool and the pool-sum
   config check, which need `limits.spawns` and so move to slice 8.
