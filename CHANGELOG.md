@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.35.0](https://github.com/MohammadBnei/agent-fleet/compare/7.34.1...7.35.0) (2026-11-17)
+
+### Features
+
+* **core:** reach for characters, spawns, issues, responder cards, scoped logs (ADR-0084 slice 8) ([#417](https://github.com/MohammadBnei/agent-fleet/issues/417)) ([e07f6d6](https://github.com/MohammadBnei/agent-fleet/commit/e07f6d6f6a8d777a838d3c766dd9f1fc8654c65a))
+
 ## [7.34.1](https://github.com/MohammadBnei/agent-fleet/compare/7.34.0...7.34.1) (2026-11-17)
 
 ### Bug Fixes
