@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,11 +40,19 @@ func TestRepoDefinitions(t *testing.T) {
 		if r.Err == nil && r.Effective.Cluster != nil && r.Effective.Cluster.Read {
 			t.Errorf("%s sets cluster.read before infra-bootstrap#462 (fleet-read ServiceAccount) has synced", r.Name)
 		}
+		// OpenIssue matches owns.repos against an <owner>/<repo> (coreserver/reach.go); a bare name never matches.
+		if r.Err == nil && slices.Contains(r.Effective.SidecarTools, "open_issue") {
+			for _, repo := range r.Effective.Owns.Repos {
+				if !strings.Contains(repo, "/") {
+					t.Errorf("%s: owns.repos %q must be <owner>/<repo> for open_issue", r.Name, repo)
+				}
+			}
+		}
 		if r.Name == "alert-responder" && r.Err == nil && !r.Effective.Responder() {
 			t.Errorf("alert-responder must be a first responder (trust.untrusted B): %+v", r.Effective.Trust)
 		}
 	}
-	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes", "agent-reviewer-agent-fleet", "alert-responder"} {
+	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes", "agent-reviewer-agent-fleet", "alert-responder", "ops-lead", "ops-worker"} {
 		if !seen[want] {
 			t.Errorf("%s must be a valid, launchable definition", want)
 		}
