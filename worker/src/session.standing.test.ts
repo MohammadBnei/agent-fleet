@@ -268,6 +268,47 @@ test("the turn deadline aborts the turn and the next entry runs", async () => {
   await stop(run);
 });
 
+test("a late result of a turn the deadline cut changes nothing for the thread that runs now", async () => {
+  process.env.TURN_DEADLINE_MS = "60";
+  const run = runSession();
+  await until(() => handler !== null);
+  await handler?.(msg(10, "a"));
+  await handler?.(msg(11, "b"));
+  await until(() => sdks[1]?.inputs.length === 1);
+  // The deadline already wrote a's result so its cursor moved, and b runs.
+  expect(results().map((r) => [r.thread, r.subtype])).toEqual([
+    ["a", "deadline"],
+  ]);
+  const before = turns.length;
+  sdks[0].release();
+  await Bun.sleep(30);
+  // a's late result neither clears b's turn nor writes a second result.
+  expect(turns.slice(before)).toEqual([]);
+  expect(results().length).toBe(1);
+  await stop(run);
+});
+
+test("an answer for a thread that is not running waits its turn instead of starting a second one", async () => {
+  const run = runSession();
+  await until(() => handler !== null);
+  await handler?.(msg(10, "a"));
+  await until(() => sdks[0]?.inputs.length === 1);
+  await handler?.({
+    seq: 11,
+    from: "human",
+    text: JSON.stringify({ answers: {} }),
+    type: "answer",
+    replyTo: 5,
+    threadKey: "b",
+  });
+  expect(sdks[1]?.inputs.length ?? 0).toBe(0);
+  expect(turns).toEqual([{ thread: "a", seq: 10 }]);
+  sdks[0].release();
+  await until(() => sdks[1]?.inputs.length === 1);
+  expect(turns.at(-1)).toEqual({ thread: "b", seq: 11 });
+  await stop(run);
+});
+
 test("a closed thread ends only its own SDK session, and a later entry starts it afresh", async () => {
   threadSessionIds = { b: "old-b" };
   const run = runSession();
@@ -293,6 +334,40 @@ test("a closed thread ends only its own SDK session, and a later entry starts it
   expect(sdks.length).toBe(3);
   expect(sdks[2].options.resume).toBeUndefined();
   await stop(run);
+});
+
+test("closing a waiting thread leaves the running thread's parked permission alone", async () => {
+  const run = runSession();
+  await until(() => handler !== null);
+  await handler?.(msg(10, "a"));
+  await handler?.(msg(11, "b"));
+  await until(() => sdks[0]?.inputs.length === 1);
+  let settled: unknown;
+  const can = sdks[0].options.canUseTool as (
+    tool: string,
+    input: Record<string, unknown>,
+    o: { signal: AbortSignal; toolUseID: string },
+  ) => Promise<unknown>;
+  void can(
+    "Bash",
+    { command: "ls" },
+    {
+      signal: new AbortController().signal,
+      toolUseID: "t1",
+    },
+  ).then((r) => (settled = r));
+  await until(() => pushed.some((p) => p.type === "permission_request"));
+  await handler?.({
+    seq: 12,
+    from: "human",
+    text: "closed",
+    type: "abort",
+    threadKey: "b",
+  });
+  await Bun.sleep(20);
+  expect(settled).toBeUndefined();
+  await stop(run);
+  expect(settled).toBeDefined();
 });
 
 test("Stop in main ends every thread and the run", async () => {

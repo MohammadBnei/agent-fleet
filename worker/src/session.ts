@@ -1292,6 +1292,8 @@ class SdkThread {
   // Message entries waiting for their turn, each at its own head, in seq order.
   waiting: { seq: number; text: string }[] = [];
   deadline: ReturnType<typeof setTimeout> | undefined;
+  // The deadline cut a turn: its SDK session may still emit that turn's result, which must change nothing.
+  cut = false;
   ended = false;
   constructor(
     readonly key: string,
@@ -2060,6 +2062,7 @@ export async function runSession(): Promise<SessionResult> {
     }
     th.outstanding++;
     if (th.outstanding === 1) {
+      th.cut = false;
       await sidecar.setTurn(th.key, th.lastSeq).catch((err) =>
         log("warn", "setTurn failed", {
           taskId: SESSION_ID,
@@ -2071,8 +2074,12 @@ export async function runSession(): Promise<SessionResult> {
     }
     th.input.push(text);
   }
+  // A follow-up (an answer, a permission outcome) goes straight into a thread that is running. Otherwise it waits at
+  // its thread's head, so only one thread runs and runNext starts it in seq order (docs/adr/0084 §4). th.taken is
+  // the entry being handled.
   function push(th: SdkThread, text: string): void {
-    void startTurn(th, text);
+    if (standing && th.outstanding === 0) void submit(th, th.taken, text);
+    else void startTurn(th, text);
   }
 
   // The thread's turn ended: when nothing else is queued in it, it stops running and the lowest waiting head
@@ -2134,6 +2141,15 @@ export async function runSession(): Promise<SessionResult> {
       )
       .catch(() => {});
     th.outstanding = 0;
+    th.cut = true;
+    // Moves the thread's cursor past the aborted entry even when the SDK never emits a result.
+    await pushResult(
+      "agent",
+      { subtype: "deadline", is_error: true },
+      consumedFor(th),
+      false,
+      th,
+    );
     await turnEnded(th, 0);
   }
 
@@ -2233,7 +2249,8 @@ export async function runSession(): Promise<SessionResult> {
         if (standing && entry.type === "abort" && key !== "main") {
           const t = threads.get(key);
           if (t) {
-            resolveAllPendingDeny("The thread was closed.", true);
+            if (t.outstanding > 0)
+              resolveAllPendingDeny("The thread was closed.", true);
             await interruptSafely(t, "thread close");
             await endThread(t);
           } else endedKeys.add(key);
@@ -2507,7 +2524,8 @@ export async function runSession(): Promise<SessionResult> {
         if (standing && /^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
           // One thread starts over: its SDK session id is dropped and the next entry opens a fresh one.
           planRetry = undefined;
-          resolveAllPendingDeny("Conversation cleared.", true, true);
+          if (th.outstanding > 0)
+            resolveAllPendingDeny("Conversation cleared.", true, true);
           await sidecar
             .saveSessionId("", initModel, key === "main" ? undefined : key)
             .catch((err) =>
@@ -2811,6 +2829,11 @@ export async function runSession(): Promise<SessionResult> {
       }
 
       if (msg.type === "result") {
+        // The late result of a turn the deadline already cut: that turn ended and its result was written then.
+        if (standing && (th.cut || th.ended)) {
+          th.cut = false;
+          continue;
+        }
         // docs/adr/0070 §6: a single-shot pod's last result says so, and is
         // written only once this pod is sure it is the last.
         const exit =
