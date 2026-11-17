@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.34.0](https://github.com/MohammadBnei/agent-fleet/compare/7.33.0...7.34.0) (2026-11-17)
+
+### Features
+
+* **core:** set enforcement for characters (ADR-0084 slice 7) ([#416](https://github.com/MohammadBnei/agent-fleet/issues/416)) ([73e3391](https://github.com/MohammadBnei/agent-fleet/commit/73e339105ca04874004e4f0294482017862fc6d0))
+
 # [7.33.0](https://github.com/MohammadBnei/agent-fleet/compare/7.32.0...7.33.0) (2026-11-17)
 
 ### Features
