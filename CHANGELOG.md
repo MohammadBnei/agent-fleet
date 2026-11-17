@@ -1,5 +1,15 @@
 # Changelog
 
+# [7.33.0](https://github.com/MohammadBnei/agent-fleet/compare/7.32.0...7.33.0) (2026-11-17)
+
+### Features
+
+* **core:** count standing rows only in MAX_STANDING_SESSIONS ([#415](https://github.com/MohammadBnei/agent-fleet/issues/415)) ([b969e1f](https://github.com/MohammadBnei/agent-fleet/commit/b969e1f214b77e770e8f8726f43eca307a20775c))
+* **core:** sweeps, re-warm and re-pin for standing characters (ADR-0084 slice 5) ([#414](https://github.com/MohammadBnei/agent-fleet/issues/414)) ([b4e4096](https://github.com/MohammadBnei/agent-fleet/commit/b4e4096cf3e421732890ac134c1596c257f6c05b))
+* **core:** threads and delivery per thread (ADR-0084 slice 4) ([#413](https://github.com/MohammadBnei/agent-fleet/issues/413)) ([4d7909d](https://github.com/MohammadBnei/agent-fleet/commit/4d7909d718736bb64bb6cc5fae9ad8dca8e8e7f7))
+* **provisioner:** read ServiceAccount for cluster.read definitions (ADR-0084 slice 11) ([#412](https://github.com/MohammadBnei/agent-fleet/issues/412)) ([aa72a9c](https://github.com/MohammadBnei/agent-fleet/commit/aa72a9ce7edcdf098ecd9bd53dc44794e04abbcb))
+* **sidecar:** memory as code with quarantine and CODEOWNERS (ADR-0086 §5) ([#405](https://github.com/MohammadBnei/agent-fleet/issues/405)) ([b5aa159](https://github.com/MohammadBnei/agent-fleet/commit/b5aa159192466dba4e2720892b71e3605ba5d3c7))
+
 # [7.32.0](https://github.com/MohammadBnei/agent-fleet/compare/7.31.0...7.32.0) (2026-11-17)
 
 ### Features
