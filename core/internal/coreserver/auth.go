@@ -127,6 +127,18 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/ExportSpans": func(r any) string {
 		return r.(*agentfleetv1.ExportSpansRequest).GetSessionId()
 	},
+	"/agentfleet.v1.CoreService/SpawnWorker": func(r any) string {
+		return r.(*agentfleetv1.SpawnWorkerRequest).GetSessionId()
+	},
+	"/agentfleet.v1.CoreService/WaitForSpawn": func(r any) string {
+		return r.(*agentfleetv1.WaitForSpawnRequest).GetSessionId()
+	},
+	"/agentfleet.v1.CoreService/OpenIssue": func(r any) string {
+		return r.(*agentfleetv1.OpenIssueRequest).GetSessionId()
+	},
+	"/agentfleet.v1.CoreService/ListResponderCards": func(r any) string {
+		return r.(*agentfleetv1.ListResponderCardsRequest).GetSessionId()
+	},
 }
 
 // unboundMethods name no session belonging to the caller, so a lease proves
@@ -189,6 +201,14 @@ var definitionMethods = map[string]bool{
 	// The session's own timings, which every pod's sidecar sends; core
 	// derives the trace and the identity itself (docs/adr/0081 §7).
 	"/agentfleet.v1.CoreService/ExportSpans": true,
+	// A standing character's reach (docs/adr/0084 §6): each is granted per definition, the handler checking the
+	// pinned spec's sidecarTools. ViewLogs names no session, so its handler reads the lease's and scopes the
+	// namespace (Server.scopeLogs).
+	"/agentfleet.v1.CoreService/SpawnWorker":        true,
+	"/agentfleet.v1.CoreService/WaitForSpawn":       true,
+	"/agentfleet.v1.CoreService/OpenIssue":          true,
+	"/agentfleet.v1.CoreService/ListResponderCards": true,
+	"/agentfleet.v1.CoreService/ViewLogs":           true,
 }
 
 // provisionerMethods are callable only by the provisioner. ReportPodEvents
@@ -213,6 +233,10 @@ var sessionOnlyMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/DraftCard":            true,
 	"/agentfleet.v1.CoreService/SubmitReview":         true,
 	"/agentfleet.v1.CoreService/ExportSpans":          true,
+	"/agentfleet.v1.CoreService/SpawnWorker":          true,
+	"/agentfleet.v1.CoreService/WaitForSpawn":         true,
+	"/agentfleet.v1.CoreService/OpenIssue":            true,
+	"/agentfleet.v1.CoreService/ListResponderCards":   true,
 }
 
 var (

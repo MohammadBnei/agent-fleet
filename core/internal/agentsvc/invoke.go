@@ -62,6 +62,12 @@ func (s *Server) invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 	if !ok {
 		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyDefinitionUnavailable, definitions.ErrUnknown)
 	}
+	return s.run(ctx, p, m, head, tier, nil)
+}
+
+// run is invoke after the caller's right to the definition is settled. admit, when set, is a gate on starting a NEW
+// run (a spawn's hourly and daily caps): a retry of a run already started never meets it.
+func (s *Server) run(ctx context.Context, p Principal, m *agentfleetv1.InvokeRequest, head definitions.Head, tier sessions.Tier, admit func(context.Context) error) (*connect.Response[agentfleetv1.InvokeResponse], error) {
 	if err := dashboard.StandingOnly(head.Effective); err != nil {
 		return nil, err
 	}
@@ -112,6 +118,11 @@ func (s *Server) invoke(ctx context.Context, req *connect.Request[agentfleetv1.I
 		t = nil
 	}
 	if t == nil {
+		if admit != nil {
+			if err := admit(ctx); err != nil {
+				return nil, err
+			}
+		}
 		// Refused, not queued: the claim stays pending, so the same key runs
 		// once a parked run moves (docs/adr/0070 §1). Admission-time only: runs
 		// still live when admitted may park later and exceed maxParked;
@@ -204,6 +215,11 @@ func (s *Server) WaitForResult(ctx context.Context, req *connect.Request[agentfl
 	if deref(t.Lifecycle, "resident") != singleShot {
 		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New("this thread is not a single-shot run"))
 	}
+	return s.awaitResult(ctx, t, wait)
+}
+
+// awaitResult is WaitForResult's loop on a run the caller may see.
+func (s *Server) awaitResult(ctx context.Context, t *sessions.Session, wait time.Duration) (*connect.Response[agentfleetv1.WaitForResultResponse], error) {
 	// Subscribe before the first read, so nothing appended between is missed.
 	head, err := s.transcr.LatestSeq(ctx, t.ID)
 	if err != nil {

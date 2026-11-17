@@ -774,3 +774,75 @@ func TestLoad_StandingPrefixReservedInClientFiles(t *testing.T) {
 		t.Fatalf("want the reserved-prefix error, got %v", errs)
 	}
 }
+
+// docs/adr/0084 §6: a character's reach. spawns.allow names valid single-shot definitions, and each reach tool
+// needs what it acts on.
+func TestLoad_Reach(t *testing.T) {
+	standing := func(kv map[string]string) map[string]string {
+		m := map[string]string{"lifecycle": "{ allow: [standing] }"}
+		for k, v := range kv {
+			m[k] = v
+		}
+		return m
+	}
+	shot := map[string]string{"lifecycle": "{ allow: [single-shot] }"}
+	cases := []struct {
+		name string
+		kv   map[string]string
+		want string
+	}{
+		{"spawn", standing(map[string]string{"spawns": "{ allow: [worker] }", "sidecarTools": "[AskUserQuestion, spawn_worker, wait_for_result]", "limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 2, perHour: 4, perDay: 10 } }"}), ""},
+		{"spawns on a worker", map[string]string{"spawns": "{ allow: [worker] }"}, "only a standing definition may spawn"},
+		{"empty allow", standing(map[string]string{"spawns": "{ allow: [] }"}), "spawns.allow must not be empty"},
+		{"self", standing(map[string]string{"spawns": "{ allow: [cee] }"}), "the spawner itself"},
+		{"unknown", standing(map[string]string{"spawns": "{ allow: [nope] }"}), "not a valid definition"},
+		{"resident target", standing(map[string]string{"spawns": "{ allow: [resi] }"}), "must be single-shot only"},
+		{"responder target", standing(map[string]string{"spawns": "{ allow: [alertresp] }"}), "is a first responder"},
+		{"standing target", standing(map[string]string{"spawns": "{ allow: [other] }"}), "must be single-shot only"},
+		{"spawn_worker needs spawns", standing(map[string]string{"sidecarTools": "[AskUserQuestion, spawn_worker]"}), "spawn_worker needs spawns.allow"},
+		{"wait needs spawn", standing(map[string]string{"spawns": "{ allow: [worker] }", "sidecarTools": "[AskUserQuestion, wait_for_result]"}), "wait_for_result needs spawn_worker"},
+		{"reach tool on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, list_responder_cards]"}, "standing character's tool"},
+		{"open_issue needs repos", standing(map[string]string{"sidecarTools": "[AskUserQuestion, open_issue]"}), "open_issue needs owns.repos"},
+		{"open_issue", standing(map[string]string{"sidecarTools": "[AskUserQuestion, open_issue]", "owns": "{ repos: [a/b] }"}), ""},
+		{"view_logs needs namespaces", standing(map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]"}), "view_logs needs cluster.logNamespaces"},
+		{"view_logs", standing(map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]", "cluster": "{ logNamespaces: [agent-fleet] }"}), ""},
+		{"bad namespace", standing(map[string]string{"cluster": "{ logNamespaces: [\"A b\"] }"}), "not a namespace name"},
+		{"limits without spawns", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 1 } }"}), "limits.spawns needs spawns.allow"},
+		{"limits too wide", standing(map[string]string{"spawns": "{ allow: [worker] }", "limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, spawns: { concurrent: 11 } }"}), "limits.spawns"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := load(t, map[string]string{
+				"definitions/base.yaml":   baseYAML,
+				"definitions/worker.yaml": childYAML("worker", shot),
+				"definitions/resi.yaml":   childYAML("resi", nil),
+				"definitions/other.yaml":  childYAML("other", standing(nil)),
+				"definitions/alertresp.yaml": childYAML("alertresp", map[string]string{
+					"lifecycle": "{ allow: [single-shot] }", "trust": "{ untrusted: B }", "git": "{ mode: none, identity: { name: a, email: a@b.c } }",
+					"output": "{ schema: { type: object } }", "subscribes": "{ types: [dev.bnei.alert.] }"}),
+				"definitions/cee.yaml": childYAML("cee", tc.kv),
+			})
+			err := got["cee"].Err
+			if tc.want == "" && err != nil {
+				t.Fatalf("want valid: %v", err)
+			}
+			if tc.want != "" && !strings.Contains(errText(err), tc.want) {
+				t.Fatalf("want error containing %q, got %q", tc.want, errText(err))
+			}
+		})
+	}
+}
+
+func TestSpawnCaps(t *testing.T) {
+	var none *Spec
+	if c, h, d := none.SpawnCaps(); c != 1 || h != DefaultSpawnsPerHour || d != DefaultSpawnsPerDay || none.SpawnSubPool() != 0 || none.MaySpawn("x") {
+		t.Fatal("a nil spec has the defaults, no sub-pool and spawns nothing")
+	}
+	s := &Spec{Spawns: &AllowList{Allow: []string{"w"}}, Limits: &Limits{Spawns: &SpawnLimits{Concurrent: 3, PerHour: 2}}}
+	if c, h, d := s.SpawnCaps(); c != 3 || h != 2 || d != DefaultSpawnsPerDay || s.SpawnSubPool() != 3 || !s.MaySpawn("w") || s.MaySpawn("x") {
+		t.Fatal("caps, sub-pool or allow list wrong")
+	}
+	if (&Spec{Limits: &Limits{Spawns: &SpawnLimits{Concurrent: 3}}}).SpawnSubPool() != 0 {
+		t.Fatal("no spawns.allow, no sub-pool")
+	}
+}

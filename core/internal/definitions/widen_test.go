@@ -22,6 +22,8 @@ func TestWidens(t *testing.T) {
 		{"deny removed", func(s *Spec) { s.Tools.Deny = nil }, true, false},
 		{"deny added", func(s *Spec) { s.Tools.Deny = append(s.Tools.Deny, "Edit") }, false, false},
 		{"sidecar tool added", func(s *Spec) { s.SidecarTools = append(s.SidecarTools, "draft_card") }, true, false},
+		{"spawn target added", func(s *Spec) { s.Spawns = &AllowList{Allow: []string{"w"}} }, true, false},
+		{"log namespace added", func(s *Spec) { s.Cluster = &Cluster{LogNamespaces: []string{"agent-fleet"}} }, true, false},
 		{"cluster read on", func(s *Spec) { s.Cluster = &Cluster{Read: true} }, true, false},
 		{"path added", func(s *Spec) { s.Credentials.Services[0].Paths = append(s.Credentials.Services[0].Paths, "/repos/c/d") }, false, true},
 		{"service added", func(s *Spec) {

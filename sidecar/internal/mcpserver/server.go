@@ -251,6 +251,30 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter) *server.MCPServer {
 		mcp.WithInputSchema[SubmitReviewArgs](),
 	), submitReviewHandler(core))
 
+	// docs/adr/0084 §6, a standing character's reach. Registered in every sidecar like submit_review; core refuses
+	// each unless the session's definition grants it.
+	s.AddTool(mcp.NewTool("spawn_worker",
+		mcp.WithDescription("Start one single-shot run of a definition on your spawns.allow list, with `input` as its task. Returns its thread id at once: the run's end arrives later as a new message, or call wait_for_result. The run counts against your concurrent, hourly and daily spawn limits; past them core refuses. Only for definitions that grant it."),
+		mcp.WithString("definition", mcp.Required(), mcp.Description("A definition name from your spawns.allow")),
+		mcp.WithString("input", mcp.Required(), mcp.Description("The run's task, complete in itself: it sees nothing of this conversation")),
+	), spawnWorkerHandler(core))
+	s.AddTool(mcp.NewTool("wait_for_result",
+		mcp.WithDescription("Wait up to 60 seconds for a run you spawned to end. Answers only your own runs. state is done or failed (the final result), waiting (it asked a question), expired, or running (the wait ran out: not an error, do not loop). Only for definitions that grant it."),
+		mcp.WithString("threadId", mcp.Required(), mcp.Description("The thread id spawn_worker returned")),
+		mcp.WithNumber("waitSeconds", mcp.Description("0 to 60; 0 answers at once")),
+	), waitForResultHandler(core))
+	s.AddTool(mcp.NewTool("open_issue",
+		mcp.WithDescription("Open a GitHub issue in a repo your definition owns. One line title, a body of at most 60000 characters. Returns the issue's URL. Only for definitions that grant it."),
+		mcp.WithString("repo", mcp.Required(), mcp.Description("owner/name, one of your owned repos")),
+		mcp.WithString("title", mcp.Required()),
+		mcp.WithString("body"),
+	), openIssueHandler(core))
+	s.AddTool(mcp.NewTool("list_responder_cards",
+		mcp.WithDescription("Read what the alert first responders did: the owner's alert cards and the remediations they selected, newest first. Typed fields only (kind, state, a card's text core wrote, a remediation's action, target and responder): never alert text. Nothing is pushed to you, so call it when the owner asks or on your schedule. Only for definitions that grant it."),
+		mcp.WithString("since", mcp.Description("RFC3339; default the last 24 hours")),
+		mcp.WithNumber("limit", mcp.Description("Default 20, max 50")),
+	), listResponderCardsHandler(core))
+
 	// Inter-agent coordination (docs/adr/0041). Registered statically for
 	// the same reason run_command is: a resumed session must have them from
 	// turn one, not only after some other call happens to register them.
@@ -545,6 +569,89 @@ func submitReviewHandler(core Reviewer) server.ToolHandlerFunc {
 		return mcp.NewToolResultText(string(b)), nil
 	})
 }
+
+// Reach is spawn_worker, wait_for_result, open_issue and list_responder_cards' slice of *coreclient.Client.
+type Reach interface {
+	SpawnWorker(ctx context.Context, definition, input, key string) (*agentfleetv1.SpawnWorkerResponse, error)
+	WaitForResult(ctx context.Context, threadID string, waitSeconds int32) (*agentfleetv1.WaitForResultResponse, error)
+	OpenIssue(ctx context.Context, repo, title, body, key string) (*agentfleetv1.OpenIssueResponse, error)
+	ListResponderCards(ctx context.Context, since string, limit int32) (*agentfleetv1.ListResponderCardsResponse, error)
+}
+
+func spawnWorkerHandler(core Reach) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		def, input := req.GetString("definition", ""), req.GetString("input", "")
+		if def == "" || input == "" {
+			return mcp.NewToolResultError("definition and input are required"), nil
+		}
+		res, err := core.SpawnWorker(ctx, def, input, "")
+		if err != nil {
+			slog.Error("mcp spawn_worker", "definition", def, "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		slog.Info("mcp spawn_worker", "definition", def, "thread", res.GetThreadId())
+		b, _ := json.Marshal(map[string]string{"threadId": res.GetThreadId()})
+		return mcp.NewToolResultText(string(b)), nil
+	}
+}
+
+func waitForResultHandler(core Reach) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := req.GetString("threadId", "")
+		if id == "" {
+			return mcp.NewToolResultError("threadId is required"), nil
+		}
+		res, err := core.WaitForResult(ctx, id, int32(req.GetInt("waitSeconds", 0)))
+		if err != nil {
+			slog.Error("mcp wait_for_result", "thread", id, "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		out := map[string]any{"state": res.GetState()}
+		if v := res.GetResultText(); v != "" {
+			out["resultText"] = truncate(v, maxResultBytes, "The run's result is longer than this tool returns.")
+		}
+		if v := res.GetStructuredOutput(); v != "" {
+			out["structuredOutput"] = v
+		}
+		if v := res.GetError(); v != nil {
+			out["error"] = map[string]string{"code": v.GetCode(), "message": v.GetMessage()}
+		}
+		b, _ := json.Marshal(out)
+		return mcp.NewToolResultText(string(b)), nil
+	}
+}
+
+func openIssueHandler(core Reach) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		repo, title := req.GetString("repo", ""), req.GetString("title", "")
+		if repo == "" || title == "" {
+			return mcp.NewToolResultError("repo and title are required"), nil
+		}
+		res, err := core.OpenIssue(ctx, repo, title, req.GetString("body", ""), "")
+		if err != nil {
+			slog.Error("mcp open_issue", "repo", repo, "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		slog.Info("mcp open_issue", "repo", repo, "url", res.GetUrl())
+		b, _ := json.Marshal(map[string]string{"url": res.GetUrl()})
+		return mcp.NewToolResultText(string(b)), nil
+	}
+}
+
+func listResponderCardsHandler(core Reach) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		res, err := core.ListResponderCards(ctx, req.GetString("since", ""), int32(req.GetInt("limit", 0)))
+		if err != nil {
+			slog.Error("mcp list_responder_cards", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		b, _ := json.Marshal(map[string]any{"cards": res.GetCards()})
+		return mcp.NewToolResultText(string(b)), nil
+	}
+}
+
+// maxResultBytes bounds a spawned run's text in wait_for_result (ADR-0046: cap every unbounded tool result).
+const maxResultBytes = 15000
 
 // maxJournalBytes caps journal_search's result the way maxLogsBytes caps
 // view_logs (ADR-0046: cap every unbounded tool result at the source, and

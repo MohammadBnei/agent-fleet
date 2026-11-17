@@ -2,6 +2,7 @@ syntax = "proto3";
 package agentfleet.v1;
 option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
 
+import "agentfleet/v1/agent.proto";
 import "agentfleet/v1/transcript.proto";
 import "agentfleet/v1/provisioner.proto";
 import "agentfleet/v1/files.proto";
@@ -516,6 +517,75 @@ message SubmitReviewResponse {
   string event = 2;
 }
 
+// SpawnWorkerRequest is a standing character starting one single-shot run of a definition on its spawns.allow list
+// (docs/adr/0084 §6). The run is T1, its owner is the character, and its depth is 1.
+message SpawnWorkerRequest {
+  string session_id = 1;
+  string definition = 2;
+  string input = 3;
+  // A retry with the same key starts nothing new. Required.
+  string idempotency_key = 4;
+}
+
+message SpawnWorkerResponse {
+  // The run's thread: what WaitForResult takes.
+  string thread_id = 1;
+}
+
+// WaitForSpawnRequest is the character waiting on one of its own spawned runs (docs/adr/0084 §6). Core answers
+// only a run this character started. The answer is AgentService's WaitForResultResponse.
+message WaitForSpawnRequest {
+  string session_id = 1;
+  string thread_id = 2;
+  // At most 60; 0 answers at once.
+  int32 wait_seconds = 3;
+}
+
+// OpenIssueRequest is a character opening a GitHub issue in a repo its definition owns (docs/adr/0084 §6).
+message OpenIssueRequest {
+  string session_id = 1;
+  // owner/name, one of the definition's owns.repos.
+  string repo = 2;
+  string title = 3;
+  string body = 4;
+  string idempotency_key = 5;
+}
+
+message OpenIssueResponse {
+  string url = 1;
+}
+
+// ListResponderCardsRequest reads the owner's alert cards and the remediations the first responders filed
+// (docs/adr/0084 §5). Never pushed: the character calls it.
+message ListResponderCardsRequest {
+  string session_id = 1;
+  // RFC3339; empty is the last 24 hours.
+  string since = 2;
+  // At most 50; 0 is 20.
+  int32 limit = 3;
+}
+
+// ResponderCard is core-resolved typed fields only: never the agent's claim, a free label, an annotation value or
+// alert text. ask is the card's own text, which core wrote from enums, numbers and object ids.
+message ResponderCard {
+  string id = 1;
+  // "card" or "remediation".
+  string kind = 2;
+  // A card: open | answered | withdrawn | expired | stale. A remediation: pending | pulled | done | refused | lost.
+  string state = 3;
+  // A card's text. Empty for a remediation.
+  string ask = 4;
+  // A remediation: the catalogue action and its target (<namespace>/<name>), the responder that selected it.
+  string action = 5;
+  string target = 6;
+  string responder = 7;
+  string created_at = 8;
+}
+
+message ListResponderCardsResponse {
+  repeated ResponderCard cards = 1;
+}
+
 // HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
 // here. Both are deleted in docs/adr/0048.
 //
@@ -850,5 +920,17 @@ service CoreService {
   // Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
   // submit_review.
   rpc SubmitReview(SubmitReviewRequest) returns (SubmitReviewResponse);
+
+  // Reach for a standing character (docs/adr/0084 §6). Each is granted per definition through sidecarTools.
+  // Starts one run of a spawns.allow definition, counted in the definition pool and the character's sub-pool.
+  rpc SpawnWorker(SpawnWorkerRequest) returns (SpawnWorkerResponse);
+  // The character's own spawned run, long-polled. Shares AgentService's WaitForResultResponse.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc WaitForSpawn(WaitForSpawnRequest) returns (WaitForResultResponse);
+  // Opens an issue in one of the definition's owns.repos.
+  rpc OpenIssue(OpenIssueRequest) returns (OpenIssueResponse);
+  // The first responders' cards and remediations, typed fields only.
+  rpc ListResponderCards(ListResponderCardsRequest) returns (ListResponderCardsResponse);
 }
 

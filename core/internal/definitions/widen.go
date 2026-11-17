@@ -4,7 +4,7 @@ import "slices"
 
 // Widens reports whether next gives a pod more than old did (docs/adr/0084 §3), the test a re-pin in place must
 // pass. ceiling: a tool or sidecar tool old lacked, a deny removed, or cluster.read newly on. vault: a service, path or
-// vault the old one did not name. `spawns.allow` joins the ceiling when the spec has it (slice 8).
+// vault the old one did not name. spawns.allow and cluster.logNamespaces join the ceiling.
 func Widens(old, next *Spec) (ceiling, vault bool) {
 	if old == nil || next == nil {
 		return true, true
@@ -17,7 +17,8 @@ func Widens(old, next *Spec) (ceiling, vault bool) {
 		newTools = *next.Tools
 	}
 	ceiling = !subset(newTools.Allow, oldTools.Allow) || !subset(oldTools.Deny, newTools.Deny) ||
-		!subset(next.SidecarTools, old.SidecarTools) ||
+		!subset(next.SidecarTools, old.SidecarTools) || !subset(spawnList(next), spawnList(old)) ||
+		!subset(logList(next), logList(old)) ||
 		(next.Cluster != nil && next.Cluster.Read && (old.Cluster == nil || !old.Cluster.Read))
 	vault = !vaultCovers(old.Credentials, next.Credentials)
 	return ceiling, vault
@@ -55,4 +56,18 @@ func subset(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func spawnList(s *Spec) []string {
+	if s.Spawns == nil {
+		return nil
+	}
+	return s.Spawns.Allow
+}
+
+func logList(s *Spec) []string {
+	if s.Cluster == nil {
+		return nil
+	}
+	return s.Cluster.LogNamespaces
 }

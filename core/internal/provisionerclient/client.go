@@ -177,6 +177,14 @@ func (c *Client) OpenPullRequest(ctx context.Context, req *agentfleetv1.OpenPull
 	return c.rpc.OpenPullRequest(ctx, req)
 }
 
+// CreateIssue opens an issue for a standing character (docs/adr/0084 §6). The caller has checked the definition owns
+// the repo; the provisioner holds the GitHub credential. The error is the provisioner's status, unwrapped.
+func (c *Client) CreateIssue(ctx context.Context, req *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	return c.rpc.CreateIssue(ctx, req)
+}
+
 // PostReview posts a review and its agent-review status on a PR
 // (docs/adr/0082 slice 5). The caller has checked the session may review that
 // PR; the provisioner holds the GitHub credential and decides the event.

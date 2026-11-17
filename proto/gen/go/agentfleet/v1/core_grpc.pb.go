@@ -48,6 +48,10 @@ const (
 	CoreService_ConsumeGrant_FullMethodName         = "/agentfleet.v1.CoreService/ConsumeGrant"
 	CoreService_DraftCard_FullMethodName            = "/agentfleet.v1.CoreService/DraftCard"
 	CoreService_SubmitReview_FullMethodName         = "/agentfleet.v1.CoreService/SubmitReview"
+	CoreService_SpawnWorker_FullMethodName          = "/agentfleet.v1.CoreService/SpawnWorker"
+	CoreService_WaitForSpawn_FullMethodName         = "/agentfleet.v1.CoreService/WaitForSpawn"
+	CoreService_OpenIssue_FullMethodName            = "/agentfleet.v1.CoreService/OpenIssue"
+	CoreService_ListResponderCards_FullMethodName   = "/agentfleet.v1.CoreService/ListResponderCards"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -144,6 +148,17 @@ type CoreServiceClient interface {
 	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
 	// submit_review.
 	SubmitReview(ctx context.Context, in *SubmitReviewRequest, opts ...grpc.CallOption) (*SubmitReviewResponse, error)
+	// Reach for a standing character (docs/adr/0084 §6). Each is granted per definition through sidecarTools.
+	// Starts one run of a spawns.allow definition, counted in the definition pool and the character's sub-pool.
+	SpawnWorker(ctx context.Context, in *SpawnWorkerRequest, opts ...grpc.CallOption) (*SpawnWorkerResponse, error)
+	// The character's own spawned run, long-polled. Shares AgentService's WaitForResultResponse.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	WaitForSpawn(ctx context.Context, in *WaitForSpawnRequest, opts ...grpc.CallOption) (*WaitForResultResponse, error)
+	// Opens an issue in one of the definition's owns.repos.
+	OpenIssue(ctx context.Context, in *OpenIssueRequest, opts ...grpc.CallOption) (*OpenIssueResponse, error)
+	// The first responders' cards and remediations, typed fields only.
+	ListResponderCards(ctx context.Context, in *ListResponderCardsRequest, opts ...grpc.CallOption) (*ListResponderCardsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -456,6 +471,46 @@ func (c *coreServiceClient) SubmitReview(ctx context.Context, in *SubmitReviewRe
 	return out, nil
 }
 
+func (c *coreServiceClient) SpawnWorker(ctx context.Context, in *SpawnWorkerRequest, opts ...grpc.CallOption) (*SpawnWorkerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SpawnWorkerResponse)
+	err := c.cc.Invoke(ctx, CoreService_SpawnWorker_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) WaitForSpawn(ctx context.Context, in *WaitForSpawnRequest, opts ...grpc.CallOption) (*WaitForResultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WaitForResultResponse)
+	err := c.cc.Invoke(ctx, CoreService_WaitForSpawn_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) OpenIssue(ctx context.Context, in *OpenIssueRequest, opts ...grpc.CallOption) (*OpenIssueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenIssueResponse)
+	err := c.cc.Invoke(ctx, CoreService_OpenIssue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ListResponderCards(ctx context.Context, in *ListResponderCardsRequest, opts ...grpc.CallOption) (*ListResponderCardsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListResponderCardsResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListResponderCards_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -550,6 +605,17 @@ type CoreServiceServer interface {
 	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
 	// submit_review.
 	SubmitReview(context.Context, *SubmitReviewRequest) (*SubmitReviewResponse, error)
+	// Reach for a standing character (docs/adr/0084 §6). Each is granted per definition through sidecarTools.
+	// Starts one run of a spawns.allow definition, counted in the definition pool and the character's sub-pool.
+	SpawnWorker(context.Context, *SpawnWorkerRequest) (*SpawnWorkerResponse, error)
+	// The character's own spawned run, long-polled. Shares AgentService's WaitForResultResponse.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	WaitForSpawn(context.Context, *WaitForSpawnRequest) (*WaitForResultResponse, error)
+	// Opens an issue in one of the definition's owns.repos.
+	OpenIssue(context.Context, *OpenIssueRequest) (*OpenIssueResponse, error)
+	// The first responders' cards and remediations, typed fields only.
+	ListResponderCards(context.Context, *ListResponderCardsRequest) (*ListResponderCardsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -646,6 +712,18 @@ func (UnimplementedCoreServiceServer) DraftCard(context.Context, *DraftCardReque
 }
 func (UnimplementedCoreServiceServer) SubmitReview(context.Context, *SubmitReviewRequest) (*SubmitReviewResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitReview not implemented")
+}
+func (UnimplementedCoreServiceServer) SpawnWorker(context.Context, *SpawnWorkerRequest) (*SpawnWorkerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SpawnWorker not implemented")
+}
+func (UnimplementedCoreServiceServer) WaitForSpawn(context.Context, *WaitForSpawnRequest) (*WaitForResultResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WaitForSpawn not implemented")
+}
+func (UnimplementedCoreServiceServer) OpenIssue(context.Context, *OpenIssueRequest) (*OpenIssueResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method OpenIssue not implemented")
+}
+func (UnimplementedCoreServiceServer) ListResponderCards(context.Context, *ListResponderCardsRequest) (*ListResponderCardsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListResponderCards not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1172,6 +1250,78 @@ func _CoreService_SubmitReview_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_SpawnWorker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SpawnWorkerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SpawnWorker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SpawnWorker_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SpawnWorker(ctx, req.(*SpawnWorkerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_WaitForSpawn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WaitForSpawnRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).WaitForSpawn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_WaitForSpawn_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).WaitForSpawn(ctx, req.(*WaitForSpawnRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_OpenIssue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenIssueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).OpenIssue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_OpenIssue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).OpenIssue(ctx, req.(*OpenIssueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ListResponderCards_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListResponderCardsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListResponderCards(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListResponderCards_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListResponderCards(ctx, req.(*ListResponderCardsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1286,6 +1436,22 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitReview",
 			Handler:    _CoreService_SubmitReview_Handler,
+		},
+		{
+			MethodName: "SpawnWorker",
+			Handler:    _CoreService_SpawnWorker_Handler,
+		},
+		{
+			MethodName: "WaitForSpawn",
+			Handler:    _CoreService_WaitForSpawn_Handler,
+		},
+		{
+			MethodName: "OpenIssue",
+			Handler:    _CoreService_OpenIssue_Handler,
+		},
+		{
+			MethodName: "ListResponderCards",
+			Handler:    _CoreService_ListResponderCards_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

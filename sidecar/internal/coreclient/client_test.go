@@ -2,6 +2,7 @@ package coreclient
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -65,5 +66,60 @@ func TestEffectKey_StandingTurn(t *testing.T) {
 	c.SetTurn("", 0)
 	if _, err := c.effectKey("mine"); err == nil {
 		t.Fatal("an effect outside a turn on a standing pod passed")
+	}
+}
+
+type reachRPC struct {
+	agentfleetv1.CoreServiceClient
+	spawn *agentfleetv1.SpawnWorkerRequest
+	wait  *agentfleetv1.WaitForSpawnRequest
+	issue *agentfleetv1.OpenIssueRequest
+	cards *agentfleetv1.ListResponderCardsRequest
+}
+
+func (f *reachRPC) SpawnWorker(_ context.Context, r *agentfleetv1.SpawnWorkerRequest, _ ...grpc.CallOption) (*agentfleetv1.SpawnWorkerResponse, error) {
+	f.spawn = r
+	return &agentfleetv1.SpawnWorkerResponse{ThreadId: "t"}, nil
+}
+
+func (f *reachRPC) WaitForSpawn(_ context.Context, r *agentfleetv1.WaitForSpawnRequest, _ ...grpc.CallOption) (*agentfleetv1.WaitForResultResponse, error) {
+	f.wait = r
+	return &agentfleetv1.WaitForResultResponse{State: "done"}, nil
+}
+
+func (f *reachRPC) OpenIssue(_ context.Context, r *agentfleetv1.OpenIssueRequest, _ ...grpc.CallOption) (*agentfleetv1.OpenIssueResponse, error) {
+	f.issue = r
+	return &agentfleetv1.OpenIssueResponse{Url: "u"}, nil
+}
+
+func (f *reachRPC) ListResponderCards(_ context.Context, r *agentfleetv1.ListResponderCardsRequest, _ ...grpc.CallOption) (*agentfleetv1.ListResponderCardsResponse, error) {
+	f.cards = r
+	return &agentfleetv1.ListResponderCardsResponse{}, nil
+}
+
+// docs/adr/0084 §6: the session is this pod's, and inside a standing turn a spawn and an issue carry core's effect
+// key, never the agent's.
+func TestReach_SessionAndEffectKey(t *testing.T) {
+	f := &reachRPC{}
+	c := &Client{rpc: f, taskID: "s1"}
+	ctx := context.Background()
+	if _, err := c.SpawnWorker(ctx, "w", "go", "mine"); err != nil || f.spawn.GetSessionId() != "s1" || f.spawn.GetDefinition() != "w" || f.spawn.GetInput() != "go" || f.spawn.GetIdempotencyKey() != "mine" {
+		t.Fatalf("spawn: %v %v", err, f.spawn)
+	}
+	if _, err := c.WaitForResult(ctx, "t1", 20); err != nil || f.wait.GetSessionId() != "s1" || f.wait.GetThreadId() != "t1" || f.wait.GetWaitSeconds() != 20 {
+		t.Fatalf("wait: %v %v", err, f.wait)
+	}
+	if _, err := c.OpenIssue(ctx, "o/r", "T", "B", ""); err != nil || f.issue.GetSessionId() != "s1" || f.issue.GetRepo() != "o/r" || f.issue.GetTitle() != "T" || f.issue.GetBody() != "B" {
+		t.Fatalf("issue: %v %v", err, f.issue)
+	}
+	if _, err := c.ListResponderCards(ctx, "2026-01-01T00:00:00Z", 7); err != nil || f.cards.GetSessionId() != "s1" || f.cards.GetSince() != "2026-01-01T00:00:00Z" || f.cards.GetLimit() != 7 {
+		t.Fatalf("cards: %v %v", err, f.cards)
+	}
+	c.SetTurn("a", 7)
+	if _, err := c.SpawnWorker(ctx, "w", "go", "mine"); err != nil || !strings.HasPrefix(f.spawn.GetIdempotencyKey(), "eff:s1:a:7:") {
+		t.Errorf("a spawn in a standing turn: %q %v", f.spawn.GetIdempotencyKey(), err)
+	}
+	if _, err := c.OpenIssue(ctx, "o/r", "T", "B", "mine"); err != nil || !strings.HasPrefix(f.issue.GetIdempotencyKey(), "eff:s1:a:7:") {
+		t.Errorf("an issue in a standing turn: %q %v", f.issue.GetIdempotencyKey(), err)
 	}
 }

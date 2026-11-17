@@ -102,6 +102,10 @@ type Server struct {
 	decisionWait time.Duration
 	// spans exports worker spans (docs/adr/0081 §7). nil accepts nothing.
 	spans *workerspans.Sink
+	// The reach of a standing character (docs/adr/0084 §6), wired after construction like publish.
+	spawner        Spawner
+	createIssue    func(ctx context.Context, req *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error)
+	responderCards func(ctx context.Context, since time.Time, limit int) ([]*agentfleetv1.ResponderCard, error)
 }
 
 // SetDecisionWait sets DECISION_WAIT_MS.
@@ -1069,6 +1073,9 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest) (*agentfleetv1.ViewLogsResponse, error) {
 	if req.GetComponent() == "" {
 		return nil, fmt.Errorf("component is required")
+	}
+	if err := s.scopeLogs(ctx, req.GetNamespace()); err != nil {
+		return nil, err
 	}
 
 	// Extract taskId from context metadata (sidecar includes it)

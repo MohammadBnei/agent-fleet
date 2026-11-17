@@ -85,6 +85,8 @@ type GitHub interface {
 	PostReview(ctx context.Context, r github.Review) (github.Posted, error)
 	// OpenPR opens a pull request from a pushed branch at an approved commit.
 	OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, body string) (string, error)
+	// CreateIssue opens an issue for a standing character (docs/adr/0084 §6).
+	CreateIssue(ctx context.Context, owner, repo, title, body string) (string, error)
 }
 
 // SetGitHub wires the App (docs/adr/0074, 0075). Unset, ListGitHubRepos and
@@ -936,6 +938,31 @@ func (s *Server) OpenPullRequest(ctx context.Context, req *agentfleetv1.OpenPull
 	}
 	slog.Info("grpcserver OpenPullRequest", "repo", req.GetRepo(), "branch", req.GetBranch(), "url", u)
 	return &agentfleetv1.OpenPullRequestResponse{Url: u}, nil
+}
+
+// CreateIssue opens a standing character's issue (docs/adr/0084 §6). core has checked the definition owns the repo;
+// the shape is re-checked here, the trust boundary.
+func (s *Server) CreateIssue(ctx context.Context, req *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error) {
+	owner, repo, _ := strings.Cut(req.GetRepo(), "/")
+	switch {
+	case !reviewRepoRe.MatchString(req.GetRepo()) || strings.Trim(owner, ".") == "" || strings.Trim(repo, ".") == "":
+		return nil, status.Errorf(codes.InvalidArgument, "repo %q is not owner/name", req.GetRepo())
+	case req.GetTitle() == "" || strings.ContainsAny(req.GetTitle(), "\r\n"):
+		return nil, status.Error(codes.InvalidArgument, "title is required and one line")
+	}
+	if s.gh == nil {
+		return nil, status.Error(codes.FailedPrecondition, "no GitHub App: an issue cannot be opened")
+	}
+	u, err := s.gh.CreateIssue(ctx, owner, repo, req.GetTitle(), req.GetBody())
+	var se *github.StatusError
+	if errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	slog.Info("grpcserver CreateIssue", "repo", req.GetRepo(), "url", u)
+	return &agentfleetv1.CreateIssueResponse{Url: u}, nil
 }
 
 // ListGitHubRepos is core's repos sync source (docs/adr/0074, amended by

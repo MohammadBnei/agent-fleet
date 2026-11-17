@@ -210,6 +210,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			slog.Error("definitions: sync failed", "error", err)
 			return
 		}
+		heads, _ := defs.List()
+		if err := checkSpawnPool(heads, cfg.MaxDefinitionSessions); err != nil {
+			slog.Error("definitions: the spawn pool does not fit", "error", err)
+		}
 		if !vaultBusy.CompareAndSwap(false, true) {
 			return
 		}
@@ -219,6 +223,19 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			vaultErrs = reconcileVaults(ctx, provisioner, vaults, vaultErrs)
 		}()
 	})
+	// docs/adr/0084 §6: the characters' spawn sub-pools must fit the definition pool. Checked on a first sync that
+	// works, so a bad pair refuses to start; a provisioner that is not up yet is left to the per-sync log below.
+	if syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second); defs.Sync(syncCtx) == nil {
+		heads, _ := defs.List()
+		if err := checkSpawnPool(heads, cfg.MaxDefinitionSessions); err != nil {
+			cancel()
+			return err
+		}
+		cancel()
+	} else {
+		cancel()
+		slog.Warn("definitions: first sync failed, the spawn pool check waits for the loop")
+	}
 	go sessionLoop.Run(ctx, 60*time.Second)
 
 	announceClients = func() []string {
@@ -506,6 +523,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	memberInterceptors = connectInterceptors(tr, true,
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.AdminOrigins, cfg.DevOrigins...))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
+	// A standing character's reach (docs/adr/0084 §6): spawns, issues and the responders' cards, each granted per
+	// definition. The sweep tells a character when a run it spawned ends.
+	coreSvc.SetSpawner(agentSvc)
+	coreSvc.SetIssueFunc(provisioner.CreateIssue)
+	coreSvc.SetResponderCards(responder.Cards{Pool: pool}.List)
+	go agentSvc.RunSpawnReports(ctx, 15*time.Second)
 	remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
 	agentSvc.SetCardEffects(agentsvc.CardEffects{
 		Remediate: remSvc.Select,

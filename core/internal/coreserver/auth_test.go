@@ -310,6 +310,14 @@ func requestFor(method string) any {
 		return &agentfleetv1.ExportSpansRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/AuthorizeMemoryWrite":
 		return &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/SpawnWorker":
+		return &agentfleetv1.SpawnWorkerRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/WaitForSpawn":
+		return &agentfleetv1.WaitForSpawnRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/OpenIssue":
+		return &agentfleetv1.OpenIssueRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/ListResponderCards":
+		return &agentfleetv1.ListResponderCardsRequest{SessionId: "s1"}
 	}
 	return nil // unbound methods: the request names no caller
 }
@@ -328,7 +336,6 @@ var definitionDenied = map[string]bool{
 	"/agentfleet.v1.CoreService/GetFileUploadUrl":    true,
 	"/agentfleet.v1.CoreService/GetFileDownloadUrl":  true,
 	"/agentfleet.v1.CoreService/DeleteFile":          true,
-	"/agentfleet.v1.CoreService/ViewLogs":            true,
 	"/agentfleet.v1.CoreService/ListPeerSessions":    true,
 	"/agentfleet.v1.CoreService/PromptSession":       true,
 	"/agentfleet.v1.CoreService/WaitForSessionState": true,
@@ -366,7 +373,8 @@ func TestAuth_DefinitionLeaseOnlyReachesItsAllowlist(t *testing.T) {
 		}
 	}
 	// The provisioner token never publishes, drafts or reviews as a session.
-	for _, m := range []string{"/agentfleet.v1.CoreService/PublishEvent", "/agentfleet.v1.CoreService/DraftCard", "/agentfleet.v1.CoreService/SubmitReview", "/agentfleet.v1.CoreService/ExportSpans"} {
+	for _, m := range []string{"/agentfleet.v1.CoreService/PublishEvent", "/agentfleet.v1.CoreService/DraftCard", "/agentfleet.v1.CoreService/SubmitReview", "/agentfleet.v1.CoreService/ExportSpans",
+		"/agentfleet.v1.CoreService/SpawnWorker", "/agentfleet.v1.CoreService/WaitForSpawn", "/agentfleet.v1.CoreService/OpenIssue", "/agentfleet.v1.CoreService/ListResponderCards"} {
 		if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), m, requestFor(m)); codeOf(err) != codes.PermissionDenied {
 			t.Errorf("provisioner %s: %v", m, err)
 		}

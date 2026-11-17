@@ -47,9 +47,12 @@ var (
 	// SDK 0.3.301 EffortLevel.
 	EffortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
-	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review", "memory_write"}
-	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
-	lifecycles     = []string{"resident", "single-shot", "standing"}
+	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review", "memory_write",
+		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs"}
+	// reachTools are a standing character's alone (ADR-0084 §6).
+	reachTools   = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs"}
+	serviceHosts = []string{"github.com", "api.github.com", "api.anthropic.com"}
+	lifecycles   = []string{"resident", "single-shot", "standing"}
 )
 
 // standingPrincipal is the prefix of a standing character's principal (docs/adr/0084 §2); sessions.StandingPrefix
@@ -71,19 +74,20 @@ const (
 
 var (
 	// Also a valid Kubernetes label value: the pod profile labels by it.
-	nameRe     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	originRe   = regexp.MustCompile(`^https://([a-z0-9-]+(\.[a-z0-9-]+)*)(:[0-9]{1,5})?$`)
-	githubPath = regexp.MustCompile(`^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?/\*$`)
-	apiPath    = regexp.MustCompile(`^/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\*$`)
-	envKeyRe   = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
-	repoRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
-	emailRe    = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
-	skillRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	toolAllow  = regexp.MustCompile(`^([A-Za-z]+)(\((.+)\))?$`)
-	toolDeny   = regexp.MustCompile(`^([A-Za-z_]+)(\((.+)\))?$`)
-	cpuRe      = regexp.MustCompile(`^([0-9]+)(m?)$`)
-	memoryRe   = regexp.MustCompile(`^([0-9]+)(Mi|Gi)$`)
-	loginRe    = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
+	dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	nameRe       = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	originRe     = regexp.MustCompile(`^https://([a-z0-9-]+(\.[a-z0-9-]+)*)(:[0-9]{1,5})?$`)
+	githubPath   = regexp.MustCompile(`^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?/\*$`)
+	apiPath      = regexp.MustCompile(`^/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\*$`)
+	envKeyRe     = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	repoRe       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+	emailRe      = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
+	skillRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	toolAllow    = regexp.MustCompile(`^([A-Za-z]+)(\((.+)\))?$`)
+	toolDeny     = regexp.MustCompile(`^([A-Za-z_]+)(\((.+)\))?$`)
+	cpuRe        = regexp.MustCompile(`^([0-9]+)(m?)$`)
+	memoryRe     = regexp.MustCompile(`^([0-9]+)(Mi|Gi)$`)
+	loginRe      = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
 )
 
 // Result is one AgentDefinition file after load.
@@ -244,6 +248,7 @@ func LoadAll(files map[string][]byte) (results []Result, valid []Client, fileErr
 		}
 		results = append(results, res)
 	}
+	spawnTargets(results)
 	islandWorkspaces(results)
 
 	clientNames := make([]string, 0, len(clients))
@@ -634,6 +639,7 @@ func validate(name string, s *Spec) error {
 			validateStanding(&errs, s)
 		}
 	}
+	validateReach(&errs, s)
 	if s.Output != nil {
 		if err := checkOutputSchema(s.Output.Schema); err != nil {
 			bad("output.schema: %v", err)
@@ -696,6 +702,99 @@ func validate(name string, s *Spec) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateReach is docs/adr/0084 §6: a character's reach tools and what each needs. spawns, limits.spawns and
+// cluster.logNamespaces belong to a standing definition.
+func validateReach(errs *[]error, s *Spec) {
+	bad := func(format string, a ...any) { *errs = append(*errs, fmt.Errorf(format, a...)) }
+	standing := s.Lifecycle != nil && slices.Contains(s.Lifecycle.Allow, "standing")
+	if s.Abstract {
+		return // a parent's grants are judged on the child that inherits them
+	}
+	for _, t := range s.SidecarTools {
+		if slices.Contains(reachTools, t) && !standing {
+			bad("sidecarTools: %q is a standing character's tool (lifecycle standing)", t)
+		}
+	}
+	has := func(t string) bool { return slices.Contains(s.SidecarTools, t) }
+	if s.Spawns != nil {
+		if !standing {
+			bad("spawns: only a standing definition may spawn")
+		}
+		if len(s.Spawns.Allow) == 0 {
+			bad("spawns.allow must not be empty")
+		}
+		shapeList(errs, "spawns.allow", s.Spawns.Allow, "")
+		for _, d := range s.Spawns.Allow {
+			if !nameRe.MatchString(d) {
+				bad("spawns.allow: %q is not a definition name", d)
+			}
+		}
+	}
+	if has("spawn_worker") && s.Spawns == nil {
+		bad("sidecarTools: spawn_worker needs spawns.allow")
+	}
+	if has("wait_for_result") && !has("spawn_worker") {
+		bad("sidecarTools: wait_for_result needs spawn_worker")
+	}
+	if has("open_issue") && (s.Owns == nil || len(s.Owns.Repos) == 0) {
+		bad("sidecarTools: open_issue needs owns.repos")
+	}
+	if has("view_logs") && (s.Cluster == nil || len(s.Cluster.LogNamespaces) == 0) {
+		bad("sidecarTools: view_logs needs cluster.logNamespaces")
+	}
+	if s.Cluster != nil && len(s.Cluster.LogNamespaces) > 0 {
+		if !standing {
+			bad("cluster.logNamespaces: only a standing definition may read logs")
+		}
+		shapeList(errs, "cluster.logNamespaces", s.Cluster.LogNamespaces, "")
+		for _, n := range s.Cluster.LogNamespaces {
+			if !dns1123Label.MatchString(n) {
+				bad("cluster.logNamespaces: %q is not a namespace name", n)
+			}
+		}
+	}
+	if l := s.Limits; l != nil && l.Spawns != nil {
+		if s.Spawns == nil {
+			bad("limits.spawns needs spawns.allow")
+		}
+		if x := l.Spawns; x.Concurrent < 0 || x.Concurrent > 10 || x.PerHour < 0 || x.PerHour > 100 || x.PerDay < 0 || x.PerDay > 500 {
+			bad("limits.spawns: concurrent 0-10, perHour 0-100, perDay 0-500 (0 is the default)")
+		}
+	}
+}
+
+// spawnTargets is the cross-definition half of validateReach: every spawns.allow entry names a valid, single-shot
+// definition that is not a first responder or a character, and not the spawner itself.
+func spawnTargets(results []Result) {
+	by := map[string]Result{}
+	for _, r := range results {
+		by[r.Name] = r
+	}
+	for i, r := range results {
+		if r.Err != nil || r.Effective == nil || r.Effective.Spawns == nil {
+			continue
+		}
+		var errs []error
+		for _, d := range r.Effective.Spawns.Allow {
+			t, ok := by[d]
+			switch {
+			case d == r.Name:
+				errs = append(errs, fmt.Errorf("spawns.allow: %q is the spawner itself", d))
+			case !ok || t.Err != nil || t.Effective == nil || t.Abstract:
+				errs = append(errs, fmt.Errorf("spawns.allow: %q is not a valid definition", d))
+			case t.Effective.Lifecycle == nil || !slices.Equal(t.Effective.Lifecycle.Allow, []string{"single-shot"}):
+				errs = append(errs, fmt.Errorf("spawns.allow: %q must be single-shot only", d))
+			case t.Effective.Responder():
+				errs = append(errs, fmt.Errorf("spawns.allow: %q is a first responder, started by an alert", d))
+			}
+		}
+		if len(errs) > 0 {
+			results[i].Err = errors.Join(errs...)
+			results[i].Effective = nil
+		}
+	}
 }
 
 // validateStanding is docs/adr/0084 §2: a character is trusted for life, so it is never mixed with another
