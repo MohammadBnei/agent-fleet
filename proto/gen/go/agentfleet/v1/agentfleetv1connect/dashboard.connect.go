@@ -114,6 +114,9 @@ const (
 	// DashboardServiceStopStandingProcedure is the fully-qualified name of the DashboardService's
 	// StopStanding RPC.
 	DashboardServiceStopStandingProcedure = "/agentfleet.v1.DashboardService/StopStanding"
+	// DashboardServiceCloseStandingThreadProcedure is the fully-qualified name of the
+	// DashboardService's CloseStandingThread RPC.
+	DashboardServiceCloseStandingThreadProcedure = "/agentfleet.v1.DashboardService/CloseStandingThread"
 	// DashboardServiceListReposProcedure is the fully-qualified name of the DashboardService's
 	// ListRepos RPC.
 	DashboardServiceListReposProcedure = "/agentfleet.v1.DashboardService/ListRepos"
@@ -248,6 +251,7 @@ type DashboardServiceClient interface {
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	StartStanding(context.Context, *connect.Request[v1.StartStandingRequest]) (*connect.Response[v1.StartStandingResponse], error)
 	StopStanding(context.Context, *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error)
+	CloseStandingThread(context.Context, *connect.Request[v1.CloseStandingThreadRequest]) (*connect.Response[v1.CloseStandingThreadResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
@@ -460,6 +464,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("StopStanding")),
 			connect.WithClientOptions(opts...),
 		),
+		closeStandingThread: connect.NewClient[v1.CloseStandingThreadRequest, v1.CloseStandingThreadResponse](
+			httpClient,
+			baseURL+DashboardServiceCloseStandingThreadProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CloseStandingThread")),
+			connect.WithClientOptions(opts...),
+		),
 		listRepos: connect.NewClient[v1.ListReposRequest, v1.ListReposResponse](
 			httpClient,
 			baseURL+DashboardServiceListReposProcedure,
@@ -618,6 +628,7 @@ type dashboardServiceClient struct {
 	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
 	startStanding       *connect.Client[v1.StartStandingRequest, v1.StartStandingResponse]
 	stopStanding        *connect.Client[v1.StopStandingRequest, v1.StopStandingResponse]
+	closeStandingThread *connect.Client[v1.CloseStandingThreadRequest, v1.CloseStandingThreadResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
 	setReposActive      *connect.Client[v1.SetReposActiveRequest, v1.SetReposActiveResponse]
@@ -774,6 +785,11 @@ func (c *dashboardServiceClient) StartStanding(ctx context.Context, req *connect
 // StopStanding calls agentfleet.v1.DashboardService.StopStanding.
 func (c *dashboardServiceClient) StopStanding(ctx context.Context, req *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error) {
 	return c.stopStanding.CallUnary(ctx, req)
+}
+
+// CloseStandingThread calls agentfleet.v1.DashboardService.CloseStandingThread.
+func (c *dashboardServiceClient) CloseStandingThread(ctx context.Context, req *connect.Request[v1.CloseStandingThreadRequest]) (*connect.Response[v1.CloseStandingThreadResponse], error) {
+	return c.closeStandingThread.CallUnary(ctx, req)
 }
 
 // ListRepos calls agentfleet.v1.DashboardService.ListRepos.
@@ -950,6 +966,7 @@ type DashboardServiceHandler interface {
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	StartStanding(context.Context, *connect.Request[v1.StartStandingRequest]) (*connect.Response[v1.StartStandingResponse], error)
 	StopStanding(context.Context, *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error)
+	CloseStandingThread(context.Context, *connect.Request[v1.CloseStandingThreadRequest]) (*connect.Response[v1.CloseStandingThreadResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
@@ -1158,6 +1175,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("StopStanding")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceCloseStandingThreadHandler := connect.NewUnaryHandler(
+		DashboardServiceCloseStandingThreadProcedure,
+		svc.CloseStandingThread,
+		connect.WithSchema(dashboardServiceMethods.ByName("CloseStandingThread")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListReposHandler := connect.NewUnaryHandler(
 		DashboardServiceListReposProcedure,
 		svc.ListRepos,
@@ -1340,6 +1363,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceStartStandingHandler.ServeHTTP(w, r)
 		case DashboardServiceStopStandingProcedure:
 			dashboardServiceStopStandingHandler.ServeHTTP(w, r)
+		case DashboardServiceCloseStandingThreadProcedure:
+			dashboardServiceCloseStandingThreadHandler.ServeHTTP(w, r)
 		case DashboardServiceListReposProcedure:
 			dashboardServiceListReposHandler.ServeHTTP(w, r)
 		case DashboardServiceSyncRepoProcedure:
@@ -1497,6 +1522,10 @@ func (UnimplementedDashboardServiceHandler) StartStanding(context.Context, *conn
 
 func (UnimplementedDashboardServiceHandler) StopStanding(context.Context, *connect.Request[v1.StopStandingRequest]) (*connect.Response[v1.StopStandingResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StopStanding is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) CloseStandingThread(context.Context, *connect.Request[v1.CloseStandingThreadRequest]) (*connect.Response[v1.CloseStandingThreadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CloseStandingThread is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {

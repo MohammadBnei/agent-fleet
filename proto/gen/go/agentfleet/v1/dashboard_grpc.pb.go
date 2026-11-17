@@ -46,6 +46,7 @@ const (
 	DashboardService_ListDefinitions_FullMethodName     = "/agentfleet.v1.DashboardService/ListDefinitions"
 	DashboardService_StartStanding_FullMethodName       = "/agentfleet.v1.DashboardService/StartStanding"
 	DashboardService_StopStanding_FullMethodName        = "/agentfleet.v1.DashboardService/StopStanding"
+	DashboardService_CloseStandingThread_FullMethodName = "/agentfleet.v1.DashboardService/CloseStandingThread"
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
 	DashboardService_SyncRepo_FullMethodName            = "/agentfleet.v1.DashboardService/SyncRepo"
 	DashboardService_SetReposActive_FullMethodName      = "/agentfleet.v1.DashboardService/SetReposActive"
@@ -140,6 +141,7 @@ type DashboardServiceClient interface {
 	ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error)
 	StartStanding(ctx context.Context, in *StartStandingRequest, opts ...grpc.CallOption) (*StartStandingResponse, error)
 	StopStanding(ctx context.Context, in *StopStandingRequest, opts ...grpc.CallOption) (*StopStandingResponse, error)
+	CloseStandingThread(ctx context.Context, in *CloseStandingThreadRequest, opts ...grpc.CallOption) (*CloseStandingThreadResponse, error)
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
 	SyncRepo(ctx context.Context, in *SyncRepoRequest, opts ...grpc.CallOption) (*SyncRepoResponse, error)
 	SetReposActive(ctx context.Context, in *SetReposActiveRequest, opts ...grpc.CallOption) (*SetReposActiveResponse, error)
@@ -466,6 +468,16 @@ func (c *dashboardServiceClient) StopStanding(ctx context.Context, in *StopStand
 	return out, nil
 }
 
+func (c *dashboardServiceClient) CloseStandingThread(ctx context.Context, in *CloseStandingThreadRequest, opts ...grpc.CallOption) (*CloseStandingThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CloseStandingThreadResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CloseStandingThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListReposResponse)
@@ -747,6 +759,7 @@ type DashboardServiceServer interface {
 	ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error)
 	StartStanding(context.Context, *StartStandingRequest) (*StartStandingResponse, error)
 	StopStanding(context.Context, *StopStandingRequest) (*StopStandingResponse, error)
+	CloseStandingThread(context.Context, *CloseStandingThreadRequest) (*CloseStandingThreadResponse, error)
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
 	SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error)
 	SetReposActive(context.Context, *SetReposActiveRequest) (*SetReposActiveResponse, error)
@@ -874,6 +887,9 @@ func (UnimplementedDashboardServiceServer) StartStanding(context.Context, *Start
 }
 func (UnimplementedDashboardServiceServer) StopStanding(context.Context, *StopStandingRequest) (*StopStandingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopStanding not implemented")
+}
+func (UnimplementedDashboardServiceServer) CloseStandingThread(context.Context, *CloseStandingThreadRequest) (*CloseStandingThreadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseStandingThread not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRepos not implemented")
@@ -1438,6 +1454,24 @@ func _DashboardService_StopStanding_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_CloseStandingThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseStandingThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).CloseStandingThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_CloseStandingThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).CloseStandingThread(ctx, req.(*CloseStandingThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListRepos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListReposRequest)
 	if err := dec(in); err != nil {
@@ -1926,6 +1960,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopStanding",
 			Handler:    _DashboardService_StopStanding_Handler,
+		},
+		{
+			MethodName: "CloseStandingThread",
+			Handler:    _DashboardService_CloseStandingThread_Handler,
 		},
 		{
 			MethodName: "ListRepos",

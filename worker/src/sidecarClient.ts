@@ -54,11 +54,22 @@ export async function appendJournal(
 // Lease-checked by core (docs/adr/0041): the session id is what the next
 // resume reads, so a dead pod setting it would resume the wrong conversation.
 // The sidecar attaches its own lease (docs/adr/0064); the worker sends none.
+//
+// threadKey names the thread of a standing character the id belongs to (docs/adr/0084
+// §4); absent is the session's own, main's.
 export async function saveSessionId(
   sessionId: string,
   model: string,
+  threadKey?: string,
 ): Promise<void> {
-  await postJSON("/session-id", { sessionId, model });
+  await postJSON("/session-id", { sessionId, model, threadKey });
+}
+
+// Names the thread and entry the worker's one running turn answers (docs/adr/0084 §4):
+// the sidecar then files every entry and effect call it makes in that thread. An empty
+// thread ends the turn.
+export async function setTurn(thread: string, seq: number): Promise<void> {
+  await postJSON("/turn", { thread, seq });
 }
 
 // getSession reads the session row fresh at startup.
@@ -90,6 +101,9 @@ export async function getSession(): Promise<{
   // docs/adr/0082 §5: how long the gate waits on a decision before answering
   // "pending". 0 or absent (an older core or sidecar) keeps the gate blocking.
   decisionWaitMs?: number;
+  // docs/adr/0084 §4: a standing character's open threads other than main, and the SDK
+  // session id each resumes with.
+  threadSessionIds?: Record<string, string>;
 }> {
   const res = await fetch(`${base()}/task`);
   if (!res.ok)
@@ -145,6 +159,7 @@ export async function pushMessage(
   type?: string,
   replyTo?: number,
   idempotencyKey?: string,
+  threadKey?: string,
 ): Promise<number> {
   const res = await postJSON<{ seq: number }>("/message", {
     from,
@@ -152,6 +167,7 @@ export async function pushMessage(
     type,
     replyTo,
     idempotencyKey,
+    threadKey,
   });
   return res.seq;
 }
@@ -185,6 +201,8 @@ export type TranscriptEntry = {
   type?: string;
   replyTo?: number;
   authorName?: string;
+  // docs/adr/0084 §4: the standing thread the entry belongs to; absent is main.
+  threadKey?: string;
 };
 
 const RECONNECT_DELAY_MS = 2000;

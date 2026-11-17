@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -195,6 +197,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		if _, err := decisionStore.ExpireCards(ctx); err != nil {
 			slog.Error("decisions: expire cards failed", "error", err)
 		}
+		closeIdleThreads(ctx, sessionStore, store)
 		if cfg.RepoOverridesPath != "" && repoSyncBusy.CompareAndSwap(false, true) {
 			go func() {
 				defer repoSyncBusy.Store(false)
@@ -734,4 +737,28 @@ func reconcileVaults(ctx context.Context, p vaultReconciler, vaults []*agentflee
 		slog.Info("definitions: vaults match their definitions")
 	}
 	return joined
+}
+
+// threadIdle is how long a standing character's thread may go without an owner message before it closes
+// (docs/adr/0084 §4).
+const threadIdle = 7 * 24 * time.Hour
+
+// closeIdleThreads closes the threads idle for threadIdle. Each gets the abort entry an owner's close writes, so
+// a live pod ends that thread's SDK session, and only then is closed: an append that fails leaves the thread
+// open for the next sweep.
+func closeIdleThreads(ctx context.Context, sessionStore *sessions.Store, transcr transcript.Store) {
+	idle, err := sessionStore.IdleThreads(ctx, threadIdle)
+	if err != nil {
+		slog.Error("sessions: close idle threads failed", "error", err)
+		return
+	}
+	for _, c := range idle {
+		if _, err := transcr.Append(transcript.WithThread(ctx, c.Key), c.SessionID, "human", "closed: idle", "abort", uuid.NewString()); err != nil {
+			slog.Error("sessions: idle thread abort entry failed", "sessionId", c.SessionID, "thread", c.Key, "error", err)
+			continue
+		}
+		if _, err := sessionStore.CloseThread(ctx, c.SessionID, c.Key); err != nil {
+			slog.Error("sessions: closing an idle thread failed", "sessionId", c.SessionID, "thread", c.Key, "error", err)
+		}
+	}
 }

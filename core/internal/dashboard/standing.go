@@ -14,6 +14,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -108,6 +109,39 @@ func (s *Server) StopStanding(ctx context.Context, req *connect.Request[agentfle
 	}
 	slog.InfoContext(ctx, "dashboard StopStanding", "definition", name, "sessionId", row.ID)
 	return connect.NewResponse(&agentfleetv1.StopStandingResponse{}), nil
+}
+
+// CloseStandingThread is the owner's close of one thread (docs/adr/0084 §4). The thread's SDK session id is dropped
+// and its transcript stays; an abort entry in the thread tells a live pod to end that thread's SDK session (the pod
+// ends only that thread: Stop is the abort in main). Main never closes.
+func (s *Server) CloseStandingThread(ctx context.Context, req *connect.Request[agentfleetv1.CloseStandingThreadRequest]) (*connect.Response[agentfleetv1.CloseStandingThreadResponse], error) {
+	name, key := req.Msg.GetDefinition(), req.Msg.GetThreadKey()
+	row, err := s.sessions.StandingByDefinition(ctx, name)
+	if errors.Is(err, sessions.ErrNotFound) {
+		return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, fmt.Errorf("%q was never started", name))
+	}
+	if err != nil {
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	// The abort goes first and the close after, so a failed append leaves the thread open for a retry instead of
+	// closed under a live SDK session.
+	threads, err := s.sessions.Threads(ctx, row.ID)
+	if err != nil {
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	if !slices.ContainsFunc(threads, func(t sessions.Thread) bool { return t.Key == key && !t.Closed && key != sessions.MainThread }) {
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("thread %q of %q is main, unknown or already closed", key, name))
+	}
+	if _, err := s.transcr.Append(transcript.WithThread(ctx, key), row.ID, "human", "closed by "+adminSub(ctx), "abort", uuid.NewString()); err != nil {
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	}
+	if ok, err := s.sessions.CloseThread(ctx, row.ID, key); err != nil {
+		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+	} else if !ok {
+		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("thread %q of %q is main, unknown or already closed", key, name))
+	}
+	slog.InfoContext(ctx, "dashboard CloseStandingThread", "definition", name, "sessionId", row.ID, "thread", key)
+	return connect.NewResponse(&agentfleetv1.CloseStandingThreadResponse{}), nil
 }
 
 func adminSub(ctx context.Context) string {

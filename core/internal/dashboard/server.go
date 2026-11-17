@@ -1075,6 +1075,17 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	if text == "" {
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("text is required"))
 	}
+	// A thread is refused before anything warms for it (docs/adr/0084 §4): a malformed key, or any key but main on
+	// a session that is not a standing character.
+	if k := req.Msg.GetThreadKey(); k != "" && k != transcript.MainThread {
+		t, err := s.sessions.Get(ctx, sessionID)
+		if err != nil {
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
+		if !transcript.ValidThread(k) || t == nil || t.Lifecycle == nil || *t.Lifecycle != sessions.Standing {
+			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, transcript.ErrBadThread)
+		}
+	}
 	// Warm BEFORE appending, never after — see WarmIfIdle. This ordering is
 	// also the whole mechanism by which a first message boots a session
 	// (docs/adr/0048).
@@ -1083,7 +1094,10 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	if err != nil {
 		return nil, err
 	}
-	seq, err := s.transcr.Append(ctx, sessionID, "human", text, "discussion", uuid.NewString())
+	seq, err := s.transcr.Append(transcript.WithThread(ctx, req.Msg.GetThreadKey()), sessionID, "human", text, "discussion", uuid.NewString())
+	if errors.Is(err, transcript.ErrBadThread) {
+		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, err)
+	}
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
@@ -1340,6 +1354,15 @@ func (s *Server) warm(ctx context.Context, sessionID string, answer bool) (podNa
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	} else if ok && fromSeq < resumeFromSeq {
 		resumeFromSeq = fromSeq
+	}
+	// docs/adr/0084 §4: a standing character resumes each thread from its own cursor, so an entry appended while
+	// its pod was down is delivered after this warm, never skipped past LatestSeq. Only ever lowers the cursor.
+	if t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
+		if fromSeq, ok, err := s.sessions.ResumeFrom(ctx, sessionID); err != nil {
+			return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		} else if ok && fromSeq < resumeFromSeq {
+			resumeFromSeq = fromSeq
+		}
 	}
 	// Both from repoCfg, which is the row already read above. This used to
 	// re-fetch the same repo through a toolKeysFor helper — two reads of one

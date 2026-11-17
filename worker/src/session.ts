@@ -1238,8 +1238,11 @@ async function pushResult(
   msg: { [key: string]: unknown },
   consumed: number,
   exit: boolean,
+  th?: SdkThread,
 ): Promise<void> {
-  const key = `result:${SESSION_ID}:${consumed}:${++resultCount}`;
+  const key = th
+    ? `result:${SESSION_ID}:${th.key}:${consumed}:${++th.results}`
+    : `result:${SESSION_ID}:${consumed}:${++resultCount}`;
   const body = JSON.stringify({
     ...(exit ? { exit: true } : {}),
     subtype: msg.subtype,
@@ -1258,7 +1261,7 @@ async function pushResult(
   });
   for (let attempt = 1; ; attempt++) {
     try {
-      await sidecar.pushMessage(actor, body, "result", undefined, key);
+      await sidecar.pushMessage(actor, body, "result", undefined, key, th?.key);
       return;
     } catch (err) {
       log("warn", "pushMessage failed", {
@@ -1272,6 +1275,44 @@ async function pushResult(
     }
   }
 }
+
+// docs/adr/0084 §4: one SDK session per thread of a standing character. A session that is not standing has
+// exactly one, "main", and every path below behaves as it did before threads.
+class SdkThread {
+  q!: Query;
+  input = new InputQueue();
+  abort = new AbortController();
+  sessionId = "";
+  // The highest seq of this thread taken in; -1 until one is. A result's consumedSeq is consumedFor().
+  taken = -1;
+  lastSeq = -1;
+  results = 0;
+  // Turns pushed and not yet resulted. The thread is running while it is above 0, and only one thread is.
+  outstanding = 0;
+  // Message entries waiting for their turn, each at its own head, in seq order.
+  waiting: { seq: number; text: string }[] = [];
+  deadline: ReturnType<typeof setTimeout> | undefined;
+  // The deadline cut a turn: its SDK session may still emit that turn's result, which must change nothing.
+  cut = false;
+  ended = false;
+  constructor(
+    readonly key: string,
+    readonly resumeId: string | undefined,
+    readonly primary: boolean,
+  ) {}
+}
+
+// Where core resumes this thread after a crash: past the entries it is done with. A waiting message is not done, so
+// an answer taken in above it never moves the cursor past it.
+function consumedFor(th: SdkThread): number {
+  const head = th.waiting[0]?.seq;
+  return head === undefined ? th.taken : Math.min(th.taken, head - 1);
+}
+
+// A per-turn deadline of 15 min aborts a turn and lets the thread's next entry run (docs/adr/0084 §4). Read per
+// call so a test can shorten it.
+const turnDeadlineMs = () =>
+  Number(process.env.TURN_DEADLINE_MS) || 15 * 60_000;
 
 export type SessionResult = { aborted: boolean; summary: string };
 
@@ -1547,8 +1588,11 @@ export async function runSession(): Promise<SessionResult> {
     }
   }
 
-  const input = new InputQueue();
-  input.onPush = wake;
+  // docs/adr/0084 §4: a standing character runs one SDK session per thread, started on the thread's first entry.
+  const standing = spec?.lifecycle === "standing";
+  const threads = new Map<string, SdkThread>();
+  // Thread keys ended in this pod: a later entry for one starts a fresh SDK session, never the resume id read at boot.
+  const endedKeys = new Set<string>();
   // Deliberately NOT seeded. The queue is fed exclusively by
   // streamHumanMessages below, so the session's first message reaches the
   // model as an ordinary human turn rather than a fleet-authored wrapper
@@ -1571,361 +1615,387 @@ export async function runSession(): Promise<SessionResult> {
   );
   const peerTools = ["SendMessage", "ListAgents"];
 
-  const abortController = new AbortController();
-  const queryStartNs = nowNs();
-  spans.startupStep("worker.setup", setupStartNs, queryStartNs);
-  const q = query({
-    prompt: input.stream(),
-    options: {
-      executable: "bun",
-      cwd: WORKTREE_PATH,
-      // The row's model, else CLAUDE_MODEL, else none at all: Claude Code
-      // picks (docs/adr/0077). `||`, so an empty string is never passed.
-      ...(session.model || MODEL ? { model: session.model || MODEL } : {}),
-      // Continues the prior conversation instead of starting fresh when
-      // this pod is warming an existing session (Phase 4's Warm action) —
-      // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
-      // `cwd` matching exactly what it was last time (same worktree path,
-      // guaranteed since it's always /workspace/worktrees/<taskId>).
-      resume: RESUME_SESSION_ID,
-      // Without this, a crash only ever surfaces as the SDK's generic
-      // "Claude Code process exited with code 1" (worker/src/index.ts's
-      // catch) — the child process's actual stderr (auth failure, bad
-      // resume session, etc.) is otherwise discarded, not just unlogged.
-      stderr: (data) =>
-        log("error", "claude stderr", { taskId: SESSION_ID, data }),
-      // Use the task's permission mode from the database, falling back to
-      // "default" if not set. This ensures the mode is restored on resume
-      // instead of always resetting to "default".
-      permissionMode: spec ? sdkMode(launchMode) : launchMode,
-      // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
-      // (docs/adr/0053).
-      //
-      // crossSessionInbound: Claude Code's own cross-session channel is open
-      // on purpose (docs/adr/0060). Every fleet pod runs on the same OAuth
-      // account, so a peer is any session on that account — other pods AND
-      // Mohammad's own laptop sessions — and its message arrives around core,
-      // the transcript and lease auth. "accept" explicitly, rather than the
-      // CLI's unset default, which holds a message from a session in a
-      // different permission mode and nobody can approve it in a headless pod.
-      // remoteControlAtStartup stays off: that is phone/web control of the
-      // pod, a different channel nobody asked for.
-      //
-      // attribution: Claude Code otherwise tells the model to add its own
-      // "Co-Authored-By: Claude" trailer, and that instruction beat the rule
-      // text in a space's CLAUDE.md (a dev-notes commit, 2026-10-19). Flag
-      // scope, so a repo's settings cannot undo it. It only steers the model;
-      // FLEET_GIT_HOOKS below is what enforces the trailer.
-      //
-      // tools.deny (docs/adr/0067 §4) sits beside them, flag scope, so it holds
-      // in every mode, including the calls canUseTool never sees.
-      settings: {
-        permissions: {
-          ask: FLEET_ASK_RULES,
-          ...(spec?.toolsDeny.length ? { deny: spec.toolsDeny } : {}),
+  let queryStartNs = 0;
+  let queryReturnedNs = 0;
+  // Starts the driver of a standing thread's SDK session (set once driveQuery exists).
+  let onThreadStarted: ((th: SdkThread) => void) | undefined;
+  function startThread(key: string, resumeId: string | undefined): SdkThread {
+    const th = new SdkThread(
+      key,
+      resumeId,
+      threads.size === 0 && !endedKeys.size,
+    );
+    th.input.onPush = wake;
+    const abortController = th.abort;
+    if (th.primary) {
+      queryStartNs = nowNs();
+      spans.startupStep("worker.setup", setupStartNs, queryStartNs);
+    }
+    th.q = query({
+      prompt: th.input.stream(),
+      options: {
+        executable: "bun",
+        cwd: WORKTREE_PATH,
+        // The row's model, else CLAUDE_MODEL, else none at all: Claude Code
+        // picks (docs/adr/0077). `||`, so an empty string is never passed.
+        ...(session.model || MODEL ? { model: session.model || MODEL } : {}),
+        // Continues the prior conversation instead of starting fresh when
+        // this pod is warming an existing session (Phase 4's Warm action) —
+        // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
+        // `cwd` matching exactly what it was last time (same worktree path,
+        // guaranteed since it's always /workspace/worktrees/<taskId>).
+        resume: resumeId,
+        // Without this, a crash only ever surfaces as the SDK's generic
+        // "Claude Code process exited with code 1" (worker/src/index.ts's
+        // catch) — the child process's actual stderr (auth failure, bad
+        // resume session, etc.) is otherwise discarded, not just unlogged.
+        stderr: (data) =>
+          log("error", "claude stderr", { taskId: SESSION_ID, data }),
+        // Use the task's permission mode from the database, falling back to
+        // "default" if not set. This ensures the mode is restored on resume
+        // instead of always resetting to "default".
+        permissionMode: spec ? sdkMode(currentMode) : currentMode,
+        // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
+        // (docs/adr/0053).
+        //
+        // crossSessionInbound: Claude Code's own cross-session channel is open
+        // on purpose (docs/adr/0060). Every fleet pod runs on the same OAuth
+        // account, so a peer is any session on that account — other pods AND
+        // Mohammad's own laptop sessions — and its message arrives around core,
+        // the transcript and lease auth. "accept" explicitly, rather than the
+        // CLI's unset default, which holds a message from a session in a
+        // different permission mode and nobody can approve it in a headless pod.
+        // remoteControlAtStartup stays off: that is phone/web control of the
+        // pod, a different channel nobody asked for.
+        //
+        // attribution: Claude Code otherwise tells the model to add its own
+        // "Co-Authored-By: Claude" trailer, and that instruction beat the rule
+        // text in a space's CLAUDE.md (a dev-notes commit, 2026-10-19). Flag
+        // scope, so a repo's settings cannot undo it. It only steers the model;
+        // FLEET_GIT_HOOKS below is what enforces the trailer.
+        //
+        // tools.deny (docs/adr/0067 §4) sits beside them, flag scope, so it holds
+        // in every mode, including the calls canUseTool never sees.
+        settings: {
+          permissions: {
+            ask: FLEET_ASK_RULES,
+            ...(spec?.toolsDeny.length ? { deny: spec.toolsDeny } : {}),
+          },
+          crossSessionInbound: definitionPod ? "refuse" : "accept",
+          remoteControlAtStartup: false,
+          attribution: {
+            commit: definitionPod ? "" : FLEET_TRAILER,
+            pr: "",
+            sessionUrl: false,
+          },
         },
-        crossSessionInbound: definitionPod ? "refuse" : "accept",
-        remoteControlAtStartup: false,
-        attribution: {
-          commit: definitionPod ? "" : FLEET_TRAILER,
-          pr: "",
-          sessionUrl: false,
+        // docs/adr/0063: the session's context packs, rendered by core and
+        // mounted read-only by the provisioner. The env var makes the SDK load
+        // CLAUDE.md and .claude/rules/ from it, not just its skills. Absent
+        // (an older provisioner), the session runs without packs.
+        //
+        // A definition session reads no project settings (settingSources below),
+        // so its worktree is added here instead: its CLAUDE.md still loads as
+        // memory, its settings.json never does (docs/adr/0067 §4).
+        additionalDirectories: [
+          ...(existsSync(genomeDir()) ? [genomeDir()] : []),
+          ...(spec ? [WORKTREE_PATH] : []),
+        ],
+        env: {
+          ...process.env,
+          ...gitHooksEnv(process.env),
+          ...(session.definitionSha
+            ? { FLEET_DEFINITION_SHA: session.definitionSha }
+            : {}),
+          CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1",
         },
-      },
-      // docs/adr/0063: the session's context packs, rendered by core and
-      // mounted read-only by the provisioner. The env var makes the SDK load
-      // CLAUDE.md and .claude/rules/ from it, not just its skills. Absent
-      // (an older provisioner), the session runs without packs.
-      //
-      // A definition session reads no project settings (settingSources below),
-      // so its worktree is added here instead: its CLAUDE.md still loads as
-      // memory, its settings.json never does (docs/adr/0067 §4).
-      additionalDirectories: [
-        ...(existsSync(genomeDir()) ? [genomeDir()] : []),
-        ...(spec ? [WORKTREE_PATH] : []),
-      ],
-      env: {
-        ...process.env,
-        ...gitHooksEnv(process.env),
-        ...(session.definitionSha
-          ? { FLEET_DEFINITION_SHA: session.definitionSha }
-          : {}),
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1",
-      },
-      // Write/Edit/Bash are deliberately never in this list — canUseTool
-      // below is the live escalation path for all three (confirmed in
-      // Phase 0's spike: allowedTools bypasses canUseTool entirely for
-      // anything it lists, so declaring them here would silently remove
-      // the gate, not add one).
-      // This list is load-bearing and stays (docs/adr/0048). Deleting it was
-      // proposed on the grounds that "default" mode already auto-allows
-      // reads and prompts on writes — which is false for MCP tools. Checked
-      // against the vendored SDK: every MCP tool's checkPermissions returns
-      // {behavior: "passthrough"}, and the evaluator converts passthrough to
-      // "ask". WebSearch is passthrough too. With no allowlist, the agent
-      // would need a human's permission to call send_message, and would need
-      // permission before it could ASK for permission.
-      //
-      // The nine explicit mcp__agent-fleet-sidecar__<name> entries that used
-      // to sit here ARE gone: the wildcard beside them already matched every
-      // one (the SDK's rule matcher treats an mcp rule with toolName "*" or
-      // undefined as matching the whole server), so they were a second,
-      // hand-maintained copy of the same policy that every new tool had to
-      // be added to.
-      //
-      // A definition session lists only its own sidecarTools: tools.allow is
-      // decided in canUseTool, never here, since this list skips canUseTool
-      // (docs/adr/0062 §7).
-      // The plan-mode carve-out's tools stay out of it, so canUseTool sees them.
-      allowedTools: spec
-        ? spec.sidecarTools
-            .map((t) => `mcp__agent-fleet-sidecar__${t}`)
-            .filter((t) => !PLAN_MODE_STILL_ASKS.has(t))
-        : [
-            "Read",
-            "Glob",
-            "Grep",
-            "WebSearch",
-            "WebFetch",
-            "Task",
-            // Claude Code's native cross-session channel (docs/adr/0060). Listed so
-            // the agent uses it on its own, without a human prompt per message.
-            // Not for a definition pod, which disallows them below.
-            ...(definitionPod ? [] : peerTools),
-            "mcp__agent-fleet-sidecar__*",
-            // Playwright by the same wildcard rule. Every browser call would
-            // otherwise prompt — including the read-only ones a human would never
-            // want to be asked about (snapshot, console messages) — because MCP
-            // tools are passthrough → ask, not because navigating is dangerous.
-            //
-            // The browser only ever reaches what this pod can reach, and the pod's
-            // own network position is the real boundary. What it can DO with a
-            // page is bounded by the same thing bounding the agent generally.
-            "mcp__playwright__*",
-          ],
-      // The SDK's own built-in "AskUserQuestion" (distinct from the
-      // mcp__agent-fleet-sidecar__ one above) is available by default and
-      // has the same name/shape docs/adr/0018 deliberately mirrored — the
-      // model reaches for whichever it sees first, and the native one
-      // falls through canUseTool into the generic PermissionCard (raw
-      // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
-      // no way to actually deliver a chosen answer back. Removing it from
-      // context forces the only question tool that's actually wired up.
-      disallowedTools: ["AskUserQuestion", ...(definitionPod ? peerTools : [])],
-      // A definition session's built-ins stop at its ceiling (see
-      // DEFINITION_BUILTIN_TOOLS): denied in canUseTool is not enough, since a
-      // tool the model can see is one it keeps reaching for.
-      ...(spec ? { tools: DEFINITION_BUILTIN_TOOLS } : {}),
-      // docs/adr/0070 §3: single-shot with a schema only; the SDK adds its
-      // StructuredOutput end-turn tool, which `tools` above does not filter.
-      ...(outputFormat ? { outputFormat } : {}),
-      // Still no tool classification here — the SDK's own permission mode
-      // decides when canUseTool gets invoked (acceptEdits skips it for file
-      // edits, plan blocks mutation without invoking it, default invokes it
-      // for anything not auto-safe), and reproducing the CLI's live prompt is
-      // this callback's job (docs/adr/0029, superseding adr/0021's
-      // Write/Edit-absent-from-allowedTools framing).
-      //
-      // The two short-circuits at the top are not a classification of what is
-      // dangerous — they are the two answers the fleet has already made and
-      // will not re-ask a human for. Everything else asks, for at most the
-      // decision wait (docs/adr/0082 §5).
-      canUseTool: async (toolName, toolInput, options) => {
-        // See the ExitPlanMode note beside autoModeStillAsksCommand.
-        if (toolName === "EnterPlanMode") planRetry = undefined;
-        if (toolName === "ExitPlanMode" && planRetry) {
-          const approved = planRetry;
-          planRetry = undefined;
-          if (isDeepStrictEqual(approved, toolInput))
-            return { behavior: "allow", updatedInput: toolInput };
-        }
-        let noGrant = false;
-        if (spec) {
-          // Only the sidecar tools this definition lists are the fleet's own,
-          // with the same plan-mode carve-out as a repo session's: in plan, a
-          // granted tool that acts outside the session goes to the prompt.
-          if (definitionSidecarTools.has(toolName)) {
-            if (!(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName)))
+        // Write/Edit/Bash are deliberately never in this list — canUseTool
+        // below is the live escalation path for all three (confirmed in
+        // Phase 0's spike: allowedTools bypasses canUseTool entirely for
+        // anything it lists, so declaring them here would silently remove
+        // the gate, not add one).
+        // This list is load-bearing and stays (docs/adr/0048). Deleting it was
+        // proposed on the grounds that "default" mode already auto-allows
+        // reads and prompts on writes — which is false for MCP tools. Checked
+        // against the vendored SDK: every MCP tool's checkPermissions returns
+        // {behavior: "passthrough"}, and the evaluator converts passthrough to
+        // "ask". WebSearch is passthrough too. With no allowlist, the agent
+        // would need a human's permission to call send_message, and would need
+        // permission before it could ASK for permission.
+        //
+        // The nine explicit mcp__agent-fleet-sidecar__<name> entries that used
+        // to sit here ARE gone: the wildcard beside them already matched every
+        // one (the SDK's rule matcher treats an mcp rule with toolName "*" or
+        // undefined as matching the whole server), so they were a second,
+        // hand-maintained copy of the same policy that every new tool had to
+        // be added to.
+        //
+        // A definition session lists only its own sidecarTools: tools.allow is
+        // decided in canUseTool, never here, since this list skips canUseTool
+        // (docs/adr/0062 §7).
+        // The plan-mode carve-out's tools stay out of it, so canUseTool sees them.
+        allowedTools: spec
+          ? spec.sidecarTools
+              .map((t) => `mcp__agent-fleet-sidecar__${t}`)
+              .filter((t) => !PLAN_MODE_STILL_ASKS.has(t))
+          : [
+              "Read",
+              "Glob",
+              "Grep",
+              "WebSearch",
+              "WebFetch",
+              "Task",
+              // Claude Code's native cross-session channel (docs/adr/0060). Listed so
+              // the agent uses it on its own, without a human prompt per message.
+              // Not for a definition pod, which disallows them below.
+              ...(definitionPod ? [] : peerTools),
+              "mcp__agent-fleet-sidecar__*",
+              // Playwright by the same wildcard rule. Every browser call would
+              // otherwise prompt — including the read-only ones a human would never
+              // want to be asked about (snapshot, console messages) — because MCP
+              // tools are passthrough → ask, not because navigating is dangerous.
+              //
+              // The browser only ever reaches what this pod can reach, and the pod's
+              // own network position is the real boundary. What it can DO with a
+              // page is bounded by the same thing bounding the agent generally.
+              "mcp__playwright__*",
+            ],
+        // The SDK's own built-in "AskUserQuestion" (distinct from the
+        // mcp__agent-fleet-sidecar__ one above) is available by default and
+        // has the same name/shape docs/adr/0018 deliberately mirrored — the
+        // model reaches for whichever it sees first, and the native one
+        // falls through canUseTool into the generic PermissionCard (raw
+        // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
+        // no way to actually deliver a chosen answer back. Removing it from
+        // context forces the only question tool that's actually wired up.
+        disallowedTools: [
+          "AskUserQuestion",
+          ...(definitionPod ? peerTools : []),
+        ],
+        // A definition session's built-ins stop at its ceiling (see
+        // DEFINITION_BUILTIN_TOOLS): denied in canUseTool is not enough, since a
+        // tool the model can see is one it keeps reaching for.
+        ...(spec ? { tools: DEFINITION_BUILTIN_TOOLS } : {}),
+        // docs/adr/0070 §3: single-shot with a schema only; the SDK adds its
+        // StructuredOutput end-turn tool, which `tools` above does not filter.
+        ...(outputFormat ? { outputFormat } : {}),
+        // Still no tool classification here — the SDK's own permission mode
+        // decides when canUseTool gets invoked (acceptEdits skips it for file
+        // edits, plan blocks mutation without invoking it, default invokes it
+        // for anything not auto-safe), and reproducing the CLI's live prompt is
+        // this callback's job (docs/adr/0029, superseding adr/0021's
+        // Write/Edit-absent-from-allowedTools framing).
+        //
+        // The two short-circuits at the top are not a classification of what is
+        // dangerous — they are the two answers the fleet has already made and
+        // will not re-ask a human for. Everything else asks, for at most the
+        // decision wait (docs/adr/0082 §5).
+        canUseTool: async (toolName, toolInput, options) => {
+          // See the ExitPlanMode note beside autoModeStillAsksCommand.
+          if (toolName === "EnterPlanMode") planRetry = undefined;
+          if (toolName === "ExitPlanMode" && planRetry) {
+            const approved = planRetry;
+            planRetry = undefined;
+            if (isDeepStrictEqual(approved, toolInput))
               return { behavior: "allow", updatedInput: toolInput };
-          } else {
-            const decision = definitionDecision(
-              spec,
+          }
+          let noGrant = false;
+          if (spec) {
+            // Only the sidecar tools this definition lists are the fleet's own,
+            // with the same plan-mode carve-out as a repo session's: in plan, a
+            // granted tool that acts outside the session goes to the prompt.
+            if (definitionSidecarTools.has(toolName)) {
+              if (
+                !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))
+              )
+                return { behavior: "allow", updatedInput: toolInput };
+            } else {
+              const decision = definitionDecision(
+                spec,
+                toolName,
+                toolInput as Record<string, unknown>,
+                currentMode,
+                WORKTREE_PATH,
+                [...grants],
+              );
+              if (decision.behavior === "allow")
+                return { behavior: "allow", updatedInput: toolInput };
+              if (decision.behavior === "deny") return decision;
+              noGrant = decision.noGrant === true;
+            }
+            // "ask": the ordinary prompt below. definitionDecision already
+            // decided what the fleet's auto allows (docs/adr/0076 §2), so the
+            // repo-session auto branch below is skipped.
+          } else if (
+            FLEET_OWN_TOOL.test(toolName) &&
+            !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))
+          ) {
+            // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
+            return { behavior: "allow", updatedInput: toolInput };
+          }
+          // toolInput passes through untouched, and that is the whole point:
+          // what the permission_request below carries is what the resolver
+          // hands back as updatedInput, so the command a human reads is the
+          // command that runs. This used to sit between the two — an rtk
+          // rewrite that compacted the command's output after the request had
+          // already been posted with the original text (docs/adr/0046). It is
+          // gone (issue #229): rtk is a prefix the agent types when it wants
+          // one, which fleet-shared/CLAUDE.md asks it to do, and nothing in
+          // this process rewrites a call on the agent's behalf.
+          //
+          // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
+          // leaving `auto` is a live control request, so this has to read what
+          // the session is in now.
+          if (
+            !spec &&
+            currentMode === "auto" &&
+            toolName !== "ExitPlanMode" &&
+            !autoModeStillAsksCommand(
               toolName,
               toolInput as Record<string, unknown>,
-              currentMode,
-              WORKTREE_PATH,
-              [...grants],
-            );
-            if (decision.behavior === "allow")
-              return { behavior: "allow", updatedInput: toolInput };
-            if (decision.behavior === "deny") return decision;
-            noGrant = decision.noGrant === true;
+            )
+          ) {
+            return { behavior: "allow", updatedInput: toolInput };
           }
-          // "ask": the ordinary prompt below. definitionDecision already
-          // decided what the fleet's auto allows (docs/adr/0076 §2), so the
-          // repo-session auto branch below is skipped.
-        } else if (
-          FLEET_OWN_TOOL.test(toolName) &&
-          !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))
-        ) {
-          // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
-          return { behavior: "allow", updatedInput: toolInput };
-        }
-        // toolInput passes through untouched, and that is the whole point:
-        // what the permission_request below carries is what the resolver
-        // hands back as updatedInput, so the command a human reads is the
-        // command that runs. This used to sit between the two — an rtk
-        // rewrite that compacted the command's output after the request had
-        // already been posted with the original text (docs/adr/0046). It is
-        // gone (issue #229): rtk is a prefix the agent types when it wants
-        // one, which fleet-shared/CLAUDE.md asks it to do, and nothing in
-        // this process rewrites a call on the agent's behalf.
-        //
-        // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
-        // leaving `auto` is a live control request, so this has to read what
-        // the session is in now.
-        if (
-          !spec &&
-          currentMode === "auto" &&
-          toolName !== "ExitPlanMode" &&
-          !autoModeStillAsksCommand(
-            toolName,
-            toolInput as Record<string, unknown>,
+          // Where the gate would ask: a human may already have approved this
+          // exact call once (docs/adr/0082 §5), after an earlier ask of it timed
+          // out. A plan is never a grant.
+          if (
+            nonBlocking &&
+            toolName !== "ExitPlanMode" &&
+            (await spendGrant(toolName, toolInput as Record<string, unknown>))
           )
-        ) {
-          return { behavior: "allow", updatedInput: toolInput };
-        }
-        // Where the gate would ask: a human may already have approved this
-        // exact call once (docs/adr/0082 §5), after an earlier ask of it timed
-        // out. A plan is never a grant.
-        if (
-          nonBlocking &&
-          toolName !== "ExitPlanMode" &&
-          (await spendGrant(toolName, toolInput as Record<string, unknown>))
-        )
-          return { behavior: "allow", updatedInput: toolInput };
-        const seq = await sidecar
-          .pushMessage(
-            "agent",
-            JSON.stringify({
-              tool: toolName,
-              input: toolInput,
-              ...(noGrant ? { noGrant: true } : {}),
-              ...(nonBlocking ? NON_BLOCKING_STAMP : {}),
-            }),
-            "permission_request",
-          )
-          .catch((err) => {
-            log("warn", "permission_request push failed", {
-              toolName,
-              error: String(err),
+            return { behavior: "allow", updatedInput: toolInput };
+          const seq = await sidecar
+            .pushMessage(
+              "agent",
+              JSON.stringify({
+                tool: toolName,
+                input: toolInput,
+                ...(noGrant ? { noGrant: true } : {}),
+                ...(nonBlocking ? NON_BLOCKING_STAMP : {}),
+              }),
+              "permission_request",
+            )
+            .catch((err) => {
+              log("warn", "permission_request push failed", {
+                toolName,
+                error: String(err),
+              });
+              return null;
             });
-            return null;
-          });
-        if (seq === null) {
-          return {
-            behavior: "deny",
-            message:
-              "Could not reach the dashboard to request permission — try again.",
-          };
-        }
-        // core answers an identical open request with its existing seq. A twin
-        // of one still parked here is refused at once. One this pod let go of
-        // parks again on that seq for one more wait, so a retry loop runs at
-        // most once per wait, and an answer meanwhile runs it as usual.
-        if (pendingPermissions.has(seq)) {
-          return {
-            behavior: "deny",
-            message: `Duplicate of pending request seq ${seq}. Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
-          };
-        }
-        released.delete(seq);
-        const signal = options?.signal;
-        return new Promise<PermissionResult>((resolve) => {
-          // A timeout records nothing: the decision stays open for a human,
-          // and the text never quotes the input back.
-          const timer = nonBlocking
-            ? setTimeout(
-                () =>
-                  release(seq, {
-                    behavior: "deny",
-                    message: `Pending (request seq ${seq}). Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
-                  }),
-                waitMs,
-              )
-            : undefined;
-          const onAbort = () =>
-            release(seq, {
+          if (seq === null) {
+            return {
               behavior: "deny",
-              message: `The call was aborted (request seq ${seq}).`,
+              message:
+                "Could not reach the dashboard to request permission — try again.",
+            };
+          }
+          // core answers an identical open request with its existing seq. A twin
+          // of one still parked here is refused at once. One this pod let go of
+          // parks again on that seq for one more wait, so a retry loop runs at
+          // most once per wait, and an answer meanwhile runs it as usual.
+          if (pendingPermissions.has(seq)) {
+            return {
+              behavior: "deny",
+              message: `Duplicate of pending request seq ${seq}. Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
+            };
+          }
+          released.delete(seq);
+          const signal = options?.signal;
+          return new Promise<PermissionResult>((resolve) => {
+            // A timeout records nothing: the decision stays open for a human,
+            // and the text never quotes the input back.
+            const timer = nonBlocking
+              ? setTimeout(
+                  () =>
+                    release(seq, {
+                      behavior: "deny",
+                      message: `Pending (request seq ${seq}). Do not retry; a message arrives when it is answered. Do what does not need it, or end your turn.`,
+                    }),
+                  waitMs,
+                )
+              : undefined;
+            const onAbort = () =>
+              release(seq, {
+                behavior: "deny",
+                message: `The call was aborted (request seq ${seq}).`,
+              });
+            signal?.addEventListener("abort", onAbort, { once: true });
+            pendingPermissions.set(seq, {
+              resolve,
+              input: toolInput as Record<string, unknown>,
+              tool: toolName,
+              timer,
+              unlisten: () => signal?.removeEventListener("abort", onAbort),
             });
-          signal?.addEventListener("abort", onAbort, { once: true });
-          pendingPermissions.set(seq, {
-            resolve,
-            input: toolInput as Record<string, unknown>,
-            tool: toolName,
-            timer,
-            unlisten: () => signal?.removeEventListener("abort", onAbort),
+            if (signal?.aborted) onAbort();
           });
-          if (signal?.aborted) onAbort();
-        });
+        },
+        mcpServers: {
+          "agent-fleet-sidecar": sidecarMcpServer(),
+          // Always registered, and deliberately NOT gated on the browser binaries
+          // being present. They arrive on a read-only mount rather than in the
+          // image now (worker/Dockerfile), so "not there yet" is a transient
+          // bootstrap state on a fresh cluster — and a browser_navigate that
+          // fails loudly with playwright's own "browser not installed" is worth
+          // more than a session that silently has no browser tools at all. The
+          // latter is exactly docs/adr/0044's failure mode.
+          playwright: playwrightMcpServer(),
+        },
+        // "user": CLAUDE_CONFIG_DIR (provisioner/internal/k8s/pod.go) points
+        // at the shared PVC, provisioner-synced by git.Manager.SyncFleetShared
+        // (docs/adr/0032) — Claude Code discovers CLAUDE.md/settings.json/
+        // skills/ there natively, no plugins: entry needed.
+        //
+        // "project" (docs/adr/0049, resolving adr/0032's deferred question):
+        // the target repo's own CLAUDE.md and .claude/skills/, relative to cwd
+        // = WORKTREE_PATH. Without it a worker on agent-fleet never read
+        // agent-fleet's own CLAUDE.md — it was working from the fleet-shared
+        // one alone.
+        //
+        // It also merges the target repo's .claude/settings.json
+        // permissions.allow, and an allow rule removes canUseTool from the
+        // path entirely (same authority as allowedTools above). What stops a
+        // repo self-approving its own `gh api` is FLEET_ASK_RULES, injected
+        // above through `settings` rather than shipped in fleet-shared's own
+        // settings.json (docs/adr/0052): the evaluator returns on the first
+        // matching ask rule, before any allow rule and before the permission
+        // mode's own short-circuit, so a flag-scope ask outranks a
+        // project-scope allow.
+        //
+        // Deliberately NOT "local": .claude/settings.local.json is gitignored,
+        // so nothing about it is reviewable in the PR that lands it.
+        //
+        // A definition session drops "project" (docs/adr/0067 §4): the target
+        // repo's allow rules, hooks, env and plugins are never read; its memory
+        // loads through additionalDirectories above.
+        settingSources: spec ? ["user"] : ["user", "project"],
+        maxTurns: spec?.maxTurns ? spec.maxTurns : MAX_TURNS,
+        // The definition's thinking and prompt (docs/adr/0067 §4). systemPrompt
+        // is otherwise unset, which the SDK sends as an empty custom prompt, so a
+        // plain string IS "append" to what this worker runs today.
+        // `effort` is the repo session's pick or the definition's thinking
+        // (see above). Unset, both are omitted and the CLI decides.
+        ...(effort ? { effort, thinking: { type: "adaptive" as const } } : {}),
+        ...(spec?.systemPromptAppend
+          ? { systemPrompt: spec.systemPromptAppend }
+          : {}),
+        abortController,
       },
-      mcpServers: {
-        "agent-fleet-sidecar": sidecarMcpServer(),
-        // Always registered, and deliberately NOT gated on the browser binaries
-        // being present. They arrive on a read-only mount rather than in the
-        // image now (worker/Dockerfile), so "not there yet" is a transient
-        // bootstrap state on a fresh cluster — and a browser_navigate that
-        // fails loudly with playwright's own "browser not installed" is worth
-        // more than a session that silently has no browser tools at all. The
-        // latter is exactly docs/adr/0044's failure mode.
-        playwright: playwrightMcpServer(),
-      },
-      // "user": CLAUDE_CONFIG_DIR (provisioner/internal/k8s/pod.go) points
-      // at the shared PVC, provisioner-synced by git.Manager.SyncFleetShared
-      // (docs/adr/0032) — Claude Code discovers CLAUDE.md/settings.json/
-      // skills/ there natively, no plugins: entry needed.
-      //
-      // "project" (docs/adr/0049, resolving adr/0032's deferred question):
-      // the target repo's own CLAUDE.md and .claude/skills/, relative to cwd
-      // = WORKTREE_PATH. Without it a worker on agent-fleet never read
-      // agent-fleet's own CLAUDE.md — it was working from the fleet-shared
-      // one alone.
-      //
-      // It also merges the target repo's .claude/settings.json
-      // permissions.allow, and an allow rule removes canUseTool from the
-      // path entirely (same authority as allowedTools above). What stops a
-      // repo self-approving its own `gh api` is FLEET_ASK_RULES, injected
-      // above through `settings` rather than shipped in fleet-shared's own
-      // settings.json (docs/adr/0052): the evaluator returns on the first
-      // matching ask rule, before any allow rule and before the permission
-      // mode's own short-circuit, so a flag-scope ask outranks a
-      // project-scope allow.
-      //
-      // Deliberately NOT "local": .claude/settings.local.json is gitignored,
-      // so nothing about it is reviewable in the PR that lands it.
-      //
-      // A definition session drops "project" (docs/adr/0067 §4): the target
-      // repo's allow rules, hooks, env and plugins are never read; its memory
-      // loads through additionalDirectories above.
-      settingSources: spec ? ["user"] : ["user", "project"],
-      maxTurns: spec?.maxTurns ? spec.maxTurns : MAX_TURNS,
-      // The definition's thinking and prompt (docs/adr/0067 §4). systemPrompt
-      // is otherwise unset, which the SDK sends as an empty custom prompt, so a
-      // plain string IS "append" to what this worker runs today.
-      // `effort` is the repo session's pick or the definition's thinking
-      // (see above). Unset, both are omitted and the CLI decides.
-      ...(effort ? { effort, thinking: { type: "adaptive" as const } } : {}),
-      ...(spec?.systemPromptAppend
-        ? { systemPrompt: spec.systemPromptAppend }
-        : {}),
-      abortController,
-    },
-  });
-  // query() returns at once and starts the CLI behind it; the first message
-  // (in streaming-input mode, after the first input is queued) says it is up.
-  const queryReturnedNs = nowNs();
-  spans.startupStep("worker.query_start", queryStartNs, queryReturnedNs);
+    });
+    // query() returns at once and starts the CLI behind it; the first message
+    // (in streaming-input mode, after the first input is queued) says it is up.
+    if (th.primary) {
+      queryReturnedNs = nowNs();
+      spans.startupStep("worker.query_start", queryStartNs, queryReturnedNs);
+    }
+    threads.set(key, th);
+    onThreadStarted?.(th);
+    return th;
+  }
+  // A session that is not standing has its one SDK session from the start, as before threads.
+  if (!standing) startThread("main", RESUME_SESSION_ID);
   let firstMessage = true;
 
   // q.interrupt() is not guaranteed to settle, so it is never awaited bare.
@@ -1942,10 +2012,10 @@ export async function runSession(): Promise<SessionResult> {
   //
   // 5s is far beyond a healthy round-trip; if it elapses, the channel is gone
   // and abortController.abort() is what actually ends the session anyway.
-  const interruptSafely = async (what: string) => {
+  const interruptSafely = async (th: SdkThread, what: string) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
-      q.interrupt().catch((err) =>
+      th.q.interrupt().catch((err) =>
         log("warn", `${what} failed`, {
           taskId: SESSION_ID,
           error: String(err),
@@ -1965,6 +2035,137 @@ export async function runSession(): Promise<SessionResult> {
     clearTimeout(timer);
   };
 
+  // Every thread's SDK session takes a permission mode together: the mode is the session's, not a thread's. The
+  // first failure, or null.
+  async function setModeEverywhere(
+    mode: PermissionMode,
+  ): Promise<string | null> {
+    for (const t of threads.values()) {
+      const failure = await t.q
+        .setPermissionMode(spec ? sdkMode(mode) : mode)
+        .then(() => null)
+        .catch((err) => String(err));
+      if (failure !== null) return failure;
+    }
+    return null;
+  }
+
+  const anyRunning = () => [...threads.values()].some((t) => t.outstanding > 0);
+
+  // Hands a turn to the thread's SDK session. A standing thread counts it, and the first turn of a run arms the
+  // deadline and names the thread and entry to the sidecar, so every call meanwhile lands in that thread
+  // (docs/adr/0084 §4). outstanding moves before any await, so two callers never both find nothing running.
+  async function startTurn(th: SdkThread, text: string): Promise<void> {
+    if (!standing) {
+      th.input.push(text);
+      return;
+    }
+    th.outstanding++;
+    if (th.outstanding === 1) {
+      th.cut = false;
+      await sidecar.setTurn(th.key, th.lastSeq).catch((err) =>
+        log("warn", "setTurn failed", {
+          taskId: SESSION_ID,
+          error: String(err),
+        }),
+      );
+      th.deadline = setTimeout(() => void expireTurn(th), turnDeadlineMs());
+      th.deadline.unref?.();
+    }
+    th.input.push(text);
+  }
+  // A follow-up (an answer, a permission outcome) goes straight into a thread that is running. Otherwise it waits at
+  // its thread's head, so only one thread runs and runNext starts it in seq order (docs/adr/0084 §4). th.taken is
+  // the entry being handled.
+  function push(th: SdkThread, text: string): void {
+    if (standing && th.outstanding === 0) void submit(th, th.taken, text);
+    else void startTurn(th, text);
+  }
+
+  // The thread's turn ended: when nothing else is queued in it, it stops running and the lowest waiting head
+  // across threads runs next (docs/adr/0084 §4).
+  async function turnEnded(
+    th: SdkThread,
+    queued: number | undefined,
+  ): Promise<void> {
+    th.outstanding = Math.max(queued ?? 0, th.input.pending);
+    if (th.outstanding > 0) return;
+    clearTimeout(th.deadline);
+    await sidecar.setTurn("", 0).catch(() => {});
+    await runNext();
+  }
+
+  async function runNext(): Promise<void> {
+    if (!standing || anyRunning() || aborted) return;
+    let best: SdkThread | undefined;
+    for (const t of threads.values())
+      if (
+        t.waiting[0] &&
+        (!best || t.waiting[0].seq < (best.waiting[0]?.seq ?? Infinity))
+      )
+        best = t;
+    const next = best?.waiting.shift();
+    if (!best || !next) return;
+    best.lastSeq = next.seq;
+    await startTurn(best, next.text);
+  }
+
+  // A message entry: it runs now when no thread is running, else it waits at the head of its own thread.
+  async function submit(
+    th: SdkThread,
+    seq: number,
+    text: string,
+  ): Promise<void> {
+    if (!standing) {
+      th.input.push(text);
+      return;
+    }
+    th.waiting.push({ seq, text });
+    await runNext();
+  }
+
+  // The deadline aborts the turn: the SDK is interrupted, nothing parked on it waits, and the thread's next entry runs.
+  async function expireTurn(th: SdkThread): Promise<void> {
+    if (th.ended || th.outstanding === 0) return;
+    log("warn", "turn deadline", { taskId: SESSION_ID, thread: th.key });
+    resolveAllPendingDeny("The turn passed its deadline.", true);
+    await interruptSafely(th, "turn deadline");
+    await sidecar
+      .pushMessage(
+        "agent",
+        "The turn passed its deadline and was aborted.",
+        "system",
+        undefined,
+        undefined,
+        th.key,
+      )
+      .catch(() => {});
+    th.outstanding = 0;
+    th.cut = true;
+    // Moves the thread's cursor past the aborted entry even when the SDK never emits a result.
+    await pushResult(
+      "agent",
+      { subtype: "deadline", is_error: true },
+      consumedFor(th),
+      false,
+      th,
+    );
+    await turnEnded(th, 0);
+  }
+
+  // One thread ends: its SDK session is aborted and forgotten, and a later entry for the key starts afresh.
+  async function endThread(th: SdkThread): Promise<void> {
+    th.ended = true;
+    clearTimeout(th.deadline);
+    th.waiting = [];
+    const wasRunning = th.outstanding > 0;
+    th.outstanding = 0;
+    th.abort.abort();
+    threads.delete(th.key);
+    endedKeys.add(th.key);
+    if (wasRunning) await turnEnded(th, 0);
+  }
+
   // A plan approved after its ExitPlanMode call let go (docs/adr/0082 §5),
   // while the SDK is still in plan mode: nothing is parked to move it out, so
   // this does, into default, else the definition's first allowed mode that is
@@ -1973,6 +2174,7 @@ export async function runSession(): Promise<SessionResult> {
   // out of plan before the allow arrives.
   // Never throws: it runs inside onEntry.
   async function approvePlanLate(
+    th: SdkThread,
     seq: number,
     plan: Record<string, unknown> | undefined,
   ): Promise<void> {
@@ -1982,10 +2184,7 @@ export async function runSession(): Promise<SessionResult> {
     ) as PermissionMode | undefined;
     const failure = !target
       ? "no mode to leave plan mode into"
-      : await q
-          .setPermissionMode(spec ? sdkMode(target) : target)
-          .then(() => null)
-          .catch((err) => String(err));
+      : await setModeEverywhere(target);
     if (!target || failure !== null) {
       log("warn", "leaving plan mode for a late approval failed", {
         taskId: SESSION_ID,
@@ -1993,7 +2192,7 @@ export async function runSession(): Promise<SessionResult> {
         error: failure,
       });
       planRetry = plan;
-      input.push(`Approved: retry request seq ${seq} once.`);
+      push(th, `Approved: retry request seq ${seq} once.`);
       return;
     }
     currentMode = target;
@@ -2003,7 +2202,8 @@ export async function runSession(): Promise<SessionResult> {
         error: String(err),
       }),
     );
-    input.push(
+    push(
+      th,
       `Plan approved (request seq ${seq}); now in ${target} mode. Go ahead with the plan.`,
     );
   }
@@ -2043,6 +2243,45 @@ export async function runSession(): Promise<SessionResult> {
   const humanMessagesDone = sidecar
     .streamHumanMessages(
       takeIn(async (entry) => {
+        const key = standing ? entry.threadKey || "main" : "main";
+        // Stop (an abort in main) ends the whole character; an abort in another thread is that thread's close
+        // (docs/adr/0084 §4), which ends only its SDK session. One for a thread this pod never started does nothing.
+        if (standing && entry.type === "abort" && key !== "main") {
+          const t = threads.get(key);
+          if (t) {
+            if (t.outstanding > 0)
+              resolveAllPendingDeny("The thread was closed.", true);
+            await interruptSafely(t, "thread close");
+            await endThread(t);
+          } else endedKeys.add(key);
+          return;
+        }
+        if (entry.type === "abort") {
+          aborted = true;
+          resolveAllPendingDeny(
+            `${senderOf(entry.authorName, !!spec) ?? "Mohammad"} stopped the session.`,
+            true,
+          );
+          // See the interrupt note below: abort() is what guarantees the sessions end.
+          for (const t of threads.values())
+            await interruptSafely(t, "interrupt");
+          for (const t of threads.values()) t.abort.abort();
+          stopStanding?.();
+          return;
+        }
+        const th =
+          threads.get(key) ??
+          startThread(
+            key,
+            key === "main"
+              ? RESUME_SESSION_ID
+              : endedKeys.has(key)
+                ? undefined
+                : session.threadSessionIds?.[key],
+          );
+        endedKeys.delete(key);
+        th.taken = Math.max(th.taken, entry.seq);
+        th.lastSeq = entry.seq;
         // An "answer" to an AskUserQuestion. While a pod is live and its
         // AskUserQuestion tool call is mid-flight, core's own poll loop
         // consumes the answer and returns it as the tool_result — nothing to
@@ -2060,32 +2299,14 @@ export async function runSession(): Promise<SessionResult> {
         // it ever actually bites.
         if (entry.type === "answer") {
           openQuestions = Math.max(0, openQuestions - 1);
-          input.push(
+          push(
+            th,
             formatAnswerTurn(
               entry.text,
               entry.replyTo,
               senderOf(entry.authorName, !!spec),
             ),
           );
-          return;
-        }
-        if (entry.type === "abort") {
-          aborted = true;
-          // Nothing pending has anything left to wait for — deny it all so
-          // no promise dangles past the session teardown below.
-          resolveAllPendingDeny(
-            `${senderOf(entry.authorName, !!spec) ?? "Mohammad"} stopped the session.`,
-            true,
-          );
-          // interrupt() is graceful but only meaningful mid-turn — if the
-          // session is idle (paused between rounds, waiting for the next
-          // streamed input, the common case for an unprompted /stop),
-          // there's nothing active for it to interrupt and the `for await`
-          // loop below would otherwise hang forever waiting for a message
-          // that will never come. abortController.abort() guarantees the
-          // underlying session actually ends either way.
-          await interruptSafely("interrupt");
-          abortController.abort();
           return;
         }
         // A soft interrupt (DashboardService.Interrupt) — stops only the
@@ -2105,7 +2326,9 @@ export async function runSession(): Promise<SessionResult> {
               true,
             );
           }
-          await interruptSafely("soft interrupt");
+          for (const t of threads.values())
+            if (!standing || t.outstanding > 0)
+              await interruptSafely(t, "soft interrupt");
           return;
         }
         // The human's allow/deny decision for a specific permission_request,
@@ -2198,7 +2421,7 @@ export async function runSession(): Promise<SessionResult> {
                 ? decision.planInput
                 : undefined;
             if (plan && currentMode === "plan") {
-              await approvePlanLate(seq, call?.input ?? carried);
+              await approvePlanLate(th, seq, call?.input ?? carried);
               return;
             }
             // The session already left plan mode (the approval named a mode),
@@ -2206,16 +2429,17 @@ export async function runSession(): Promise<SessionResult> {
             // ExitPlanMode the agent still sends with this plan runs unasked.
             if (plan && !call && carried) {
               planRetry = carried;
-              input.push(
+              push(
+                th,
                 `Plan approved (request seq ${seq}); now in ${currentMode} mode. Go ahead with the plan.`,
               );
               return;
             }
             // Only a plan this pod held: its input is what the retry must match.
             if (plan && call) planRetry = call.input;
-            input.push(`Approved: retry request seq ${seq} once.`);
+            push(th, `Approved: retry request seq ${seq} once.`);
           } else if (decision.behavior === "deny") {
-            input.push(`Request seq ${seq} was denied. ${reason}`);
+            push(th, `Request seq ${seq} was denied. ${reason}`);
           }
           return;
         }
@@ -2246,10 +2470,7 @@ export async function runSession(): Promise<SessionResult> {
           const failure =
             spec && !spec.modeAllow.includes(mode)
               ? "not one of this definition's modes"
-              : await q
-                  .setPermissionMode(spec ? sdkMode(mode) : mode)
-                  .then(() => null)
-                  .catch((err) => String(err));
+              : await setModeEverywhere(mode);
           if (failure !== null) {
             log("warn", "setPermissionMode failed", {
               taskId: SESSION_ID,
@@ -2300,6 +2521,23 @@ export async function runSession(): Promise<SessionResult> {
         // teardown path as abort (interrupt the current turn, then
         // abortController.abort() so an idle between-rounds session doesn't
         // hang), but preceded by clearing the resume identity.
+        if (standing && /^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
+          // One thread starts over: its SDK session id is dropped and the next entry opens a fresh one.
+          planRetry = undefined;
+          if (th.outstanding > 0)
+            resolveAllPendingDeny("Conversation cleared.", true, true);
+          await sidecar
+            .saveSessionId("", initModel, key === "main" ? undefined : key)
+            .catch((err) =>
+              log("warn", "saveSessionId(clear) failed", {
+                taskId: SESSION_ID,
+                error: String(err),
+              }),
+            );
+          await interruptSafely(th, "clear");
+          await endThread(th);
+          return;
+        }
         if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
           aborted = true;
           planRetry = undefined;
@@ -2322,15 +2560,19 @@ export async function runSession(): Promise<SessionResult> {
               "system",
             )
             .catch(() => {});
-          await interruptSafely("clear");
-          abortController.abort();
+          await interruptSafely(th, "clear");
+          th.abort.abort();
           return;
         }
         // from === "human", not just "anything that got this far": a peer
         // session's message must not cut short a call parked on a human's
         // decision. Skipping the branch swallows nothing — input.push below
         // still delivers the peer's message as a real turn.
-        if (entry.from === "human" && pendingPermissions.size > 0) {
+        if (
+          entry.from === "human" &&
+          pendingPermissions.size > 0 &&
+          (!standing || th.outstanding > 0)
+        ) {
           // A plain reply while something's parked is feedback, not an
           // answer — deny every parked call with it (same as choosing "No,
           // keep planning" with guidance in Claude Code CLI's own ExitPlanMode
@@ -2346,7 +2588,9 @@ export async function runSession(): Promise<SessionResult> {
             `${sender ?? "Mohammad"} replied (not an approval): ${sender ? quoteEnvelopes(entry.text) : entry.text}`,
           );
         }
-        input.push(
+        await submit(
+          th,
+          entry.seq,
           entry.from === "session"
             ? peerTurn(entry.text)
             : humanTurn(entry.text, senderOf(entry.authorName, !!spec)),
@@ -2374,6 +2618,7 @@ export async function runSession(): Promise<SessionResult> {
   async function exitWhenDone(
     queuedTurns: number | undefined,
   ): Promise<boolean> {
+    const input = threads.get("main")?.input ?? new InputQueue();
     const pushes = input.pushes;
     const holdUntil = Date.now() + waitMs;
     for (;;) {
@@ -2407,12 +2652,11 @@ export async function runSession(): Promise<SessionResult> {
     }
   }
 
-  let sessionId = "";
   // The SDK re-emits init every turn; only the first one says what launch got.
   let launchChecked = false;
 
-  async function driveQuery(): Promise<void> {
-    for await (const msg of q) {
+  async function driveQuery(th: SdkThread): Promise<void> {
+    for await (const msg of th.q) {
       if (firstMessage) {
         firstMessage = false;
         const m = msg as { type: string; subtype?: unknown };
@@ -2428,9 +2672,10 @@ export async function runSession(): Promise<SessionResult> {
           },
         );
       }
-      if (!sessionId && "session_id" in msg) {
-        sessionId = msg.session_id as string;
-        spans.startupStep("worker.session_id", queryReturnedNs);
+      if (!th.sessionId && "session_id" in msg) {
+        const sessionId = msg.session_id as string;
+        th.sessionId = sessionId;
+        if (th.primary) spans.startupStep("worker.session_id", queryReturnedNs);
         // Identity re-check (docs/adr/0041). We asked the SDK to resume a
         // specific session; if what came back is a different id, the resume
         // did not happen and this agent is starting from nothing — no prior
@@ -2442,10 +2687,10 @@ export async function runSession(): Promise<SessionResult> {
         // session that works beats refusing to run. But it says so, loudly
         // and durably, so a session that quietly forgot everything is
         // visible rather than merely confusing.
-        if (RESUME_SESSION_ID && RESUME_SESSION_ID !== sessionId) {
+        if (th.resumeId && th.resumeId !== sessionId) {
           log("error", "resume failed: SDK returned a different session id", {
             taskId: SESSION_ID,
-            requested: RESUME_SESSION_ID,
+            requested: th.resumeId,
             got: sessionId,
           });
           await sidecar
@@ -2453,14 +2698,14 @@ export async function runSession(): Promise<SessionResult> {
               "agent",
               JSON.stringify({
                 sdk: "resume_failed",
-                requested: RESUME_SESSION_ID,
+                requested: th.resumeId,
                 got: sessionId,
               }),
               "system",
             )
             .catch(() => {});
         }
-        input.setSessionId(sessionId);
+        th.input.setSessionId(sessionId);
         // Save the session ID now, with init's model when this message is
         // init. If it is not (a SessionStart/Setup hook message carries a
         // session_id too and can arrive first), "" leaves the row's model
@@ -2469,21 +2714,29 @@ export async function runSession(): Promise<SessionResult> {
           initModel = msg.model;
         const saveStartNs = nowNs();
         let saved = true;
-        await sidecar.saveSessionId(sessionId, initModel).catch((err) => {
-          saved = false;
-          log("warn", "saveSessionId failed", {
-            taskId: SESSION_ID,
-            error: String(err),
+        await sidecar
+          .saveSessionId(
+            sessionId,
+            initModel,
+            th.key === "main" ? undefined : th.key,
+          )
+          .catch((err) => {
+            saved = false;
+            log("warn", "saveSessionId failed", {
+              taskId: SESSION_ID,
+              error: String(err),
+            });
           });
-        });
-        spans.startupStep(
-          "worker.save_session_id",
-          saveStartNs,
-          undefined,
-          saved ? {} : { "error.type": "save_failed" },
-          saved ? "ok" : "error",
-        );
-        spans.startupEnd();
+        if (th.primary) {
+          spans.startupStep(
+            "worker.save_session_id",
+            saveStartNs,
+            undefined,
+            saved ? {} : { "error.type": "save_failed" },
+            saved ? "ok" : "error",
+          );
+          spans.startupEnd();
+        }
         // Also persist the initial permission mode if not already set. This
         // ensures the mode shows up in the dashboard instead of "?".
         if (!session.permissionMode) {
@@ -2506,15 +2759,21 @@ export async function runSession(): Promise<SessionResult> {
         // unless the session-id save above already sent it.
         if (!initModel) {
           initModel = msg.model;
-          await sidecar.saveSessionId(sessionId, initModel).catch((err) =>
-            log("warn", "saveSessionId(init) failed", {
-              taskId: SESSION_ID,
-              error: String(err),
-            }),
-          );
+          await sidecar
+            .saveSessionId(
+              th.sessionId,
+              initModel,
+              th.key === "main" ? undefined : th.key,
+            )
+            .catch((err) =>
+              log("warn", "saveSessionId(init) failed", {
+                taskId: SESSION_ID,
+                error: String(err),
+              }),
+            );
         }
         // Not awaited: a control request can hang with the CLI (see q.interrupt).
-        void reportContext(q).catch((err) =>
+        void reportContext(th.q).catch((err) =>
           log("warn", "context report failed", {
             taskId: SESSION_ID,
             error: String(err),
@@ -2570,6 +2829,11 @@ export async function runSession(): Promise<SessionResult> {
       }
 
       if (msg.type === "result") {
+        // The late result of a turn the deadline already cut: that turn ended and its result was written then.
+        if (standing && (th.cut || th.ended)) {
+          th.cut = false;
+          continue;
+        }
         // docs/adr/0070 §6: a single-shot pod's last result says so, and is
         // written only once this pod is sure it is the last.
         const exit =
@@ -2579,10 +2843,17 @@ export async function runSession(): Promise<SessionResult> {
         await pushResult(
           "agent",
           msg as unknown as Record<string, unknown>,
-          consumedSeq,
+          standing ? consumedFor(th) : consumedSeq,
           exit,
+          standing ? th : undefined,
         );
         if (aborted) break;
+        if (standing) {
+          // A failed turn ends the turn, never the character: the thread's next entry runs (docs/adr/0084 §4).
+          softInterrupted = false;
+          await turnEnded(th, msg.queued_turn_count);
+          continue;
+        }
         if (exit) {
           // The pod's input is used up: end the query, then index.ts exits
           // explicitly. A non-success exit still fails the pod (the throw
@@ -2624,8 +2895,36 @@ export async function runSession(): Promise<SessionResult> {
     }
   }
 
+  // A standing character runs until its Stop or a thread's SDK session fails; each thread has its own driver.
+  let stopStanding: (() => void) | undefined;
+  let standingFailure: unknown;
+  const stopped = new Promise<void>((resolve) => {
+    stopStanding = resolve;
+  });
+  const drivers = new Set<Promise<void>>();
+  const driveStarted = standing
+    ? (th: SdkThread) => {
+        const d = driveQuery(th).then(
+          () => {},
+          (err) => {
+            if (aborted || th.ended) return;
+            standingFailure = err;
+            stopStanding?.();
+          },
+        );
+        drivers.add(d);
+      }
+    : undefined;
+  if (driveStarted) onThreadStarted = driveStarted;
+
   try {
-    await driveQuery();
+    if (standing) {
+      await stopped;
+      if (standingFailure && !aborted) throw standingFailure;
+    } else {
+      const main = threads.get("main");
+      if (main) await driveQuery(main);
+    }
   } catch (err) {
     // An aborted session throws (real SDK: AbortError; the fake mock
     // mirrors this) — expected once `aborted` is already set, not a real
@@ -2633,7 +2932,11 @@ export async function runSession(): Promise<SessionResult> {
     if (!aborted) throw err;
   } finally {
     humanMessagesAbort.abort();
-    abortController.abort();
+    for (const t of threads.values()) {
+      clearTimeout(t.deadline);
+      t.abort.abort();
+    }
+    await Promise.allSettled(drivers);
     // Nothing left to answer them, and their timers would hold the process.
     resolveAllPendingDeny("The session ended.");
     await humanMessagesDone;

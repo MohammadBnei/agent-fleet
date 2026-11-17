@@ -37,6 +37,7 @@ func (s *Server) DraftCard(ctx context.Context, req *agentfleetv1.DraftCardReque
 	if spec == nil || !slices.Contains(spec.GetSidecarTools(), "draft_card") {
 		return nil, status.Error(codes.PermissionDenied, "this definition does not grant draft_card")
 	}
+	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 	r, err := s.decisions.Draft(ctx, s.transcr, decisions.Draft{
 		SessionID: req.GetSessionId(), From: "agent", IdempotencyKey: req.GetIdempotencyKey(),
 		Ask: req.GetAsk(), Subject: req.GetSubject(), Options: req.GetOptions(), WriteOwn: req.GetWriteOwn(),
