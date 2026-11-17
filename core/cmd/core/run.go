@@ -530,6 +530,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		}
 		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
 		dispatcher.SetCards(decisionStore, activityStore)
+		dispatcher.SetCharacters(dashboardSvc.WarmForAppend, "client/"+cfg.Bridge.Username)
 		// First responders (docs/adr/0086 §3): an alert a responder definition subscribes to starts its run, and
 		// the webhook files no proposal for it.
 		remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
