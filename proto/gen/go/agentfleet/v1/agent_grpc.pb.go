@@ -82,6 +82,8 @@ type AgentServiceClient interface {
 	Open(ctx context.Context, in *OpenRequest, opts ...grpc.CallOption) (*OpenResponse, error)
 	CloseThread(ctx context.Context, in *CloseThreadRequest, opts ...grpc.CallOption) (*CloseThreadResponse, error)
 	Invoke(ctx context.Context, in *InvokeRequest, opts ...grpc.CallOption) (*InvokeResponse, error)
+	// CoreService.WaitForSpawn shares the response.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(ctx context.Context, in *WaitForResultRequest, opts ...grpc.CallOption) (*WaitForResultResponse, error)
 }
 
@@ -352,6 +354,8 @@ type AgentServiceServer interface {
 	Open(context.Context, *OpenRequest) (*OpenResponse, error)
 	CloseThread(context.Context, *CloseThreadRequest) (*CloseThreadResponse, error)
 	Invoke(context.Context, *InvokeRequest) (*InvokeResponse, error)
+	// CoreService.WaitForSpawn shares the response.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(context.Context, *WaitForResultRequest) (*WaitForResultResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }

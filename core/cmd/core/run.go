@@ -175,6 +175,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// Defined agents (docs/adr/0062) sync on the same pass, first run
 	// immediate. Its own timeout keeps a slow fetch inside the 60s interval.
 	defs := definitions.NewRegistry(pool, provisioner)
+	defs.SetCheck(func(heads []definitions.Head) error { return checkSpawnPool(heads, cfg.MaxDefinitionSessions) })
 	// After each GOOD sync, the full set of valid definitions' vaults goes to
 	// the provisioner, which makes the vaults match git (docs/adr/0065 §2).
 	// Core commands, the provisioner executes; core sends key names, never
@@ -219,6 +220,17 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			vaultErrs = reconcileVaults(ctx, provisioner, vaults, vaultErrs)
 		}()
 	})
+	// docs/adr/0084 §6: the characters' spawn sub-pools must fit the definition pool. The registry refuses a sync
+	// that breaks it (ErrCheck), so such a push never goes live; a bad pair at startup refuses to start. Until a
+	// first sync works nothing resolves, so nothing spawns.
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	err = defs.Sync(syncCtx)
+	cancel()
+	if errors.Is(err, definitions.ErrCheck) {
+		return err
+	} else if err != nil {
+		slog.Warn("definitions: first sync failed, the loop retries", "error", err)
+	}
 	go sessionLoop.Run(ctx, 60*time.Second)
 
 	announceClients = func() []string {
@@ -506,6 +518,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	memberInterceptors = connectInterceptors(tr, true,
 		append(memberInterceptors, agentsvc.MemberInterceptor(originOf(cfg.DashboardPublicURL), embedOrigins(defs), cfg.AdminOrigins, cfg.DevOrigins...))...)
 	agentSvc := agentsvc.NewServer(defs, dashboardSvc, sessionStore, activityStore, hub, decisionStore)
+	// A standing character's reach (docs/adr/0084 §6): spawns, issues and the responders' cards, each granted per
+	// definition. The sweep tells a character when a run it spawned ends.
+	coreSvc.SetSpawner(agentSvc)
+	coreSvc.SetIssueFunc(provisioner.CreateIssue)
+	coreSvc.SetResponderCards(responder.Cards{Pool: pool}.List)
+	go agentSvc.RunSpawnReports(ctx, 15*time.Second)
 	remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
 	agentSvc.SetCardEffects(agentsvc.CardEffects{
 		Remediate: remSvc.Select,

@@ -365,3 +365,98 @@ func TestReserveSlot_StandingPoolIsOutsideTheCap(t *testing.T) {
 		t.Fatalf("a live character is outside the definition pool and concurrency: %v", err)
 	}
 }
+
+// docs/adr/0084 §6: a character's spawned run draws on the definition pool, MaxLive and the character's own
+// sub-pool (limits.spawns.concurrent), and never on the clients' MaxExternal; another character's spawns and the
+// character itself are not in its count.
+func TestReserveSlot_SpawnSubPool(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	insertDefinition(t, pool, "worker", "sha-w", 5)
+	for name, eff := range map[string]string{
+		"ops":  `{"limits":{"concurrency":1,"spawns":{"concurrent":2}},"mode":{"default":"default","allow":["default"]}}`,
+		"solo": `{"limits":{"concurrency":1},"mode":{"default":"default","allow":["default"]}}`,
+	} {
+		if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ($1, 'sha-c', '{}', $2::jsonb, true)`, name, eff); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Create(ctx, CreateParams{Repo: "r", PermissionMode: "default", DefinitionName: name, DefinitionSHA: "sha-c",
+			Owner: "client:standing:" + name, Visibility: "private", Lifecycle: Standing, Invoker: "standing:" + name, ThreadKey: "main", StartedBy: "root"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spawn := func(character string) string {
+		id, err := store.Create(ctx, CreateParams{Repo: "r", PermissionMode: "default", DefinitionName: "worker", DefinitionSHA: "sha-w",
+			Owner: "client:standing:" + character, Visibility: "private", Lifecycle: "single-shot", Invoker: "standing:" + character})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	live := func(id string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING' WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// MaxExternal 0: no client run fits, a spawn still does.
+	caps := Caps{MaxLive: 9, MaxDefinition: 4, MaxExternal: 0, MaxStanding: 2}
+	a, b := spawn("ops"), spawn("ops")
+	for _, id := range []string{a, b} {
+		if _, err := store.ReserveSlot(ctx, id, caps); err != nil {
+			t.Fatalf("a spawn within the sub-pool: %v", err)
+		}
+		live(id)
+	}
+	if _, err := store.ReserveSlot(ctx, spawn("ops"), caps); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "spawn sub-pool full (2/2)") {
+		t.Fatalf("the sub-pool of 2 refuses a third: %v", err)
+	}
+	// The default sub-pool is 1, and another character's runs are not counted against ops.
+	s1 := spawn("solo")
+	if _, err := store.ReserveSlot(ctx, s1, caps); err != nil {
+		t.Fatalf("solo's first spawn: %v", err)
+	}
+	live(s1)
+	if _, err := store.ReserveSlot(ctx, spawn("solo"), caps); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "(1/1)") {
+		t.Fatalf("the default sub-pool of 1: %v", err)
+	}
+	// The pool counts them: 3 live spawns and a console run fill MaxDefinition 4, whoever's.
+	console := newDefinitionSession(t, store, "worker", "sha-w")
+	if _, err := store.ReserveSlot(ctx, console, caps); err != nil {
+		t.Fatalf("a console run beside the spawns: %v", err)
+	}
+	live(console)
+	if _, err := store.ReserveSlot(ctx, newDefinitionSession(t, store, "worker", "sha-w"), caps); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "definition pool full (4/4)") {
+		t.Fatalf("spawns count in the definition pool: %v", err)
+	}
+	// And in MaxLive.
+	if _, err := store.ReserveSlot(ctx, spawn("ops"), Caps{MaxLive: 4, MaxDefinition: 9, MaxStanding: 2}); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "live sessions") {
+		t.Fatalf("spawns count in MaxLive: %v", err)
+	}
+	// Starts are counted for the hourly and daily caps, archived runs too.
+	if n, err := store.SpawnsSince(ctx, "standing:ops", time.Hour); err != nil || n != 4 {
+		t.Fatalf("SpawnsSince = %d %v, want 4", n, err)
+	}
+	if n, _ := store.SpawnsSince(ctx, "standing:nobody", time.Hour); n != 0 {
+		t.Fatalf("another invoker: %d", n)
+	}
+	// SpawnEnds lists unreported spawns only, and MarkSpawnReported removes one.
+	// Only an ended (archived) run is listed: unended ones, however many and however old, never crowd one out.
+	if ends, err := store.SpawnEnds(ctx, 1); err != nil || len(ends) != 0 {
+		t.Fatalf("no archived run yet: %+v %v", ends, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET archived_at = now() WHERE id IN ($1, $2)`, a, b); err != nil {
+		t.Fatal(err)
+	}
+	ends, err := store.SpawnEnds(ctx, 1)
+	if err != nil || len(ends) != 1 || ends[0].Character == "" || ends[0].Run != "worker" {
+		t.Fatalf("spawn ends: %+v %v", ends, err)
+	}
+	if err := store.MarkSpawnReported(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if ends, _ = store.SpawnEnds(ctx, 50); len(ends) != 1 || ends[0].ID != b {
+		t.Fatalf("after a mark: %+v", ends)
+	}
+}

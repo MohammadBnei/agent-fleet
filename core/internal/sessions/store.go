@@ -861,6 +861,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	// limits.concurrency (docs/adr/0062), counted under the same lock.
 	var (
 		defName, owner          *string
+		invoker                 *string
 		stopped, defValid       bool
 		standing                bool
 		concurrency             *int
@@ -872,7 +873,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	// is external (docs/adr/0066 §8): limits.concurrency bounds members and
 	// clients, never an admin's console session.
 	err = tx.QueryRow(ctx, `
-		SELECT s.definition_name, s.owner, s.stopped_at IS NOT NULL, COALESCE(d.valid, false),
+		SELECT s.definition_name, s.owner, s.invoker, s.stopped_at IS NOT NULL, COALESCE(d.valid, false),
 		       (d.effective->'limits'->>'concurrency')::int, s.lifecycle IS NOT DISTINCT FROM 'standing',
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
 		                                          AND o.definition_name IS NOT NULL AND o.lifecycle IS DISTINCT FROM 'standing'),
@@ -881,6 +882,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		                                          AND (s.owner IS NULL OR o.owner IS NOT NULL)),
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
 		                                          AND o.definition_name IS NOT NULL AND o.owner IS NOT NULL
+		                                          AND o.owner NOT LIKE 'client:standing:%'
 		                                          AND o.lifecycle IS DISTINCT FROM 'standing'),
 		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
 		                                          AND o.owner = s.owner AND o.lifecycle IS DISTINCT FROM 'standing'),
@@ -889,7 +891,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		  FROM sessions s
 		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
 		 WHERE s.id = $1 AND s.archived_at IS NULL
-	`, id, livePhases).Scan(&defName, &owner, &stopped, &defValid, &concurrency, &standing, &poolLive, &defLive, &externalLive, &ownerLive, &standingLive)
+	`, id, livePhases).Scan(&defName, &owner, &invoker, &stopped, &defValid, &concurrency, &standing, &poolLive, &defLive, &externalLive, &ownerLive, &standingLive)
 	if err == pgx.ErrNoRows {
 		return "", ErrNotFound
 	}
@@ -922,7 +924,26 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		if defLive >= *concurrency {
 			return "", fmt.Errorf("%w: definition %q at its concurrency limit (%d)", ErrAtCapacity, *defName, *concurrency)
 		}
-		if owner != nil {
+		// A character's spawned run draws from the definition pool and its own sub-pool (docs/adr/0084 §6), never
+		// from the clients' MaxExternal: the config check (a sync that would overfill MAX_DEFINITION_SESSIONS is refused) sizes the pool for the sub-pools, so
+		// the clients' share must not eat it; client runs can still fill MaxDefinition, and then a spawn waits at the pool check.
+		spawn := invoker != nil && strings.HasPrefix(*invoker, StandingPrefix)
+		if spawn {
+			var spawnLive, spawnCap int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM sessions o WHERE o.invoker = $1 AND o.lifecycle = 'single-shot'
+				AND o.pod_phase = ANY($2) AND o.archived_at IS NULL AND o.id::text <> $3`, *invoker, livePhases, id).Scan(&spawnLive); err != nil {
+				return "", fmt.Errorf("reserve slot: spawn count: %w", err)
+			}
+			if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT (d.effective->'limits'->'spawns'->>'concurrent')::int
+				FROM sessions c JOIN agent_definitions d ON d.name = c.definition_name AND d.sha = c.definition_sha
+				WHERE c.lifecycle = 'standing' AND c.archived_at IS NULL AND c.invoker = $1), 1)`, *invoker).Scan(&spawnCap); err != nil {
+				return "", fmt.Errorf("reserve slot: spawn cap: %w", err)
+			}
+			if spawnLive >= spawnCap {
+				return "", fmt.Errorf("%w: %s's spawn sub-pool full (%d/%d)", ErrAtCapacity, *invoker, spawnLive, spawnCap)
+			}
+		}
+		if owner != nil && !spawn {
 			if externalLive >= caps.MaxExternal {
 				return "", fmt.Errorf("%w: member and client pool full (%d/%d)", ErrAtCapacity, externalLive, caps.MaxExternal)
 			}
@@ -1747,4 +1768,53 @@ func (s *Store) MarkStandingStopped(ctx context.Context, id string) (bool, error
 		return false, fmt.Errorf("stop standing: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// SpawnsSince counts the runs a character (invoker standing:<name>) started in the last d, the per-hour and per-day
+// caps of limits.spawns (docs/adr/0084 §6). An archived run counts: the cap is on starts.
+func (s *Store) SpawnsSince(ctx context.Context, invoker string, d time.Duration) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE invoker = $1 AND lifecycle = 'single-shot'
+		AND created_at > now() - make_interval(secs => $2)`, invoker, d.Seconds()).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count spawns: %w", err)
+	}
+	return n, nil
+}
+
+// SpawnEnd is a spawned run whose character has not yet been told it ended.
+type SpawnEnd struct {
+	ID        string
+	Character string // the character's definition name
+	Run       string // the run's definition name
+}
+
+// SpawnEnds lists the archived (ended) spawned runs of the last two days not yet reported, oldest first, up to
+// limit; a run still going never sits at the head. The caller
+// judges which ended (WaitForResult's rule) and reports each with MarkSpawnReported.
+func (s *Store) SpawnEnds(ctx context.Context, limit int) ([]SpawnEnd, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id::text, substring(invoker from char_length($1) + 1), COALESCE(definition_name, '')
+		FROM sessions WHERE lifecycle = 'single-shot' AND invoker LIKE $1 || '%' AND spawn_reported_at IS NULL AND archived_at IS NOT NULL
+		AND created_at > now() - interval '2 days' ORDER BY created_at LIMIT $2`, StandingPrefix, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list spawn ends: %w", err)
+	}
+	defer rows.Close()
+	var out []SpawnEnd
+	for rows.Next() {
+		var e SpawnEnd
+		if err := rows.Scan(&e.ID, &e.Character, &e.Run); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// MarkSpawnReported records that the character was told run id ended.
+func (s *Store) MarkSpawnReported(ctx context.Context, id string) error {
+	if _, err := s.pool.Exec(ctx, `UPDATE sessions SET spawn_reported_at = now() WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("mark spawn reported: %w", err)
+	}
+	return nil
 }

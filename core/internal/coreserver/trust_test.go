@@ -102,3 +102,26 @@ func TestAuth_AppendJournalQuarantineIsCoreDerived(t *testing.T) {
 		}
 	}
 }
+
+// docs/adr/0084 §6: SpawnWorker and OpenIssue are effects (C), ListResponderCards is a read of the owner's alert
+// history (B), WaitForSpawn is neither. An A·B session cannot spawn or open an issue; an A·C one cannot read cards.
+func TestAuth_ReachMethodsFollowTheirTags(t *testing.T) {
+	for _, tc := range []struct {
+		set, method string
+		req         any
+		refused     bool
+	}{
+		{"AB", "SpawnWorker", &agentfleetv1.SpawnWorkerRequest{SessionId: "s1"}, true},
+		{"AB", "OpenIssue", &agentfleetv1.OpenIssueRequest{SessionId: "s1"}, true},
+		{"AC", "ListResponderCards", &agentfleetv1.ListResponderCardsRequest{SessionId: "s1"}, true},
+		{"AC", "SpawnWorker", &agentfleetv1.SpawnWorkerRequest{SessionId: "s1"}, false},
+		{"AB", "ListResponderCards", &agentfleetv1.ListResponderCardsRequest{SessionId: "s1"}, false},
+		{"AB", "WaitForSpawn", &agentfleetv1.WaitForSpawnRequest{SessionId: "s1"}, false},
+	} {
+		a := NewAuthenticator(fakeLeases{session: "s1", lease: "L1", trustSet: tc.set, definition: "ops"}, "provtoken")
+		err := callUnary(t, a, ctxWith(mdSessionID, "s1", mdLeaseID, "L1"), "/agentfleet.v1.CoreService/"+tc.method, tc.req)
+		if got := codeOf(err) == codes.PermissionDenied && errkeys.Of(err) == errkeys.KeyRuleOfTwo; got != tc.refused || (!tc.refused && err != nil) {
+			t.Errorf("%s %s: %v, refused want %v", tc.set, tc.method, err, tc.refused)
+		}
+	}
+}

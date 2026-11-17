@@ -190,7 +190,11 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   pinned spec grants `draft_card`, and `SendMessage` refuses a `card` entry (`adr/0082` §6). `SubmitReview` too:
   only `submit_review`, only on the session's own `github/<owner>/<repo>/pr/<n>` thread, and core
   hands it to the provisioner's `PostReview`, which posts the review and the `agent-review` status
-  (`adr/0082` §9). Every lease caller authors `SendMessage` as
+  (`adr/0082` §9). A standing character's reach (`adr/0084` §6) is granted the same way: `spawn_worker`
+  (only `spawns.allow`, T1, under the principal `standing:<name>`, in the definition pool and the
+  character's `limits.spawns.concurrent` sub-pool), `wait_for_result` (its own runs), `open_issue` (only
+  `owns.repos`, via the provisioner's `CreateIssue`), `list_responder_cards` (typed fields) and `view_logs`
+  (only `cluster.logNamespaces`). Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.

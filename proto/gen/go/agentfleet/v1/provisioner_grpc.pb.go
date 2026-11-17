@@ -33,6 +33,7 @@ const (
 	ProvisionerService_ListGitHubRepos_FullMethodName     = "/agentfleet.v1.ProvisionerService/ListGitHubRepos"
 	ProvisionerService_PostReview_FullMethodName          = "/agentfleet.v1.ProvisionerService/PostReview"
 	ProvisionerService_OpenPullRequest_FullMethodName     = "/agentfleet.v1.ProvisionerService/OpenPullRequest"
+	ProvisionerService_CreateIssue_FullMethodName         = "/agentfleet.v1.ProvisionerService/CreateIssue"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
@@ -82,6 +83,8 @@ type ProvisionerServiceClient interface {
 	// Opens a pull request from a pushed branch, for an owner-approved card
 	// (docs/adr/0086 §4 open_pr).
 	OpenPullRequest(ctx context.Context, in *OpenPullRequestRequest, opts ...grpc.CallOption) (*OpenPullRequestResponse, error)
+	// Opens an issue for a standing character (docs/adr/0084 §6): core has checked the definition owns the repo.
+	CreateIssue(ctx context.Context, in *CreateIssueRequest, opts ...grpc.CallOption) (*CreateIssueResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -232,6 +235,16 @@ func (c *provisionerServiceClient) OpenPullRequest(ctx context.Context, in *Open
 	return out, nil
 }
 
+func (c *provisionerServiceClient) CreateIssue(ctx context.Context, in *CreateIssueRequest, opts ...grpc.CallOption) (*CreateIssueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateIssueResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_CreateIssue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvisionerServiceServer is the server API for ProvisionerService service.
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
@@ -279,6 +292,8 @@ type ProvisionerServiceServer interface {
 	// Opens a pull request from a pushed branch, for an owner-approved card
 	// (docs/adr/0086 §4 open_pr).
 	OpenPullRequest(context.Context, *OpenPullRequestRequest) (*OpenPullRequestResponse, error)
+	// Opens an issue for a standing character (docs/adr/0084 §6): core has checked the definition owns the repo.
+	CreateIssue(context.Context, *CreateIssueRequest) (*CreateIssueResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -330,6 +345,9 @@ func (UnimplementedProvisionerServiceServer) PostReview(context.Context, *PostRe
 }
 func (UnimplementedProvisionerServiceServer) OpenPullRequest(context.Context, *OpenPullRequestRequest) (*OpenPullRequestResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method OpenPullRequest not implemented")
+}
+func (UnimplementedProvisionerServiceServer) CreateIssue(context.Context, *CreateIssueRequest) (*CreateIssueResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateIssue not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -604,6 +622,24 @@ func _ProvisionerService_OpenPullRequest_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_CreateIssue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateIssueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).CreateIssue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_CreateIssue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).CreateIssue(ctx, req.(*CreateIssueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvisionerService_ServiceDesc is the grpc.ServiceDesc for ProvisionerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -666,6 +702,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "OpenPullRequest",
 			Handler:    _ProvisionerService_OpenPullRequest_Handler,
+		},
+		{
+			MethodName: "CreateIssue",
+			Handler:    _ProvisionerService_CreateIssue_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -8,6 +8,8 @@ var methodTags = map[string]string{
 	// B: fleet-wide reads of private memory and logs.
 	"/agentfleet.v1.CoreService/ViewLogs":      "B",
 	"/agentfleet.v1.CoreService/SearchJournal": "B",
+	// ADR-0084 §5: typed fields only, but the owner's alert history is private, so it is a read of B.
+	"/agentfleet.v1.CoreService/ListResponderCards": "B",
 
 	// C: effects core runs: memory writes, exposure, peer prompts, events, GitHub reviews.
 	"/agentfleet.v1.CoreService/AppendJournal":        "A|C", // a set holding A writes quarantined rows (ADR-0086 §5)
@@ -18,6 +20,8 @@ var methodTags = map[string]string{
 	"/agentfleet.v1.CoreService/PromptSession":        "C",
 	"/agentfleet.v1.CoreService/PublishEvent":         "C",
 	"/agentfleet.v1.CoreService/SubmitReview":         "C",
+	"/agentfleet.v1.CoreService/SpawnWorker":          "C", // a run starts and acts (ADR-0084 §6)
+	"/agentfleet.v1.CoreService/OpenIssue":            "C",
 
 	// Neither: the session's own plumbing, files, cards (the way to ask the owner), pod lifecycle.
 	"/agentfleet.v1.CoreService/ReportPodEvents":     "",
@@ -37,6 +41,7 @@ var methodTags = map[string]string{
 	"/agentfleet.v1.CoreService/DeleteFile":          "",
 	"/agentfleet.v1.CoreService/ListPeerSessions":    "",
 	"/agentfleet.v1.CoreService/WaitForSessionState": "",
+	"/agentfleet.v1.CoreService/WaitForSpawn":        "", // reads the character's own run, which it started
 	"/agentfleet.v1.CoreService/ConsumeGrant":        "",
 	"/agentfleet.v1.CoreService/DraftCard":           "",
 }

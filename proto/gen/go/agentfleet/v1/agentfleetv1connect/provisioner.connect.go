@@ -75,6 +75,9 @@ const (
 	// ProvisionerServiceOpenPullRequestProcedure is the fully-qualified name of the
 	// ProvisionerService's OpenPullRequest RPC.
 	ProvisionerServiceOpenPullRequestProcedure = "/agentfleet.v1.ProvisionerService/OpenPullRequest"
+	// ProvisionerServiceCreateIssueProcedure is the fully-qualified name of the ProvisionerService's
+	// CreateIssue RPC.
+	ProvisionerServiceCreateIssueProcedure = "/agentfleet.v1.ProvisionerService/CreateIssue"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -122,6 +125,8 @@ type ProvisionerServiceClient interface {
 	// Opens a pull request from a pushed branch, for an owner-approved card
 	// (docs/adr/0086 §4 open_pr).
 	OpenPullRequest(context.Context, *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error)
+	// Opens an issue for a standing character (docs/adr/0084 §6): core has checked the definition owns the repo.
+	CreateIssue(context.Context, *connect.Request[v1.CreateIssueRequest]) (*connect.Response[v1.CreateIssueResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -219,6 +224,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("OpenPullRequest")),
 			connect.WithClientOptions(opts...),
 		),
+		createIssue: connect.NewClient[v1.CreateIssueRequest, v1.CreateIssueResponse](
+			httpClient,
+			baseURL+ProvisionerServiceCreateIssueProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("CreateIssue")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -238,6 +249,7 @@ type provisionerServiceClient struct {
 	listGitHubRepos     *connect.Client[v1.ListGitHubReposRequest, v1.ListGitHubReposResponse]
 	postReview          *connect.Client[v1.PostReviewRequest, v1.PostReviewResponse]
 	openPullRequest     *connect.Client[v1.OpenPullRequestRequest, v1.OpenPullRequestResponse]
+	createIssue         *connect.Client[v1.CreateIssueRequest, v1.CreateIssueResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -310,6 +322,11 @@ func (c *provisionerServiceClient) OpenPullRequest(ctx context.Context, req *con
 	return c.openPullRequest.CallUnary(ctx, req)
 }
 
+// CreateIssue calls agentfleet.v1.ProvisionerService.CreateIssue.
+func (c *provisionerServiceClient) CreateIssue(ctx context.Context, req *connect.Request[v1.CreateIssueRequest]) (*connect.Response[v1.CreateIssueResponse], error) {
+	return c.createIssue.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
@@ -355,6 +372,8 @@ type ProvisionerServiceHandler interface {
 	// Opens a pull request from a pushed branch, for an owner-approved card
 	// (docs/adr/0086 §4 open_pr).
 	OpenPullRequest(context.Context, *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error)
+	// Opens an issue for a standing character (docs/adr/0084 §6): core has checked the definition owns the repo.
+	CreateIssue(context.Context, *connect.Request[v1.CreateIssueRequest]) (*connect.Response[v1.CreateIssueResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -448,6 +467,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("OpenPullRequest")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceCreateIssueHandler := connect.NewUnaryHandler(
+		ProvisionerServiceCreateIssueProcedure,
+		svc.CreateIssue,
+		connect.WithSchema(provisionerServiceMethods.ByName("CreateIssue")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceCreateWorkerPodProcedure:
@@ -478,6 +503,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServicePostReviewHandler.ServeHTTP(w, r)
 		case ProvisionerServiceOpenPullRequestProcedure:
 			provisionerServiceOpenPullRequestHandler.ServeHTTP(w, r)
+		case ProvisionerServiceCreateIssueProcedure:
+			provisionerServiceCreateIssueHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -541,4 +568,8 @@ func (UnimplementedProvisionerServiceHandler) PostReview(context.Context, *conne
 
 func (UnimplementedProvisionerServiceHandler) OpenPullRequest(context.Context, *connect.Request[v1.OpenPullRequestRequest]) (*connect.Response[v1.OpenPullRequestResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.OpenPullRequest is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) CreateIssue(context.Context, *connect.Request[v1.CreateIssueRequest]) (*connect.Response[v1.CreateIssueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.CreateIssue is not implemented"))
 }

@@ -216,3 +216,26 @@ func escapeRef(b string) string {
 	}
 	return strings.Join(parts, "/")
 }
+
+// issuePermissions is CreateIssue's token: open an issue, nothing else.
+var issuePermissions = map[string]string{"issues": "write", "metadata": "read"}
+
+// CreateIssue opens an issue in owner/repo (docs/adr/0084 §6 open_issue) and returns its URL. core has checked the
+// definition owns the repo; the token is minted for that one repo with the issues permission alone.
+func (a *App) CreateIssue(ctx context.Context, owner, repo, title, body string) (string, error) {
+	full := owner + "/" + repo
+	tok, err := a.cached(ctx, "issue:"+strings.ToLower(full), func(ctx context.Context) (token, error) {
+		return a.mint(ctx, owner, repo, issuePermissions)
+	})
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		HTMLURL string `json:"html_url"`
+	}
+	if err := request(ctx, a.HTTP, a.API, tok, http.MethodPost, "/repos/"+full+"/issues",
+		map[string]any{"title": title, "body": body}, &out); err != nil {
+		return "", err
+	}
+	return out.HTMLURL, nil
+}

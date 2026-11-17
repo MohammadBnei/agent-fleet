@@ -121,6 +121,8 @@ type AgentServiceClient interface {
 	Open(context.Context, *connect.Request[v1.OpenRequest]) (*connect.Response[v1.OpenResponse], error)
 	CloseThread(context.Context, *connect.Request[v1.CloseThreadRequest]) (*connect.Response[v1.CloseThreadResponse], error)
 	Invoke(context.Context, *connect.Request[v1.InvokeRequest]) (*connect.Response[v1.InvokeResponse], error)
+	// CoreService.WaitForSpawn shares the response.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(context.Context, *connect.Request[v1.WaitForResultRequest]) (*connect.Response[v1.WaitForResultResponse], error)
 }
 
@@ -413,6 +415,8 @@ type AgentServiceHandler interface {
 	Open(context.Context, *connect.Request[v1.OpenRequest]) (*connect.Response[v1.OpenResponse], error)
 	CloseThread(context.Context, *connect.Request[v1.CloseThreadRequest]) (*connect.Response[v1.CloseThreadResponse], error)
 	Invoke(context.Context, *connect.Request[v1.InvokeRequest]) (*connect.Response[v1.InvokeResponse], error)
+	// CoreService.WaitForSpawn shares the response.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForResult(context.Context, *connect.Request[v1.WaitForResultRequest]) (*connect.Response[v1.WaitForResultResponse], error)
 }
 

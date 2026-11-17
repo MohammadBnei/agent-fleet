@@ -276,3 +276,28 @@ func TestOpenPR(t *testing.T) {
 		t.Errorf("moved branch: %v opened %d", err, len(opened))
 	}
 }
+
+// CreateIssue mints an issues-only token for the one repo and returns the issue's URL.
+func TestCreateIssue(t *testing.T) {
+	var posted []map[string]any
+	a, f := newApp(t, false)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/repos/MohammadBnei/notes/issues" {
+			var b map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			posted = append(posted, b)
+			_ = json.NewEncoder(w).Encode(map[string]any{"html_url": "https://github.com/MohammadBnei/notes/issues/3"})
+			return
+		}
+		f.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	a.API = srv.URL
+	u, err := a.CreateIssue(context.Background(), "MohammadBnei", "notes", "Broken", "details")
+	if err != nil || u != "https://github.com/MohammadBnei/notes/issues/3" || len(posted) != 1 || posted[0]["title"] != "Broken" || posted[0]["body"] != "details" {
+		t.Fatalf("create: %v %v %v", u, err, posted)
+	}
+	if issuePermissions["issues"] != "write" || len(issuePermissions) != 2 {
+		t.Errorf("the token is for issues alone: %v", issuePermissions)
+	}
+}

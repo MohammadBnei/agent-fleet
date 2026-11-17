@@ -11,6 +11,27 @@
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
+- **Built:** appendix slice 8: reach (migration 000034: `sessions.spawn_reported_at`).
+  - New spec: `spawns.allow` (a standing definition only; each entry a valid single-shot definition that is not a
+    first responder), `limits.spawns` (`concurrent` default 1, `perHour` 6, `perDay` 24, applied where read) and
+    `cluster.logNamespaces`. A widening of `spawns.allow` or `logNamespaces` refuses a re-pin in place. Five sidecar
+    tools join the ceiling and only a standing definition may hold them: `spawn_worker`, `wait_for_result`,
+    `open_issue`, `list_responder_cards`, `view_logs`.
+  - `CoreService.SpawnWorker` is an in-process Invoke under the principal `standing:<name>`, T1 (set BC), refused
+    off `spawns.allow`. It counts in `MaxLive`, the definition pool and the sub-pool (`sessions.ReserveSlot`: live
+    runs with that invoker, against the character's pinned `limits.spawns.concurrent`), and not in `MaxExternal`.
+    The hourly and daily caps count starts, and meet a new run only: a retry of a key at the cap returns its thread.
+    `WaitForSpawn` answers only the character's own runs. Core's sweep (`agentsvc.RunSpawnReports`) appends one
+    turn-starting entry to the character's main thread when a run ends (done, failed, expired), keyed
+    `spawn-end:<run>`; a stopped character takes none and the run is marked anyway.
+  - The pool-sum check: at startup, after a first good definitions sync, core refuses a `MAX_DEFINITION_SESSIONS`
+    below the sum of the characters' sub-pools (`cmd/core/spawnpool.go`), and logs it on every later sync.
+  - `OpenIssue` is limited to `owns.repos` and relayed to the provisioner's `CreateIssue` (the App needs the Issues
+    write permission). `ViewLogs` for a definition session needs the grant and a namespace on
+    `cluster.logNamespaces`; a repo session and the provisioner are unchanged. `ListResponderCards` reads the
+    `alert_group` cards and the remediations (kind, state, core's card text, action, target, responder): never the
+    agent claim, labels, annotations or alert text.
+  - Not in this slice: `QueryMetrics` (§6) and `Speak` (slice 12).
 - **Built:** appendix slice 7: set enforcement. The dispatcher appends an event to a started character
   (`Dispatcher.characters`) only when it is T1: a trusted `PublishEvent` hand-off naming the character, from a session
   whose stored set lacks A (looked up through `published_events`). Alerts, GitHub events, unaddressed, unverified or
@@ -18,8 +39,8 @@
   core first (every sidecar tool is a tagged CoreService call, ADR-0086 §2); no new local tool exists to gate yet.
   The appended entry carries no causation, so the character's own publishes about it are unvouched.
 - **Built:** appendix slice 6: counting. Standing rows count only in `MAX_STANDING_SESSIONS` (default 2) and leave
-  `MaxLive`, `MaxDefinition` and a definition's concurrency. Not in this slice: the spawn sub-pool and the pool-sum
-  config check, which need `limits.spawns` and so move to slice 8.
+  `MaxLive`, `MaxDefinition` and a definition's concurrency. The spawn sub-pool and the pool-sum
+  config check needed `limits.spawns` and were built in slice 8.
 - **Built:** appendix slice 5: sweeps, re-warm and re-pin (migration 000033: `sessions.restart_after`, `drain_started_at`, `warm_failures`).
   - The idle sweep skips a character; the stop-grace sweep skips it unless the owner stopped it; a startup stall alerts
     once and tears nothing down.

@@ -137,3 +137,44 @@ func TestOpenPullRequest(t *testing.T) {
 		t.Errorf("stale head: %v", err)
 	}
 }
+
+// docs/adr/0084 §6: core checked the definition owns the repo; the shape is re-checked here.
+func TestCreateIssue(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	app := &fakeApp{}
+	s.SetGitHub(app)
+	req := func() *agentfleetv1.CreateIssueRequest {
+		return &agentfleetv1.CreateIssueRequest{Repo: "MohammadBnei/agent-fleet", Title: "Fix x", Body: "b"}
+	}
+	resp, err := s.CreateIssue(context.Background(), req())
+	if err != nil || resp.GetUrl() != "https://x/issues/1" || len(app.issues) != 1 || app.issues[0] != "MohammadBnei/agent-fleet Fix x" {
+		t.Fatalf("open: %v %v %v", resp, err, app.issues)
+	}
+	for name, mut := range map[string]func(*agentfleetv1.CreateIssueRequest){
+		"repo":      func(r *agentfleetv1.CreateIssueRequest) { r.Repo = "../x" },
+		"no slash":  func(r *agentfleetv1.CreateIssueRequest) { r.Repo = "agent-fleet" },
+		"title":     func(r *agentfleetv1.CreateIssueRequest) { r.Title = "" },
+		"multiline": func(r *agentfleetv1.CreateIssueRequest) { r.Title = "a\nb" },
+	} {
+		r := req()
+		mut(r)
+		if _, err := s.CreateIssue(context.Background(), r); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if len(app.issues) != 1 {
+		t.Errorf("a refused request reached the App: %v", app.issues)
+	}
+	app.issueErr = &github.StatusError{Status: 404}
+	if _, err := s.CreateIssue(context.Background(), req()); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("a 4xx is final: %v", err)
+	}
+	app.issueErr = &github.StatusError{Status: 502}
+	if _, err := s.CreateIssue(context.Background(), req()); status.Code(err) != codes.Unavailable {
+		t.Errorf("a 5xx retries: %v", err)
+	}
+	s.SetGitHub(nil)
+	if _, err := s.CreateIssue(context.Background(), req()); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("no App: %v", err)
+	}
+}

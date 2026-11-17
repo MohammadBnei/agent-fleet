@@ -105,6 +105,8 @@ service AgentService {
     option (ukubi.errors.v1.keys) = "agent.parked_limit";
     option (ukubi.errors.v1.keys) = "agent.standing_only";
   }
+  // CoreService.WaitForSpawn shares the response.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc WaitForResult(WaitForResultRequest) returns (WaitForResultResponse);
 }
 

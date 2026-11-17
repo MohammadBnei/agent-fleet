@@ -591,6 +591,53 @@ func (c *Client) SubmitReview(ctx context.Context, req *agentfleetv1.SubmitRevie
 	return res, nil
 }
 
+// SpawnWorker starts one run of a definition on this character's spawns.allow (docs/adr/0084 §6). The key is the
+// effect key inside a standing turn, so a replayed turn starts nothing twice.
+func (c *Client) SpawnWorker(ctx context.Context, definition, input, key string) (*agentfleetv1.SpawnWorkerResponse, error) {
+	ek, err := c.effectKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("SpawnWorker: %w", err)
+	}
+	res, err := c.rpc.SpawnWorker(ctx, &agentfleetv1.SpawnWorkerRequest{
+		SessionId: c.taskID, Definition: definition, Input: input, IdempotencyKey: ek,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("SpawnWorker: %w", err)
+	}
+	return res, nil
+}
+
+// WaitForResult long-polls one of this character's own spawned runs.
+func (c *Client) WaitForResult(ctx context.Context, threadID string, waitSeconds int32) (*agentfleetv1.WaitForResultResponse, error) {
+	res, err := c.rpc.WaitForSpawn(ctx, &agentfleetv1.WaitForSpawnRequest{SessionId: c.taskID, ThreadId: threadID, WaitSeconds: waitSeconds})
+	if err != nil {
+		return nil, fmt.Errorf("WaitForResult: %w", err)
+	}
+	return res, nil
+}
+
+// OpenIssue opens a GitHub issue in a repo this character's definition owns.
+func (c *Client) OpenIssue(ctx context.Context, repo, title, body, key string) (*agentfleetv1.OpenIssueResponse, error) {
+	ek, err := c.effectKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("OpenIssue: %w", err)
+	}
+	res, err := c.rpc.OpenIssue(ctx, &agentfleetv1.OpenIssueRequest{SessionId: c.taskID, Repo: repo, Title: title, Body: body, IdempotencyKey: ek})
+	if err != nil {
+		return nil, fmt.Errorf("OpenIssue: %w", err)
+	}
+	return res, nil
+}
+
+// ListResponderCards reads the first responders' cards and remediations, typed fields only.
+func (c *Client) ListResponderCards(ctx context.Context, since string, limit int32) (*agentfleetv1.ListResponderCardsResponse, error) {
+	res, err := c.rpc.ListResponderCards(ctx, &agentfleetv1.ListResponderCardsRequest{SessionId: c.taskID, Since: since, Limit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("ListResponderCards: %w", err)
+	}
+	return res, nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the

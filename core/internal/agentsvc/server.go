@@ -3,6 +3,7 @@ package agentsvc
 import (
 	"context"
 	"slices"
+	"sync"
 
 	"connectrpc.com/connect"
 
@@ -28,6 +29,7 @@ type Server struct {
 	decisions   *decisions.Store
 	cardFx      CardEffects
 	opener      sessionOpener
+	spawnLocks  sync.Map // character invoker -> *sync.Mutex, SpawnWorker's cap check and create
 }
 
 // console is the part of *dashboard.Server AgentService reuses, so every pod

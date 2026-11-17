@@ -4,6 +4,8 @@
 // (after `extends`) against a ceiling the fleet owns.
 package definitions
 
+import "slices"
+
 // apiVersion is the only apiVersion a definition or client file may carry.
 const apiVersion = "fleet.bnei.dev/v1alpha1"
 
@@ -64,11 +66,16 @@ type Spec struct {
 	Limits       *Limits       `yaml:"limits,omitempty"       json:"limits,omitempty"`
 	Trust        *Trust        `yaml:"trust,omitempty"        json:"trust,omitempty"`
 	Cluster      *Cluster      `yaml:"cluster,omitempty"      json:"cluster,omitempty"`
+	// Spawns names the single-shot definitions a standing character may start (ADR-0084 §6). It replaces the
+	// `invokers` check for spawns.
+	Spawns *AllowList `yaml:"spawns,omitempty" json:"spawns,omitempty"`
 }
 
 // Cluster is the definition's cluster grant (ADR-0084 §6): Read names the read ServiceAccount for its pod.
 type Cluster struct {
 	Read bool `yaml:"read,omitempty" json:"read,omitempty"`
+	// LogNamespaces are the namespaces view_logs may read for a character (ADR-0084 §6); empty means none.
+	LogNamespaces []string `yaml:"logNamespaces,omitempty" json:"logNamespaces,omitempty"`
 }
 
 // Trust is the definition's half of docs/adr/0086 §2. Untrusted names the one letter (B or C) a session keeps
@@ -189,6 +196,57 @@ type Limits struct {
 	// 24h, applied where it is read (sessions.Loop), not here: filling it in
 	// would change every definition's effective JSON and so move every pin.
 	AnswerTimeout string `yaml:"answerTimeout,omitempty" json:"answerTimeout,omitempty"`
+	// Spawns bounds a standing character's spawned runs (ADR-0084 §6). Unset or 0 is the Default* below, applied
+	// where it is read, as AnswerTimeout is.
+	Spawns *SpawnLimits `yaml:"spawns,omitempty" json:"spawns,omitempty"`
+}
+
+// SpawnLimits: Concurrent is the character's sub-pool inside the definition pool; PerHour and PerDay cap the runs
+// it starts.
+type SpawnLimits struct {
+	Concurrent int `yaml:"concurrent,omitempty" json:"concurrent,omitempty"`
+	PerHour    int `yaml:"perHour,omitempty"    json:"perHour,omitempty"`
+	PerDay     int `yaml:"perDay,omitempty"     json:"perDay,omitempty"`
+}
+
+const (
+	DefaultSpawnConcurrent = 1
+	DefaultSpawnsPerHour   = 6
+	DefaultSpawnsPerDay    = 24
+)
+
+// SpawnCaps is s's spawn limits with the defaults filled in: concurrent, per hour, per day.
+func (s *Spec) SpawnCaps() (concurrent, perHour, perDay int) {
+	concurrent, perHour, perDay = DefaultSpawnConcurrent, DefaultSpawnsPerHour, DefaultSpawnsPerDay
+	if s == nil || s.Limits == nil || s.Limits.Spawns == nil {
+		return
+	}
+	l := s.Limits.Spawns
+	if l.Concurrent > 0 {
+		concurrent = l.Concurrent
+	}
+	if l.PerHour > 0 {
+		perHour = l.PerHour
+	}
+	if l.PerDay > 0 {
+		perDay = l.PerDay
+	}
+	return
+}
+
+// MaySpawn reports whether s lists definition on its spawns.allow.
+func (s *Spec) MaySpawn(definition string) bool {
+	return s != nil && s.Spawns != nil && slices.Contains(s.Spawns.Allow, definition)
+}
+
+// SpawnSubPool is the character's share of the definition pool: its limits.spawns.concurrent when it can spawn at
+// all, else 0.
+func (s *Spec) SpawnSubPool() int {
+	if s == nil || s.Spawns == nil || len(s.Spawns.Allow) == 0 {
+		return 0
+	}
+	c, _, _ := s.SpawnCaps()
+	return c
 }
 
 // DefaultMaxParks is limits.maxParks when a definition sets none.

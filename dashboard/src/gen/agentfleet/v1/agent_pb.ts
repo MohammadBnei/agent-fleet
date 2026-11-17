@@ -1751,6 +1751,9 @@ export const AgentService: GenService<{
     output: typeof InvokeResponseSchema;
   },
   /**
+   * CoreService.WaitForSpawn shares the response.
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
    * @generated from rpc agentfleet.v1.AgentService.WaitForResult
    */
   waitForResult: {

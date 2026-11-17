@@ -111,6 +111,16 @@ const (
 	// CoreServiceSubmitReviewProcedure is the fully-qualified name of the CoreService's SubmitReview
 	// RPC.
 	CoreServiceSubmitReviewProcedure = "/agentfleet.v1.CoreService/SubmitReview"
+	// CoreServiceSpawnWorkerProcedure is the fully-qualified name of the CoreService's SpawnWorker RPC.
+	CoreServiceSpawnWorkerProcedure = "/agentfleet.v1.CoreService/SpawnWorker"
+	// CoreServiceWaitForSpawnProcedure is the fully-qualified name of the CoreService's WaitForSpawn
+	// RPC.
+	CoreServiceWaitForSpawnProcedure = "/agentfleet.v1.CoreService/WaitForSpawn"
+	// CoreServiceOpenIssueProcedure is the fully-qualified name of the CoreService's OpenIssue RPC.
+	CoreServiceOpenIssueProcedure = "/agentfleet.v1.CoreService/OpenIssue"
+	// CoreServiceListResponderCardsProcedure is the fully-qualified name of the CoreService's
+	// ListResponderCards RPC.
+	CoreServiceListResponderCardsProcedure = "/agentfleet.v1.CoreService/ListResponderCards"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -205,6 +215,17 @@ type CoreServiceClient interface {
 	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
 	// submit_review.
 	SubmitReview(context.Context, *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error)
+	// Reach for a standing character (docs/adr/0084 §6). Each is granted per definition through sidecarTools.
+	// Starts one run of a spawns.allow definition, counted in the definition pool and the character's sub-pool.
+	SpawnWorker(context.Context, *connect.Request[v1.SpawnWorkerRequest]) (*connect.Response[v1.SpawnWorkerResponse], error)
+	// The character's own spawned run, long-polled. Shares AgentService's WaitForResultResponse.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	WaitForSpawn(context.Context, *connect.Request[v1.WaitForSpawnRequest]) (*connect.Response[v1.WaitForResultResponse], error)
+	// Opens an issue in one of the definition's owns.repos.
+	OpenIssue(context.Context, *connect.Request[v1.OpenIssueRequest]) (*connect.Response[v1.OpenIssueResponse], error)
+	// The first responders' cards and remediations, typed fields only.
+	ListResponderCards(context.Context, *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -392,6 +413,30 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("SubmitReview")),
 			connect.WithClientOptions(opts...),
 		),
+		spawnWorker: connect.NewClient[v1.SpawnWorkerRequest, v1.SpawnWorkerResponse](
+			httpClient,
+			baseURL+CoreServiceSpawnWorkerProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("SpawnWorker")),
+			connect.WithClientOptions(opts...),
+		),
+		waitForSpawn: connect.NewClient[v1.WaitForSpawnRequest, v1.WaitForResultResponse](
+			httpClient,
+			baseURL+CoreServiceWaitForSpawnProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("WaitForSpawn")),
+			connect.WithClientOptions(opts...),
+		),
+		openIssue: connect.NewClient[v1.OpenIssueRequest, v1.OpenIssueResponse](
+			httpClient,
+			baseURL+CoreServiceOpenIssueProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("OpenIssue")),
+			connect.WithClientOptions(opts...),
+		),
+		listResponderCards: connect.NewClient[v1.ListResponderCardsRequest, v1.ListResponderCardsResponse](
+			httpClient,
+			baseURL+CoreServiceListResponderCardsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ListResponderCards")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -426,6 +471,10 @@ type coreServiceClient struct {
 	consumeGrant         *connect.Client[v1.ConsumeGrantRequest, v1.ConsumeGrantResponse]
 	draftCard            *connect.Client[v1.DraftCardRequest, v1.DraftCardResponse]
 	submitReview         *connect.Client[v1.SubmitReviewRequest, v1.SubmitReviewResponse]
+	spawnWorker          *connect.Client[v1.SpawnWorkerRequest, v1.SpawnWorkerResponse]
+	waitForSpawn         *connect.Client[v1.WaitForSpawnRequest, v1.WaitForResultResponse]
+	openIssue            *connect.Client[v1.OpenIssueRequest, v1.OpenIssueResponse]
+	listResponderCards   *connect.Client[v1.ListResponderCardsRequest, v1.ListResponderCardsResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -573,6 +622,26 @@ func (c *coreServiceClient) SubmitReview(ctx context.Context, req *connect.Reque
 	return c.submitReview.CallUnary(ctx, req)
 }
 
+// SpawnWorker calls agentfleet.v1.CoreService.SpawnWorker.
+func (c *coreServiceClient) SpawnWorker(ctx context.Context, req *connect.Request[v1.SpawnWorkerRequest]) (*connect.Response[v1.SpawnWorkerResponse], error) {
+	return c.spawnWorker.CallUnary(ctx, req)
+}
+
+// WaitForSpawn calls agentfleet.v1.CoreService.WaitForSpawn.
+func (c *coreServiceClient) WaitForSpawn(ctx context.Context, req *connect.Request[v1.WaitForSpawnRequest]) (*connect.Response[v1.WaitForResultResponse], error) {
+	return c.waitForSpawn.CallUnary(ctx, req)
+}
+
+// OpenIssue calls agentfleet.v1.CoreService.OpenIssue.
+func (c *coreServiceClient) OpenIssue(ctx context.Context, req *connect.Request[v1.OpenIssueRequest]) (*connect.Response[v1.OpenIssueResponse], error) {
+	return c.openIssue.CallUnary(ctx, req)
+}
+
+// ListResponderCards calls agentfleet.v1.CoreService.ListResponderCards.
+func (c *coreServiceClient) ListResponderCards(ctx context.Context, req *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error) {
+	return c.listResponderCards.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -665,6 +734,17 @@ type CoreServiceHandler interface {
 	// Posts the calling reviewer session's review of its PR (docs/adr/0082 slice 5). Only for a definition granting
 	// submit_review.
 	SubmitReview(context.Context, *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error)
+	// Reach for a standing character (docs/adr/0084 §6). Each is granted per definition through sidecarTools.
+	// Starts one run of a spawns.allow definition, counted in the definition pool and the character's sub-pool.
+	SpawnWorker(context.Context, *connect.Request[v1.SpawnWorkerRequest]) (*connect.Response[v1.SpawnWorkerResponse], error)
+	// The character's own spawned run, long-polled. Shares AgentService's WaitForResultResponse.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	WaitForSpawn(context.Context, *connect.Request[v1.WaitForSpawnRequest]) (*connect.Response[v1.WaitForResultResponse], error)
+	// Opens an issue in one of the definition's owns.repos.
+	OpenIssue(context.Context, *connect.Request[v1.OpenIssueRequest]) (*connect.Response[v1.OpenIssueResponse], error)
+	// The first responders' cards and remediations, typed fields only.
+	ListResponderCards(context.Context, *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -848,6 +928,30 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("SubmitReview")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceSpawnWorkerHandler := connect.NewUnaryHandler(
+		CoreServiceSpawnWorkerProcedure,
+		svc.SpawnWorker,
+		connect.WithSchema(coreServiceMethods.ByName("SpawnWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceWaitForSpawnHandler := connect.NewUnaryHandler(
+		CoreServiceWaitForSpawnProcedure,
+		svc.WaitForSpawn,
+		connect.WithSchema(coreServiceMethods.ByName("WaitForSpawn")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceOpenIssueHandler := connect.NewUnaryHandler(
+		CoreServiceOpenIssueProcedure,
+		svc.OpenIssue,
+		connect.WithSchema(coreServiceMethods.ByName("OpenIssue")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceListResponderCardsHandler := connect.NewUnaryHandler(
+		CoreServiceListResponderCardsProcedure,
+		svc.ListResponderCards,
+		connect.WithSchema(coreServiceMethods.ByName("ListResponderCards")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -908,6 +1012,14 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceDraftCardHandler.ServeHTTP(w, r)
 		case CoreServiceSubmitReviewProcedure:
 			coreServiceSubmitReviewHandler.ServeHTTP(w, r)
+		case CoreServiceSpawnWorkerProcedure:
+			coreServiceSpawnWorkerHandler.ServeHTTP(w, r)
+		case CoreServiceWaitForSpawnProcedure:
+			coreServiceWaitForSpawnHandler.ServeHTTP(w, r)
+		case CoreServiceOpenIssueProcedure:
+			coreServiceOpenIssueHandler.ServeHTTP(w, r)
+		case CoreServiceListResponderCardsProcedure:
+			coreServiceListResponderCardsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1031,4 +1143,20 @@ func (UnimplementedCoreServiceHandler) DraftCard(context.Context, *connect.Reque
 
 func (UnimplementedCoreServiceHandler) SubmitReview(context.Context, *connect.Request[v1.SubmitReviewRequest]) (*connect.Response[v1.SubmitReviewResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SubmitReview is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) SpawnWorker(context.Context, *connect.Request[v1.SpawnWorkerRequest]) (*connect.Response[v1.SpawnWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SpawnWorker is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) WaitForSpawn(context.Context, *connect.Request[v1.WaitForSpawnRequest]) (*connect.Response[v1.WaitForResultResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.WaitForSpawn is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) OpenIssue(context.Context, *connect.Request[v1.OpenIssueRequest]) (*connect.Response[v1.OpenIssueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.OpenIssue is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ListResponderCards(context.Context, *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListResponderCards is not implemented"))
 }

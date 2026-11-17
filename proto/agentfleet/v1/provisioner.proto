@@ -420,6 +420,8 @@ service ProvisionerService {
   // Opens a pull request from a pushed branch, for an owner-approved card
   // (docs/adr/0086 §4 open_pr).
   rpc OpenPullRequest(OpenPullRequestRequest) returns (OpenPullRequestResponse);
+  // Opens an issue for a standing character (docs/adr/0084 §6): core has checked the definition owns the repo.
+  rpc CreateIssue(CreateIssueRequest) returns (CreateIssueResponse);
 }
 
 // One inline review comment, on the PR head's version of the file.
@@ -462,6 +464,17 @@ message OpenPullRequestRequest {
 }
 
 message OpenPullRequestResponse {
+  string url = 1;
+}
+
+message CreateIssueRequest {
+  // owner/name.
+  string repo = 1;
+  string title = 2;
+  string body = 3;
+}
+
+message CreateIssueResponse {
   string url = 1;
 }
 
