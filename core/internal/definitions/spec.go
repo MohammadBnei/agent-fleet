@@ -199,6 +199,20 @@ type Limits struct {
 	// Spawns bounds a standing character's spawned runs (ADR-0084 §6). Unset or 0 is the Default* below, applied
 	// where it is read, as AnswerTimeout is.
 	Spawns *SpawnLimits `yaml:"spawns,omitempty" json:"spawns,omitempty"`
+	// TurnsPerDay is a standing character's budget of turns per calendar day, Europe/Paris, across its threads
+	// (ADR-0084 §9). Unset or 0 is DefaultTurnsPerDay, applied where it is read (TurnBudget).
+	TurnsPerDay int `yaml:"turnsPerDay,omitempty" json:"turnsPerDay,omitempty"`
+}
+
+// DefaultTurnsPerDay is limits.turnsPerDay when a character sets none.
+const DefaultTurnsPerDay = 200
+
+// TurnBudget is s's turns per day with the default filled in.
+func (s *Spec) TurnBudget() int {
+	if s == nil || s.Limits == nil || s.Limits.TurnsPerDay <= 0 {
+		return DefaultTurnsPerDay
+	}
+	return s.Limits.TurnsPerDay
 }
 
 // SpawnLimits: Concurrent is the character's sub-pool inside the definition pool; PerHour and PerDay cap the runs

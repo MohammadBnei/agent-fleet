@@ -116,6 +116,30 @@ test("a responder's alert-group card names the group, not a repo and a number", 
   expect(html).not.toContain("#0");
 });
 
+// docs/adr/0084 §9: a character's budget card names the character and what raising it does.
+test("a character's budget card names the character and its raise_budget effect", () => {
+  const html = render(
+    card({
+      draftedBy: "core",
+      subject: {
+        $typeName: "agentfleet.v1.CardSubject",
+        repo: "keeper",
+        kind: "character",
+        number: 0n,
+        url: "",
+        groupKey: "",
+      },
+      options: [
+        option("1", "Raise the budget", "raise_budget", "yes"),
+        option("2", "Keep the hold", "handoff", "yes"),
+      ],
+    }),
+  );
+  expect(html).toContain("character keeper");
+  expect(html).toContain("daily turn hold for 24 hours");
+  expect(html).not.toContain("#0");
+});
+
 // Core's own cards (dispatch's close-threads card) are not an agent's words.
 test("a card core drafted says so instead of agent claim", () => {
   const html = render(card({ draftedBy: "core" }));

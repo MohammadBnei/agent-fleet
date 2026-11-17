@@ -31,6 +31,7 @@ const REVERSIBLE: Record<string, string> = {
 function subjectText(s: CardSubject | undefined): string {
   if (!s) return "";
   if (s.kind === "alert_group") return `alert ${s.groupKey}`;
+  if (s.kind === "character") return `character ${s.repo}`;
   return s.kind === "repo" ? s.repo : `${s.repo} ${s.kind} #${s.number}`;
 }
 
@@ -39,6 +40,7 @@ const coreVerbText: Record<string, string> = {
   catalogue: "Core runs the bound remediation",
   open_pr: "Core opens a pull request from the pushed branch",
   open_session: "Core starts a supervised session seeded with the typed brief",
+  raise_budget: "Core lifts this character's daily turn hold for 24 hours",
   executor_step: "Refused: the executor does not exist yet",
 };
 

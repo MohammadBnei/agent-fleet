@@ -20,11 +20,12 @@ const (
 	VerbOpenPR       = "open_pr"
 	VerbOpenSession  = "open_session"
 	VerbExecutorStep = "executor_step"
+	VerbRaiseBudget  = "raise_budget"
 )
 
 // IsCoreVerb: the verb carries a bound payload that core runs itself.
 func IsCoreVerb(v string) bool {
-	return v == VerbCatalogue || v == VerbOpenPR || v == VerbOpenSession || v == VerbExecutorStep
+	return v == VerbCatalogue || v == VerbOpenPR || v == VerbOpenSession || v == VerbExecutorStep || v == VerbRaiseBudget
 }
 
 // PRTarget is open_pr's payload: a branch a B.C session pushed, and the commit the owner approved.
@@ -42,6 +43,11 @@ type Brief struct {
 	Findings []BriefFinding `json:"findings,omitempty"`
 }
 
+// Budget is raise_budget's payload: the character whose daily turn hold lifts for 24 hours (ADR-0084 §9).
+type Budget struct {
+	Character string `json:"character"`
+}
+
 type BriefFinding struct {
 	Name  string  `json:"name"`
 	Value float64 `json:"value"`
@@ -51,7 +57,9 @@ var (
 	fleetRepo   = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
 	headSHA     = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	branchName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
-	findingName = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
+	// characterName is a definition name (definitions' nameRe).
+	characterName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	findingName   = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
 )
 
 // ValidBranch: a branch name git accepts (git check-ref-format's rules for what we allow): no "..", "//",
@@ -109,6 +117,15 @@ func bindEffect(e *agentfleetv1.CardEffect) error {
 			return err
 		}
 		canon = t
+	case VerbRaiseBudget:
+		var b Budget
+		if err := strictJSON(e.GetPayload(), &b); err != nil {
+			return bad("%v", err)
+		}
+		if !characterName.MatchString(b.Character) {
+			return bad("%q is not a character name", b.Character)
+		}
+		canon = b
 	case VerbOpenSession:
 		var b Brief
 		if err := strictJSON(e.GetPayload(), &b); err != nil {

@@ -525,6 +525,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	coreSvc.SetIssueFunc(provisioner.CreateIssue)
 	coreSvc.SetResponderCards(responder.Cards{Pool: pool}.List)
 	go agentSvc.RunSpawnReports(ctx, 15*time.Second)
+	go agentSvc.RunBudgets(ctx, time.Minute)
 	remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
 	agentSvc.SetCardEffects(agentsvc.CardEffects{
 		Remediate: remSvc.Select,

@@ -75,6 +75,25 @@ var (
 		},
 	)
 
+	// CharacterTurnsLastHour and CharacterTurnsPerDay are the pair behind ADR-0084 §9's alert: turns_last_hour * 24
+	// >= turnsPerDay / 2 means the character spends half its day's budget at this hour's pace. Labelled by
+	// character (a definition name, few).
+	CharacterTurnsLastHour = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "agentfleet_character_turns_last_hour",
+			Help: "Turns a started standing character finished in the last hour",
+		},
+		[]string{"character"},
+	)
+
+	CharacterTurnsPerDay = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "agentfleet_character_turns_per_day",
+			Help: "A started standing character's limits.turnsPerDay",
+		},
+		[]string{"character"},
+	)
+
 	MaxInFlight = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "agentfleet_max_in_flight",
