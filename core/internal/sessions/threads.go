@@ -57,10 +57,11 @@ func (s *Store) ResumeFrom(ctx context.Context, sessionID string) (fromSeq int64
 	return *seq, true, nil
 }
 
-// CloseThread is the owner's close (docs/adr/0084 §4): the SDK session id is dropped, the transcript stays.
+// CloseThread is the owner's close (docs/adr/0084 §4, amended A4): the thread is parked. Its SDK session id and
+// transcript stay, and the owner's next message to the key resumes it (transcript.noteThread).
 // False when the thread is main (never closes), unknown or already closed.
 func (s *Store) CloseThread(ctx context.Context, sessionID, key string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE session_threads SET closed_at = now(), agent_session_id = NULL
+	tag, err := s.pool.Exec(ctx, `UPDATE session_threads SET closed_at = now()
 		WHERE session_id = $1 AND thread_key = $2 AND thread_key <> $3 AND closed_at IS NULL`, sessionID, key, MainThread)
 	if err != nil {
 		return false, fmt.Errorf("close thread: %w", err)
@@ -84,6 +85,25 @@ func (s *Store) IdleThreads(ctx context.Context, idle time.Duration) ([]IdleThre
 		err = r.Scan(&c.SessionID, &c.Key)
 		return
 	})
+}
+
+// RunningHeads is RunningThreads with the entry each turn answers: thread key to the head entry's seq.
+func (s *Store) RunningHeads(ctx context.Context, id string) (map[string]int64, error) {
+	rows, err := s.pool.Query(ctx, `SELECT q.thread_key, q.head_seq FROM (`+runningThreads+`) q`, id)
+	if err != nil {
+		return nil, fmt.Errorf("running heads: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var key string
+		var seq int64
+		if err := rows.Scan(&key, &seq); err != nil {
+			return nil, fmt.Errorf("running heads: %w", err)
+		}
+		out[key] = seq
+	}
+	return out, rows.Err()
 }
 
 // SaveThreadSessionID is SaveAgentSessionID for a thread other than main, under the same lease rule. An
@@ -119,7 +139,7 @@ type Settled struct {
 // runningThreads selects the open threads of session $1 with a turn running: the head entry (the first
 // turn-starting one at or above the cursor) has agent output above it and above the thread's last result. top
 // is that output's highest seq.
-const runningThreads = `SELECT st.thread_key, head.seq, COALESCE(st.effect_seq, -1), COALESCE(st.crash_seq, -1), st.crashes, top.seq
+const runningThreads = `SELECT st.thread_key, head.seq AS head_seq, COALESCE(st.effect_seq, -1), COALESCE(st.crash_seq, -1), st.crashes, top.seq AS top_seq
 		FROM session_threads st
 		CROSS JOIN LATERAL (SELECT MIN(h.seq) AS seq FROM transcript h WHERE h.session_id = st.session_id
 		                      AND h.thread_key = st.thread_key AND h.seq >= st.cursor AND ` + turnStarting + `) head

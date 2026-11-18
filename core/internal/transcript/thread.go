@@ -55,8 +55,8 @@ func threadOf(ctx context.Context) (key string, named bool) {
 }
 
 // noteThread keeps session_threads in step with one appended entry, inside the append's transaction:
-//   - an owner or peer message opens its thread (or reopens a closed one, from this entry with a fresh SDK
-//     session), and stamps the thread active (§4);
+//   - an owner or peer message opens its thread (or reopens a parked one, from this entry, keeping its SDK
+//     session id: docs/adr/0084 amendment A4), and stamps the thread active (§4);
 //   - a result advances the thread's cursor past its consumedSeq, so a re-warm resumes from the last result
 //     and never from LatestSeq (§4). A crash result written by core does the same.
 //
@@ -99,7 +99,6 @@ func noteThread(ctx context.Context, tx pgx.Tx, sessionID string, e Entry) error
 			ON CONFLICT (session_id, thread_key) DO UPDATE SET
 			  last_active_at = now(),
 			  cursor = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.cursor ELSE EXCLUDED.cursor END,
-			  agent_session_id = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.agent_session_id END,
 			  effect_seq = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.effect_seq END,
 			  crash_seq = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.crash_seq END,
 			  crashes = CASE WHEN session_threads.closed_at IS NULL THEN session_threads.crashes ELSE 0 END,

@@ -495,7 +495,7 @@ type CardSubject struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// owner/name.
 	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	// "pr", "issue", "alert", "repo" or "alert_group".
+	// "pr", "issue", "alert", "repo", "alert_group" or "character".
 	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Required for pr, issue and alert; 0 for repo.
 	Number int64 `protobuf:"varint,3,opt,name=number,proto3" json:"number,omitempty"`
@@ -503,7 +503,11 @@ type CardSubject struct {
 	Url string `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
 	// An "alert_group" subject (docs/adr/0086 §4): the first responder's alert group, 16 lowercase hex. It has no
 	// GitHub repo or number; the thread key is alert/<group_key>.
-	GroupKey      string `protobuf:"bytes,5,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	GroupKey string `protobuf:"bytes,5,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	// A "character" subject (docs/adr/0084 amendment A6): the character's definition name. Core files it for a
+	// character's budget and the thread key is character/<name>. A card stored before this field carries the name in
+	// repo; reads accept both and new cards write this one only.
+	Name          string `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -569,6 +573,13 @@ func (x *CardSubject) GetUrl() string {
 func (x *CardSubject) GetGroupKey() string {
 	if x != nil {
 		return x.GroupKey
+	}
+	return ""
+}
+
+func (x *CardSubject) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -879,13 +890,14 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\v_before_seq\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq\"|\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq\"\x90\x01\n" +
 	"\vCardSubject\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06number\x18\x03 \x01(\x03R\x06number\x12\x10\n" +
 	"\x03url\x18\x04 \x01(\tR\x03url\x12\x1b\n" +
-	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\"]\n" +
+	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\"]\n" +
 	"\n" +
 	"CardEffect\x12\x12\n" +
 	"\x04verb\x18\x01 \x01(\tR\x04verb\x12\x18\n" +

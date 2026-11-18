@@ -67,6 +67,12 @@ spec:
             # port-forwarded console's origin must be admitted to reach it.
             - name: FLEET_DEV_ORIGINS
               value: "http://localhost:8080"
+            # docs/adr/0084 amendment A9: the game's dev server (ukubi-game on 127.0.0.1:8152) is an admin origin, a
+            # surface for the character API. Kind-local only, never in k8s/core.yaml; override it here for another
+            # port. It must not also be in FLEET_DEV_ORIGINS above: dev origins are checked first and would pass the
+            # game as the console. An http origin is accepted because the gate is off (FLEET_AUTH_DISABLED).
+            - name: FLEET_ADMIN_ORIGINS
+              value: "http://127.0.0.1:8152"
             # docs/adr/0057: the provisioner authenticates to CoreService with
             # this shared value. Unset on both sides, core starts but rejects
             # every pod event. Must equal 40-provisioner.yaml's. A local-only

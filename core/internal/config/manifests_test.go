@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -95,6 +96,21 @@ func TestManifestsLoad(t *testing.T) {
 		} else if c.Warnings != nil {
 			t.Errorf("%s: Load warns about what the manifest sets: %q", name, c.Warnings)
 		}
+	}
+	// docs/adr/0084 amendment A9: the game's dev origin is an admin origin in kind-local, and only there: production's
+	// is https, and the dev origins (checked first, as the console) do not hold it.
+	kc, err := Load(env(kind))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind["FLEET_ADMIN_ORIGINS"] != "http://127.0.0.1:8152" || !slices.Equal(kc.AdminOrigins, []string{"http://127.0.0.1:8152"}) {
+		t.Errorf("kind-local FLEET_ADMIN_ORIGINS = %q (loaded %v), want http://127.0.0.1:8152", kind["FLEET_ADMIN_ORIGINS"], kc.AdminOrigins)
+	}
+	if strings.Contains(kind["FLEET_DEV_ORIGINS"], "127.0.0.1:8152") {
+		t.Errorf("FLEET_DEV_ORIGINS %q holds the admin origin: the call would pass as the console", kind["FLEET_DEV_ORIGINS"])
+	}
+	if strings.Contains(core["FLEET_ADMIN_ORIGINS"], "127.0.0.1") || strings.Contains(core["FLEET_ADMIN_ORIGINS"], "http://") {
+		t.Errorf("k8s/core.yaml FLEET_ADMIN_ORIGINS = %q: the dev origin is kind-local only", core["FLEET_ADMIN_ORIGINS"])
 	}
 	// The positive control: the reader sees a value, and Load refuses a bad required one in the same map.
 	bad := map[string]string{}

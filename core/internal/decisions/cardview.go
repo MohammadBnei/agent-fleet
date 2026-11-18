@@ -65,6 +65,10 @@ func storedCard(r Record) *agentfleetv1.Card {
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(r.Payload), c); err != nil {
 		return nil
 	}
+	// A character card stored before CardSubject.name has the name in repo (docs/adr/0084 amendment A6).
+	if sub := c.GetSubject(); sub.GetKind() == "character" && sub.GetName() == "" {
+		sub.Name, sub.Repo = sub.GetRepo(), ""
+	}
 	return c
 }
 

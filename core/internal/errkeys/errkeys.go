@@ -59,6 +59,11 @@ const (
 	// KeyStandingOnly: the definition is a standing character (docs/adr/0084 §2): only an admin's Start opens it, so
 	// Open, Invoke and CreateThread are refused.
 	KeyStandingOnly errs.Key = "agent.standing_only"
+	// KeyCharacterNotFound: the character API's name is no standing definition and no started character
+	// (docs/adr/0084 amendment A4).
+	KeyCharacterNotFound errs.Key = "agent.character_not_found"
+	// KeyThreadNotFound: the character has no such thread; main never closes (docs/adr/0084 amendment A4).
+	KeyThreadNotFound errs.Key = "agent.thread_not_found"
 	// KeyCardBudget: the definition drafted its 10 cards of the last 24 hours (CoreService.DraftCard).
 	KeyCardBudget errs.Key = "core.card_budget"
 )

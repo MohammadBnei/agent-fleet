@@ -1,0 +1,41 @@
+# A standing character for developing the game against a local core (docs/adr/0084 amendment A9). It holds the Speak
+# grant and a persona with home: world, so ListCharacters, StartCharacter, PostToCharacter and WatchSpeech can be
+# driven from the game's dev origin (30-core.yaml FLEET_ADMIN_ORIGINS) without a production character.
+# Kind-local only: it lives here, never in definitions/, which production reads whole and builds a vault for
+# (TestDevSpeakerIsKindLocalOnly). /kind-local copies it into definitions/ of the local mirror's `game` commit.
+# git.mode pr: the model credential only, so the pod holds no push credential even offline.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: dev-speaker }
+spec:
+  extends: game-base
+  audience: { group: platform-admins }
+  credentials:
+    vault: dev-speaker
+    services:
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: ukubi-game }
+  git: { mode: pr, identity: { name: dev-speaker, email: dev-speaker@bnei.dev } }
+  lifecycle: { allow: [standing] }
+  persona:
+    display_name: Dev Speaker
+    role: Says short lines to the game while it is built
+    traits: [brief, friendly]
+    portrait: dev-speaker
+    home: world
+  systemPrompt:
+    append: |
+      You are a development character for the game's UI. When the owner writes to you, answer with the speak tool: one
+      or two short lines, then stop. You have no work to do and nothing to remember.
+  tools:
+    allow: [Read, Glob, Grep]
+    deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
+  sidecarTools: [AskUserQuestion, speak]
+  # Guaranteed QoS (ADR-0084 §9): requests equal limits.
+  resources: { cpu: 500m, memory: 1536Mi }
+  limits:
+    maxTurns: 20
+    timeout: 30m
+    concurrency: 1
+    startupBudget: 3m
+    turnsPerDay: 100

@@ -366,3 +366,16 @@ func (l *Loop) repinStanding(ctx context.Context) {
 		slog.Info("sessions loop: re-pinned a character in place", "sessionId", r.ID, "from", r.SHA, "to", head.SHA)
 	}
 }
+
+// RestartSeq is the highest transcript seq when Start last resumed the character, -1 when it never has. A Stop's abort
+// in main at or below it targeted an earlier pod (docs/adr/0084 amendment A4).
+func (s *Store) RestartSeq(ctx context.Context, id string) (int64, error) {
+	var seq *int64
+	if err := s.pool.QueryRow(ctx, `SELECT restart_seq FROM sessions WHERE id = $1`, id).Scan(&seq); err != nil {
+		return -1, fmt.Errorf("restart seq: %w", err)
+	}
+	if seq == nil {
+		return -1, nil
+	}
+	return *seq, nil
+}

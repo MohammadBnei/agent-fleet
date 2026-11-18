@@ -47,6 +47,10 @@ type console interface {
 	ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error)
 	SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error)
 	StopSession(ctx context.Context, req *connect.Request[agentfleetv1.StopSessionRequest]) (*connect.Response[agentfleetv1.StopSessionResponse], error)
+	// The character API's lifecycle is the console's own (docs/adr/0084 amendment A4): one path, never a second.
+	StartStanding(ctx context.Context, req *connect.Request[agentfleetv1.StartStandingRequest]) (*connect.Response[agentfleetv1.StartStandingResponse], error)
+	StopStanding(ctx context.Context, req *connect.Request[agentfleetv1.StopStandingRequest]) (*connect.Response[agentfleetv1.StopStandingResponse], error)
+	CloseStandingThread(ctx context.Context, req *connect.Request[agentfleetv1.CloseStandingThreadRequest]) (*connect.Response[agentfleetv1.CloseStandingThreadResponse], error)
 }
 
 // heads is the part of *definitions.Registry this reads.

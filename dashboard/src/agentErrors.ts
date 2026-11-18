@@ -28,6 +28,8 @@ const keyText: Record<Keyed, string> = {
     "This session's trust set does not allow that. Ask the owner through a decision card; nothing was done.",
   STANDING_ONLY:
     "This agent is a standing character: only an admin's Start opens it. Nothing was done.",
+  CHARACTER_NOT_FOUND: "There is no such character. Nothing was done.",
+  THREAD_NOT_FOUND: "This character has no such thread. Nothing was done.",
 };
 
 // agentErrorText is the key's text, or the error's own message for a key with none (server.internal, a key a newer

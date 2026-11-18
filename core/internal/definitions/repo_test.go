@@ -1,6 +1,7 @@
 package definitions
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path"
@@ -97,10 +98,16 @@ func TestLocalKindDefinitions(t *testing.T) {
 	for _, e := range fileErrs {
 		t.Errorf("file error: %v", e)
 	}
-	launchable := false
+	launchable, speaker := false, false
 	for _, r := range results {
 		if r.Err != nil {
 			t.Errorf("definition %q is invalid: %v", r.Name, r.Err)
+		}
+		if r.Name == "dev-speaker" && r.Err == nil {
+			// docs/adr/0084 amendment A9: a standing character with the Speak grant and a persona at home in the world.
+			e := r.Effective
+			speaker = e.Lifecycle != nil && slices.Equal(e.Lifecycle.Allow, []string{"standing"}) && slices.Contains(e.SidecarTools, "speak") &&
+				e.Persona != nil && e.Persona.Home == "world"
 		}
 		if r.Name == "game-ukubi-game" && !r.Abstract && r.Err == nil {
 			launchable = r.Effective.Mode != nil && r.Effective.Mode.Default == "auto"
@@ -108,6 +115,43 @@ func TestLocalKindDefinitions(t *testing.T) {
 	}
 	if !launchable {
 		t.Error("game-ukubi-game must be a valid, launchable definition in auto")
+	}
+	if !speaker {
+		t.Error("dev-speaker must be a valid standing definition with the speak grant and home: world")
+	}
+}
+
+// docs/adr/0084 amendment A9: dev-speaker is the local stack's, never production's. Production reads definitions/ at the
+// provisioner's release tag, whole; so the file must not be in it, no definition there may take its name, and nothing
+// that ships (the provisioner, core, k8s/) may read the local tree.
+func TestDevSpeakerIsKindLocalOnly(t *testing.T) {
+	results, _ := Load(definitionTree(t, "definitions"))
+	for _, r := range results {
+		if r.Name == "dev-speaker" {
+			t.Errorf("definitions/ defines %q: production would load it", r.Name)
+		}
+	}
+	root := os.DirFS("../../..")
+	if _, err := fs.Stat(root, "definitions/dev-speaker.yaml"); err == nil {
+		t.Error("definitions/dev-speaker.yaml exists")
+	}
+	if _, err := fs.Stat(root, "local/kind/definitions/dev-speaker.yaml"); err != nil {
+		t.Errorf("the kind-local copy is missing: %v", err)
+	}
+	for _, dir := range []string{"k8s", "provisioner", "core/cmd", "core/internal", "packs", "fleet-shared", ".github"} {
+		err := fs.WalkDir(root, dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || strings.HasSuffix(p, "_test.go") || strings.Contains(p, "node_modules") {
+				return err
+			}
+			b, err := fs.ReadFile(root, p)
+			if err == nil && (strings.Contains(string(b), "local/kind/definitions") || strings.Contains(string(b), "dev-speaker")) {
+				t.Errorf("%s names the kind-local definitions: only /kind-local's mirror.sh may", p)
+			}
+			return err
+		})
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
 	}
 }
 

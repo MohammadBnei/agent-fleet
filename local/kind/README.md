@@ -31,6 +31,8 @@ stays online.
   rewrite it to the forge (`FLEET_GIT_URL_REWRITE`, ConfigMap `local-forge`),
   the worker with its session id as the push user. With no App, owner vaults
   take a placeholder GitHub token from the mounted `GH_OWNER_<OWNER>` file.
+- **`FLEET_ADMIN_ORIGINS` is `http://127.0.0.1:8152`** in `30-core.yaml` (docs/adr/0084 A9): the game's dev server is a
+  surface for the character API. Edit it there to use another port; it is never in `k8s/core.yaml`.
 - **Definitions come from a read-only mirror**: `mirror.sh` writes a bare repo
   on the workspace volume, outside every worker pod's mounts, whose `game` branch is
   the committed branch under test with `definitions/` replaced by
@@ -120,7 +122,7 @@ reload fails loudly (`ErrImageNeverPull`) rather than silently.
 | `40-provisioner.yaml` | local variant of `k8s/provisioner/deployment.yaml` (local images, local vault, mirror, forge rewrite) |
 | `vault-bootstrap.sh` | the local vault's bootstrap: owner, invite-only, the provisioner's token and files |
 | `mirror.sh` | the read-only definitions mirror (`game` branch) |
-| `definitions/` | the game's sim-only agents, checked by `core/internal/definitions/repo_test.go` |
+| `definitions/` | the game's sim-only agents, and `dev-speaker`, a standing character with the Speak grant for the game's UI (docs/adr/0084 A9); checked by `core/internal/definitions/repo_test.go`, which also proves production never loads it |
 
 `serviceaccount.yaml`/`role.yaml`/`service.yaml`/`definition-egress.yaml` for
 the provisioner are applied straight from `k8s/provisioner/` — RBAC/Service shape is identical

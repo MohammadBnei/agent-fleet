@@ -134,3 +134,42 @@ func TestAnswerOption(t *testing.T) {
 		}
 	}
 }
+
+// docs/adr/0084 amendment A6: a character subject names the character in name; a card stored before that field has it
+// in repo, which still reads, as name. A new card writes name only, and the thread key is character/<name> either way.
+func TestCharacterSubject_NameAndLegacyRepo(t *testing.T) {
+	opts := []*agentfleetv1.CardOption{
+		{Label: "Raise", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
+		{Label: "Keep", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
+	}
+	for _, tc := range []struct {
+		what    string
+		sub     *agentfleetv1.CardSubject
+		ok      bool
+		wantKey string
+	}{
+		{"name", &agentfleetv1.CardSubject{Kind: "character", Name: "ada"}, true, "character/ada"},
+		{"the old repo", &agentfleetv1.CardSubject{Kind: "character", Repo: "ada"}, true, "character/ada"},
+		{"both, the same", &agentfleetv1.CardSubject{Kind: "character", Name: "ada", Repo: "ada"}, true, "character/ada"},
+		{"both, differing", &agentfleetv1.CardSubject{Kind: "character", Name: "ada", Repo: "bo"}, false, ""},
+		{"neither", &agentfleetv1.CardSubject{Kind: "character"}, false, ""},
+		{"a bad name", &agentfleetv1.CardSubject{Kind: "character", Name: "Ada Lovelace"}, false, ""},
+		{"a number", &agentfleetv1.CardSubject{Kind: "character", Name: "ada", Number: 3}, false, ""},
+		{"a name on a pr", &agentfleetv1.CardSubject{Kind: "pr", Repo: "o/r", Number: 1, Name: "ada"}, false, ""},
+		{"a name on an alert group", &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef", Name: "ada"}, false, ""},
+	} {
+		c := &agentfleetv1.Card{Ask: "Lift the hold?", Subject: tc.sub, Options: opts}
+		key, err := normalize(c)
+		if (err == nil) != tc.ok || key != tc.wantKey {
+			t.Errorf("%s: key %q err %v, want ok=%v key %q", tc.what, key, err, tc.ok, tc.wantKey)
+			continue
+		}
+		if tc.ok && (c.GetSubject().GetName() != "ada" || c.GetSubject().GetRepo() != "") {
+			t.Errorf("%s: filed as name %q repo %q, want name only", tc.what, c.GetSubject().GetName(), c.GetSubject().GetRepo())
+		}
+	}
+	old := `{"ask":"Lift?","subject":{"kind":"character","repo":"ada"},"options":[{"id":"1","label":"Yes","effect":{"verb":"handoff"},"reversible":"yes"}]}`
+	if sub := CardView(Record{Kind: Card, Payload: old}).GetSubject(); sub.GetName() != "ada" || sub.GetRepo() != "" {
+		t.Errorf("a stored card's subject reads as name %q repo %q, want ada and none", sub.GetName(), sub.GetRepo())
+	}
+}

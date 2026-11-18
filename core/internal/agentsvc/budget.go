@@ -67,7 +67,7 @@ func (s *Server) reportBudget(ctx context.Context, id, definition string) error 
 	_, err = s.decisions.Draft(ctx, s.transcr, decisions.Draft{
 		SessionID: id, From: "system", IdempotencyKey: "budget:" + id + ":" + time.Now().In(budgetZone).Format("2006-01-02"),
 		Ask:     fmt.Sprintf("%s has spent its %d turns for today. Its fleet and peer messages wait; yours still go through. Lift the hold for 24 hours?", definition, budget),
-		Subject: &agentfleetv1.CardSubject{Kind: "character", Repo: definition},
+		Subject: &agentfleetv1.CardSubject{Kind: "character", Name: definition},
 		Options: []*agentfleetv1.CardOption{
 			{Label: "Raise the budget for 24 hours", Effect: &agentfleetv1.CardEffect{Verb: decisions.VerbRaiseBudget, Payload: fmt.Sprintf(`{"character":%q}`, definition)}, Reversible: "yes"},
 			{Label: "Keep the hold", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}, Reversible: "yes", Recommended: true},

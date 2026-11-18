@@ -616,8 +616,9 @@ func (*StopSessionResponse) Descriptor() ([]byte, []int) {
 }
 
 // StartStanding and StopStanding (docs/adr/0084 §2, admin console only): a character is the one session of a
-// definition whose lifecycle is "standing". Start makes the row, or resumes a stopped one with a fresh SDK session
-// and the current definition version; Stop marks it stopped. Neither warms a pod.
+// definition whose lifecycle is "standing". Start makes the row, or resumes a stopped one, every thread with its kept SDK
+// session id and cursor, on the current definition version; Stop marks it stopped and settles only a turn in flight.
+// Neither warms a pod. AgentService's StartCharacter and StopCharacter call these.
 type StartStandingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Definition    string                 `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
@@ -786,8 +787,8 @@ func (*StopStandingResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{12}
 }
 
-// CloseStandingThread closes one of a standing character's threads (docs/adr/0084 §4): its SDK session id is dropped, its
-// transcript stays, and a later message to the same key opens it afresh. Main never closes.
+// CloseStandingThread closes one of a standing character's threads (docs/adr/0084 §4, amended A4): it is parked. Its SDK
+// session id and transcript stay, and a later message to the same key resumes it. Main never closes.
 type CloseStandingThreadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Definition    string                 `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`

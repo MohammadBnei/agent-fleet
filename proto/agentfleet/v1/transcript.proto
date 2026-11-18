@@ -128,7 +128,7 @@ message ReadTranscriptSinceResponse {
 message CardSubject {
   // owner/name.
   string repo = 1;
-  // "pr", "issue", "alert", "repo" or "alert_group".
+  // "pr", "issue", "alert", "repo", "alert_group" or "character".
   string kind = 2;
   // Required for pr, issue and alert; 0 for repo.
   int64 number = 3;
@@ -137,6 +137,10 @@ message CardSubject {
   // An "alert_group" subject (docs/adr/0086 §4): the first responder's alert group, 16 lowercase hex. It has no
   // GitHub repo or number; the thread key is alert/<group_key>.
   string group_key = 5;
+  // A "character" subject (docs/adr/0084 amendment A6): the character's definition name. Core files it for a
+  // character's budget and the thread key is character/<name>. A card stored before this field carries the name in
+  // repo; reads accept both and new cards write this one only.
+  string name = 6;
 }
 
 // What answering with an option does. Nothing writes to GitHub.

@@ -41,6 +41,11 @@ enum AgentErrorKey {
   // The definition is a standing character (docs/adr/0084 §2): only an admin's Start opens it. Open, Invoke and
   // CreateThread refuse it, FailedPrecondition, and nothing was created.
   AGENT_ERROR_KEY_STANDING_ONLY = 10 [(ukubi.errors.v1.key) = "agent.standing_only"];
+  // The character API (docs/adr/0084 amendment A4): no standing definition or started character by that name. Nothing
+  // was done.
+  AGENT_ERROR_KEY_CHARACTER_NOT_FOUND = 11 [(ukubi.errors.v1.key) = "agent.character_not_found"];
+  // The character has no thread by that key (main included, which never closes). Nothing was done.
+  AGENT_ERROR_KEY_THREAD_NOT_FOUND = 12 [(ukubi.errors.v1.key) = "agent.thread_not_found"];
 }
 
 // AgentService (docs/adr/0066): the one API members and registered clients
@@ -120,7 +125,89 @@ service AgentService {
   // Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
   // reconnects and gets the baseline again.
   rpc WatchCharacters(WatchCharactersRequest) returns (stream WatchCharactersResponse);
+  // docs/adr/0084 amendment A4, owner only. Start makes the character's session, or resumes a stopped one with every
+  // thread's SDK session id and cursor kept; it returns the new state at once and warms nothing (the first message does).
+  // Starting a started character returns its state; on a character still stopping, state "stopping" with why "pod drain".
+  rpc StartCharacter(StartCharacterRequest) returns (StartCharacterResponse) {
+    option (ukubi.errors.v1.keys) = "agent.character_not_found";
+  }
+  // Stops the pod and keeps every thread's SDK session id and cursor; only a turn in flight is aborted, like Ctrl-C. No
+  // confirm: Start resumes it. Stopping a stopped character returns its state.
+  rpc StopCharacter(StopCharacterRequest) returns (StopCharacterResponse) {
+    option (ukubi.errors.v1.keys) = "agent.character_not_found";
+  }
+  // docs/adr/0084 amendment A5, owner only: one thread's transcript in full, as the console shows it, tool results
+  // included. The character's standing session is owned by client:standing:<name>, which a thread read refuses the owner.
+  rpc ReadCharacterThread(ReadCharacterThreadRequest) returns (ReadCharacterThreadResponse) {
+    option (ukubi.errors.v1.keys) = "agent.character_not_found";
+    option (ukubi.errors.v1.keys) = "agent.thread_not_found";
+  }
+  // ReadCharacterThread, then each new entry, until the stream's age (90 s) is up; the client reconnects from next_seq.
+  rpc WatchCharacterThread(WatchCharacterThreadRequest) returns (stream WatchCharacterThreadResponse) {
+    option (ukubi.errors.v1.keys) = "agent.character_not_found";
+    option (ukubi.errors.v1.keys) = "agent.thread_not_found";
+  }
+  // docs/adr/0084 amendment A4/A5, owner only: parks the thread. Its SDK session id and transcript are kept, and the
+  // owner's next PostToCharacter on that key resumes it with full context. Only a turn in flight is aborted. Closing a
+  // parked thread is a no-op; main never closes (thread_not_found).
+  rpc CloseCharacterThread(CloseCharacterThreadRequest) returns (CloseCharacterThreadResponse) {
+    option (ukubi.errors.v1.keys) = "agent.character_not_found";
+    option (ukubi.errors.v1.keys) = "agent.thread_not_found";
+  }
 }
+
+message StartCharacterRequest {
+  // The character's definition name.
+  string name = 1;
+}
+
+message StartCharacterResponse {
+  // The character as ListCharacters shows it now.
+  Character character = 1;
+}
+
+message StopCharacterRequest {
+  string name = 1;
+}
+
+message StopCharacterResponse {
+  Character character = 1;
+}
+
+message ReadCharacterThreadRequest {
+  string name = 1;
+  // The thread key; "main" is the owner's admin thread.
+  string thread = 2;
+  // The first seq to return (the whole transcript's numbering).
+  int64 since = 3;
+  // At most 500; 0 is 500.
+  int32 limit = 4;
+}
+
+message ReadCharacterThreadResponse {
+  // Only this thread's entries, in seq order. The same entry the console shows, from a character's agent too.
+  repeated Entry entries = 1;
+  // Where to read on from.
+  int64 next_seq = 2;
+}
+
+message WatchCharacterThreadRequest {
+  string name = 1;
+  string thread = 2;
+  int64 since = 3;
+}
+
+message WatchCharacterThreadResponse {
+  repeated Entry entries = 1;
+  int64 next_seq = 2;
+}
+
+message CloseCharacterThreadRequest {
+  string name = 1;
+  string thread = 2;
+}
+
+message CloseCharacterThreadResponse {}
 
 message ListCharactersRequest {}
 
@@ -195,6 +282,9 @@ message CharacterThread {
   bool running = 3;
   // RFC 3339: the thread's latest entry.
   string last_at = 4;
+  // Closed by the owner or by the 7-day idle close: its session id and transcript are kept, and the next owner
+  // message to the key resumes it. Open threads come first, main first.
+  bool parked = 5;
 }
 
 message CharacterTurn {
@@ -236,6 +326,9 @@ message WatchSpeechResponse {
   string text = 2;
   // A short label for the game's portrait (the character's own choice, e.g. "happy"); may be empty.
   string face = 3;
+  // The thread of the character the line belongs to (the turn that spoke it); never empty on a line, empty only on
+  // the first, empty frame that says the stream is connected (docs/adr/0084 amendment A7).
+  string thread_key = 4;
 }
 
 message AgentDefinitionInfo {
@@ -530,6 +623,13 @@ message Decision {
   // The decision as a card (docs/adr/0082 §5): a card's own, or the view core
   // builds for a question, permission or plan. Unset when none can be built.
   Card card = 16;
+  // The character the decision belongs to (docs/adr/0084 amendment A6), set by core from the session row: the standing
+  // session's definition name, or the character a spawned run's principal names (standing:<name>), or a character
+  // subject's name on a card core filed. Empty otherwise; the session never sets it.
+  string character = 17;
+  // With character: the thread of the character the request is on, the transcript entry's thread. For a spawned run,
+  // the run's own thread key.
+  string thread_key = 18;
 }
 
 message ListDecisionsRequest {

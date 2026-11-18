@@ -102,6 +102,32 @@ func TestStreamHumanMessages_StandingDeliversPerThread(t *testing.T) {
 	}
 }
 
+// docs/adr/0084 amendment A4: Stop keeps every waiting entry, so a resumed stream can start below the abort that stopped
+// the earlier pod. That abort, at or below the seq Start recorded, must not end it; one written after does.
+func TestStreamHumanMessages_StandingSkipsAnAbortFromBeforeTheRestart(t *testing.T) {
+	s, _, pool, id := newCharacter(t)
+	ctx := context.Background()
+	put(t, pool, id, 1, "main", "human", "discussion", "waiting")
+	put(t, pool, id, 2, "main", "human", "abort", "stopped by root") // the earlier pod's Stop
+	put(t, pool, id, 3, "main", "human", "abort", "stopped by root") // this pod's
+	// Start recorded seq 2 as the end of what the earlier pod saw; no clock is involved, so a stale pod_started_at
+	// (or none) changes nothing.
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET restart_seq = 2, pod_started_at = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	_, sha, err := s.agentSpecOf(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 900*time.Millisecond)
+	defer cancel()
+	rec := &streamRecorder{ctx: sctx}
+	_ = s.StreamHumanMessages(&agentfleetv1.StreamHumanMessagesRequest{SessionId: id, AgentSpecSha: sha}, rec)
+	if want := []string{"main:waiting", "main:stopped by root"}; !slices.Equal(rec.texts, want) {
+		t.Fatalf("streamed %v, want the waiting entry and only this pod's abort %v", rec.texts, want)
+	}
+}
+
 func TestGetSession_StandingCarriesThreadSessionIDs(t *testing.T) {
 	s, store, pool, id := newCharacter(t)
 	thread(t, pool, id, "a", 0)
@@ -121,9 +147,10 @@ func TestGetSession_StandingCarriesThreadSessionIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Open threads other than main that have one; main resumes from the row's own id.
-	if got := res.GetThreadSessionIds(); len(got) != 1 || got["a"] != "sdk-a" {
-		t.Fatalf("thread session ids = %v, want only a", got)
+	// Threads other than main that have one, a parked one too (docs/adr/0084 amendment A4: the owner's next message
+	// resumes it); main resumes from the row's own id.
+	if got := res.GetThreadSessionIds(); len(got) != 2 || got["a"] != "sdk-a" || got["b"] != "sdk-b" {
+		t.Fatalf("thread session ids = %v, want a and the parked b", got)
 	}
 	if res.GetAgentSpec().GetLifecycle() != "standing" {
 		t.Fatalf("spec lifecycle = %q, want standing", res.GetAgentSpec().GetLifecycle())

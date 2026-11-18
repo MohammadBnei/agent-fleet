@@ -12,6 +12,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
@@ -22,6 +23,11 @@ import (
 var characterCalls = []string{
 	agentfleetv1connect.AgentServiceListCharactersProcedure,
 	agentfleetv1connect.AgentServiceWatchCharactersProcedure,
+	agentfleetv1connect.AgentServiceStartCharacterProcedure,
+	agentfleetv1connect.AgentServiceStopCharacterProcedure,
+	agentfleetv1connect.AgentServiceReadCharacterThreadProcedure,
+	agentfleetv1connect.AgentServiceWatchCharacterThreadProcedure,
+	agentfleetv1connect.AgentServiceCloseCharacterThreadProcedure,
 }
 
 func TestCharacterCalls_InBothListsAndNeverAClients(t *testing.T) {
@@ -201,5 +207,122 @@ func TestDropGone(t *testing.T) {
 	}
 	if got := dropGone(sent, []*agentfleetv1.Character{ch("b")}); got != nil {
 		t.Errorf("again: %v", got)
+	}
+}
+
+// The lifecycle and thread calls (amendment A4, A5) through the member interceptor, as the game sends them. With no
+// such character, an allowed call reaches its handler and answers agent.character_not_found; a refused one never does.
+func TestCharacterLifecycleCalls_Origin(t *testing.T) {
+	const game, island = "https://game.bnei.dev", "https://notes.bnei.dev"
+	admin := &auth.Identity{Sub: "a", Groups: []string{auth.RequiredGroup}}
+	member := &auth.Identity{Sub: "m", Groups: []string{"shared-notes"}}
+	id := admin
+	srv := &Server{definitions: fakeHeads{}}
+	path, h := agentfleetv1connect.NewAgentServiceHandler(srv, connect.WithInterceptors(asIdentity{&id},
+		MemberInterceptor("https://fleet.bnei.dev", func() []string { return []string{island} }, []string{game})))
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	hs := httptest.NewServer(mux)
+	t.Cleanup(hs.Close)
+	c := agentfleetv1connect.NewAgentServiceClient(hs.Client(), hs.URL)
+	origin := func(r interface{ Header() http.Header }, o string) {
+		if o != "" {
+			r.Header().Set("Origin", o)
+		}
+	}
+	calls := map[string]func(string) error{
+		"StartCharacter": func(o string) error {
+			r := connect.NewRequest(&agentfleetv1.StartCharacterRequest{Name: "ghost"})
+			origin(r, o)
+			_, err := c.StartCharacter(context.Background(), r)
+			return err
+		},
+		"StopCharacter": func(o string) error {
+			r := connect.NewRequest(&agentfleetv1.StopCharacterRequest{Name: "ghost"})
+			origin(r, o)
+			_, err := c.StopCharacter(context.Background(), r)
+			return err
+		},
+		"CloseCharacterThread": func(o string) error {
+			r := connect.NewRequest(&agentfleetv1.CloseCharacterThreadRequest{Name: "ghost", Thread: "chat"})
+			origin(r, o)
+			_, err := c.CloseCharacterThread(context.Background(), r)
+			return err
+		},
+		"ReadCharacterThread": func(o string) error {
+			r := connect.NewRequest(&agentfleetv1.ReadCharacterThreadRequest{Name: "ghost", Thread: "chat"})
+			origin(r, o)
+			_, err := c.ReadCharacterThread(context.Background(), r)
+			return err
+		},
+		"WatchCharacterThread": func(o string) error {
+			r := connect.NewRequest(&agentfleetv1.WatchCharacterThreadRequest{Name: "ghost", Thread: "chat"})
+			origin(r, o)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			st, err := c.WatchCharacterThread(ctx, r)
+			if err != nil {
+				return err
+			}
+			defer st.Close() //nolint:errcheck
+			st.Receive()
+			return st.Err()
+		},
+	}
+	for name, call := range calls {
+		for _, tc := range []struct {
+			who    string
+			id     *auth.Identity
+			origin string
+			deny   bool
+		}{
+			{"admin on the admin origin", admin, game, false},
+			{"admin in the console", admin, "", false},
+			{"member on the admin origin", member, game, true},
+			{"member in the console", member, "", true},
+			{"admin on an island", admin, island, true},
+			{"admin on a stranger", admin, "https://evil.example", true},
+		} {
+			id = tc.id
+			err := call(tc.origin)
+			denied := connect.CodeOf(err) == connect.CodePermissionDenied
+			reached := errkeys.Of(err) == errkeys.KeyCharacterNotFound
+			if denied != tc.deny || (!tc.deny && !reached) {
+				t.Errorf("%s, %s: %v (denied %v, want %v; reached the handler %v)", name, tc.who, err, denied, tc.deny, reached)
+			}
+		}
+	}
+}
+
+// docs/adr/0084 amendment A9: the kind-local admin origin is a surface. With the gate off the console's own origin is a
+// dev origin and passes as the console; the game's dev origin is an admin origin, so its call is a surface's: allowed
+// for the character API, refused for anything outside surfaceCalls.
+func TestKindLocalAdminOriginIsASurface(t *testing.T) {
+	const game = "http://127.0.0.1:8152"
+	m := memberAuth{fleet: "http://localhost:8080", admin: []string{game}, dev: []string{"http://localhost:8080"}}
+	id := auth.Identity{Sub: "dev", Groups: []string{auth.RequiredGroup}}
+	ctx := auth.WithIdentity(context.Background(), id)
+	for _, tc := range []struct {
+		origin, proc string
+		surface      bool
+		ok           bool
+	}{
+		{game, agentfleetv1connect.AgentServiceStartCharacterProcedure, true, true},
+		{game, agentfleetv1connect.AgentServiceListCharactersProcedure, true, true},
+		{game, agentfleetv1connect.AgentServiceCreateThreadProcedure, true, false}, // outside surfaceCalls
+		{"http://localhost:8080", agentfleetv1connect.AgentServiceCreateThreadProcedure, false, true},
+	} {
+		h := http.Header{}
+		h.Set("Origin", tc.origin)
+		got, err := m.principal(ctx, tc.proc, h)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s from %s: %v, want ok=%v", tc.proc, tc.origin, err, tc.ok)
+			continue
+		}
+		if err == nil {
+			if p, _ := FromContext(got); p.Surface != tc.surface {
+				t.Errorf("%s from %s: Surface %v, want %v", tc.proc, tc.origin, p.Surface, tc.surface)
+			}
+		}
 	}
 }

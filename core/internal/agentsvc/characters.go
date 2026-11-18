@@ -183,7 +183,7 @@ func characterProto(name, sha string, spec *definitions.Spec, row *sessions.Sess
 		}
 	}
 	for _, t := range rt.Threads {
-		c.Threads = append(c.Threads, &agentfleetv1.CharacterThread{Key: t.Key, Title: t.Title, Running: t.Running, LastAt: t.LastAt.UTC().Format(time.RFC3339)})
+		c.Threads = append(c.Threads, &agentfleetv1.CharacterThread{Key: t.Key, Title: t.Title, Running: t.Running, Parked: t.Parked, LastAt: t.LastAt.UTC().Format(time.RFC3339)})
 	}
 	if rt.RunningThread != "" {
 		c.RunningTurn = &agentfleetv1.CharacterTurn{Thread: rt.RunningThread, StartedAt: rt.RunningSince.UTC().Format(time.RFC3339)}

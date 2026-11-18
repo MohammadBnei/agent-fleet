@@ -58,6 +58,8 @@ const keyText: Record<Keyed, string> = {
     "This session is not allowed that. The owner can approve it through a card.",
   STANDING_ONLY:
     "This agent is a standing character and cannot be opened from here.",
+  CHARACTER_NOT_FOUND: "There is no such character.",
+  THREAD_NOT_FOUND: "This character has no such thread.",
 };
 
 // The key's text, or "" for a key with none (server.internal, or one a newer core added).

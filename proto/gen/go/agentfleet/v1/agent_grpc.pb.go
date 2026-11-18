@@ -19,30 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_ListDefinitions_FullMethodName     = "/agentfleet.v1.AgentService/ListDefinitions"
-	AgentService_ListThreads_FullMethodName         = "/agentfleet.v1.AgentService/ListThreads"
-	AgentService_CreateThread_FullMethodName        = "/agentfleet.v1.AgentService/CreateThread"
-	AgentService_PostMessage_FullMethodName         = "/agentfleet.v1.AgentService/PostMessage"
-	AgentService_GetTranscript_FullMethodName       = "/agentfleet.v1.AgentService/GetTranscript"
-	AgentService_StreamTranscript_FullMethodName    = "/agentfleet.v1.AgentService/StreamTranscript"
-	AgentService_RespondToPermission_FullMethodName = "/agentfleet.v1.AgentService/RespondToPermission"
-	AgentService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.AgentService/AnswerQuestion"
-	AgentService_ApprovePlan_FullMethodName         = "/agentfleet.v1.AgentService/ApprovePlan"
-	AgentService_ListDecisions_FullMethodName       = "/agentfleet.v1.AgentService/ListDecisions"
-	AgentService_GetDecision_FullMethodName         = "/agentfleet.v1.AgentService/GetDecision"
-	AgentService_AnswerDecision_FullMethodName      = "/agentfleet.v1.AgentService/AnswerDecision"
-	AgentService_WatchDecisions_FullMethodName      = "/agentfleet.v1.AgentService/WatchDecisions"
-	AgentService_SetConfig_FullMethodName           = "/agentfleet.v1.AgentService/SetConfig"
-	AgentService_Stop_FullMethodName                = "/agentfleet.v1.AgentService/Stop"
-	AgentService_GetStatus_FullMethodName           = "/agentfleet.v1.AgentService/GetStatus"
-	AgentService_Open_FullMethodName                = "/agentfleet.v1.AgentService/Open"
-	AgentService_CloseThread_FullMethodName         = "/agentfleet.v1.AgentService/CloseThread"
-	AgentService_Invoke_FullMethodName              = "/agentfleet.v1.AgentService/Invoke"
-	AgentService_WaitForResult_FullMethodName       = "/agentfleet.v1.AgentService/WaitForResult"
-	AgentService_PostToCharacter_FullMethodName     = "/agentfleet.v1.AgentService/PostToCharacter"
-	AgentService_WatchSpeech_FullMethodName         = "/agentfleet.v1.AgentService/WatchSpeech"
-	AgentService_ListCharacters_FullMethodName      = "/agentfleet.v1.AgentService/ListCharacters"
-	AgentService_WatchCharacters_FullMethodName     = "/agentfleet.v1.AgentService/WatchCharacters"
+	AgentService_ListDefinitions_FullMethodName      = "/agentfleet.v1.AgentService/ListDefinitions"
+	AgentService_ListThreads_FullMethodName          = "/agentfleet.v1.AgentService/ListThreads"
+	AgentService_CreateThread_FullMethodName         = "/agentfleet.v1.AgentService/CreateThread"
+	AgentService_PostMessage_FullMethodName          = "/agentfleet.v1.AgentService/PostMessage"
+	AgentService_GetTranscript_FullMethodName        = "/agentfleet.v1.AgentService/GetTranscript"
+	AgentService_StreamTranscript_FullMethodName     = "/agentfleet.v1.AgentService/StreamTranscript"
+	AgentService_RespondToPermission_FullMethodName  = "/agentfleet.v1.AgentService/RespondToPermission"
+	AgentService_AnswerQuestion_FullMethodName       = "/agentfleet.v1.AgentService/AnswerQuestion"
+	AgentService_ApprovePlan_FullMethodName          = "/agentfleet.v1.AgentService/ApprovePlan"
+	AgentService_ListDecisions_FullMethodName        = "/agentfleet.v1.AgentService/ListDecisions"
+	AgentService_GetDecision_FullMethodName          = "/agentfleet.v1.AgentService/GetDecision"
+	AgentService_AnswerDecision_FullMethodName       = "/agentfleet.v1.AgentService/AnswerDecision"
+	AgentService_WatchDecisions_FullMethodName       = "/agentfleet.v1.AgentService/WatchDecisions"
+	AgentService_SetConfig_FullMethodName            = "/agentfleet.v1.AgentService/SetConfig"
+	AgentService_Stop_FullMethodName                 = "/agentfleet.v1.AgentService/Stop"
+	AgentService_GetStatus_FullMethodName            = "/agentfleet.v1.AgentService/GetStatus"
+	AgentService_Open_FullMethodName                 = "/agentfleet.v1.AgentService/Open"
+	AgentService_CloseThread_FullMethodName          = "/agentfleet.v1.AgentService/CloseThread"
+	AgentService_Invoke_FullMethodName               = "/agentfleet.v1.AgentService/Invoke"
+	AgentService_WaitForResult_FullMethodName        = "/agentfleet.v1.AgentService/WaitForResult"
+	AgentService_PostToCharacter_FullMethodName      = "/agentfleet.v1.AgentService/PostToCharacter"
+	AgentService_WatchSpeech_FullMethodName          = "/agentfleet.v1.AgentService/WatchSpeech"
+	AgentService_ListCharacters_FullMethodName       = "/agentfleet.v1.AgentService/ListCharacters"
+	AgentService_WatchCharacters_FullMethodName      = "/agentfleet.v1.AgentService/WatchCharacters"
+	AgentService_StartCharacter_FullMethodName       = "/agentfleet.v1.AgentService/StartCharacter"
+	AgentService_StopCharacter_FullMethodName        = "/agentfleet.v1.AgentService/StopCharacter"
+	AgentService_ReadCharacterThread_FullMethodName  = "/agentfleet.v1.AgentService/ReadCharacterThread"
+	AgentService_WatchCharacterThread_FullMethodName = "/agentfleet.v1.AgentService/WatchCharacterThread"
+	AgentService_CloseCharacterThread_FullMethodName = "/agentfleet.v1.AgentService/CloseCharacterThread"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -101,6 +106,22 @@ type AgentServiceClient interface {
 	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
 	// reconnects and gets the baseline again.
 	WatchCharacters(ctx context.Context, in *WatchCharactersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchCharactersResponse], error)
+	// docs/adr/0084 amendment A4, owner only. Start makes the character's session, or resumes a stopped one with every
+	// thread's SDK session id and cursor kept; it returns the new state at once and warms nothing (the first message does).
+	// Starting a started character returns its state; on a character still stopping, state "stopping" with why "pod drain".
+	StartCharacter(ctx context.Context, in *StartCharacterRequest, opts ...grpc.CallOption) (*StartCharacterResponse, error)
+	// Stops the pod and keeps every thread's SDK session id and cursor; only a turn in flight is aborted, like Ctrl-C. No
+	// confirm: Start resumes it. Stopping a stopped character returns its state.
+	StopCharacter(ctx context.Context, in *StopCharacterRequest, opts ...grpc.CallOption) (*StopCharacterResponse, error)
+	// docs/adr/0084 amendment A5, owner only: one thread's transcript in full, as the console shows it, tool results
+	// included. The character's standing session is owned by client:standing:<name>, which a thread read refuses the owner.
+	ReadCharacterThread(ctx context.Context, in *ReadCharacterThreadRequest, opts ...grpc.CallOption) (*ReadCharacterThreadResponse, error)
+	// ReadCharacterThread, then each new entry, until the stream's age (90 s) is up; the client reconnects from next_seq.
+	WatchCharacterThread(ctx context.Context, in *WatchCharacterThreadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchCharacterThreadResponse], error)
+	// docs/adr/0084 amendment A4/A5, owner only: parks the thread. Its SDK session id and transcript are kept, and the
+	// owner's next PostToCharacter on that key resumes it with full context. Only a turn in flight is aborted. Closing a
+	// parked thread is a no-op; main never closes (thread_not_found).
+	CloseCharacterThread(ctx context.Context, in *CloseCharacterThreadRequest, opts ...grpc.CallOption) (*CloseCharacterThreadResponse, error)
 }
 
 type agentServiceClient struct {
@@ -387,6 +408,65 @@ func (c *agentServiceClient) WatchCharacters(ctx context.Context, in *WatchChara
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_WatchCharactersClient = grpc.ServerStreamingClient[WatchCharactersResponse]
 
+func (c *agentServiceClient) StartCharacter(ctx context.Context, in *StartCharacterRequest, opts ...grpc.CallOption) (*StartCharacterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartCharacterResponse)
+	err := c.cc.Invoke(ctx, AgentService_StartCharacter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) StopCharacter(ctx context.Context, in *StopCharacterRequest, opts ...grpc.CallOption) (*StopCharacterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopCharacterResponse)
+	err := c.cc.Invoke(ctx, AgentService_StopCharacter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReadCharacterThread(ctx context.Context, in *ReadCharacterThreadRequest, opts ...grpc.CallOption) (*ReadCharacterThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadCharacterThreadResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReadCharacterThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) WatchCharacterThread(ctx context.Context, in *WatchCharacterThreadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchCharacterThreadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[4], AgentService_WatchCharacterThread_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchCharacterThreadRequest, WatchCharacterThreadResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchCharacterThreadClient = grpc.ServerStreamingClient[WatchCharacterThreadResponse]
+
+func (c *agentServiceClient) CloseCharacterThread(ctx context.Context, in *CloseCharacterThreadRequest, opts ...grpc.CallOption) (*CloseCharacterThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CloseCharacterThreadResponse)
+	err := c.cc.Invoke(ctx, AgentService_CloseCharacterThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -443,6 +523,22 @@ type AgentServiceServer interface {
 	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
 	// reconnects and gets the baseline again.
 	WatchCharacters(*WatchCharactersRequest, grpc.ServerStreamingServer[WatchCharactersResponse]) error
+	// docs/adr/0084 amendment A4, owner only. Start makes the character's session, or resumes a stopped one with every
+	// thread's SDK session id and cursor kept; it returns the new state at once and warms nothing (the first message does).
+	// Starting a started character returns its state; on a character still stopping, state "stopping" with why "pod drain".
+	StartCharacter(context.Context, *StartCharacterRequest) (*StartCharacterResponse, error)
+	// Stops the pod and keeps every thread's SDK session id and cursor; only a turn in flight is aborted, like Ctrl-C. No
+	// confirm: Start resumes it. Stopping a stopped character returns its state.
+	StopCharacter(context.Context, *StopCharacterRequest) (*StopCharacterResponse, error)
+	// docs/adr/0084 amendment A5, owner only: one thread's transcript in full, as the console shows it, tool results
+	// included. The character's standing session is owned by client:standing:<name>, which a thread read refuses the owner.
+	ReadCharacterThread(context.Context, *ReadCharacterThreadRequest) (*ReadCharacterThreadResponse, error)
+	// ReadCharacterThread, then each new entry, until the stream's age (90 s) is up; the client reconnects from next_seq.
+	WatchCharacterThread(*WatchCharacterThreadRequest, grpc.ServerStreamingServer[WatchCharacterThreadResponse]) error
+	// docs/adr/0084 amendment A4/A5, owner only: parks the thread. Its SDK session id and transcript are kept, and the
+	// owner's next PostToCharacter on that key resumes it with full context. Only a turn in flight is aborted. Closing a
+	// parked thread is a no-op; main never closes (thread_not_found).
+	CloseCharacterThread(context.Context, *CloseCharacterThreadRequest) (*CloseCharacterThreadResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -524,6 +620,21 @@ func (UnimplementedAgentServiceServer) ListCharacters(context.Context, *ListChar
 }
 func (UnimplementedAgentServiceServer) WatchCharacters(*WatchCharactersRequest, grpc.ServerStreamingServer[WatchCharactersResponse]) error {
 	return status.Error(codes.Unimplemented, "method WatchCharacters not implemented")
+}
+func (UnimplementedAgentServiceServer) StartCharacter(context.Context, *StartCharacterRequest) (*StartCharacterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartCharacter not implemented")
+}
+func (UnimplementedAgentServiceServer) StopCharacter(context.Context, *StopCharacterRequest) (*StopCharacterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopCharacter not implemented")
+}
+func (UnimplementedAgentServiceServer) ReadCharacterThread(context.Context, *ReadCharacterThreadRequest) (*ReadCharacterThreadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadCharacterThread not implemented")
+}
+func (UnimplementedAgentServiceServer) WatchCharacterThread(*WatchCharacterThreadRequest, grpc.ServerStreamingServer[WatchCharacterThreadResponse]) error {
+	return status.Error(codes.Unimplemented, "method WatchCharacterThread not implemented")
+}
+func (UnimplementedAgentServiceServer) CloseCharacterThread(context.Context, *CloseCharacterThreadRequest) (*CloseCharacterThreadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseCharacterThread not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -950,6 +1061,89 @@ func _AgentService_WatchCharacters_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_WatchCharactersServer = grpc.ServerStreamingServer[WatchCharactersResponse]
 
+func _AgentService_StartCharacter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartCharacterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).StartCharacter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_StartCharacter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).StartCharacter(ctx, req.(*StartCharacterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_StopCharacter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopCharacterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).StopCharacter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_StopCharacter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).StopCharacter(ctx, req.(*StopCharacterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReadCharacterThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadCharacterThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReadCharacterThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReadCharacterThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReadCharacterThread(ctx, req.(*ReadCharacterThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_WatchCharacterThread_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchCharacterThreadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServiceServer).WatchCharacterThread(m, &grpc.GenericServerStream[WatchCharacterThreadRequest, WatchCharacterThreadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchCharacterThreadServer = grpc.ServerStreamingServer[WatchCharacterThreadResponse]
+
+func _AgentService_CloseCharacterThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseCharacterThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).CloseCharacterThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_CloseCharacterThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).CloseCharacterThread(ctx, req.(*CloseCharacterThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1037,6 +1231,22 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ListCharacters",
 			Handler:    _AgentService_ListCharacters_Handler,
 		},
+		{
+			MethodName: "StartCharacter",
+			Handler:    _AgentService_StartCharacter_Handler,
+		},
+		{
+			MethodName: "StopCharacter",
+			Handler:    _AgentService_StopCharacter_Handler,
+		},
+		{
+			MethodName: "ReadCharacterThread",
+			Handler:    _AgentService_ReadCharacterThread_Handler,
+		},
+		{
+			MethodName: "CloseCharacterThread",
+			Handler:    _AgentService_CloseCharacterThread_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -1057,6 +1267,11 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchCharacters",
 			Handler:       _AgentService_WatchCharacters_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchCharacterThread",
+			Handler:       _AgentService_WatchCharacterThread_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -100,6 +100,21 @@ const (
 	// AgentServiceWatchCharactersProcedure is the fully-qualified name of the AgentService's
 	// WatchCharacters RPC.
 	AgentServiceWatchCharactersProcedure = "/agentfleet.v1.AgentService/WatchCharacters"
+	// AgentServiceStartCharacterProcedure is the fully-qualified name of the AgentService's
+	// StartCharacter RPC.
+	AgentServiceStartCharacterProcedure = "/agentfleet.v1.AgentService/StartCharacter"
+	// AgentServiceStopCharacterProcedure is the fully-qualified name of the AgentService's
+	// StopCharacter RPC.
+	AgentServiceStopCharacterProcedure = "/agentfleet.v1.AgentService/StopCharacter"
+	// AgentServiceReadCharacterThreadProcedure is the fully-qualified name of the AgentService's
+	// ReadCharacterThread RPC.
+	AgentServiceReadCharacterThreadProcedure = "/agentfleet.v1.AgentService/ReadCharacterThread"
+	// AgentServiceWatchCharacterThreadProcedure is the fully-qualified name of the AgentService's
+	// WatchCharacterThread RPC.
+	AgentServiceWatchCharacterThreadProcedure = "/agentfleet.v1.AgentService/WatchCharacterThread"
+	// AgentServiceCloseCharacterThreadProcedure is the fully-qualified name of the AgentService's
+	// CloseCharacterThread RPC.
+	AgentServiceCloseCharacterThreadProcedure = "/agentfleet.v1.AgentService/CloseCharacterThread"
 )
 
 // AgentServiceClient is a client for the agentfleet.v1.AgentService service.
@@ -148,6 +163,22 @@ type AgentServiceClient interface {
 	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
 	// reconnects and gets the baseline again.
 	WatchCharacters(context.Context, *connect.Request[v1.WatchCharactersRequest]) (*connect.ServerStreamForClient[v1.WatchCharactersResponse], error)
+	// docs/adr/0084 amendment A4, owner only. Start makes the character's session, or resumes a stopped one with every
+	// thread's SDK session id and cursor kept; it returns the new state at once and warms nothing (the first message does).
+	// Starting a started character returns its state; on a character still stopping, state "stopping" with why "pod drain".
+	StartCharacter(context.Context, *connect.Request[v1.StartCharacterRequest]) (*connect.Response[v1.StartCharacterResponse], error)
+	// Stops the pod and keeps every thread's SDK session id and cursor; only a turn in flight is aborted, like Ctrl-C. No
+	// confirm: Start resumes it. Stopping a stopped character returns its state.
+	StopCharacter(context.Context, *connect.Request[v1.StopCharacterRequest]) (*connect.Response[v1.StopCharacterResponse], error)
+	// docs/adr/0084 amendment A5, owner only: one thread's transcript in full, as the console shows it, tool results
+	// included. The character's standing session is owned by client:standing:<name>, which a thread read refuses the owner.
+	ReadCharacterThread(context.Context, *connect.Request[v1.ReadCharacterThreadRequest]) (*connect.Response[v1.ReadCharacterThreadResponse], error)
+	// ReadCharacterThread, then each new entry, until the stream's age (90 s) is up; the client reconnects from next_seq.
+	WatchCharacterThread(context.Context, *connect.Request[v1.WatchCharacterThreadRequest]) (*connect.ServerStreamForClient[v1.WatchCharacterThreadResponse], error)
+	// docs/adr/0084 amendment A4/A5, owner only: parks the thread. Its SDK session id and transcript are kept, and the
+	// owner's next PostToCharacter on that key resumes it with full context. Only a turn in flight is aborted. Closing a
+	// parked thread is a no-op; main never closes (thread_not_found).
+	CloseCharacterThread(context.Context, *connect.Request[v1.CloseCharacterThreadRequest]) (*connect.Response[v1.CloseCharacterThreadResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the agentfleet.v1.AgentService service. By default,
@@ -305,35 +336,70 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("WatchCharacters")),
 			connect.WithClientOptions(opts...),
 		),
+		startCharacter: connect.NewClient[v1.StartCharacterRequest, v1.StartCharacterResponse](
+			httpClient,
+			baseURL+AgentServiceStartCharacterProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("StartCharacter")),
+			connect.WithClientOptions(opts...),
+		),
+		stopCharacter: connect.NewClient[v1.StopCharacterRequest, v1.StopCharacterResponse](
+			httpClient,
+			baseURL+AgentServiceStopCharacterProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("StopCharacter")),
+			connect.WithClientOptions(opts...),
+		),
+		readCharacterThread: connect.NewClient[v1.ReadCharacterThreadRequest, v1.ReadCharacterThreadResponse](
+			httpClient,
+			baseURL+AgentServiceReadCharacterThreadProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ReadCharacterThread")),
+			connect.WithClientOptions(opts...),
+		),
+		watchCharacterThread: connect.NewClient[v1.WatchCharacterThreadRequest, v1.WatchCharacterThreadResponse](
+			httpClient,
+			baseURL+AgentServiceWatchCharacterThreadProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("WatchCharacterThread")),
+			connect.WithClientOptions(opts...),
+		),
+		closeCharacterThread: connect.NewClient[v1.CloseCharacterThreadRequest, v1.CloseCharacterThreadResponse](
+			httpClient,
+			baseURL+AgentServiceCloseCharacterThreadProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("CloseCharacterThread")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	listDefinitions     *connect.Client[v1.AgentServiceListDefinitionsRequest, v1.AgentServiceListDefinitionsResponse]
-	listThreads         *connect.Client[v1.ListThreadsRequest, v1.ListThreadsResponse]
-	createThread        *connect.Client[v1.CreateThreadRequest, v1.CreateThreadResponse]
-	postMessage         *connect.Client[v1.AgentServicePostMessageRequest, v1.AgentServicePostMessageResponse]
-	getTranscript       *connect.Client[v1.AgentServiceGetTranscriptRequest, v1.AgentServiceGetTranscriptResponse]
-	streamTranscript    *connect.Client[v1.AgentServiceStreamTranscriptRequest, v1.AgentServiceStreamTranscriptResponse]
-	respondToPermission *connect.Client[v1.AgentServiceRespondToPermissionRequest, v1.AgentServiceRespondToPermissionResponse]
-	answerQuestion      *connect.Client[v1.AgentServiceAnswerQuestionRequest, v1.AgentServiceAnswerQuestionResponse]
-	approvePlan         *connect.Client[v1.ApprovePlanRequest, v1.ApprovePlanResponse]
-	listDecisions       *connect.Client[v1.ListDecisionsRequest, v1.ListDecisionsResponse]
-	getDecision         *connect.Client[v1.GetDecisionRequest, v1.GetDecisionResponse]
-	answerDecision      *connect.Client[v1.AnswerDecisionRequest, v1.AnswerDecisionResponse]
-	watchDecisions      *connect.Client[v1.WatchDecisionsRequest, v1.WatchDecisionsResponse]
-	setConfig           *connect.Client[v1.SetConfigRequest, v1.SetConfigResponse]
-	stop                *connect.Client[v1.StopRequest, v1.StopResponse]
-	getStatus           *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
-	open                *connect.Client[v1.OpenRequest, v1.OpenResponse]
-	closeThread         *connect.Client[v1.CloseThreadRequest, v1.CloseThreadResponse]
-	invoke              *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
-	waitForResult       *connect.Client[v1.WaitForResultRequest, v1.WaitForResultResponse]
-	postToCharacter     *connect.Client[v1.PostToCharacterRequest, v1.PostToCharacterResponse]
-	watchSpeech         *connect.Client[v1.WatchSpeechRequest, v1.WatchSpeechResponse]
-	listCharacters      *connect.Client[v1.ListCharactersRequest, v1.ListCharactersResponse]
-	watchCharacters     *connect.Client[v1.WatchCharactersRequest, v1.WatchCharactersResponse]
+	listDefinitions      *connect.Client[v1.AgentServiceListDefinitionsRequest, v1.AgentServiceListDefinitionsResponse]
+	listThreads          *connect.Client[v1.ListThreadsRequest, v1.ListThreadsResponse]
+	createThread         *connect.Client[v1.CreateThreadRequest, v1.CreateThreadResponse]
+	postMessage          *connect.Client[v1.AgentServicePostMessageRequest, v1.AgentServicePostMessageResponse]
+	getTranscript        *connect.Client[v1.AgentServiceGetTranscriptRequest, v1.AgentServiceGetTranscriptResponse]
+	streamTranscript     *connect.Client[v1.AgentServiceStreamTranscriptRequest, v1.AgentServiceStreamTranscriptResponse]
+	respondToPermission  *connect.Client[v1.AgentServiceRespondToPermissionRequest, v1.AgentServiceRespondToPermissionResponse]
+	answerQuestion       *connect.Client[v1.AgentServiceAnswerQuestionRequest, v1.AgentServiceAnswerQuestionResponse]
+	approvePlan          *connect.Client[v1.ApprovePlanRequest, v1.ApprovePlanResponse]
+	listDecisions        *connect.Client[v1.ListDecisionsRequest, v1.ListDecisionsResponse]
+	getDecision          *connect.Client[v1.GetDecisionRequest, v1.GetDecisionResponse]
+	answerDecision       *connect.Client[v1.AnswerDecisionRequest, v1.AnswerDecisionResponse]
+	watchDecisions       *connect.Client[v1.WatchDecisionsRequest, v1.WatchDecisionsResponse]
+	setConfig            *connect.Client[v1.SetConfigRequest, v1.SetConfigResponse]
+	stop                 *connect.Client[v1.StopRequest, v1.StopResponse]
+	getStatus            *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
+	open                 *connect.Client[v1.OpenRequest, v1.OpenResponse]
+	closeThread          *connect.Client[v1.CloseThreadRequest, v1.CloseThreadResponse]
+	invoke               *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
+	waitForResult        *connect.Client[v1.WaitForResultRequest, v1.WaitForResultResponse]
+	postToCharacter      *connect.Client[v1.PostToCharacterRequest, v1.PostToCharacterResponse]
+	watchSpeech          *connect.Client[v1.WatchSpeechRequest, v1.WatchSpeechResponse]
+	listCharacters       *connect.Client[v1.ListCharactersRequest, v1.ListCharactersResponse]
+	watchCharacters      *connect.Client[v1.WatchCharactersRequest, v1.WatchCharactersResponse]
+	startCharacter       *connect.Client[v1.StartCharacterRequest, v1.StartCharacterResponse]
+	stopCharacter        *connect.Client[v1.StopCharacterRequest, v1.StopCharacterResponse]
+	readCharacterThread  *connect.Client[v1.ReadCharacterThreadRequest, v1.ReadCharacterThreadResponse]
+	watchCharacterThread *connect.Client[v1.WatchCharacterThreadRequest, v1.WatchCharacterThreadResponse]
+	closeCharacterThread *connect.Client[v1.CloseCharacterThreadRequest, v1.CloseCharacterThreadResponse]
 }
 
 // ListDefinitions calls agentfleet.v1.AgentService.ListDefinitions.
@@ -456,6 +522,31 @@ func (c *agentServiceClient) WatchCharacters(ctx context.Context, req *connect.R
 	return c.watchCharacters.CallServerStream(ctx, req)
 }
 
+// StartCharacter calls agentfleet.v1.AgentService.StartCharacter.
+func (c *agentServiceClient) StartCharacter(ctx context.Context, req *connect.Request[v1.StartCharacterRequest]) (*connect.Response[v1.StartCharacterResponse], error) {
+	return c.startCharacter.CallUnary(ctx, req)
+}
+
+// StopCharacter calls agentfleet.v1.AgentService.StopCharacter.
+func (c *agentServiceClient) StopCharacter(ctx context.Context, req *connect.Request[v1.StopCharacterRequest]) (*connect.Response[v1.StopCharacterResponse], error) {
+	return c.stopCharacter.CallUnary(ctx, req)
+}
+
+// ReadCharacterThread calls agentfleet.v1.AgentService.ReadCharacterThread.
+func (c *agentServiceClient) ReadCharacterThread(ctx context.Context, req *connect.Request[v1.ReadCharacterThreadRequest]) (*connect.Response[v1.ReadCharacterThreadResponse], error) {
+	return c.readCharacterThread.CallUnary(ctx, req)
+}
+
+// WatchCharacterThread calls agentfleet.v1.AgentService.WatchCharacterThread.
+func (c *agentServiceClient) WatchCharacterThread(ctx context.Context, req *connect.Request[v1.WatchCharacterThreadRequest]) (*connect.ServerStreamForClient[v1.WatchCharacterThreadResponse], error) {
+	return c.watchCharacterThread.CallServerStream(ctx, req)
+}
+
+// CloseCharacterThread calls agentfleet.v1.AgentService.CloseCharacterThread.
+func (c *agentServiceClient) CloseCharacterThread(ctx context.Context, req *connect.Request[v1.CloseCharacterThreadRequest]) (*connect.Response[v1.CloseCharacterThreadResponse], error) {
+	return c.closeCharacterThread.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the agentfleet.v1.AgentService service.
 type AgentServiceHandler interface {
 	ListDefinitions(context.Context, *connect.Request[v1.AgentServiceListDefinitionsRequest]) (*connect.Response[v1.AgentServiceListDefinitionsResponse], error)
@@ -502,6 +593,22 @@ type AgentServiceHandler interface {
 	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
 	// reconnects and gets the baseline again.
 	WatchCharacters(context.Context, *connect.Request[v1.WatchCharactersRequest], *connect.ServerStream[v1.WatchCharactersResponse]) error
+	// docs/adr/0084 amendment A4, owner only. Start makes the character's session, or resumes a stopped one with every
+	// thread's SDK session id and cursor kept; it returns the new state at once and warms nothing (the first message does).
+	// Starting a started character returns its state; on a character still stopping, state "stopping" with why "pod drain".
+	StartCharacter(context.Context, *connect.Request[v1.StartCharacterRequest]) (*connect.Response[v1.StartCharacterResponse], error)
+	// Stops the pod and keeps every thread's SDK session id and cursor; only a turn in flight is aborted, like Ctrl-C. No
+	// confirm: Start resumes it. Stopping a stopped character returns its state.
+	StopCharacter(context.Context, *connect.Request[v1.StopCharacterRequest]) (*connect.Response[v1.StopCharacterResponse], error)
+	// docs/adr/0084 amendment A5, owner only: one thread's transcript in full, as the console shows it, tool results
+	// included. The character's standing session is owned by client:standing:<name>, which a thread read refuses the owner.
+	ReadCharacterThread(context.Context, *connect.Request[v1.ReadCharacterThreadRequest]) (*connect.Response[v1.ReadCharacterThreadResponse], error)
+	// ReadCharacterThread, then each new entry, until the stream's age (90 s) is up; the client reconnects from next_seq.
+	WatchCharacterThread(context.Context, *connect.Request[v1.WatchCharacterThreadRequest], *connect.ServerStream[v1.WatchCharacterThreadResponse]) error
+	// docs/adr/0084 amendment A4/A5, owner only: parks the thread. Its SDK session id and transcript are kept, and the
+	// owner's next PostToCharacter on that key resumes it with full context. Only a turn in flight is aborted. Closing a
+	// parked thread is a no-op; main never closes (thread_not_found).
+	CloseCharacterThread(context.Context, *connect.Request[v1.CloseCharacterThreadRequest]) (*connect.Response[v1.CloseCharacterThreadResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -655,6 +762,36 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("WatchCharacters")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceStartCharacterHandler := connect.NewUnaryHandler(
+		AgentServiceStartCharacterProcedure,
+		svc.StartCharacter,
+		connect.WithSchema(agentServiceMethods.ByName("StartCharacter")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceStopCharacterHandler := connect.NewUnaryHandler(
+		AgentServiceStopCharacterProcedure,
+		svc.StopCharacter,
+		connect.WithSchema(agentServiceMethods.ByName("StopCharacter")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceReadCharacterThreadHandler := connect.NewUnaryHandler(
+		AgentServiceReadCharacterThreadProcedure,
+		svc.ReadCharacterThread,
+		connect.WithSchema(agentServiceMethods.ByName("ReadCharacterThread")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceWatchCharacterThreadHandler := connect.NewServerStreamHandler(
+		AgentServiceWatchCharacterThreadProcedure,
+		svc.WatchCharacterThread,
+		connect.WithSchema(agentServiceMethods.ByName("WatchCharacterThread")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceCloseCharacterThreadHandler := connect.NewUnaryHandler(
+		AgentServiceCloseCharacterThreadProcedure,
+		svc.CloseCharacterThread,
+		connect.WithSchema(agentServiceMethods.ByName("CloseCharacterThread")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceListDefinitionsProcedure:
@@ -705,6 +842,16 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceListCharactersHandler.ServeHTTP(w, r)
 		case AgentServiceWatchCharactersProcedure:
 			agentServiceWatchCharactersHandler.ServeHTTP(w, r)
+		case AgentServiceStartCharacterProcedure:
+			agentServiceStartCharacterHandler.ServeHTTP(w, r)
+		case AgentServiceStopCharacterProcedure:
+			agentServiceStopCharacterHandler.ServeHTTP(w, r)
+		case AgentServiceReadCharacterThreadProcedure:
+			agentServiceReadCharacterThreadHandler.ServeHTTP(w, r)
+		case AgentServiceWatchCharacterThreadProcedure:
+			agentServiceWatchCharacterThreadHandler.ServeHTTP(w, r)
+		case AgentServiceCloseCharacterThreadProcedure:
+			agentServiceCloseCharacterThreadHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -808,4 +955,24 @@ func (UnimplementedAgentServiceHandler) ListCharacters(context.Context, *connect
 
 func (UnimplementedAgentServiceHandler) WatchCharacters(context.Context, *connect.Request[v1.WatchCharactersRequest], *connect.ServerStream[v1.WatchCharactersResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WatchCharacters is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) StartCharacter(context.Context, *connect.Request[v1.StartCharacterRequest]) (*connect.Response[v1.StartCharacterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.StartCharacter is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) StopCharacter(context.Context, *connect.Request[v1.StopCharacterRequest]) (*connect.Response[v1.StopCharacterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.StopCharacter is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ReadCharacterThread(context.Context, *connect.Request[v1.ReadCharacterThreadRequest]) (*connect.Response[v1.ReadCharacterThreadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.ReadCharacterThread is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) WatchCharacterThread(context.Context, *connect.Request[v1.WatchCharacterThreadRequest], *connect.ServerStream[v1.WatchCharacterThreadResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WatchCharacterThread is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) CloseCharacterThread(context.Context, *connect.Request[v1.CloseCharacterThreadRequest]) (*connect.Response[v1.CloseCharacterThreadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.CloseCharacterThread is not implemented"))
 }
