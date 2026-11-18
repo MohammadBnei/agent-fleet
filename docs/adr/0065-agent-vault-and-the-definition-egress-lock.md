@@ -226,7 +226,7 @@ into ConfigMap `agent-vault-ca`, upserted on change and mounted as a required
 volume, so the worker fetches nothing and a pod never starts without it. The
 pod sets `automountServiceAccountToken: false` (the namespace's `default` SA
 would otherwise get an API-server token mounted at admission, readable by the
-agent's `Read` tool) and `enableServiceLinks: false` (no Service env vars). The sidecar gets no proxy env (grpc-go honours `HTTPS_PROXY`; it dials core
+agent's `Read` tool) and `enableServiceLinks: false` (no Service env vars, except the always-injected KUBERNETES_SERVICE_HOST/PORT, which kubectl_read dials). The sidecar gets no proxy env (grpc-go honours `HTTPS_PROXY`; it dials core
 directly) and the clone init container needs none (local transport only). Pod
 `dnsConfig` `ndots:1` (REFUSED + `ndots:5` breaks musl, spike 1 (b)). The worker
 skips `gh api user` when `FLEET_DEFINITION` is set: the placeholder `GH_TOKEN`

@@ -130,7 +130,7 @@ func runKubectl(ctx context.Context, host, port string, args []string) (string, 
 // kubectlBin is a variable so a test can put a fake in its place.
 var kubectlBin = "kubectl"
 
-// kubectlEnv is the child's whole environment. It fails closed when the pod has no KUBERNETES_SERVICE_HOST: no
+// kubectlEnv is the child's whole environment. It fails closed when the pod has no KUBERNETES_SERVICE_HOST or _PORT: no
 // fallback to a DNS name. TLS stays verified against the mounted CA, so the apiserver cert must carry the ClusterIP
 // as an IP SAN (kubeadm and kubespray add it).
 func kubectlEnv(host, port string) ([]string, error) {
@@ -138,7 +138,7 @@ func kubectlEnv(host, port string) ([]string, error) {
 		return nil, errors.New("KUBERNETES_SERVICE_HOST is not set in this pod; refusing to guess the API server address")
 	}
 	if port == "" {
-		port = "443"
+		return nil, errors.New("KUBERNETES_SERVICE_PORT is not set in this pod; refusing to guess the API server port")
 	}
 	return []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp", "KUBECACHEDIR=/tmp/kube-cache",
 		"KUBERNETES_SERVICE_HOST=" + host, "KUBERNETES_SERVICE_PORT=" + port}, nil

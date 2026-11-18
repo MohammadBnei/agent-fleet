@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -162,7 +163,8 @@ func TestRunKubectl_EnvAndCap(t *testing.T) {
 	if strings.Contains(out, "secret") {
 		t.Errorf("the sidecar's environment reached kubectl:\n%s", out)
 	}
-	for _, e := range []string{"KUBERNETES_SERVICE_HOST=10.233.0.1", "KUBERNETES_SERVICE_PORT=443", "HOME=/tmp"} {
+	want, _ := kubectlEnv("10.233.0.1", "443")
+	for _, e := range want {
 		if !strings.Contains(out, e+"\n") {
 			t.Errorf("child lacks %s:\n%s", e, out)
 		}
@@ -214,8 +216,28 @@ func TestKubectlEnv_MissingHostFailsClosed(t *testing.T) {
 	if _, err := kubectlEnv("", "443"); err == nil {
 		t.Fatal("no KUBERNETES_SERVICE_HOST must be an error")
 	}
+	if _, err := kubectlEnv("10.233.0.1", ""); err == nil {
+		t.Fatal("no KUBERNETES_SERVICE_PORT must be an error")
+	}
+	old := kubectlBin
+	kubectlBin = filepath.Join(t.TempDir(), "must-not-run")
+	t.Cleanup(func() { kubectlBin = old })
 	out, err := runKubectl(context.Background(), "", "443", []string{"get", "pods"})
 	if err == nil || out != "" {
 		t.Errorf("runKubectl must refuse without running kubectl: out %q err %v", out, err)
+	}
+}
+
+// The real path (Run nil) uses the KubeRead address fields and refuses when the host is empty.
+func TestKubectlReadHandler_NoAPIHostRefuses(t *testing.T) {
+	old := kubectlBin
+	kubectlBin = filepath.Join(t.TempDir(), "must-not-run")
+	t.Cleanup(func() { kubectlBin = old })
+	k := &KubeRead{Namespaces: logNS, Core: &fakeCore{}}
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"args": []any{"get", "pods"}}
+	res, err := kubectlReadHandler(k)(context.Background(), req)
+	if err != nil || !res.IsError || !strings.Contains(fmt.Sprint(res.Content), "KUBERNETES_SERVICE_HOST") {
+		t.Errorf("want a refusal naming KUBERNETES_SERVICE_HOST, got %+v, %v", res, err)
 	}
 }
