@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.41.0](https://github.com/MohammadBnei/agent-fleet/compare/7.40.0...7.41.0) (2026-11-18)
+
+### Features
+
+* **core:** persona block and ListCharacters/WatchCharacters (ADR-0084 slices 14, 15) ([#428](https://github.com/MohammadBnei/agent-fleet/issues/428)) ([7d9dea0](https://github.com/MohammadBnei/agent-fleet/commit/7d9dea0b60120627db9fb7549fefbb05be37f585))
+
 # [7.40.0](https://github.com/MohammadBnei/agent-fleet/compare/7.39.0...7.40.0) (2026-11-17)
 
 ### Bug Fixes
