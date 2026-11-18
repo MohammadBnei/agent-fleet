@@ -5,7 +5,7 @@
   - Guests never reach the fleet. Every character is the owner's, and so trusted.
   - Alerts go to ADR-0086's single-shot first responders.
   - Choices marked **default, owner may change** are the coordinator's defaults.
-  - **Owner to confirm** marks a consequence the owner has not yet seen.
+  - **Owner to confirm** marks a consequence the owner has not yet seen (one remains: the worker at 2Gi, §4).
   - Mechanisms live in the build-slice appendix.
 - **Date:** 2026-11-16
 - **Amended 2026-11-17:** the character API for the game (§7, [ADR-0086](0086-rule-of-two.md) §4, [ADR-0082](0082-decision-cards.md) §7); slices 14 to 19.
@@ -90,10 +90,10 @@
   - Not in this slice: `spawns.allow` in the widening test (the spec has none yet).
 - **Built:** appendix slice 4: threads and delivery per thread (migration 000031).
   - `transcript.thread_key` and `session_threads` (cursor, SDK session id, last activity, effect and crash marks). The
-    owner's message to a new key opens a thread (`PostMessage.thread_key`); `CloseStandingThread` or 7 idle days close
-    it. Main never closes and keeps its SDK session id in `sessions.agent_session_id`.
+    owner's message to a new key opens a thread (`PostMessage.thread_key`); `CloseStandingThread` or 7 idle days park
+    it (SDK session id kept, resumable). Main never closes and keeps its SDK session id in `sessions.agent_session_id`.
   - Core delivers per thread from each thread's own cursor, the last result's `consumedSeq`, never from `LatestSeq`
-    (`StreamHumanMessages`, `sessions.ResumeFrom`). A closed thread gets only the abort that ends its SDK session.
+    (`StreamHumanMessages`, `sessions.ResumeFrom`). A parked thread gets no delivery until the owner writes to it again, which resumes it.
   - The worker runs one SDK session per thread and one running thread per pod. A waiting message holds its thread's
     cursor back. Answers, permission responses and Stop pass. A turn passes its 15-minute deadline and is interrupted.
   - The sidecar files every call under the running turn's thread (`x-fleet-thread`, set by `POST /turn`), and keys
@@ -167,7 +167,7 @@ What is left is a trusted agent that lives on.
 - **Only `Start` opens it.** Start is an admin console call. Core refuses `Open`, `Invoke` and a routed proposal for
   a standing definition (`agent.standing_only`).
   - Stop marks the row stopped. Events for a stopped character file a card instead of being appended.
-  - Start on a stopped character resumes the row with a fresh SDK session (§3), and memory carries over.
+  - Start on a stopped character resumes the row and each thread's kept SDK session (A4), and memory carries over.
 
 ### 3. Lifecycle: started once, kept up by core
 
@@ -201,8 +201,8 @@ What is left is a trusted agent that lives on.
 - **Hermes-style threads inside one character.** A thread is a topic the owner opens.
   - One pod per character; one SDK session per thread, each with its own SDK session id.
   - Transcript entries of standing rows carry a `thread_key` (migration). The owner's admin thread is `main`.
-  - A thread closes when the owner closes it, or after 7 days idle. Closing drops its SDK session id. Its transcript
-    stays.
+  - A thread closes (parks) when the owner closes it, or after 7 days idle. Closing keeps its SDK session id and its
+    transcript, and a later owner message or a reopen resumes it (A4).
   - Memory is shared across threads through the sidecar, the single writer (§8).
 - **Why this is safe now.** A character receives only T0 and T1 entries (§2), so every thread is T0/T1 and every
   thread holds the same set.
@@ -422,34 +422,29 @@ decisions are final; mechanisms are in appendix slices 14 to 19.
 - `StartCharacter` and `StopCharacter` return the new state at once. By owner decision, start and stop for characters
   move to `AgentService`; ADR-0086 §4's "steer and stop stay in the console" now reads: **steering stays in the
   console**. Stopping a character never answers a card.
-- **What stop and close really lose.** They are not reversible, and this ADR does not call them so.
-  - Stop aborts the running turn and appends an abort entry. Start (`RestartStanding`) then clears every thread's SDK
-    session id and moves every cursor to the end, so a stop then start wipes every thread's SDK context and drops any
-    entry that was waiting behind a running turn or the budget hold.
-  - Close drops that thread's SDK session for good.
-- **Decision (Owner to confirm).** From a surface, `StopCharacter` and `CloseCharacterThread` are not answered in place.
-  They are refused with `agent.decision_confirm_required`, carrying core's confirm page (ADR-0082 §7), which shows
-  what is lost and answers only on a POST. From the console or an admin they act at once. `StartCharacter` acts in
-  place from a surface: on a stopped character it only warms what stop already cleared, and it cannot be reached
-  without a stop, which a surface cannot do alone. The alternative, accepting these effects from the admin origin as the
-  ADR-0082 §7 injected-script rule already accepts a reversible "yes", is the owner's to choose instead.
+- **Stop and close are resumable, like Claude Code sessions (owner 2026-11-18).** A simple stop, with no confirm page.
+  - `StopCharacter` stops the pod and keeps every thread's SDK session id and cursor. `StartCharacter` resumes each
+    thread from them, so a stop then start loses no context and no waiting entry. Only an in-flight turn is aborted,
+    like Ctrl-C, and appends an abort entry.
+  - `CloseCharacterThread` parks the thread: its SDK session id and transcript are kept, and a later owner message or
+    an explicit reopen resumes it with full context. The 7-day idle close parks the same way.
+  - Both act in place from a surface, as `StartCharacter` does. Being resumable, they stay inside what ADR-0082 §7
+    already accepts from the admin origin for a reversible "yes"; the confirm page is not used for them.
 - **Boundary states.** `StartCharacter` on a `stopping` character returns state `stopping` with `why` "pod drain",
   not an error, so the game shows it and retries. Starting an already started character and stopping an already
   stopped one return the current state. Declared keys (ADR-0081), listed on each RPC's method option:
-  `agent.character_not_found`, `agent.decision_confirm_required` (stop and close from a surface) and
-  `agent.thread_not_found`. Nothing else is a new key; the rest stays `server.internal`.
+  `agent.character_not_found` and `agent.thread_not_found`. Nothing else is a new key; the rest stays `server.internal`.
 
 ### A5. Threads the owner can read
 
 - Standing rows are owned by `client:standing:<name>`, so today's thread reads refuse the owner. `ReadCharacterThread(name,
   thread, since)` and `WatchCharacterThread` return the owner-readable transcript of one character thread, in the same
   entry shapes as the console.
-- `CloseCharacterThread(name, thread)` is the §4 close, on the owner's word, and is confirm-gated from a surface (A4).
-- **Narrowed shapes (Owner to confirm).** The console's entries carry tool results, `view_logs` output from cluster
-  namespaces, issue and PR text, permission inputs and spawn results. Any script on `game.bnei.dev` could read and
-  exfiltrate them, which is wider than card text and speech. So the surface shapes are: owner and character text, and
-  speech, in full; tool calls as the tool name only; no tool results, permission inputs or spawn results. The console
-  keeps the full shapes. The owner may instead accept the full transcript on the admin origin.
+- `CloseCharacterThread(name, thread)` is the §4 close, on the owner's word. It parks the thread and is resumable (A4).
+- **Full transcript (owner 2026-11-18).** Thread reads from the game return the full transcript, the same entries the
+  console shows, tool results included. This is wider than card text and speech: any script on `game.bnei.dev` can
+  read it, and it can hold `view_logs` output, issue and PR text, permission inputs and spawn results. The owner
+  accepted that on the admin origin; the surface shapes are not narrowed.
 
 ### A6. Cards and decisions join to a character
 
@@ -477,8 +472,8 @@ decisions are final; mechanisms are in appendix slices 14 to 19.
   Consumers must render it as text, never as markup.
 - The game's "Ask about" prefill carries only atlas ids or character names, never a player-chosen string.
 - Speech is best effort; the game must not depend on it for anything the owner must see (cards are the record).
-- An injected script on the game origin can call these, as ADR-0082 §7 already assumes for cards. Start acts in place;
-  stop and close, which are irreversible (A4), go through the confirm page; thread reads are narrowed (A5). The card
+- An injected script on the game origin can call these, as ADR-0082 §7 already assumes for cards. Start, stop
+  and close act in place and are resumable (A4); thread reads return the full transcript (A5). The card
   rules are unchanged.
 - A registered game-server client and an island origin are refused on every new RPC (A1).
 
@@ -511,7 +506,7 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
    - `Open`, `Invoke` and routed proposals are refused.
 4. **Threads and delivery per thread.**
    - `thread_key` on standing transcript entries; one SDK session id per thread.
-   - A thread opens on the owner's first message, closes on his close or after 7 days idle, and its transcript stays.
+   - A thread opens on the owner's first message, parks on his close or after 7 days idle (SDK session id and transcript kept), and resumes on his next message or a reopen.
    - At most 1 thread runs at once; the others wait at their own heads.
    - An entry appended while the pod is down is delivered after the re-warm, in seq order within its thread.
    - Answers and Stop pass during a turn.
@@ -566,11 +561,14 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
     - Proto in `AgentService`, Go and TS regenerated, `buf breaking` clean.
 16. **Start, stop and thread reads.**
     - `StartCharacter` and `StopCharacter` return the new state at once.
+    - `StopCharacter` keeps every thread's SDK session id and cursor, and `StartCharacter` resumes them (today's
+      `RestartStanding` clears them: this slice changes it).
     - `ReadCharacterThread`, `WatchCharacterThread` and `CloseCharacterThread`, owner-readable on
-      `client:standing:<name>` rows, in the narrowed surface shapes (A5).
-    - Tests: a surface `StopCharacter` and `CloseCharacterThread` return `agent.decision_confirm_required` and change
-      nothing; the console acts at once; Start on a `stopping` character returns `stopping`; a test pins the allowed
-      surface entry shapes (no tool results, tool names only).
+      `client:standing:<name>` rows, returning the full transcript (A5). Close parks the thread; a later owner message
+      or a reopen resumes it, and the idle close parks too.
+    - Tests: stop then start resumes every thread with its SDK session id and cursor; stop aborts only the in-flight
+      turn; close then an owner message resumes the thread with context; Start on a `stopping` character returns
+      `stopping`; a thread read returns tool results.
     - The keys in A4 are declared in the proto (ADR-0081).
 17. **Cards join.**
     - `CardSubject.kind = character` moves its name from `repo` to `name`; reads accept both; stored cards are not
