@@ -1,5 +1,11 @@
 # Changelog
 
+## [7.44.2](https://github.com/MohammadBnei/agent-fleet/compare/7.44.1...7.44.2) (2026-11-18)
+
+### Bug Fixes
+
+* **sidecar:** kubectl_read dials the API server ClusterIP ([#435](https://github.com/MohammadBnei/agent-fleet/issues/435)) ([eedf0fe](https://github.com/MohammadBnei/agent-fleet/commit/eedf0fe53ea322fcfcfa1bd9891cf089fa486341))
+
 ## [7.44.1](https://github.com/MohammadBnei/agent-fleet/compare/7.44.0...7.44.1) (2026-11-18)
 
 # [7.44.0](https://github.com/MohammadBnei/agent-fleet/compare/7.43.0...7.44.0) (2026-11-18)
