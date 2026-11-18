@@ -172,7 +172,7 @@ func TestStandingProfileCarriesMemoryGate(t *testing.T) {
 	prov.set(func(p *definitionsProvisioner) {
 		p.files["definitions/dev-stander.yaml"] = []byte(strings.NewReplacer("name: dev-dream-analyst }", "name: dev-stander }",
 			"vault: dev-dream-analyst", "vault: dev-stander").Replace(string(p.files["definitions/dev-dream-analyst.yaml"])) +
-			"  lifecycle: { allow: [standing] }\n  cluster: { read: true }\n")
+			"  lifecycle: { allow: [standing] }\n  cluster: { read: true, logNamespaces: [agent-fleet] }\n")
 	})
 	if err := reg.Sync(context.Background()); err != nil {
 		t.Fatal(err)
@@ -194,6 +194,9 @@ func TestStandingProfileCarriesMemoryGate(t *testing.T) {
 	// ADR-0084 §6: cluster.read reaches the profile.
 	if !d.GetClusterRead() {
 		t.Error("cluster.read did not reach the profile")
+	}
+	if got := d.GetClusterLogNamespaces(); len(got) != 1 || got[0] != "agent-fleet" {
+		t.Errorf("cluster log namespaces = %v, want [agent-fleet]", got)
 	}
 	// ADR-0086 §2: cluster reads are B; a set without it (A·C) gets no service account.
 	id := res.Msg.GetSession().GetId()

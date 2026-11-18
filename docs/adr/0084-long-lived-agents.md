@@ -317,6 +317,12 @@ What is left is a trusted agent that lives on.
     `ukubi-meet` and `monitoring`.
   - Never `secrets`, `configmaps`, RBAC objects, `*/exec`, `*/proxy` or `nodes/proxy`.
   - The egress lock admits the API server for granted pods.
+  - **The one reader is the sidecar tool `kubectl_read`** (A5). It is served only when the pod holds the grant and
+    the session's stored set holds B (the provisioner passes `FLEET_CLUSTER_READ`, `FLEET_CLUSTER_LOG_NAMESPACES` and
+    the set; a missing set serves nothing). Verbs: `get`, `describe`, `logs`, `events`, `top`, `api-resources`.
+    Flags are an allowlist (no `--as`, `--server`, `--token`, `-f`, `--raw`, `-w`), and `logs` must name one of the
+    definition's `logNamespaces` with `-n`. It runs kubectl with an environment built for it, as the mounted token.
+    The check is in the sidecar and the grant in core; the ADR-0086 "asks core first" call is not made for it yet.
 
 ### 7. The game, for the owner only
 

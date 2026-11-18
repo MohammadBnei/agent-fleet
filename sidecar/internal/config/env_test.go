@@ -56,6 +56,8 @@ var envReadsAllowed = map[string][]string{
 	"internal/telemetry/loop.go": {"import os/exec", "os.Environ"},
 	// git for the memory repo (docs/adr/0086 §5) inherits the process's environment: a child process, not config.
 	"internal/memory/memory.go": {"import os/exec"},
+	// kubectl_read runs kubectl with an environment it builds itself, nothing inherited: a child process, not config.
+	"internal/mcpserver/kuberead.go": {"import os/exec"},
 }
 
 // envUses lists the names in src that read the environment, as "pkg.Name" or

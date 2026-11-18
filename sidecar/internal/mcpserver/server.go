@@ -124,13 +124,14 @@ const blockingWaitMs int32 = 45_000
 //
 // The e2e directDialer parameter is gone with the sandbox it dialed
 // (docs/adr/0048 §6) — this sidecar now talks only to core.
-func New(core *coreclient.Client, mem MemoryWriter) http.Handler {
-	return server.NewStreamableHTTPServer(newMCPServer(core, mem))
+func New(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) http.Handler {
+	return server.NewStreamableHTTPServer(newMCPServer(core, mem, kube))
 }
 
 // newMCPServer is New without the transport, so a test can read the tool
 // list the agent will see.
-func newMCPServer(core *coreclient.Client, mem MemoryWriter) *server.MCPServer {
+// kube is nil unless the pod holds the cluster.read grant and a trust set with B (ADR-0084 §6); then kubectl_read exists.
+func newMCPServer(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) *server.MCPServer {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
@@ -293,6 +294,10 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter) *server.MCPServer {
 		mcp.WithString("sessionId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
+
+	if kube != nil {
+		addKubeRead(s, kube)
+	}
 
 	s.AddTool(mcp.NewTool("wait_for_agent",
 		mcp.WithDescription(fmt.Sprintf("Wait up to %ds for another session to reach a liveness state — a single check, not a way to wait for a reply (a reply arrives as a new message; end your turn for it). With no `until`, waits for it to settle (idle, done, blocked, stalled). `until: blocked` returns when that session genuinely needs a human. Running out of time is not an error: the response reports timedOut plus the state actually reached, and 'still working' is a legitimate answer to act on — do not re-invoke in a loop.", blockingWaitMs/1000)),

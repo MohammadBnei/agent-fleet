@@ -80,6 +80,11 @@ type Config struct {
 	// MemoryRoot is the directory holding agent-<name>-memory and
 	// agent-<name>-quarantine (FLEET_MEMORY_ROOT, default /memory).
 	MemoryRoot string
+	// ClusterRead is the definition's cluster.read grant (FLEET_CLUSTER_READ=1): the read-only kube token is
+	// mounted here, so kubectl_read may be served (ADR-0084 §6). ClusterLogNamespaces
+	// (FLEET_CLUSTER_LOG_NAMESPACES, comma-separated) are the only namespaces it may read pod logs in.
+	ClusterRead          bool
+	ClusterLogNamespaces string
 }
 
 // FromProcess is the sidecar's configuration from its environment: the one call
@@ -114,22 +119,25 @@ func Load(getenv func(string) string) (Config, error) {
 		return strings.TrimSpace(string(b))
 	}
 	c := Config{
-		LogLevel:       env("LOG_LEVEL", "info"),
-		SessionID:      getenv("SESSION_ID"),
-		LeaseID:        secret("LEASE_ID"),
-		CoreGRPCAddr:   env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
-		WorktreePath:   env("WORKTREE_PATH", "/workspace"),
-		MCPPort:        env("MCP_PORT", "9090"),
-		LocalAPIPort:   env("LOCAL_API_PORT", "9091"),
-		HealthPort:     env("HEALTH_PORT", "9092"),
-		VaultProxy:     secret("FLEET_VAULT_PROXY"),
-		VaultHosts:     getenv("FLEET_VAULT_HOSTS"),
-		EgressPort:     env("EGRESS_PORT", "9093"),
-		TracesEndpoint: getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
-		TrustSet:       getenv("FLEET_TRUST_SET"),
-		AgentName:      getenv("FLEET_AGENT_NAME"),
-		MemoryRoot:     env("FLEET_MEMORY_ROOT", "/memory"),
+		LogLevel:             env("LOG_LEVEL", "info"),
+		SessionID:            getenv("SESSION_ID"),
+		LeaseID:              secret("LEASE_ID"),
+		CoreGRPCAddr:         env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
+		WorktreePath:         env("WORKTREE_PATH", "/workspace"),
+		MCPPort:              env("MCP_PORT", "9090"),
+		LocalAPIPort:         env("LOCAL_API_PORT", "9091"),
+		HealthPort:           env("HEALTH_PORT", "9092"),
+		VaultProxy:           secret("FLEET_VAULT_PROXY"),
+		VaultHosts:           getenv("FLEET_VAULT_HOSTS"),
+		EgressPort:           env("EGRESS_PORT", "9093"),
+		TracesEndpoint:       getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+		TrustSet:             getenv("FLEET_TRUST_SET"),
+		AgentName:            getenv("FLEET_AGENT_NAME"),
+		MemoryRoot:           env("FLEET_MEMORY_ROOT", "/memory"),
+		ClusterRead:          getenv("FLEET_CLUSTER_READ") == "1",
+		ClusterLogNamespaces: getenv("FLEET_CLUSTER_LOG_NAMESPACES"),
 	}
+
 	var errs []error
 	if c.SessionID == "" {
 		errs = append(errs, ErrNoSessionID)

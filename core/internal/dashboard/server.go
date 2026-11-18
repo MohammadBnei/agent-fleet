@@ -1601,6 +1601,9 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	// Cluster reads are B (ADR-0086 §2): a set without B never gets the credential mounted; empty means the fleet default.
 	profile.ClusterRead = eff.Cluster != nil && eff.Cluster.Read &&
 		sessions.HoldsTrust(cmp.Or(t.TrustSet, sessions.TrustFor(sessions.TierFleet)), "B")
+	if profile.ClusterRead {
+		profile.ClusterLogNamespaces = eff.Cluster.LogNamespaces
+	}
 	if r := eff.Resources; r != nil {
 		profile.Cpu, profile.Memory = r.CPU, r.Memory
 		// Guaranteed QoS is for standing definitions only (ADR-0084 §9).

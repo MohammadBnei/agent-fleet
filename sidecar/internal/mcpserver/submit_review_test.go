@@ -27,7 +27,7 @@ func (f *fakeReviewer) SubmitReview(_ context.Context, req *agentfleetv1.SubmitR
 
 func TestSubmitReviewListed(t *testing.T) {
 	var raw json.RawMessage
-	for _, tl := range newMCPServer(nil, nil).ListTools() {
+	for _, tl := range newMCPServer(nil, nil, nil).ListTools() {
 		if tl.Tool.Name == "submit_review" {
 			raw = tl.Tool.RawInputSchema
 		}

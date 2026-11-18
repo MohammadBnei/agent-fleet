@@ -42,7 +42,7 @@ func TestResolveLogLevel(t *testing.T) {
 // thing between another pod and this session's human-message feed. The health
 // listener is the deliberate exception: kubelet dials probes at the pod IP.
 func TestServers_OnlyHealthBindsBeyondLoopback(t *testing.T) {
-	mcp, localAPI, health := servers(nil, nil, nil, "9090", "9091", "9092")
+	mcp, localAPI, health := servers(nil, nil, nil, nil, "9090", "9091", "9092")
 
 	for _, c := range []struct {
 		name string
@@ -63,7 +63,7 @@ func TestServers_OnlyHealthBindsBeyondLoopback(t *testing.T) {
 // nothing but readiness. Adding a route to localapi.New is free; adding one to
 // localapi.NewHealth publishes it to the whole namespace.
 func TestNewHealth_ServesNothingButReadyz(t *testing.T) {
-	_, _, health := servers(nil, nil, nil, "9090", "9091", "9092")
+	_, _, health := servers(nil, nil, nil, nil, "9090", "9091", "9092")
 
 	for _, path := range []string{"/message", "/human-messages", "/permission-mode", "/session-id", "/journal", "/task", "/telemetry"} {
 		rec := httptest.NewRecorder()
@@ -82,7 +82,7 @@ func TestServers_TracesAllButHealth(t *testing.T) {
 	prev := slog.Default()
 	slog.SetDefault(uktel.NewLogger(&logs))
 	t.Cleanup(func() { slog.SetDefault(prev) })
-	mcp, localAPI, health := servers(uktel.WithExporter(nil, "agent-fleet-sidecar"), nil, nil, "9090", "9091", "9092")
+	mcp, localAPI, health := servers(uktel.WithExporter(nil, "agent-fleet-sidecar"), nil, nil, nil, "9090", "9091", "9092")
 
 	for _, c := range []struct {
 		name   string
@@ -116,5 +116,23 @@ func TestMemoryWiring(t *testing.T) {
 	}
 	if _, mem = memoryWiring(config.Config{}, "s1"); mem != nil {
 		t.Error("a pod without an agent got a memory writer")
+	}
+}
+
+// kubectl_read needs the grant and B in the trust set; either alone serves nothing.
+func TestKubeRead_NeedsGrantAndB(t *testing.T) {
+	for _, c := range []struct {
+		cfg  config.Config
+		want bool
+	}{
+		{config.Config{ClusterRead: true, TrustSet: "AB"}, true},
+		{config.Config{ClusterRead: true, TrustSet: "BC"}, true},
+		{config.Config{ClusterRead: true, TrustSet: "AC"}, false},
+		{config.Config{ClusterRead: true}, false},
+		{config.Config{TrustSet: "AB"}, false},
+	} {
+		if got := kubeRead(c.cfg) != nil; got != c.want {
+			t.Errorf("%+v: served %v, want %v", c.cfg, got, c.want)
+		}
 	}
 }
