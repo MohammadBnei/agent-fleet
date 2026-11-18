@@ -298,6 +298,9 @@ func TestRestartStanding_KeepsSessionsAndCursors(t *testing.T) {
 	if from, ok, _ := store.ResumeFrom(ctx, id); !ok || from != 4 {
 		t.Fatalf("ResumeFrom = %d %v, want the waiting entry 4", from, ok)
 	}
+	if rs, err := store.RestartSeq(ctx, id); err != nil || rs != 4 {
+		t.Fatalf("RestartSeq = %d, %v, want 4: the transcript's last seq at Start", rs, err)
+	}
 	var crashes int
 	if err := pool.QueryRow(ctx, fmt.Sprintf(`SELECT crashes FROM session_threads WHERE session_id = '%s' AND thread_key = 'a'`, id)).Scan(&crashes); err != nil || crashes != 0 {
 		t.Fatalf("crashes = %d (%v)", crashes, err)

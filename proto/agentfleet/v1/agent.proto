@@ -282,6 +282,9 @@ message CharacterThread {
   bool running = 3;
   // RFC 3339: the thread's latest entry.
   string last_at = 4;
+  // Closed by the owner or by the 7-day idle close: its session id and transcript are kept, and the next owner
+  // message to the key resumes it. Open threads come first, main first.
+  bool parked = 5;
 }
 
 message CharacterTurn {

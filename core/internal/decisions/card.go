@@ -159,11 +159,14 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 		key = "character/" + name
 	} else if sub.GetKind() == "alert_group" {
 		// docs/adr/0086 §4: a responder's alert group has no GitHub subject. The key is core's, 16 hex.
-		if !groupKey.MatchString(sub.GetGroupKey()) || sub.GetRepo() != "" || sub.GetNumber() != 0 {
+		if !groupKey.MatchString(sub.GetGroupKey()) || sub.GetRepo() != "" || sub.GetNumber() != 0 || sub.GetName() != "" {
 			return bad("an alert_group subject is its group_key alone, 16 lowercase hex")
 		}
 		key = "alert/" + sub.GetGroupKey()
 	} else {
+		if sub.GetName() != "" {
+			return bad("subject.name is for a character subject only")
+		}
 		repo := sub.GetRepo()
 		owner, name, _ := strings.Cut(repo, "/")
 		if !repoName.MatchString(repo) || owner == "." || owner == ".." || name == "." || name == ".." {

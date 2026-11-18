@@ -79,7 +79,7 @@ const cols = `
 	CASE WHEN s.invoker LIKE 'standing:%' THEN substring(s.invoker from 10) ELSE '' END,
 	CASE WHEN COALESCE(s.invoker, '') NOT LIKE 'standing:%' THEN ''
 	     WHEN s.lifecycle = 'standing' THEN COALESCE((SELECT t.thread_key FROM transcript t
-	                                                  WHERE t.session_id = d.session_id AND t.seq = d.request_seq), s.thread_key)
+	                                                  WHERE t.session_id = d.session_id AND t.seq = d.request_seq), s.thread_key, '')
 	     ELSE COALESCE(s.thread_key, '') END
 	FROM decisions d JOIN sessions s ON s.id = d.session_id`
 

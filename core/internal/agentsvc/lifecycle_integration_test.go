@@ -313,4 +313,24 @@ func TestCharacterLifecycleAndThreads(t *testing.T) {
 	if !st.Receive() || len(st.Msg().GetEntries()) != 1 || st.Msg().GetEntries()[0].GetText() != "late result" {
 		t.Fatalf("second frame: %v (%v)", st.Msg(), st.Err())
 	}
+
+	// A long backlog goes out a page per frame, not in one message.
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key)
+		SELECT $1, (SELECT max(seq) FROM transcript WHERE session_id = $1) + g, 'agent', 'bulk', 'tool_call', gen_random_uuid()::text, 'notes'
+		FROM generate_series(1, $2::int) g`, id, threadPage+1); err != nil {
+		t.Fatal(err)
+	}
+	bst, err := c.WatchCharacterThread(wctx, connect.NewRequest(&agentfleetv1.WatchCharacterThreadRequest{Name: "ada", Thread: "notes", Since: 0}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bst.Close() //nolint:errcheck
+	var sizes []int
+	for n := 0; n < 2 && bst.Receive(); n++ {
+		sizes = append(sizes, len(bst.Msg().GetEntries()))
+	}
+	// notes holds its two entries from before plus the bulk: pages of threadPage, then the rest.
+	if len(sizes) != 2 || sizes[0] != threadPage || sizes[1] != 3 {
+		t.Errorf("backlog frames %v, want [%d 3]", sizes, threadPage)
+	}
 }

@@ -1741,7 +1741,8 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 	defer tx.Rollback(ctx) //nolint:errcheck
 	tag, err := tx.Exec(ctx, `
 		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
-		       restart_after = NULL, drain_started_at = NULL, updated_at = now()
+		       restart_after = NULL, drain_started_at = NULL, updated_at = now(),
+		       restart_seq = (SELECT COALESCE(MAX(seq), -1) FROM transcript WHERE session_id = $1)
 		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL AND COALESCE(pod_phase, '') <> ALL($4)`,
 		id, sha, by, livePhases)
 	if err != nil {

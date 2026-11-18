@@ -155,6 +155,8 @@ func TestCharacterSubject_NameAndLegacyRepo(t *testing.T) {
 		{"neither", &agentfleetv1.CardSubject{Kind: "character"}, false, ""},
 		{"a bad name", &agentfleetv1.CardSubject{Kind: "character", Name: "Ada Lovelace"}, false, ""},
 		{"a number", &agentfleetv1.CardSubject{Kind: "character", Name: "ada", Number: 3}, false, ""},
+		{"a name on a pr", &agentfleetv1.CardSubject{Kind: "pr", Repo: "o/r", Number: 1, Name: "ada"}, false, ""},
+		{"a name on an alert group", &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef", Name: "ada"}, false, ""},
 	} {
 		c := &agentfleetv1.Card{Ask: "Lift the hold?", Subject: tc.sub, Options: opts}
 		key, err := normalize(c)

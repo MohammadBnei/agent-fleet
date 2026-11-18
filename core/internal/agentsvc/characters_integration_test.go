@@ -106,8 +106,9 @@ func TestListAndWatchCharacters(t *testing.T) {
 	if ada.GetState() != "idle" || ada.GetWhy() != "" || ada.GetDisplayName() != "Ada" || ada.GetPersona().GetHome() != "world" || !ada.GetCanSpeak() || ada.GetDefinition().GetSha() != "sha1" {
 		t.Errorf("ada: %v", ada)
 	}
-	if th := ada.GetThreads(); len(th) != 2 || th[0].GetKey() != "main" || th[0].GetTitle() != long[:60] || th[1].GetKey() != "chat" || th[1].GetTitle() != "hello there" || th[0].GetLastAt() == "" {
-		t.Errorf("threads: %v", th)
+	if th := ada.GetThreads(); len(th) != 3 || th[0].GetKey() != "main" || th[0].GetTitle() != long[:60] || th[1].GetKey() != "chat" || th[1].GetTitle() != "hello there" || th[0].GetLastAt() == "" ||
+		th[0].GetParked() || th[1].GetParked() || th[2].GetKey() != "old" || !th[2].GetParked() {
+		t.Errorf("threads: %v, want main, chat, then old parked (open first, main first)", th)
 	}
 	if b := ada.GetBudget(); b.GetTurnsToday() != 0 || b.GetLimit() != 1 || b.GetHeld() {
 		t.Errorf("budget: %v", b)

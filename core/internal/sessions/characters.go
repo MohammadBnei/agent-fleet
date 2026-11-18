@@ -9,13 +9,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// CharacterThread is one open thread of a character, for the game's list (docs/adr/0084 amendment A3).
+// CharacterThread is one thread, open or parked, of a character, for the game's list (docs/adr/0084 amendment A3).
 type CharacterThread struct {
 	Key string
 	// Title is the owner's first line in the thread, cut to 60 characters; empty before one.
 	Title   string
 	Running bool
-	LastAt  time.Time
+	// Parked: closed, resumable by the next owner message to the key.
+	Parked bool
+	LastAt time.Time
 }
 
 // CharacterRuntime is what a started character's row and transcript say about it now.
@@ -42,7 +44,7 @@ type CharacterRuntime struct {
 // titleLen is the length a thread title is cut to.
 const titleLen = 60
 
-// CharacterRuntime reads one standing row's state for ListCharacters: one row, its open threads and the turn that
+// CharacterRuntime reads one standing row's state for ListCharacters: one row, its threads (parked last) and the turn that
 // runs. It is a read; nothing here moves the row.
 func (s *Store) CharacterRuntime(ctx context.Context, id string) (CharacterRuntime, error) {
 	c := CharacterRuntime{ID: id}
@@ -84,19 +86,19 @@ func (s *Store) CharacterRuntime(ctx context.Context, id string) (CharacterRunti
 	}
 	rows, err := s.pool.Query(ctx, `SELECT st.thread_key,
 		COALESCE(left(split_part(ltrim(first.text, E' \t\r\n'), E'\n', 1), $2), ''),
-		COALESCE(last.at, st.opened_at)
+		COALESCE(last.at, st.opened_at), st.closed_at IS NOT NULL
 		FROM session_threads st
 		LEFT JOIN LATERAL (SELECT h.text FROM transcript h WHERE h.session_id = st.session_id AND h.thread_key = st.thread_key
 			AND h."from" = 'human' AND COALESCE(h.type, '') IN ('', 'discussion') ORDER BY h.seq LIMIT 1) first ON true
 		LEFT JOIN LATERAL (SELECT max(h.created_at) AS at FROM transcript h WHERE h.session_id = st.session_id
 			AND h.thread_key = st.thread_key) last ON true
-		WHERE st.session_id = $1 AND st.closed_at IS NULL
-		ORDER BY (st.thread_key <> $3), st.opened_at, st.thread_key`, id, titleLen, MainThread)
+		WHERE st.session_id = $1
+		ORDER BY (st.closed_at IS NOT NULL), (st.thread_key <> $3), st.opened_at, st.thread_key`, id, titleLen, MainThread)
 	if err != nil {
 		return c, fmt.Errorf("character runtime: threads: %w", err)
 	}
 	c.Threads, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (t CharacterThread, err error) {
-		err = r.Scan(&t.Key, &t.Title, &t.LastAt)
+		err = r.Scan(&t.Key, &t.Title, &t.LastAt, &t.Parked)
 		return
 	})
 	if err != nil {

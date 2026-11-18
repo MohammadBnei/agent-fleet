@@ -56,7 +56,7 @@
     2 s and sends changed characters whole, after a baseline of all.
   - `state` is read from the row and the transcript (`sessions.CharacterRuntime`): `running` keeps a drain's reason in
     `why`; `held` is a drain (pin drain, token refresh), a crash back-off with no pod, or the budget; `stopping` is a
-    stopped row whose pod is still live ("pod drain"). `threads` lists the open threads, main first; `spawns.used` is
+    stopped row whose pod is still live ("pod drain"). `threads` lists every thread, open ones first (main first), then parked ones marked `parked`; `spawns.used` is
     the spawned runs holding a pod. `open_cards` counts open cards on the character's session and its spawned runs
     (by invoker `standing:<name>`), so it needs no A6 join yet.
 - **Built:** appendix slices 16 to 19: the lifecycle, thread reads, cards joined to a character, speech and the kind-local
@@ -453,7 +453,7 @@ decisions are final; mechanisms are in appendix slices 14 to 19.
   turn, `budget`, `spawns`, `can_speak` and `open_cards`.
   - `state` is `stopped | starting | idle | running | held | stopping`. `why` is a short reason when the state is not
     plain: budget, token refresh, crash back-off, pin drain.
-  - `threads` is `[{key, title, running, last_at}]`. `title` is the owner's first line, cut to 60 characters.
+  - `threads` is `[{key, title, running, last_at, parked}]`: open threads first, main first, then parked ones, which the next owner message to the key resumes. `title` is the owner's first line, cut to 60 characters.
   - The running turn is `{thread, started_at}`. `budget` is `{turns_today, limit, held}`. `spawns` is `{used, limit}`.
   - `can_speak` is whether the definition holds the `Speak` grant (§7).
   - `open_cards` is the count of open cards joined to the character (A6).

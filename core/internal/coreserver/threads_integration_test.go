@@ -103,19 +103,17 @@ func TestStreamHumanMessages_StandingDeliversPerThread(t *testing.T) {
 }
 
 // docs/adr/0084 amendment A4: Stop keeps every waiting entry, so a resumed stream can start below the abort that stopped
-// the earlier pod. That abort, older than the new pod, must not end it; one written after the pod started does.
-func TestStreamHumanMessages_StandingSkipsAnAbortFromBeforeThePod(t *testing.T) {
+// the earlier pod. That abort, at or below the seq Start recorded, must not end it; one written after does.
+func TestStreamHumanMessages_StandingSkipsAnAbortFromBeforeTheRestart(t *testing.T) {
 	s, _, pool, id := newCharacter(t)
 	ctx := context.Background()
 	put(t, pool, id, 1, "main", "human", "discussion", "waiting")
 	put(t, pool, id, 2, "main", "human", "abort", "stopped by root") // the earlier pod's Stop
 	put(t, pool, id, 3, "main", "human", "abort", "stopped by root") // this pod's
-	for _, q := range []string{`UPDATE sessions SET pod_started_at = now() WHERE id = $1`,
-		`UPDATE transcript SET created_at = now() - interval '1 hour' WHERE session_id = $1 AND seq <= 2`,
-		`UPDATE transcript SET created_at = now() + interval '1 minute' WHERE session_id = $1 AND seq = 3`} {
-		if _, err := pool.Exec(ctx, q, id); err != nil {
-			t.Fatal(err)
-		}
+	// Start recorded seq 2 as the end of what the earlier pod saw; no clock is involved, so a stale pod_started_at
+	// (or none) changes nothing.
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET restart_seq = 2, pod_started_at = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
 	}
 	_, sha, err := s.agentSpecOf(ctx, id)
 	if err != nil {

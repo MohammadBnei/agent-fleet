@@ -72,4 +72,21 @@ func TestDecisionCharacterJoin(t *testing.T) {
 			t.Errorf("%s: character %q thread %q, want %q %q", tc.what, d.GetCharacter(), d.GetThreadKey(), tc.character, tc.thread)
 		}
 	}
+
+	// sessions.thread_key is nullable: a standing row without one and a request entry that is gone must read as an
+	// empty thread, not fail the whole listing.
+	orphan := card(ada, "main", 5)
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET thread_key = NULL WHERE id = $1`, ada); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE decisions SET request_seq = 99999 WHERE id = $1`, orphan.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := decs.Get(ctx, orphan.ID)
+	if err != nil {
+		t.Fatalf("a standing row with no thread_key: %v", err)
+	}
+	if d := decisionToProto(got); d.GetCharacter() != "ada" || d.GetThreadKey() != "" {
+		t.Errorf("orphan: character %q thread %q, want ada and none", d.GetCharacter(), d.GetThreadKey())
+	}
 }

@@ -3,11 +3,13 @@ package agentsvc
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -23,19 +25,59 @@ var threadPoll = time.Second
 
 const threadPage = 500
 
-// characterNamed is the named character as ListCharacters shows it now: agent.character_not_found when no standing
-// definition and no started character has the name.
+// standingHead is the valid standing definition head by that name.
+func (s *Server) standingHead(name string) (definitions.Head, bool) {
+	if s.definitions == nil {
+		return definitions.Head{}, false
+	}
+	heads, _ := s.definitions.List()
+	for _, h := range heads {
+		if h.Name == name && h.Effective != nil && h.Effective.Lifecycle != nil && slices.Contains(h.Effective.Lifecycle.Allow, sessions.Standing) {
+			return h, true
+		}
+	}
+	return definitions.Head{}, false
+}
+
+// characterKnown is agent.character_not_found unless a standing definition or a started character has the name. It
+// builds no view: Read, Watch and Close only need to know the name is one.
+func (s *Server) characterKnown(ctx context.Context, name string) error {
+	if _, ok := s.standingHead(name); ok {
+		return nil
+	}
+	if s.sessions != nil {
+		_, err := s.sessions.StandingByDefinition(ctx, name)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, sessions.ErrNotFound) {
+			return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
+	}
+	return errkeys.Connect(connect.CodeNotFound, errkeys.KeyCharacterNotFound, errors.New("no such character"))
+}
+
+// characterNamed is the named character as ListCharacters shows it now, and only that one's view is built.
 func (s *Server) characterNamed(ctx context.Context, name string) (*agentfleetv1.Character, error) {
-	cs, err := s.characters(ctx)
+	if err := s.characterKnown(ctx, name); err != nil {
+		return nil, err
+	}
+	h, ok := s.standingHead(name)
+	if !ok {
+		h = definitions.Head{Name: name} // started, its head invalid or gone: it runs its pinned version
+	}
+	cards := map[string]int{}
+	if s.decisions != nil {
+		var err error
+		if cards, err = s.decisions.OpenCardsByCharacter(ctx, sessions.StandingPrefix); err != nil {
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
+	}
+	c, err := s.characterView(ctx, h, cards[name])
 	if err != nil {
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
-	for _, c := range cs {
-		if c.GetName() == name {
-			return c, nil
-		}
-	}
-	return nil, errkeys.Connect(connect.CodeNotFound, errkeys.KeyCharacterNotFound, errors.New("no such character"))
+	return c, nil
 }
 
 // lifecycle is Start's and Stop's shared shape: the owner, the character, the console's call, and its outcomes that
@@ -44,7 +86,7 @@ func (s *Server) lifecycle(ctx context.Context, name string, call func() error, 
 	if err := ownerOnly(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := s.characterNamed(ctx, name); err != nil {
+	if err := s.characterKnown(ctx, name); err != nil {
 		return nil, err
 	}
 	if err := call(); err != nil {
@@ -101,7 +143,7 @@ func (s *Server) CloseCharacterThread(ctx context.Context, req *connect.Request[
 		return nil, err
 	}
 	name, key := req.Msg.GetName(), req.Msg.GetThread()
-	if _, err := s.characterNamed(ctx, name); err != nil {
+	if err := s.characterKnown(ctx, name); err != nil {
 		return nil, err
 	}
 	_, err := s.dash.CloseStandingThread(ctx, connect.NewRequest(&agentfleetv1.CloseStandingThreadRequest{Definition: name, ThreadKey: key}))
@@ -117,7 +159,7 @@ func (s *Server) CloseCharacterThread(ctx context.Context, req *connect.Request[
 
 // threadSession is the character's session when it has the thread, closed or parked included.
 func (s *Server) threadSession(ctx context.Context, name, key string) (string, error) {
-	if _, err := s.characterNamed(ctx, name); err != nil {
+	if err := s.characterKnown(ctx, name); err != nil {
 		return "", err
 	}
 	row, err := s.sessions.StandingByDefinition(ctx, name)
@@ -188,7 +230,7 @@ func (s *Server) ReadCharacterThread(ctx context.Context, req *connect.Request[a
 }
 
 // WatchCharacterThread sends the thread from since, then each new entry, until the stream's age is up. The first frame
-// always goes out, empty or not, so the client knows it is connected.
+// always goes out, empty or not, so the client knows it is connected. A backlog is sent a page per frame.
 func (s *Server) WatchCharacterThread(ctx context.Context, req *connect.Request[agentfleetv1.WatchCharacterThreadRequest], stream *connect.ServerStream[agentfleetv1.WatchCharacterThreadResponse]) error {
 	if err := ownerOnly(ctx); err != nil {
 		return err
@@ -205,7 +247,7 @@ func (s *Server) WatchCharacterThread(ctx context.Context, req *connect.Request[
 	tick := time.NewTicker(threadPoll)
 	defer tick.Stop()
 	for first := true; ; first = false {
-		entries, next, err := s.readThread(ctx, p, id, key, cur, 1<<30)
+		entries, next, err := s.readThread(ctx, p, id, key, cur, threadPage)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -218,6 +260,9 @@ func (s *Server) WatchCharacterThread(ctx context.Context, req *connect.Request[
 			}
 		}
 		cur = next
+		if len(entries) == threadPage {
+			continue // more is waiting: the backlog goes out a page per frame, then the poll
+		}
 		select {
 		case <-ctx.Done():
 			return nil

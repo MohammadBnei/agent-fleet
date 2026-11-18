@@ -1266,7 +1266,10 @@ type CharacterThread struct {
 	Title   string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	Running bool   `protobuf:"varint,3,opt,name=running,proto3" json:"running,omitempty"`
 	// RFC 3339: the thread's latest entry.
-	LastAt        string `protobuf:"bytes,4,opt,name=last_at,json=lastAt,proto3" json:"last_at,omitempty"`
+	LastAt string `protobuf:"bytes,4,opt,name=last_at,json=lastAt,proto3" json:"last_at,omitempty"`
+	// Closed by the owner or by the 7-day idle close: its session id and transcript are kept, and the next owner
+	// message to the key resumes it. Open threads come first, main first.
+	Parked        bool `protobuf:"varint,5,opt,name=parked,proto3" json:"parked,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1327,6 +1330,13 @@ func (x *CharacterThread) GetLastAt() string {
 		return x.LastAt
 	}
 	return ""
+}
+
+func (x *CharacterThread) GetParked() bool {
+	if x != nil {
+		return x.Parked
+	}
+	return false
 }
 
 type CharacterTurn struct {
@@ -4637,12 +4647,13 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x04home\x18\x06 \x01(\tR\x04home\"7\n" +
 	"\x11CharacterRelation\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\tR\x02to\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"l\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"\x84\x01\n" +
 	"\x0fCharacterThread\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
 	"\arunning\x18\x03 \x01(\bR\arunning\x12\x17\n" +
-	"\alast_at\x18\x04 \x01(\tR\x06lastAt\"F\n" +
+	"\alast_at\x18\x04 \x01(\tR\x06lastAt\x12\x16\n" +
+	"\x06parked\x18\x05 \x01(\bR\x06parked\"F\n" +
 	"\rCharacterTurn\x12\x16\n" +
 	"\x06thread\x18\x01 \x01(\tR\x06thread\x12\x1d\n" +
 	"\n" +

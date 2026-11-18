@@ -367,15 +367,15 @@ func (l *Loop) repinStanding(ctx context.Context) {
 	}
 }
 
-// PodStartedAt is when the row's current pod was created (SetPodImages stamps it at the warm); the zero time before
-// any pod. A Stop's abort entry older than it targeted an earlier pod (docs/adr/0084 amendment A4).
-func (s *Store) PodStartedAt(ctx context.Context, id string) (time.Time, error) {
-	var at *time.Time
-	if err := s.pool.QueryRow(ctx, `SELECT pod_started_at FROM sessions WHERE id = $1`, id).Scan(&at); err != nil {
-		return time.Time{}, fmt.Errorf("pod started at: %w", err)
+// RestartSeq is the highest transcript seq when Start last resumed the character, -1 when it never has. A Stop's abort
+// in main at or below it targeted an earlier pod (docs/adr/0084 amendment A4).
+func (s *Store) RestartSeq(ctx context.Context, id string) (int64, error) {
+	var seq *int64
+	if err := s.pool.QueryRow(ctx, `SELECT restart_seq FROM sessions WHERE id = $1`, id).Scan(&seq); err != nil {
+		return -1, fmt.Errorf("restart seq: %w", err)
 	}
-	if at == nil {
-		return time.Time{}, nil
+	if seq == nil {
+		return -1, nil
 	}
-	return *at, nil
+	return *seq, nil
 }

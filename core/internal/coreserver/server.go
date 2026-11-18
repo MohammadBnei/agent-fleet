@@ -821,12 +821,12 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 	// cursor (the stream starts at the lowest of them), none of a closed thread but the abort that ends its
 	// SDK session. Read per batch, since a thread opens and a result moves a cursor while this runs.
 	standing := false
-	var podStart time.Time      // a Stop's abort in main older than this pod was meant for an earlier one
+	restartSeq := int64(-1)     // a Stop's abort in main at or below the last Start's seq was meant for an earlier pod
 	var held []transcript.Entry // new turns a drain holds back
 	if t, err := s.sessions.Get(ctx, taskID); err == nil && t != nil && t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
 		standing = true
 		var err error
-		if podStart, err = s.sessions.PodStartedAt(ctx, taskID); err != nil {
+		if restartSeq, err = s.sessions.RestartSeq(ctx, taskID); err != nil {
 			return fmt.Errorf("StreamHumanMessages: %w", err)
 		}
 	}
@@ -865,7 +865,7 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 			if standing {
 				// Stop keeps every waiting entry (amendment A4), so the resumed stream can start below the abort
 				// that stopped the earlier pod: that abort must not end this one.
-				if e.Type == "abort" && e.ThreadKey == sessions.MainThread && e.CreatedAt.Before(podStart) {
+				if e.Type == "abort" && e.ThreadKey == sessions.MainThread && e.Seq <= restartSeq {
 					continue
 				}
 				th, ok := threads[e.ThreadKey]
