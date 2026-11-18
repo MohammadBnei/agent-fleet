@@ -191,7 +191,9 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - *(Amended, slice 6, owner 2026-11-04.)* Surfaces are only the origins in `FLEET_ADMIN_ORIGINS`
      (`https://game.bnei.dev`), exact origins, never merged with `embed.origins` and checked before them. Islands stay
      member-only: they show cards read-only and link to the console.
-   - A surface calls the card methods cross-origin with credentials, and only those (list, get, watch, answer). A
+   - A surface calls the card methods cross-origin with credentials, and only those (list, get, watch, answer).
+     *(Amended 2026-11-17 by [ADR-0084](0084-long-lived-agents.md): the surface list also holds `PostToCharacter`,
+     `WatchSpeech` and the character API.)* A
      script injected into it can click whatever it draws, so only an option that is reversible "yes" is answered in
      place. Any other option, and any answer in the owner's own words, is refused with
      `agent.decision_confirm_required`, carrying core's confirm URL (`/decisions/confirm?id&option&v`, and
