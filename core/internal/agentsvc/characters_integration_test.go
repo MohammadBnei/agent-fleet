@@ -172,7 +172,7 @@ func TestListAndWatchCharacters(t *testing.T) {
 }
 
 // A character's open cards are those on its own session and on the runs it spawned, cards only, and not on a swept
-// session or another character's.
+// session or another character's, plus core-filed cards whose subject is the character.
 func TestOpenCardsByCharacter(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -214,12 +214,38 @@ func TestOpenCardsByCharacter(t *testing.T) {
 	decide(run, "card", "open")
 	decide(swept, "card", "open")
 	decide(bo, "card", "open")
+	// A core-filed budget card: a non-character session, subject character/bo (amendment A3).
+	core, err := store.Create(ctx, sessions.CreateParams{Repo: "r", PermissionMode: "default", DefinitionName: "ada", DefinitionSHA: "sha1", Owner: "root", Visibility: "private", Lifecycle: "single-shot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 1, 'open', 'character/bo')`, core); err != nil {
+		t.Fatal(err)
+	}
+	// A character with only a subject card; a swept session's, a closed and a non-card subject card do not count;
+	// a card on ada's session with another character's subject (dx) counts once, under ada (the invoker wins).
+	ins := func(kind, state, subject string) {
+		t.Helper()
+		n++
+		if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ($1, $2, $3, $4, $5)`, kind, core, 100+n, state, subject); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ins("card", "open", "character/cy")
+	ins("card", "answered", "character/cy")
+	ins("permission", "open", "character/cy")
+	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 200, 'open', 'character/cz')`, swept); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 201, 'open', 'character/dx')`, ada); err != nil {
+		t.Fatal(err)
+	}
 	got, err := decisions.NewStore(pool).OpenCardsByCharacter(ctx, sessions.StandingPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got["ada"] != 2 || got["bo"] != 1 {
-		t.Errorf("open cards by character = %v, want ada 2 and bo 1", got)
+	if len(got) != 3 || got["ada"] != 3 || got["bo"] != 2 || got["cy"] != 1 {
+		t.Errorf("open cards by character = %v, want ada 3, bo 2 and cy 1", got)
 	}
 }
 
