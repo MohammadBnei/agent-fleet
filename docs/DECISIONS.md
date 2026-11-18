@@ -341,7 +341,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   trusted (guests never reach the fleet, alerts go to ADR-0086's single-shot first responders and
   reach a character only as typed outcomes it reads); the worker's cursor in strict order, resumed
   from the last result; Bash within the definition's ceiling; the owner talks from the game browser
-  straight to core (Proposed 2026-11-16; not built). Depends on [`0086`](adr/0086-rule-of-two.md).
+  straight to core (Proposed 2026-11-16; not built). Amended 2026-11-17: an owner-only character API
+  on `AgentService` for the game (list, watch, start, stop, thread reads, cards joined to a character;
+  steering stays in the console). Depends on [`0086`](adr/0086-rule-of-two.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
