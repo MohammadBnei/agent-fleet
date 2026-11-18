@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.44.0](https://github.com/MohammadBnei/agent-fleet/compare/7.43.0...7.44.0) (2026-11-18)
+
+### Features
+
+* **core:** QueryMetrics RPC and query_metrics sidecar tool for ops-lead ([#432](https://github.com/MohammadBnei/agent-fleet/issues/432)) ([3909577](https://github.com/MohammadBnei/agent-fleet/commit/3909577063ac54c2965c7bd138383a662ff49966)), closes [no-passthrough-RPC](https://github.com/no-passthrou/issues/RPC)
+
 # [7.43.0](https://github.com/MohammadBnei/agent-fleet/compare/7.42.0...7.43.0) (2026-11-18)
 
 ### Features
