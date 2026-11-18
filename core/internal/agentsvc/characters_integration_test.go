@@ -223,7 +223,7 @@ func TestOpenCardsByCharacter(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A character with only a subject card; a swept session's, a closed and a non-card subject card do not count;
-	// a card on ada's session with another character's subject counts once, under ada (the invoker wins).
+	// a card on ada's session with another character's subject (dx) counts once, under ada (the invoker wins).
 	ins := func(kind, state, subject string) {
 		t.Helper()
 		n++
@@ -234,10 +234,10 @@ func TestOpenCardsByCharacter(t *testing.T) {
 	ins("card", "open", "character/cy")
 	ins("card", "answered", "character/cy")
 	ins("permission", "open", "character/cy")
-	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 200, 'open', 'character/bo')`, swept); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 200, 'open', 'character/cz')`, swept); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 201, 'open', 'character/bo')`, ada); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 201, 'open', 'character/dx')`, ada); err != nil {
 		t.Fatal(err)
 	}
 	got, err := decisions.NewStore(pool).OpenCardsByCharacter(ctx, sessions.StandingPrefix)
