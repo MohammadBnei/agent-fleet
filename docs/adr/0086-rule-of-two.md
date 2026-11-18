@@ -232,7 +232,8 @@ interface and one deck stay.
 - **Choosing runs exactly the bound effect.** Core re-checks the target when the owner answers and again before
   running; a moved target makes the card stale (ADR-0082 §6).
 - **The game** stays an ADR-0082 §7 surface for cards: list, watch and answer, with only reversible "yes" answered in
-  place. Steer and stop stay in the console, behind a link.
+  place. Steer stays in the console, behind a link.
+  *(Amended 2026-11-17, owner: start and stop for characters move to `AgentService`, owner-only; see [ADR-0084](0084-long-lived-agents.md) amendment 2026-11-17.)*
 - **Load.**
   - ADR-0082 §8's daily card budget is split per trigger tier, so cards filed for untrusted triggers cannot spend the
     owner's own.

@@ -8,6 +8,7 @@
   - **Owner to confirm** marks a consequence the owner has not yet seen.
   - Mechanisms live in the build-slice appendix.
 - **Date:** 2026-11-16
+- **Amended 2026-11-17:** the character API for the game (§7, [ADR-0086](0086-rule-of-two.md) §4, [ADR-0082](0082-decision-cards.md) §7); slices 14 to 19.
 - **Built:** appendix slice 3: the `standing` lifecycle, the `standing:<name>` principal, and an admin's Start and Stop
   (`DashboardService.StartStanding`, `StopStanding`). Start makes the row and provisions nothing; the first message
   warms it, until slice 5's re-warm.
@@ -167,6 +168,7 @@ What is left is a trusted agent that lives on.
   a standing definition (`agent.standing_only`).
   - Stop marks the row stopped. Events for a stopped character file a card instead of being appended.
   - Start on a stopped character resumes the row with a fresh SDK session (§3), and memory carries over.
+  - (Amended 2026-11-17, slice 16, not built: Start resumes each thread's kept SDK session, A4.)
 
 ### 3. Lifecycle: started once, kept up by core
 
@@ -202,6 +204,7 @@ What is left is a trusted agent that lives on.
   - Transcript entries of standing rows carry a `thread_key` (migration). The owner's admin thread is `main`.
   - A thread closes when the owner closes it, or after 7 days idle. Closing drops its SDK session id. Its transcript
     stays.
+  - (Amended 2026-11-17, slice 16, not built: closing parks the thread and keeps its SDK session id, A4.)
   - Memory is shared across threads through the sidecar, the single writer (§8).
 - **Why this is safe now.** A character receives only T0 and T1 entries (§2), so every thread is T0/T1 and every
   thread holds the same set.
@@ -288,6 +291,8 @@ What is left is a trusted agent that lives on.
   - Core bounds it at 20 lines per turn.
   - A character that does not appear in the game has no `Speak` grant.
 
+(Amended 2026-11-17: see A1 to A8 for the game's character API.)
+
 ### 8. Memory
 
 ADR-0086 §5 applies.
@@ -370,6 +375,127 @@ it can be as capable as the owner's own sessions.
 - A heartbeat.
 - A Deployment.
 
+## Amendment 2026-11-17: the character API for the game
+
+Owner-agreed (via the game session, 2026-11-17). The game draws characters, so it needs to list them, start and stop
+them, read their threads, and join cards to them. This amends §7 (the game surface), [ADR-0086](0086-rule-of-two.md) §4
+("steer and stop stay in the console") and [ADR-0082](0082-decision-cards.md) §7 (the surface's call list). The
+decisions are final; mechanisms are in appendix slices 14 to 19.
+
+### A1. One surface, owner only
+
+- Every call below is on `AgentService`, owner-only (platform-admins), T0, and callable from the browser on
+  `FLEET_ADMIN_ORIGINS` (`https://game.bnei.dev`) under core's own OIDC session.
+- Each call is added to **both** the authz table and `surfaceCalls` in `core/internal/agentsvc/authz.go`. Islands and
+  `embed.origins` never get them. The game server has no connection to characters (§7 stands).
+- "Owner-only" is built from two things, because the table only has member and client flags. Each new row is
+  `{member: true}` with `client` false, so the game server's bearer (`FLEET_CLIENT_TOKEN_GAME`, port 9091) cannot call
+  it. Each handler refuses unless `AnswersCards()` (admin, console or surface). A handler must not use `Admin()`: it is
+  false on a surface, because `Origin` is set, and the game would be denied.
+- ADR-0082 §7's "list, get, watch, answer" widens to this list, and only to it.
+
+### A2. The persona block
+
+- A definition gains a reviewed `persona`: `display_name`, `role`, `traits[]`, `relations[{to, kind}]`, `portrait`,
+  `home`. It is read-only data from the definition's synced file; changing it is a definition review like any other.
+- `home` is opaque to the fleet and checked by syntax only: `world`, `village:[a-z0-9-]+` or `building:<atlas id>`. The
+  game resolves it.
+- Every other field is bounded, and a violation is refused at load:
+  - `display_name` up to 40 characters, `role` up to 80, up to 8 `traits` of up to 40 each.
+  - `portrait` is an atlas or asset id (`[a-z0-9-]+`, up to 64), never a URL, so the game never fetches an arbitrary
+    host from the admin origin.
+  - `relations` has up to 16 entries. `to` is a definition name (the definition-name regex) and `kind` is an enum
+    (`friend | mentor | rival | family | colleague`).
+- A persona change is a sha change, so it drains and replaces the pod like any definition change (§3 re-pin). Cosmetic
+  edits are not exempt: persona is part of the reviewed file, and one rule is cheaper than a second class of change.
+
+### A3. Reading characters
+
+- `ListCharacters` and `WatchCharacters` (a baseline frame, then changes, ending at 90 s like `WatchDecisions`) return,
+  per character: `name`, `display_name`, `definition {name, sha}`, `persona`, `state`, `why`, `threads`, the running
+  turn, `budget`, `spawns`, `can_speak` and `open_cards`.
+  - `state` is `stopped | starting | idle | running | held | stopping`. `why` is a short reason when the state is not
+    plain: budget, token refresh, crash back-off, pin drain.
+  - `threads` is `[{key, title, running, last_at}]`. `title` is the owner's first line, cut to 60 characters.
+  - The running turn is `{thread, started_at}`. `budget` is `{turns_today, limit, held}`. `spawns` is `{used, limit}`.
+  - `can_speak` is whether the definition holds the `Speak` grant (§7).
+  - `open_cards` is the count of open cards joined to the character (A6).
+
+### A4. Start and stop move; steering stays
+
+- `StartCharacter` and `StopCharacter` return the new state at once. By owner decision, start and stop for characters
+  move to `AgentService`; ADR-0086 §4's "steer and stop stay in the console" now reads: **steering stays in the
+  console**. Stopping a character never answers a card.
+- **Stop and close are resumable, like Claude Code sessions (owner 2026-11-18).** A simple stop, with no confirm page.
+  - `StopCharacter` stops the pod and keeps every thread's SDK session id and cursor. `StartCharacter` resumes each
+    thread from them, so a stop then start loses no context and no waiting entry. Only an in-flight turn is aborted,
+    like Ctrl-C, and appends an abort entry.
+  - `CloseCharacterThread` parks the thread: its SDK session id and transcript are kept, and a later owner message to
+    that thread key resumes it with full context. The 7-day idle close parks the same way. There is no reopen RPC:
+    reopen is the owner's next `PostToCharacter` on that key.
+  - Both act in place from a surface, as `StartCharacter` does. Being resumable, they stay inside what ADR-0082 §7
+    already accepts from the admin origin for a reversible "yes"; the confirm page is not used for them.
+- **Boundary states.** `StartCharacter` on a `stopping` character returns state `stopping` with `why` "pod drain",
+  not an error, so the game shows it and retries. Starting an already started character and stopping an already
+  stopped one return the current state. Declared keys (ADR-0081), listed on each RPC's method option:
+  `agent.character_not_found` and `agent.thread_not_found`. Nothing else is a new key; the rest stays `server.internal`.
+
+### A5. Threads the owner can read
+
+- Standing rows are owned by `client:standing:<name>`, so today's thread reads refuse the owner. `ReadCharacterThread(name,
+  thread, since)` and `WatchCharacterThread` return the owner-readable transcript of one character thread, in the same
+  entry shapes as the console.
+- `CloseCharacterThread(name, thread)` is the §4 close, on the owner's word. It parks the thread and is resumable (A4).
+- **Full transcript (owner 2026-11-18).** Thread reads from the game return the full transcript, the same entries the
+  console shows, tool results included. This is wider than card text and speech: any script on `game.bnei.dev` can
+  read it, and it can hold `view_logs` output, issue and PR text, permission inputs and spawn results. The owner
+  accepted that on the admin origin; the surface shapes are not narrowed.
+
+### A6. Cards and decisions join to a character
+
+- `CardSubject.kind = character` already exists: slice 13's budget card sends it with the definition name in `repo`, and
+  the card path keys it `character/<repo>`. This moves the name to a new `name` field.
+  - The thread key `character/<name>` is unchanged. Stored cards keep `repo`; reads accept both `name` and `repo` for
+    the `character` kind, and new cards write `name` only. No migration of stored rows.
+  - Only core files `character`-subject cards (the budget card); an agent's `draft_card` still cannot carry the kind
+    (`decisions/card.go` refuses it unless core drafts). Agent cards join to a character through `Decision.character`.
+- `Decision` gains `character` and `thread_key`, set by core from the session row, never by the session. The game
+  joins cards and open decisions of every kind to a character without a second lookup.
+  - A spawned run (§6: T1, principal `standing:<name>`, its own definition) has a session row whose definition is not
+    the character. Core sets `character` from the session's owner principal when it is `standing:<name>`, so spawned
+    runs join too.
+  - Cards core files itself (budget, alert-group responder, unmerged-close) have no character session row. For these,
+    `character` comes from a `character` subject when there is one, and is empty otherwise.
+
+### A7. Speech
+
+- `WatchSpeechResponse` gains `thread_key`; `WatchSpeech` sends one empty first frame so the client knows it is
+  connected.
+- Speech stays live-only and best effort: no replay, no store, and a line may be lost.
+
+### A8. Trust notes
+
+- Everything here is owner-only and T0 from the admin origin; nothing widens a character's set (ADR-0086 §1 stands).
+- Fleet text (persona fields, thread titles, transcript, `why`, card text) is model-authored or definition-authored.
+  Consumers must render it as text, never as markup.
+- The game's "Ask about" prefill carries only atlas ids or character names, never a player-chosen string.
+- Speech is best effort; the game must not depend on it for anything the owner must see (cards are the record).
+- An injected script on the game origin can call these, as ADR-0082 §7 already assumes for cards. Start, stop
+  and close act in place and are resumable (A4); thread reads return the full transcript (A5). The card
+  rules are unchanged.
+- A registered game-server client and an island origin are refused on every new RPC (A1).
+
+### A9. Kind-local development only
+
+- `FLEET_ADMIN_ORIGINS` defaults to `http://127.0.0.1:8152` in the kind-local values only, never in `k8s/core.yaml`.
+  It lives, and is overridden, in `local/kind/30-core.yaml` (core's env there), and nowhere else.
+- That origin must not also be in `FLEET_DEV_ORIGINS`: the member interceptor checks dev origins first and would treat
+  the call as the console, so the kind check would never exercise the surface path. A core unit test asserts `Principal.Surface` is true for that origin;
+  in kind the observable signal is a call outside `surfaceCalls` being refused. An http admin origin is accepted only with `FLEET_AUTH_DISABLED`, which kind-local sets.
+- A `dev-speaker` standing definition holds the `Speak` grant and a persona with `home: world`. It lives outside the
+  prod-synced `definitions/` path, and a test proves prod never loads it.
+- Kind-local peak memory with a standing character is measured (`docker stats`) and reported in the PR.
+
 ## Appendix: build slices, in order
 
 Each slice is its own PR, with its acceptance tests. Migration numbers are the next free ones at build time.
@@ -389,6 +515,7 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
 4. **Threads and delivery per thread.**
    - `thread_key` on standing transcript entries; one SDK session id per thread.
    - A thread opens on the owner's first message, closes on his close or after 7 days idle, and its transcript stays.
+   - (Amended 2026-11-17: slice 16 changes close to park, keeping the SDK session id.)
    - At most 1 thread runs at once; the others wait at their own heads.
    - An entry appended while the pod is down is delivered after the re-warm, in seq order within its thread.
    - Answers and Stop pass during a turn.
@@ -433,3 +560,38 @@ Each slice is its own PR, with its acceptance tests. Migration numbers are the n
       to hold).
     - `raise_budget` sets a 24h override.
     - The alert formula fires.
+14. **Persona.**
+    - The `persona` spec block, with the `home` syntax check, in the loader and the registry.
+    - A bad `home`, a URL `portrait`, an unknown relation `kind` or an over-long field is refused at load. A changed
+      persona is a definition change (sha) and drains the pod.
+15. **Read characters.**
+    - `ListCharacters` and `WatchCharacters` (baseline, changes, 90 s end), with `state`, `why`, threads, the running
+      turn, budget, spawns, `can_speak` and `open_cards`.
+    - Proto in `AgentService`, Go and TS regenerated, `buf breaking` clean.
+16. **Start, stop and thread reads.**
+    - `StartCharacter` and `StopCharacter` return the new state at once.
+    - `StopCharacter` keeps every thread's SDK session id and cursor, and `StartCharacter` resumes them (today's
+      `RestartStanding` clears them: this slice changes it).
+    - `ReadCharacterThread`, `WatchCharacterThread` and `CloseCharacterThread`, owner-readable on
+      `client:standing:<name>` rows, returning the full transcript (A5). Close parks the thread; a later owner message
+      resumes it, and the idle close parks too.
+    - Tests: stop then start resumes every thread with its SDK session id and cursor; stop aborts only the in-flight
+      turn; close then an owner message resumes the thread with context; Start on a `stopping` character returns
+      `stopping`; a thread read returns tool results.
+    - The keys in A4 are declared in the proto (ADR-0081).
+17. **Cards join.**
+    - `CardSubject.kind = character` moves its name from `repo` to `name`; reads accept both; stored cards are not
+      migrated.
+    - `Decision.character` and `thread_key` set from the session row, empty for core-filed cards without a character
+      subject. `open_cards` is the joined count.
+18. **Speech.**
+    - `thread_key` on `WatchSpeechResponse`, and the empty first frame.
+19. **Surface test and kind-local.**
+    - Each new RPC with Origin `https://game.bnei.dev` and an admin cookie is allowed, without admin is denied, and each
+      is in both the authz table and `surfaceCalls`.
+    - On every new RPC, a non-admin member with an empty Origin is denied by the handler (`AnswersCards()`), and an
+      admin from an embed origin is denied.
+    - Each new RPC is `{member: true}` with client false: a registered client (9091) and an island origin are refused
+      on every one.
+    - The kind-local `FLEET_ADMIN_ORIGINS` default, the `dev-speaker` definition outside `definitions/`, and the test
+      that prod never loads it. Peak memory measured.
