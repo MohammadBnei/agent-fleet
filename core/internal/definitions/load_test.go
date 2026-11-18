@@ -885,13 +885,15 @@ func TestSpec_TurnBudget(t *testing.T) {
 // personaCases is ADR-0084 amendment A2: every bound and the home syntax, one refusal each.
 var personaCases = []struct{ name, persona, want string }{
 	{"minimal", "{ display_name: Ada, home: world }", ""},
-	{"full", "{ display_name: Ada, role: Keeper, traits: [calm, curious], relations: [{ to: other, kind: mentor }], portrait: ada-1, home: building:keep-2 }", ""},
+	{"full", "{ display_name: Ada, role: Keeper, traits: [calm, curious], relations: [{ to: other, kind: mentor }], portrait: ada-1, home: building:app:mountain }", ""},
 	{"village", "{ display_name: Ada, home: \"village:oak-hill\" }", ""},
 	{"no home", "{ display_name: Ada }", "persona.home"},
 	{"bad home", "{ display_name: Ada, home: \"town:x\" }", "persona.home"},
 	{"home with upper", "{ display_name: Ada, home: \"village:Oak\" }", "persona.home"},
 	{"home bare village", "{ display_name: Ada, home: \"village:\" }", "persona.home"},
-	{"home url", "{ display_name: Ada, home: \"building:a/b\" }", "persona.home"},
+	{"home url", "{ display_name: Ada, home: \"building:app:x?y=1\" }", "persona.home"},
+	{"home no kind", "{ display_name: Ada, home: \"building:keep-2\" }", "persona.home"},
+	{"home nested id", "{ display_name: Ada, home: \"building:svc:agent-fleet/core\" }", ""},
 	{"no name", "{ home: world }", "persona.display_name is required"},
 	{"long name", "{ display_name: \"" + strings.Repeat("a", 41) + "\", home: world }", "persona.display_name"},
 	{"long role", "{ display_name: Ada, role: \"" + strings.Repeat("a", 81) + "\", home: world }", "persona.role"},

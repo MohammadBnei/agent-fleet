@@ -70,6 +70,8 @@ func (s *Store) CharacterRuntime(ctx context.Context, id string) (CharacterRunti
 	if err != nil {
 		return c, err
 	}
+	// Two threads can run at once; a fixed pick keeps the watch from flapping between them.
+	slices.Sort(running)
 	if len(running) > 0 {
 		c.RunningThread = running[0]
 		// The turn's agent output sits above the thread's last result, so its first entry is when it began.
@@ -104,4 +106,14 @@ func (s *Store) CharacterRuntime(ctx context.Context, id string) (CharacterRunti
 		c.Threads[i].Running = slices.Contains(running, c.Threads[i].Key)
 	}
 	return c, nil
+}
+
+// LiveStandingNames is the definition name of every live standing row, for characters whose head is no longer valid.
+func (s *Store) LiveStandingNames(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT definition_name FROM sessions WHERE lifecycle = 'standing'
+		AND archived_at IS NULL AND definition_name IS NOT NULL ORDER BY definition_name`)
+	if err != nil {
+		return nil, fmt.Errorf("live standing names: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }

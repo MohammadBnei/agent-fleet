@@ -48,7 +48,7 @@
     `agentfleet_character_turns_per_day`, and files one core card a day per spent character (subject kind `character`,
     its definition name). Its `raise_budget` option, a core verb bound to the writer's own name, sets the 24h override.
   - The alert rule (`turns_last_hour * 24 >= turnsPerDay / 2`) is a draft PR on infra-bootstrap.
-- **Built:** appendix slices 14 and 15: the persona block and the character list (no migration).
+- **Built:** appendix slices 14 and 15: the persona block and the character list (no migration). A started character whose head is invalid or gone is still listed from its pinned version; WatchCharacters names a character that left the set in `removed`. `building:` homes take the atlas id alphabet (`kind:name`).
   - `persona` in the spec (standing only), checked at load and on every sync (`definitions.validatePersona`): bounds
     and `home` syntax as in A2. It rides the effective spec, so a persona edit is a new sha and the §3 re-pin drains.
   - `AgentService.ListCharacters` and `WatchCharacters` (`agentsvc/characters.go`): every valid standing head, started

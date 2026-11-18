@@ -74,9 +74,10 @@ func (s *Server) WatchCharacters(ctx context.Context, _ *connect.Request[agentfl
 				sent[c.GetName()] = c
 			}
 		}
+		removed := dropGone(sent, cs)
 		// The baseline always goes out, empty or not; a quiet poll sends nothing.
-		if first || len(changed) > 0 {
-			if err := stream.Send(&agentfleetv1.WatchCharactersResponse{Characters: changed}); err != nil {
+		if first || len(changed) > 0 || len(removed) > 0 {
+			if err := stream.Send(&agentfleetv1.WatchCharactersResponse{Characters: changed, Removed: removed}); err != nil {
 				return err
 			}
 		}
@@ -88,8 +89,8 @@ func (s *Server) WatchCharacters(ctx context.Context, _ *connect.Request[agentfl
 	}
 }
 
-// characters is every valid standing definition's character, by name. A definition whose head is invalid is not
-// listed: its character cannot be started, and a started one keeps its pinned version until the head is fixed.
+// characters is every valid standing definition's character plus every started one whose head is invalid or gone.
+// A never-started character with a broken head cannot be started, so it is not listed.
 func (s *Server) characters(ctx context.Context) ([]*agentfleetv1.Character, error) {
 	if s.definitions == nil {
 		return nil, nil
@@ -103,6 +104,7 @@ func (s *Server) characters(ctx context.Context) ([]*agentfleetv1.Character, err
 		}
 	}
 	out := []*agentfleetv1.Character{}
+	listed := map[string]bool{}
 	for _, h := range heads {
 		if h.Effective == nil || h.Effective.Lifecycle == nil || !slices.Contains(h.Effective.Lifecycle.Allow, sessions.Standing) {
 			continue
@@ -112,12 +114,35 @@ func (s *Server) characters(ctx context.Context) ([]*agentfleetv1.Character, err
 			return nil, err
 		}
 		out = append(out, c)
+		listed[h.Name] = true
+	}
+	// A started character whose head is invalid or gone still runs its pinned version: the owner keeps seeing it.
+	var names []string
+	if s.sessions != nil {
+		var err error
+		if names, err = s.sessions.LiveStandingNames(ctx); err != nil {
+			return nil, err
+		}
+	}
+	for _, n := range names {
+		if listed[n] {
+			continue
+		}
+		c, err := s.characterView(ctx, definitions.Head{Name: n}, cards[n])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+		listed[n] = true
 	}
 	return out, nil
 }
 
 func (s *Server) characterView(ctx context.Context, h definitions.Head, openCards int) (*agentfleetv1.Character, error) {
 	spec, sha := h.Effective, h.SHA
+	if spec == nil {
+		spec = &definitions.Spec{}
+	}
 	row, err := s.sessions.StandingByDefinition(ctx, h.Name)
 	if errors.Is(err, sessions.ErrNotFound) {
 		return characterProto(h.Name, sha, spec, nil, sessions.CharacterRuntime{}, openCards), nil
@@ -193,4 +218,21 @@ func characterState(started bool, rt sessions.CharacterRuntime, budgetHeld bool)
 		return "starting", ""
 	}
 	return "idle", ""
+}
+
+// dropGone forgets and names every sent character that is not in cs any more, in order.
+func dropGone(sent map[string]*agentfleetv1.Character, cs []*agentfleetv1.Character) []string {
+	now := map[string]bool{}
+	for _, c := range cs {
+		now[c.GetName()] = true
+	}
+	var gone []string
+	for n := range sent {
+		if !now[n] {
+			gone = append(gone, n)
+			delete(sent, n)
+		}
+	}
+	slices.Sort(gone)
+	return gone
 }

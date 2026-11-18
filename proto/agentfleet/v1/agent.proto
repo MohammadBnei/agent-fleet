@@ -134,6 +134,8 @@ message WatchCharactersRequest {}
 message WatchCharactersResponse {
   // The first frame holds every character; a later one only those that changed since the last frame.
   repeated Character characters = 1;
+  // Names that left the set since the last frame (definition deleted, lifecycle changed); never in the baseline.
+  repeated string removed = 2;
 }
 
 // A character as the game draws it (docs/adr/0084 amendment A3). Persona fields, thread titles and why are

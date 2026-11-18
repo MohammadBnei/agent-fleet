@@ -191,3 +191,15 @@ func TestCharacterProto(t *testing.T) {
 		t.Errorf("bare: %v", bare)
 	}
 }
+
+func TestDropGone(t *testing.T) {
+	ch := func(n string) *agentfleetv1.Character { return &agentfleetv1.Character{Name: n} }
+	sent := map[string]*agentfleetv1.Character{"a": ch("a"), "b": ch("b"), "c": ch("c")}
+	got := dropGone(sent, []*agentfleetv1.Character{ch("b")})
+	if !slices.Equal(got, []string{"a", "c"}) || len(sent) != 1 || sent["b"] == nil {
+		t.Errorf("gone %v, sent %v", got, sent)
+	}
+	if got := dropGone(sent, []*agentfleetv1.Character{ch("b")}); got != nil {
+		t.Errorf("again: %v", got)
+	}
+}

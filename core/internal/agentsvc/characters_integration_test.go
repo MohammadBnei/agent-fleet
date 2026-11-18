@@ -221,3 +221,39 @@ func TestOpenCardsByCharacter(t *testing.T) {
 		t.Errorf("open cards by character = %v, want ada 2 and bo 1", got)
 	}
 }
+
+// A started character whose head is invalid or gone is still listed, from its pinned version, and with two turns
+// running at once the running turn is a fixed pick (the thread that sorts first).
+func TestCharacters_BrokenHeadStillListed_StableRunningTurn(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	raw, _ := json.Marshal(&definitions.Spec{Lifecycle: &definitions.AllowList{Allow: []string{"standing"}}, Persona: &definitions.Persona{DisplayName: "Ada", Home: "world"}})
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ('ada', 'sha1', '{}', $1, true)`, raw); err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "r", PermissionMode: "default", DefinitionName: "ada", DefinitionSHA: "sha1",
+		Owner: "client:standing:ada", Visibility: "private", Lifecycle: sessions.Standing, Invoker: "standing:ada", ThreadKey: "main", StartedBy: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, th := range []string{"main", "chat"} {
+		if _, err := pool.Exec(ctx, `INSERT INTO session_threads (session_id, thread_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`, id, th); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key)
+			VALUES ($1, $2, 'human', 'hi', 'discussion', gen_random_uuid()::text, $3), ($1, $4, 'agent', 'busy', 'assistant', gen_random_uuid()::text, $3)`, id, 2*i+1, th, 2*i+2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{definitions: fakeHeads{}, sessions: store}
+	for range 3 {
+		cs, err := s.characters(ctx)
+		if err != nil || len(cs) != 1 {
+			t.Fatalf("characters %v, %v: want the started ada with no head", cs, err)
+		}
+		if c := cs[0]; c.GetName() != "ada" || c.GetDisplayName() != "Ada" || c.GetState() != "running" || c.GetRunningTurn().GetThread() != "chat" {
+			t.Fatalf("ada: %v", c)
+		}
+	}
+}

@@ -87,7 +87,7 @@ var (
 	toolDeny     = regexp.MustCompile(`^([A-Za-z_]+)(\((.+)\))?$`)
 	cpuRe        = regexp.MustCompile(`^([0-9]+)(m?)$`)
 	memoryRe     = regexp.MustCompile(`^([0-9]+)(Mi|Gi)$`)
-	homeRe       = regexp.MustCompile(`^(world|village:[a-z0-9-]+|building:[a-z0-9-]+)$`)
+	homeRe       = regexp.MustCompile(`^(world|village:[a-z0-9-]+|building:[a-z][a-z0-9-]*:[A-Za-z0-9._/-]+)$`)
 	portraitRe   = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 	loginRe      = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
 )

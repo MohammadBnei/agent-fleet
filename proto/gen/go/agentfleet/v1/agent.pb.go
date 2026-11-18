@@ -360,7 +360,9 @@ func (*WatchCharactersRequest) Descriptor() ([]byte, []int) {
 type WatchCharactersResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The first frame holds every character; a later one only those that changed since the last frame.
-	Characters    []*Character `protobuf:"bytes,1,rep,name=characters,proto3" json:"characters,omitempty"`
+	Characters []*Character `protobuf:"bytes,1,rep,name=characters,proto3" json:"characters,omitempty"`
+	// Names that left the set since the last frame (definition deleted, lifecycle changed); never in the baseline.
+	Removed       []string `protobuf:"bytes,2,rep,name=removed,proto3" json:"removed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -398,6 +400,13 @@ func (*WatchCharactersResponse) Descriptor() ([]byte, []int) {
 func (x *WatchCharactersResponse) GetCharacters() []*Character {
 	if x != nil {
 		return x.Characters
+	}
+	return nil
+}
+
+func (x *WatchCharactersResponse) GetRemoved() []string {
+	if x != nil {
+		return x.Removed
 	}
 	return nil
 }
@@ -4023,11 +4032,12 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"characters\x18\x01 \x03(\v2\x18.agentfleet.v1.CharacterR\n" +
 	"characters\"\x18\n" +
-	"\x16WatchCharactersRequest\"S\n" +
+	"\x16WatchCharactersRequest\"m\n" +
 	"\x17WatchCharactersResponse\x128\n" +
 	"\n" +
 	"characters\x18\x01 \x03(\v2\x18.agentfleet.v1.CharacterR\n" +
-	"characters\"\x90\x04\n" +
+	"characters\x12\x18\n" +
+	"\aremoved\x18\x02 \x03(\tR\aremoved\"\x90\x04\n" +
 	"\tCharacter\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12B\n" +
