@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.43.0](https://github.com/MohammadBnei/agent-fleet/compare/7.42.0...7.43.0) (2026-11-18)
+
+### Features
+
+* **sidecar:** kubectl_read tool over the fleet-read token ([#431](https://github.com/MohammadBnei/agent-fleet/issues/431)) ([b506479](https://github.com/MohammadBnei/agent-fleet/commit/b506479ca6db0b61c1cbf70bdc58fd3153213bc5))
+
 # [7.42.0](https://github.com/MohammadBnei/agent-fleet/compare/7.41.0...7.42.0) (2026-11-18)
 
 ### Features
