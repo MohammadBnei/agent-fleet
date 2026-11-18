@@ -63,12 +63,19 @@ func (s *Server) visible(p Principal, r decisions.Record) bool {
 }
 
 func decisionToProto(r decisions.Record) *agentfleetv1.Decision {
+	card := cardOf(r)
+	character, thread := r.Character, r.ThreadKey
+	// A card core files about a character names it in its subject, whatever session it sits on (amendment A6).
+	if character == "" && card.GetSubject().GetKind() == "character" {
+		character = card.GetSubject().GetName()
+	}
 	return &agentfleetv1.Decision{
+		Character: character, ThreadKey: thread,
 		Id: r.ID, Kind: kindToProto[r.Kind], State: stateToProto[r.State], ThreadId: r.SessionID,
 		RequestSeq: r.RequestSeq, Ask: r.Ask, PayloadJson: r.Payload, Tool: r.Tool,
 		AnswerJson: r.Answer, AnsweredBy: r.AnsweredBy, AnsweredAt: timeOrEmpty(r.AnsweredAt),
 		CreatedAt: transcript.RFC3339OrEmpty(r.CreatedAt), Version: r.Version, SubjectRepo: r.SubjectRepo,
-		Interrupted: r.Interrupted, Card: cardOf(r),
+		Interrupted: r.Interrupted, Card: card,
 	}
 }
 

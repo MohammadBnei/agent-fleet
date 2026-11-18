@@ -120,7 +120,7 @@ func (s *Server) Speak(ctx context.Context, characterID, text, face, key string)
 		return false, errkeys.Connect(connect.CodeNotFound, errkeys.KeyInternal, errors.New("no such character"))
 	}
 	return s.speech.say(characterID, fmt.Sprintf("%s:%d", thread, seq), key,
-		&agentfleetv1.WatchSpeechResponse{Character: *t.DefinitionName, Text: text, Face: face})
+		&agentfleetv1.WatchSpeechResponse{Character: *t.DefinitionName, Text: text, Face: face, ThreadKey: thread})
 }
 
 // WatchSpeech streams the lines characters speak, to an admin on the console or an admin origin, until the stream's
@@ -135,6 +135,11 @@ func (s *Server) WatchSpeech(ctx context.Context, _ *connect.Request[agentfleetv
 	}
 	lines, cancel := s.speech.subscribe()
 	defer cancel()
+	// One empty frame tells the client it is connected (amendment A7); it is sent after the subscription, so a line
+	// spoken once the client has it is not lost.
+	if err := stream.Send(&agentfleetv1.WatchSpeechResponse{}); err != nil {
+		return err
+	}
 	deadline := time.NewTimer(streamMaxAge)
 	defer deadline.Stop()
 	for {

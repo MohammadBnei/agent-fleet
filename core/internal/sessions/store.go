@@ -1727,8 +1727,10 @@ func (s *Store) StandingByDefinition(ctx context.Context, name string) (*Session
 	return sess, nil
 }
 
-// RestartStanding is Start on a stopped character (docs/adr/0084 §2): the row is un-stopped and re-pinned to sha, and
-// its SDK session id is dropped, so the next warm opens a fresh SDK session. The transcript and the memory stay.
+// RestartStanding is Start on a stopped character (docs/adr/0084 §2, amended A4): the row is un-stopped and
+// re-pinned to sha. Every thread keeps its SDK session id and its cursor, so the next warm resumes each thread with
+// its context and no waiting entry is lost; a stopped in-flight turn was settled by Stop (MarkStandingStopped's
+// caller). Only the crash counters restart. The transcript and the memory stay.
 // False when the row is not stopped or its old pod is still live: a Stop's grace-period teardown must run first,
 // else Start would disarm it (ListOverdueStopIDs) and the old pod could write its SDK session id back.
 func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, error) {
@@ -1739,7 +1741,7 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 	defer tx.Rollback(ctx) //nolint:errcheck
 	tag, err := tx.Exec(ctx, `
 		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
-		       agent_session_id = NULL, restart_after = NULL, drain_started_at = NULL, updated_at = now()
+		       restart_after = NULL, drain_started_at = NULL, updated_at = now()
 		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL AND COALESCE(pod_phase, '') <> ALL($4)`,
 		id, sha, by, livePhases)
 	if err != nil {
@@ -1748,10 +1750,7 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 	if tag.RowsAffected() != 1 {
 		return false, nil
 	}
-	// A fresh SDK session per thread (docs/adr/0084 §2): their cursors move to the end, so nothing the stopped
-	// pod left is replayed into it, and every thread's SDK session id is dropped.
-	if _, err := tx.Exec(ctx, `UPDATE session_threads SET agent_session_id = NULL, crash_seq = NULL, crashes = 0, crash_agent_seq = NULL,
-		cursor = (SELECT COALESCE(MAX(seq) + 1, 0) FROM transcript WHERE session_id = $1) WHERE session_id = $1`, id); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE session_threads SET crash_seq = NULL, crashes = 0, crash_agent_seq = NULL WHERE session_id = $1`, id); err != nil {
 		return false, fmt.Errorf("restart standing: %w", err)
 	}
 	return true, tx.Commit(ctx)

@@ -146,11 +146,17 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 	}
 	var key string
 	if sub.GetKind() == "character" {
-		// ADR-0084 §9: a character's budget card. The subject is the character's definition name, in repo.
-		if !characterName.MatchString(sub.GetRepo()) || sub.GetNumber() != 0 || sub.GetGroupKey() != "" {
+		// ADR-0084 §9, amendment A6: a character's budget card. The subject is the character's definition name, in
+		// name; a card made before that field had it in repo, which is still read. New cards write name only.
+		name := sub.GetName()
+		if name == "" {
+			name = sub.GetRepo()
+		}
+		if !characterName.MatchString(name) || (sub.GetRepo() != "" && sub.GetRepo() != name) || sub.GetNumber() != 0 || sub.GetGroupKey() != "" {
 			return bad("a character subject is its definition name alone")
 		}
-		key = "character/" + sub.GetRepo()
+		sub.Name, sub.Repo = name, ""
+		key = "character/" + name
 	} else if sub.GetKind() == "alert_group" {
 		// docs/adr/0086 §4: a responder's alert group has no GitHub subject. The key is core's, 16 hex.
 		if !groupKey.MatchString(sub.GetGroupKey()) || sub.GetRepo() != "" || sub.GetNumber() != 0 {

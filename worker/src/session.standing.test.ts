@@ -309,7 +309,7 @@ test("an answer for a thread that is not running waits its turn instead of start
   await stop(run);
 });
 
-test("a closed thread ends only its own SDK session, and a later entry starts it afresh", async () => {
+test("a closed thread ends only its own SDK session, and a later entry resumes it (parked)", async () => {
   threadSessionIds = { b: "old-b" };
   const run = runSession();
   await until(() => handler !== null);
@@ -332,7 +332,27 @@ test("a closed thread ends only its own SDK session, and a later entry starts it
   ).toBe(false);
   await handler?.(msg(13, "b", "again"));
   expect(sdks.length).toBe(3);
-  expect(sdks[2].options.resume).toBeUndefined();
+  // The id this pod's SDK session ended with (the fake reports its own), not the one read at boot.
+  expect(sdks[2].options.resume).toBe("sdk-2");
+  await stop(run);
+});
+
+test("closing a thread this pod never started leaves its kept SDK session to resume", async () => {
+  threadSessionIds = { b: "old-b" };
+  const run = runSession();
+  await until(() => handler !== null);
+  await handler?.(msg(10, "a"));
+  await handler?.({
+    seq: 11,
+    from: "human",
+    text: "closed",
+    type: "abort",
+    threadKey: "b",
+  });
+  expect(sdks.length).toBe(1);
+  await handler?.(msg(12, "b", "again"));
+  expect(sdks.length).toBe(2);
+  expect(sdks[1].options.resume).toBe("old-b");
   await stop(run);
 });
 

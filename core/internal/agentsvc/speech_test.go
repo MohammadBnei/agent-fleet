@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -156,14 +157,26 @@ func TestWatchSpeech_Streams(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	got := make(chan *agentfleetv1.WatchSpeechResponse, 1)
-	go func() { // the call returns once the first line makes the headers flow
+	first := make(chan *agentfleetv1.WatchSpeechResponse, 1)
+	go func() {
 		st, err := connect.NewClient[agentfleetv1.WatchSpeechRequest, agentfleetv1.WatchSpeechResponse](
 			srv.Client(), srv.URL+agentfleetv1connect.AgentServiceWatchSpeechProcedure).CallServerStream(ctx, connect.NewRequest(&agentfleetv1.WatchSpeechRequest{}))
+		if err == nil && st.Receive() {
+			first <- st.Msg() // the empty frame that says the stream is connected (amendment A7)
+		}
 		if err == nil && st.Receive() {
 			got <- st.Msg()
 		}
 	}()
-	line := &agentfleetv1.WatchSpeechResponse{Character: "ops", Text: "hi", Face: "happy"}
+	select {
+	case m := <-first:
+		if !proto.Equal(m, &agentfleetv1.WatchSpeechResponse{}) {
+			t.Errorf("first frame %v, want an empty one", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no first frame")
+	}
+	line := &agentfleetv1.WatchSpeechResponse{Character: "ops", Text: "hi", Face: "happy", ThreadKey: "chat"}
 	var d bool
 	for i := 0; i < 50 && !d; i++ { // retry until the handler is subscribed
 		d, _ = s.speech.say("c1", "main:1", fmt.Sprintf("eff:c1:main:1:%d", i+1), line)
@@ -173,7 +186,7 @@ func TestWatchSpeech_Streams(t *testing.T) {
 	}
 	select {
 	case m := <-got:
-		if m.GetCharacter() != "ops" || m.GetText() != "hi" || m.GetFace() != "happy" {
+		if m.GetCharacter() != "ops" || m.GetText() != "hi" || m.GetFace() != "happy" || m.GetThreadKey() != "chat" {
 			t.Errorf("received %v", m)
 		}
 	case <-time.After(5 * time.Second):

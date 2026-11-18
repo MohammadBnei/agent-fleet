@@ -97,7 +97,7 @@ func TestThreads_EntriesOpenAndAdvanceTheirOwnThread(t *testing.T) {
 	}
 }
 
-func TestThreads_ClosedThreadReopensAfresh_BadThreadsRefused(t *testing.T) {
+func TestThreads_ParkedThreadReopensWithItsSession_BadThreadsRefused(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(newTestPool(t), noHook)
 	id := newStanding(t, ctx, store)
@@ -108,7 +108,7 @@ func TestThreads_ClosedThreadReopensAfresh_BadThreadsRefused(t *testing.T) {
 	if _, err := store.pool.Exec(ctx, `UPDATE session_threads SET agent_session_id = 'sdk', crashes = 2, closed_at = now(), cursor = 99 WHERE session_id = $1 AND thread_key = 't1'`, id); err != nil {
 		t.Fatal(err)
 	}
-	// A later owner message reopens the key from that entry, with no SDK session and no crash history.
+	// A later owner message reopens the key from that entry, with its SDK session (parked, amendment A4) and no crash history.
 	m2, err := store.Append(WithThread(ctx, "t1"), id, "human", "again", "discussion", "")
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestThreads_ClosedThreadReopensAfresh_BadThreadsRefused(t *testing.T) {
 	if err := store.pool.QueryRow(ctx, `SELECT agent_session_id, crashes, cursor, closed_at IS NOT NULL FROM session_threads WHERE session_id = $1 AND thread_key = 't1'`, id).Scan(&sdk, &crashes, &cur, &closed); err != nil {
 		t.Fatal(err)
 	}
-	if sdk != nil || crashes != 0 || cur != m2 || closed || m2 == m1 {
+	if sdk == nil || *sdk != "sdk" || crashes != 0 || cur != m2 || closed || m2 == m1 {
 		t.Fatalf("reopened: sdk %v crashes %d cursor %d (want %d) closed %v", sdk, crashes, cur, m2, closed)
 	}
 

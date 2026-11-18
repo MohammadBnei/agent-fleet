@@ -366,3 +366,16 @@ func (l *Loop) repinStanding(ctx context.Context) {
 		slog.Info("sessions loop: re-pinned a character in place", "sessionId", r.ID, "from", r.SHA, "to", head.SHA)
 	}
 }
+
+// PodStartedAt is when the row's current pod was created (SetPodImages stamps it at the warm); the zero time before
+// any pod. A Stop's abort entry older than it targeted an earlier pod (docs/adr/0084 amendment A4).
+func (s *Store) PodStartedAt(ctx context.Context, id string) (time.Time, error) {
+	var at *time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT pod_started_at FROM sessions WHERE id = $1`, id).Scan(&at); err != nil {
+		return time.Time{}, fmt.Errorf("pod started at: %w", err)
+	}
+	if at == nil {
+		return time.Time{}, nil
+	}
+	return *at, nil
+}

@@ -1591,8 +1591,9 @@ export async function runSession(): Promise<SessionResult> {
   // docs/adr/0084 §4: a standing character runs one SDK session per thread, started on the thread's first entry.
   const standing = spec?.lifecycle === "standing";
   const threads = new Map<string, SdkThread>();
-  // Thread keys ended in this pod: a later entry for one starts a fresh SDK session, never the resume id read at boot.
-  const endedKeys = new Set<string>();
+  // Thread keys ended in this pod, with the SDK session id each had: a later entry for one resumes that session, never
+  // the id read at boot, which this pod may have moved on from (docs/adr/0084 amendment A4: a closed thread is parked).
+  const endedKeys = new Map<string, string | undefined>();
   // Deliberately NOT seeded. The queue is fed exclusively by
   // streamHumanMessages below, so the session's first message reaches the
   // model as an ordinary human turn rather than a fleet-authored wrapper
@@ -2153,7 +2154,7 @@ export async function runSession(): Promise<SessionResult> {
     await turnEnded(th, 0);
   }
 
-  // One thread ends: its SDK session is aborted and forgotten, and a later entry for the key starts afresh.
+  // One thread ends: its SDK session is aborted and parked, and a later entry for the key resumes it.
   async function endThread(th: SdkThread): Promise<void> {
     th.ended = true;
     clearTimeout(th.deadline);
@@ -2162,7 +2163,7 @@ export async function runSession(): Promise<SessionResult> {
     th.outstanding = 0;
     th.abort.abort();
     threads.delete(th.key);
-    endedKeys.add(th.key);
+    endedKeys.set(th.key, th.sessionId || th.resumeId);
     if (wasRunning) await turnEnded(th, 0);
   }
 
@@ -2253,7 +2254,7 @@ export async function runSession(): Promise<SessionResult> {
               resolveAllPendingDeny("The thread was closed.", true);
             await interruptSafely(t, "thread close");
             await endThread(t);
-          } else endedKeys.add(key);
+          }
           return;
         }
         if (entry.type === "abort") {
@@ -2276,7 +2277,7 @@ export async function runSession(): Promise<SessionResult> {
             key === "main"
               ? RESUME_SESSION_ID
               : endedKeys.has(key)
-                ? undefined
+                ? endedKeys.get(key)
                 : session.threadSessionIds?.[key],
           );
         endedKeys.delete(key);

@@ -73,7 +73,7 @@ func TestResumeFrom_PerThreadCursorsNotLatestSeq(t *testing.T) {
 	}
 }
 
-func TestCloseThread_MainNeverClosesAndSessionIDIsDropped(t *testing.T) {
+func TestCloseThread_MainNeverClosesAndTheSessionIDIsKept(t *testing.T) {
 	ctx := context.Background()
 	store, pool, id := newCharacter(t)
 	openThread(t, pool, id, "a", 0)
@@ -94,8 +94,8 @@ func TestCloseThread_MainNeverClosesAndSessionIDIsDropped(t *testing.T) {
 	}
 	th, _ := store.Threads(ctx, id)
 	for _, x := range th {
-		if x.Key == "a" && (!x.Closed || x.AgentSessionID != "") {
-			t.Fatalf("a after close = %+v", x)
+		if x.Key == "a" && (!x.Closed || x.AgentSessionID != "sdk-a") {
+			t.Fatalf("a after close = %+v, want parked with its SDK session (amendment A4)", x)
 		}
 	}
 }
@@ -250,32 +250,72 @@ func TestSettleCrash_ADifferentHeadRestartsTheCount(t *testing.T) {
 	}
 }
 
-func TestRestartStanding_FreshSessionsAndCursorsAtTheEnd(t *testing.T) {
+// docs/adr/0084 amendment A4: Start keeps every thread's SDK session id and cursor, so a waiting entry is delivered
+// after it and nothing is lost; only the crash history restarts. A live old pod still refuses it.
+func TestRestartStanding_KeepsSessionsAndCursors(t *testing.T) {
 	ctx := context.Background()
 	store, pool, id := newCharacter(t)
 	openThread(t, pool, id, "a", 0)
-	put(t, pool, id, 4, "a", "human", "discussion", "old")
+	put(t, pool, id, 4, "a", "human", "discussion", "waiting")
 	if _, err := pool.Exec(ctx, `UPDATE session_threads SET agent_session_id = 'sdk', crashes = 2, crash_seq = 4 WHERE session_id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET agent_session_id = 'sdk-main' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := store.MarkStandingStopped(ctx, id); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root"); err != nil || ok {
+		t.Fatalf("a start over a live pod = %v, %v", ok, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_TERMINATED' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	th, _ := store.Threads(ctx, id)
+	before := map[string]Thread{}
+	for _, x := range th {
+		before[x.Key] = x
+	}
 	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root"); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
-	th, _ := store.Threads(ctx, id)
+	th, _ = store.Threads(ctx, id)
 	for _, x := range th {
-		if x.AgentSessionID != "" || x.Cursor != 5 {
-			t.Fatalf("thread %s after restart = %+v, want no SDK session and cursor 5", x.Key, x)
+		if x.Cursor != before[x.Key].Cursor || x.AgentSessionID != before[x.Key].AgentSessionID {
+			t.Fatalf("thread %s after restart = %+v, want %+v: cursor and SDK session kept", x.Key, x, before[x.Key])
+		}
+		if x.Key == "a" && x.AgentSessionID != "sdk" {
+			t.Fatalf("a lost its SDK session: %+v", x)
 		}
 	}
-	if _, ok, _ := store.ResumeFrom(ctx, id); ok {
-		t.Fatal("the stopped pod's entries are replayed into the fresh session")
+	if got, _ := store.Get(ctx, id); got.AgentSessionID == nil || *got.AgentSessionID != "sdk-main" {
+		t.Fatalf("main's SDK session = %v, want it kept", got.AgentSessionID)
+	}
+	if from, ok, _ := store.ResumeFrom(ctx, id); !ok || from != 4 {
+		t.Fatalf("ResumeFrom = %d %v, want the waiting entry 4", from, ok)
 	}
 	var crashes int
 	if err := pool.QueryRow(ctx, fmt.Sprintf(`SELECT crashes FROM session_threads WHERE session_id = '%s' AND thread_key = 'a'`, id)).Scan(&crashes); err != nil || crashes != 0 {
 		t.Fatalf("crashes = %d (%v)", crashes, err)
+	}
+}
+
+// RunningHeads names each thread with a turn in flight and the entry it answers: Stop settles those and no other.
+func TestRunningHeads(t *testing.T) {
+	ctx := context.Background()
+	store, pool, id := newCharacter(t)
+	openThread(t, pool, id, "a", 0)
+	openThread(t, pool, id, "b", 0)
+	put(t, pool, id, 1, "a", "human", "discussion", "running")
+	put(t, pool, id, 2, "a", "agent", "assistant", "on it")
+	put(t, pool, id, 3, "b", "human", "discussion", "waiting")
+	got, err := store.RunningHeads(ctx, id)
+	if err != nil || len(got) != 1 || got["a"] != 1 {
+		t.Fatalf("running heads = %v, %v, want only a at 1", got, err)
 	}
 }
 

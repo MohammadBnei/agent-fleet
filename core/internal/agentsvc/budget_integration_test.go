@@ -83,6 +83,16 @@ func TestReportBudgets_CardAndRaise(t *testing.T) {
 		t.Fatal("not held at its budget")
 	}
 	_, id := cards(d)
+	// The card joins to its character (amendment A6): the name is in subject.name, repo is empty, and the decision
+	// names the character and the thread of the entry that holds it, from the session row.
+	g, err := c.GetDecision(ctx, as("root", &agentfleetv1.GetDecisionRequest{Id: id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dd := g.Msg.GetDecision(); dd.GetCharacter() != "d" || dd.GetThreadKey() != "main" ||
+		dd.GetCard().GetSubject().GetKind() != "character" || dd.GetCard().GetSubject().GetName() != "d" || dd.GetCard().GetSubject().GetRepo() != "" {
+		t.Errorf("the budget card's decision = character %q thread %q subject %v", dd.GetCharacter(), dd.GetThreadKey(), dd.GetCard().GetSubject())
+	}
 	if _, err := c.AnswerDecision(ctx, as("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: id, OptionId: "1"})); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +122,7 @@ func TestReportBudgets_CardAndRaise(t *testing.T) {
 
 	// A card on e's session naming d raises nothing.
 	r, err := decs.Draft(ctx, transcr, decisions.Draft{SessionID: e, From: "system", Ask: "Lift it?",
-		Subject: &agentfleetv1.CardSubject{Kind: "character", Repo: "e"},
+		Subject: &agentfleetv1.CardSubject{Kind: "character", Repo: "e"}, // a card of the old shape: still read
 		Options: []*agentfleetv1.CardOption{
 			{Label: "Raise", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: decisions.VerbRaiseBudget, Payload: `{"character":"d"}`}},
 			{Label: "No", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
@@ -122,6 +132,14 @@ func TestReportBudgets_CardAndRaise(t *testing.T) {
 	}
 	if _, err := c.AnswerDecision(ctx, as("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: r.ID, OptionId: "1"})); err == nil {
 		t.Error("a card raised the budget of a character that is not its writer")
+	}
+	// A card drafted in the old shape (the name in repo) is filed with the name in subject.name.
+	g, err = c.GetDecision(ctx, as("root", &agentfleetv1.GetDecisionRequest{Id: r.ID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub := g.Msg.GetDecision().GetCard().GetSubject(); sub.GetName() != "e" || sub.GetRepo() != "" || g.Msg.GetDecision().GetCharacter() != "e" {
+		t.Errorf("the legacy-shape card: subject %v character %q", sub, g.Msg.GetDecision().GetCharacter())
 	}
 	var until *string
 	_ = pool.QueryRow(ctx, `SELECT budget_override_until::text FROM sessions WHERE id = $1`, e).Scan(&until)

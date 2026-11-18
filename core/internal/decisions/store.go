@@ -54,6 +54,11 @@ type Record struct {
 	// The session's, for the caller's visibility check.
 	Owner, Visibility, Definition *string
 	Archived                      bool
+
+	// The character the decision belongs to and its thread (docs/adr/0084 amendment A6), from the session row: a
+	// standing session's, or a spawned run's, by its principal standing:<name>. Empty for any other session. Core
+	// sets them, never the session.
+	Character, ThreadKey string
 }
 
 type Store struct{ pool *pgxpool.Pool }
@@ -70,7 +75,12 @@ const cols = `
 	                                AND t.type IN ('interrupt', 'abort')),
 	COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^github/([^/]+/[^/]+)'), ''),
 	COALESCE(d.subject, ''), d.expires_at,
-	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL
+	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL,
+	CASE WHEN s.invoker LIKE 'standing:%' THEN substring(s.invoker from 10) ELSE '' END,
+	CASE WHEN COALESCE(s.invoker, '') NOT LIKE 'standing:%' THEN ''
+	     WHEN s.lifecycle = 'standing' THEN COALESCE((SELECT t.thread_key FROM transcript t
+	                                                  WHERE t.session_id = d.session_id AND t.seq = d.request_seq), s.thread_key)
+	     ELSE COALESCE(s.thread_key, '') END
 	FROM decisions d JOIN sessions s ON s.id = d.session_id`
 
 func scan(row pgx.Row) (Record, error) {
@@ -78,7 +88,7 @@ func scan(row pgx.Row) (Record, error) {
 	var kind string
 	err := row.Scan(&r.ID, &kind, &r.SessionID, &r.RequestSeq, &r.State, &r.Ask,
 		&r.Payload, &r.Tool, &r.Answer, &r.AnsweredBy, &r.AnsweredAt, &r.Version, &r.CreatedAt, &r.Grantable,
-		&r.NonBlocking, &r.Interrupted, &r.SubjectRepo, &r.Subject, &r.ExpiresAt, &r.Owner, &r.Visibility, &r.Definition, &r.Archived)
+		&r.NonBlocking, &r.Interrupted, &r.SubjectRepo, &r.Subject, &r.ExpiresAt, &r.Owner, &r.Visibility, &r.Definition, &r.Archived, &r.Character, &r.ThreadKey)
 	r.Kind = Kind(kind)
 	return r, err
 }

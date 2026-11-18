@@ -551,13 +551,14 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 	}
 	if t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
 		// docs/adr/0084 §4: the SDK session ids the pod resumes its other threads with (main's is session.agent_session_id).
+		// A parked thread's too (amendment A4): the owner's next message resumes it with its context.
 		threads, err := s.sessions.Threads(ctx, req.GetId())
 		if err != nil {
 			return nil, err
 		}
 		resp.ThreadSessionIds = map[string]string{}
 		for _, th := range threads {
-			if th.Key != sessions.MainThread && !th.Closed && th.AgentSessionID != "" {
+			if th.Key != sessions.MainThread && th.AgentSessionID != "" {
 				resp.ThreadSessionIds[th.Key] = th.AgentSessionID
 			}
 		}
@@ -820,9 +821,14 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 	// cursor (the stream starts at the lowest of them), none of a closed thread but the abort that ends its
 	// SDK session. Read per batch, since a thread opens and a result moves a cursor while this runs.
 	standing := false
+	var podStart time.Time      // a Stop's abort in main older than this pod was meant for an earlier one
 	var held []transcript.Entry // new turns a drain holds back
 	if t, err := s.sessions.Get(ctx, taskID); err == nil && t != nil && t.Lifecycle != nil && *t.Lifecycle == sessions.Standing {
 		standing = true
+		var err error
+		if podStart, err = s.sessions.PodStartedAt(ctx, taskID); err != nil {
+			return fmt.Errorf("StreamHumanMessages: %w", err)
+		}
 	}
 	for {
 		entries, nextSeq, err := s.transcr.ReadSince(ctx, taskID, cursor, 100)
@@ -857,6 +863,11 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 		blocked := map[string]bool{}
 		for _, e := range entries {
 			if standing {
+				// Stop keeps every waiting entry (amendment A4), so the resumed stream can start below the abort
+				// that stopped the earlier pod: that abort must not end this one.
+				if e.Type == "abort" && e.ThreadKey == sessions.MainThread && e.CreatedAt.Before(podStart) {
+					continue
+				}
 				th, ok := threads[e.ThreadKey]
 				if !ok || (th.Closed && e.Type != "abort") || (!th.Closed && e.Seq < th.Cursor) {
 					continue

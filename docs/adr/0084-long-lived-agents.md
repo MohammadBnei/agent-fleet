@@ -59,6 +59,32 @@
     stopped row whose pod is still live ("pod drain"). `threads` lists the open threads, main first; `spawns.used` is
     the spawned runs holding a pod. `open_cards` counts open cards on the character's session and its spawned runs
     (by invoker `standing:<name>`), so it needs no A6 join yet.
+- **Built:** appendix slices 16 to 19: the lifecycle, thread reads, cards joined to a character, speech and the kind-local
+  additions (no migration).
+  - `AgentService.StartCharacter`, `StopCharacter`, `ReadCharacterThread`, `WatchCharacterThread` and
+    `CloseCharacterThread` (`agentsvc/lifecycle.go`), each in the authz table (`{member: true}`) and `surfaceCalls`, each
+    refused unless `AnswersCards()`. Start, Stop and Close are `DashboardService.StartStanding`, `StopStanding` and
+    `CloseStandingThread` (the console's own, `dashboard/standing.go`): `agentsvc` only turns an outcome that says the
+    state already is what was asked (`ErrStandingStarted`, `ErrStandingStopping`, `ErrStandingStopped`,
+    `ErrStandingNever`, `ErrThreadParked`) into the character's state, and the not-found outcomes into
+    `agent.character_not_found` and `agent.thread_not_found`. Start and Stop answer a `Character`, as `ListCharacters`
+    shows it.
+  - Stop keeps every thread's SDK session id, cursor and waiting entry. It settles only a turn in flight: each running
+    thread's head entry gets a core `aborted` result (`from` fleet, so it counts no turn), which moves the cursor.
+    `RestartStanding` no longer drops session ids or moves cursors; it restarts the crash counters.
+  - Closing parks: `CloseThread` keeps `agent_session_id`, and an owner message to the key reopens it from that entry
+    with the id (`transcript.noteThread`). `GetSession` returns parked threads' ids. The worker resumes a thread it ended
+    in this pod from the id it had (`endedKeys`), else from the boot-time id. The 7-day idle close is the same call.
+  - A resumed stream can start below the abort that stopped the earlier pod, so `StreamHumanMessages` skips a main abort
+    older than the row's `pod_started_at`.
+  - Thread reads filter the one transcript sequence by thread and return the console's entries, tool results included,
+    from a parked thread too; the watch polls once a second and ends at 90 s.
+  - `Decision.character` and `thread_key` come from the session row (`decisions.Record`): the invoker `standing:<name>`
+    covers the character's session and the runs it spawned, and a `character` card subject names it otherwise.
+    `CardSubject.name` is the new field; `normalize` writes it only and reads `repo` of an old card.
+  - `WatchSpeechResponse.thread_key` is the turn's thread; `WatchSpeech` sends one empty frame first.
+  - `local/kind/30-core.yaml` sets `FLEET_ADMIN_ORIGINS` to `http://127.0.0.1:8152`; `local/kind/definitions/dev-speaker.yaml`
+    is the Speak-granted standing character. `TestDevSpeakerIsKindLocalOnly` and `TestManifestsLoad` pin both.
 - **Built:** appendix slice 12: the game channel (no migration).
   - `AgentService.PostToCharacter(character, text, thread_key)`: an admin on the console or an admin origin (the
     surface list gains it), an owner (T0) message appended as the console's `PostMessage` does, warming a character
@@ -179,7 +205,7 @@ What is left is a trusted agent that lives on.
   a standing definition (`agent.standing_only`).
   - Stop marks the row stopped. Events for a stopped character file a card instead of being appended.
   - Start on a stopped character resumes the row with a fresh SDK session (§3), and memory carries over.
-  - (Amended 2026-11-17, slice 16, not built: Start resumes each thread's kept SDK session, A4.)
+  - (Amended 2026-11-17, built in slice 16: Start resumes each thread's kept SDK session id and cursor, A4.)
 
 ### 3. Lifecycle: started once, kept up by core
 
@@ -215,7 +241,7 @@ What is left is a trusted agent that lives on.
   - Transcript entries of standing rows carry a `thread_key` (migration). The owner's admin thread is `main`.
   - A thread closes when the owner closes it, or after 7 days idle. Closing drops its SDK session id. Its transcript
     stays.
-  - (Amended 2026-11-17, slice 16, not built: closing parks the thread and keeps its SDK session id, A4.)
+  - (Amended 2026-11-17, built in slice 16: closing parks the thread and keeps its SDK session id, A4.)
   - Memory is shared across threads through the sidecar, the single writer (§8).
 - **Why this is safe now.** A character receives only T0 and T1 entries (§2), so every thread is T0/T1 and every
   thread holds the same set.
