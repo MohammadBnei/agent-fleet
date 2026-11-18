@@ -146,6 +146,8 @@ message DefinitionPodProfile {
   // The definition's `cluster.read` grant (ADR-0084 §6): the pod runs as the read ServiceAccount, its token mounted
   // in the sidecar only.
   bool cluster_read = 11;
+  // The namespaces the sidecar's kubectl_read may read pod logs in (ADR-0084 §6, the definition's cluster.logNamespaces).
+  repeated string cluster_log_namespaces = 12;
 }
 
 // A vault's desired state, from a definition's validated effective spec

@@ -69,7 +69,7 @@ func newHTTPSidecar(t *testing.T) *httptest.Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = core.Close() })
-	srv := httptest.NewServer(New(core, nil))
+	srv := httptest.NewServer(New(core, nil, nil))
 	t.Cleanup(srv.Close)
 	return srv
 }

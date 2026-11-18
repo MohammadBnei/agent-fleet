@@ -48,7 +48,7 @@ var (
 	EffortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review", "memory_write",
-		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "speak"}
+		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "speak", "kubectl_read"}
 	// reachTools are a standing character's alone (ADR-0084 §6).
 	reachTools   = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "speak"}
 	serviceHosts = []string{"github.com", "api.github.com", "api.anthropic.com"}
@@ -743,6 +743,9 @@ func validateReach(errs *[]error, s *Spec) {
 	}
 	if has("open_issue") && (s.Owns == nil || len(s.Owns.Repos) == 0) {
 		bad("sidecarTools: open_issue needs owns.repos")
+	}
+	if has("kubectl_read") && (s.Cluster == nil || !s.Cluster.Read) {
+		bad("sidecarTools: kubectl_read needs cluster.read")
 	}
 	if has("view_logs") && (s.Cluster == nil || len(s.Cluster.LogNamespaces) == 0) {
 		bad("sidecarTools: view_logs needs cluster.logNamespaces")

@@ -178,7 +178,7 @@ func (f fakeAuth) AuthorizeMemoryWrite(context.Context) (bool, error) { return f
 // memory_write exists only when the pod has a memory repo, and reaches the store.
 func TestMemoryWrite(t *testing.T) {
 	has := func(m MemoryWriter) bool {
-		for _, tl := range newMCPServer(nil, m).ListTools() {
+		for _, tl := range newMCPServer(nil, m, nil).ListTools() {
 			if tl.Tool.Name == "memory_write" {
 				return true
 			}

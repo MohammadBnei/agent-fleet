@@ -277,6 +277,10 @@ type DefinitionProfile struct {
 	Guaranteed bool
 	// ClusterRead is the definition's cluster.read grant (ADR-0084 §6): the pod runs as ReadServiceAccount.
 	ClusterRead bool
+	// ClusterLogNamespaces are the namespaces kubectl_read may read logs in; TrustSet is the session's stored set,
+	// which the sidecar checks for B before it serves kubectl_read. Both only matter with ClusterRead.
+	ClusterLogNamespaces []string
+	TrustSet             string
 }
 
 // guaranteedResources is requests == limits, which is what Guaranteed QoS needs.
@@ -933,7 +937,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		}
 	}
 	if d := spec.Definition; d != nil && d.ClusterRead {
-		applyClusterRead(&job.Spec.Template)
+		applyClusterRead(&job.Spec.Template, d.ClusterLogNamespaces, d.TrustSet)
 	}
 	if d := spec.Definition; d != nil {
 		// docs/adr/0065: a fixed lifetime cap, and its token's TTL is longer,

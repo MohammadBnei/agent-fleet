@@ -19,10 +19,12 @@ func TestLoad(t *testing.T) {
 		"MCP_PORT": "2", "LOCAL_API_PORT": "3", "HEALTH_PORT": "4", "FLEET_VAULT_PROXY": "http://t:p@v:5", "FLEET_VAULT_HOSTS": "a.test,b.test",
 		"EGRESS_PORT": "6", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces",
 		"FLEET_TRUST_SET": "AB", "FLEET_AGENT_NAME": "kai", "FLEET_MEMORY_ROOT": "/m",
+		"FLEET_CLUSTER_READ": "1", "FLEET_CLUSTER_LOG_NAMESPACES": "agent-fleet,monitoring",
 	}))
 	want := Config{LogLevel: "debug", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "core:1", WorktreePath: "/wt", MCPPort: "2",
 		LocalAPIPort: "3", HealthPort: "4", VaultProxy: "http://t:p@v:5", VaultHosts: "a.test,b.test", EgressPort: "6",
-		TracesEndpoint: "http://otel:4318/v1/traces", TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m"}
+		TracesEndpoint: "http://otel:4318/v1/traces", TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m",
+		ClusterRead: true, ClusterLogNamespaces: "agent-fleet,monitoring"}
 	if err != nil || c != want {
 		t.Errorf("set: %+v, %v\nwant %+v", c, err, want)
 	}

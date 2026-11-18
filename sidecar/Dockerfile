@@ -28,7 +28,17 @@ FROM debian:12-slim
 # Unpinned installs below: docker.yml passes the ISO week, so a cached layer
 # is refreshed at least weekly instead of living forever.
 ARG CACHE_WEEK=none
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+# kubectl serves the kubectl_read tool (ADR-0084 §6): read-only, as the mounted fleet-read token, only in a pod
+# whose definition grants cluster.read. The version is pinned (bump it by hand) and the download is checked against
+# the published .sha256, so a weekly cache bust cannot change the binary.
+ARG KUBECTL_VERSION=v1.37.2
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl \
+    && arch="$(dpkg --print-architecture)" \
+    && base="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" \
+    && curl -fsSL "$base" -o /usr/local/bin/kubectl \
+    && echo "$(curl -fsSL "$base.sha256")  /usr/local/bin/kubectl" | sha256sum -c - \
+    && chmod +x /usr/local/bin/kubectl \
+    && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/sidecar /sidecar
 ENTRYPOINT ["/sidecar"]

@@ -65,6 +65,9 @@ const (
 	// CoreServiceAuthorizeMemoryWriteProcedure is the fully-qualified name of the CoreService's
 	// AuthorizeMemoryWrite RPC.
 	CoreServiceAuthorizeMemoryWriteProcedure = "/agentfleet.v1.CoreService/AuthorizeMemoryWrite"
+	// CoreServiceAuthorizeKubeReadProcedure is the fully-qualified name of the CoreService's
+	// AuthorizeKubeRead RPC.
+	CoreServiceAuthorizeKubeReadProcedure = "/agentfleet.v1.CoreService/AuthorizeKubeRead"
 	// CoreServiceSearchJournalProcedure is the fully-qualified name of the CoreService's SearchJournal
 	// RPC.
 	CoreServiceSearchJournalProcedure = "/agentfleet.v1.CoreService/SearchJournal"
@@ -179,6 +182,7 @@ type CoreServiceClient interface {
 	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
 	AuthorizeMemoryWrite(context.Context, *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error)
+	AuthorizeKubeRead(context.Context, *connect.Request[v1.AuthorizeKubeReadRequest]) (*connect.Response[v1.AuthorizeKubeReadResponse], error)
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
@@ -314,6 +318,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+CoreServiceAuthorizeMemoryWriteProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("AuthorizeMemoryWrite")),
+			connect.WithClientOptions(opts...),
+		),
+		authorizeKubeRead: connect.NewClient[v1.AuthorizeKubeReadRequest, v1.AuthorizeKubeReadResponse](
+			httpClient,
+			baseURL+CoreServiceAuthorizeKubeReadProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("AuthorizeKubeRead")),
 			connect.WithClientOptions(opts...),
 		),
 		searchJournal: connect.NewClient[v1.SearchJournalRequest, v1.SearchJournalResponse](
@@ -465,6 +475,7 @@ type coreServiceClient struct {
 	updateSessionMeta    *connect.Client[v1.UpdateSessionMetaRequest, v1.UpdateSessionMetaResponse]
 	appendJournal        *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
 	authorizeMemoryWrite *connect.Client[v1.AuthorizeMemoryWriteRequest, v1.AuthorizeMemoryWriteResponse]
+	authorizeKubeRead    *connect.Client[v1.AuthorizeKubeReadRequest, v1.AuthorizeKubeReadResponse]
 	searchJournal        *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
 	saveAgentSessionId   *connect.Client[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse]
 	pushToolTelemetry    *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
@@ -547,6 +558,11 @@ func (c *coreServiceClient) AppendJournal(ctx context.Context, req *connect.Requ
 // AuthorizeMemoryWrite calls agentfleet.v1.CoreService.AuthorizeMemoryWrite.
 func (c *coreServiceClient) AuthorizeMemoryWrite(ctx context.Context, req *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error) {
 	return c.authorizeMemoryWrite.CallUnary(ctx, req)
+}
+
+// AuthorizeKubeRead calls agentfleet.v1.CoreService.AuthorizeKubeRead.
+func (c *coreServiceClient) AuthorizeKubeRead(ctx context.Context, req *connect.Request[v1.AuthorizeKubeReadRequest]) (*connect.Response[v1.AuthorizeKubeReadResponse], error) {
+	return c.authorizeKubeRead.CallUnary(ctx, req)
 }
 
 // SearchJournal calls agentfleet.v1.CoreService.SearchJournal.
@@ -713,6 +729,7 @@ type CoreServiceHandler interface {
 	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
 	AuthorizeMemoryWrite(context.Context, *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error)
+	AuthorizeKubeRead(context.Context, *connect.Request[v1.AuthorizeKubeReadRequest]) (*connect.Response[v1.AuthorizeKubeReadResponse], error)
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
@@ -844,6 +861,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceAuthorizeMemoryWriteProcedure,
 		svc.AuthorizeMemoryWrite,
 		connect.WithSchema(coreServiceMethods.ByName("AuthorizeMemoryWrite")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceAuthorizeKubeReadHandler := connect.NewUnaryHandler(
+		CoreServiceAuthorizeKubeReadProcedure,
+		svc.AuthorizeKubeRead,
+		connect.WithSchema(coreServiceMethods.ByName("AuthorizeKubeRead")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceSearchJournalHandler := connect.NewUnaryHandler(
@@ -1004,6 +1027,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceAppendJournalHandler.ServeHTTP(w, r)
 		case CoreServiceAuthorizeMemoryWriteProcedure:
 			coreServiceAuthorizeMemoryWriteHandler.ServeHTTP(w, r)
+		case CoreServiceAuthorizeKubeReadProcedure:
+			coreServiceAuthorizeKubeReadHandler.ServeHTTP(w, r)
 		case CoreServiceSearchJournalProcedure:
 			coreServiceSearchJournalHandler.ServeHTTP(w, r)
 		case CoreServiceSaveAgentSessionIdProcedure:
@@ -1103,6 +1128,10 @@ func (UnimplementedCoreServiceHandler) AppendJournal(context.Context, *connect.R
 
 func (UnimplementedCoreServiceHandler) AuthorizeMemoryWrite(context.Context, *connect.Request[v1.AuthorizeMemoryWriteRequest]) (*connect.Response[v1.AuthorizeMemoryWriteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AuthorizeMemoryWrite is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) AuthorizeKubeRead(context.Context, *connect.Request[v1.AuthorizeKubeReadRequest]) (*connect.Response[v1.AuthorizeKubeReadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AuthorizeKubeRead is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error) {

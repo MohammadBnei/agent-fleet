@@ -31,6 +31,7 @@ const (
 	CoreService_UpdateSessionMeta_FullMethodName    = "/agentfleet.v1.CoreService/UpdateSessionMeta"
 	CoreService_AppendJournal_FullMethodName        = "/agentfleet.v1.CoreService/AppendJournal"
 	CoreService_AuthorizeMemoryWrite_FullMethodName = "/agentfleet.v1.CoreService/AuthorizeMemoryWrite"
+	CoreService_AuthorizeKubeRead_FullMethodName    = "/agentfleet.v1.CoreService/AuthorizeKubeRead"
 	CoreService_SearchJournal_FullMethodName        = "/agentfleet.v1.CoreService/SearchJournal"
 	CoreService_SaveAgentSessionId_FullMethodName   = "/agentfleet.v1.CoreService/SaveAgentSessionId"
 	CoreService_PushToolTelemetry_FullMethodName    = "/agentfleet.v1.CoreService/PushToolTelemetry"
@@ -111,6 +112,7 @@ type CoreServiceClient interface {
 	// why each stopped being a question worth asking.
 	AppendJournal(ctx context.Context, in *AppendJournalRequest, opts ...grpc.CallOption) (*AppendJournalResponse, error)
 	AuthorizeMemoryWrite(ctx context.Context, in *AuthorizeMemoryWriteRequest, opts ...grpc.CallOption) (*AuthorizeMemoryWriteResponse, error)
+	AuthorizeKubeRead(ctx context.Context, in *AuthorizeKubeReadRequest, opts ...grpc.CallOption) (*AuthorizeKubeReadResponse, error)
 	SearchJournal(ctx context.Context, in *SearchJournalRequest, opts ...grpc.CallOption) (*SearchJournalResponse, error)
 	SaveAgentSessionId(ctx context.Context, in *SaveAgentSessionIdRequest, opts ...grpc.CallOption) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(ctx context.Context, in *PushToolTelemetryRequest, opts ...grpc.CallOption) (*PushToolTelemetryResponse, error)
@@ -290,6 +292,16 @@ func (c *coreServiceClient) AuthorizeMemoryWrite(ctx context.Context, in *Author
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AuthorizeMemoryWriteResponse)
 	err := c.cc.Invoke(ctx, CoreService_AuthorizeMemoryWrite_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) AuthorizeKubeRead(ctx context.Context, in *AuthorizeKubeReadRequest, opts ...grpc.CallOption) (*AuthorizeKubeReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuthorizeKubeReadResponse)
+	err := c.cc.Invoke(ctx, CoreService_AuthorizeKubeRead_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -581,6 +593,7 @@ type CoreServiceServer interface {
 	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error)
 	AuthorizeMemoryWrite(context.Context, *AuthorizeMemoryWriteRequest) (*AuthorizeMemoryWriteResponse, error)
+	AuthorizeKubeRead(context.Context, *AuthorizeKubeReadRequest) (*AuthorizeKubeReadResponse, error)
 	SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error)
 	SaveAgentSessionId(context.Context, *SaveAgentSessionIdRequest) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error)
@@ -678,6 +691,9 @@ func (UnimplementedCoreServiceServer) AppendJournal(context.Context, *AppendJour
 }
 func (UnimplementedCoreServiceServer) AuthorizeMemoryWrite(context.Context, *AuthorizeMemoryWriteRequest) (*AuthorizeMemoryWriteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AuthorizeMemoryWrite not implemented")
+}
+func (UnimplementedCoreServiceServer) AuthorizeKubeRead(context.Context, *AuthorizeKubeReadRequest) (*AuthorizeKubeReadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeKubeRead not implemented")
 }
 func (UnimplementedCoreServiceServer) SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchJournal not implemented")
@@ -967,6 +983,24 @@ func _CoreService_AuthorizeMemoryWrite_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).AuthorizeMemoryWrite(ctx, req.(*AuthorizeMemoryWriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_AuthorizeKubeRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuthorizeKubeReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).AuthorizeKubeRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_AuthorizeKubeRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).AuthorizeKubeRead(ctx, req.(*AuthorizeKubeReadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1410,6 +1444,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AuthorizeMemoryWrite",
 			Handler:    _CoreService_AuthorizeMemoryWrite_Handler,
+		},
+		{
+			MethodName: "AuthorizeKubeRead",
+			Handler:    _CoreService_AuthorizeKubeRead_Handler,
 		},
 		{
 			MethodName: "SearchJournal",

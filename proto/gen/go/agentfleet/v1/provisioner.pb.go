@@ -347,9 +347,11 @@ type DefinitionPodProfile struct {
 	Standing bool `protobuf:"varint,10,opt,name=standing,proto3" json:"standing,omitempty"`
 	// The definition's `cluster.read` grant (ADR-0084 §6): the pod runs as the read ServiceAccount, its token mounted
 	// in the sidecar only.
-	ClusterRead   bool `protobuf:"varint,11,opt,name=cluster_read,json=clusterRead,proto3" json:"cluster_read,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ClusterRead bool `protobuf:"varint,11,opt,name=cluster_read,json=clusterRead,proto3" json:"cluster_read,omitempty"`
+	// The namespaces the sidecar's kubectl_read may read pod logs in (ADR-0084 §6, the definition's cluster.logNamespaces).
+	ClusterLogNamespaces []string `protobuf:"bytes,12,rep,name=cluster_log_namespaces,json=clusterLogNamespaces,proto3" json:"cluster_log_namespaces,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *DefinitionPodProfile) Reset() {
@@ -457,6 +459,13 @@ func (x *DefinitionPodProfile) GetClusterRead() bool {
 		return x.ClusterRead
 	}
 	return false
+}
+
+func (x *DefinitionPodProfile) GetClusterLogNamespaces() []string {
+	if x != nil {
+		return x.ClusterLogNamespaces
+	}
+	return nil
 }
 
 // A vault's desired state, from a definition's validated effective spec
@@ -2518,7 +2527,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
 	"GenomeFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04body\x18\x02 \x01(\tR\x04body\"\xfb\x02\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\"\xb1\x03\n" +
 	"\x14DefinitionPodProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
 	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
@@ -2533,7 +2542,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\ttrust_set\x18\t \x01(\tR\btrustSet\x12\x1a\n" +
 	"\bstanding\x18\n" +
 	" \x01(\bR\bstanding\x12!\n" +
-	"\fcluster_read\x18\v \x01(\bR\vclusterRead\"u\n" +
+	"\fcluster_read\x18\v \x01(\bR\vclusterRead\x124\n" +
+	"\x16cluster_log_namespaces\x18\f \x03(\tR\x14clusterLogNamespaces\"u\n" +
 	"\tVaultSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
 	"\bservices\x18\x02 \x03(\v2\x1b.agentfleet.v1.VaultServiceR\bservices\x12\x1b\n" +

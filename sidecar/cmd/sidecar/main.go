@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -129,7 +130,7 @@ func main() {
 	// direct-dial decision is not reversed — it is moot: there is no second pod
 	// to dial. The sidecar's outbound connections are the one to core it always
 	// had and, in a repo pod, the egress router's tunnels.
-	mcpServer, localAPIServer, healthServer := servers(tr, core, mem, mcpPort, localAPIPort, healthPort)
+	mcpServer, localAPIServer, healthServer := servers(tr, core, mem, kubeRead(cfg, core), mcpPort, localAPIPort, healthPort)
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)
@@ -171,6 +172,16 @@ func memoryWiring(cfg config.Config, sessionID string) (quarantine bool, mem mcp
 	return memory.Quarantined(cfg.TrustSet), mem
 }
 
+// kubeRead is the kubectl_read grant: the definition's cluster.read (the token is mounted) held by a session whose
+// trust set has B. Anything else, including a missing set, serves nothing.
+// Exposure here is a convenience; core is asked on every call (ADR-0086 §2).
+func kubeRead(cfg config.Config, core mcpserver.KubeAuthorizer) *mcpserver.KubeRead {
+	if cfg.ClusterRead && strings.Contains(cfg.TrustSet, "B") {
+		return &mcpserver.KubeRead{Core: core, Namespaces: strings.FieldsFunc(cfg.ClusterLogNamespaces, func(r rune) bool { return r == ',' || r == ' ' })}
+	}
+	return nil
+}
+
 // servers builds the sidecar's three listeners. Split out of main purely so
 // the bind addresses are assertable — the ":" that used to be on the first two
 // is the entire reason this function exists, and nothing else in the process
@@ -189,8 +200,8 @@ func memoryWiring(cfg config.Config, sessionID string) (quarantine bool, mem mcp
 //
 // tr spans the two agent-facing listeners, outside the access log so its line
 // carries the trace id. Not health: a probe every few seconds is noise.
-func servers(tr *uktel.Tracing, core *coreclient.Client, mem mcpserver.MemoryWriter, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
-	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: tr.Handler("sidecar mcp", withAccessLog("sidecar mcp", mcpserver.New(core, mem))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
+func servers(tr *uktel.Tracing, core *coreclient.Client, mem mcpserver.MemoryWriter, kube *mcpserver.KubeRead, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
+	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: tr.Handler("sidecar mcp", withAccessLog("sidecar mcp", mcpserver.New(core, mem, kube))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: tr.Handler("sidecar local api", withAccessLog("sidecar local api", localapi.New(core))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 }

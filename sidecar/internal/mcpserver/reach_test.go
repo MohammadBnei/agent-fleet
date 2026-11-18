@@ -58,7 +58,7 @@ func callTool(t *testing.T, h func(context.Context, mcp.CallToolRequest) (*mcp.C
 // forward their arguments, with the session never the agent's to set.
 func TestReachTools(t *testing.T) {
 	listed := map[string]bool{}
-	for _, tl := range newMCPServer(nil, nil).ListTools() {
+	for _, tl := range newMCPServer(nil, nil, nil).ListTools() {
 		listed[tl.Tool.Name] = true
 	}
 	for _, n := range []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "speak"} {

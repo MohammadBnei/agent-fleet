@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -241,4 +243,36 @@ func (s *Server) Speak(ctx context.Context, req *agentfleetv1.SpeakRequest) (*ag
 		return nil, grpcErr(err)
 	}
 	return &agentfleetv1.SpeakResponse{Delivered: delivered}, nil
+}
+
+// AuthorizeKubeRead answers the sidecar's kubectl_read (ADR-0086 §2). The interceptor has already required B in the
+// stored set; here the pinned definition must grant cluster.read. The call is noted as an effect of the turn.
+func (s *Server) AuthorizeKubeRead(ctx context.Context, req *agentfleetv1.AuthorizeKubeReadRequest) (*agentfleetv1.AuthorizeKubeReadResponse, error) {
+	t, err := s.sessions.Get(ctx, req.GetSessionId())
+	if errors.Is(err, sessions.ErrNotFound) {
+		return nil, status.Error(codes.NotFound, "session not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("AuthorizeKubeRead: %w", err)
+	}
+	if t.DefinitionName == nil || t.ArchivedAt != nil {
+		return nil, status.Error(codes.PermissionDenied, "only an open definition session may read the cluster")
+	}
+	if !sessions.HoldsTrust(t.TrustSet, "B") {
+		return nil, errkeys.Status(codes.PermissionDenied, errkeys.KeyRuleOfTwo,
+			"kubectl_read needs B, outside this session's trust set "+t.TrustSet+" (docs/adr/0086): ask the owner through a decision card")
+	}
+	raw, _, err := s.sessions.PinnedEffective(ctx, req.GetSessionId())
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "definition of %s: %v", req.GetSessionId(), err)
+	}
+	var eff definitions.Spec
+	if err := json.Unmarshal(raw, &eff); err != nil {
+		return nil, fmt.Errorf("definition spec of %s: %w", req.GetSessionId(), err)
+	}
+	if eff.Cluster == nil || !eff.Cluster.Read {
+		return nil, status.Error(codes.PermissionDenied, "this definition does not grant cluster.read")
+	}
+	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
+	return &agentfleetv1.AuthorizeKubeReadResponse{}, nil
 }

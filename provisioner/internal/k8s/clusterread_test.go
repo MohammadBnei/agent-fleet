@@ -94,3 +94,39 @@ func TestClusterReadServiceAccount(t *testing.T) {
 		}
 	}
 }
+
+// The sidecar serves kubectl_read only from these three variables; an ungranted pod must carry none of them.
+func TestClusterReadSidecarEnv(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
+		SessionID: "t2", Repo: "r", LeaseID: "l",
+		Definition: &DefinitionProfile{Name: "d", ProxyURL: "http://p", DeadlineSeconds: 60, ClusterRead: true,
+			ClusterLogNamespaces: []string{"agent-fleet", "monitoring"}, TrustSet: "AB"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("t2"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, ic := range job.Spec.Template.Spec.InitContainers {
+		if ic.Name == "sidecar" {
+			for _, e := range ic.Env {
+				got[e.Name] = e.Value
+			}
+		}
+	}
+	if got["FLEET_CLUSTER_READ"] != "1" || got["FLEET_CLUSTER_LOG_NAMESPACES"] != "agent-fleet,monitoring" || got["FLEET_TRUST_SET"] != "AB" {
+		t.Errorf("sidecar env = %v", got)
+	}
+	ps, _ := readJobLabels(t, false)
+	for _, ic := range ps.InitContainers {
+		for _, e := range ic.Env {
+			if e.Name == "FLEET_CLUSTER_READ" {
+				t.Error("ungranted sidecar has FLEET_CLUSTER_READ")
+			}
+		}
+	}
+}

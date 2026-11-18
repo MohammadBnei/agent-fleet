@@ -10,6 +10,8 @@ var methodTags = map[string]string{
 	"/agentfleet.v1.CoreService/SearchJournal": "B",
 	// ADR-0084 §5: typed fields only, but the owner's alert history is private, so it is a read of B.
 	"/agentfleet.v1.CoreService/ListResponderCards": "B",
+	// ADR-0086 §2: the sidecar's kubectl_read asks core before it runs kubectl.
+	"/agentfleet.v1.CoreService/AuthorizeKubeRead": "B",
 
 	// C: effects core runs: memory writes, exposure, peer prompts, events, GitHub reviews.
 	"/agentfleet.v1.CoreService/AppendJournal":        "A|C", // a set holding A writes quarantined rows (ADR-0086 §5)

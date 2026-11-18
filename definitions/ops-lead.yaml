@@ -5,8 +5,8 @@
 #
 # git.mode pr: the model credential only, so the pod holds no GitHub write (the existing CLAUDE_CODE_OAUTH_TOKEN
 # mapping, as dev-notes). Its memory is claude-home/agent-ops-lead-memory, written by the sidecar (memory_write).
-# cluster.read: the fleet-read ServiceAccount (infra-bootstrap #462). Its token reaches the sidecar only, and no
-# sidecar tool reads it yet, so the grant is in place for that tool.
+# cluster.read: the fleet-read ServiceAccount (infra-bootstrap #462). Its token reaches the sidecar only, and the
+# sidecar's kubectl_read tool is the one reader (read-only verbs; logs only in cluster.logNamespaces).
 # No query_metrics: core has no sidecar tool for it yet (ADR-0084 slice 8 left QueryMetrics out). No speak: no
 # ukubi-game client consumes a character's speech yet.
 # The workspace is agent-fleet, not infra-bootstrap: infra-bootstrap is a cluster-access repo, and core never runs a
@@ -32,7 +32,8 @@ spec:
       answer from scratch). The working tree is agent-fleet. You may edit and commit there as scratch, but nothing
       leaves the pod: hand real changes to the owner through open_issue.
 
-      Reach: view_logs for the namespaces your definition names; list_responder_cards for what the alert
+      Reach: view_logs for the namespaces your definition names; kubectl_read for read-only kubectl (get, describe,
+      events, top, api-resources, and logs in those same namespaces); list_responder_cards for what the alert
       responders found and did; open_issue on MohammadBnei/agent-fleet or
       MohammadBnei/infra-bootstrap for work a human or a PR should do; spawn_worker
       for the one worker you may start, then wait_for_result or let its end arrive as a turn. You change nothing
@@ -42,7 +43,7 @@ spec:
             "Bash(git show:*)", "Bash(git add:*)", "Bash(git commit:*)"]
     deny: ["Bash(git push:*)", "Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
   sidecarTools: [AskUserQuestion, set_session_meta, draft_card, memory_write, spawn_worker, wait_for_result,
-                 open_issue, list_responder_cards, view_logs]
+                 open_issue, list_responder_cards, view_logs, kubectl_read]
   spawns: { allow: [ops-worker] }
   owns: { repos: [MohammadBnei/agent-fleet, MohammadBnei/infra-bootstrap] }
   cluster: { read: true, logNamespaces: [agent-fleet, ukubi-game, ukubi-realm, ukubi-meet, monitoring] }

@@ -2,6 +2,8 @@ package k8s
 
 import (
 	"maps"
+	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -18,9 +20,11 @@ const ClusterReadLabel = "fleet.bnei.dev/cluster-read"
 // clusterReadTokenTTL is the projected token's life, a choice (the API floor is 600); the kubelet rotates the file.
 const clusterReadTokenTTL = 3600
 
+// applyClusterRead also tells the sidecar to serve kubectl_read: FLEET_CLUSTER_READ, the namespaces it may read
+// logs in, and the trust set it checks for B (left alone when the memory wiring already set it).
 // applyClusterRead names the read ServiceAccount and mounts its token in the sidecar only. The pod keeps
 // automountServiceAccountToken false, so the worker never gets one; the projected volume is the only way in.
-func applyClusterRead(t *corev1.PodTemplateSpec) {
+func applyClusterRead(t *corev1.PodTemplateSpec, logNamespaces []string, trustSet string) {
 	ps := &t.Spec
 	t.Labels = maps.Clone(t.Labels)
 	t.Labels[ClusterReadLabel] = "true"
@@ -39,6 +43,12 @@ func applyClusterRead(t *corev1.PodTemplateSpec) {
 		if c := &ps.InitContainers[i]; c.Name == "sidecar" {
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 				Name: "kube-read", MountPath: "/var/run/secrets/kubernetes.io/serviceaccount", ReadOnly: true})
+			c.Env = append(c.Env,
+				corev1.EnvVar{Name: "FLEET_CLUSTER_READ", Value: "1"},
+				corev1.EnvVar{Name: "FLEET_CLUSTER_LOG_NAMESPACES", Value: strings.Join(logNamespaces, ",")})
+			if trustSet != "" && !slices.ContainsFunc(c.Env, func(e corev1.EnvVar) bool { return e.Name == "FLEET_TRUST_SET" }) {
+				c.Env = append(c.Env, corev1.EnvVar{Name: "FLEET_TRUST_SET", Value: trustSet})
+			}
 		}
 	}
 }

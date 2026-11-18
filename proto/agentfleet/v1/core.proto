@@ -637,6 +637,16 @@ message AuthorizeMemoryWriteResponse {
   bool quarantine = 1; // the write goes to the quarantine repo
 }
 
+// AuthorizeKubeRead is the sidecar's kubectl_read asking core first (ADR-0086 §2): the stored set must hold B and the
+// session's pinned definition must grant cluster.read. Core notes the call as an effect of the turn; an empty
+// response means go ahead, any error means refuse.
+message AuthorizeKubeReadRequest {
+  string session_id = 1;
+  string idempotency_key = 2;
+}
+
+message AuthorizeKubeReadResponse {}
+
 // JournalEntry also backs dashboard.proto's GetJournal (imported from
 // here, same reuse pattern as Session/GetSessionRequest/GetSessionResponse below).
 message JournalEntry {
@@ -888,6 +898,7 @@ service CoreService {
   // why each stopped being a question worth asking.
   rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
   rpc AuthorizeMemoryWrite(AuthorizeMemoryWriteRequest) returns (AuthorizeMemoryWriteResponse);
+  rpc AuthorizeKubeRead(AuthorizeKubeReadRequest) returns (AuthorizeKubeReadResponse);
   rpc SearchJournal(SearchJournalRequest) returns (SearchJournalResponse);
   rpc SaveAgentSessionId(SaveAgentSessionIdRequest) returns (SaveAgentSessionIdResponse);
   rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);
