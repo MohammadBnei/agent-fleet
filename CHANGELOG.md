@@ -1,5 +1,11 @@
 # Changelog
 
+# [7.42.0](https://github.com/MohammadBnei/agent-fleet/compare/7.41.0...7.42.0) (2026-11-18)
+
+### Features
+
+* **core:** character start, stop, thread reads and cards joined to a character (ADR-0084 slices 16-19) ([#429](https://github.com/MohammadBnei/agent-fleet/issues/429)) ([0c51b1d](https://github.com/MohammadBnei/agent-fleet/commit/0c51b1d2c942c574671f5c1748e365d60ac2bc81))
+
 # [7.41.0](https://github.com/MohammadBnei/agent-fleet/compare/7.40.0...7.41.0) (2026-11-18)
 
 ### Features
