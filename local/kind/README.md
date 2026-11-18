@@ -38,6 +38,11 @@ stays online.
   the committed branch under test with `definitions/` replaced by
   `definitions/` here (the game's agents, sim-only).
 
+## Standing-character run
+
+The step-by-step run of `dev-speaker` (start, post, `WatchSpeech`, `docker stats` peak memory, tear down) is
+section 7b of `.claude/skills/kind-local/SKILL.md`. It needs `MODEL_TOKEN_FILE` and is not yet run.
+
 ## Why hostPath instead of the prod RWX PVC
 
 Prod's `agent-fleet-workspace` PVC (`k8s/provisioner/pvc.yaml`) is
