@@ -13,7 +13,8 @@ import (
 
 type fakeReach struct {
 	def, input, thread, repo, title, body, since string
-	text, face                                   string
+	text, face, query, startEnd                  string
+	step                                         int32
 	wait, limit                                  int32
 	err                                          error
 }
@@ -43,6 +44,11 @@ func (f *fakeReach) Speak(_ context.Context, text, face, _ string) (bool, error)
 	return true, f.err
 }
 
+func (f *fakeReach) QueryMetrics(_ context.Context, q, start, end string, step int32) (string, error) {
+	f.query, f.startEnd, f.step = q, start+"|"+end, step
+	return `{"resultType":"vector","result":[]}`, f.err
+}
+
 func callTool(t *testing.T, h func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error), args map[string]any) (string, bool) {
 	t.Helper()
 	req := mcp.CallToolRequest{}
@@ -61,7 +67,7 @@ func TestReachTools(t *testing.T) {
 	for _, tl := range newMCPServer(nil, nil, nil).ListTools() {
 		listed[tl.Tool.Name] = true
 	}
-	for _, n := range []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "speak"} {
+	for _, n := range []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "query_metrics", "speak"} {
 		if !listed[n] {
 			t.Errorf("%s is not registered", n)
 		}
@@ -79,6 +85,12 @@ func TestReachTools(t *testing.T) {
 	if txt, isErr := callTool(t, listResponderCardsHandler(f), map[string]any{"since": "2026-01-01T00:00:00Z", "limit": 5}); isErr || !strings.Contains(txt, `"id":"c1"`) || f.since != "2026-01-01T00:00:00Z" || f.limit != 5 {
 		t.Errorf("cards: %q %v %+v", txt, isErr, f)
 	}
+	if txt, isErr := callTool(t, queryMetricsHandler(f), map[string]any{"query": "up", "start": "2026-01-01T00:00:00Z", "step_seconds": 30}); isErr || !strings.Contains(txt, "vector") || f.query != "up" || f.startEnd != "2026-01-01T00:00:00Z|" || f.step != 30 {
+		t.Errorf("metrics: %q %v %+v", txt, isErr, f)
+	}
+	if _, isErr := callTool(t, queryMetricsHandler(f), map[string]any{}); !isErr {
+		t.Error("query_metrics with no query must be refused here")
+	}
 	if txt, isErr := callTool(t, speakHandler(f), map[string]any{"text": "good morning", "face": "happy"}); isErr || !strings.Contains(txt, `"delivered":true`) || f.text != "good morning" || f.face != "happy" {
 		t.Errorf("speak: %q %v %+v", txt, isErr, f)
 	}
@@ -91,9 +103,9 @@ func TestReachTools(t *testing.T) {
 	}
 	f.err = errors.New("core refused")
 	for name, h := range map[string]func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error){
-		"spawn": spawnWorkerHandler(f), "wait": waitForResultHandler(f), "issue": openIssueHandler(f), "cards": listResponderCardsHandler(f), "speak": speakHandler(f),
+		"spawn": spawnWorkerHandler(f), "wait": waitForResultHandler(f), "issue": openIssueHandler(f), "cards": listResponderCardsHandler(f), "metrics": queryMetricsHandler(f), "speak": speakHandler(f),
 	} {
-		if txt, isErr := callTool(t, h, map[string]any{"definition": "w", "input": "x", "threadId": "t", "repo": "o/r", "title": "T", "text": "hi"}); !isErr || !strings.Contains(txt, "core refused") {
+		if txt, isErr := callTool(t, h, map[string]any{"definition": "w", "input": "x", "threadId": "t", "repo": "o/r", "title": "T", "text": "hi", "query": "up"}); !isErr || !strings.Contains(txt, "core refused") {
 			t.Errorf("%s: core's refusal must reach the agent, got %q", name, txt)
 		}
 	}

@@ -53,6 +53,7 @@ const (
 	CoreService_WaitForSpawn_FullMethodName         = "/agentfleet.v1.CoreService/WaitForSpawn"
 	CoreService_OpenIssue_FullMethodName            = "/agentfleet.v1.CoreService/OpenIssue"
 	CoreService_ListResponderCards_FullMethodName   = "/agentfleet.v1.CoreService/ListResponderCards"
+	CoreService_QueryMetrics_FullMethodName         = "/agentfleet.v1.CoreService/QueryMetrics"
 	CoreService_Speak_FullMethodName                = "/agentfleet.v1.CoreService/Speak"
 )
 
@@ -162,6 +163,12 @@ type CoreServiceClient interface {
 	OpenIssue(ctx context.Context, in *OpenIssueRequest, opts ...grpc.CallOption) (*OpenIssueResponse, error)
 	// The first responders' cards and remediations, typed fields only.
 	ListResponderCards(ctx context.Context, in *ListResponderCardsRequest, opts ...grpc.CallOption) (*ListResponderCardsResponse, error)
+	// Read-only PromQL over core's promclient: a named exception to "no passthrough RPC" because the egress lock
+	// blocks a definition pod from Prometheus (docs/DECISIONS.md §2, docs/adr/0084 §6). Tagged B. The messages are
+	// Core-prefixed because DashboardService already owns QueryMetricsRequest/Response (the console's own shape).
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	QueryMetrics(ctx context.Context, in *CoreQueryMetricsRequest, opts ...grpc.CallOption) (*CoreQueryMetricsResponse, error)
 	// One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
 	// bridge, wakes nothing, at most 20 lines per turn.
 	Speak(ctx context.Context, in *SpeakRequest, opts ...grpc.CallOption) (*SpeakResponse, error)
@@ -527,6 +534,16 @@ func (c *coreServiceClient) ListResponderCards(ctx context.Context, in *ListResp
 	return out, nil
 }
 
+func (c *coreServiceClient) QueryMetrics(ctx context.Context, in *CoreQueryMetricsRequest, opts ...grpc.CallOption) (*CoreQueryMetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CoreQueryMetricsResponse)
+	err := c.cc.Invoke(ctx, CoreService_QueryMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) Speak(ctx context.Context, in *SpeakRequest, opts ...grpc.CallOption) (*SpeakResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SpeakResponse)
@@ -643,6 +660,12 @@ type CoreServiceServer interface {
 	OpenIssue(context.Context, *OpenIssueRequest) (*OpenIssueResponse, error)
 	// The first responders' cards and remediations, typed fields only.
 	ListResponderCards(context.Context, *ListResponderCardsRequest) (*ListResponderCardsResponse, error)
+	// Read-only PromQL over core's promclient: a named exception to "no passthrough RPC" because the egress lock
+	// blocks a definition pod from Prometheus (docs/DECISIONS.md §2, docs/adr/0084 §6). Tagged B. The messages are
+	// Core-prefixed because DashboardService already owns QueryMetricsRequest/Response (the console's own shape).
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	QueryMetrics(context.Context, *CoreQueryMetricsRequest) (*CoreQueryMetricsResponse, error)
 	// One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
 	// bridge, wakes nothing, at most 20 lines per turn.
 	Speak(context.Context, *SpeakRequest) (*SpeakResponse, error)
@@ -757,6 +780,9 @@ func (UnimplementedCoreServiceServer) OpenIssue(context.Context, *OpenIssueReque
 }
 func (UnimplementedCoreServiceServer) ListResponderCards(context.Context, *ListResponderCardsRequest) (*ListResponderCardsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListResponderCards not implemented")
+}
+func (UnimplementedCoreServiceServer) QueryMetrics(context.Context, *CoreQueryMetricsRequest) (*CoreQueryMetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method QueryMetrics not implemented")
 }
 func (UnimplementedCoreServiceServer) Speak(context.Context, *SpeakRequest) (*SpeakResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Speak not implemented")
@@ -1376,6 +1402,24 @@ func _CoreService_ListResponderCards_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_QueryMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CoreQueryMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).QueryMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_QueryMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).QueryMetrics(ctx, req.(*CoreQueryMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_Speak_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SpeakRequest)
 	if err := dec(in); err != nil {
@@ -1528,6 +1572,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListResponderCards",
 			Handler:    _CoreService_ListResponderCards_Handler,
+		},
+		{
+			MethodName: "QueryMetrics",
+			Handler:    _CoreService_QueryMetrics_Handler,
 		},
 		{
 			MethodName: "Speak",

@@ -4,6 +4,7 @@ package coreserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"strings"
@@ -329,5 +330,63 @@ func TestAuthorizeKubeRead_NeedsGrantAndB(t *testing.T) {
 	s2, id2, _ := reachCharacter(t, `{"cluster":{"logNamespaces":["agent-fleet"]},"mode":{"default":"default","allow":["default"]}}`)
 	if _, err := s2.AuthorizeKubeRead(ctx, &agentfleetv1.AuthorizeKubeReadRequest{SessionId: id2}); code(err) != codes.PermissionDenied {
 		t.Errorf("no cluster.read grant: %v", err)
+	}
+}
+
+type fakeMetrics struct {
+	q          string
+	start, end time.Time
+	step       time.Duration
+	instant    bool
+}
+
+func (f *fakeMetrics) Query(_ context.Context, q string) (json.RawMessage, error) {
+	f.q, f.instant = q, true
+	return json.RawMessage(`{"resultType":"vector"}`), nil
+}
+
+func (f *fakeMetrics) QueryRange(_ context.Context, q string, start, end time.Time, step time.Duration) (json.RawMessage, error) {
+	f.q, f.start, f.end, f.step, f.instant = q, start, end, step, false
+	return json.RawMessage(`{"resultType":"matrix"}`), nil
+}
+
+// docs/adr/0084 §6: query_metrics needs the grant, runs instant or range, and bounds the range and the step.
+func TestQueryMetrics_GrantAndBounds(t *testing.T) {
+	ctx := context.Background()
+	s, id, _ := reachCharacter(t, `{"sidecarTools":["query_metrics"]}`)
+	f := &fakeMetrics{}
+	s.SetMetrics(f)
+	if res, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: "up"}); err != nil || !f.instant || f.q != "up" || !strings.Contains(res.GetResultJson(), "vector") {
+		t.Fatalf("instant: %v %v %+v", res, err, f)
+	}
+	now := time.Now().UTC()
+	rng := func(start, end time.Time, step int32) error {
+		_, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: "up", Start: start.Format(time.RFC3339), End: end.Format(time.RFC3339), StepSeconds: step})
+		return err
+	}
+	if err := rng(now.Add(-time.Hour), now, 0); err != nil || f.instant || f.step != time.Minute {
+		t.Fatalf("range default step: %v %+v", err, f)
+	}
+	if err := rng(now.Add(-time.Hour), now, 1); err != nil || f.step != minMetricsStep {
+		t.Errorf("step floor: %v %v", err, f.step)
+	}
+	if err := rng(now.Add(-24*time.Hour), now, 15); err != nil || f.end.Sub(f.start)/f.step > maxMetricsPoints {
+		t.Errorf("point cap: %v %+v", err, f)
+	}
+	if err := rng(now.Add(-25*time.Hour), now, 60); code(err) != codes.InvalidArgument {
+		t.Errorf("range over 24h: %v", err)
+	}
+	if err := rng(now, now.Add(-time.Hour), 60); code(err) != codes.InvalidArgument {
+		t.Errorf("end before start: %v", err)
+	}
+	for _, q := range []string{"", "  ", strings.Repeat("x", maxMetricsQuery+1)} {
+		if _, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: q}); code(err) != codes.InvalidArgument {
+			t.Errorf("query %.10q: %v", q, err)
+		}
+	}
+	s2, id2, _ := reachCharacter(t, `{"sidecarTools":["send_message"]}`)
+	s2.SetMetrics(&fakeMetrics{})
+	if _, err := s2.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id2, Query: "up"}); code(err) != codes.PermissionDenied {
+		t.Errorf("no grant: %v", err)
 	}
 }

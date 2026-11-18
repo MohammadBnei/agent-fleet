@@ -17,6 +17,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -49,6 +50,9 @@ func (s *Server) SetIssueFunc(f func(ctx context.Context, req *agentfleetv1.Crea
 func (s *Server) SetResponderCards(f func(ctx context.Context, since time.Time, limit int) ([]*agentfleetv1.ResponderCard, error)) {
 	s.responderCards = f
 }
+
+// SetMetrics is core's promclient, for QueryMetrics.
+func (s *Server) SetMetrics(q promclient.Querier) { s.metrics = q }
 
 // granted is the session's pinned spec when it is an open definition session whose spec lists tool in sidecarTools.
 func (s *Server) granted(ctx context.Context, sessionID, tool string) (*definitions.Spec, error) {
@@ -275,4 +279,57 @@ func (s *Server) AuthorizeKubeRead(ctx context.Context, req *agentfleetv1.Author
 	}
 	s.noteEffect(ctx, req.GetSessionId(), req.GetIdempotencyKey())
 	return &agentfleetv1.AuthorizeKubeReadResponse{}, nil
+}
+
+const (
+	maxMetricsQuery    = 2000 // characters of PromQL
+	maxMetricsRange    = 24 * time.Hour
+	defaultMetricsStep = time.Minute
+	minMetricsStep     = 15 * time.Second
+	maxMetricsPoints   = 500 // per series: a coarser step is chosen rather than a refusal
+)
+
+// QueryMetrics is a read-only PromQL instant or range query over core's promclient (docs/adr/0084 §6), tagged B.
+// It is a named exception to "no passthrough RPC": the egress lock blocks a definition pod from Prometheus. Prometheus
+// is only ever read (GET /api/v1/query*), and the range and step are bounded here, not by the caller.
+func (s *Server) QueryMetrics(ctx context.Context, req *agentfleetv1.CoreQueryMetricsRequest) (*agentfleetv1.CoreQueryMetricsResponse, error) {
+	if s.metrics == nil {
+		return nil, status.Error(codes.Unavailable, "metrics are not wired")
+	}
+	if _, err := s.granted(ctx, req.GetSessionId(), "query_metrics"); err != nil {
+		return nil, err
+	}
+	q := req.GetQuery()
+	if strings.TrimSpace(q) == "" || utf8.RuneCountInString(q) > maxMetricsQuery {
+		return nil, status.Errorf(codes.InvalidArgument, "query is required, at most %d characters", maxMetricsQuery)
+	}
+	var data json.RawMessage
+	var err error
+	if req.GetStart() == "" {
+		data, err = s.metrics.Query(ctx, q)
+	} else {
+		start, e1 := time.Parse(time.RFC3339, req.GetStart())
+		end := time.Now()
+		var e2 error
+		if v := req.GetEnd(); v != "" {
+			end, e2 = time.Parse(time.RFC3339, v)
+		}
+		if e1 != nil || e2 != nil {
+			return nil, status.Error(codes.InvalidArgument, "start and end must be RFC3339")
+		}
+		if !end.After(start) || end.Sub(start) > maxMetricsRange {
+			return nil, status.Errorf(codes.InvalidArgument, "end must be after start, at most %s apart", maxMetricsRange)
+		}
+		step := time.Duration(req.GetStepSeconds()) * time.Second
+		if step <= 0 {
+			step = defaultMetricsStep
+		}
+		step = max(step, minMetricsStep, end.Sub(start)/maxMetricsPoints)
+		data, err = s.metrics.QueryRange(ctx, q, start, end, step)
+	}
+	if err != nil {
+		// Prometheus' own reason (a parse error) is the useful part, and the query came from the character.
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	return &agentfleetv1.CoreQueryMetricsResponse{ResultJson: string(data)}, nil
 }

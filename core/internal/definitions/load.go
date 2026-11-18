@@ -48,9 +48,9 @@ var (
 	EffortLevels   = []string{"low", "medium", "high", "xhigh", "max"}
 	toolCeiling    = []string{"Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"}
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review", "memory_write",
-		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "speak", "kubectl_read"}
+		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak", "kubectl_read"}
 	// reachTools are a standing character's alone (ADR-0084 §6).
-	reachTools   = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "speak"}
+	reachTools   = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak"}
 	serviceHosts = []string{"github.com", "api.github.com", "api.anthropic.com"}
 	lifecycles   = []string{"resident", "single-shot", "standing"}
 )
