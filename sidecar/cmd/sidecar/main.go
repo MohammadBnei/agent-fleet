@@ -130,7 +130,7 @@ func main() {
 	// direct-dial decision is not reversed — it is moot: there is no second pod
 	// to dial. The sidecar's outbound connections are the one to core it always
 	// had and, in a repo pod, the egress router's tunnels.
-	mcpServer, localAPIServer, healthServer := servers(tr, core, mem, kubeRead(cfg), mcpPort, localAPIPort, healthPort)
+	mcpServer, localAPIServer, healthServer := servers(tr, core, mem, kubeRead(cfg, core), mcpPort, localAPIPort, healthPort)
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)
@@ -174,9 +174,10 @@ func memoryWiring(cfg config.Config, sessionID string) (quarantine bool, mem mcp
 
 // kubeRead is the kubectl_read grant: the definition's cluster.read (the token is mounted) held by a session whose
 // trust set has B. Anything else, including a missing set, serves nothing.
-func kubeRead(cfg config.Config) *mcpserver.KubeRead {
+// Exposure here is a convenience; core is asked on every call (ADR-0086 §2).
+func kubeRead(cfg config.Config, core mcpserver.KubeAuthorizer) *mcpserver.KubeRead {
 	if cfg.ClusterRead && strings.Contains(cfg.TrustSet, "B") {
-		return &mcpserver.KubeRead{Namespaces: strings.FieldsFunc(cfg.ClusterLogNamespaces, func(r rune) bool { return r == ',' || r == ' ' })}
+		return &mcpserver.KubeRead{Core: core, Namespaces: strings.FieldsFunc(cfg.ClusterLogNamespaces, func(r rune) bool { return r == ',' || r == ' ' })}
 	}
 	return nil
 }

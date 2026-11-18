@@ -67,6 +67,9 @@ type LeaseVerifier interface {
 // default anything falls into by being forgotten — unknownMethodPolicy makes a
 // new method fail closed.
 var callerSessionOf = map[string]func(any) string{
+	"/agentfleet.v1.CoreService/AuthorizeKubeRead": func(r any) string {
+		return r.(*agentfleetv1.AuthorizeKubeReadRequest).GetSessionId()
+	},
 	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": func(r any) string {
 		return r.(*agentfleetv1.AuthorizeMemoryWriteRequest).GetSessionId()
 	},
@@ -178,6 +181,8 @@ var unboundMethods = map[string]bool{
 // ponytail: a fixed table. P4 derives it from the definition's sidecarTools
 // (tool -> method); until then every definition gets the same set.
 var definitionMethods = map[string]bool{
+	// kubectl_read asks core first (docs/adr/0086 §2); the handler checks the definition's cluster.read.
+	"/agentfleet.v1.CoreService/AuthorizeKubeRead": true,
 	// A long-lived agent's memory_write asks core first (docs/adr/0086 §5).
 	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": true,
 	"/agentfleet.v1.CoreService/SendMessage":          true,
@@ -232,6 +237,7 @@ var provisionerMethods = map[string]bool{
 // writes a session's trace, which the provisioner must never do),
 // which no component may borrow.
 var sessionOnlyMethods = map[string]bool{
+	"/agentfleet.v1.CoreService/AuthorizeKubeRead":    true,
 	"/agentfleet.v1.CoreService/AuthorizeMemoryWrite": true,
 	"/agentfleet.v1.CoreService/PublishEvent":         true,
 	"/agentfleet.v1.CoreService/ConsumeGrant":         true,

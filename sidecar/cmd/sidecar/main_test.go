@@ -131,7 +131,7 @@ func TestKubeRead_NeedsGrantAndB(t *testing.T) {
 		{config.Config{ClusterRead: true}, false},
 		{config.Config{TrustSet: "AB"}, false},
 	} {
-		if got := kubeRead(c.cfg) != nil; got != c.want {
+		if got := kubeRead(c.cfg, nil) != nil; got != c.want {
 			t.Errorf("%+v: served %v, want %v", c.cfg, got, c.want)
 		}
 	}

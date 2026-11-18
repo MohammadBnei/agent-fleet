@@ -29,9 +29,14 @@ FROM debian:12-slim
 # is refreshed at least weekly instead of living forever.
 ARG CACHE_WEEK=none
 # kubectl serves the kubectl_read tool (ADR-0084 §6): read-only, as the mounted fleet-read token, only in a pod
-# whose definition grants cluster.read. Same download as executor/Dockerfile.
+# whose definition grants cluster.read. The version is pinned (bump it by hand) and the download is checked against
+# the published .sha256, so a weekly cache bust cannot change the binary.
+ARG KUBECTL_VERSION=v1.37.2
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl \
-    && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" -o /usr/local/bin/kubectl \
+    && arch="$(dpkg --print-architecture)" \
+    && base="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" \
+    && curl -fsSL "$base" -o /usr/local/bin/kubectl \
+    && echo "$(curl -fsSL "$base.sha256")  /usr/local/bin/kubectl" | sha256sum -c - \
     && chmod +x /usr/local/bin/kubectl \
     && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*

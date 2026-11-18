@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"slices"
 	"strings"
@@ -17,8 +18,16 @@ import (
 // session whose trust set holds B. Namespaces are where pod logs may be read.
 type KubeRead struct {
 	Namespaces []string
+	// Core is asked before every call (ADR-0086 §2); a nil Core or any error refuses, so exposure in the tool list
+	// is a convenience and never the check.
+	Core KubeAuthorizer
 	// Run executes kubectl; nil runs the real one with the mounted fleet-read token.
 	Run func(ctx context.Context, args []string) (string, error)
+}
+
+// KubeAuthorizer is *coreclient.Client's slice: core re-reads the stored set and the definition's grant.
+type KubeAuthorizer interface {
+	AuthorizeKubeRead(ctx context.Context) error
 }
 
 // kubeVerbs are the only subcommands. Narrower than the executor's ValidateReadOnly list on purpose: no explain,
@@ -35,7 +44,7 @@ var kubeFlags = map[string]bool{
 	"--previous": false, "-p": false, "--timestamps": false, "--prefix": false, "--all-containers": false,
 	"--no-headers": false, "--show-labels": false, "--show-kind": false, "--sort-by": true, "--containers": false,
 	"--ignore-not-found": false, "--for": true, "--types": true, "--chunk-size": true, "--max-log-requests": true,
-	"--api-group": true, "--namespaced": true, "--verbs": true, "--cached": false,
+	"--api-group": true, "--namespaced": false, "--verbs": true, "--cached": false,
 }
 
 // validateKubeRead returns "" for an acceptable read, else why not. logNamespaces bounds `logs`: it must name one
@@ -69,7 +78,11 @@ func validateKubeRead(args []string, logNamespaces []string) string {
 			if i++; i >= len(args) {
 				return fmt.Sprintf("flag %q needs a value", name)
 			}
-			val = args[i]
+			// A value never starts with "-" here, so a flag whose arity is wrong in kubeFlags cannot swallow the
+			// next flag unchecked; a value that does (--since=-1h) is written glued.
+			if val = args[i]; strings.HasPrefix(val, "-") {
+				return fmt.Sprintf("flag %q needs a value; write a value starting with - as %s=VALUE", name, name)
+			}
 		}
 		switch name {
 		case "-n", "--namespace":
@@ -97,17 +110,43 @@ const kubeOutputCap = 100_000 // ADR-0046: cap every unbounded tool result at th
 func runKubectl(ctx context.Context, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
-	cmd.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp", "KUBECACHEDIR=/tmp/kube-cache",
-		"KUBERNETES_SERVICE_HOST=kubernetes.default.svc", "KUBERNETES_SERVICE_PORT=443"}
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd := exec.CommandContext(ctx, kubectlBin, args...)
+	cmd.Env = kubectlEnv
+	out := &cappedBuffer{limit: kubeOutputCap}
+	cmd.Stdout, cmd.Stderr = out, out // one writer: exec shares it, so output interleaves in order
 	err := cmd.Run()
-	text := out.String() + errb.String()
-	if len(text) > kubeOutputCap {
-		text = text[:kubeOutputCap] + "\n... (truncated)"
+	return out.String(), err
+}
+
+// kubectlBin is a variable so a test can put a fake in its place.
+var kubectlBin = "kubectl"
+
+var kubectlEnv = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp", "KUBECACHEDIR=/tmp/kube-cache",
+	"KUBERNETES_SERVICE_HOST=kubernetes.default.svc", "KUBERNETES_SERVICE_PORT=443"}
+
+// cappedBuffer keeps the first limit bytes and drops the rest as it goes, so a huge `logs` never sits in memory
+// (ADR-0046: cap at the source).
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if room := c.limit - c.buf.Len(); len(p) > room {
+		c.buf.Write(p[:max(room, 0)])
+		c.truncated = true
+	} else {
+		c.buf.Write(p)
 	}
-	return text, err
+	return len(p), nil // never an error: kubectl must keep running to exit, not die on a broken pipe
+}
+
+func (c *cappedBuffer) String() string {
+	if !c.truncated {
+		return c.buf.String()
+	}
+	return strings.ToValidUTF8(c.buf.String(), "") + "\n... (truncated)"
 }
 
 func kubectlReadHandler(k *KubeRead) server.ToolHandlerFunc {
@@ -116,6 +155,15 @@ func kubectlReadHandler(k *KubeRead) server.ToolHandlerFunc {
 		if refusal := validateKubeRead(args, k.Namespaces); refusal != "" {
 			return mcp.NewToolResultError("kubectl_read refused: " + refusal), nil
 		}
+		// ADR-0086 §2: core is asked first, every call, and any failure refuses.
+		if k.Core == nil {
+			return mcp.NewToolResultError("kubectl_read refused: no core authorizer"), nil
+		}
+		if err := k.Core.AuthorizeKubeRead(ctx); err != nil {
+			slog.Error("mcp kubectl_read refused by core", "error", err)
+			return mcp.NewToolResultError("kubectl_read refused: " + err.Error()), nil
+		}
+		slog.Info("mcp kubectl_read", "verb", args[0])
 		run := k.Run
 		if run == nil {
 			run = runKubectl

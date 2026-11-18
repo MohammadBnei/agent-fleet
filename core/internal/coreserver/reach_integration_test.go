@@ -297,3 +297,37 @@ func TestSpeak_Grant(t *testing.T) {
 		t.Errorf("no grant, no line: %v %q", err, sp2.text)
 	}
 }
+
+// ADR-0086 §2: kubectl_read asks core first. It needs cluster.read on the pinned definition and B in the stored set;
+// a repo session and a missing session are refused.
+func TestAuthorizeKubeRead_NeedsGrantAndB(t *testing.T) {
+	ctx := context.Background()
+	s, id, repoID, pool := reachCharacterDB(t, `{"cluster":{"read":true,"logNamespaces":["agent-fleet"]},"mode":{"default":"default","allow":["default"]}}`)
+	ask := func(sid string) error {
+		_, err := s.AuthorizeKubeRead(ctx, &agentfleetv1.AuthorizeKubeReadRequest{SessionId: sid})
+		return err
+	}
+	if err := ask(id); err != nil {
+		t.Fatalf("granted, BC: %v", err)
+	}
+	if code(ask(repoID)) != codes.PermissionDenied {
+		t.Error("a repo session must be refused")
+	}
+	if code(ask("00000000-0000-0000-0000-000000000000")) != codes.NotFound {
+		t.Error("unknown session must be NotFound")
+	}
+	noB, err := sessions.NewStore(pool).Create(ctx, sessions.CreateParams{
+		Repo: "r", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a", TrustSet: "AC",
+		Owner: "client:bridge", Visibility: "private", Invoker: "bridge", ThreadKey: "x", StartedBy: "root",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code(ask(noB)) != codes.PermissionDenied {
+		t.Error("a set without B must be refused")
+	}
+	s2, id2, _ := reachCharacter(t, `{"cluster":{"logNamespaces":["agent-fleet"]},"mode":{"default":"default","allow":["default"]}}`)
+	if _, err := s2.AuthorizeKubeRead(ctx, &agentfleetv1.AuthorizeKubeReadRequest{SessionId: id2}); code(err) != codes.PermissionDenied {
+		t.Errorf("no cluster.read grant: %v", err)
+	}
+}

@@ -379,6 +379,19 @@ func (c *Client) AuthorizeMemoryWrite(ctx context.Context) (quarantine bool, err
 	return r.GetQuarantine(), nil
 }
 
+// AuthorizeKubeRead asks core whether this session may run kubectl_read (ADR-0086 §2): its stored set must hold B and
+// its definition grant cluster.read. Any error means refuse.
+func (c *Client) AuthorizeKubeRead(ctx context.Context) error {
+	ek, err := c.effectKey("")
+	if err != nil {
+		return fmt.Errorf("AuthorizeKubeRead: %w", err)
+	}
+	if _, err := c.rpc.AuthorizeKubeRead(ctx, &agentfleetv1.AuthorizeKubeReadRequest{SessionId: c.taskID, IdempotencyKey: ek}); err != nil {
+		return fmt.Errorf("AuthorizeKubeRead: %w", err)
+	}
+	return nil
+}
+
 // JournalSearch mirrors journal.SearchOpts on core's side — a struct, not
 // four positional strings, because Repo/Query/Since/Until are all string and
 // a swapped pair would compile fine and silently return the wrong window.

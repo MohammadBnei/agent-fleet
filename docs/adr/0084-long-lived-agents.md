@@ -322,7 +322,9 @@ What is left is a trusted agent that lives on.
     the set; a missing set serves nothing). Verbs: `get`, `describe`, `logs`, `events`, `top`, `api-resources`.
     Flags are an allowlist (no `--as`, `--server`, `--token`, `-f`, `--raw`, `-w`), and `logs` must name one of the
     definition's `logNamespaces` with `-n`. It runs kubectl with an environment built for it, as the mounted token.
-    The check is in the sidecar and the grant in core; the ADR-0086 "asks core first" call is not made for it yet.
+    Every call asks core first (`AuthorizeKubeRead`, tagged B, ADR-0086 §2): core checks the stored set and the pinned
+    definition's `cluster.read`, and the tool fails closed on any error. Exposure in the tool list is a convenience,
+    and a flag's value may not start with `-`, so a wrong arity in the allowlist cannot hide a flag.
 
 ### 7. The game, for the owner only
 

@@ -1599,10 +1599,11 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 	profile.Standing = t.Lifecycle != nil && *t.Lifecycle == "standing" &&
 		eff.Lifecycle != nil && slices.Contains(eff.Lifecycle.Allow, "standing")
 	// Cluster reads are B (ADR-0086 §2): a set without B never gets the credential mounted; empty means the fleet default.
-	profile.ClusterRead = eff.Cluster != nil && eff.Cluster.Read &&
-		sessions.HoldsTrust(cmp.Or(t.TrustSet, sessions.TrustFor(sessions.TierFleet)), "B")
+	set := cmp.Or(t.TrustSet, sessions.TrustFor(sessions.TierFleet))
+	profile.ClusterRead = eff.Cluster != nil && eff.Cluster.Read && sessions.HoldsTrust(set, "B")
 	if profile.ClusterRead {
 		profile.ClusterLogNamespaces = eff.Cluster.LogNamespaces
+		profile.TrustSet = set // the sidecar's kubectl_read gate must agree with the grant above
 	}
 	if r := eff.Resources; r != nil {
 		profile.Cpu, profile.Memory = r.CPU, r.Memory

@@ -128,3 +128,15 @@ func TestAuth_ReachMethodsFollowTheirTags(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0086 §2: AuthorizeKubeRead is a read of B, so a set without B is refused at the interceptor.
+func TestAuth_AuthorizeKubeReadNeedsB(t *testing.T) {
+	const m = "/agentfleet.v1.CoreService/AuthorizeKubeRead"
+	for set, refused := range map[string]bool{"BC": false, "AB": false, "AC": true} {
+		a := NewAuthenticator(fakeLeases{session: "s1", lease: "L1", trustSet: set, definition: "ops"}, "provtoken")
+		err := callUnary(t, a, ctxWith(mdSessionID, "s1", mdLeaseID, "L1"), m, &agentfleetv1.AuthorizeKubeReadRequest{SessionId: "s1"})
+		if got := errkeys.Of(err) == errkeys.KeyRuleOfTwo; got != refused || (!refused && err != nil) {
+			t.Errorf("%s: %v, want refused=%v", set, err, refused)
+		}
+	}
+}

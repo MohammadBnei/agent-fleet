@@ -308,6 +308,8 @@ func requestFor(method string) any {
 		return &agentfleetv1.SubmitReviewRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/ExportSpans":
 		return &agentfleetv1.ExportSpansRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/AuthorizeKubeRead":
+		return &agentfleetv1.AuthorizeKubeReadRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/AuthorizeMemoryWrite":
 		return &agentfleetv1.AuthorizeMemoryWriteRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/SpawnWorker":
