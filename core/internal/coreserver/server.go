@@ -34,6 +34,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -103,6 +104,7 @@ type Server struct {
 	// spans exports worker spans (docs/adr/0081 §7). nil accepts nothing.
 	spans *workerspans.Sink
 	// The reach of a standing character (docs/adr/0084 §6), wired after construction like publish.
+	metrics        promclient.Querier
 	spawner        Spawner
 	speaker        Speaker
 	createIssue    func(ctx context.Context, req *agentfleetv1.CreateIssueRequest) (*agentfleetv1.CreateIssueResponse, error)

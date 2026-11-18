@@ -142,6 +142,9 @@ var callerSessionOf = map[string]func(any) string{
 	"/agentfleet.v1.CoreService/ListResponderCards": func(r any) string {
 		return r.(*agentfleetv1.ListResponderCardsRequest).GetSessionId()
 	},
+	"/agentfleet.v1.CoreService/QueryMetrics": func(r any) string {
+		return r.(*agentfleetv1.CoreQueryMetricsRequest).GetSessionId()
+	},
 	"/agentfleet.v1.CoreService/Speak": func(r any) string {
 		return r.(*agentfleetv1.SpeakRequest).GetSessionId()
 	},
@@ -217,6 +220,8 @@ var definitionMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/OpenIssue":          true,
 	"/agentfleet.v1.CoreService/ListResponderCards": true,
 	"/agentfleet.v1.CoreService/ViewLogs":           true,
+	// Granted per definition (query_metrics); the egress lock blocks a direct dial to Prometheus (docs/adr/0084 §6).
+	"/agentfleet.v1.CoreService/QueryMetrics": true,
 	// The game channel (docs/adr/0084 §7): granted per definition through sidecarTools (speak).
 	"/agentfleet.v1.CoreService/Speak": true,
 }
@@ -248,6 +253,7 @@ var sessionOnlyMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/WaitForSpawn":         true,
 	"/agentfleet.v1.CoreService/OpenIssue":            true,
 	"/agentfleet.v1.CoreService/ListResponderCards":   true,
+	"/agentfleet.v1.CoreService/QueryMetrics":         true,
 	"/agentfleet.v1.CoreService/Speak":                true,
 }
 

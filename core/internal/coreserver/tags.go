@@ -7,6 +7,7 @@ package coreserver
 var methodTags = map[string]string{
 	// B: fleet-wide reads of private memory and logs.
 	"/agentfleet.v1.CoreService/ViewLogs":      "B",
+	"/agentfleet.v1.CoreService/QueryMetrics":  "B", // read-only PromQL relay (ADR-0084 §6)
 	"/agentfleet.v1.CoreService/SearchJournal": "B",
 	// ADR-0084 §5: typed fields only, but the owner's alert history is private, so it is a read of B.
 	"/agentfleet.v1.CoreService/ListResponderCards": "B",

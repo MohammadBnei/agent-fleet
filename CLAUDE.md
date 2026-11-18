@@ -194,7 +194,9 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   (only `spawns.allow`, T1, under the principal `standing:<name>`, in the definition pool and the
   character's `limits.spawns.concurrent` sub-pool), `wait_for_result` (its own runs), `open_issue` (only
   `owns.repos`, via the provisioner's `CreateIssue`), `list_responder_cards` (typed fields) and `view_logs`
-  (only `cluster.logNamespaces`). `speak` (`adr/0084` §7, tagged C) sends a line to the owner's browser through
+  (only `cluster.logNamespaces`). `query_metrics` (tagged B) is `CoreService.QueryMetrics`, a read-only PromQL
+  instant or range query over core's `promclient`, range at most 24h, step at least 15s and at most 500 points per
+  series (these bound the arguments only; the cost ceiling is core's 10s timeout, a 3MB response cap and Prometheus' own limits): the named exception to "no passthrough RPC", because the egress lock blocks the pod from Prometheus. `speak` (`adr/0084` §7, tagged C) sends a line to the owner's browser through
   `AgentService.WatchSpeech`, live only: no bridge, no transcript, no wake, 20 lines per turn. The owner's way
   back is `AgentService.PostToCharacter` (T0, an admin from the console or an admin origin). The rest of the owner's character API (`ListCharacters`/`WatchCharacters`, `StartCharacter`/`StopCharacter` (the console's own Start and Stop, resumable), `ReadCharacterThread`/`WatchCharacterThread`/`CloseCharacterThread` (a close parks)) is owner-only on the same terms: each is in the authz table and `surfaceCalls` (`adr/0084` amendment). Every lease caller authors `SendMessage` as
   `agent`/`worker` only: the worker obeys `human`/`session` entries.

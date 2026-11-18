@@ -276,6 +276,14 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) *se
 		mcp.WithNumber("limit", mcp.Description("Default 20, max 50")),
 	), listResponderCardsHandler(core))
 
+	s.AddTool(mcp.NewTool("query_metrics",
+		mcp.WithDescription("Read cluster metrics from Prometheus with a read-only PromQL query, through core. Without start it is an instant query at now; with start it is a range query (at most 24h wide, step at least 15s, about 500 points per series). Returns Prometheus' own result JSON. Only for definitions that grant it."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("PromQL, at most 2000 characters")),
+		mcp.WithString("start", mcp.Description("RFC3339; set it for a range query")),
+		mcp.WithString("end", mcp.Description("RFC3339; default now")),
+		mcp.WithNumber("step_seconds", mcp.Description("Range resolution in seconds (default 60, min 15)")),
+	), queryMetricsHandler(core))
+
 	s.AddTool(mcp.NewTool("speak",
 		mcp.WithDescription("Say one line to the owner in the game: it appears in their browser at once and is not stored or sent anywhere else, and it does not wake anything. At most 20 lines per turn. delivered is false when the owner was not watching, so the line was dropped: say it again in your reply if it matters. Only for definitions that grant it."),
 		mcp.WithString("text", mcp.Required(), mcp.Description("The line, at most 1000 characters")),
@@ -581,13 +589,14 @@ func submitReviewHandler(core Reviewer) server.ToolHandlerFunc {
 	})
 }
 
-// Reach is spawn_worker, wait_for_result, open_issue and list_responder_cards' slice of *coreclient.Client.
+// Reach is spawn_worker, wait_for_result, open_issue, list_responder_cards, speak and query_metrics' slice of *coreclient.Client.
 type Reach interface {
 	SpawnWorker(ctx context.Context, definition, input, key string) (*agentfleetv1.SpawnWorkerResponse, error)
 	WaitForResult(ctx context.Context, threadID string, waitSeconds int32) (*agentfleetv1.WaitForResultResponse, error)
 	OpenIssue(ctx context.Context, repo, title, body, key string) (*agentfleetv1.OpenIssueResponse, error)
 	ListResponderCards(ctx context.Context, since string, limit int32) (*agentfleetv1.ListResponderCardsResponse, error)
 	Speak(ctx context.Context, text, face, key string) (bool, error)
+	QueryMetrics(ctx context.Context, query, start, end string, stepSeconds int32) (string, error)
 }
 
 func spawnWorkerHandler(core Reach) server.ToolHandlerFunc {
@@ -659,6 +668,21 @@ func listResponderCardsHandler(core Reach) server.ToolHandlerFunc {
 		}
 		b, _ := json.Marshal(map[string]any{"cards": res.GetCards()})
 		return mcp.NewToolResultText(string(b)), nil
+	}
+}
+
+func queryMetricsHandler(core Reach) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		q := req.GetString("query", "")
+		if q == "" {
+			return mcp.NewToolResultError("query is required"), nil
+		}
+		out, err := core.QueryMetrics(ctx, q, req.GetString("start", ""), req.GetString("end", ""), int32(req.GetInt("step_seconds", 0)))
+		if err != nil {
+			slog.Error("mcp query_metrics", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(truncate(out, maxResultBytes, "Narrow the query: aggregate with sum/avg by, a shorter range or a coarser step_seconds.")), nil
 	}
 }
 

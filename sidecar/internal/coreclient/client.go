@@ -665,6 +665,15 @@ func (c *Client) ListResponderCards(ctx context.Context, since string, limit int
 	return res, nil
 }
 
+// QueryMetrics runs a read-only PromQL query through core: an instant query when start is empty, else a range query.
+func (c *Client) QueryMetrics(ctx context.Context, query, start, end string, stepSeconds int32) (string, error) {
+	res, err := c.rpc.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: c.taskID, Query: query, Start: start, End: end, StepSeconds: stepSeconds})
+	if err != nil {
+		return "", fmt.Errorf("QueryMetrics: %w", err)
+	}
+	return res.GetResultJson(), nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the

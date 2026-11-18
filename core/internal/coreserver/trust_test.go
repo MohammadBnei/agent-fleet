@@ -36,9 +36,10 @@ func TestMethodTagsCoverCoreService(t *testing.T) {
 // it, or a method tagged neither, passes.
 func TestAuth_RuleOfTwoRefusesAMethodOutsideTheSet(t *testing.T) {
 	const (
-		b = "/agentfleet.v1.CoreService/ViewLogs"    // B
-		c = "/agentfleet.v1.CoreService/Expose"      // C
-		n = "/agentfleet.v1.CoreService/SendMessage" // neither
+		b = "/agentfleet.v1.CoreService/ViewLogs"     // B
+		c = "/agentfleet.v1.CoreService/Expose"       // C
+		q = "/agentfleet.v1.CoreService/QueryMetrics" // B
+		n = "/agentfleet.v1.CoreService/SendMessage"  // neither
 	)
 	for _, tc := range []struct {
 		set, method string
@@ -47,13 +48,15 @@ func TestAuth_RuleOfTwoRefusesAMethodOutsideTheSet(t *testing.T) {
 		{"BC", b, false}, {"BC", c, false}, {"BC", n, false},
 		{"AB", b, false}, {"AB", c, true}, {"AB", n, false},
 		{"AC", c, false}, {"AC", b, true}, {"AC", n, false},
-		{"ABC", b, false}, {"ABC", c, false},
+		{"AC", q, true}, {"AB", q, false}, {"ABC", b, false}, {"ABC", c, false},
 	} {
 		a := NewAuthenticator(fakeLeases{session: "s1", lease: "L1", trustSet: tc.set}, "provtoken")
 		var req any = &agentfleetv1.SendMessageRequest{SessionId: "s1", From: "agent"}
 		switch tc.method {
 		case b:
 			req = &agentfleetv1.ViewLogsRequest{}
+		case q:
+			req = &agentfleetv1.CoreQueryMetricsRequest{SessionId: "s1"}
 		case c:
 			req = &agentfleetv1.ExposeRequest{SessionId: "s1"}
 		}

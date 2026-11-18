@@ -565,6 +565,24 @@ message ListResponderCardsRequest {
   int32 limit = 3;
 }
 
+// CoreQueryMetricsRequest is a read-only PromQL query for a standing character's query_metrics (docs/adr/0084 §6).
+// An instant query when start is empty, a range query otherwise. Core bounds the range and the step.
+message CoreQueryMetricsRequest {
+  string session_id = 1;
+  string query = 2;
+  // RFC3339; empty makes this an instant query at now.
+  string start = 3;
+  // RFC3339; empty is now. Ignored without start.
+  string end = 4;
+  // Range query resolution in seconds; 0 is 60.
+  int32 step_seconds = 5;
+}
+
+message CoreQueryMetricsResponse {
+  // Prometheus' own `data` envelope (resultType and result), unparsed.
+  string result_json = 1;
+}
+
 // ResponderCard is core-resolved typed fields only: never the agent's claim, a free label, an annotation value or
 // alert text. ask is the card's own text, which core wrote from enums, numbers and object ids.
 message ResponderCard {
@@ -957,6 +975,12 @@ service CoreService {
   rpc OpenIssue(OpenIssueRequest) returns (OpenIssueResponse);
   // The first responders' cards and remediations, typed fields only.
   rpc ListResponderCards(ListResponderCardsRequest) returns (ListResponderCardsResponse);
+  // Read-only PromQL over core's promclient: a named exception to "no passthrough RPC" because the egress lock
+  // blocks a definition pod from Prometheus (docs/DECISIONS.md §2, docs/adr/0084 §6). Tagged B. The messages are
+  // Core-prefixed because DashboardService already owns QueryMetricsRequest/Response (the console's own shape).
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc QueryMetrics(CoreQueryMetricsRequest) returns (CoreQueryMetricsResponse);
   // One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
   // bridge, wakes nothing, at most 20 lines per turn.
   rpc Speak(SpeakRequest) returns (SpeakResponse);

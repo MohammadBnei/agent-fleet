@@ -32,7 +32,7 @@ files no proposal for it.
 `lifecycle: { allow: [standing] }` makes a definition a long-lived character: an admin Starts it from the console,
 core keeps its one pod up (Guaranteed QoS from `resources`) until Stop, and it receives only the owner's messages
 and trusted hand-offs (set B·C). `ops-lead.yaml` is the first: memory (`memory_write`), reach (`view_logs` over
-`cluster.logNamespaces`, `list_responder_cards`, `open_issue` on `owns.repos`, each `<owner>/<repo>`) and `spawn_worker` for the one
+`cluster.logNamespaces`, `query_metrics`, `list_responder_cards`, `open_issue` on `owns.repos`, each `<owner>/<repo>`) and `spawn_worker` for the one
 definition its `spawns.allow` names, `ops-worker.yaml` (a spawn target must be single-shot only and not a first
 responder). No client lists a character or its spawn target: Start is the admin's, and `spawns.allow` replaces
 `invokers`. `cluster.read` mounts the fleet-read token (infra-bootstrap #462) in the sidecar.

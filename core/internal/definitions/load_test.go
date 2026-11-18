@@ -808,6 +808,8 @@ func TestLoad_Reach(t *testing.T) {
 		{"view_logs", standing(map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]", "cluster": "{ logNamespaces: [agent-fleet] }"}), ""},
 		{"kubectl_read needs cluster.read", standing(map[string]string{"sidecarTools": "[AskUserQuestion, kubectl_read]"}), "kubectl_read needs cluster.read"},
 		{"kubectl_read", standing(map[string]string{"sidecarTools": "[AskUserQuestion, kubectl_read]", "cluster": "{ read: true }"}), ""},
+		{"query_metrics", standing(map[string]string{"sidecarTools": "[AskUserQuestion, query_metrics]"}), ""},
+		{"query_metrics on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, query_metrics]"}, "standing character's tool"},
 		{"speak", standing(map[string]string{"sidecarTools": "[AskUserQuestion, speak]"}), ""},
 		{"speak on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, speak]"}, "standing character's tool"},
 		{"bad namespace", standing(map[string]string{"cluster": "{ logNamespaces: [\"A b\"] }"}), "not a namespace name"},

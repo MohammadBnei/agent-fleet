@@ -37,7 +37,12 @@
     `cluster.logNamespaces`; a repo session and the provisioner are unchanged. `ListResponderCards` reads the
     `alert_group` cards and the remediations (kind, state, core's card text, action, target, responder): never the
     agent claim, labels, annotations or alert text.
-  - Not in this slice: `QueryMetrics` (§6).
+  - Not in this slice: `QueryMetrics` (§6), built later (see the next entry).
+- **Built:** `QueryMetrics` (§6): `CoreService.QueryMetrics`, tagged B, and the sidecar tool `query_metrics`, granted to `ops-lead`.
+  - Instant or range, read-only. Range at most 24h, step at least 15s, at most 500 points per series (endpoints included).
+  - The limits cover the tool's arguments only. PromQL can widen its own window (`x[90d]`), so the cost ceiling is a
+    10s timeout in core, a 3MB response cap in `promclient` and Prometheus' own `query.timeout` and `max-samples`.
+  - Prometheus' own query error is `InvalidArgument`. A transport failure is `Unavailable` with a fixed message (full error logged).
 - **Built:** appendix slice 13: budget and alert (migration 000036: `sessions.budget_override_until`).
   - `limits.turnsPerDay` (standing only, 1-10000, default 200 applied where read). A turn is a worker result entry
     (core's crash results are not), counted per character across its threads since midnight Europe/Paris.

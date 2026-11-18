@@ -522,6 +522,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// definition. The sweep tells a character when a run it spawned ends.
 	coreSvc.SetSpawner(agentSvc)
 	coreSvc.SetSpeaker(agentSvc)
+	coreSvc.SetMetrics(prom)
 	coreSvc.SetIssueFunc(provisioner.CreateIssue)
 	coreSvc.SetResponderCards(responder.Cards{Pool: pool}.List)
 	go agentSvc.RunSpawnReports(ctx, 15*time.Second)

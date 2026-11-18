@@ -124,6 +124,9 @@ const (
 	// CoreServiceListResponderCardsProcedure is the fully-qualified name of the CoreService's
 	// ListResponderCards RPC.
 	CoreServiceListResponderCardsProcedure = "/agentfleet.v1.CoreService/ListResponderCards"
+	// CoreServiceQueryMetricsProcedure is the fully-qualified name of the CoreService's QueryMetrics
+	// RPC.
+	CoreServiceQueryMetricsProcedure = "/agentfleet.v1.CoreService/QueryMetrics"
 	// CoreServiceSpeakProcedure is the fully-qualified name of the CoreService's Speak RPC.
 	CoreServiceSpeakProcedure = "/agentfleet.v1.CoreService/Speak"
 )
@@ -232,6 +235,12 @@ type CoreServiceClient interface {
 	OpenIssue(context.Context, *connect.Request[v1.OpenIssueRequest]) (*connect.Response[v1.OpenIssueResponse], error)
 	// The first responders' cards and remediations, typed fields only.
 	ListResponderCards(context.Context, *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error)
+	// Read-only PromQL over core's promclient: a named exception to "no passthrough RPC" because the egress lock
+	// blocks a definition pod from Prometheus (docs/DECISIONS.md §2, docs/adr/0084 §6). Tagged B. The messages are
+	// Core-prefixed because DashboardService already owns QueryMetricsRequest/Response (the console's own shape).
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	QueryMetrics(context.Context, *connect.Request[v1.CoreQueryMetricsRequest]) (*connect.Response[v1.CoreQueryMetricsResponse], error)
 	// One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
 	// bridge, wakes nothing, at most 20 lines per turn.
 	Speak(context.Context, *connect.Request[v1.SpeakRequest]) (*connect.Response[v1.SpeakResponse], error)
@@ -452,6 +461,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("ListResponderCards")),
 			connect.WithClientOptions(opts...),
 		),
+		queryMetrics: connect.NewClient[v1.CoreQueryMetricsRequest, v1.CoreQueryMetricsResponse](
+			httpClient,
+			baseURL+CoreServiceQueryMetricsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("QueryMetrics")),
+			connect.WithClientOptions(opts...),
+		),
 		speak: connect.NewClient[v1.SpeakRequest, v1.SpeakResponse](
 			httpClient,
 			baseURL+CoreServiceSpeakProcedure,
@@ -497,6 +512,7 @@ type coreServiceClient struct {
 	waitForSpawn         *connect.Client[v1.WaitForSpawnRequest, v1.WaitForResultResponse]
 	openIssue            *connect.Client[v1.OpenIssueRequest, v1.OpenIssueResponse]
 	listResponderCards   *connect.Client[v1.ListResponderCardsRequest, v1.ListResponderCardsResponse]
+	queryMetrics         *connect.Client[v1.CoreQueryMetricsRequest, v1.CoreQueryMetricsResponse]
 	speak                *connect.Client[v1.SpeakRequest, v1.SpeakResponse]
 }
 
@@ -670,6 +686,11 @@ func (c *coreServiceClient) ListResponderCards(ctx context.Context, req *connect
 	return c.listResponderCards.CallUnary(ctx, req)
 }
 
+// QueryMetrics calls agentfleet.v1.CoreService.QueryMetrics.
+func (c *coreServiceClient) QueryMetrics(ctx context.Context, req *connect.Request[v1.CoreQueryMetricsRequest]) (*connect.Response[v1.CoreQueryMetricsResponse], error) {
+	return c.queryMetrics.CallUnary(ctx, req)
+}
+
 // Speak calls agentfleet.v1.CoreService.Speak.
 func (c *coreServiceClient) Speak(ctx context.Context, req *connect.Request[v1.SpeakRequest]) (*connect.Response[v1.SpeakResponse], error) {
 	return c.speak.CallUnary(ctx, req)
@@ -779,6 +800,12 @@ type CoreServiceHandler interface {
 	OpenIssue(context.Context, *connect.Request[v1.OpenIssueRequest]) (*connect.Response[v1.OpenIssueResponse], error)
 	// The first responders' cards and remediations, typed fields only.
 	ListResponderCards(context.Context, *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error)
+	// Read-only PromQL over core's promclient: a named exception to "no passthrough RPC" because the egress lock
+	// blocks a definition pod from Prometheus (docs/DECISIONS.md §2, docs/adr/0084 §6). Tagged B. The messages are
+	// Core-prefixed because DashboardService already owns QueryMetricsRequest/Response (the console's own shape).
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	QueryMetrics(context.Context, *connect.Request[v1.CoreQueryMetricsRequest]) (*connect.Response[v1.CoreQueryMetricsResponse], error)
 	// One line to the owner's browser on an admin origin (docs/adr/0084 §7). Granted per definition (speak), never on the
 	// bridge, wakes nothing, at most 20 lines per turn.
 	Speak(context.Context, *connect.Request[v1.SpeakRequest]) (*connect.Response[v1.SpeakResponse], error)
@@ -995,6 +1022,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("ListResponderCards")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceQueryMetricsHandler := connect.NewUnaryHandler(
+		CoreServiceQueryMetricsProcedure,
+		svc.QueryMetrics,
+		connect.WithSchema(coreServiceMethods.ByName("QueryMetrics")),
+		connect.WithHandlerOptions(opts...),
+	)
 	coreServiceSpeakHandler := connect.NewUnaryHandler(
 		CoreServiceSpeakProcedure,
 		svc.Speak,
@@ -1071,6 +1104,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceOpenIssueHandler.ServeHTTP(w, r)
 		case CoreServiceListResponderCardsProcedure:
 			coreServiceListResponderCardsHandler.ServeHTTP(w, r)
+		case CoreServiceQueryMetricsProcedure:
+			coreServiceQueryMetricsHandler.ServeHTTP(w, r)
 		case CoreServiceSpeakProcedure:
 			coreServiceSpeakHandler.ServeHTTP(w, r)
 		default:
@@ -1216,6 +1251,10 @@ func (UnimplementedCoreServiceHandler) OpenIssue(context.Context, *connect.Reque
 
 func (UnimplementedCoreServiceHandler) ListResponderCards(context.Context, *connect.Request[v1.ListResponderCardsRequest]) (*connect.Response[v1.ListResponderCardsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListResponderCards is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) QueryMetrics(context.Context, *connect.Request[v1.CoreQueryMetricsRequest]) (*connect.Response[v1.CoreQueryMetricsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.QueryMetrics is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) Speak(context.Context, *connect.Request[v1.SpeakRequest]) (*connect.Response[v1.SpeakResponse], error) {

@@ -322,6 +322,8 @@ func requestFor(method string) any {
 		return &agentfleetv1.ListResponderCardsRequest{SessionId: "s1"}
 	case "/agentfleet.v1.CoreService/Speak":
 		return &agentfleetv1.SpeakRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/QueryMetrics":
+		return &agentfleetv1.CoreQueryMetricsRequest{SessionId: "s1"}
 	}
 	return nil // unbound methods: the request names no caller
 }
