@@ -69,6 +69,24 @@ type Spec struct {
 	// Spawns names the single-shot definitions a standing character may start (ADR-0084 §6). It replaces the
 	// `invokers` check for spawns.
 	Spawns *AllowList `yaml:"spawns,omitempty" json:"spawns,omitempty"`
+	// Persona is how the game draws a character (ADR-0084 amendment A2): reviewed data, read-only to everyone.
+	Persona *Persona `yaml:"persona,omitempty" json:"persona,omitempty"`
+}
+
+// Persona is the game's view of a character. Home is opaque to the fleet and checked by syntax alone.
+type Persona struct {
+	DisplayName string     `yaml:"display_name" json:"display_name"`
+	Role        string     `yaml:"role,omitempty"      json:"role,omitempty"`
+	Traits      []string   `yaml:"traits,omitempty"    json:"traits,omitempty"`
+	Relations   []Relation `yaml:"relations,omitempty" json:"relations,omitempty"`
+	Portrait    string     `yaml:"portrait,omitempty"  json:"portrait,omitempty"`
+	Home        string     `yaml:"home"                json:"home"`
+}
+
+// Relation names another definition and how the character knows it.
+type Relation struct {
+	To   string `yaml:"to"   json:"to"`
+	Kind string `yaml:"kind" json:"kind"`
 }
 
 // Cluster is the definition's cluster grant (ADR-0084 §6): Read names the read ServiceAccount for its pod.

@@ -254,3 +254,28 @@ func (s *Store) Watch(ctx context.Context, since int64, send func(version int64,
 		}
 	}
 }
+
+// OpenCardsByCharacter counts the open cards on each character's own session and on the runs it spawned, keyed by
+// the character's name: the session's invoker is prefix+name for both (docs/adr/0084 amendment A6). Sessions
+// archived or swept do not count, as List does not show them.
+func (s *Store) OpenCardsByCharacter(ctx context.Context, prefix string) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, `SELECT substring(s.invoker from char_length($1) + 1), count(*)::int
+		FROM decisions d JOIN sessions s ON s.id = d.session_id
+		WHERE d.kind = 'card' AND d.state = 'open' AND s.archived_at IS NULL AND s.swept_at IS NULL
+		  AND s.invoker LIKE $1 || '%'
+		GROUP BY 1`, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("open cards by character: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var name string
+		var n int
+		if err := rows.Scan(&name, &n); err != nil {
+			return nil, fmt.Errorf("open cards by character: %w", err)
+		}
+		out[name] = n
+	}
+	return out, rows.Err()
+}

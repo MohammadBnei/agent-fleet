@@ -41,6 +41,8 @@ const (
 	AgentService_WaitForResult_FullMethodName       = "/agentfleet.v1.AgentService/WaitForResult"
 	AgentService_PostToCharacter_FullMethodName     = "/agentfleet.v1.AgentService/PostToCharacter"
 	AgentService_WatchSpeech_FullMethodName         = "/agentfleet.v1.AgentService/WatchSpeech"
+	AgentService_ListCharacters_FullMethodName      = "/agentfleet.v1.AgentService/ListCharacters"
+	AgentService_WatchCharacters_FullMethodName     = "/agentfleet.v1.AgentService/WatchCharacters"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -93,6 +95,12 @@ type AgentServiceClient interface {
 	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
 	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
 	WatchSpeech(ctx context.Context, in *WatchSpeechRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchSpeechResponse], error)
+	// docs/adr/0084 amendment A3: every character, started or not, for the game. The owner only (an admin, from the
+	// console or an admin origin).
+	ListCharacters(ctx context.Context, in *ListCharactersRequest, opts ...grpc.CallOption) (*ListCharactersResponse, error)
+	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
+	// reconnects and gets the baseline again.
+	WatchCharacters(ctx context.Context, in *WatchCharactersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchCharactersResponse], error)
 }
 
 type agentServiceClient struct {
@@ -350,6 +358,35 @@ func (c *agentServiceClient) WatchSpeech(ctx context.Context, in *WatchSpeechReq
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_WatchSpeechClient = grpc.ServerStreamingClient[WatchSpeechResponse]
 
+func (c *agentServiceClient) ListCharacters(ctx context.Context, in *ListCharactersRequest, opts ...grpc.CallOption) (*ListCharactersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCharactersResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListCharacters_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) WatchCharacters(ctx context.Context, in *WatchCharactersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchCharactersResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[3], AgentService_WatchCharacters_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchCharactersRequest, WatchCharactersResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchCharactersClient = grpc.ServerStreamingClient[WatchCharactersResponse]
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -400,6 +437,12 @@ type AgentServiceServer interface {
 	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
 	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
 	WatchSpeech(*WatchSpeechRequest, grpc.ServerStreamingServer[WatchSpeechResponse]) error
+	// docs/adr/0084 amendment A3: every character, started or not, for the game. The owner only (an admin, from the
+	// console or an admin origin).
+	ListCharacters(context.Context, *ListCharactersRequest) (*ListCharactersResponse, error)
+	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
+	// reconnects and gets the baseline again.
+	WatchCharacters(*WatchCharactersRequest, grpc.ServerStreamingServer[WatchCharactersResponse]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -475,6 +518,12 @@ func (UnimplementedAgentServiceServer) PostToCharacter(context.Context, *PostToC
 }
 func (UnimplementedAgentServiceServer) WatchSpeech(*WatchSpeechRequest, grpc.ServerStreamingServer[WatchSpeechResponse]) error {
 	return status.Error(codes.Unimplemented, "method WatchSpeech not implemented")
+}
+func (UnimplementedAgentServiceServer) ListCharacters(context.Context, *ListCharactersRequest) (*ListCharactersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCharacters not implemented")
+}
+func (UnimplementedAgentServiceServer) WatchCharacters(*WatchCharactersRequest, grpc.ServerStreamingServer[WatchCharactersResponse]) error {
+	return status.Error(codes.Unimplemented, "method WatchCharacters not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -872,6 +921,35 @@ func _AgentService_WatchSpeech_Handler(srv interface{}, stream grpc.ServerStream
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_WatchSpeechServer = grpc.ServerStreamingServer[WatchSpeechResponse]
 
+func _AgentService_ListCharacters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCharactersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListCharacters(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListCharacters_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListCharacters(ctx, req.(*ListCharactersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_WatchCharacters_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchCharactersRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServiceServer).WatchCharacters(m, &grpc.GenericServerStream[WatchCharactersRequest, WatchCharactersResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_WatchCharactersServer = grpc.ServerStreamingServer[WatchCharactersResponse]
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -955,6 +1033,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "PostToCharacter",
 			Handler:    _AgentService_PostToCharacter_Handler,
 		},
+		{
+			MethodName: "ListCharacters",
+			Handler:    _AgentService_ListCharacters_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -970,6 +1052,11 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchSpeech",
 			Handler:       _AgentService_WatchSpeech_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchCharacters",
+			Handler:       _AgentService_WatchCharacters_Handler,
 			ServerStreams: true,
 		},
 	},

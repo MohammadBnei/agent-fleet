@@ -114,6 +114,107 @@ service AgentService {
   // docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
   // stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
   rpc WatchSpeech(WatchSpeechRequest) returns (stream WatchSpeechResponse);
+  // docs/adr/0084 amendment A3: every character, started or not, for the game. The owner only (an admin, from the
+  // console or an admin origin).
+  rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse);
+  // Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
+  // reconnects and gets the baseline again.
+  rpc WatchCharacters(WatchCharactersRequest) returns (stream WatchCharactersResponse);
+}
+
+message ListCharactersRequest {}
+
+message ListCharactersResponse {
+  // By name.
+  repeated Character characters = 1;
+}
+
+message WatchCharactersRequest {}
+
+message WatchCharactersResponse {
+  // The first frame holds every character; a later one only those that changed since the last frame.
+  repeated Character characters = 1;
+  // Names that left the set since the last frame (definition deleted, lifecycle changed); never in the baseline.
+  repeated string removed = 2;
+}
+
+// A character as the game draws it (docs/adr/0084 amendment A3). Persona fields, thread titles and why are
+// definition- or model-authored: show them as text, never as markup.
+message Character {
+  // The definition name, which is the character's id everywhere.
+  string name = 1;
+  // persona.display_name, or the name when the definition has no persona.
+  string display_name = 2;
+  // The version the character is pinned to; a persona change moves its sha.
+  CharacterDefinition definition = 3;
+  // Unset when the definition has none.
+  CharacterPersona persona = 4;
+  // stopped | starting | idle | running | held | stopping.
+  string state = 5;
+  // A short reason when state is not plain: "budget", "token refresh", "crash back-off", "pin drain"; else empty.
+  string why = 6;
+  // Open threads, main first.
+  repeated CharacterThread threads = 7;
+  // Unset when no turn runs.
+  CharacterTurn running_turn = 8;
+  CharacterBudget budget = 9;
+  CharacterSpawns spawns = 10;
+  // Whether the definition holds the Speak grant.
+  bool can_speak = 11;
+  // Open cards on the character's own session and on the runs it spawned.
+  int32 open_cards = 12;
+}
+
+message CharacterDefinition {
+  string name = 1;
+  string sha = 2;
+}
+
+message CharacterPersona {
+  string display_name = 1;
+  string role = 2;
+  repeated string traits = 3;
+  repeated CharacterRelation relations = 4;
+  // An atlas or asset id, never a URL.
+  string portrait = 5;
+  // world | village:<id> | building:<atlas id>; the game resolves it.
+  string home = 6;
+}
+
+message CharacterRelation {
+  // A definition name.
+  string to = 1;
+  // friend | mentor | rival | family | colleague.
+  string kind = 2;
+}
+
+message CharacterThread {
+  string key = 1;
+  // The owner's first line in the thread, cut to 60 characters; empty before one.
+  string title = 2;
+  bool running = 3;
+  // RFC 3339: the thread's latest entry.
+  string last_at = 4;
+}
+
+message CharacterTurn {
+  string thread = 1;
+  // RFC 3339.
+  string started_at = 2;
+}
+
+message CharacterBudget {
+  int32 turns_today = 1;
+  int32 limit = 2;
+  // Whether the budget holds non-owner entries at the head of each thread now.
+  bool held = 3;
+}
+
+message CharacterSpawns {
+  // Runs the character has in flight.
+  int32 used = 1;
+  // limits.spawns.concurrent; 0 when the character cannot spawn.
+  int32 limit = 2;
 }
 
 message PostToCharacterRequest {

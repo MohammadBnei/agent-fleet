@@ -94,6 +94,12 @@ const (
 	// AgentServiceWatchSpeechProcedure is the fully-qualified name of the AgentService's WatchSpeech
 	// RPC.
 	AgentServiceWatchSpeechProcedure = "/agentfleet.v1.AgentService/WatchSpeech"
+	// AgentServiceListCharactersProcedure is the fully-qualified name of the AgentService's
+	// ListCharacters RPC.
+	AgentServiceListCharactersProcedure = "/agentfleet.v1.AgentService/ListCharacters"
+	// AgentServiceWatchCharactersProcedure is the fully-qualified name of the AgentService's
+	// WatchCharacters RPC.
+	AgentServiceWatchCharactersProcedure = "/agentfleet.v1.AgentService/WatchCharacters"
 )
 
 // AgentServiceClient is a client for the agentfleet.v1.AgentService service.
@@ -136,6 +142,12 @@ type AgentServiceClient interface {
 	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
 	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
 	WatchSpeech(context.Context, *connect.Request[v1.WatchSpeechRequest]) (*connect.ServerStreamForClient[v1.WatchSpeechResponse], error)
+	// docs/adr/0084 amendment A3: every character, started or not, for the game. The owner only (an admin, from the
+	// console or an admin origin).
+	ListCharacters(context.Context, *connect.Request[v1.ListCharactersRequest]) (*connect.Response[v1.ListCharactersResponse], error)
+	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
+	// reconnects and gets the baseline again.
+	WatchCharacters(context.Context, *connect.Request[v1.WatchCharactersRequest]) (*connect.ServerStreamForClient[v1.WatchCharactersResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the agentfleet.v1.AgentService service. By default,
@@ -281,6 +293,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("WatchSpeech")),
 			connect.WithClientOptions(opts...),
 		),
+		listCharacters: connect.NewClient[v1.ListCharactersRequest, v1.ListCharactersResponse](
+			httpClient,
+			baseURL+AgentServiceListCharactersProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ListCharacters")),
+			connect.WithClientOptions(opts...),
+		),
+		watchCharacters: connect.NewClient[v1.WatchCharactersRequest, v1.WatchCharactersResponse](
+			httpClient,
+			baseURL+AgentServiceWatchCharactersProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("WatchCharacters")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -308,6 +332,8 @@ type agentServiceClient struct {
 	waitForResult       *connect.Client[v1.WaitForResultRequest, v1.WaitForResultResponse]
 	postToCharacter     *connect.Client[v1.PostToCharacterRequest, v1.PostToCharacterResponse]
 	watchSpeech         *connect.Client[v1.WatchSpeechRequest, v1.WatchSpeechResponse]
+	listCharacters      *connect.Client[v1.ListCharactersRequest, v1.ListCharactersResponse]
+	watchCharacters     *connect.Client[v1.WatchCharactersRequest, v1.WatchCharactersResponse]
 }
 
 // ListDefinitions calls agentfleet.v1.AgentService.ListDefinitions.
@@ -420,6 +446,16 @@ func (c *agentServiceClient) WatchSpeech(ctx context.Context, req *connect.Reque
 	return c.watchSpeech.CallServerStream(ctx, req)
 }
 
+// ListCharacters calls agentfleet.v1.AgentService.ListCharacters.
+func (c *agentServiceClient) ListCharacters(ctx context.Context, req *connect.Request[v1.ListCharactersRequest]) (*connect.Response[v1.ListCharactersResponse], error) {
+	return c.listCharacters.CallUnary(ctx, req)
+}
+
+// WatchCharacters calls agentfleet.v1.AgentService.WatchCharacters.
+func (c *agentServiceClient) WatchCharacters(ctx context.Context, req *connect.Request[v1.WatchCharactersRequest]) (*connect.ServerStreamForClient[v1.WatchCharactersResponse], error) {
+	return c.watchCharacters.CallServerStream(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the agentfleet.v1.AgentService service.
 type AgentServiceHandler interface {
 	ListDefinitions(context.Context, *connect.Request[v1.AgentServiceListDefinitionsRequest]) (*connect.Response[v1.AgentServiceListDefinitionsResponse], error)
@@ -460,6 +496,12 @@ type AgentServiceHandler interface {
 	// docs/adr/0084 §7: the lines characters speak (CoreService.Speak) to the owner's browser, live only: nothing is
 	// stored, and a line spoken while nobody watches is dropped. An admin, from the console or an admin origin.
 	WatchSpeech(context.Context, *connect.Request[v1.WatchSpeechRequest], *connect.ServerStream[v1.WatchSpeechResponse]) error
+	// docs/adr/0084 amendment A3: every character, started or not, for the game. The owner only (an admin, from the
+	// console or an admin origin).
+	ListCharacters(context.Context, *connect.Request[v1.ListCharactersRequest]) (*connect.Response[v1.ListCharactersResponse], error)
+	// Sends every character, then each character that changed (whole, never a diff). It ends after 90 s; the client
+	// reconnects and gets the baseline again.
+	WatchCharacters(context.Context, *connect.Request[v1.WatchCharactersRequest], *connect.ServerStream[v1.WatchCharactersResponse]) error
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -601,6 +643,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("WatchSpeech")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceListCharactersHandler := connect.NewUnaryHandler(
+		AgentServiceListCharactersProcedure,
+		svc.ListCharacters,
+		connect.WithSchema(agentServiceMethods.ByName("ListCharacters")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceWatchCharactersHandler := connect.NewServerStreamHandler(
+		AgentServiceWatchCharactersProcedure,
+		svc.WatchCharacters,
+		connect.WithSchema(agentServiceMethods.ByName("WatchCharacters")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceListDefinitionsProcedure:
@@ -647,6 +701,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServicePostToCharacterHandler.ServeHTTP(w, r)
 		case AgentServiceWatchSpeechProcedure:
 			agentServiceWatchSpeechHandler.ServeHTTP(w, r)
+		case AgentServiceListCharactersProcedure:
+			agentServiceListCharactersHandler.ServeHTTP(w, r)
+		case AgentServiceWatchCharactersProcedure:
+			agentServiceWatchCharactersHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -742,4 +800,12 @@ func (UnimplementedAgentServiceHandler) PostToCharacter(context.Context, *connec
 
 func (UnimplementedAgentServiceHandler) WatchSpeech(context.Context, *connect.Request[v1.WatchSpeechRequest], *connect.ServerStream[v1.WatchSpeechResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WatchSpeech is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ListCharacters(context.Context, *connect.Request[v1.ListCharactersRequest]) (*connect.Response[v1.ListCharactersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.ListCharacters is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) WatchCharacters(context.Context, *connect.Request[v1.WatchCharactersRequest], *connect.ServerStream[v1.WatchCharactersResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.AgentService.WatchCharacters is not implemented"))
 }

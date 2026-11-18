@@ -240,6 +240,751 @@ func (DecisionState) EnumDescriptor() ([]byte, []int) {
 	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{2}
 }
 
+type ListCharactersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCharactersRequest) Reset() {
+	*x = ListCharactersRequest{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCharactersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCharactersRequest) ProtoMessage() {}
+
+func (x *ListCharactersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCharactersRequest.ProtoReflect.Descriptor instead.
+func (*ListCharactersRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
+type ListCharactersResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// By name.
+	Characters    []*Character `protobuf:"bytes,1,rep,name=characters,proto3" json:"characters,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCharactersResponse) Reset() {
+	*x = ListCharactersResponse{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCharactersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCharactersResponse) ProtoMessage() {}
+
+func (x *ListCharactersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCharactersResponse.ProtoReflect.Descriptor instead.
+func (*ListCharactersResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListCharactersResponse) GetCharacters() []*Character {
+	if x != nil {
+		return x.Characters
+	}
+	return nil
+}
+
+type WatchCharactersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchCharactersRequest) Reset() {
+	*x = WatchCharactersRequest{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchCharactersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchCharactersRequest) ProtoMessage() {}
+
+func (x *WatchCharactersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchCharactersRequest.ProtoReflect.Descriptor instead.
+func (*WatchCharactersRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{2}
+}
+
+type WatchCharactersResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The first frame holds every character; a later one only those that changed since the last frame.
+	Characters []*Character `protobuf:"bytes,1,rep,name=characters,proto3" json:"characters,omitempty"`
+	// Names that left the set since the last frame (definition deleted, lifecycle changed); never in the baseline.
+	Removed       []string `protobuf:"bytes,2,rep,name=removed,proto3" json:"removed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchCharactersResponse) Reset() {
+	*x = WatchCharactersResponse{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchCharactersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchCharactersResponse) ProtoMessage() {}
+
+func (x *WatchCharactersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchCharactersResponse.ProtoReflect.Descriptor instead.
+func (*WatchCharactersResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *WatchCharactersResponse) GetCharacters() []*Character {
+	if x != nil {
+		return x.Characters
+	}
+	return nil
+}
+
+func (x *WatchCharactersResponse) GetRemoved() []string {
+	if x != nil {
+		return x.Removed
+	}
+	return nil
+}
+
+// A character as the game draws it (docs/adr/0084 amendment A3). Persona fields, thread titles and why are
+// definition- or model-authored: show them as text, never as markup.
+type Character struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The definition name, which is the character's id everywhere.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// persona.display_name, or the name when the definition has no persona.
+	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// The version the character is pinned to; a persona change moves its sha.
+	Definition *CharacterDefinition `protobuf:"bytes,3,opt,name=definition,proto3" json:"definition,omitempty"`
+	// Unset when the definition has none.
+	Persona *CharacterPersona `protobuf:"bytes,4,opt,name=persona,proto3" json:"persona,omitempty"`
+	// stopped | starting | idle | running | held | stopping.
+	State string `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
+	// A short reason when state is not plain: "budget", "token refresh", "crash back-off", "pin drain"; else empty.
+	Why string `protobuf:"bytes,6,opt,name=why,proto3" json:"why,omitempty"`
+	// Open threads, main first.
+	Threads []*CharacterThread `protobuf:"bytes,7,rep,name=threads,proto3" json:"threads,omitempty"`
+	// Unset when no turn runs.
+	RunningTurn *CharacterTurn   `protobuf:"bytes,8,opt,name=running_turn,json=runningTurn,proto3" json:"running_turn,omitempty"`
+	Budget      *CharacterBudget `protobuf:"bytes,9,opt,name=budget,proto3" json:"budget,omitempty"`
+	Spawns      *CharacterSpawns `protobuf:"bytes,10,opt,name=spawns,proto3" json:"spawns,omitempty"`
+	// Whether the definition holds the Speak grant.
+	CanSpeak bool `protobuf:"varint,11,opt,name=can_speak,json=canSpeak,proto3" json:"can_speak,omitempty"`
+	// Open cards on the character's own session and on the runs it spawned.
+	OpenCards     int32 `protobuf:"varint,12,opt,name=open_cards,json=openCards,proto3" json:"open_cards,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Character) Reset() {
+	*x = Character{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Character) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Character) ProtoMessage() {}
+
+func (x *Character) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Character.ProtoReflect.Descriptor instead.
+func (*Character) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Character) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Character) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *Character) GetDefinition() *CharacterDefinition {
+	if x != nil {
+		return x.Definition
+	}
+	return nil
+}
+
+func (x *Character) GetPersona() *CharacterPersona {
+	if x != nil {
+		return x.Persona
+	}
+	return nil
+}
+
+func (x *Character) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Character) GetWhy() string {
+	if x != nil {
+		return x.Why
+	}
+	return ""
+}
+
+func (x *Character) GetThreads() []*CharacterThread {
+	if x != nil {
+		return x.Threads
+	}
+	return nil
+}
+
+func (x *Character) GetRunningTurn() *CharacterTurn {
+	if x != nil {
+		return x.RunningTurn
+	}
+	return nil
+}
+
+func (x *Character) GetBudget() *CharacterBudget {
+	if x != nil {
+		return x.Budget
+	}
+	return nil
+}
+
+func (x *Character) GetSpawns() *CharacterSpawns {
+	if x != nil {
+		return x.Spawns
+	}
+	return nil
+}
+
+func (x *Character) GetCanSpeak() bool {
+	if x != nil {
+		return x.CanSpeak
+	}
+	return false
+}
+
+func (x *Character) GetOpenCards() int32 {
+	if x != nil {
+		return x.OpenCards
+	}
+	return 0
+}
+
+type CharacterDefinition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Sha           string                 `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterDefinition) Reset() {
+	*x = CharacterDefinition{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterDefinition) ProtoMessage() {}
+
+func (x *CharacterDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterDefinition.ProtoReflect.Descriptor instead.
+func (*CharacterDefinition) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CharacterDefinition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CharacterDefinition) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+type CharacterPersona struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	DisplayName string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Role        string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	Traits      []string               `protobuf:"bytes,3,rep,name=traits,proto3" json:"traits,omitempty"`
+	Relations   []*CharacterRelation   `protobuf:"bytes,4,rep,name=relations,proto3" json:"relations,omitempty"`
+	// An atlas or asset id, never a URL.
+	Portrait string `protobuf:"bytes,5,opt,name=portrait,proto3" json:"portrait,omitempty"`
+	// world | village:<id> | building:<atlas id>; the game resolves it.
+	Home          string `protobuf:"bytes,6,opt,name=home,proto3" json:"home,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterPersona) Reset() {
+	*x = CharacterPersona{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterPersona) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterPersona) ProtoMessage() {}
+
+func (x *CharacterPersona) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterPersona.ProtoReflect.Descriptor instead.
+func (*CharacterPersona) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CharacterPersona) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *CharacterPersona) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *CharacterPersona) GetTraits() []string {
+	if x != nil {
+		return x.Traits
+	}
+	return nil
+}
+
+func (x *CharacterPersona) GetRelations() []*CharacterRelation {
+	if x != nil {
+		return x.Relations
+	}
+	return nil
+}
+
+func (x *CharacterPersona) GetPortrait() string {
+	if x != nil {
+		return x.Portrait
+	}
+	return ""
+}
+
+func (x *CharacterPersona) GetHome() string {
+	if x != nil {
+		return x.Home
+	}
+	return ""
+}
+
+type CharacterRelation struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A definition name.
+	To string `protobuf:"bytes,1,opt,name=to,proto3" json:"to,omitempty"`
+	// friend | mentor | rival | family | colleague.
+	Kind          string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterRelation) Reset() {
+	*x = CharacterRelation{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterRelation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterRelation) ProtoMessage() {}
+
+func (x *CharacterRelation) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterRelation.ProtoReflect.Descriptor instead.
+func (*CharacterRelation) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CharacterRelation) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+func (x *CharacterRelation) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+type CharacterThread struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// The owner's first line in the thread, cut to 60 characters; empty before one.
+	Title   string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Running bool   `protobuf:"varint,3,opt,name=running,proto3" json:"running,omitempty"`
+	// RFC 3339: the thread's latest entry.
+	LastAt        string `protobuf:"bytes,4,opt,name=last_at,json=lastAt,proto3" json:"last_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterThread) Reset() {
+	*x = CharacterThread{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterThread) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterThread) ProtoMessage() {}
+
+func (x *CharacterThread) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterThread.ProtoReflect.Descriptor instead.
+func (*CharacterThread) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CharacterThread) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *CharacterThread) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *CharacterThread) GetRunning() bool {
+	if x != nil {
+		return x.Running
+	}
+	return false
+}
+
+func (x *CharacterThread) GetLastAt() string {
+	if x != nil {
+		return x.LastAt
+	}
+	return ""
+}
+
+type CharacterTurn struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Thread string                 `protobuf:"bytes,1,opt,name=thread,proto3" json:"thread,omitempty"`
+	// RFC 3339.
+	StartedAt     string `protobuf:"bytes,2,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterTurn) Reset() {
+	*x = CharacterTurn{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterTurn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterTurn) ProtoMessage() {}
+
+func (x *CharacterTurn) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterTurn.ProtoReflect.Descriptor instead.
+func (*CharacterTurn) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CharacterTurn) GetThread() string {
+	if x != nil {
+		return x.Thread
+	}
+	return ""
+}
+
+func (x *CharacterTurn) GetStartedAt() string {
+	if x != nil {
+		return x.StartedAt
+	}
+	return ""
+}
+
+type CharacterBudget struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	TurnsToday int32                  `protobuf:"varint,1,opt,name=turns_today,json=turnsToday,proto3" json:"turns_today,omitempty"`
+	Limit      int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Whether the budget holds non-owner entries at the head of each thread now.
+	Held          bool `protobuf:"varint,3,opt,name=held,proto3" json:"held,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterBudget) Reset() {
+	*x = CharacterBudget{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterBudget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterBudget) ProtoMessage() {}
+
+func (x *CharacterBudget) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterBudget.ProtoReflect.Descriptor instead.
+func (*CharacterBudget) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CharacterBudget) GetTurnsToday() int32 {
+	if x != nil {
+		return x.TurnsToday
+	}
+	return 0
+}
+
+func (x *CharacterBudget) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *CharacterBudget) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
+}
+
+type CharacterSpawns struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Runs the character has in flight.
+	Used int32 `protobuf:"varint,1,opt,name=used,proto3" json:"used,omitempty"`
+	// limits.spawns.concurrent; 0 when the character cannot spawn.
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterSpawns) Reset() {
+	*x = CharacterSpawns{}
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterSpawns) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterSpawns) ProtoMessage() {}
+
+func (x *CharacterSpawns) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterSpawns.ProtoReflect.Descriptor instead.
+func (*CharacterSpawns) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CharacterSpawns) GetUsed() int32 {
+	if x != nil {
+		return x.Used
+	}
+	return 0
+}
+
+func (x *CharacterSpawns) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
 type PostToCharacterRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The character's definition name.
@@ -253,7 +998,7 @@ type PostToCharacterRequest struct {
 
 func (x *PostToCharacterRequest) Reset() {
 	*x = PostToCharacterRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[0]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -265,7 +1010,7 @@ func (x *PostToCharacterRequest) String() string {
 func (*PostToCharacterRequest) ProtoMessage() {}
 
 func (x *PostToCharacterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[0]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -278,7 +1023,7 @@ func (x *PostToCharacterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostToCharacterRequest.ProtoReflect.Descriptor instead.
 func (*PostToCharacterRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{0}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PostToCharacterRequest) GetCharacter() string {
@@ -311,7 +1056,7 @@ type PostToCharacterResponse struct {
 
 func (x *PostToCharacterResponse) Reset() {
 	*x = PostToCharacterResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[1]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +1068,7 @@ func (x *PostToCharacterResponse) String() string {
 func (*PostToCharacterResponse) ProtoMessage() {}
 
 func (x *PostToCharacterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[1]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +1081,7 @@ func (x *PostToCharacterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostToCharacterResponse.ProtoReflect.Descriptor instead.
 func (*PostToCharacterResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{1}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PostToCharacterResponse) GetSeq() int64 {
@@ -354,7 +1099,7 @@ type WatchSpeechRequest struct {
 
 func (x *WatchSpeechRequest) Reset() {
 	*x = WatchSpeechRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[2]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -366,7 +1111,7 @@ func (x *WatchSpeechRequest) String() string {
 func (*WatchSpeechRequest) ProtoMessage() {}
 
 func (x *WatchSpeechRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[2]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,7 +1124,7 @@ func (x *WatchSpeechRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSpeechRequest.ProtoReflect.Descriptor instead.
 func (*WatchSpeechRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{2}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 type WatchSpeechResponse struct {
@@ -394,7 +1139,7 @@ type WatchSpeechResponse struct {
 
 func (x *WatchSpeechResponse) Reset() {
 	*x = WatchSpeechResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[3]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +1151,7 @@ func (x *WatchSpeechResponse) String() string {
 func (*WatchSpeechResponse) ProtoMessage() {}
 
 func (x *WatchSpeechResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[3]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +1164,7 @@ func (x *WatchSpeechResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSpeechResponse.ProtoReflect.Descriptor instead.
 func (*WatchSpeechResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{3}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WatchSpeechResponse) GetCharacter() string {
@@ -459,7 +1204,7 @@ type AgentDefinitionInfo struct {
 
 func (x *AgentDefinitionInfo) Reset() {
 	*x = AgentDefinitionInfo{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[4]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -471,7 +1216,7 @@ func (x *AgentDefinitionInfo) String() string {
 func (*AgentDefinitionInfo) ProtoMessage() {}
 
 func (x *AgentDefinitionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[4]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -484,7 +1229,7 @@ func (x *AgentDefinitionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDefinitionInfo.ProtoReflect.Descriptor instead.
 func (*AgentDefinitionInfo) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{4}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *AgentDefinitionInfo) GetName() string {
@@ -531,7 +1276,7 @@ type AgentServiceListDefinitionsRequest struct {
 
 func (x *AgentServiceListDefinitionsRequest) Reset() {
 	*x = AgentServiceListDefinitionsRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[5]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -543,7 +1288,7 @@ func (x *AgentServiceListDefinitionsRequest) String() string {
 func (*AgentServiceListDefinitionsRequest) ProtoMessage() {}
 
 func (x *AgentServiceListDefinitionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[5]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -556,7 +1301,7 @@ func (x *AgentServiceListDefinitionsRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use AgentServiceListDefinitionsRequest.ProtoReflect.Descriptor instead.
 func (*AgentServiceListDefinitionsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 type AgentServiceListDefinitionsResponse struct {
@@ -568,7 +1313,7 @@ type AgentServiceListDefinitionsResponse struct {
 
 func (x *AgentServiceListDefinitionsResponse) Reset() {
 	*x = AgentServiceListDefinitionsResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[6]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -580,7 +1325,7 @@ func (x *AgentServiceListDefinitionsResponse) String() string {
 func (*AgentServiceListDefinitionsResponse) ProtoMessage() {}
 
 func (x *AgentServiceListDefinitionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[6]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -593,7 +1338,7 @@ func (x *AgentServiceListDefinitionsResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use AgentServiceListDefinitionsResponse.ProtoReflect.Descriptor instead.
 func (*AgentServiceListDefinitionsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AgentServiceListDefinitionsResponse) GetDefinitions() []*AgentDefinitionInfo {
@@ -633,7 +1378,7 @@ type Thread struct {
 
 func (x *Thread) Reset() {
 	*x = Thread{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[7]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +1390,7 @@ func (x *Thread) String() string {
 func (*Thread) ProtoMessage() {}
 
 func (x *Thread) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[7]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +1403,7 @@ func (x *Thread) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Thread.ProtoReflect.Descriptor instead.
 func (*Thread) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Thread) GetId() string {
@@ -769,7 +1514,7 @@ type Status struct {
 
 func (x *Status) Reset() {
 	*x = Status{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[8]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -781,7 +1526,7 @@ func (x *Status) String() string {
 func (*Status) ProtoMessage() {}
 
 func (x *Status) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[8]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -794,7 +1539,7 @@ func (x *Status) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Status.ProtoReflect.Descriptor instead.
 func (*Status) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Status) GetState() string {
@@ -843,7 +1588,7 @@ type Entry struct {
 
 func (x *Entry) Reset() {
 	*x = Entry{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[9]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +1600,7 @@ func (x *Entry) String() string {
 func (*Entry) ProtoMessage() {}
 
 func (x *Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[9]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +1613,7 @@ func (x *Entry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Entry.ProtoReflect.Descriptor instead.
 func (*Entry) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Entry) GetSeq() int64 {
@@ -952,7 +1697,7 @@ type ListThreadsRequest struct {
 
 func (x *ListThreadsRequest) Reset() {
 	*x = ListThreadsRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[10]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -964,7 +1709,7 @@ func (x *ListThreadsRequest) String() string {
 func (*ListThreadsRequest) ProtoMessage() {}
 
 func (x *ListThreadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[10]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -977,7 +1722,7 @@ func (x *ListThreadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListThreadsRequest.ProtoReflect.Descriptor instead.
 func (*ListThreadsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListThreadsRequest) GetDefinition() string {
@@ -996,7 +1741,7 @@ type ListThreadsResponse struct {
 
 func (x *ListThreadsResponse) Reset() {
 	*x = ListThreadsResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1008,7 +1753,7 @@ func (x *ListThreadsResponse) String() string {
 func (*ListThreadsResponse) ProtoMessage() {}
 
 func (x *ListThreadsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1021,7 +1766,7 @@ func (x *ListThreadsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListThreadsResponse.ProtoReflect.Descriptor instead.
 func (*ListThreadsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListThreadsResponse) GetThreads() []*Thread {
@@ -1043,7 +1788,7 @@ type CreateThreadRequest struct {
 
 func (x *CreateThreadRequest) Reset() {
 	*x = CreateThreadRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1055,7 +1800,7 @@ func (x *CreateThreadRequest) String() string {
 func (*CreateThreadRequest) ProtoMessage() {}
 
 func (x *CreateThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1068,7 +1813,7 @@ func (x *CreateThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateThreadRequest.ProtoReflect.Descriptor instead.
 func (*CreateThreadRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CreateThreadRequest) GetDefinition() string {
@@ -1101,7 +1846,7 @@ type CreateThreadResponse struct {
 
 func (x *CreateThreadResponse) Reset() {
 	*x = CreateThreadResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1113,7 +1858,7 @@ func (x *CreateThreadResponse) String() string {
 func (*CreateThreadResponse) ProtoMessage() {}
 
 func (x *CreateThreadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1126,7 +1871,7 @@ func (x *CreateThreadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateThreadResponse.ProtoReflect.Descriptor instead.
 func (*CreateThreadResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CreateThreadResponse) GetThread() *Thread {
@@ -1146,7 +1891,7 @@ type AgentServicePostMessageRequest struct {
 
 func (x *AgentServicePostMessageRequest) Reset() {
 	*x = AgentServicePostMessageRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1158,7 +1903,7 @@ func (x *AgentServicePostMessageRequest) String() string {
 func (*AgentServicePostMessageRequest) ProtoMessage() {}
 
 func (x *AgentServicePostMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1171,7 +1916,7 @@ func (x *AgentServicePostMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentServicePostMessageRequest.ProtoReflect.Descriptor instead.
 func (*AgentServicePostMessageRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AgentServicePostMessageRequest) GetThreadId() string {
@@ -1197,7 +1942,7 @@ type AgentServicePostMessageResponse struct {
 
 func (x *AgentServicePostMessageResponse) Reset() {
 	*x = AgentServicePostMessageResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1209,7 +1954,7 @@ func (x *AgentServicePostMessageResponse) String() string {
 func (*AgentServicePostMessageResponse) ProtoMessage() {}
 
 func (x *AgentServicePostMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1222,7 +1967,7 @@ func (x *AgentServicePostMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentServicePostMessageResponse.ProtoReflect.Descriptor instead.
 func (*AgentServicePostMessageResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AgentServicePostMessageResponse) GetSeq() int64 {
@@ -1243,7 +1988,7 @@ type AgentServiceGetTranscriptRequest struct {
 
 func (x *AgentServiceGetTranscriptRequest) Reset() {
 	*x = AgentServiceGetTranscriptRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1255,7 +2000,7 @@ func (x *AgentServiceGetTranscriptRequest) String() string {
 func (*AgentServiceGetTranscriptRequest) ProtoMessage() {}
 
 func (x *AgentServiceGetTranscriptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1268,7 +2013,7 @@ func (x *AgentServiceGetTranscriptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentServiceGetTranscriptRequest.ProtoReflect.Descriptor instead.
 func (*AgentServiceGetTranscriptRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AgentServiceGetTranscriptRequest) GetThreadId() string {
@@ -1302,7 +2047,7 @@ type AgentServiceGetTranscriptResponse struct {
 
 func (x *AgentServiceGetTranscriptResponse) Reset() {
 	*x = AgentServiceGetTranscriptResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1314,7 +2059,7 @@ func (x *AgentServiceGetTranscriptResponse) String() string {
 func (*AgentServiceGetTranscriptResponse) ProtoMessage() {}
 
 func (x *AgentServiceGetTranscriptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1327,7 +2072,7 @@ func (x *AgentServiceGetTranscriptResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use AgentServiceGetTranscriptResponse.ProtoReflect.Descriptor instead.
 func (*AgentServiceGetTranscriptResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AgentServiceGetTranscriptResponse) GetEntries() []*Entry {
@@ -1354,7 +2099,7 @@ type AgentServiceStreamTranscriptRequest struct {
 
 func (x *AgentServiceStreamTranscriptRequest) Reset() {
 	*x = AgentServiceStreamTranscriptRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[18]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1366,7 +2111,7 @@ func (x *AgentServiceStreamTranscriptRequest) String() string {
 func (*AgentServiceStreamTranscriptRequest) ProtoMessage() {}
 
 func (x *AgentServiceStreamTranscriptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[18]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1379,7 +2124,7 @@ func (x *AgentServiceStreamTranscriptRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use AgentServiceStreamTranscriptRequest.ProtoReflect.Descriptor instead.
 func (*AgentServiceStreamTranscriptRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AgentServiceStreamTranscriptRequest) GetThreadId() string {
@@ -1405,7 +2150,7 @@ type AgentServiceStreamTranscriptResponse struct {
 
 func (x *AgentServiceStreamTranscriptResponse) Reset() {
 	*x = AgentServiceStreamTranscriptResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[19]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1417,7 +2162,7 @@ func (x *AgentServiceStreamTranscriptResponse) String() string {
 func (*AgentServiceStreamTranscriptResponse) ProtoMessage() {}
 
 func (x *AgentServiceStreamTranscriptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[19]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1430,7 +2175,7 @@ func (x *AgentServiceStreamTranscriptResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use AgentServiceStreamTranscriptResponse.ProtoReflect.Descriptor instead.
 func (*AgentServiceStreamTranscriptResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentServiceStreamTranscriptResponse) GetEntry() *Entry {
@@ -1453,7 +2198,7 @@ type AgentServiceRespondToPermissionRequest struct {
 
 func (x *AgentServiceRespondToPermissionRequest) Reset() {
 	*x = AgentServiceRespondToPermissionRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1465,7 +2210,7 @@ func (x *AgentServiceRespondToPermissionRequest) String() string {
 func (*AgentServiceRespondToPermissionRequest) ProtoMessage() {}
 
 func (x *AgentServiceRespondToPermissionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1478,7 +2223,7 @@ func (x *AgentServiceRespondToPermissionRequest) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use AgentServiceRespondToPermissionRequest.ProtoReflect.Descriptor instead.
 func (*AgentServiceRespondToPermissionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AgentServiceRespondToPermissionRequest) GetThreadId() string {
@@ -1518,7 +2263,7 @@ type AgentServiceRespondToPermissionResponse struct {
 
 func (x *AgentServiceRespondToPermissionResponse) Reset() {
 	*x = AgentServiceRespondToPermissionResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[21]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1530,7 +2275,7 @@ func (x *AgentServiceRespondToPermissionResponse) String() string {
 func (*AgentServiceRespondToPermissionResponse) ProtoMessage() {}
 
 func (x *AgentServiceRespondToPermissionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[21]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1543,7 +2288,7 @@ func (x *AgentServiceRespondToPermissionResponse) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use AgentServiceRespondToPermissionResponse.ProtoReflect.Descriptor instead.
 func (*AgentServiceRespondToPermissionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *AgentServiceRespondToPermissionResponse) GetSeq() int64 {
@@ -1564,7 +2309,7 @@ type AgentServiceAnswerQuestionRequest struct {
 
 func (x *AgentServiceAnswerQuestionRequest) Reset() {
 	*x = AgentServiceAnswerQuestionRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[22]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1576,7 +2321,7 @@ func (x *AgentServiceAnswerQuestionRequest) String() string {
 func (*AgentServiceAnswerQuestionRequest) ProtoMessage() {}
 
 func (x *AgentServiceAnswerQuestionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[22]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1589,7 +2334,7 @@ func (x *AgentServiceAnswerQuestionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use AgentServiceAnswerQuestionRequest.ProtoReflect.Descriptor instead.
 func (*AgentServiceAnswerQuestionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *AgentServiceAnswerQuestionRequest) GetThreadId() string {
@@ -1622,7 +2367,7 @@ type AgentServiceAnswerQuestionResponse struct {
 
 func (x *AgentServiceAnswerQuestionResponse) Reset() {
 	*x = AgentServiceAnswerQuestionResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[23]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1634,7 +2379,7 @@ func (x *AgentServiceAnswerQuestionResponse) String() string {
 func (*AgentServiceAnswerQuestionResponse) ProtoMessage() {}
 
 func (x *AgentServiceAnswerQuestionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[23]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1647,7 +2392,7 @@ func (x *AgentServiceAnswerQuestionResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use AgentServiceAnswerQuestionResponse.ProtoReflect.Descriptor instead.
 func (*AgentServiceAnswerQuestionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *AgentServiceAnswerQuestionResponse) GetSeq() int64 {
@@ -1669,7 +2414,7 @@ type ApprovePlanRequest struct {
 
 func (x *ApprovePlanRequest) Reset() {
 	*x = ApprovePlanRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[24]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1681,7 +2426,7 @@ func (x *ApprovePlanRequest) String() string {
 func (*ApprovePlanRequest) ProtoMessage() {}
 
 func (x *ApprovePlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[24]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1694,7 +2439,7 @@ func (x *ApprovePlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApprovePlanRequest.ProtoReflect.Descriptor instead.
 func (*ApprovePlanRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{24}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ApprovePlanRequest) GetThreadId() string {
@@ -1727,7 +2472,7 @@ type ApprovePlanResponse struct {
 
 func (x *ApprovePlanResponse) Reset() {
 	*x = ApprovePlanResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[25]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1739,7 +2484,7 @@ func (x *ApprovePlanResponse) String() string {
 func (*ApprovePlanResponse) ProtoMessage() {}
 
 func (x *ApprovePlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[25]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1752,7 +2497,7 @@ func (x *ApprovePlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApprovePlanResponse.ProtoReflect.Descriptor instead.
 func (*ApprovePlanResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{25}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ApprovePlanResponse) GetSeq() int64 {
@@ -1774,7 +2519,7 @@ type SetConfigRequest struct {
 
 func (x *SetConfigRequest) Reset() {
 	*x = SetConfigRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[26]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1786,7 +2531,7 @@ func (x *SetConfigRequest) String() string {
 func (*SetConfigRequest) ProtoMessage() {}
 
 func (x *SetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[26]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1799,7 +2544,7 @@ func (x *SetConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetConfigRequest.ProtoReflect.Descriptor instead.
 func (*SetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{26}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SetConfigRequest) GetThreadId() string {
@@ -1831,7 +2576,7 @@ type SetConfigResponse struct {
 
 func (x *SetConfigResponse) Reset() {
 	*x = SetConfigResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[27]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1843,7 +2588,7 @@ func (x *SetConfigResponse) String() string {
 func (*SetConfigResponse) ProtoMessage() {}
 
 func (x *SetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[27]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1856,7 +2601,7 @@ func (x *SetConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetConfigResponse.ProtoReflect.Descriptor instead.
 func (*SetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{27}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{39}
 }
 
 type StopRequest struct {
@@ -1868,7 +2613,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[28]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1880,7 +2625,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[28]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1893,7 +2638,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{28}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *StopRequest) GetThreadId() string {
@@ -1911,7 +2656,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[29]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1923,7 +2668,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[29]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1936,7 +2681,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{29}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{41}
 }
 
 type GetStatusRequest struct {
@@ -1948,7 +2693,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[30]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1960,7 +2705,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[30]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1973,7 +2718,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{30}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GetStatusRequest) GetThreadId() string {
@@ -1992,7 +2737,7 @@ type GetStatusResponse struct {
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[31]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2004,7 +2749,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[31]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2017,7 +2762,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{31}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetStatusResponse) GetStatus() *Status {
@@ -2052,7 +2797,7 @@ type OpenRequest struct {
 
 func (x *OpenRequest) Reset() {
 	*x = OpenRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[32]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2064,7 +2809,7 @@ func (x *OpenRequest) String() string {
 func (*OpenRequest) ProtoMessage() {}
 
 func (x *OpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[32]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2077,7 +2822,7 @@ func (x *OpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenRequest.ProtoReflect.Descriptor instead.
 func (*OpenRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{32}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *OpenRequest) GetDefinition() string {
@@ -2169,7 +2914,7 @@ type OpenResponse struct {
 
 func (x *OpenResponse) Reset() {
 	*x = OpenResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[33]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2181,7 +2926,7 @@ func (x *OpenResponse) String() string {
 func (*OpenResponse) ProtoMessage() {}
 
 func (x *OpenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[33]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2194,7 +2939,7 @@ func (x *OpenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenResponse.ProtoReflect.Descriptor instead.
 func (*OpenResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{33}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *OpenResponse) GetThreadId() string {
@@ -2221,7 +2966,7 @@ type CloseThreadRequest struct {
 
 func (x *CloseThreadRequest) Reset() {
 	*x = CloseThreadRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[34]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2233,7 +2978,7 @@ func (x *CloseThreadRequest) String() string {
 func (*CloseThreadRequest) ProtoMessage() {}
 
 func (x *CloseThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[34]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2246,7 +2991,7 @@ func (x *CloseThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseThreadRequest.ProtoReflect.Descriptor instead.
 func (*CloseThreadRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{34}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *CloseThreadRequest) GetDefinition() string {
@@ -2271,7 +3016,7 @@ type CloseThreadResponse struct {
 
 func (x *CloseThreadResponse) Reset() {
 	*x = CloseThreadResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[35]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2283,7 +3028,7 @@ func (x *CloseThreadResponse) String() string {
 func (*CloseThreadResponse) ProtoMessage() {}
 
 func (x *CloseThreadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[35]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2296,7 +3041,7 @@ func (x *CloseThreadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseThreadResponse.ProtoReflect.Descriptor instead.
 func (*CloseThreadResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{35}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{47}
 }
 
 // Invoke runs definition once on input, in a private single-shot thread the client owns (docs/adr/0070 §1).
@@ -2315,7 +3060,7 @@ type InvokeRequest struct {
 
 func (x *InvokeRequest) Reset() {
 	*x = InvokeRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[36]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2327,7 +3072,7 @@ func (x *InvokeRequest) String() string {
 func (*InvokeRequest) ProtoMessage() {}
 
 func (x *InvokeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[36]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2340,7 +3085,7 @@ func (x *InvokeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeRequest.ProtoReflect.Descriptor instead.
 func (*InvokeRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{36}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *InvokeRequest) GetDefinition() string {
@@ -2373,7 +3118,7 @@ type InvokeResponse struct {
 
 func (x *InvokeResponse) Reset() {
 	*x = InvokeResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[37]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2385,7 +3130,7 @@ func (x *InvokeResponse) String() string {
 func (*InvokeResponse) ProtoMessage() {}
 
 func (x *InvokeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[37]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2398,7 +3143,7 @@ func (x *InvokeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeResponse.ProtoReflect.Descriptor instead.
 func (*InvokeResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{37}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *InvokeResponse) GetThreadId() string {
@@ -2418,7 +3163,7 @@ type InvokeCapacity struct {
 
 func (x *InvokeCapacity) Reset() {
 	*x = InvokeCapacity{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[38]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2430,7 +3175,7 @@ func (x *InvokeCapacity) String() string {
 func (*InvokeCapacity) ProtoMessage() {}
 
 func (x *InvokeCapacity) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[38]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2443,7 +3188,7 @@ func (x *InvokeCapacity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeCapacity.ProtoReflect.Descriptor instead.
 func (*InvokeCapacity) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{38}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *InvokeCapacity) GetThreadId() string {
@@ -2464,7 +3209,7 @@ type WaitForResultRequest struct {
 
 func (x *WaitForResultRequest) Reset() {
 	*x = WaitForResultRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[39]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2476,7 +3221,7 @@ func (x *WaitForResultRequest) String() string {
 func (*WaitForResultRequest) ProtoMessage() {}
 
 func (x *WaitForResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[39]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2489,7 +3234,7 @@ func (x *WaitForResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForResultRequest.ProtoReflect.Descriptor instead.
 func (*WaitForResultRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{39}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *WaitForResultRequest) GetThreadId() string {
@@ -2526,7 +3271,7 @@ type WaitForResultResponse struct {
 
 func (x *WaitForResultResponse) Reset() {
 	*x = WaitForResultResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[40]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2538,7 +3283,7 @@ func (x *WaitForResultResponse) String() string {
 func (*WaitForResultResponse) ProtoMessage() {}
 
 func (x *WaitForResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[40]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2551,7 +3296,7 @@ func (x *WaitForResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForResultResponse.ProtoReflect.Descriptor instead.
 func (*WaitForResultResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{40}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *WaitForResultResponse) GetState() string {
@@ -2632,7 +3377,7 @@ type Decision struct {
 
 func (x *Decision) Reset() {
 	*x = Decision{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2644,7 +3389,7 @@ func (x *Decision) String() string {
 func (*Decision) ProtoMessage() {}
 
 func (x *Decision) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[41]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2657,7 +3402,7 @@ func (x *Decision) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Decision.ProtoReflect.Descriptor instead.
 func (*Decision) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{41}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *Decision) GetId() string {
@@ -2788,7 +3533,7 @@ type ListDecisionsRequest struct {
 
 func (x *ListDecisionsRequest) Reset() {
 	*x = ListDecisionsRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2800,7 +3545,7 @@ func (x *ListDecisionsRequest) String() string {
 func (*ListDecisionsRequest) ProtoMessage() {}
 
 func (x *ListDecisionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[42]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2813,7 +3558,7 @@ func (x *ListDecisionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDecisionsRequest.ProtoReflect.Descriptor instead.
 func (*ListDecisionsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{42}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListDecisionsRequest) GetStates() []DecisionState {
@@ -2870,7 +3615,7 @@ type ListDecisionsResponse struct {
 
 func (x *ListDecisionsResponse) Reset() {
 	*x = ListDecisionsResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[43]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2882,7 +3627,7 @@ func (x *ListDecisionsResponse) String() string {
 func (*ListDecisionsResponse) ProtoMessage() {}
 
 func (x *ListDecisionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[43]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2895,7 +3640,7 @@ func (x *ListDecisionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDecisionsResponse.ProtoReflect.Descriptor instead.
 func (*ListDecisionsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{43}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ListDecisionsResponse) GetDecisions() []*Decision {
@@ -2921,7 +3666,7 @@ type GetDecisionRequest struct {
 
 func (x *GetDecisionRequest) Reset() {
 	*x = GetDecisionRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[44]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2933,7 +3678,7 @@ func (x *GetDecisionRequest) String() string {
 func (*GetDecisionRequest) ProtoMessage() {}
 
 func (x *GetDecisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[44]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2946,7 +3691,7 @@ func (x *GetDecisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDecisionRequest.ProtoReflect.Descriptor instead.
 func (*GetDecisionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{44}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GetDecisionRequest) GetId() string {
@@ -2965,7 +3710,7 @@ type GetDecisionResponse struct {
 
 func (x *GetDecisionResponse) Reset() {
 	*x = GetDecisionResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[45]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2977,7 +3722,7 @@ func (x *GetDecisionResponse) String() string {
 func (*GetDecisionResponse) ProtoMessage() {}
 
 func (x *GetDecisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[45]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2990,7 +3735,7 @@ func (x *GetDecisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDecisionResponse.ProtoReflect.Descriptor instead.
 func (*GetDecisionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{45}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *GetDecisionResponse) GetDecision() *Decision {
@@ -3026,7 +3771,7 @@ type AnswerDecisionRequest struct {
 
 func (x *AnswerDecisionRequest) Reset() {
 	*x = AnswerDecisionRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[46]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3038,7 +3783,7 @@ func (x *AnswerDecisionRequest) String() string {
 func (*AnswerDecisionRequest) ProtoMessage() {}
 
 func (x *AnswerDecisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[46]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3051,7 +3796,7 @@ func (x *AnswerDecisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerDecisionRequest.ProtoReflect.Descriptor instead.
 func (*AnswerDecisionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{46}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *AnswerDecisionRequest) GetDecisionId() string {
@@ -3131,7 +3876,7 @@ type AnswerDecisionResponse struct {
 
 func (x *AnswerDecisionResponse) Reset() {
 	*x = AnswerDecisionResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[47]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3143,7 +3888,7 @@ func (x *AnswerDecisionResponse) String() string {
 func (*AnswerDecisionResponse) ProtoMessage() {}
 
 func (x *AnswerDecisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[47]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3156,7 +3901,7 @@ func (x *AnswerDecisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerDecisionResponse.ProtoReflect.Descriptor instead.
 func (*AnswerDecisionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{47}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *AnswerDecisionResponse) GetSeq() int64 {
@@ -3190,7 +3935,7 @@ type WatchDecisionsRequest struct {
 
 func (x *WatchDecisionsRequest) Reset() {
 	*x = WatchDecisionsRequest{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[48]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3202,7 +3947,7 @@ func (x *WatchDecisionsRequest) String() string {
 func (*WatchDecisionsRequest) ProtoMessage() {}
 
 func (x *WatchDecisionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[48]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3215,7 +3960,7 @@ func (x *WatchDecisionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDecisionsRequest.ProtoReflect.Descriptor instead.
 func (*WatchDecisionsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{48}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *WatchDecisionsRequest) GetSinceVersion() int64 {
@@ -3235,7 +3980,7 @@ type WatchDecisionsResponse struct {
 
 func (x *WatchDecisionsResponse) Reset() {
 	*x = WatchDecisionsResponse{}
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[49]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3247,7 +3992,7 @@ func (x *WatchDecisionsResponse) String() string {
 func (*WatchDecisionsResponse) ProtoMessage() {}
 
 func (x *WatchDecisionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_agent_proto_msgTypes[49]
+	mi := &file_agentfleet_v1_agent_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3260,7 +4005,7 @@ func (x *WatchDecisionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDecisionsResponse.ProtoReflect.Descriptor instead.
 func (*WatchDecisionsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{49}
+	return file_agentfleet_v1_agent_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *WatchDecisionsResponse) GetVersion() int64 {
@@ -3281,7 +4026,65 @@ var File_agentfleet_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x19agentfleet/v1/agent.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1dukubi/errors/v1/options.proto\"i\n" +
+	"\x19agentfleet/v1/agent.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1dukubi/errors/v1/options.proto\"\x17\n" +
+	"\x15ListCharactersRequest\"R\n" +
+	"\x16ListCharactersResponse\x128\n" +
+	"\n" +
+	"characters\x18\x01 \x03(\v2\x18.agentfleet.v1.CharacterR\n" +
+	"characters\"\x18\n" +
+	"\x16WatchCharactersRequest\"m\n" +
+	"\x17WatchCharactersResponse\x128\n" +
+	"\n" +
+	"characters\x18\x01 \x03(\v2\x18.agentfleet.v1.CharacterR\n" +
+	"characters\x12\x18\n" +
+	"\aremoved\x18\x02 \x03(\tR\aremoved\"\x90\x04\n" +
+	"\tCharacter\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12B\n" +
+	"\n" +
+	"definition\x18\x03 \x01(\v2\".agentfleet.v1.CharacterDefinitionR\n" +
+	"definition\x129\n" +
+	"\apersona\x18\x04 \x01(\v2\x1f.agentfleet.v1.CharacterPersonaR\apersona\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12\x10\n" +
+	"\x03why\x18\x06 \x01(\tR\x03why\x128\n" +
+	"\athreads\x18\a \x03(\v2\x1e.agentfleet.v1.CharacterThreadR\athreads\x12?\n" +
+	"\frunning_turn\x18\b \x01(\v2\x1c.agentfleet.v1.CharacterTurnR\vrunningTurn\x126\n" +
+	"\x06budget\x18\t \x01(\v2\x1e.agentfleet.v1.CharacterBudgetR\x06budget\x126\n" +
+	"\x06spawns\x18\n" +
+	" \x01(\v2\x1e.agentfleet.v1.CharacterSpawnsR\x06spawns\x12\x1b\n" +
+	"\tcan_speak\x18\v \x01(\bR\bcanSpeak\x12\x1d\n" +
+	"\n" +
+	"open_cards\x18\f \x01(\x05R\topenCards\";\n" +
+	"\x13CharacterDefinition\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03sha\x18\x02 \x01(\tR\x03sha\"\xd1\x01\n" +
+	"\x10CharacterPersona\x12!\n" +
+	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x12\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\x12\x16\n" +
+	"\x06traits\x18\x03 \x03(\tR\x06traits\x12>\n" +
+	"\trelations\x18\x04 \x03(\v2 .agentfleet.v1.CharacterRelationR\trelations\x12\x1a\n" +
+	"\bportrait\x18\x05 \x01(\tR\bportrait\x12\x12\n" +
+	"\x04home\x18\x06 \x01(\tR\x04home\"7\n" +
+	"\x11CharacterRelation\x12\x0e\n" +
+	"\x02to\x18\x01 \x01(\tR\x02to\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"l\n" +
+	"\x0fCharacterThread\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
+	"\arunning\x18\x03 \x01(\bR\arunning\x12\x17\n" +
+	"\alast_at\x18\x04 \x01(\tR\x06lastAt\"F\n" +
+	"\rCharacterTurn\x12\x16\n" +
+	"\x06thread\x18\x01 \x01(\tR\x06thread\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\x02 \x01(\tR\tstartedAt\"\\\n" +
+	"\x0fCharacterBudget\x12\x1f\n" +
+	"\vturns_today\x18\x01 \x01(\x05R\n" +
+	"turnsToday\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x12\n" +
+	"\x04held\x18\x03 \x01(\bR\x04held\";\n" +
+	"\x0fCharacterSpawns\x12\x12\n" +
+	"\x04used\x18\x01 \x01(\x05R\x04used\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"i\n" +
 	"\x16PostToCharacterRequest\x12\x1c\n" +
 	"\tcharacter\x18\x01 \x01(\tR\tcharacter\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x1d\n" +
@@ -3541,7 +4344,7 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x17DECISION_STATE_ANSWERED\x10\x02\x12\x1c\n" +
 	"\x18DECISION_STATE_WITHDRAWN\x10\x03\x12\x1a\n" +
 	"\x16DECISION_STATE_EXPIRED\x10\x04\x12\x18\n" +
-	"\x14DECISION_STATE_STALE\x10\x052\xba\x13\n" +
+	"\x14DECISION_STATE_STALE\x10\x052\xfd\x14\n" +
 	"\fAgentService\x12x\n" +
 	"\x0fListDefinitions\x121.agentfleet.v1.AgentServiceListDefinitionsRequest\x1a2.agentfleet.v1.AgentServiceListDefinitionsResponse\x12T\n" +
 	"\vListThreads\x12!.agentfleet.v1.ListThreadsRequest\x1a\".agentfleet.v1.ListThreadsResponse\x12\xa4\x01\n" +
@@ -3564,7 +4367,9 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"\x06Invoke\x12\x1c.agentfleet.v1.InvokeRequest\x1a\x1d.agentfleet.v1.InvokeResponse\"a\xca\xf3\x18\x10agent.thread_cap\xca\xf3\x18\x1cagent.definition_unavailable\xca\xf3\x18\x12agent.parked_limit\xca\xf3\x18\x13agent.standing_only\x12Z\n" +
 	"\rWaitForResult\x12#.agentfleet.v1.WaitForResultRequest\x1a$.agentfleet.v1.WaitForResultResponse\x12`\n" +
 	"\x0fPostToCharacter\x12%.agentfleet.v1.PostToCharacterRequest\x1a&.agentfleet.v1.PostToCharacterResponse\x12V\n" +
-	"\vWatchSpeech\x12!.agentfleet.v1.WatchSpeechRequest\x1a\".agentfleet.v1.WatchSpeechResponse0\x01BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\vWatchSpeech\x12!.agentfleet.v1.WatchSpeechRequest\x1a\".agentfleet.v1.WatchSpeechResponse0\x01\x12]\n" +
+	"\x0eListCharacters\x12$.agentfleet.v1.ListCharactersRequest\x1a%.agentfleet.v1.ListCharactersResponse\x12b\n" +
+	"\x0fWatchCharacters\x12%.agentfleet.v1.WatchCharactersRequest\x1a&.agentfleet.v1.WatchCharactersResponse0\x01BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_agent_proto_rawDescOnce sync.Once
@@ -3579,131 +4384,156 @@ func file_agentfleet_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_agentfleet_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_agentfleet_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_agentfleet_v1_agent_proto_goTypes = []any{
 	(AgentErrorKey)(0),                              // 0: agentfleet.v1.AgentErrorKey
 	(DecisionKind)(0),                               // 1: agentfleet.v1.DecisionKind
 	(DecisionState)(0),                              // 2: agentfleet.v1.DecisionState
-	(*PostToCharacterRequest)(nil),                  // 3: agentfleet.v1.PostToCharacterRequest
-	(*PostToCharacterResponse)(nil),                 // 4: agentfleet.v1.PostToCharacterResponse
-	(*WatchSpeechRequest)(nil),                      // 5: agentfleet.v1.WatchSpeechRequest
-	(*WatchSpeechResponse)(nil),                     // 6: agentfleet.v1.WatchSpeechResponse
-	(*AgentDefinitionInfo)(nil),                     // 7: agentfleet.v1.AgentDefinitionInfo
-	(*AgentServiceListDefinitionsRequest)(nil),      // 8: agentfleet.v1.AgentServiceListDefinitionsRequest
-	(*AgentServiceListDefinitionsResponse)(nil),     // 9: agentfleet.v1.AgentServiceListDefinitionsResponse
-	(*Thread)(nil),                                  // 10: agentfleet.v1.Thread
-	(*Status)(nil),                                  // 11: agentfleet.v1.Status
-	(*Entry)(nil),                                   // 12: agentfleet.v1.Entry
-	(*ListThreadsRequest)(nil),                      // 13: agentfleet.v1.ListThreadsRequest
-	(*ListThreadsResponse)(nil),                     // 14: agentfleet.v1.ListThreadsResponse
-	(*CreateThreadRequest)(nil),                     // 15: agentfleet.v1.CreateThreadRequest
-	(*CreateThreadResponse)(nil),                    // 16: agentfleet.v1.CreateThreadResponse
-	(*AgentServicePostMessageRequest)(nil),          // 17: agentfleet.v1.AgentServicePostMessageRequest
-	(*AgentServicePostMessageResponse)(nil),         // 18: agentfleet.v1.AgentServicePostMessageResponse
-	(*AgentServiceGetTranscriptRequest)(nil),        // 19: agentfleet.v1.AgentServiceGetTranscriptRequest
-	(*AgentServiceGetTranscriptResponse)(nil),       // 20: agentfleet.v1.AgentServiceGetTranscriptResponse
-	(*AgentServiceStreamTranscriptRequest)(nil),     // 21: agentfleet.v1.AgentServiceStreamTranscriptRequest
-	(*AgentServiceStreamTranscriptResponse)(nil),    // 22: agentfleet.v1.AgentServiceStreamTranscriptResponse
-	(*AgentServiceRespondToPermissionRequest)(nil),  // 23: agentfleet.v1.AgentServiceRespondToPermissionRequest
-	(*AgentServiceRespondToPermissionResponse)(nil), // 24: agentfleet.v1.AgentServiceRespondToPermissionResponse
-	(*AgentServiceAnswerQuestionRequest)(nil),       // 25: agentfleet.v1.AgentServiceAnswerQuestionRequest
-	(*AgentServiceAnswerQuestionResponse)(nil),      // 26: agentfleet.v1.AgentServiceAnswerQuestionResponse
-	(*ApprovePlanRequest)(nil),                      // 27: agentfleet.v1.ApprovePlanRequest
-	(*ApprovePlanResponse)(nil),                     // 28: agentfleet.v1.ApprovePlanResponse
-	(*SetConfigRequest)(nil),                        // 29: agentfleet.v1.SetConfigRequest
-	(*SetConfigResponse)(nil),                       // 30: agentfleet.v1.SetConfigResponse
-	(*StopRequest)(nil),                             // 31: agentfleet.v1.StopRequest
-	(*StopResponse)(nil),                            // 32: agentfleet.v1.StopResponse
-	(*GetStatusRequest)(nil),                        // 33: agentfleet.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),                       // 34: agentfleet.v1.GetStatusResponse
-	(*OpenRequest)(nil),                             // 35: agentfleet.v1.OpenRequest
-	(*OpenResponse)(nil),                            // 36: agentfleet.v1.OpenResponse
-	(*CloseThreadRequest)(nil),                      // 37: agentfleet.v1.CloseThreadRequest
-	(*CloseThreadResponse)(nil),                     // 38: agentfleet.v1.CloseThreadResponse
-	(*InvokeRequest)(nil),                           // 39: agentfleet.v1.InvokeRequest
-	(*InvokeResponse)(nil),                          // 40: agentfleet.v1.InvokeResponse
-	(*InvokeCapacity)(nil),                          // 41: agentfleet.v1.InvokeCapacity
-	(*WaitForResultRequest)(nil),                    // 42: agentfleet.v1.WaitForResultRequest
-	(*WaitForResultResponse)(nil),                   // 43: agentfleet.v1.WaitForResultResponse
-	(*Decision)(nil),                                // 44: agentfleet.v1.Decision
-	(*ListDecisionsRequest)(nil),                    // 45: agentfleet.v1.ListDecisionsRequest
-	(*ListDecisionsResponse)(nil),                   // 46: agentfleet.v1.ListDecisionsResponse
-	(*GetDecisionRequest)(nil),                      // 47: agentfleet.v1.GetDecisionRequest
-	(*GetDecisionResponse)(nil),                     // 48: agentfleet.v1.GetDecisionResponse
-	(*AnswerDecisionRequest)(nil),                   // 49: agentfleet.v1.AnswerDecisionRequest
-	(*AnswerDecisionResponse)(nil),                  // 50: agentfleet.v1.AnswerDecisionResponse
-	(*WatchDecisionsRequest)(nil),                   // 51: agentfleet.v1.WatchDecisionsRequest
-	(*WatchDecisionsResponse)(nil),                  // 52: agentfleet.v1.WatchDecisionsResponse
-	(TranscriptEntryType)(0),                        // 53: agentfleet.v1.TranscriptEntryType
-	(*Card)(nil),                                    // 54: agentfleet.v1.Card
+	(*ListCharactersRequest)(nil),                   // 3: agentfleet.v1.ListCharactersRequest
+	(*ListCharactersResponse)(nil),                  // 4: agentfleet.v1.ListCharactersResponse
+	(*WatchCharactersRequest)(nil),                  // 5: agentfleet.v1.WatchCharactersRequest
+	(*WatchCharactersResponse)(nil),                 // 6: agentfleet.v1.WatchCharactersResponse
+	(*Character)(nil),                               // 7: agentfleet.v1.Character
+	(*CharacterDefinition)(nil),                     // 8: agentfleet.v1.CharacterDefinition
+	(*CharacterPersona)(nil),                        // 9: agentfleet.v1.CharacterPersona
+	(*CharacterRelation)(nil),                       // 10: agentfleet.v1.CharacterRelation
+	(*CharacterThread)(nil),                         // 11: agentfleet.v1.CharacterThread
+	(*CharacterTurn)(nil),                           // 12: agentfleet.v1.CharacterTurn
+	(*CharacterBudget)(nil),                         // 13: agentfleet.v1.CharacterBudget
+	(*CharacterSpawns)(nil),                         // 14: agentfleet.v1.CharacterSpawns
+	(*PostToCharacterRequest)(nil),                  // 15: agentfleet.v1.PostToCharacterRequest
+	(*PostToCharacterResponse)(nil),                 // 16: agentfleet.v1.PostToCharacterResponse
+	(*WatchSpeechRequest)(nil),                      // 17: agentfleet.v1.WatchSpeechRequest
+	(*WatchSpeechResponse)(nil),                     // 18: agentfleet.v1.WatchSpeechResponse
+	(*AgentDefinitionInfo)(nil),                     // 19: agentfleet.v1.AgentDefinitionInfo
+	(*AgentServiceListDefinitionsRequest)(nil),      // 20: agentfleet.v1.AgentServiceListDefinitionsRequest
+	(*AgentServiceListDefinitionsResponse)(nil),     // 21: agentfleet.v1.AgentServiceListDefinitionsResponse
+	(*Thread)(nil),                                  // 22: agentfleet.v1.Thread
+	(*Status)(nil),                                  // 23: agentfleet.v1.Status
+	(*Entry)(nil),                                   // 24: agentfleet.v1.Entry
+	(*ListThreadsRequest)(nil),                      // 25: agentfleet.v1.ListThreadsRequest
+	(*ListThreadsResponse)(nil),                     // 26: agentfleet.v1.ListThreadsResponse
+	(*CreateThreadRequest)(nil),                     // 27: agentfleet.v1.CreateThreadRequest
+	(*CreateThreadResponse)(nil),                    // 28: agentfleet.v1.CreateThreadResponse
+	(*AgentServicePostMessageRequest)(nil),          // 29: agentfleet.v1.AgentServicePostMessageRequest
+	(*AgentServicePostMessageResponse)(nil),         // 30: agentfleet.v1.AgentServicePostMessageResponse
+	(*AgentServiceGetTranscriptRequest)(nil),        // 31: agentfleet.v1.AgentServiceGetTranscriptRequest
+	(*AgentServiceGetTranscriptResponse)(nil),       // 32: agentfleet.v1.AgentServiceGetTranscriptResponse
+	(*AgentServiceStreamTranscriptRequest)(nil),     // 33: agentfleet.v1.AgentServiceStreamTranscriptRequest
+	(*AgentServiceStreamTranscriptResponse)(nil),    // 34: agentfleet.v1.AgentServiceStreamTranscriptResponse
+	(*AgentServiceRespondToPermissionRequest)(nil),  // 35: agentfleet.v1.AgentServiceRespondToPermissionRequest
+	(*AgentServiceRespondToPermissionResponse)(nil), // 36: agentfleet.v1.AgentServiceRespondToPermissionResponse
+	(*AgentServiceAnswerQuestionRequest)(nil),       // 37: agentfleet.v1.AgentServiceAnswerQuestionRequest
+	(*AgentServiceAnswerQuestionResponse)(nil),      // 38: agentfleet.v1.AgentServiceAnswerQuestionResponse
+	(*ApprovePlanRequest)(nil),                      // 39: agentfleet.v1.ApprovePlanRequest
+	(*ApprovePlanResponse)(nil),                     // 40: agentfleet.v1.ApprovePlanResponse
+	(*SetConfigRequest)(nil),                        // 41: agentfleet.v1.SetConfigRequest
+	(*SetConfigResponse)(nil),                       // 42: agentfleet.v1.SetConfigResponse
+	(*StopRequest)(nil),                             // 43: agentfleet.v1.StopRequest
+	(*StopResponse)(nil),                            // 44: agentfleet.v1.StopResponse
+	(*GetStatusRequest)(nil),                        // 45: agentfleet.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),                       // 46: agentfleet.v1.GetStatusResponse
+	(*OpenRequest)(nil),                             // 47: agentfleet.v1.OpenRequest
+	(*OpenResponse)(nil),                            // 48: agentfleet.v1.OpenResponse
+	(*CloseThreadRequest)(nil),                      // 49: agentfleet.v1.CloseThreadRequest
+	(*CloseThreadResponse)(nil),                     // 50: agentfleet.v1.CloseThreadResponse
+	(*InvokeRequest)(nil),                           // 51: agentfleet.v1.InvokeRequest
+	(*InvokeResponse)(nil),                          // 52: agentfleet.v1.InvokeResponse
+	(*InvokeCapacity)(nil),                          // 53: agentfleet.v1.InvokeCapacity
+	(*WaitForResultRequest)(nil),                    // 54: agentfleet.v1.WaitForResultRequest
+	(*WaitForResultResponse)(nil),                   // 55: agentfleet.v1.WaitForResultResponse
+	(*Decision)(nil),                                // 56: agentfleet.v1.Decision
+	(*ListDecisionsRequest)(nil),                    // 57: agentfleet.v1.ListDecisionsRequest
+	(*ListDecisionsResponse)(nil),                   // 58: agentfleet.v1.ListDecisionsResponse
+	(*GetDecisionRequest)(nil),                      // 59: agentfleet.v1.GetDecisionRequest
+	(*GetDecisionResponse)(nil),                     // 60: agentfleet.v1.GetDecisionResponse
+	(*AnswerDecisionRequest)(nil),                   // 61: agentfleet.v1.AnswerDecisionRequest
+	(*AnswerDecisionResponse)(nil),                  // 62: agentfleet.v1.AnswerDecisionResponse
+	(*WatchDecisionsRequest)(nil),                   // 63: agentfleet.v1.WatchDecisionsRequest
+	(*WatchDecisionsResponse)(nil),                  // 64: agentfleet.v1.WatchDecisionsResponse
+	(TranscriptEntryType)(0),                        // 65: agentfleet.v1.TranscriptEntryType
+	(*Card)(nil),                                    // 66: agentfleet.v1.Card
 }
 var file_agentfleet_v1_agent_proto_depIdxs = []int32{
-	7,  // 0: agentfleet.v1.AgentServiceListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinitionInfo
-	11, // 1: agentfleet.v1.Thread.status:type_name -> agentfleet.v1.Status
-	53, // 2: agentfleet.v1.Entry.type:type_name -> agentfleet.v1.TranscriptEntryType
-	10, // 3: agentfleet.v1.ListThreadsResponse.threads:type_name -> agentfleet.v1.Thread
-	10, // 4: agentfleet.v1.CreateThreadResponse.thread:type_name -> agentfleet.v1.Thread
-	12, // 5: agentfleet.v1.AgentServiceGetTranscriptResponse.entries:type_name -> agentfleet.v1.Entry
-	12, // 6: agentfleet.v1.AgentServiceStreamTranscriptResponse.entry:type_name -> agentfleet.v1.Entry
-	11, // 7: agentfleet.v1.GetStatusResponse.status:type_name -> agentfleet.v1.Status
-	11, // 8: agentfleet.v1.WaitForResultResponse.error:type_name -> agentfleet.v1.Status
-	44, // 9: agentfleet.v1.WaitForResultResponse.pending:type_name -> agentfleet.v1.Decision
-	1,  // 10: agentfleet.v1.Decision.kind:type_name -> agentfleet.v1.DecisionKind
-	2,  // 11: agentfleet.v1.Decision.state:type_name -> agentfleet.v1.DecisionState
-	54, // 12: agentfleet.v1.Decision.card:type_name -> agentfleet.v1.Card
-	2,  // 13: agentfleet.v1.ListDecisionsRequest.states:type_name -> agentfleet.v1.DecisionState
-	1,  // 14: agentfleet.v1.ListDecisionsRequest.kinds:type_name -> agentfleet.v1.DecisionKind
-	44, // 15: agentfleet.v1.ListDecisionsResponse.decisions:type_name -> agentfleet.v1.Decision
-	44, // 16: agentfleet.v1.GetDecisionResponse.decision:type_name -> agentfleet.v1.Decision
-	8,  // 17: agentfleet.v1.AgentService.ListDefinitions:input_type -> agentfleet.v1.AgentServiceListDefinitionsRequest
-	13, // 18: agentfleet.v1.AgentService.ListThreads:input_type -> agentfleet.v1.ListThreadsRequest
-	15, // 19: agentfleet.v1.AgentService.CreateThread:input_type -> agentfleet.v1.CreateThreadRequest
-	17, // 20: agentfleet.v1.AgentService.PostMessage:input_type -> agentfleet.v1.AgentServicePostMessageRequest
-	19, // 21: agentfleet.v1.AgentService.GetTranscript:input_type -> agentfleet.v1.AgentServiceGetTranscriptRequest
-	21, // 22: agentfleet.v1.AgentService.StreamTranscript:input_type -> agentfleet.v1.AgentServiceStreamTranscriptRequest
-	23, // 23: agentfleet.v1.AgentService.RespondToPermission:input_type -> agentfleet.v1.AgentServiceRespondToPermissionRequest
-	25, // 24: agentfleet.v1.AgentService.AnswerQuestion:input_type -> agentfleet.v1.AgentServiceAnswerQuestionRequest
-	27, // 25: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
-	45, // 26: agentfleet.v1.AgentService.ListDecisions:input_type -> agentfleet.v1.ListDecisionsRequest
-	47, // 27: agentfleet.v1.AgentService.GetDecision:input_type -> agentfleet.v1.GetDecisionRequest
-	49, // 28: agentfleet.v1.AgentService.AnswerDecision:input_type -> agentfleet.v1.AnswerDecisionRequest
-	51, // 29: agentfleet.v1.AgentService.WatchDecisions:input_type -> agentfleet.v1.WatchDecisionsRequest
-	29, // 30: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
-	31, // 31: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
-	33, // 32: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
-	35, // 33: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
-	37, // 34: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
-	39, // 35: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
-	42, // 36: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
-	3,  // 37: agentfleet.v1.AgentService.PostToCharacter:input_type -> agentfleet.v1.PostToCharacterRequest
-	5,  // 38: agentfleet.v1.AgentService.WatchSpeech:input_type -> agentfleet.v1.WatchSpeechRequest
-	9,  // 39: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
-	14, // 40: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
-	16, // 41: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
-	18, // 42: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
-	20, // 43: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
-	22, // 44: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
-	24, // 45: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
-	26, // 46: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
-	28, // 47: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
-	46, // 48: agentfleet.v1.AgentService.ListDecisions:output_type -> agentfleet.v1.ListDecisionsResponse
-	48, // 49: agentfleet.v1.AgentService.GetDecision:output_type -> agentfleet.v1.GetDecisionResponse
-	50, // 50: agentfleet.v1.AgentService.AnswerDecision:output_type -> agentfleet.v1.AnswerDecisionResponse
-	52, // 51: agentfleet.v1.AgentService.WatchDecisions:output_type -> agentfleet.v1.WatchDecisionsResponse
-	30, // 52: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
-	32, // 53: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
-	34, // 54: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
-	36, // 55: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
-	38, // 56: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
-	40, // 57: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
-	43, // 58: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
-	4,  // 59: agentfleet.v1.AgentService.PostToCharacter:output_type -> agentfleet.v1.PostToCharacterResponse
-	6,  // 60: agentfleet.v1.AgentService.WatchSpeech:output_type -> agentfleet.v1.WatchSpeechResponse
-	39, // [39:61] is the sub-list for method output_type
-	17, // [17:39] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	7,  // 0: agentfleet.v1.ListCharactersResponse.characters:type_name -> agentfleet.v1.Character
+	7,  // 1: agentfleet.v1.WatchCharactersResponse.characters:type_name -> agentfleet.v1.Character
+	8,  // 2: agentfleet.v1.Character.definition:type_name -> agentfleet.v1.CharacterDefinition
+	9,  // 3: agentfleet.v1.Character.persona:type_name -> agentfleet.v1.CharacterPersona
+	11, // 4: agentfleet.v1.Character.threads:type_name -> agentfleet.v1.CharacterThread
+	12, // 5: agentfleet.v1.Character.running_turn:type_name -> agentfleet.v1.CharacterTurn
+	13, // 6: agentfleet.v1.Character.budget:type_name -> agentfleet.v1.CharacterBudget
+	14, // 7: agentfleet.v1.Character.spawns:type_name -> agentfleet.v1.CharacterSpawns
+	10, // 8: agentfleet.v1.CharacterPersona.relations:type_name -> agentfleet.v1.CharacterRelation
+	19, // 9: agentfleet.v1.AgentServiceListDefinitionsResponse.definitions:type_name -> agentfleet.v1.AgentDefinitionInfo
+	23, // 10: agentfleet.v1.Thread.status:type_name -> agentfleet.v1.Status
+	65, // 11: agentfleet.v1.Entry.type:type_name -> agentfleet.v1.TranscriptEntryType
+	22, // 12: agentfleet.v1.ListThreadsResponse.threads:type_name -> agentfleet.v1.Thread
+	22, // 13: agentfleet.v1.CreateThreadResponse.thread:type_name -> agentfleet.v1.Thread
+	24, // 14: agentfleet.v1.AgentServiceGetTranscriptResponse.entries:type_name -> agentfleet.v1.Entry
+	24, // 15: agentfleet.v1.AgentServiceStreamTranscriptResponse.entry:type_name -> agentfleet.v1.Entry
+	23, // 16: agentfleet.v1.GetStatusResponse.status:type_name -> agentfleet.v1.Status
+	23, // 17: agentfleet.v1.WaitForResultResponse.error:type_name -> agentfleet.v1.Status
+	56, // 18: agentfleet.v1.WaitForResultResponse.pending:type_name -> agentfleet.v1.Decision
+	1,  // 19: agentfleet.v1.Decision.kind:type_name -> agentfleet.v1.DecisionKind
+	2,  // 20: agentfleet.v1.Decision.state:type_name -> agentfleet.v1.DecisionState
+	66, // 21: agentfleet.v1.Decision.card:type_name -> agentfleet.v1.Card
+	2,  // 22: agentfleet.v1.ListDecisionsRequest.states:type_name -> agentfleet.v1.DecisionState
+	1,  // 23: agentfleet.v1.ListDecisionsRequest.kinds:type_name -> agentfleet.v1.DecisionKind
+	56, // 24: agentfleet.v1.ListDecisionsResponse.decisions:type_name -> agentfleet.v1.Decision
+	56, // 25: agentfleet.v1.GetDecisionResponse.decision:type_name -> agentfleet.v1.Decision
+	20, // 26: agentfleet.v1.AgentService.ListDefinitions:input_type -> agentfleet.v1.AgentServiceListDefinitionsRequest
+	25, // 27: agentfleet.v1.AgentService.ListThreads:input_type -> agentfleet.v1.ListThreadsRequest
+	27, // 28: agentfleet.v1.AgentService.CreateThread:input_type -> agentfleet.v1.CreateThreadRequest
+	29, // 29: agentfleet.v1.AgentService.PostMessage:input_type -> agentfleet.v1.AgentServicePostMessageRequest
+	31, // 30: agentfleet.v1.AgentService.GetTranscript:input_type -> agentfleet.v1.AgentServiceGetTranscriptRequest
+	33, // 31: agentfleet.v1.AgentService.StreamTranscript:input_type -> agentfleet.v1.AgentServiceStreamTranscriptRequest
+	35, // 32: agentfleet.v1.AgentService.RespondToPermission:input_type -> agentfleet.v1.AgentServiceRespondToPermissionRequest
+	37, // 33: agentfleet.v1.AgentService.AnswerQuestion:input_type -> agentfleet.v1.AgentServiceAnswerQuestionRequest
+	39, // 34: agentfleet.v1.AgentService.ApprovePlan:input_type -> agentfleet.v1.ApprovePlanRequest
+	57, // 35: agentfleet.v1.AgentService.ListDecisions:input_type -> agentfleet.v1.ListDecisionsRequest
+	59, // 36: agentfleet.v1.AgentService.GetDecision:input_type -> agentfleet.v1.GetDecisionRequest
+	61, // 37: agentfleet.v1.AgentService.AnswerDecision:input_type -> agentfleet.v1.AnswerDecisionRequest
+	63, // 38: agentfleet.v1.AgentService.WatchDecisions:input_type -> agentfleet.v1.WatchDecisionsRequest
+	41, // 39: agentfleet.v1.AgentService.SetConfig:input_type -> agentfleet.v1.SetConfigRequest
+	43, // 40: agentfleet.v1.AgentService.Stop:input_type -> agentfleet.v1.StopRequest
+	45, // 41: agentfleet.v1.AgentService.GetStatus:input_type -> agentfleet.v1.GetStatusRequest
+	47, // 42: agentfleet.v1.AgentService.Open:input_type -> agentfleet.v1.OpenRequest
+	49, // 43: agentfleet.v1.AgentService.CloseThread:input_type -> agentfleet.v1.CloseThreadRequest
+	51, // 44: agentfleet.v1.AgentService.Invoke:input_type -> agentfleet.v1.InvokeRequest
+	54, // 45: agentfleet.v1.AgentService.WaitForResult:input_type -> agentfleet.v1.WaitForResultRequest
+	15, // 46: agentfleet.v1.AgentService.PostToCharacter:input_type -> agentfleet.v1.PostToCharacterRequest
+	17, // 47: agentfleet.v1.AgentService.WatchSpeech:input_type -> agentfleet.v1.WatchSpeechRequest
+	3,  // 48: agentfleet.v1.AgentService.ListCharacters:input_type -> agentfleet.v1.ListCharactersRequest
+	5,  // 49: agentfleet.v1.AgentService.WatchCharacters:input_type -> agentfleet.v1.WatchCharactersRequest
+	21, // 50: agentfleet.v1.AgentService.ListDefinitions:output_type -> agentfleet.v1.AgentServiceListDefinitionsResponse
+	26, // 51: agentfleet.v1.AgentService.ListThreads:output_type -> agentfleet.v1.ListThreadsResponse
+	28, // 52: agentfleet.v1.AgentService.CreateThread:output_type -> agentfleet.v1.CreateThreadResponse
+	30, // 53: agentfleet.v1.AgentService.PostMessage:output_type -> agentfleet.v1.AgentServicePostMessageResponse
+	32, // 54: agentfleet.v1.AgentService.GetTranscript:output_type -> agentfleet.v1.AgentServiceGetTranscriptResponse
+	34, // 55: agentfleet.v1.AgentService.StreamTranscript:output_type -> agentfleet.v1.AgentServiceStreamTranscriptResponse
+	36, // 56: agentfleet.v1.AgentService.RespondToPermission:output_type -> agentfleet.v1.AgentServiceRespondToPermissionResponse
+	38, // 57: agentfleet.v1.AgentService.AnswerQuestion:output_type -> agentfleet.v1.AgentServiceAnswerQuestionResponse
+	40, // 58: agentfleet.v1.AgentService.ApprovePlan:output_type -> agentfleet.v1.ApprovePlanResponse
+	58, // 59: agentfleet.v1.AgentService.ListDecisions:output_type -> agentfleet.v1.ListDecisionsResponse
+	60, // 60: agentfleet.v1.AgentService.GetDecision:output_type -> agentfleet.v1.GetDecisionResponse
+	62, // 61: agentfleet.v1.AgentService.AnswerDecision:output_type -> agentfleet.v1.AnswerDecisionResponse
+	64, // 62: agentfleet.v1.AgentService.WatchDecisions:output_type -> agentfleet.v1.WatchDecisionsResponse
+	42, // 63: agentfleet.v1.AgentService.SetConfig:output_type -> agentfleet.v1.SetConfigResponse
+	44, // 64: agentfleet.v1.AgentService.Stop:output_type -> agentfleet.v1.StopResponse
+	46, // 65: agentfleet.v1.AgentService.GetStatus:output_type -> agentfleet.v1.GetStatusResponse
+	48, // 66: agentfleet.v1.AgentService.Open:output_type -> agentfleet.v1.OpenResponse
+	50, // 67: agentfleet.v1.AgentService.CloseThread:output_type -> agentfleet.v1.CloseThreadResponse
+	52, // 68: agentfleet.v1.AgentService.Invoke:output_type -> agentfleet.v1.InvokeResponse
+	55, // 69: agentfleet.v1.AgentService.WaitForResult:output_type -> agentfleet.v1.WaitForResultResponse
+	16, // 70: agentfleet.v1.AgentService.PostToCharacter:output_type -> agentfleet.v1.PostToCharacterResponse
+	18, // 71: agentfleet.v1.AgentService.WatchSpeech:output_type -> agentfleet.v1.WatchSpeechResponse
+	4,  // 72: agentfleet.v1.AgentService.ListCharacters:output_type -> agentfleet.v1.ListCharactersResponse
+	6,  // 73: agentfleet.v1.AgentService.WatchCharacters:output_type -> agentfleet.v1.WatchCharactersResponse
+	50, // [50:74] is the sub-list for method output_type
+	26, // [26:50] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_agent_proto_init() }
@@ -3712,14 +4542,14 @@ func file_agentfleet_v1_agent_proto_init() {
 		return
 	}
 	file_agentfleet_v1_transcript_proto_init()
-	file_agentfleet_v1_agent_proto_msgTypes[9].OneofWrappers = []any{}
+	file_agentfleet_v1_agent_proto_msgTypes[21].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_agent_proto_rawDesc), len(file_agentfleet_v1_agent_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   50,
+			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
