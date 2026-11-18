@@ -263,6 +263,99 @@ kubectl logs -n agent-fleet job/worker-<shortId> -c worker -f
 Then check what reached the forge: its push log, or the branch itself
 (`git ls-remote http://<forge>:7480/MohammadBnei/ukubi-game.git`).
 
+## 7b. Standing character run (dev-speaker) — documented, not yet run
+
+Deferred live run for docs/adr/0084 A9: a standing character speaks, a line
+reaches the game's origin, and the peak memory is recorded. It needs a real
+model token (`MODEL_TOKEN_FILE`, a separate revocable one) and has **not been
+run yet**; do it once a token exists. Steps 1-6 first, in order, with
+`MODEL_TOKEN_FILE` exported (step 4 puts it in the vault). `mirror.sh` already
+ships `local/kind/definitions/dev-speaker.yaml` into the mirror's
+`definitions/`, so commit, re-run `local/kind/mirror.sh`, and wait about 60s
+for core's sync.
+
+Auth is off here (`FLEET_AUTH_DISABLED`), so the "admin session" is the dev
+identity; what makes a call a game call is its `Origin`. Use the same
+port-forward as step 7 (`$CORE_PF_PID`). Connect-JSON over curl; every call
+below sends `Origin: http://127.0.0.1:8152` and no `X-Fleet-Dashboard`:
+
+```bash
+A=http://localhost:8080/agentfleet.v1.AgentService
+O='Origin: http://127.0.0.1:8152'
+J='Content-Type: application/json'
+
+# 0. Baseline memory of the whole node, before any character pod.
+docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' agent-fleet-local-control-plane
+
+# 1. The character is listed (home: world, Speak grant).
+curl -s "$A/ListCharacters" -H "$O" -H "$J" -d '{}'
+
+# 2. Start it. This returns state "starting" at once and creates NO pod: Start
+#    only makes the session row and warms nothing. The first PostToCharacter
+#    (step 3) provisions the pod. Do not poll for "running" here: it never comes
+#    before a message. After a post, "idle" is ready and "running" is a turn.
+curl -s "$A/StartCharacter" -H "$O" -H "$J" -d '{"name": "dev-speaker"}'
+
+# 3. Start the peak sampler first (the peak is the pod start and the model
+#    turn, which a sample taken after the turn misses): one stats line every 2s.
+( while :; do date +%T; docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' \
+    agent-fleet-local-control-plane; sleep 2; done ) > /tmp/dev-speaker-mem.out 2>&1 &
+MEM_PID=$!
+
+#    Warm the pod with a throwaway post (empty thread_key = main thread), then
+#    wait for the state to read "idle" (cold start, startupBudget 3m).
+curl -s "$A/PostToCharacter" -H "$O" -H "$J" \
+  -d '{"character": "dev-speaker", "text": "Warm up. Reply with ok."}'
+until curl -s "$A/ListCharacters" -H "$O" -H "$J" -d '{}' | grep -q '"idle"'; do sleep 5; done
+kubectl get pods -n agent-fleet -l fleet.bnei.dev/definition=dev-speaker   # the Job's pod: worker-<shortId>
+
+# 4. Listen, then post the real line inside the stream's 90s life. Speech is
+#    live only (a line spoken while nobody watches is dropped) and WatchSpeech
+#    closes after 90s, so an empty file after that is not by itself a failure:
+#    re-run the listener and post again. Connect server-streaming over JSON
+#    needs the envelope content type and a 5-byte-framed empty request.
+printf '\x00\x00\x00\x00\x02{}' | curl -sN "$A/WatchSpeech" -H "$O" \
+  -H 'Content-Type: application/connect+json' --data-binary @- > /tmp/dev-speaker-speech.out &
+WATCH_PID=$!
+curl -s "$A/PostToCharacter" -H "$O" -H "$J" \
+  -d '{"character": "dev-speaker", "text": "Say hello in one short line."}'
+
+# 5. Pass: within ~60s the file holds a frame with "character":"dev-speaker",
+#    a non-empty "text" and a "thread_key" (the first frame is the empty
+#    connected frame). Fail: nothing arrives in two attempts; check
+#    `kubectl logs -n agent-fleet job/worker-<shortId> -c sidecar`, with the
+#    shortId from the step 3 pod list.
+sleep 60; cat /tmp/dev-speaker-speech.out
+
+# 6. Peak memory. Stop the sampler, take the largest MemUsage in the file and
+#    subtract the step 0 baseline (node-wide: it also moves with core, postgres,
+#    vault and provisioner). Then read the pod's own peak, which is the number
+#    that matters; the pod is the worker and sidecar containers.
+kill "$MEM_PID" 2>/dev/null; sort -k2 -h /tmp/dev-speaker-mem.out | tail -3
+P=$(kubectl get pods -n agent-fleet -l fleet.bnei.dev/definition=dev-speaker -o name | head -1)
+for c in worker sidecar; do
+  echo "$c peak:"; kubectl exec -n agent-fleet "$P" -c "$c" -- cat /sys/fs/cgroup/memory.peak
+done   # bytes; if exec has no cat, docker exec into the node and read the pod's kubepods cgroup memory.peak
+```
+
+Record the baseline, the node peak and delta, and the two cgroup peaks
+(ADR-0084 A9 wants it in the PR that does the run). The cgroup peaks are the
+standing character's footprint (worker, sidecar and the model session),
+against its 1536Mi request equal to limit.
+
+Stop and tear down, always: stop the character, kill the watcher, then run
+section 8.
+
+```bash
+curl -s "$A/StopCharacter" -H "$O" -H "$J" -d '{"name": "dev-speaker"}'
+kill "$WATCH_PID" "$MEM_PID" 2>/dev/null; rm -f /tmp/dev-speaker-speech.out /tmp/dev-speaker-mem.out
+```
+
+Two failure signals worth knowing: a call outside the game's allowed
+surface calls is refused from this origin (that is the proof the origin is
+treated as a surface and not as the console), and `StartCharacter` on a
+`stopping` character returns state `stopping` with why "pod drain"; retry.
+
 ## 8. Teardown — run this every time, no exceptions
 
 Three explicit levels — pick based on whether you're iterating again soon:
