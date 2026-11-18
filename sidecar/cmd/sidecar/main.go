@@ -177,7 +177,7 @@ func memoryWiring(cfg config.Config, sessionID string) (quarantine bool, mem mcp
 // Exposure here is a convenience; core is asked on every call (ADR-0086 §2).
 func kubeRead(cfg config.Config, core mcpserver.KubeAuthorizer) *mcpserver.KubeRead {
 	if cfg.ClusterRead && strings.Contains(cfg.TrustSet, "B") {
-		return &mcpserver.KubeRead{Core: core, Namespaces: strings.FieldsFunc(cfg.ClusterLogNamespaces, func(r rune) bool { return r == ',' || r == ' ' })}
+		return &mcpserver.KubeRead{Core: core, APIHost: cfg.KubeAPIHost, APIPort: cfg.KubeAPIPort, Namespaces: strings.FieldsFunc(cfg.ClusterLogNamespaces, func(r rune) bool { return r == ',' || r == ' ' })}
 	}
 	return nil
 }

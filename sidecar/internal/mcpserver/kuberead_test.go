@@ -155,20 +155,23 @@ func TestRunKubectl_EnvAndCap(t *testing.T) {
 	t.Setenv("LEASE_ID", "sidecar-lease-secret")
 	t.Setenv("FLEET_VAULT_PROXY", "http://vault-secret")
 
-	out, err := runKubectl(context.Background(), []string{"get", "pods"})
+	out, err := runKubectl(context.Background(), "10.233.0.1", "443", []string{"get", "pods"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out, "secret") {
 		t.Errorf("the sidecar's environment reached kubectl:\n%s", out)
 	}
-	for _, e := range kubectlEnv {
+	for _, e := range []string{"KUBERNETES_SERVICE_HOST=10.233.0.1", "KUBERNETES_SERVICE_PORT=443", "HOME=/tmp"} {
 		if !strings.Contains(out, e+"\n") {
 			t.Errorf("child lacks %s:\n%s", e, out)
 		}
 	}
+	if strings.Contains(out, "kubernetes.default.svc") {
+		t.Errorf("child was pointed at the DNS name the egress lock refuses:\n%s", out)
+	}
 
-	big, err := runKubectl(context.Background(), []string{"big"})
+	big, err := runKubectl(context.Background(), "10.233.0.1", "443", []string{"big"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +190,32 @@ func TestKubectlReadOnlyWhenGranted(t *testing.T) {
 	}
 	if !has(&KubeRead{Namespaces: logNS}) {
 		t.Error("kubectl_read missing with the grant")
+	}
+}
+
+// #434: the API server address is the pod's own injected ClusterIP, never kubernetes.default.svc.
+func TestKubectlEnv_FromPodServiceEnv(t *testing.T) {
+	env, err := kubectlEnv("10.233.0.1", "6443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{"KUBERNETES_SERVICE_HOST=10.233.0.1", "KUBERNETES_SERVICE_PORT=6443"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("env lacks %s: %v", want, env)
+		}
+	}
+	if strings.Contains(joined, "kubernetes.default.svc") {
+		t.Errorf("env names the refused DNS name: %v", env)
+	}
+}
+
+func TestKubectlEnv_MissingHostFailsClosed(t *testing.T) {
+	if _, err := kubectlEnv("", "443"); err == nil {
+		t.Fatal("no KUBERNETES_SERVICE_HOST must be an error")
+	}
+	out, err := runKubectl(context.Background(), "", "443", []string{"get", "pods"})
+	if err == nil || out != "" {
+		t.Errorf("runKubectl must refuse without running kubectl: out %q err %v", out, err)
 	}
 }

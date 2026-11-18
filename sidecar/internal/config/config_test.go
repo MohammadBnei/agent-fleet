@@ -20,11 +20,12 @@ func TestLoad(t *testing.T) {
 		"EGRESS_PORT": "6", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces",
 		"FLEET_TRUST_SET": "AB", "FLEET_AGENT_NAME": "kai", "FLEET_MEMORY_ROOT": "/m",
 		"FLEET_CLUSTER_READ": "1", "FLEET_CLUSTER_LOG_NAMESPACES": "agent-fleet,monitoring",
+		"KUBERNETES_SERVICE_HOST": "10.233.0.1", "KUBERNETES_SERVICE_PORT": "443",
 	}))
 	want := Config{LogLevel: "debug", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "core:1", WorktreePath: "/wt", MCPPort: "2",
 		LocalAPIPort: "3", HealthPort: "4", VaultProxy: "http://t:p@v:5", VaultHosts: "a.test,b.test", EgressPort: "6",
 		TracesEndpoint: "http://otel:4318/v1/traces", TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m",
-		ClusterRead: true, ClusterLogNamespaces: "agent-fleet,monitoring"}
+		ClusterRead: true, ClusterLogNamespaces: "agent-fleet,monitoring", KubeAPIHost: "10.233.0.1", KubeAPIPort: "443"}
 	if err != nil || c != want {
 		t.Errorf("set: %+v, %v\nwant %+v", c, err, want)
 	}
