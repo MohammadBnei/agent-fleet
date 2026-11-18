@@ -85,6 +85,9 @@ type Config struct {
 	// (FLEET_CLUSTER_LOG_NAMESPACES, comma-separated) are the only namespaces it may read pod logs in.
 	ClusterRead          bool
 	ClusterLogNamespaces string
+	// KubeAPIHost and KubeAPIPort are the kubelet-injected KUBERNETES_SERVICE_HOST/PORT: the API server's ClusterIP,
+	// which kubectl_read dials because the egress lock's DNS allowlist refuses kubernetes.default.svc (#434).
+	KubeAPIHost, KubeAPIPort string
 }
 
 // FromProcess is the sidecar's configuration from its environment: the one call
@@ -136,6 +139,8 @@ func Load(getenv func(string) string) (Config, error) {
 		MemoryRoot:           env("FLEET_MEMORY_ROOT", "/memory"),
 		ClusterRead:          getenv("FLEET_CLUSTER_READ") == "1",
 		ClusterLogNamespaces: getenv("FLEET_CLUSTER_LOG_NAMESPACES"),
+		KubeAPIHost:          getenv("KUBERNETES_SERVICE_HOST"),
+		KubeAPIPort:          getenv("KUBERNETES_SERVICE_PORT"),
 	}
 
 	var errs []error

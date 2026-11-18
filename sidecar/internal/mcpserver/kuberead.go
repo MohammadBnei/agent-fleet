@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -18,6 +19,9 @@ import (
 // session whose trust set holds B. Namespaces are where pod logs may be read.
 type KubeRead struct {
 	Namespaces []string
+	// APIHost and APIPort are the API server's ClusterIP and port, from the pod's own KUBERNETES_SERVICE_HOST/PORT
+	// (via config). Empty host refuses every call.
+	APIHost, APIPort string
 	// Core is asked before every call (ADR-0086 §2); a nil Core or any error refuses, so exposure in the tool list
 	// is a convenience and never the check.
 	Core KubeAuthorizer
@@ -105,24 +109,40 @@ func validateKubeRead(args []string, logNamespaces []string) string {
 const kubeOutputCap = 100_000 // ADR-0046: cap every unbounded tool result at the source.
 
 // runKubectl runs the real kubectl as the mounted ServiceAccount. The environment is built here, not inherited:
-// the sidecar's own (lease, vault proxy) never reaches the child, and the pod has no Service env, so the API server
-// address is named for the in-cluster config.
-func runKubectl(ctx context.Context, args []string) (string, error) {
+// the sidecar's own (lease, vault proxy) never reaches the child. The API server address is the one the kubelet
+// injected into this container (KUBERNETES_SERVICE_HOST/PORT, a ClusterIP present even with Service links off), not
+// the name kubernetes.default.svc: the definition egress lock's DNS allowlist refuses that lookup (#434).
+func runKubectl(ctx context.Context, host, port string, args []string) (string, error) {
+	env, err := kubectlEnv(host, port)
+	if err != nil {
+		return "", err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, kubectlBin, args...)
-	cmd.Env = kubectlEnv
+	cmd.Env = env
 	out := &cappedBuffer{limit: kubeOutputCap}
 	cmd.Stdout, cmd.Stderr = out, out // one writer: exec shares it, so output interleaves in order
-	err := cmd.Run()
+	err = cmd.Run()
 	return out.String(), err
 }
 
 // kubectlBin is a variable so a test can put a fake in its place.
 var kubectlBin = "kubectl"
 
-var kubectlEnv = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp", "KUBECACHEDIR=/tmp/kube-cache",
-	"KUBERNETES_SERVICE_HOST=kubernetes.default.svc", "KUBERNETES_SERVICE_PORT=443"}
+// kubectlEnv is the child's whole environment. It fails closed when the pod has no KUBERNETES_SERVICE_HOST or _PORT: no
+// fallback to a DNS name. TLS stays verified against the mounted CA, so the apiserver cert must carry the ClusterIP
+// as an IP SAN (kubeadm and kubespray add it).
+func kubectlEnv(host, port string) ([]string, error) {
+	if host == "" {
+		return nil, errors.New("KUBERNETES_SERVICE_HOST is not set in this pod; refusing to guess the API server address")
+	}
+	if port == "" {
+		return nil, errors.New("KUBERNETES_SERVICE_PORT is not set in this pod; refusing to guess the API server port")
+	}
+	return []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp", "KUBECACHEDIR=/tmp/kube-cache",
+		"KUBERNETES_SERVICE_HOST=" + host, "KUBERNETES_SERVICE_PORT=" + port}, nil
+}
 
 // cappedBuffer keeps the first limit bytes and drops the rest as it goes, so a huge `logs` never sits in memory
 // (ADR-0046: cap at the source).
@@ -166,7 +186,9 @@ func kubectlReadHandler(k *KubeRead) server.ToolHandlerFunc {
 		slog.Info("mcp kubectl_read", "verb", args[0])
 		run := k.Run
 		if run == nil {
-			run = runKubectl
+			run = func(ctx context.Context, args []string) (string, error) {
+				return runKubectl(ctx, k.APIHost, k.APIPort, args)
+			}
 		}
 		out, err := run(ctx, args)
 		if err != nil {
