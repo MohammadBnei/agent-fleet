@@ -12,6 +12,7 @@ package promclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,17 @@ type Client struct {
 }
 
 var _ Querier = (*Client)(nil)
+
+// MaxBody caps a Prometheus response, under the 4MB gRPC receive limit so a caller can relay it.
+const MaxBody = 3 << 20
+
+// ErrTooLarge is a response over MaxBody.
+var ErrTooLarge = errors.New("prometheus response is too large")
+
+// QueryError is Prometheus' own refusal of a query (a parse error, a limit), as opposed to a transport failure.
+type QueryError struct{ Msg string }
+
+func (e *QueryError) Error() string { return "prometheus: " + e.Msg }
 
 // New builds a client for a Prometheus base URL, e.g.
 // http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090
@@ -90,9 +102,12 @@ func (c *Client) get(ctx context.Context, path string, values url.Values) (json.
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxBody+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response body: %w", err)
+	}
+	if len(body) > MaxBody {
+		return nil, ErrTooLarge
 	}
 
 	// Prometheus answers a bad query with 400 and a JSON body carrying the
@@ -107,7 +122,7 @@ func (c *Client) get(ctx context.Context, path string, values url.Values) (json.
 		return nil, fmt.Errorf("prometheus returned status %d: %s", resp.StatusCode, string(body))
 	}
 	if envelope.Status != "success" {
-		return nil, fmt.Errorf("prometheus: %s", envelope.Error)
+		return nil, &QueryError{Msg: envelope.Error}
 	}
 	return envelope.Data, nil
 }

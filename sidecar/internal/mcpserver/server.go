@@ -589,7 +589,7 @@ func submitReviewHandler(core Reviewer) server.ToolHandlerFunc {
 	})
 }
 
-// Reach is spawn_worker, wait_for_result, open_issue and list_responder_cards' slice of *coreclient.Client.
+// Reach is spawn_worker, wait_for_result, open_issue, list_responder_cards, speak and query_metrics' slice of *coreclient.Client.
 type Reach interface {
 	SpawnWorker(ctx context.Context, definition, input, key string) (*agentfleetv1.SpawnWorkerResponse, error)
 	WaitForResult(ctx context.Context, threadID string, waitSeconds int32) (*agentfleetv1.WaitForResultResponse, error)

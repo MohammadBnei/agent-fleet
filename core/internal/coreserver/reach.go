@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -286,12 +287,14 @@ const (
 	maxMetricsRange    = 24 * time.Hour
 	defaultMetricsStep = time.Minute
 	minMetricsStep     = 15 * time.Second
-	maxMetricsPoints   = 500 // per series: a coarser step is chosen rather than a refusal
+	maxMetricsPoints   = 500 // per series, endpoints included: a coarser step is chosen rather than a refusal
+	metricsTimeout     = 10 * time.Second
 )
 
 // QueryMetrics is a read-only PromQL instant or range query over core's promclient (docs/adr/0084 §6), tagged B.
 // It is a named exception to "no passthrough RPC": the egress lock blocks a definition pod from Prometheus. Prometheus
-// is only ever read (GET /api/v1/query*), and the range and step are bounded here, not by the caller.
+// is only ever read (GET /api/v1/query*), and the range and step arguments are bounded here. The query text is not: PromQL can widen its own window
+// (x[90d]), so the cost ceiling is the 10s timeout here, the promclient body cap and Prometheus' own limits.
 func (s *Server) QueryMetrics(ctx context.Context, req *agentfleetv1.CoreQueryMetricsRequest) (*agentfleetv1.CoreQueryMetricsResponse, error) {
 	if s.metrics == nil {
 		return nil, status.Error(codes.Unavailable, "metrics are not wired")
@@ -303,6 +306,8 @@ func (s *Server) QueryMetrics(ctx context.Context, req *agentfleetv1.CoreQueryMe
 	if strings.TrimSpace(q) == "" || utf8.RuneCountInString(q) > maxMetricsQuery {
 		return nil, status.Errorf(codes.InvalidArgument, "query is required, at most %d characters", maxMetricsQuery)
 	}
+	ctx, cancel := context.WithTimeout(ctx, metricsTimeout)
+	defer cancel()
 	var data json.RawMessage
 	var err error
 	if req.GetStart() == "" {
@@ -324,12 +329,20 @@ func (s *Server) QueryMetrics(ctx context.Context, req *agentfleetv1.CoreQueryMe
 		if step <= 0 {
 			step = defaultMetricsStep
 		}
-		step = max(step, minMetricsStep, end.Sub(start)/maxMetricsPoints)
+		step = max(step, minMetricsStep, end.Sub(start)/(maxMetricsPoints-1))
 		data, err = s.metrics.QueryRange(ctx, q, start, end, step)
 	}
 	if err != nil {
-		// Prometheus' own reason (a parse error) is the useful part, and the query came from the character.
-		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		var qe *promclient.QueryError
+		switch {
+		case errors.As(err, &qe):
+			// Prometheus' own reason (a parse error) is the useful part, and the query came from the character.
+			return nil, status.Error(codes.InvalidArgument, qe.Error())
+		case errors.Is(err, promclient.ErrTooLarge):
+			return nil, status.Error(codes.InvalidArgument, "the result is too large. Narrow the query: fewer series, a shorter range, an aggregation.")
+		}
+		slog.Warn("query_metrics failed", "err", err)
+		return nil, status.Error(codes.Unavailable, "metrics are unavailable right now")
 	}
 	return &agentfleetv1.CoreQueryMetricsResponse{ResultJson: string(data)}, nil
 }

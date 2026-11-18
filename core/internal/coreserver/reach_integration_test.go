@@ -18,6 +18,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -338,10 +339,14 @@ type fakeMetrics struct {
 	start, end time.Time
 	step       time.Duration
 	instant    bool
+	err        error
 }
 
 func (f *fakeMetrics) Query(_ context.Context, q string) (json.RawMessage, error) {
 	f.q, f.instant = q, true
+	if f.err != nil {
+		return nil, f.err
+	}
 	return json.RawMessage(`{"resultType":"vector"}`), nil
 }
 
@@ -370,7 +375,7 @@ func TestQueryMetrics_GrantAndBounds(t *testing.T) {
 	if err := rng(now.Add(-time.Hour), now, 1); err != nil || f.step != minMetricsStep {
 		t.Errorf("step floor: %v %v", err, f.step)
 	}
-	if err := rng(now.Add(-24*time.Hour), now, 15); err != nil || f.end.Sub(f.start)/f.step > maxMetricsPoints {
+	if err := rng(now.Add(-24*time.Hour), now, 15); err != nil || f.end.Sub(f.start)/f.step+1 > maxMetricsPoints {
 		t.Errorf("point cap: %v %+v", err, f)
 	}
 	if err := rng(now.Add(-25*time.Hour), now, 60); code(err) != codes.InvalidArgument {
@@ -383,6 +388,33 @@ func TestQueryMetrics_GrantAndBounds(t *testing.T) {
 		if _, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: q}); code(err) != codes.InvalidArgument {
 			t.Errorf("query %.10q: %v", q, err)
 		}
+	}
+	for name, c := range map[string]struct{ start, end string }{"start": {"nope", ""}, "end": {now.Format(time.RFC3339), "nope"}} {
+		if _, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: "up", Start: c.start, End: c.end}); code(err) != codes.InvalidArgument {
+			t.Errorf("bad %s: %v", name, err)
+		}
+	}
+	if _, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: "up", Start: now.Add(-time.Hour).Format(time.RFC3339)}); err != nil || time.Since(f.end) > time.Minute {
+		t.Errorf("end defaults to now: %v %v", err, f.end)
+	}
+	for _, c := range []struct {
+		err  error
+		want codes.Code
+	}{
+		{&promclient.QueryError{Msg: "parse error"}, codes.InvalidArgument},
+		{promclient.ErrTooLarge, codes.InvalidArgument},
+		{errors.New("dial tcp 10.0.0.1:9090: refused"), codes.Unavailable},
+	} {
+		f.err = c.err
+		_, err := s.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id, Query: "up"})
+		if code(err) != c.want || strings.Contains(err.Error(), "10.0.0.1") {
+			t.Errorf("%v -> %v", c.err, err)
+		}
+	}
+	f.err = nil
+	s0, id0, _ := reachCharacter(t, `{"sidecarTools":["query_metrics"]}`)
+	if _, err := s0.QueryMetrics(ctx, &agentfleetv1.CoreQueryMetricsRequest{SessionId: id0, Query: "up"}); code(err) != codes.Unavailable {
+		t.Errorf("metrics nil: %v", err)
 	}
 	s2, id2, _ := reachCharacter(t, `{"sidecarTools":["send_message"]}`)
 	s2.SetMetrics(&fakeMetrics{})
