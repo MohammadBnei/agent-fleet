@@ -89,6 +89,10 @@ var table = map[string]access{
 	agentfleetv1connect.AgentServiceWaitForResultProcedure:       {client: true},
 	agentfleetv1connect.AgentServicePostToCharacterProcedure:     {member: true},
 	agentfleetv1connect.AgentServiceWatchSpeechProcedure:         {member: true},
+	// The character API (docs/adr/0084 amendment A1): owner only. {member} keeps the game server's bearer out; the
+	// handler refuses all but an admin on the console or an admin origin (ownerOnly).
+	agentfleetv1connect.AgentServiceListCharactersProcedure:  {member: true},
+	agentfleetv1connect.AgentServiceWatchCharactersProcedure: {member: true},
 }
 
 // surfaceCalls are all a surface may call (docs/adr/0082 §7, docs/adr/0084 §7).
@@ -100,6 +104,9 @@ var surfaceCalls = []string{
 	// The game channel (docs/adr/0084 §7): the owner talks to characters and hears them from an admin origin.
 	agentfleetv1connect.AgentServicePostToCharacterProcedure,
 	agentfleetv1connect.AgentServiceWatchSpeechProcedure,
+	// The character API (docs/adr/0084 amendment A1), the owner's from the game.
+	agentfleetv1connect.AgentServiceListCharactersProcedure,
+	agentfleetv1connect.AgentServiceWatchCharactersProcedure,
 }
 
 func allowed(procedure string, p Principal) bool {

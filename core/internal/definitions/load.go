@@ -87,6 +87,8 @@ var (
 	toolDeny     = regexp.MustCompile(`^([A-Za-z_]+)(\((.+)\))?$`)
 	cpuRe        = regexp.MustCompile(`^([0-9]+)(m?)$`)
 	memoryRe     = regexp.MustCompile(`^([0-9]+)(Mi|Gi)$`)
+	homeRe       = regexp.MustCompile(`^(world|village:[a-z0-9-]+|building:[a-z0-9-]+)$`)
+	portraitRe   = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 	loginRe      = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
 )
 
@@ -640,6 +642,7 @@ func validate(name string, s *Spec) error {
 		}
 	}
 	validateReach(&errs, s)
+	validatePersona(&errs, s)
 	if s.Output != nil {
 		if err := checkOutputSchema(s.Output.Schema); err != nil {
 			bad("output.schema: %v", err)
@@ -1086,5 +1089,56 @@ func validateTrust(errs *[]error, s *Spec, t *Trust) {
 	}
 	if t.Scale != nil && (t.Scale.Min < 0 || t.Scale.Max < t.Scale.Min || t.Scale.Max > 50) {
 		bad("trust.scale: need 0 <= min <= max <= 50")
+	}
+}
+
+// relationKinds is ADR-0084 amendment A2's closed set of relation kinds.
+var relationKinds = []string{"friend", "mentor", "rival", "family", "colleague"}
+
+// validatePersona is ADR-0084 amendment A2: every field bounded, home checked by syntax only (the game resolves it),
+// and no control character in a text, since the game shows them.
+func validatePersona(errs *[]error, s *Spec) {
+	p := s.Persona
+	if p == nil {
+		return
+	}
+	if s.Lifecycle == nil || !slices.Contains(s.Lifecycle.Allow, "standing") {
+		*errs = append(*errs, errors.New("persona: only a standing definition is a character"))
+	}
+	bad := func(format string, a ...any) { *errs = append(*errs, fmt.Errorf("persona."+format, a...)) }
+	text := func(field, v string, max int, required bool) {
+		switch n := utf8.RuneCountInString(v); {
+		case required && strings.TrimSpace(v) == "":
+			bad("%s is required", field)
+		case n > max:
+			bad("%s is %d characters, at most %d", field, n, max)
+		case !utf8.ValidString(v) || strings.ContainsFunc(v, unicode.IsControl):
+			bad("%s must be valid text with no control characters", field)
+		}
+	}
+	text("display_name", p.DisplayName, 40, true)
+	text("role", p.Role, 80, false)
+	if len(p.Traits) > 8 {
+		bad("traits has %d entries, at most 8", len(p.Traits))
+	}
+	for i, t := range p.Traits {
+		text(fmt.Sprintf("traits[%d]", i), t, 40, true)
+	}
+	if p.Portrait != "" && !portraitRe.MatchString(p.Portrait) {
+		bad("portrait %q must be an atlas or asset id matching %s, never a URL", p.Portrait, portraitRe)
+	}
+	if len(p.Home) > 80 || !homeRe.MatchString(p.Home) {
+		bad("home %q must be world, village:<id> or building:<atlas id> (a-z, 0-9, -; at most 80 characters)", p.Home)
+	}
+	if len(p.Relations) > 16 {
+		bad("relations has %d entries, at most 16", len(p.Relations))
+	}
+	for i, r := range p.Relations {
+		if !nameRe.MatchString(r.To) {
+			bad("relations[%d].to %q is not a definition name", i, r.To)
+		}
+		if !slices.Contains(relationKinds, r.Kind) {
+			bad("relations[%d].kind %q must be one of %v", i, r.Kind, relationKinds)
+		}
 	}
 }

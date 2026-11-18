@@ -816,6 +816,18 @@ func TestLoad_Reach(t *testing.T) {
 		{"budget too wide", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, turnsPerDay: 10001 }"}), "limits.turnsPerDay"},
 		{"budget negative", standing(map[string]string{"limits": "{ maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m, turnsPerDay: -1 }"}), "limits.turnsPerDay"},
 	}
+	for _, c := range personaCases {
+		cases = append(cases, struct {
+			name string
+			kv   map[string]string
+			want string
+		}{"persona " + c.name, standing(map[string]string{"persona": c.persona}), c.want})
+	}
+	cases = append(cases, struct {
+		name string
+		kv   map[string]string
+		want string
+	}{"persona on a worker", map[string]string{"persona": "{ display_name: A, home: world }"}, "only a standing definition is a character"})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, _ := load(t, map[string]string{
@@ -868,4 +880,28 @@ func TestSpec_TurnBudget(t *testing.T) {
 			t.Errorf("TurnBudget = %d, want %d", got, tc.want)
 		}
 	}
+}
+
+// personaCases is ADR-0084 amendment A2: every bound and the home syntax, one refusal each.
+var personaCases = []struct{ name, persona, want string }{
+	{"minimal", "{ display_name: Ada, home: world }", ""},
+	{"full", "{ display_name: Ada, role: Keeper, traits: [calm, curious], relations: [{ to: other, kind: mentor }], portrait: ada-1, home: building:keep-2 }", ""},
+	{"village", "{ display_name: Ada, home: \"village:oak-hill\" }", ""},
+	{"no home", "{ display_name: Ada }", "persona.home"},
+	{"bad home", "{ display_name: Ada, home: \"town:x\" }", "persona.home"},
+	{"home with upper", "{ display_name: Ada, home: \"village:Oak\" }", "persona.home"},
+	{"home bare village", "{ display_name: Ada, home: \"village:\" }", "persona.home"},
+	{"home url", "{ display_name: Ada, home: \"building:a/b\" }", "persona.home"},
+	{"no name", "{ home: world }", "persona.display_name is required"},
+	{"long name", "{ display_name: \"" + strings.Repeat("a", 41) + "\", home: world }", "persona.display_name"},
+	{"long role", "{ display_name: Ada, role: \"" + strings.Repeat("a", 81) + "\", home: world }", "persona.role"},
+	{"control in name", "{ display_name: \"a\\nb\", home: world }", "persona.display_name"},
+	{"nine traits", "{ display_name: Ada, home: world, traits: [a, b, c, d, e, f, g, h, i] }", "persona.traits has 9"},
+	{"long trait", "{ display_name: Ada, home: world, traits: [\"" + strings.Repeat("a", 41) + "\"] }", "persona.traits[0]"},
+	{"url portrait", "{ display_name: Ada, home: world, portrait: \"https://x.y/a.png\" }", "persona.portrait"},
+	{"long portrait", "{ display_name: Ada, home: world, portrait: " + strings.Repeat("a", 65) + " }", "persona.portrait"},
+	{"unknown kind", "{ display_name: Ada, home: world, relations: [{ to: other, kind: enemy }] }", "persona.relations[0].kind"},
+	{"bad to", "{ display_name: Ada, home: world, relations: [{ to: \"Not A Name\", kind: friend }] }", "persona.relations[0].to"},
+	{"17 relations", "{ display_name: Ada, home: world, relations: [" + strings.TrimSuffix(strings.Repeat("{ to: other, kind: friend }, ", 17), ", ") + "] }", "persona.relations has 17"},
+	{"unknown key", "{ display_name: Ada, home: world, mood: sad }", "mood"},
 }

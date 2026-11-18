@@ -48,6 +48,17 @@
     `agentfleet_character_turns_per_day`, and files one core card a day per spent character (subject kind `character`,
     its definition name). Its `raise_budget` option, a core verb bound to the writer's own name, sets the 24h override.
   - The alert rule (`turns_last_hour * 24 >= turnsPerDay / 2`) is a draft PR on infra-bootstrap.
+- **Built:** appendix slices 14 and 15: the persona block and the character list (no migration).
+  - `persona` in the spec (standing only), checked at load and on every sync (`definitions.validatePersona`): bounds
+    and `home` syntax as in A2. It rides the effective spec, so a persona edit is a new sha and the §3 re-pin drains.
+  - `AgentService.ListCharacters` and `WatchCharacters` (`agentsvc/characters.go`): every valid standing head, started
+    or not, in the authz table (`{member: true}`) and `surfaceCalls`, refused unless `AnswersCards()`. Watch polls every
+    2 s and sends changed characters whole, after a baseline of all.
+  - `state` is read from the row and the transcript (`sessions.CharacterRuntime`): `running` keeps a drain's reason in
+    `why`; `held` is a drain (pin drain, token refresh), a crash back-off with no pod, or the budget; `stopping` is a
+    stopped row whose pod is still live ("pod drain"). `threads` lists the open threads, main first; `spawns.used` is
+    the spawned runs holding a pod. `open_cards` counts open cards on the character's session and its spawned runs
+    (by invoker `standing:<name>`), so it needs no A6 join yet.
 - **Built:** appendix slice 12: the game channel (no migration).
   - `AgentService.PostToCharacter(character, text, thread_key)`: an admin on the console or an admin origin (the
     surface list gains it), an owner (T0) message appended as the console's `PostMessage` does, warming a character
