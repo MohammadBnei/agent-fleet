@@ -1,5 +1,11 @@
 # Changelog
 
+## [7.44.3](https://github.com/MohammadBnei/agent-fleet/compare/7.44.2...7.44.3) (2026-11-20)
+
+### Bug Fixes
+
+* **k8s:** allow definition-egress DNS via CoreDNS pods on Talos ([#436](https://github.com/MohammadBnei/agent-fleet/issues/436)) ([b1895ea](https://github.com/MohammadBnei/agent-fleet/commit/b1895ea66d02454ad97299e631c44f9478047a3f))
+
 ## [7.44.2](https://github.com/MohammadBnei/agent-fleet/compare/7.44.1...7.44.2) (2026-11-18)
 
 ### Bug Fixes

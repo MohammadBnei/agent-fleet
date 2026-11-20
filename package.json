@@ -1,6 +1,6 @@
 {
   "name": "agent-fleet",
-  "version": "7.44.2",
+  "version": "7.44.3",
   "private": true,
   "scripts": {
     "lint": "biome ci .",
