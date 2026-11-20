@@ -33,7 +33,7 @@ spec:
       serviceAccountName: provisioner
       containers:
       - name: provisioner
-        image: registry.bnei.lan:5000/agent-fleet-provisioner:src-d6bf8aa22dd5
+        image: registry.bnei.lan:5000/agent-fleet-provisioner:src-c62bb3404a3a
         ports:
         - containerPort: 8080
           name: http
@@ -62,7 +62,7 @@ spec:
         # definitions-only release changes only this value, which is what
         # rolls the pod onto the new definitions.
         - name: FLEET_VERSION
-          value: "7.44.2"
+          value: "7.44.3"
         - name: NAMESPACE
           value: agent-fleet
         # OTLP/HTTP traces URL in full (docs/adr/0081 §4). Unset = no export.

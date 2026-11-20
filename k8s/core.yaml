@@ -146,7 +146,7 @@ env:
   # the image tag is a hash of core's inputs, shared by every release that
   # doesn't change them, so the version can't come from the image.
   - name: FLEET_VERSION
-    value: "7.44.2"
+    value: "7.44.3"
   - name: CORE_PORT
     value: "8080"
   - name: CORE_GRPC_PORT
