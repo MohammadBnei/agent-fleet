@@ -331,9 +331,10 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	if len(coreRule.ToPorts) != 1 || !slices.Equal(coreRule.ToPorts[0].Ports, []port{{corePort, "TCP"}}) {
 		t.Errorf("core ports %+v, want only CoreService %s", coreRule.ToPorts, corePort)
 	}
-	if len(dnsRule.ToEndpoints) > 0 || !slices.Equal(dnsRule.ToEntities, []string{"host"}) || len(dnsRule.ToPorts) != 1 ||
+	wantDNS := map[string]string{"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
+	if len(dnsRule.ToEndpoints) != 1 || !maps.Equal(dnsRule.ToEndpoints[0].MatchLabels, wantDNS) || len(dnsRule.ToEntities) > 0 || len(dnsRule.ToPorts) != 1 ||
 		!slices.Equal(dnsRule.ToPorts[0].Ports, []port{{"53", "UDP"}, {"53", "TCP"}}) || dnsRule.ToPorts[0].Rules == nil {
-		t.Fatalf("dns rule %+v, want host :53 with an L7 dns rule and nothing else", dnsRule)
+		t.Fatalf("dns rule %+v, want the kube-system CoreDNS pods on :53 with an L7 dns rule and nothing else", dnsRule)
 	}
 	var names []string
 	for _, d := range dnsRule.ToPorts[0].Rules.DNS {
