@@ -19,7 +19,9 @@
 # because core keeps state in memory that only holds with one pod (the span
 # caps for worker spans, docs/adr/0081 §7). Raising it needs that state moved
 # first. The provisioner is replicas: 1 for the same reason.
-replicaCount: 1
+# Paused 2026-11-21 for the GitHub to Forgejo move (owner): 0 until the
+# fleet speaks Forgejo. Restore 1 to resume.
+replicaCount: 0
 
 # docs/adr/0086 §6: core needs no cluster access, so it gets no API token.
 automountServiceAccountToken: false
