@@ -1,5 +1,7 @@
 # Changelog
 
+## [7.44.4](https://github.com/MohammadBnei/agent-fleet/compare/7.44.3...7.44.4) (2026-11-21)
+
 ## [7.44.3](https://github.com/MohammadBnei/agent-fleet/compare/7.44.2...7.44.3) (2026-11-20)
 
 ### Bug Fixes
