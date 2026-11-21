@@ -149,7 +149,10 @@ func podScopedServiceSidecar(key string, def catalog.ServiceDef) (corev1.Contain
 		}}
 	}
 	if key == "redis" {
-		envVars = nil // set via --requirepass instead, mirrors shared_instance.go's own redis handling
+		// Set via --requirepass below instead. Fine here: podScopedServiceCred is
+		// a fixed, non-secret value for a pod-local sidecar. A shared instance's
+		// admin password is a real secret and goes in from a file (redisStart).
+		envVars = nil
 	}
 
 	container := corev1.Container{

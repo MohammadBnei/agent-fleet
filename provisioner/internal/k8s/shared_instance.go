@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,10 +16,13 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 )
@@ -49,11 +53,41 @@ func (c *Client) EnsureSharedInstance(ctx context.Context, repo, serviceKey stri
 	}
 
 	image := c.serviceImage(serviceKey)
-	if err := c.ensureSharedDeployment(ctx, name, labels, def, image, serviceKey, adminPassword); err != nil {
+	if err := c.ensureSharedDeployment(ctx, name, labels, def, image, serviceKey, SharedInstanceAdminSecretName(repo, serviceKey)); err != nil {
 		return "", 0, "", fmt.Errorf("ensure shared deployment: %w", err)
 	}
 	if err := c.ensureSharedService(ctx, name, labels, def.Port); err != nil {
 		return "", 0, "", fmt.Errorf("ensure shared service: %w", err)
+	}
+
+	// Touch, and heal, before the readiness wait: a heal restarts the pod, and
+	// the caller mints against the instance the moment this returns. A mint
+	// into the pod about to be replaced is lost (Redis keeps no data), so the
+	// waits below must be against the healed pod.
+	if err := c.touchLastUsedAt(ctx, name, serviceKey, SharedInstanceAdminSecretName(repo, serviceKey)); err != nil {
+		// Non-fatal: a missed annotation touch just makes this instance a
+		// slightly earlier idle-GC candidate than it should be, it doesn't
+		// break the caller's actual request.
+		slog.Warn("touch last-used-at failed", "name", name, "error", err)
+	}
+	// Every caller waits, not only the one whose Update changed the template:
+	// a concurrent caller that touched a moment later sees no change of its
+	// own, but the old pod is still the one answering. The touch retries on
+	// conflict, so once it returns nil the heal has landed, by this caller or
+	// another, and a complete rollout here means the healed pod. Residual
+	// window: a touch that failed outright (the WARN above) healed nothing,
+	// so this wait passes on the old template and the next caller's heal
+	// restarts the pod under this caller's mint.
+	if err := c.waitRolledOut(ctx, name); err != nil {
+		return "", 0, "", fmt.Errorf("wait for %s rollout: %w (%s)", serviceKey, err, c.describeSharedInstanceFailure(ctx, repo, serviceKey))
+	}
+	// Only after the rollout: deleting a ReplicaSet that still has a pod makes
+	// the deployment controller stop waiting for that pod (it counts only pods
+	// of ReplicaSets it can list), so Recreate would start the new pod while
+	// the old one still holds PGDATA.
+	if err := c.pruneInlinePasswordReplicaSets(ctx, name); err != nil {
+		// Non-fatal: revisionHistoryLimit 0 has the controller prune it too.
+		slog.Warn("prune inline-password replicasets failed", "name", name, "error", err)
 	}
 
 	host = fmt.Sprintf("%s.%s.svc.cluster.local", name, c.Namespace)
@@ -68,13 +102,6 @@ func (c *Client) EnsureSharedInstance(ctx context.Context, repo, serviceKey stri
 		// shows up in the provisioner's logs directly, one hop closer to
 		// where an operator is already looking.
 		return "", 0, "", fmt.Errorf("wait for %s ready: %w (%s)", serviceKey, err, c.describeSharedInstanceFailure(ctx, repo, serviceKey))
-	}
-
-	if err := c.touchLastUsedAt(ctx, name); err != nil {
-		// Non-fatal: a missed annotation touch just makes this instance a
-		// slightly earlier idle-GC candidate than it should be, it doesn't
-		// break the caller's actual request.
-		slog.Warn("touch last-used-at failed", "name", name, "error", err)
 	}
 
 	slog.Info("k8s EnsureSharedInstance", "repo", repo, "serviceKey", serviceKey, "host", host)
@@ -140,7 +167,7 @@ func randomPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels map[string]string, def catalog.ServiceDef, image, serviceKey, adminPassword string) error {
+func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels map[string]string, def catalog.ServiceDef, image, serviceKey, adminSecret string) error {
 	deployments := c.Core.AppsV1().Deployments(c.Namespace)
 	if _, err := deployments.Get(ctx, name, metav1.GetOptions{}); err == nil {
 		return nil
@@ -152,27 +179,6 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 		if err := c.ensureSharedPVC(ctx, name, labels); err != nil {
 			return fmt.Errorf("ensure pvc: %w", err)
 		}
-	}
-
-	container := corev1.Container{
-		Name:  serviceKey,
-		Image: image,
-		Ports: []corev1.ContainerPort{{ContainerPort: def.Port}},
-		Env:   serviceEnv(serviceKey, def, adminPassword),
-	}
-	if serviceKey == "redis" {
-		// redis:7-alpine has no POSTGRES_PASSWORD-style env var for this —
-		// --requirepass on the command line is the documented way to set
-		// it at start time.
-		container.Command = []string{"redis-server", "--requirepass", adminPassword}
-	}
-	volumes := []corev1.Volume{}
-	if def.NeedsPVC {
-		container.VolumeMounts = []corev1.VolumeMount{{Name: "data", MountPath: postgresDataMountPath}}
-		volumes = append(volumes, corev1.Volume{
-			Name:         "data",
-			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}},
-		})
 	}
 
 	deployment := &appsv1.Deployment{
@@ -189,6 +195,10 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: int32Ptr(1),
+			// No old ReplicaSets kept: a ReplicaSet's pod template is readable
+			// by anyone who can get replicasets, so one kept from before a
+			// change to the template keeps whatever that template held.
+			RevisionHistoryLimit: int32Ptr(0),
 			// Recreate, not the default RollingUpdate. The data volume below
 			// is ReadWriteOnce, so a rolling update cannot converge: the new
 			// pod cannot attach the PVC until the old one releases it, and
@@ -209,11 +219,7 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					AutomountServiceAccountToken: boolPtr(false),
-					Containers:                   []corev1.Container{container},
-					Volumes:                      volumes,
-				},
+				Spec:       sharedPodSpec(name, def, image, serviceKey, adminSecret),
 			},
 		},
 	}
@@ -222,6 +228,68 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 		return nil // lost a create race, the winner's object is fine
 	}
 	return err
+}
+
+// redisStart reads the admin password from its file and fails closed: an
+// unreadable or empty file must stop the pod, not start Redis with
+// requirepass "". The config goes in on stdin, so the password is not in
+// redis-server's argv (/proc/<pid>/cmdline). The heredoc keeps exec in the
+// shell itself, so redis-server is PID 1 and gets SIGTERM.
+const redisStart = `pw=$(cat ` + credDir + `/password) && [ -n "$pw" ] || { echo "no admin password in ` + credDir + `/password" >&2; exit 1; }
+exec redis-server - <<EOF
+requirepass $pw
+EOF`
+
+// sharedPodSpec is a shared instance's pod. docs/adr/0086 §6: the admin
+// password is a file from its Secret, never a value in the pod spec, which
+// anyone who can get pods reads.
+//
+// The file is root:root 0440 (no fsGroup here, unlike a worker pod), and
+// root is what reads it: neither image sets USER, so the postgres entrypoint
+// reads POSTGRES_PASSWORD_FILE before it drops to the postgres user, and
+// redisStart's sh, which replaces the redis entrypoint, never drops at all.
+// A runAsUser on this pod would need an fsGroup to match.
+func sharedPodSpec(name string, def catalog.ServiceDef, image, serviceKey, adminSecret string) corev1.PodSpec {
+	credVol, credMount := credVolume("cred", adminSecret, "password")
+	container := corev1.Container{
+		Name:         serviceKey,
+		Image:        image,
+		Ports:        []corev1.ContainerPort{{ContainerPort: def.Port}},
+		Env:          serviceEnv(serviceKey, def),
+		VolumeMounts: []corev1.VolumeMount{credMount},
+	}
+	if serviceKey == "redis" {
+		container.Command = []string{"sh", "-c", redisStart}
+	}
+	volumes := []corev1.Volume{credVol}
+	if def.NeedsPVC {
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: postgresDataMountPath})
+		volumes = append(volumes, corev1.Volume{
+			Name:         "data",
+			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}},
+		})
+	}
+	return corev1.PodSpec{
+		AutomountServiceAccountToken: boolPtr(false),
+		Containers:                   []corev1.Container{container},
+		Volumes:                      volumes,
+	}
+}
+
+// inlinePassword reports a pod spec from before ADR-0086 §6: the admin
+// password as POSTGRES_PASSWORD or as the argument after --requirepass.
+func inlinePassword(ps corev1.PodSpec) bool {
+	for _, ct := range ps.Containers {
+		if slices.Contains(ct.Command, "--requirepass") || slices.Contains(ct.Args, "--requirepass") {
+			return true
+		}
+		for _, e := range ct.Env {
+			if e.Name == "POSTGRES_PASSWORD" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // postgresDataMountPath is the PVC mount point; postgresPGDATA is a
@@ -238,17 +306,16 @@ const (
 	postgresPGDATA        = postgresDataMountPath + "/pgdata"
 )
 
-func serviceEnv(serviceKey string, def catalog.ServiceDef, adminPassword string) []corev1.EnvVar {
+func serviceEnv(serviceKey string, def catalog.ServiceDef) []corev1.EnvVar {
 	if serviceKey == "redis" {
 		// redis:7-alpine has no built-in "start with this password" env var
-		// (unlike postgres's POSTGRES_PASSWORD) — --requirepass is passed
-		// as a command-line arg instead, see ensureSharedDeployment's
-		// container.Command wiring below. No env vars needed here.
+		// (unlike postgres's POSTGRES_PASSWORD_FILE) — requirepass is fed
+		// on stdin instead, see redisStart. No env vars needed here.
 		return nil
 	}
 	return []corev1.EnvVar{
 		{Name: "POSTGRES_USER", Value: def.AdminUser},
-		{Name: "POSTGRES_PASSWORD", Value: adminPassword},
+		{Name: "POSTGRES_PASSWORD_FILE", Value: credDir + "/password"},
 		{Name: "POSTGRES_DB", Value: "postgres"},
 		{Name: "PGDATA", Value: postgresPGDATA},
 	}
@@ -315,7 +382,17 @@ func (c *Client) ensureSharedService(ctx context.Context, name string, labels ma
 // single-replica RWO service ended up with a permanently unconvergeable
 // rollout in front of it. A Deployment-level annotation is invisible to the
 // pod-template hash, so a touch restarts nothing.
-func (c *Client) touchLastUsedAt(ctx context.Context, name string) error {
+//
+// A heal that changes the pod template starts a Recreate rollout; the caller
+// waits for it (waitRolledOut). A conflict (another caller's heal, or any
+// other write) re-reads and re-applies, so a nil return means the heal landed.
+func (c *Client) touchLastUsedAt(ctx context.Context, name, serviceKey, adminSecret string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		return c.touchOnce(ctx, name, serviceKey, adminSecret)
+	})
+}
+
+func (c *Client) touchOnce(ctx context.Context, name, serviceKey, adminSecret string) error {
 	deployments := c.Core.AppsV1().Deployments(c.Namespace)
 	dep, err := deployments.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -348,8 +425,125 @@ func (c *Client) touchLastUsedAt(ctx context.Context, name string) error {
 	// differing from what ensureSharedDeployment now builds, so a later
 	// genuine rollout would look like a template change twice over.
 	delete(dep.Spec.Template.Annotations, LastUsedAtAnnotation)
+	// ADR-0086 §6 for an instance created with its admin password inline.
+	// This changes the pod template, so it costs one Recreate restart, once:
+	// the healed template no longer matches. The image is kept, so the heal
+	// is not also an image bump.
+	if inlinePassword(dep.Spec.Template.Spec) && len(dep.Spec.Template.Spec.Containers) > 0 {
+		image := dep.Spec.Template.Spec.Containers[0].Image
+		dep.Spec.Template.Spec = sharedPodSpec(name, catalog.Services[serviceKey], image, serviceKey, adminSecret)
+	}
+	// An old ReplicaSet keeps the template it was made from, readable by
+	// anyone who can get replicasets. RevisionHistoryLimit 0 has the
+	// controller prune it once scaled down; pruneInlinePasswordReplicaSets,
+	// after the rollout, is what this code itself guarantees.
+	if dep.Spec.RevisionHistoryLimit == nil || *dep.Spec.RevisionHistoryLimit != 0 {
+		dep.Spec.RevisionHistoryLimit = int32Ptr(0)
+	}
 	_, err = deployments.Update(ctx, dep, metav1.UpdateOptions{})
 	return err
+}
+
+// pruneInlinePasswordReplicaSets deletes a ReplicaSet of the Deployment whose
+// pod template still carries the admin password inline (ADR-0086 §6). Only
+// one that is scaled to zero with no pod left, the same condition the
+// controller's own cleanup uses: a ReplicaSet with a pod is still part of the
+// rollout, and deleting it lets Recreate overlap the old pod and the new.
+func (c *Client) pruneInlinePasswordReplicaSets(ctx context.Context, name string) error {
+	dep, err := c.Core.AppsV1().Deployments(c.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	rss, err := c.ownedReplicaSets(ctx, dep)
+	if err != nil {
+		return err
+	}
+	pods, err := c.Core.CoreV1().Pods(c.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(dep.Spec.Selector)})
+	if err != nil {
+		return err
+	}
+	withPods := map[string]bool{}
+	for _, p := range pods.Items {
+		withPods[p.Labels[appsv1.DefaultDeploymentUniqueLabelKey]] = true
+	}
+	for _, rs := range rss {
+		if !inlinePassword(rs.Spec.Template.Spec) || rs.Spec.Replicas == nil || *rs.Spec.Replicas != 0 ||
+			rs.Status.Replicas != 0 || withPods[rs.Labels[appsv1.DefaultDeploymentUniqueLabelKey]] {
+			continue
+		}
+		if err := ignoreNotFound(c.Core.AppsV1().ReplicaSets(c.Namespace).Delete(ctx, rs.Name, metav1.DeleteOptions{})); err != nil {
+			return fmt.Errorf("delete replicaset %s: %w", rs.Name, err)
+		}
+	}
+	return nil
+}
+
+// ownedReplicaSets lists the ReplicaSets the deployment controller made for dep.
+func (c *Client) ownedReplicaSets(ctx context.Context, dep *appsv1.Deployment) ([]appsv1.ReplicaSet, error) {
+	list, err := c.Core.AppsV1().ReplicaSets(c.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(dep.Spec.Selector)})
+	if err != nil {
+		return nil, err
+	}
+	var out []appsv1.ReplicaSet
+	for _, rs := range list.Items {
+		if metav1.IsControlledBy(&rs, dep) {
+			out = append(out, rs)
+		}
+	}
+	return out, nil
+}
+
+// waitRolledOut blocks until the Deployment's rollout is complete: the
+// controller has seen the current spec, every replica is updated and ready,
+// and no pod is left from an older ReplicaSet (none terminating either, so
+// the old pod can no longer answer a connection).
+func (c *Client) waitRolledOut(ctx context.Context, name string) error {
+	return wait.PollUntilContextTimeout(ctx, time.Second, sharedInstanceReadyTimeout, true, func(ctx context.Context) (bool, error) {
+		dep, err := c.Core.AppsV1().Deployments(c.Namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		want := int32(1)
+		if dep.Spec.Replicas != nil {
+			want = *dep.Spec.Replicas
+		}
+		st := dep.Status
+		if st.ObservedGeneration < dep.Generation || st.UpdatedReplicas != want || st.Replicas != want || st.ReadyReplicas != want {
+			return false, nil
+		}
+		rss, err := c.ownedReplicaSets(ctx, dep)
+		if err != nil {
+			return false, err
+		}
+		hash := ""
+		for _, rs := range rss {
+			if templateEqualIgnoringHash(rs.Spec.Template, dep.Spec.Template) {
+				hash = rs.Labels[appsv1.DefaultDeploymentUniqueLabelKey]
+			}
+		}
+		if hash == "" {
+			return false, nil
+		}
+		pods, err := c.Core.CoreV1().Pods(c.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(dep.Spec.Selector)})
+		if err != nil {
+			return false, err
+		}
+		for _, p := range pods.Items {
+			if p.DeletionTimestamp != nil || p.Labels[appsv1.DefaultDeploymentUniqueLabelKey] != hash {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+}
+
+// templateEqualIgnoringHash: the controller adds pod-template-hash to its
+// ReplicaSet's template labels, so that label is the only expected difference.
+func templateEqualIgnoringHash(a, b corev1.PodTemplateSpec) bool {
+	a, b = *a.DeepCopy(), *b.DeepCopy()
+	delete(a.Labels, appsv1.DefaultDeploymentUniqueLabelKey)
+	delete(b.Labels, appsv1.DefaultDeploymentUniqueLabelKey)
+	return apiequality.Semantic.DeepEqual(a, b)
 }
 
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
@@ -470,8 +664,9 @@ func (c *Client) describeSharedInstanceFailure(ctx context.Context, repo, servic
 
 // waitReady blocks until the shared instance actually accepts connections
 // — a real connection attempt IS the readiness check (docs/adr/0034), not
-// a separate probe/poll layered on top.
-func waitReady(ctx context.Context, serviceKey string, def catalog.ServiceDef, host, adminPassword string) error {
+// a separate probe/poll layered on top. A var so a test can stand in for the
+// connection and check what EnsureSharedInstance did before it.
+var waitReady = func(ctx context.Context, serviceKey string, def catalog.ServiceDef, host, adminPassword string) error {
 	deadline := time.Now().Add(sharedInstanceReadyTimeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
