@@ -28,8 +28,8 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/spans"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
@@ -63,9 +63,11 @@ type Server struct {
 	// vault is the Agent Vault client (docs/adr/0065); it fails closed on its
 	// own without an agent token.
 	vault *vault.Client
-	// gh is the App ukubi-fleet: the repos sync source (docs/adr/0074,
-	// amended by 0075) and the repo pods' owner tokens (0075 §7).
-	gh GitHub
+	// gh is the forge (FORGE): the repos sync source (docs/adr/0074, amended
+	// by 0075) and the repo pods' owner tokens (0075 §7).
+	gh forge.Forge
+	// forgeHost is FORGE_URL's host: the only host a repo pod's URL may name.
+	forgeHost string
 	// gitName/gitEmail author a repo session's commits (docs/adr/0075 §8).
 	gitName, gitEmail string
 	// specs is core's last full vault set, kept so RefreshVaults can push
@@ -74,24 +76,9 @@ type Server struct {
 	specs   []*agentfleetv1.VaultSpec
 }
 
-// GitHub is the App ukubi-fleet (docs/adr/0075 §4, §7).
-type GitHub interface {
-	ListRepos(ctx context.Context) ([]github.Repo, error)
-	// OwnerToken is a token over owner's whole installation, for its vault.
-	OwnerToken(ctx context.Context, owner string) (string, error)
-	// Owners are the allowlisted installations' logins.
-	Owners(ctx context.Context) ([]string, error)
-	// PostReview posts an agent review and its agent-review status.
-	PostReview(ctx context.Context, r github.Review) (github.Posted, error)
-	// OpenPR opens a pull request from a pushed branch at an approved commit.
-	OpenPR(ctx context.Context, owner, repo, branch, headSHA, title, body string) (string, error)
-	// CreateIssue opens an issue for a standing character (docs/adr/0084 §6).
-	CreateIssue(ctx context.Context, owner, repo, title, body string) (string, error)
-}
-
-// SetGitHub wires the App (docs/adr/0074, 0075). Unset, ListGitHubRepos and
-// every repo warm fail closed.
-func (s *Server) SetGitHub(gh GitHub) { s.gh = gh }
+// SetForge wires the forge (docs/adr/0074, 0075) and its host (FORGE_URL's).
+// Unset, ListGitHubRepos and every repo warm fail closed.
+func (s *Server) SetForge(f forge.Forge, host string) { s.gh, s.forgeHost = f, host }
 
 // SetGitIdentity sets the author of repo sessions' commits (docs/adr/0075 §8).
 func (s *Server) SetGitIdentity(name, email string) { s.gitName, s.gitEmail = name, email }
@@ -107,7 +94,7 @@ func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, vc *vault.Cl
 	return &Server{
 		k8sc: k8sc, git: gitMgr, core: core, vault: vc, e2eHost: e2eHost,
 		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch,
-		version: version,
+		version: version, forgeHost: vault.GitHub.Git,
 	}
 }
 
@@ -272,7 +259,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	var owner string
 	if definition == nil {
 		var err error
-		if owner, err = repoOwner(req.GetRepoUrl()); err != nil {
+		if owner, err = repoOwner(req.GetRepoUrl(), s.forgeHost); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
@@ -578,7 +565,7 @@ func (s *Server) reconcileOwnerLocked(ctx context.Context, owner string) error {
 	var tok string
 	var mintErr error
 	if s.gh == nil {
-		mintErr = errors.New("no GitHub App: repo pods have no credentials")
+		mintErr = errors.New("no forge: repo pods have no credentials")
 	} else if mintErr = spans.Do(ctx, "warm.github_owner_token", func(ctx context.Context) (err error) {
 		tok, err = s.gh.OwnerToken(ctx, owner)
 		return err
@@ -858,7 +845,7 @@ var (
 // PostReview posts a reviewer definition's review with the App (ADR-0082
 // slice 5). core has checked the caller, its thread and the body; the shape
 // is re-checked here, the trust boundary. Which event GitHub gets is the
-// App's call (github.App.PostReview), not the request's.
+// forge's call (its PostReview), not the request's.
 func (s *Server) PostReview(ctx context.Context, req *agentfleetv1.PostReviewRequest) (*agentfleetv1.PostReviewResponse, error) {
 	owner, repo, _ := strings.Cut(req.GetRepo(), "/")
 	switch v := req.GetVerdict(); {
@@ -872,18 +859,18 @@ func (s *Server) PostReview(ctx context.Context, req *agentfleetv1.PostReviewReq
 		return nil, status.Errorf(codes.InvalidArgument, "verdict %q is not approve, changes or comment", v)
 	}
 	if s.gh == nil {
-		return nil, status.Error(codes.FailedPrecondition, "no GitHub App: reviews cannot be posted")
+		return nil, status.Error(codes.FailedPrecondition, "no forge: reviews cannot be posted")
 	}
-	r := github.Review{Owner: owner, Repo: repo, PR: req.GetPr(), HeadSHA: req.GetHeadSha(), Verdict: req.GetVerdict(), Body: req.GetBody()}
+	r := forge.Review{Owner: owner, Repo: repo, PR: req.GetPr(), HeadSHA: req.GetHeadSha(), Verdict: req.GetVerdict(), Body: req.GetBody()}
 	for _, c := range req.GetComments() {
-		r.Comments = append(r.Comments, github.ReviewComment{Path: c.GetPath(), Line: c.GetLine(), Body: c.GetBody()})
+		r.Comments = append(r.Comments, forge.ReviewComment{Path: c.GetPath(), Line: c.GetLine(), Body: c.GetBody()})
 	}
 	p, err := s.gh.PostReview(ctx, r)
 	// A 4xx but 429 will answer the same next time (a moved head, a refused review):
 	// FailedPrecondition, so the agent does not retry it. Unavailable is for
 	// GitHub or the network failing.
-	var se *github.StatusError
-	if errors.Is(err, github.ErrNotOpen) || errors.Is(err, github.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
+	var se *forge.StatusError
+	if errors.Is(err, forge.ErrNotOpen) || errors.Is(err, forge.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	if err != nil {
@@ -926,11 +913,11 @@ func (s *Server) OpenPullRequest(ctx context.Context, req *agentfleetv1.OpenPull
 		return nil, status.Error(codes.InvalidArgument, "title is required")
 	}
 	if s.gh == nil {
-		return nil, status.Error(codes.FailedPrecondition, "no GitHub App: a pull request cannot be opened")
+		return nil, status.Error(codes.FailedPrecondition, "no forge: a pull request cannot be opened")
 	}
 	u, err := s.gh.OpenPR(ctx, owner, repo, req.GetBranch(), req.GetHeadSha(), req.GetTitle(), req.GetBody())
-	var se *github.StatusError
-	if errors.Is(err, github.ErrStaleHead) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
+	var se *forge.StatusError
+	if errors.Is(err, forge.ErrStaleHead) || errors.Is(err, forge.ErrNotOpen) || errors.Is(err, forge.ErrRefused) || errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	if err != nil {
@@ -951,10 +938,10 @@ func (s *Server) CreateIssue(ctx context.Context, req *agentfleetv1.CreateIssueR
 		return nil, status.Error(codes.InvalidArgument, "title is required and one line")
 	}
 	if s.gh == nil {
-		return nil, status.Error(codes.FailedPrecondition, "no GitHub App: an issue cannot be opened")
+		return nil, status.Error(codes.FailedPrecondition, "no forge: an issue cannot be opened")
 	}
 	u, err := s.gh.CreateIssue(ctx, owner, repo, req.GetTitle(), req.GetBody())
-	var se *github.StatusError
+	var se *forge.StatusError
 	if errors.As(err, &se) && se.Status < 500 && se.Status != http.StatusTooManyRequests {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
@@ -985,19 +972,19 @@ func (s *Server) ListGitHubRepos(ctx context.Context, _ *agentfleetv1.ListGitHub
 	return out, nil
 }
 
-// ownerRe is a GitHub login: letters, digits, hyphens.
+// ownerRe is a login an owner vault can be named after: letters, digits, hyphens.
 var ownerRe = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 // repoOwner is the <owner> of repos.url's .../<owner>/<repo>[.git]. A URL
-// must be https://github.com/: the owner's token is minted for GitHub only.
+// must be https://<forgeHost>/: the owner's token is for the forge only.
 // A bare path is a test's local origin.
-func repoOwner(repoURL string) (string, error) {
-	if strings.Contains(repoURL, "://") && !strings.HasPrefix(strings.ToLower(repoURL), "https://github.com/") {
-		return "", fmt.Errorf("repo url %q is not on https://github.com: no owner vault (docs/adr/0075 §7)", repoURL)
+func repoOwner(repoURL, forgeHost string) (string, error) {
+	if strings.Contains(repoURL, "://") && !strings.HasPrefix(strings.ToLower(repoURL), "https://"+strings.ToLower(forgeHost)+"/") {
+		return "", fmt.Errorf("repo url %q is not on https://%s: no owner vault (docs/adr/0075 §7)", repoURL, forgeHost)
 	}
 	parts := strings.Split(strings.TrimSuffix(strings.TrimSuffix(repoURL, "/"), ".git"), "/")
 	if len(parts) < 3 || !ownerRe.MatchString(parts[len(parts)-2]) {
-		return "", fmt.Errorf("repo url %q names no GitHub owner: no owner vault (docs/adr/0075 §7)", repoURL)
+		return "", fmt.Errorf("repo url %q names no forge owner: no owner vault (docs/adr/0075 §7)", repoURL)
 	}
 	return parts[len(parts)-2], nil
 }

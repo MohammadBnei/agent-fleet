@@ -51,6 +51,9 @@ type Client struct {
 	// Forge, when set, supplies each vault's GitHub key: a token minted for
 	// the vault's one repo (docs/adr/0075 §5). Nil reads it from SecretsDir.
 	Forge Forge
+	// Hosts is where the forge serves git and its API (FORGE_URL): GitHub
+	// unless main sets it.
+	Hosts Hosts
 
 	mu    sync.Mutex
 	set   map[string]map[string][32]byte // vault -> key -> sha256 of the value last written
@@ -60,13 +63,13 @@ type Client struct {
 func New(api, proxy, secretsDir string) *Client {
 	return &Client{
 		API: strings.TrimSuffix(api, "/"), Proxy: proxy, SecretsDir: secretsDir,
-		HTTP: &http.Client{Timeout: 10 * time.Second},
-		set:  map[string]map[string][32]byte{}, locks: map[string]*sync.Mutex{},
+		HTTP: &http.Client{Timeout: 10 * time.Second}, Hosts: GitHub,
+		set: map[string]map[string][32]byte{}, locks: map[string]*sync.Mutex{},
 	}
 }
 
-// Forge mints repo-scoped credentials. GitHub's App is the one
-// implementation; Forgejo is the planned second (docs/adr/0075 §2).
+// Forge supplies repo-scoped credentials: forge.Forge's Token, the one call
+// the vault makes (internal/github mints one, internal/forgejo reads a file).
 type Forge interface {
 	Token(ctx context.Context, owner, repo string, readOnly bool) (string, error)
 }
@@ -119,10 +122,59 @@ func gitAuth(key string) auth {
 var (
 	vaultNameRe = regexp.MustCompile(`^[a-z0-9-]{3,64}$`)
 	keyRe       = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
-	githubPath  = regexp.MustCompile(`^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?/\*$`)
-	apiPath     = regexp.MustCompile(`^/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\*$`)
+	gitPath     = regexp.MustCompile(`^/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/\*$`)
+	apiPath     = regexp.MustCompile(`^/repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/\*$`)
 	referenceRe = regexp.MustCompile(`^\$\{.*\}$`)
+	ownerSegRe  = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
 )
+
+// Hosts is where a forge serves git and its API: GitHub's two hosts, or one
+// Forgejo host with its API under APIPrefix.
+type Hosts struct{ Git, API, APIPrefix string }
+
+// GitHub is github.com's hosts, a Client's default.
+var GitHub = Hosts{Git: "github.com", API: "api.github.com"}
+
+// HostsFor is the hosts of forge (FORGE) at host (FORGE_URL's): GitHub's
+// two, whatever host says (config.Load holds FORGE=github to github.com), or
+// one Forgejo host.
+func HostsFor(forge, host string) Hosts {
+	if forge == "github" {
+		return GitHub
+	}
+	return Hosts{Git: host, API: host, APIPrefix: "/api/v1"}
+}
+
+// OwnerHosts are the hosts an owner vault injects on, all on :443. Repo
+// pods send only these to the vault; the rest goes direct (sidecar/internal/
+// egress).
+func (h Hosts) OwnerHosts() []string {
+	return slices.Compact([]string{"api.anthropic.com", h.Git, h.API})
+}
+
+// repoOf is the <owner>/<repo> an exact repo glob on host names, and whether
+// it is an API path: /<owner>/<repo>[.git]/* on the git host,
+// <APIPrefix>/repos/<owner>/<repo>/* on the API host. No "." / ".." segment:
+// the vault matches by prefix, unnormalised. On a shared host the git owner
+// cannot be the API's first segment: /api/v1/* would cover every repo.
+func (h Hosts) repoOf(host, p string) (owner, repo string, api, ok bool) {
+	seg := strings.Split(p, "/")
+	if slices.Contains(seg, ".") || slices.Contains(seg, "..") {
+		return "", "", false, false
+	}
+	if rest, found := strings.CutPrefix(p, h.APIPrefix); host == h.API && found {
+		if m := apiPath.FindStringSubmatch(rest); m != nil {
+			return m[1], m[2], true, true
+		}
+	}
+	if m := gitPath.FindStringSubmatch(p); host == h.Git && m != nil {
+		if h.Git == h.API && h.APIPrefix != "" && m[1] == strings.Split(h.APIPrefix, "/")[1] {
+			return "", "", false, false
+		}
+		return m[1], strings.TrimSuffix(m[2], ".git"), false, true
+	}
+	return "", "", false, false
+}
 
 // GitHubKey is the only secret key a vault's GitHub services may name:
 // "GH_" + the vault name upper-snaked (dev-notes -> GH_DEV_NOTES). Core's
@@ -139,25 +191,19 @@ const OwnerPrefix = "owner-"
 // OwnerVault is owner's vault name. Logins are case-insensitive on GitHub.
 func OwnerVault(owner string) string { return OwnerPrefix + strings.ToLower(owner) }
 
-// OwnerHosts are the hosts an owner vault injects on, all on :443. Repo
-// pods send only these to the vault; the rest goes direct (sidecar/internal/
-// egress).
-var OwnerHosts = []string{"api.anthropic.com", "github.com", "api.github.com"}
-
 // oauthKey is the model token every owner vault injects: the same mounted key
 // the definitions name.
 const oauthKey = "CLAUDE_CODE_OAUTH_TOKEN"
 
-func checkSpec(s Spec) error {
+func checkSpec(s Spec, h Hosts) error {
 	if !vaultNameRe.MatchString(s.Name) || strings.HasPrefix(s.Name, "executor-") || strings.HasPrefix(s.Name, OwnerPrefix) {
 		return fmt.Errorf("vault name %q is not a definition vault slug", s.Name)
 	}
 	repos := map[string]bool{}
 	for _, svc := range s.Services {
-		if !keyRe.MatchString(svc.Secret) || strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") || strings.HasPrefix(svc.Secret, "GITHUB_APP_") {
+		if !keyRe.MatchString(svc.Secret) || strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") || strings.HasPrefix(svc.Secret, "GITHUB_APP_") || strings.HasPrefix(svc.Secret, "FORGEJO_") {
 			return fmt.Errorf("vault %s: secret %q is not a definition credential key", s.Name, svc.Secret)
 		}
-		re := githubPath
 		switch svc.Host {
 		case "api.anthropic.com":
 			if len(svc.Paths) > 0 {
@@ -167,9 +213,7 @@ func checkSpec(s Spec) error {
 				return fmt.Errorf("vault %s: api.anthropic.com cannot take a GitHub key (%s)", s.Name, svc.Secret)
 			}
 			continue
-		case "api.github.com":
-			re = apiPath
-		case "github.com":
+		case h.Git, h.API:
 		default:
 			return fmt.Errorf("vault %s: host %q is not allowed", s.Name, svc.Host)
 		}
@@ -180,14 +224,11 @@ func checkSpec(s Spec) error {
 			return fmt.Errorf("vault %s: %s needs a path", s.Name, svc.Host)
 		}
 		for _, p := range svc.Paths {
-			seg := strings.Split(p, "/")
-			if !re.MatchString(p) || slices.Contains(seg, ".") || slices.Contains(seg, "..") {
+			owner, repo, _, ok := h.repoOf(svc.Host, p)
+			if !ok {
 				return fmt.Errorf("vault %s: path %q on %s is not an exact repo glob", s.Name, p, svc.Host)
 			}
-			if svc.Host == "api.github.com" {
-				seg = seg[1:] // "", "repos", owner, repo, "*"
-			}
-			repos[seg[1]+"/"+strings.TrimSuffix(seg[2], ".git")] = true // "", owner, repo[.git], "*"
+			repos[owner+"/"+repo] = true
 		}
 	}
 	if len(repos) > 1 {
@@ -201,19 +242,18 @@ func checkSpec(s Spec) error {
 // :443: a service without a port matches any port, and the vault's plain
 // http:// forward path injects too, so http://github.com/... would carry the
 // PAT in cleartext (docs/adr/0065 accepted risks).
-func render(s Spec) []service {
+func render(s Spec, h Hosts) []service {
 	var out []service
 	for _, svc := range s.Services {
-		switch svc.Host {
-		case "api.anthropic.com":
+		if svc.Host == "api.anthropic.com" {
 			out = append(out, service{Name: "anthropic", Host: svc.Host + ":443", Auth: auth{Type: "bearer", Token: svc.Secret}})
-		case "github.com":
-			for i, p := range svc.Paths {
-				out = append(out, service{Name: fmt.Sprintf("github-%d", i), Host: svc.Host + ":443" + p, Auth: gitAuth(svc.Secret)})
-			}
-		case "api.github.com":
-			for i, p := range svc.Paths {
+			continue
+		}
+		for i, p := range svc.Paths {
+			if _, _, api, _ := h.repoOf(svc.Host, p); api {
 				out = append(out, service{Name: fmt.Sprintf("github-api-%d", i), Host: svc.Host + ":443" + p, Auth: auth{Type: "bearer", Token: svc.Secret}})
+			} else {
+				out = append(out, service{Name: fmt.Sprintf("github-%d", i), Host: svc.Host + ":443" + p, Auth: gitAuth(svc.Secret)})
 			}
 		}
 	}
@@ -275,7 +315,7 @@ func (c *Client) Lock(name string) (unlock func()) {
 // either way counts as a widening too, revoked before the new key is written.
 // The caller holds Lock(s.Name).
 func (c *Client) Reconcile(ctx context.Context, s Spec) (widened bool, err error) {
-	if err := checkSpec(s); err != nil {
+	if err := checkSpec(s, c.Hosts); err != nil {
 		return false, err
 	}
 	err = c.reconcile(ctx, s, &widened)
@@ -290,16 +330,21 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	if s.ReadOnly {
 		// Only a mint is read-only: every other source of the GitHub key is
 		// the mounted file, a writable PAT.
-		if _, _, ok := specRepo(s); c.Forge == nil || !ok {
+		if _, _, ok := specRepo(s, c.Hosts); c.Forge == nil || !ok {
 			return fmt.Errorf("vault %s: read-only needs a GitHub App and one GitHub repo", s.Name)
 		}
 	}
 	if c.Forge != nil {
-		if owner, repo, ok := specRepo(s); ok {
+		if owner, repo, ok := specRepo(s, c.Hosts); ok {
 			v, err := c.Forge.Token(ctx, owner, repo, s.ReadOnly)
 			if err != nil && s.ReadOnly {
 				// The mounted file is a writable PAT: never a read-only key.
 				return fmt.Errorf("vault %s: mint read-only %s/%s: %w", s.Name, owner, repo, err)
+			}
+			if err != nil && c.Hosts != GitHub {
+				// The mounted GH_ file is a GitHub PAT, and a Forgejo refusal
+				// (no collaborator, owner not allowlisted) is final.
+				return fmt.Errorf("vault %s: forge token %s/%s: %w", s.Name, owner, repo, err)
 			}
 			if err != nil {
 				file, ferr := c.readSecret(GitHubKey(s.Name))
@@ -314,7 +359,7 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	}
 	var missing []string
 	var desired []service
-	for _, svc := range render(s) {
+	for _, svc := range render(s, c.Hosts) {
 		ok := true
 		for _, k := range svc.Auth.keys() {
 			if _, seen := values[k]; seen {
@@ -348,7 +393,8 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 
 // ReconcileOwner makes owner's vault serve repo pods (docs/adr/0075 §7): all
 // of github.com:443 and api.github.com:443 carry ghToken, the owner's
-// installation-wide token, api.anthropic.com:443 the model token, and every
+// installation-wide token (on Forgejo, only the owner's paths of its one
+// host: the token is ukubi-fleet's), api.anthropic.com:443 the model token, and every
 // other host passes through. Any value missing is an error before the first
 // write: a narrowed owner vault would widen back on the next call and revoke
 // every repo pod's token. The caller holds Lock(OwnerVault(owner)).
@@ -361,6 +407,9 @@ func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (wid
 	// No App token (none mounted, or the mint failed): the mounted file, as a
 	// definition vault does. The offline local stack provides one
 	// (docs/adr/0080 §1); production has none, so the warm fails closed.
+	if ghToken == "" && c.Hosts != GitHub {
+		return false, fmt.Errorf("vault %s: no forge token (the mounted %s is a GitHub PAT)", name, gh)
+	}
 	if ghToken == "" {
 		file, ferr := c.readSecret(gh)
 		if ferr != nil || file == "" || referenceRe.MatchString(file) {
@@ -375,11 +424,26 @@ func (c *Client) ReconcileOwner(ctx context.Context, owner, ghToken string) (wid
 	if oauth == "" || referenceRe.MatchString(oauth) {
 		return false, missingErr(name, []string{oauthKey})
 	}
-	// One service per OwnerHosts entry, in its order.
-	desired := []service{
-		{Name: "anthropic", Host: OwnerHosts[0] + ":443", Auth: auth{Type: "bearer", Token: oauthKey}},
-		{Name: "github", Host: OwnerHosts[1] + ":443", Auth: gitAuth(gh)},
-		{Name: "github-api", Host: OwnerHosts[2] + ":443", Auth: auth{Type: "bearer", Token: gh}},
+	desired := []service{{Name: "anthropic", Host: "api.anthropic.com:443", Auth: auth{Type: "bearer", Token: oauthKey}}}
+	if h := c.Hosts; h == GitHub {
+		// The whole of both hosts: the token is the owner's installation's.
+		desired = append(desired,
+			service{Name: "github", Host: h.Git + ":443", Auth: gitAuth(gh)},
+			service{Name: "github-api", Host: h.API + ":443", Auth: auth{Type: "bearer", Token: gh}})
+	} else {
+		// Forgejo's token is ukubi-fleet's, identity-wide: only this owner's
+		// git and API paths carry it (Basic on both), as written and
+		// lowercased (git matches paths case-sensitively); the rest of the
+		// host passes through bare. An owner "api" would cover every repo's
+		// API.
+		if !ownerSegRe.MatchString(owner) || strings.EqualFold(owner, strings.Split(h.APIPrefix, "/")[1]) {
+			return false, fmt.Errorf("vault %s: owner %q is no forge path segment", name, owner)
+		}
+		for i, o := range slices.Compact([]string{owner, strings.ToLower(owner)}) {
+			desired = append(desired,
+				service{Name: fmt.Sprintf("forge-%d", i), Host: h.Git + ":443/" + o + "/*", Auth: gitAuth(gh)},
+				service{Name: fmt.Sprintf("forge-api-%d", i), Host: h.API + ":443" + h.APIPrefix + "/repos/" + o + "/*", Auth: gitAuth(gh)})
+		}
 	}
 	values := map[string]string{gitUsernameKey: "x-access-token", gh: ghToken, oauthKey: oauth}
 	err = c.apply(ctx, name, desired, values, "passthrough", false, &widened)
@@ -513,17 +577,14 @@ func (c *Client) apply(ctx context.Context, name string, desired []service, valu
 	return nil
 }
 
-// specRepo is the one <owner>/<repo> a checked spec's GitHub paths name.
-func specRepo(s Spec) (owner, repo string, ok bool) {
+// specRepo is the one <owner>/<repo> a checked spec's forge paths name.
+func specRepo(s Spec, h Hosts) (owner, repo string, ok bool) {
 	for _, svc := range s.Services {
-		if len(svc.Paths) == 0 || (svc.Host != "github.com" && svc.Host != "api.github.com") {
+		if len(svc.Paths) == 0 || (svc.Host != h.Git && svc.Host != h.API) {
 			continue
 		}
-		seg := strings.Split(svc.Paths[0], "/") // "", owner, repo[.git], "*"
-		if svc.Host == "api.github.com" {
-			seg = seg[1:] // "", "repos", owner, repo, "*"
-		}
-		return seg[1], strings.TrimSuffix(seg[2], ".git"), true
+		owner, repo, _, ok := h.repoOf(svc.Host, svc.Paths[0])
+		return owner, repo, ok
 	}
 	return "", "", false
 }

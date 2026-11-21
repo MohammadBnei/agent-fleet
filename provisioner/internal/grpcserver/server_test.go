@@ -129,7 +129,10 @@ func (f *fakeApp) PostReview(_ context.Context, r github.Review) (github.Posted,
 }
 
 func (f *fakeApp) ListRepos(context.Context) ([]github.Repo, error) { return nil, nil }
-func (f *fakeApp) Owners(context.Context) ([]string, error)         { return []string{"MohammadBnei"}, nil }
+func (f *fakeApp) Token(context.Context, string, string, bool) (string, error) {
+	return "", nil
+}
+func (f *fakeApp) Owners(context.Context) ([]string, error) { return []string{"MohammadBnei"}, nil }
 func (f *fakeApp) OwnerToken(context.Context, string) (string, error) {
 	return f.token, f.err
 }
@@ -139,7 +142,7 @@ func (f *fakeApp) OwnerToken(context.Context, string) (string, error) {
 func withRepoVault(t *testing.T, s *Server) *vaulttest.Server {
 	t.Helper()
 	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
-	s.SetGitHub(&fakeApp{token: "ghs-owner"})
+	s.SetForge(&fakeApp{token: "ghs-owner"}, "github.com")
 	s.SetGitIdentity("ukubi", "ukubi@bnei.dev")
 	return f
 }

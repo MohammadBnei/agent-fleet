@@ -564,7 +564,7 @@ func TestCreateWorkerPod_RepoSessionUsesItsOwnerVault(t *testing.T) {
 func TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	f := withRepoVault(t, s)
-	s.SetGitHub(&fakeApp{err: errors.New("github down")})
+	s.SetForge(&fakeApp{err: errors.New("github down")}, "github.com")
 	_, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1"))
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("err %v", err)
@@ -584,7 +584,7 @@ func TestCreateWorkerPod_RepoOwnerMintFailureRefusesTheWarm(t *testing.T) {
 func TestCreateWorkerPod_OwnerTokenFromTheMountedFile(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "GH_OWNER_MOHAMMADBNEI": "local-owner-token"})
-	s.SetGitHub(&fakeApp{err: errors.New("github app not mounted")})
+	s.SetForge(&fakeApp{err: errors.New("github app not mounted")}, "github.com")
 	s.SetGitIdentity("ukubi", "ukubi@bnei.dev")
 	if _, err := s.CreateWorkerPod(context.Background(), repoRequest(t, "repo-1")); err != nil {
 		t.Fatal(err)
@@ -599,7 +599,7 @@ func TestRefreshVaults_PushesOwnerTokens(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	f := withRepoVault(t, s)
 	app := &fakeApp{token: "ghs-1"}
-	s.SetGitHub(app)
+	s.SetForge(app, "github.com")
 	s.RefreshVaults(context.Background())
 	app.token = "ghs-2"
 	s.RefreshVaults(context.Background())
@@ -619,7 +619,7 @@ func TestRepoOwner(t *testing.T) {
 		"https://evil.example/MohammadBnei/r":             "",
 		"http://github.com/MohammadBnei/r":                "",
 	} {
-		got, err := repoOwner(url)
+		got, err := repoOwner(url, "github.com")
 		if got != want || (want == "") != (err != nil) {
 			t.Errorf("repoOwner(%q) = %q, %v; want %q", url, got, err, want)
 		}

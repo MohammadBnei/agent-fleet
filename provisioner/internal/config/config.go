@@ -179,7 +179,45 @@ type Config struct {
 	// definitions keep their git.identity.
 	GitAuthorName  string
 	GitAuthorEmail string
-	// GitURLRewrite is the forge every worker's `https://github.com/`
+	// Forge picks the forge implementation (FORGE): "github", the App
+	// (internal/github, the default), or "forgejo" (internal/forgejo). Any
+	// other value refuses the start: it decides who holds the forge tokens.
+	Forge string
+	// ForgeURL is the forge's web root, scheme and host only (FORGE_URL):
+	// https://github.com, or https://git.bnei.dev for Forgejo. Its host is
+	// the one forge-host value: the owner vault's hosts, repo URLs' check, the
+	// workers' insteadOf. A value that is no https URL with a host alone
+	// (no port; the host is lowercased) refuses the start, as does FORGE=github
+	// on any host but github.com (the App's hosts are fixed) or FORGE=forgejo
+	// on github.com.
+	//
+	// Open point m3, read from infra-bootstrap on 2026-11-21, not tested from
+	// a pod: in-cluster DNS (CoreDNS -> Talos host DNS -> Pi-hole
+	// 192.168.1.55, split horizon) answers git.bnei.dev with 192.168.1.214,
+	// the forgejo CT, which terminates TLS with a publicly trusted Let's
+	// Encrypt certificate (lego, DNS-01; infra-bootstrap ADR-0078 Decision 10),
+	// so the system roots suffice and no CA is configured here. Only the
+	// provisioner's own direct calls (API, its git) are known to work. A pod's
+	// credentialed request is not: a repo pod's NO_PROXY holds .bnei.dev and
+	// 192.168.1.0/24 (k8s repoNoProxy), so git.bnei.dev bypasses the sidecar
+	// and the owner vault and goes bare, and a definition pod's request goes
+	// through Agent Vault, whose egress refuses private ranges (ADR-0065), so
+	// 192.168.1.214 is refused. Until git.bnei.dev leaves repo pods' NO_PROXY
+	// and Agent Vault allows 192.168.1.214:443 (or resolves git.bnei.dev
+	// publicly), the vault wiring for it is unreachable (build plan P4.x).
+	ForgeURL string
+	// ForgejoSecretsDir holds the Forgejo bots' tokens as files
+	// (FORGEJO_SECRETS_DIR; internal/forgejo names them), the ADR-0086 §6 way:
+	// mounted, never env. ForgejoOwners are the logins whose repos count
+	// (FORGEJO_OWNERS, comma-separated; MohammadBnei unset): anyone can add a
+	// bot as a collaborator on their own repo.
+	// ForgejoTrustedLogins are TrustedLogins on Forgejo
+	// (FORGEJO_TRUSTED_LOGINS): its own list, since a GitHub login nobody
+	// holds on the Forgejo instance is anyone's to register there.
+	ForgejoSecretsDir    string
+	ForgejoOwners        []string
+	ForgejoTrustedLogins []string
+	// GitURLRewrite is the forge every worker's `https://<forge host>/`
 	// rewrites to, on the offline local stack (docs/adr/0080 §2,
 	// FLEET_GIT_URL_REWRITE). Unset in production. It contains the local
 	// stack (without it a worker pushes to the real github.com through the
@@ -267,7 +305,7 @@ func Load(getenv func(string) string) (Config, error) {
 		ExecutorAddr:              env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
 		ReconcileInterval:         millis("RECONCILE_INTERVAL_MS", 10*time.Second),
 		LogLevel:                  env("LOG_LEVEL", "info"),
-		FleetSharedRepoURL:        env("FLEET_SHARED_REPO_URL", "https://github.com/MohammadBnei/agent-fleet.git"),
+		Forge:                     env("FORGE", "github"),
 		FleetSharedBranch:         env("FLEET_SHARED_BRANCH", "main"),
 		FleetDefinitionsRef:       env("FLEET_DEFINITIONS_REF", ""),
 		PostgresImage:             env("POSTGRES_IMAGE", "postgres:16-alpine"),
@@ -279,6 +317,7 @@ func Load(getenv func(string) string) (Config, error) {
 		AgentVaultProxy:           env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
 		AgentVaultSecretsDir:      env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
 		GitHubAppDir:              env("GITHUB_APP_DIR", "/var/run/github-app"),
+		ForgejoSecretsDir:         env("FORGEJO_SECRETS_DIR", "/var/run/forgejo"),
 		GitHubAccounts:            env("FLEET_GITHUB_ACCOUNTS", ""),
 		GitAuthorName:             env("FLEET_GIT_AUTHOR_NAME", "ukubi"),
 		GitAuthorEmail:            env("FLEET_GIT_AUTHOR_EMAIL", "ukubi@bnei.dev"),
@@ -288,12 +327,24 @@ func Load(getenv func(string) string) (Config, error) {
 		MaxTurns:                  getenv("MAX_TURNS"),
 		TracesEndpoint:            getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
 	}
-	for _, l := range strings.Split(getenv("PROVISIONER_TRUSTED_LOGINS"), ",") {
-		if l = strings.TrimSpace(l); l != "" {
-			c.TrustedLogins = append(c.TrustedLogins, l)
+	c.TrustedLogins = list(getenv("PROVISIONER_TRUSTED_LOGINS"))
+	c.ForgejoOwners = list(env("FORGEJO_OWNERS", "MohammadBnei"))
+	c.ForgejoTrustedLogins = list(getenv("FORGEJO_TRUSTED_LOGINS"))
+	var errs []error
+	forgeURL := map[string]string{"github": "https://github.com", "forgejo": "https://git.bnei.dev"}[c.Forge]
+	if forgeURL == "" {
+		errs = append(errs, fmt.Errorf("FORGE must be github or forgejo, got %q", shown(c.Forge)))
+	}
+	c.ForgeURL = strings.TrimSuffix(env("FORGE_URL", forgeURL), "/")
+	if u, err := url.Parse(c.ForgeURL); err != nil || u.Scheme != "https" || u.Hostname() == "" || u.Port() != "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		errs = append(errs, fmt.Errorf("FORGE_URL %q must be an https URL with a host, no port, and nothing else", shown(c.ForgeURL)))
+	} else {
+		c.ForgeURL = "https://" + strings.ToLower(u.Host)
+		if host := c.ForgeHost(); (c.Forge == "github") != (host == "github.com") && forgeURL != "" {
+			errs = append(errs, fmt.Errorf("FORGE=%s cannot run on %s: the GitHub App is github.com's, and github.com is no Forgejo", c.Forge, host))
 		}
 	}
-	var errs []error
+	c.FleetSharedRepoURL = env("FLEET_SHARED_REPO_URL", c.ForgeURL+"/MohammadBnei/agent-fleet.git")
 	if err := c.rewriteMalformed(); err != nil {
 		errs = append(errs, err)
 	} else if err := c.rewriteOnProductionVault(); err != nil {
@@ -302,6 +353,23 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	c.Warnings = warnings
 	return c, errors.Join(errs...)
+}
+
+// ForgeHost is ForgeURL's host: the one forge-host value.
+func (c Config) ForgeHost() string {
+	u, _ := url.Parse(c.ForgeURL)
+	return u.Host
+}
+
+// list is a comma-separated value's non-blank entries, trimmed.
+func list(raw string) []string {
+	var out []string
+	for _, l := range strings.Split(raw, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // durationText is d as an operator writes it: 12h, not 12h0m0s.

@@ -11,20 +11,25 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/forge"
 )
 
 const perPage = 100
 
-// Repo is one repo an allowlisted installation covers.
-type Repo struct {
-	ID            int64  `json:"id"`
-	Name          string `json:"name"`
-	FullName      string `json:"full_name"`
-	CloneURL      string `json:"clone_url"`
-	DefaultBranch string `json:"default_branch"`
-	Archived      bool   `json:"archived"`
-	Fork          bool   `json:"fork"`
-}
+// The forge's shared types, under the names this package always had.
+type (
+	Repo          = forge.Repo
+	Review        = forge.Review
+	ReviewComment = forge.ReviewComment
+	Posted        = forge.Posted
+	StatusError   = forge.StatusError
+)
+
+var (
+	ErrNotOpen   = forge.ErrNotOpen
+	ErrStaleHead = forge.ErrStaleHead
+)
 
 // request is one GitHub REST call. Errors carry GitHub's message and the
 // path without its query, never the request body or the bearer.
@@ -58,7 +63,7 @@ func request(ctx context.Context, hc *http.Client, api, bearer, method, path str
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(b, &e)
-		return &StatusError{Status: resp.StatusCode, msg: fmt.Sprintf("github: %s %s: %d %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, e.Message)}
+		return &StatusError{Status: resp.StatusCode, Msg: fmt.Sprintf("github: %s %s: %d %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, e.Message)}
 	}
 	if out != nil {
 		if err := json.Unmarshal(b, out); err != nil {
@@ -67,11 +72,3 @@ func request(ctx context.Context, hc *http.Client, api, bearer, method, path str
 	}
 	return nil
 }
-
-// StatusError is a non-2xx answer: PostReview retries a 422.
-type StatusError struct {
-	Status int
-	msg    string
-}
-
-func (e *StatusError) Error() string { return e.msg }

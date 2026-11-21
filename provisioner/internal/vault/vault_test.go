@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -673,4 +674,97 @@ func TestReconcile_RefusesOwnerPrefix(t *testing.T) {
 	if _, err := c.Reconcile(context.Background(), vault.Spec{Name: "owner-x", Services: notesSpec().Services[2:]}); err == nil {
 		t.Fatal("a definition took the owner- prefix")
 	}
+}
+
+// FORGE=forgejo: git and API share one host, the API under /api/v1. A git
+// glob and an API glob each get their auth; GitHub's hosts are refused; a git
+// "owner" of api would cover every repo's API and is refused; the owner vault
+// injects Basic on that owner's git and API paths only (the token is
+// ukubi-fleet's, not the owner's), and a forge refusal never falls back to a
+// mounted GH_ file (a GitHub PAT).
+func TestReconcile_ForgejoHosts(t *testing.T) {
+	const host = "git.bnei.dev"
+	fj := vault.HostsFor("forgejo", host)
+	c, f, _ := setup(t, notesSecrets)
+	c.Hosts = fj
+	spec := vault.Spec{Name: "dev-notes", Services: []vault.Service{
+		{Host: host, Paths: []string{"/MohammadBnei/notes.git/*", "/api/v1/repos/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+		{Host: "api.anthropic.com", Secret: "CLAUDE_CODE_OAUTH_TOKEN"},
+	}}
+	if _, err := c.Reconcile(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range services(t, f, "dev-notes") {
+		got[s.Host] = s.Auth.Type
+	}
+	want := map[string]string{"api.anthropic.com:443": "bearer", host + ":443/MohammadBnei/notes.git/*": "basic", host + ":443/api/v1/repos/MohammadBnei/notes/*": "bearer"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("services %v, want %v", got, want)
+	}
+
+	for name, svc := range map[string]vault.Service{
+		"github host":       {Host: "github.com", Paths: []string{"/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+		"api as git owner":  {Host: host, Paths: []string{"/api/v1/*"}, Secret: "GH_DEV_NOTES"},
+		"github api shape":  {Host: host, Paths: []string{"/repos/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+		"api of every repo": {Host: host, Paths: []string{"/api/v1/repos/*"}, Secret: "GH_DEV_NOTES"},
+		"bot token":         {Host: "api.anthropic.com", Secret: "FORGEJO_REVIEW_TOKEN"},
+	} {
+		c, f, _ := setup(t, notesSecrets)
+		c.Hosts = fj
+		if _, err := c.Reconcile(context.Background(), vault.Spec{Name: "dev-notes", Services: []vault.Service{svc}}); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+		if w := f.Writes(); len(w) != 0 {
+			t.Errorf("%s: wrote %v before refusing", name, w)
+		}
+	}
+
+	if !reflect.DeepEqual(fj.OwnerHosts(), []string{"api.anthropic.com", host}) {
+		t.Errorf("owner hosts %v", fj.OwnerHosts())
+	}
+	if _, err := c.ReconcileOwner(context.Background(), "MohammadBnei", "fj-write"); err != nil {
+		t.Fatal(err)
+	}
+	got = map[string]string{}
+	for _, s := range services(t, f, "owner-mohammadbnei") {
+		got[s.Host] = s.Auth.Type + "/" + s.Auth.Password
+	}
+	const b = "basic/GH_OWNER_MOHAMMADBNEI"
+	if want := map[string]string{
+		"api.anthropic.com:443":      "bearer/",
+		host + ":443/MohammadBnei/*": b, host + ":443/api/v1/repos/MohammadBnei/*": b,
+		host + ":443/mohammadbnei/*": b, host + ":443/api/v1/repos/mohammadbnei/*": b,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("owner services %v, want %v", got, want)
+	}
+	if v, _ := f.Get("owner-mohammadbnei"); v.Policy != "passthrough" {
+		t.Errorf("owner policy %q", v.Policy)
+	}
+	for _, o := range []string{"api", "API", ".x"} {
+		if _, err := c.ReconcileOwner(context.Background(), o, "fj-write"); err == nil {
+			t.Errorf("owner %q accepted", o)
+		}
+	}
+
+	// Fail closed: a forge refusal, or no owner token, with the GH_ files
+	// mounted, writes nothing.
+	c, f, dir := setup(t, notesSecrets)
+	writeSecrets(t, dir, map[string]string{"GH_OWNER_MOHAMMADBNEI": "ghp-owner"})
+	c.Hosts, c.Forge = fj, refusingForge{}
+	if _, err := c.Reconcile(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "not a fleet repo") {
+		t.Errorf("refused token: err %v", err)
+	}
+	if _, err := c.ReconcileOwner(context.Background(), "MohammadBnei", ""); err == nil {
+		t.Error("owner vault took the mounted GH_ file")
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("wrote %v", w)
+	}
+}
+
+type refusingForge struct{}
+
+func (refusingForge) Token(context.Context, string, string, bool) (string, error) {
+	return "", errors.New("not a fleet repo")
 }

@@ -18,6 +18,8 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/config"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/coreclient"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/forge"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/forgejo"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/grpcserver"
@@ -120,9 +122,18 @@ func main() {
 	gitMgr := git.NewManager(cfg.WorkspaceRoot)
 	// docs/adr/0075 §9: the provisioner's own clone/fetch uses the App's
 	// read-only installation tokens, and nothing else: the bot PAT is gone.
+	// FORGE=forgejo swaps the App for the two Forgejo bots, whose read
+	// token does the same (internal/forgejo).
 	app := github.NewApp(cfg.GitHubAppDir, parseIDs(cfg.GitHubAccounts))
 	app.Trusted = cfg.TrustedLogins
+	var fg forge.Forge = app
+	configured := app.Configured
 	gitMgr.GitEnv = app.GitEnv
+	if cfg.Forge == "forgejo" {
+		fj := forgejo.New(cfg.ForgeURL, cfg.ForgejoSecretsDir, cfg.ForgejoOwners)
+		fj.Trusted = cfg.ForgejoTrustedLogins
+		fg, configured, gitMgr.GitEnv = fj, fj.Configured, fj.GitEnv
+	}
 
 	// Fill the shared PVC's Playwright browser cache, which every worker pod
 	// mounts read-only (pod.go's browsersDir). Best-effort and NOT fatal: a
@@ -162,15 +173,18 @@ func main() {
 	// Always wired: Token re-checks the mount per call, so a Secret synced
 	// after boot is used without a restart; unmounted, the vault falls back
 	// to the Infisical files.
-	vc.Forge = app
-	if !app.Configured() {
+	vc.Forge, vc.Hosts = fg, vault.HostsFor(cfg.Forge, cfg.ForgeHost())
+	switch {
+	case !configured() && cfg.Forge == "github":
 		slog.Warn("github app not mounted yet: vault GitHub keys come from Infisical files", "dir", cfg.GitHubAppDir)
-	} else if len(app.Accounts) == 0 {
+	case !configured():
+		slog.Warn("forgejo tokens not mounted yet: every forge vault key fails closed", "dir", cfg.ForgejoSecretsDir)
+	case cfg.Forge == "github" && len(app.Accounts) == 0:
 		slog.Error("github app mounted but FLEET_GITHUB_ACCOUNTS is empty: every definition GitHub token will fail closed")
 	}
 	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
 	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
-	provSvc.SetGitHub(app)
+	provSvc.SetForge(fg, cfg.ForgeHost())
 	provSvc.SetGitIdentity(cfg.GitAuthorName, cfg.GitAuthorEmail)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
@@ -186,7 +200,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if app.Configured() { // nothing re-mints without the App
+				if configured() { // nothing re-mints or re-reads without the tokens
 					provSvc.RefreshVaults(ctx)
 				}
 			}
@@ -315,6 +329,7 @@ func images(cfg config.Config, version string) k8s.Images {
 		RedisImage:            cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 		GitURLRewrite:         cfg.GitURLRewrite,
+		ForgeHosts:            vault.HostsFor(cfg.Forge, cfg.ForgeHost()),
 		ClaudeModel:           cfg.ClaudeModel,
 		MaxTurns:              cfg.MaxTurns,
 	}

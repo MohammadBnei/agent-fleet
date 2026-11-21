@@ -124,6 +124,41 @@ func TestLoad_WarningsNeverEchoAnAt(t *testing.T) {
 	}
 }
 
+// FORGE picks the implementation and FORGE_URL's default; the shared repo
+// follows the forge. Anything else refuses the start: it decides who holds the
+// forge tokens.
+func TestLoad_Forge(t *testing.T) {
+	for _, tc := range []struct {
+		env              map[string]string
+		url, host, share string
+		refuse           string
+	}{
+		{env: map[string]string{}, url: "https://github.com", host: "github.com", share: "https://github.com/MohammadBnei/agent-fleet.git"},
+		{env: map[string]string{"FORGE": "forgejo"}, url: "https://git.bnei.dev", host: "git.bnei.dev", share: "https://git.bnei.dev/MohammadBnei/agent-fleet.git"},
+		{env: map[string]string{"FORGE": "gitlab"}, refuse: `FORGE must be github or forgejo, got "gitlab"`},
+		{env: map[string]string{"FORGE": "forgejo", "FORGE_URL": "http://git.bnei.dev"}, refuse: "FORGE_URL"},
+		{env: map[string]string{"FORGE": "forgejo", "FORGE_URL": "https://git.bnei.dev/x"}, refuse: "FORGE_URL"},
+		{env: map[string]string{"FORGE": "forgejo", "FORGE_URL": "https://u:p@git.bnei.dev"}, refuse: "<redacted: contains @>"},
+		{env: map[string]string{"FORGE": "forgejo", "FORGE_URL": "https://Git.Bnei.dev/"}, url: "https://git.bnei.dev", host: "git.bnei.dev", share: "https://git.bnei.dev/MohammadBnei/agent-fleet.git"},
+		{env: map[string]string{"FORGE": "forgejo", "FORGE_URL": "https://git.bnei.dev:443"}, refuse: "no port"},
+		{env: map[string]string{"FORGE_URL": "https://GitHub.com"}, url: "https://github.com", host: "github.com", share: "https://github.com/MohammadBnei/agent-fleet.git"},
+		{env: map[string]string{"FORGE_URL": "https://github.com:443"}, refuse: "no port"},
+		{env: map[string]string{"FORGE_URL": "https://ghe.example"}, refuse: "FORGE=github cannot run on ghe.example"},
+		{env: map[string]string{"FORGE": "forgejo", "FORGE_URL": "https://github.com"}, refuse: "FORGE=forgejo cannot run on github.com"},
+	} {
+		c, err := Load(func(k string) string { return tc.env[k] })
+		if tc.refuse != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.refuse) {
+				t.Errorf("%v: error %v, want %q", tc.env, err, tc.refuse)
+			}
+			continue
+		}
+		if err != nil || c.ForgeURL != tc.url || c.ForgeHost() != tc.host || c.FleetSharedRepoURL != tc.share {
+			t.Errorf("%v: %v, %q %q %q", tc.env, err, c.ForgeURL, c.ForgeHost(), c.FleetSharedRepoURL)
+		}
+	}
+}
+
 // TestLoad: every field comes from its own variable, the default applies when the variable is unset (or blank: getenv cannot tell), and
 // an optional variable that is invalid warns instead of refusing.
 func TestLoad(t *testing.T) {
@@ -138,6 +173,8 @@ func TestLoad(t *testing.T) {
 		"GITHUB_APP_DIR": "/app", "FLEET_GITHUB_ACCOUNTS": "1,2", "FLEET_GIT_AUTHOR_NAME": "me", "FLEET_GIT_AUTHOR_EMAIL": "me@x",
 		"FLEET_GIT_URL_REWRITE": "http://forge.local/", "FLEET_VERSION": "v1.2.3", "CLAUDE_MODEL": "m", "MAX_TURNS": "9",
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces", "PROVISIONER_TRUSTED_LOGINS": " MohammadBnei, ,other ",
+		"FORGE": "forgejo", "FORGE_URL": "https://forge.test/", "FORGEJO_SECRETS_DIR": "/fj", "FORGEJO_OWNERS": "a, b",
+		"FORGEJO_TRUSTED_LOGINS": "fj",
 	}
 	c, err := Load(func(k string) string { return env[k] })
 	if err != nil {
@@ -153,6 +190,8 @@ func TestLoad(t *testing.T) {
 		GitHubAccounts: "1,2", GitAuthorName: "me", GitAuthorEmail: "me@x", GitURLRewrite: "http://forge.local/",
 		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9", TracesEndpoint: "http://otel:4318/v1/traces",
 		TrustedLogins: []string{"MohammadBnei", "other"},
+		Forge:         "forgejo", ForgeURL: "https://forge.test", ForgejoSecretsDir: "/fj", ForgejoOwners: []string{"a", "b"},
+		ForgejoTrustedLogins: []string{"fj"},
 	}
 	if !reflect.DeepEqual(c, want) { // Warnings is nil too: every value here is good
 		t.Errorf("set:\n got %+v\nwant %+v", c, want)
@@ -167,6 +206,7 @@ func TestLoad(t *testing.T) {
 		RedisImage: "redis:7-alpine", SharedInstancePVCSize: "2Gi", SharedInstanceIdleTimeout: 12 * time.Hour, RepoPrefetchInterval: 5 * time.Minute, AgentVaultAPI: DefaultAgentVaultAPI,
 		AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault", GitHubAppDir: "/var/run/github-app",
 		GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
+		Forge: "github", ForgeURL: "https://github.com", ForgejoSecretsDir: "/var/run/forgejo", ForgejoOwners: []string{"MohammadBnei"},
 	}
 	// Through getenv a blank variable and an unset one are the same "", so there is one case.
 	if c, err := Load(func(string) string { return "" }); err != nil || !reflect.DeepEqual(c, defaults) {

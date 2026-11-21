@@ -11,6 +11,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
 var (
@@ -64,9 +66,13 @@ type Client struct {
 	PostgresImage         string
 	RedisImage            string
 	SharedInstancePVCSize string
-	// GitURLRewrite is where every worker's https://github.com/ goes, for the
+	// GitURLRewrite is where every worker's https://<ForgeHost>/ goes, for the
 	// offline local stack (docs/adr/0080 §2). Empty in production.
 	GitURLRewrite string
+	// ForgeHosts is the forge's hosts (vault.HostsFor of FORGE and FORGE_URL):
+	// what a repo pod sends to its owner vault, and whose git host
+	// GitURLRewrite replaces. Zero is GitHub's.
+	ForgeHosts vault.Hosts
 	// ClaudeModel and MaxTurns are the operator's model override and turn cap
 	// (CLAUDE_MODEL, MAX_TURNS), forwarded as the worker container's env of
 	// the same names. Empty leaves Claude Code's own default.
@@ -111,6 +117,7 @@ func newClient(core kubernetes.Interface, dyn dynamic.Interface, namespace strin
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 		GitURLRewrite:         cfg.GitURLRewrite,
+		ForgeHosts:            cfg.ForgeHosts,
 		ClaudeModel:           cfg.ClaudeModel,
 		MaxTurns:              cfg.MaxTurns,
 	}
@@ -136,6 +143,7 @@ type Images struct {
 	RedisImage            string
 	SharedInstancePVCSize string
 	GitURLRewrite         string
+	ForgeHosts            vault.Hosts
 	ClaudeModel           string
 	MaxTurns              string
 }

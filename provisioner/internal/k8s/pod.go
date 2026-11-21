@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -353,13 +354,13 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 	return vaultWorkerEnv(env, fmt.Sprintf("http://127.0.0.1:%d", SidecarEgressPort), noProxy, vaultCADir+"/ca.pem", d.Name, d.GitAuthorName, d.GitAuthorEmail)
 }
 
-// withGitURLRewrite appends `url.<rewrite>.insteadOf = https://github.com/` to
+// withGitURLRewrite appends `url.<rewrite>.insteadOf = https://<forgeHost>/` to
 // the worker's GIT_CONFIG_* (docs/adr/0080 §2): the agent's own push reads the
-// clone's github.com origin. The session id is the URL's user name, so the
+// clone's forge origin. The session id is the URL's user name, so the
 // local forge, which challenges a push and takes any credentials, records
 // which session pushed; GIT_TERMINAL_PROMPT=0 means git needs the password in
 // the URL too.
-func withGitURLRewrite(env []corev1.EnvVar, rewrite, sessionID string) []corev1.EnvVar {
+func withGitURLRewrite(env []corev1.EnvVar, rewrite, forgeHost, sessionID string) []corev1.EnvVar {
 	u, err := url.Parse(rewrite)
 	if err != nil {
 		return env // config.Load refuses a malformed rewrite, so this is not reached from a Config
@@ -377,9 +378,12 @@ func withGitURLRewrite(env []corev1.EnvVar, rewrite, sessionID string) []corev1.
 	}
 	return append(env,
 		corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_KEY_%d", n), Value: "url." + u.String() + ".insteadOf"},
-		corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), Value: "https://github.com/"},
+		corev1.EnvVar{Name: fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), Value: "https://" + forgeHost + "/"},
 	)
 }
+
+// forgeHosts is ForgeHosts, GitHub's when unset (a Client a test builds).
+func (c *Client) forgeHosts() vault.Hosts { return cmp.Or(c.ForgeHosts, vault.GitHub) }
 
 // repoNoProxy is what a repo pod reaches directly (docs/adr/0075 §7, spike
 // PR4a): the cluster, the LAN and the split-horizon names. The vault refuses
@@ -391,8 +395,8 @@ var repoNoProxy = []string{".cluster.local", ".svc", ".bnei.lan", ".bnei.dev", "
 
 // repoWorkerEnv is definitionWorkerEnv for a repo pod (docs/adr/0075 §7).
 // Its HTTPS_PROXY is the sidecar's egress router, which holds the vault
-// token and sends only vault.OwnerHosts to the vault: the worker's env holds
-// no token at all. Egress is open, so direct TLS needs the system roots too:
+// token and sends only the forge's Hosts.OwnerHosts to the vault: the
+// worker's env holds no token at all. Egress is open, so direct TLS needs the system roots too:
 // the CA variables name bundle.pem. NODE_EXTRA_CA_CERTS adds to Node's own
 // roots, so it takes the vault root alone.
 func repoWorkerEnv(env []corev1.EnvVar, r RepoVault, coreHost string) []corev1.EnvVar {
@@ -597,7 +601,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		workerEnv = repoWorkerEnv(workerEnv, *spec.RepoVault, coreHost)
 	}
 	if c.GitURLRewrite != "" {
-		workerEnv = withGitURLRewrite(workerEnv, c.GitURLRewrite, taskID)
+		workerEnv = withGitURLRewrite(workerEnv, c.GitURLRewrite, c.forgeHosts().Git, taskID)
 	}
 	workerEnv = append(workerEnv, cacheEnv()...)
 	workerEnv = append(workerEnv, contextBudgetEnv()...)
@@ -886,7 +890,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	case spec.Definition != nil:
 		vaultProxy, vaultHosts = spec.Definition.ProxyURL, spec.Definition.VaultHosts
 	case spec.RepoVault != nil:
-		vaultProxy, vaultHosts = spec.RepoVault.ProxyURL, vault.OwnerHosts
+		vaultProxy, vaultHosts = spec.RepoVault.ProxyURL, c.forgeHosts().OwnerHosts()
 	}
 	for i := range podSpec.InitContainers {
 		sc := &podSpec.InitContainers[i]

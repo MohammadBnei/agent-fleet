@@ -20,11 +20,12 @@ func TestImages(t *testing.T) {
 		}
 	}
 	cfg.SessionNodeSelector = "k=v"
+	cfg.ForgeURL = "https://forge.test"
 	img := images(cfg, "v-release")
 	iv := reflect.ValueOf(img)
 
 	// Images field -> the Config field it is set from. Version is the release passed in, and
-	// SessionNodeSelector the parsed form of the Config's single label.
+	// SessionNodeSelector the parsed form of the Config's single label, ForgeHosts vault.HostsFor of Forge and ForgeURL.
 	from := map[string]string{
 		"WorkerImage":           "WorkerImage",
 		"SidecarImage":          "SidecarImage",
@@ -42,7 +43,7 @@ func TestImages(t *testing.T) {
 		"ClaudeModel":           "ClaudeModel",
 		"MaxTurns":              "MaxTurns",
 	}
-	special := map[string]bool{"Version": true, "SessionNodeSelector": true}
+	special := map[string]bool{"Version": true, "SessionNodeSelector": true, "ForgeHosts": true}
 	for i := 0; i < iv.NumField(); i++ {
 		name := iv.Type().Field(i).Name
 		if special[name] {
@@ -57,7 +58,7 @@ func TestImages(t *testing.T) {
 			t.Errorf("Images.%s = %q, want %q (Config.%s)", name, got, want, src)
 		}
 	}
-	if img.Version != "v-release" || img.SessionNodeSelector["k"] != "v" || len(img.SessionNodeSelector) != 1 {
+	if img.Version != "v-release" || img.ForgeHosts.Git != "forge.test" || img.SessionNodeSelector["k"] != "v" || len(img.SessionNodeSelector) != 1 {
 		t.Errorf("%+v", img)
 	}
 }

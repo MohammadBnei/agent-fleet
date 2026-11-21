@@ -853,6 +853,10 @@ func TestNewClientCopiesImages(t *testing.T) {
 			f.SetString("v-" + iv.Type().Field(i).Name)
 		case reflect.Map:
 			f.Set(reflect.ValueOf(map[string]string{"k" + iv.Type().Field(i).Name: "v"}))
+		case reflect.Struct: // vault.Hosts: strings
+			for j := 0; j < f.NumField(); j++ {
+				f.Field(j).SetString("v-" + iv.Type().Field(i).Name + "." + f.Type().Field(j).Name)
+			}
 		default:
 			t.Fatalf("Images.%s is a %s: teach this test its shape", iv.Type().Field(i).Name, f.Kind())
 		}

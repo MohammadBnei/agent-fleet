@@ -10,45 +10,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/forge"
 )
-
-// maxReviewBody is GitHub's review body limit, in characters.
-const maxReviewBody = 65536
-
-const truncated = "\n\n(truncated)"
 
 // reviewPermissions is PostReview's token: a review and the agent-review
 // status on one repo, nothing else (ADR-0082 slice 5).
 var reviewPermissions = map[string]string{"pull_requests": "write", "statuses": "write", "metadata": "read"}
-
-// ErrNotOpen: the PR is closed or merged, so nothing is posted.
-var ErrNotOpen = errors.New("pull request is not open")
-
-// ErrStaleHead: the PR moved past the reviewed commit, so nothing is posted.
-var ErrStaleHead = errors.New("pull request head moved")
-
-// Review is one agent review of owner/repo#PR at HeadSHA. Verdict is
-// approve, changes or comment; core and the grpc handler have checked it.
-type Review struct {
-	Owner, Repo string
-	PR          int64
-	HeadSHA     string
-	Verdict     string
-	Body        string
-	Comments    []ReviewComment
-}
-
-type ReviewComment struct {
-	Path string `json:"path"`
-	Line int32  `json:"line"`
-	Body string `json:"body"`
-}
-
-// Posted is what reached GitHub: the review's URL, its event, and the
-// agent-review status state ("" for none).
-type Posted struct {
-	URL, Event, Status string
-}
 
 var verdicts = map[string]struct{ event, label, status string }{
 	"approve": {"APPROVE", "Approve", "success"},
@@ -134,18 +102,8 @@ func (a *App) PostReview(ctx context.Context, r Review) (Posted, error) {
 	var se *StatusError
 	if errors.As(err, &se) && se.Status == http.StatusUnprocessableEntity && len(r.Comments) > 0 {
 		// Usually a line outside the diff: once more, the comments in the body.
-		var b strings.Builder
-		b.WriteString(body + "\n\nInline comments GitHub could not place:\n")
-		for _, c := range r.Comments {
-			fmt.Fprintf(&b, "\n- `%s:%d`: %s", c.Path, c.Line, c.Body)
-		}
-		folded := []rune(b.String())
-		if len(folded) > maxReviewBody {
-			// ponytail: core caps only the body; cut the folded comments, not the review.
-			folded = append(folded[:maxReviewBody-len(truncated)], []rune(truncated)...)
-		}
 		delete(post, "comments")
-		post["body"] = string(folded)
+		post["body"] = forge.FoldComments(body, "GitHub", r.Comments)
 		err = request(ctx, a.HTTP, a.API, tok, http.MethodPost, path, post, &out)
 	}
 	if err != nil {

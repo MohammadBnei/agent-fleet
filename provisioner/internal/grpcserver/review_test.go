@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/github"
 )
 
@@ -26,7 +27,7 @@ func TestPostReview_PassesTheReviewToTheApp(t *testing.T) {
 	app := &fakeApp{post: func(github.Review) (github.Posted, error) {
 		return github.Posted{URL: "https://x/review", Event: "APPROVE", Status: "success"}, nil
 	}}
-	s.SetGitHub(app)
+	s.SetForge(app, "github.com")
 	resp, err := s.PostReview(context.Background(), reviewReq())
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +46,7 @@ func TestPostReview_PassesTheReviewToTheApp(t *testing.T) {
 func TestPostReview_RefusesABadRequest(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	app := &fakeApp{}
-	s.SetGitHub(app)
+	s.SetForge(app, "github.com")
 	for name, mut := range map[string]func(*agentfleetv1.PostReviewRequest){
 		"repo no slash": func(r *agentfleetv1.PostReviewRequest) { r.Repo = "agent-fleet" },
 		"repo dots":     func(r *agentfleetv1.PostReviewRequest) { r.Repo = "../x" },
@@ -67,31 +68,31 @@ func TestPostReview_RefusesABadRequest(t *testing.T) {
 
 func TestPostReview_Codes(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	s.SetGitHub(&fakeApp{post: func(github.Review) (github.Posted, error) {
+	s.SetForge(&fakeApp{post: func(github.Review) (github.Posted, error) {
 		return github.Posted{}, fmt.Errorf("pr 12: %w", github.ErrNotOpen)
-	}})
+	}}, "github.com")
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("closed PR: %v", err)
 	}
-	s.SetGitHub(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, fmt.Errorf("github: 502") }})
+	s.SetForge(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, fmt.Errorf("github: 502") }}, "github.com")
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.Unavailable {
 		t.Errorf("GitHub down: %v", err)
 	}
-	s.SetGitHub(&fakeApp{post: func(github.Review) (github.Posted, error) {
+	s.SetForge(&fakeApp{post: func(github.Review) (github.Posted, error) {
 		return github.Posted{}, fmt.Errorf("pr 12: %w", github.ErrStaleHead)
-	}})
+	}}, "github.com")
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("stale head: %v", err)
 	}
-	s.SetGitHub(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, &github.StatusError{Status: 422} }})
+	s.SetForge(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, &github.StatusError{Status: 422} }}, "github.com")
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("GitHub 422: %v", err)
 	}
-	s.SetGitHub(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, &github.StatusError{Status: 429} }})
+	s.SetForge(&fakeApp{post: func(github.Review) (github.Posted, error) { return github.Posted{}, &github.StatusError{Status: 429} }}, "github.com")
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.Unavailable {
 		t.Errorf("GitHub rate limit: %v", err)
 	}
-	s.SetGitHub(nil)
+	s.SetForge(nil, "github.com")
 	if _, err := s.PostReview(context.Background(), reviewReq()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("no App: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestVaultSpec_CarriesReadOnly(t *testing.T) {
 func TestOpenPullRequest(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	app := &fakeApp{}
-	s.SetGitHub(app)
+	s.SetForge(app, "github.com")
 	req := func() *agentfleetv1.OpenPullRequestRequest {
 		return &agentfleetv1.OpenPullRequestRequest{Repo: "MohammadBnei/agent-fleet", Branch: "fix/x", HeadSha: headSHA, Title: "Fix x"}
 	}
@@ -131,10 +132,13 @@ func TestOpenPullRequest(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	// A branch that moved past the approved commit is final: FailedPrecondition, not a retry.
-	app.prErr = fmt.Errorf("moved: %w", github.ErrStaleHead)
-	if _, err := s.OpenPullRequest(context.Background(), req()); status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("stale head: %v", err)
+	// A branch that moved past the approved commit is final: FailedPrecondition, not a retry. So is
+	// Forgejo's AGit PR that is closed, someone else's or on another base.
+	for _, final := range []error{github.ErrStaleHead, forge.ErrNotOpen, forge.ErrRefused} {
+		app.prErr = fmt.Errorf("pr: %w", final)
+		if _, err := s.OpenPullRequest(context.Background(), req()); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("%v: %v", final, err)
+		}
 	}
 }
 
@@ -142,7 +146,7 @@ func TestOpenPullRequest(t *testing.T) {
 func TestCreateIssue(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	app := &fakeApp{}
-	s.SetGitHub(app)
+	s.SetForge(app, "github.com")
 	req := func() *agentfleetv1.CreateIssueRequest {
 		return &agentfleetv1.CreateIssueRequest{Repo: "MohammadBnei/agent-fleet", Title: "Fix x", Body: "b"}
 	}
@@ -173,7 +177,7 @@ func TestCreateIssue(t *testing.T) {
 	if _, err := s.CreateIssue(context.Background(), req()); status.Code(err) != codes.Unavailable {
 		t.Errorf("a 5xx retries: %v", err)
 	}
-	s.SetGitHub(nil)
+	s.SetForge(nil, "github.com")
 	if _, err := s.CreateIssue(context.Background(), req()); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("no App: %v", err)
 	}
