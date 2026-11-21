@@ -1,6 +1,8 @@
 # ADR-0075 — The fleet acts as a GitHub App; every pod gets its credentials from the vault
 
-- **Status:** Accepted (rollout complete 2026-10-21)
+- **Status:** Accepted (rollout complete 2026-10-21). Amended by [ADR-0086](0086-rule-of-two.md) (2026-11-21, D3):
+  on Forgejo, bot users `ukubi-fleet` (a read collaborator that proposes through AGit) and `ukubi-review` (the only
+  agent approval that counts) replace the App.
 - **Date:** 2026-10-20
 - **Related:** [ADR-0064](0064-definition-pod-profile.md) (amended: repo pods
   take the vault half of the definition profile, plus a 12h cap),

@@ -1,6 +1,9 @@
 # ADR-0082 — Decision cards: only an explicit address wakes an agent, and the owner decides on cards
 
-- **Status:** Accepted (owner-approved 2026-10-28; taint dropped and every decision made one non-blocking kind by the owner 2026-10-29)
+- **Status:** Accepted (owner-approved 2026-10-28; taint dropped and every decision made one non-blocking kind by the owner 2026-10-29).
+  Amended by [ADR-0086](0086-rule-of-two.md) (2026-11-21, D3, D7): on Forgejo, `ukubi-review`'s approval is the only
+  agent approval that counts, its token stays with the provisioner, and agents merge after a fleet review on §5's
+  paths too, under probation once its controls are live (§9, §11).
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
   (no proposal; alerts and hand-offs keep theirs). Slice 2's first PR:

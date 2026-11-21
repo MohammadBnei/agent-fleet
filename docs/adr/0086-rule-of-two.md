@@ -2,6 +2,10 @@
 
 - **Status:** Accepted (owner, 2026-11-16)
 - **Date:** 2026-11-16
+- **Amended 2026-11-21 (owner):** verb kinds and `values.set`'s CI render check (§3, §4), AGit proposals (§4),
+  probation for §5's protected paths, the Forgejo bot users
+  ([ADR-0075](0075-github-app-identity-and-vault-credentials.md)) and the CI/CD split as a precondition; see the
+  amendment, a decision record whose mechanisms are open items.
 - **Would amend:**
   - [ADR-0082](0082-decision-cards.md):
     - §1: an alert wakes a first-responder definition (§3);
@@ -24,6 +28,14 @@
   - `CLAUDE.md`'s forbidden "Fleet-managed `infra-bootstrap` cluster ops" (`CLAUDE.md:231`, `docs/DECISIONS.md:467-470`),
     together with `infra-bootstrap`'s own `CLAUDE.md` rule that a human runs Ansible, as ADR-0072 §6 already requires.
     The change is scoped to the catalogue's named playbooks run through ADR-0072.
+  - *Added 2026-11-21 (the amendment):*
+    - ADR-0082 §9: on Forgejo, `ukubi-review`'s approval is the only agent approval that counts, and agents merge
+      after a fleet review on §5's paths too, under probation once its controls are live (D3, D7);
+    - ADR-0082 §11: on Forgejo, the forge write path holds the bot users' tokens, not the App key, and the
+      `ukubi-review` token stays with the provisioner (D3);
+    - [ADR-0075](0075-github-app-identity-and-vault-credentials.md): on Forgejo, bot users `ukubi-fleet` and
+      `ukubi-review` replace the App (D3);
+    - ADR-0065 §7 and its rollout: on Forgejo, `git.mode: push` proposes through AGit, since `ukubi-fleet` pushes no branch (D3).
 - **Related:** [ADR-0062](0062-defined-agents.md), [ADR-0071](0071-events-reach-sessions-through-the-bridge.md),
   [ADR-0075](0075-github-app-identity-and-vault-credentials.md)
 
@@ -175,9 +187,13 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
     restart annotation), `delete pod`, and a restart.
   - Each such namespace carries the PodSecurity `restricted` label.
   - A namespace is low-stakes only by an owner commit to that file. The game and dev apps start there.
+    *(Amended 2026-11-21, owner: once probation's controls are live, an agent's change to this file merges on
+    probation; see D7.)*
 - **Anything else** becomes a card (§4): a code fix, an Ansible step, an unknown failure.
 - **The catalogue grows through the owner.** When a card fix keeps being chosen, the owner promotes it into the
   catalogue as a reviewed change. Agents never write catalogue files (§5).
+  *(Amended 2026-11-21, owner: once probation's controls are live, an agent's change to them merges on probation;
+  see D7.)*
 
 ### 4. Cards: what the owner approves
 
@@ -198,6 +214,7 @@ interface and one deck stay.
     - No SSH key is held anywhere.
     - Only playbooks the catalogue names. ADR-0072 §6's first one is `build-runner-configure.yml`.
   - **`open_pr`:** a branch pushed by a B·C session, shown with its diff. A session holding A never files one.
+    *(Amended 2026-11-21: on Forgejo, the B·C session's AGit PR in place of a branch; see D3.)*
   - **`open_session`:** an optional follow-up session, seeded with the card's typed context posted as an `agent`-authored
     context entry, never as a `human` one. It holds only the letters the owner ticks on the confirm page, so B·C at most.
     It is marked **supervised** in the console and the cockpit, and the owner steers or stops it from the console.
@@ -209,6 +226,8 @@ interface and one deck stay.
   - `catalogue` runs `remediations.Service.Select` for the writer's definition (the schema, denylist and rate limits
     again, the executor's checks at pull). `open_pr` is the provisioner's `OpenPullRequest`: it refuses a branch that
     moved past the approved commit, and core files and runs it only for a `BC` writer.
+    *(Amended 2026-11-21: on Forgejo no branch exists to open from. How `open_pr` binds an AGit PR, and how a
+    pr-mode session's commit reaches the forge, are open items of the amendment.)*
   - `open_session` starts a session at T0 trust (`BC`) with the typed brief as an `agent` entry, the title labelled an
     agent claim. The letter ticking on the confirm page is not built: it gets `BC`. It launches in `default` permission
     mode (every tool asks, never the unattended `auto`), with `[supervised]` on its title. A console session is
@@ -256,12 +275,23 @@ interface and one deck stay.
 - **`knowledge_journal`** (ADR-0055) is fleet-wide shared memory too. A session whose set holds A writes its notes
   with `quarantined = true` (migration). `journal_search` hides quarantined rows until the owner promotes them.
 - **Skills, prompts and pack content** from a session whose set holds A arrive only as a PR.
+  *(Amended 2026-11-21: a session holding A proposes no lasting change (D6), so they arrive as a card request or in
+  the quarantine directory above.)*
 - **Protected paths.** `CODEOWNERS` plus a ruleset require the owner's review on:
   - `definitions/`, `packs/`, `fleet-shared/`, `.claude/`, `.github/CODEOWNERS`, the ruleset itself and the catalogue;
   - in `infra-bootstrap`, the vault, egress, low-stakes and RBAC files.
+  - *(Amended 2026-11-21: the provisioner's and core's forge, probation and enforcement code join the list; see the
+    amendment's invariants.)*
   - The `ukubi-fleet` App sits in no bypass list.
+    *(Amended 2026-11-21: on Forgejo, `ukubi-fleet` is a read collaborator in no push or approval allowlist; how
+    the owner-only paths are gated there is P2.2 and P5.)*
   - These paths are excluded from ADR-0082 §9's merge right.
   - No agent changes its own set, tier, catalogue, vault or egress.
+  - *(Amended 2026-11-21, owner: once probation's controls are live, the owner's review above becomes probation
+    (D7), except on the amendment's owner-only paths, which include the vault, egress and RBAC files. An agent's
+    change to its catalogue then merges on probation. Set and tier are fed by a definition's `trust`, a
+    client's `actors.allow` (`definitions/clients/*.yaml`) and the reach fields (`invokers`, a client's
+    `definitions`, `subscribes`); an agent change to those fields is owner-only (see the invariants).)*
 
 ### 6. Credentials: no secret in any pod's env
 
@@ -288,6 +318,8 @@ interface and one deck stay.
   - **Accepted risk:** a session triggered untrusted with `trust.untrusted: C` can write to GitHub as its
     definition, and a repo pod can send data to any host.
   - **Revisit trigger:** §1's trigger, or the first public-facing input class.
+  - *(Amended 2026-11-21: a session holding A never proposes a lasting change (D6). How that is enforced against
+    per-definition vaults is an open item, so this risk stands until it is built.)*
 
 ### 8. What is never the boundary
 
@@ -332,8 +364,93 @@ most alerts, so the owner's attention goes to the cards that matter.
 
 - Read-taint.
 - A classifier gate as a boundary.
-- Agent-editable policy.
+- Agent-editable policy. *(Amended 2026-11-21, owner: on probation for §5's paths once its controls are live, never
+  for the owner-only paths; see D7.)*
 - Cordon, or a rollback against ArgoCD self-heal.
 - Guests in the fleet.
 - Vault rule sets per session class beyond responders.
 - Standing SSH keys.
+
+## Amendment 2026-11-21: verb kinds, AGit proposals, probation, the Forgejo identity
+
+Owner decisions of 2026-11-21 (ukubi conception §16, build plan "Owner decisions (2026-11-21 late)"), taken while the
+forge moves to Forgejo (`git.bnei.dev`). This records decisions and invariants only. None of it is built: each
+mechanism is designed with its code in the build task named under "Open items". The text above stands wherever this
+does not change it.
+
+### Decisions
+
+- **D1. Verbs are lasting or transient.** A lasting verb changes desired state through git, and its PR is the
+  reversible act (its undo is a revert PR); a transient verb acts on the running system and is its own undo or records
+  its inverse. The catalogue's five actions are transient; `sync_app`'s undo is partial (§3).
+- **D2. `values.set` gets a render check that runs in CI:** a required PR check job, with no secrets and on no
+  privileged runner. It never runs in the provisioner, which holds forge tokens.
+- **D3. Agents propose through AGit** (`git push origin HEAD:refs/for/<base>/<topic>`), never from a fork or a
+  branch. `ukubi-fleet` is a read collaborator holding a `write:repository` token: the token allows the AGit push, and the read role makes
+  Forgejo's pre-receive refuse any branch or tag push (verified). `ukubi-review` is a separate user whose approval is the only agent approval that counts; no component
+  but the provisioner holds its token at runtime (a mounted file).
+- **D4. Verified on Forgejo 15.0.12** (build plan, AGit spike): Forgejo Actions runs an AGit PR as a fork PR
+  (`is_fork_pull_request: true`); its run gets no repo secrets but a job token; every run waits for approval unless
+  the poster is trusted, and approval is web-only; "Approve always" is ignored for a restricted user and stored per
+  repo; an approved run can pick any runner label.
+- **D5. The CI/CD split is a precondition** of trusting `ukubi-fleet` and of resuming the fleet:
+  - CI runs checks only, with no secrets, on the podman runner;
+  - CD runs only from `main` and tags, through a deployer the `main` push webhook triggers, which holds the
+    persistent builder;
+  - PR images build on an ephemeral, isolated builder;
+  - the host executor is unreachable from PR runs by its runner registration and scope, not by label (D4: the PR
+    picks the label).
+
+  Only then does `ukubi-fleet` become unrestricted, with one "Approve always" per fleet repo. The owner never approves
+  runs one by one.
+- **D6. A session holding A never proposes a lasting change.** It files a card request (§3), and the owner's option
+  runs at B·C. The enforcement mechanism is an open item.
+- **D7. Agents merge after a fleet review (ADR-0082 §9) everywhere but the owner-only paths and set/tier fields,** §5's paths
+  included, which merge under probation once its controls are live. Until then §5 stands. Probation covers
+  agent-authored merges only:
+  - an immediate notice to the owner;
+  - a 24 h window, in which the case's card reverts the merge in one click, or a canary signal (Degraded health, a
+    rise in alerts on the System) reverts it automatically. The canary only reverts, at most once per case, and
+    only inside the window;
+  - an episode card with evidence, until the library exists.
+- **D8. The library never opens PRs.** It files lesson candidates as cards.
+- **D9. Mistakes come in three tiers.** Cheap: visible and reversible (a bad app PR, a wrong replica count), allowed,
+  followed by a revert and a lesson. Compounding: it widens reach (an agent's own definition, packs or catalogue),
+  allowed on probation. Irreversible: no undo exists (a leaked key, deleted production data, an exposed secret), never
+  an agent's alone: the owner-only paths below, or a decision the owner signs.
+
+### Invariants
+
+Each holds whatever mechanism implements it, and each can be checked.
+- An agent merge targets only the repo's default branch: never `deploy`, never a tag.
+- No agent merge changes an owner-only path: at least `db/migrations/**`, the secrets, vault, egress and RBAC files,
+  `.forgejo/**` and `.github/workflows/**`. Probation never covers them.
+- No agent merge changes the fields that feed a session's set and tier: a definition's `trust`, `invokers` and
+  `subscribes`, and a client's `actors.allow` and `definitions` (`definitions/clients/*.yaml`).
+- A probation revert cannot be closed or edited by any `ukubi-fleet` token holder: it is posted by an identity no
+  session holds.
+- The provisioner's and core's forge, probation and enforcement code is on §5's protected list.
+- The host executor takes no PR job.
+
+### Open items
+
+- A-session proposal enforcement (D6), when vaults are per definition and every warm on one shares its keys (P4.1).
+- If D6 is enforced with a separate untrusted vault: `vault.go` makes a read-only vault only from a minted key, for a
+  spec naming one forge repo path (P4.1).
+- The pr-mode push path: a session's clone is a `git clone --shared` whose alternates point into the repo cache
+  (P4.1).
+- The render check's source access (D2): `infra-bootstrap` is private and its Applications name it by SSH URL, while
+  the PR run holds no credential (P2.4).
+- `merge_pr`: the method, who performs the merge for a read collaborator, and the checks it refuses on (P5 step 3).
+- Probation case detection: where a merge's changed-file list comes from (P5 step 4).
+- `botEvent` keys on a `github.com/` source prefix (`core/internal/dispatch/dispatch.go`), which a Forgejo event
+  does not carry (P4.4).
+- Dedup between a system webhook and per-repo webhooks, if a system webhook watches for `ukubi-fleet` PRs outside
+  the fleet (P4.3).
+- AGit topic naming: any `ukubi-fleet` push to a topic updates that topic's PR (P4.2).
+- Owner merges during the interim: an admin override or `ukubi-review`'s approval (P2.2).
+- The definition ceiling (§1, §2) is not built: `core/internal/sessions/trust.go` gives T0 and T1 B·C whatever
+  the definition says, so reach fields decide set and tier today (P5).
+- Owner-only gating on Forgejo: the path globs for the secrets, vault, egress, RBAC and enforcement files, the
+  field-level check for `definitions/*.yaml` (`trust`, `invokers`, `subscribes`) and
+  `definitions/clients/*.yaml` (`actors.allow`, `definitions`), and the merge-time check that refuses them (P2.2, P5).
