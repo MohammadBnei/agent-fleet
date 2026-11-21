@@ -16,9 +16,9 @@ import (
 
 // externalPool is the escape hatch for environments with no Docker socket —
 // notably the fleet's own worker pods, where testcontainers cannot run at all
-// and `request_service("postgres")` is the only way to get a database. Set
-// AGENTFLEET_TEST_DSN to use it; CI leaves it unset and keeps using a
-// container.
+// and `request_service("postgres")` is the only way to get a database, and
+// Forgejo's container runner, where CI points it at the job's Postgres
+// service. Set AGENTFLEET_TEST_DSN to use it.
 //
 // The instance is SHARED (per repo, not per session), so every test gets its
 // own schema and drops it again. Migrations still come from db/migrations/ —

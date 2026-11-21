@@ -683,22 +683,23 @@ smoke test did.
 
 ### Deploy pipeline
 
-`.github/workflows/docker.yml` is the pipeline; read it for the detail. On a
-push to `main`:
+`.github/workflows/docker.yml` is the pipeline; read it for the detail.
+On a push to `main` (Forgejo Actions, shared ukubi-ci v0.11.1 workflows):
 
-1. `release` runs `release-it` (Conventional Commits → version, `CHANGELOG.md`,
-   tag), gated on the worker and dashboard test jobs.
-2. `build-push`, one job on the `build-runner` LXC (a self-hosted runner does
-   one job at a time; infra-bootstrap ADR-0034), builds the six images
-   (`$COMPONENTS`: `core`, `provisioner`, `sidecar`, `executor`, `worker`,
-   `migration`) with `buildah` and pushes content-addressed `src-<hash>` tags
-   to Zot at `registry.bnei.lan:5000` (see "Which build is running"). On a PR
-   only changed components build, and nothing is pushed.
-3. `deploy` pins those tags and `FLEET_VERSION` in `k8s/core.yaml` and
-   `k8s/provisioner/*.yaml`, writes `k8s/images.env`, checks every pin
-   landed (a sed that stops matching is a green no-op otherwise), and commits
-   to `main` with the built-in token, which triggers no workflow.
-4. ArgoCD syncs `core` (two-source chart Application) and `provisioner`
+1. `release` (ukubi-ci `release.yml`, gated on the worker, dashboard and
+   islands test jobs) pushes an annotated `X.Y.Z` tag on the tested commit.
+   Nothing is committed to `main`; `CHANGELOG.md` is history only.
+2. `core`, `migration` and `executor` (ukubi-ci `image.yml`, `ukubi-build`
+   runner) build the tag with `buildah` and push `<sha12>` tags to Zot at
+   `registry.bnei.lan:5000`; `executor` also pushes `latest`. `core` and
+   `migration` commit their pin to `k8s/image-core.yaml` and
+   `k8s/image-migration.yaml` on the `deploy` branch, which ArgoCD layers
+   over `k8s/core.yaml`. `provisioner`, `worker` and `sidecar` only build
+   (`image-build.yml`): their pins live in `k8s/provisioner/*.yaml` on
+   `main`, which CI no longer writes, so they are bumped by a reviewed PR
+   until that Application reads pins from `deploy`. `FLEET_VERSION` is not
+   bumped by CI either. On a PR every image builds and nothing is pushed.
+3. ArgoCD syncs `core` (two-source chart Application) and `provisioner`
    (standalone plain-manifest Application). `db/migrations/` is applied by
    the `migration` image as a `PreSync` hook on `core`'s Application
    (`docs/adr/0030`); `core` embeds no schema.
@@ -786,17 +787,11 @@ provisioner's and executor's traces, when they have an endpoint, are their own.
 
 ### Which build is running
 
-`core` and `provisioner` report the release from their `FLEET_VERSION` env,
-which `docker.yml`'s deploy job sets alongside the image pins (`dev` without
-it). Images are tagged `src-<hash of their inputs, the ISO week and a salt>`,
-not by release. An image whose tag the registry already holds is reused, not
-rebuilt, and only a run that deploys pushes (dispatch and stale re-runs build
-without pushing), so a binary cannot know its release. `k8s/images.env`
-records what deploy pinned. Accepted: the first release of each ISO week
-rebuilds and rolls everything, and a `_test.go`/`.md` edit inside a
-component's directory rebuilds it. `worker` and `sidecar` show their image tag, the
-`src-…` the provisioner puts in the pod spec, which is the truth actually
-deployed. The dashboard SPA
+`core` and `provisioner` report the release from their `FLEET_VERSION` env
+(`dev` without it), set in the manifests by hand since CI stopped committing
+to `main`. Images are tagged by the 12-character sha of the commit they were
+built from; `core` and `migration` are pinned as `<sha12>@<digest>` on the
+`deploy` branch, the others in `k8s/provisioner/*.yaml`. The dashboard SPA
 is compiled into `core`'s binary, so its version is `core`'s.
 
 Two different questions, answered from two different places:

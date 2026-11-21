@@ -107,33 +107,29 @@ new-session dialog fleet-wide. The only infra-bootstrap edit is an override
 ## 2. Release / deploy walkthrough
 
 `.github/workflows/docker.yml` is the pipeline; read it for the detail.
-One workflow, three jobs on a push to `main`:
+On a push to `main` (Forgejo Actions, shared ukubi-ci v0.11.1 workflows):
 
-```
-push to main
-  → release (ubuntu-latest; gated on worker-test and dashboard-test):
-      release-it computes the version from Conventional Commits, bumps
-      package.json + CHANGELOG.md, pushes the version commit and tag
-  → build-push (ONE job, on [self-hosted, ukubi-build] — the build-runner LXC):
-      loops $COMPONENTS (core provisioner sidecar executor worker migration),
-      `buildah` builds, pushes content-addressed `src-<hash>` tags to
-      registry.bnei.lan:5000 (ukubi's own Zot, infra-bootstrap ADR-0034).
-      An image whose inputs did not change is not rebuilt. On a PR only the
-      changed components build, and nothing is pushed.
-  → deploy (push only): pins each image's tag in k8s/core.yaml (core,
-      migration) and k8s/provisioner/*.yaml (provisioner, worker, sidecar),
-      writes k8s/images.env and FLEET_VERSION, checks every pin landed,
-      commits to main with the built-in token (no workflow re-trigger)
-  → ArgoCD: core (two-source Application, chart from infra-bootstrap +
-      k8s/core.yaml here) and provisioner (standalone plain-manifest
-      Application, k8s/provisioner/ here) sync the new pins
-```
+1. `release` (ukubi-ci `release.yml`, gated on the worker, dashboard and
+   islands test jobs) pushes an annotated `X.Y.Z` tag on the tested commit.
+   Nothing is committed to `main`; `CHANGELOG.md` is history only.
+2. `core`, `migration` and `executor` (ukubi-ci `image.yml`, `ukubi-build`
+   runner) build the tag with `buildah` and push `<sha12>` tags to Zot at
+   `registry.bnei.lan:5000`; `executor` also pushes `latest`. `core` and
+   `migration` commit their pin to a pin file each (`image-core.yaml`,
+   `image-migration.yaml` under k8s/) on the `deploy` branch, which ArgoCD layers
+   over `k8s/core.yaml`. `provisioner`, `worker` and `sidecar` only build
+   (`image-build.yml`): their pins live in `k8s/provisioner/*.yaml` on
+   `main`, which CI no longer writes, so they are bumped by a reviewed PR
+   until that Application reads pins from `deploy`. `FLEET_VERSION` is not
+   bumped by CI either. On a PR every image builds and nothing is pushed.
+3. ArgoCD syncs `core` (two-source chart Application) and `provisioner`
+   (standalone plain-manifest Application). `db/migrations/` is applied by
+   the `migration` image as a `PreSync` hook on `core`'s Application
+   (`docs/adr/0030`); `core` embeds no schema.
 
-`workflow_dispatch` builds what the registry lacks on `main` and pushes
-nothing: it measures the build loop without cutting a release.
-
-Check current live tags: `grep 'tag:' k8s/core.yaml; grep 'image:'
-k8s/provisioner/deployment.yaml`. Check what actually reached the registry —
+Check current live tags: the pin files on the `deploy` branch
+(`git fetch origin deploy && git grep tag: origin/deploy`), and
+`grep 'image:' k8s/provisioner/deployment.yaml`. Check what actually reached the registry —
 a green build is not the same claim, and anonymous read means no auth:
 
 ```bash
@@ -144,8 +140,7 @@ curl -s http://registry.bnei.lan:5000/v2/agent-fleet-worker/tags/list
 Retention keeps only the **last 3 tags per image** plus `latest`
 (infra-bootstrap `gitops/platform/values/zot/values.yaml`), so a rollback
 deeper than 3 releases needs the images rebuilt and pushed, which no
-workflow path does today (`workflow_dispatch` builds `main` and pushes
-nothing). Runner/build/disk problems on the box itself go
+workflow path does today. Runner/build/disk problems on the box itself go
 through infra-bootstrap's `/build-runner-ops`.
 
 Check what's actually running:

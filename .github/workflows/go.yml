@@ -26,93 +26,45 @@ env:
   PROTOC_GEN_CONNECT_GO_VERSION: 'v1.21.0'
 
 jobs:
-  # Precise CI: only run a module's vet/lint/test against what actually
-  # changed. proto/ changes count as a change for every Go consumer. This job never
-  
-  # gates a push/deploy step (go.yml only checks correctness, doesn't
-  # build/push images), so it's safe to apply on every trigger, unlike
-  # docker.yml's equivalent (see that file's comment on why its filtering
-  # is pull_request-only).
+  # Precise CI: only run a module's vet/lint/test against what changed. A
+  # proto/ change counts for every Go module. On a push every module runs.
+  # Plain git rather than paths-filter + github-script, which talk to
+  # GitHub's API.
   changes:
     runs-on: ubuntu-latest
-    # Setting ANY permissions here resets every other permission to `none`
-    # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
-    # read must be explicit or actions/checkout's own clone fails.
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
-      proto: ${{ steps.filter.outputs.proto }}
+      proto: ${{ steps.modules.outputs.proto }}
       go-modules: ${{ steps.modules.outputs.result }}
     steps:
-      # fetch-depth: 0 (not the default shallow 1) — this job also runs on
-      # push-to-main, where paths-filter needs to diff against the
-      # previous commit; the default single-commit checkout wouldn't have
-      # it. pull_request events don't need this (paths-filter uses the API
-      # there) but it's harmless either way.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@v4
-        id: filter
-        with:
-          filters: |
-            proto:
-              - 'proto/**'
-            core:
-              - 'core/**'
-              # dbtest.NewPool applies db/migrations/ (docs/adr/0030), so a
-              # migration-only PR must run core's integration tests — before
-              # this line it ran nothing.
-              - 'db/migrations/**'
-              # core/internal/definitions/repo_test.go validates this
-              # directory (docs/adr/0062), so a definitions-only PR runs it.
-              - 'definitions/**'
-              # core/internal/buildguard reads these: every Dockerfile's
-              # COPY sources against .github/image-inputs.txt, and docker.yml.
-              # A worker-only Dockerfile change must still run it.
-              - '*/Dockerfile'
-              - '.github/image-inputs.txt'
-              - '.github/workflows/docker.yml'
-              # TestWorkflowsWriteOnlyInReleaseJobs reads every workflow.
-              - '.github/workflows/biome.yml'
-              # core/internal/buildguard (TestLogGuardCopiesAreIdentical) reads
-              # the logging guard's copy in every module, so an edit to one
-              # copy must run it even when core itself did not change.
-              - '*/internal/logguard/**'
-            # k8s/**: provisioner/internal/k8s tests read k8s/core.yaml and
-            # k8s/provisioner/*.yaml (LimitRange, readiness probe, NetworkPolicy
-            # labels), so a
-            # manifest-only change must run them too.
-            provisioner:
-              - 'provisioner/**'
-              - 'k8s/**'
-            sidecar:
-              - 'sidecar/**'
-            executor:
-              - 'executor/**'
-      # A proto/ change affects every Go module's generated code, so it
-      # counts as a change for all three, on top of each module's own filter.
       - name: Compute go-modules matrix
         id: modules
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const proto = ${{ steps.filter.outputs.proto }};
-            // Not named `core` — actions/github-script already injects its
-            // own `core` (the @actions/core toolkit) into this scope;
-            // shadowing it threw "Identifier 'core' has already been
-            // declared" the first time this ran.
-            const coreChanged = ${{ steps.filter.outputs.core }};
-            const provisioner = ${{ steps.filter.outputs.provisioner }};
-            const sidecar = ${{ steps.filter.outputs.sidecar }};
-            const executor = ${{ steps.filter.outputs.executor }};
-            const modules = [];
-            if (proto || coreChanged) modules.push('core');
-            if (proto || provisioner) modules.push('provisioner');
-            if (proto || sidecar) modules.push('sidecar');
-            if (proto || executor) modules.push('executor');
-            return modules;
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo 'proto=true' >> "$GITHUB_OUTPUT"
+            echo 'result=["core","provisioner","sidecar","executor"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" HEAD)
+          hit() { grep -qE "$1" <<<"$files"; }
+          proto=false; hit '^proto/' && proto=true
+          echo "proto=$proto" >> "$GITHUB_OUTPUT"
+          # core: dbtest.NewPool applies db/migrations/ (docs/adr/0030);
+          # definitions/ is validated by core's repo_test.go (docs/adr/0062);
+          # core/internal/buildguard reads every Dockerfile and workflow and
+          # every module's logguard copy.
+          # provisioner: its k8s tests read k8s/core.yaml and k8s/provisioner/.
+          m=()
+          { $proto || hit '^(core/|db/migrations/|definitions/|[^/]+/Dockerfile$|\.github/workflows/|[^/]+/internal/logguard/)'; } && m+=('"core"')
+          { $proto || hit '^(provisioner/|k8s/)'; } && m+=('"provisioner"')
+          { $proto || hit '^sidecar/'; } && m+=('"sidecar"')
+          { $proto || hit '^executor/'; } && m+=('"executor"')
+          echo "result=[$(IFS=,; echo "${m[*]}")]" >> "$GITHUB_OUTPUT"
 
   buf:
     needs: changes
@@ -127,10 +79,19 @@ jobs:
           # head_ref names no branch here. fetch-depth 0 for origin/main.
           fetch-depth: 0
 
-      - name: Setup buf
-        uses: bufbuild/buf-setup-action@v1
-        with:
-          version: ${{ env.BUF_VERSION }}
+      # A pinned release, checked by sha256 (BUF_VERSION and this sha move
+      # together, from the release's sha256.txt). Not buf-setup-action: it
+      # looks the release up through GitHub's API, unauthenticated from
+      # Forgejo, and the runners' shared address hits the rate limit.
+      - name: Install buf
+        env:
+          SHA: 8720830e26a733da55bb89bcd3cb44849c0965fc0c44fb5d691cccdc64dca5af
+        run: |
+          set -euo pipefail
+          curl -sSfLo "$RUNNER_TEMP/buf" "https://github.com/bufbuild/buf/releases/download/v$BUF_VERSION/buf-Linux-x86_64"
+          echo "$SHA  $RUNNER_TEMP/buf" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/buf"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: buf lint
         working-directory: proto
@@ -234,12 +195,24 @@ jobs:
         module: ${{ fromJSON(needs.changes.outputs.go-modules) }}
     services:
       postgres:
-        image: postgres:18
+        # The alpine tag, as ukubi-bridge's test job: postgres:18 failed to
+        # start under the podman runner (crun: memory.max).
+        image: postgres:18.7-alpine
         env:
           POSTGRES_USER: agentfleet
           POSTGRES_PASSWORD: agentfleet
           POSTGRES_DB: agentfleetdb
-        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # The provisioner's mintPostgres tests need a superuser named postgres
+      # (credentials_integration_test.go), so they get an instance of their own.
+      postgres-admin:
+        image: postgres:18.7-alpine
+        env:
+          POSTGRES_PASSWORD: admin-test-password
         options: >-
           --health-cmd pg_isready
           --health-interval 5s
@@ -255,6 +228,11 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+
+      # provisioner/internal/git's SyncFleetShared shells out to rsync, which
+      # the container runner's image lacks.
+      - name: Install rsync
+        run: command -v rsync || { apt-get update -qq && apt-get install -y -qq rsync; }
 
       - name: go vet
         working-directory: ${{ matrix.module }}
@@ -291,11 +269,16 @@ jobs:
       - name: go test (integration, real Postgres)
         working-directory: ${{ matrix.module }}
         env:
-          AGENTFLEET_DB_HOST: localhost
+          # A container job reaches the service by its name.
+          AGENTFLEET_DB_HOST: postgres
           AGENTFLEET_DB_PORT: '5432'
           AGENTFLEET_DB_NAME: agentfleetdb
           AGENTFLEET_DB_USER: agentfleet
           AGENTFLEET_DB_PASSWORD: agentfleet
+          # dbtest.NewPool's external-database path (a schema per test): the
+          # container runner has no Docker socket for testcontainers.
+          AGENTFLEET_TEST_DSN: postgres://agentfleet:agentfleet@postgres:5432/agentfleetdb?sslmode=disable
+          AGENTFLEET_TEST_ADMIN_PG_HOST: postgres-admin
         run: go test -tags=integration ./... -count=1
 
   # Unfiltered on purpose: the drift it catches (an ADR index row that

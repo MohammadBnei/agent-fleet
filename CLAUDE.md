@@ -43,7 +43,7 @@ is stale → check code.**
 | k8s client | `client-go` (`provisioner/` — only component with cluster RBAC; a `cluster.read` definition pod's sidecar holds the read-only `fleet-read` token, ADR-0084 §6) |
 | DB | `jackc/pgx/v5` (`core/` only — **sole** `AGENTFLEET_DB_*` holder, `adr/0020` pt1). worker/sidecar/provisioner hold zero DB creds |
 | Deploy | Docker per component. `core` = two-source ArgoCD app (chart from `infra-bootstrap`, values `k8s/core.yaml`). `provisioner` = standalone plain manifests (`k8s/provisioner/`, RBAC `common-app-chart` can't express) |
-| CI/CD | Actions: `docker.yml` (on push to `main`: `release` job runs `release-it`, then build/push/deploy), `go.yml` (vet/lint/test + buf lint/breaking/drift). `biome.yml` (`biome ci .` over every JS/TS package; root `biome.jsonc`, Biome pinned in root `package.json`; `bun run lint` / `bun run format` from the root). No `release.yml`: it was folded into `docker.yml`. **Images build on ukubi-cluster `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub.** One job loops all six components — self-hosted runner does one job at a time (infra-bootstrap ADR-0034) |
+| CI/CD | Forgejo Actions on the shared ukubi-ci v0.11.1 workflows: `docker.yml` (tests, then `release.yml` tags the commit, then one `image.yml`/`image-build.yml` call per image on the `ukubi-build` runner; core and migration pins go to the `deploy` branch, never `main`), `go.yml` (vet/lint/test + buf lint/breaking/drift), `biome.yml` (`biome ci .` over every JS/TS package; root `biome.jsonc`, Biome pinned in root `package.json`). **Images build on the `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub** |
 
 ## Directory map
 
@@ -262,8 +262,8 @@ deploy, CI, permission or pod-lifecycle paths.
 - PR build never pushes an image. Check registry, not CI. Only last 3 tags + `latest` kept.
 - `kubectl apply --dry-run=server` creates no pod. ArgoCD `Synced`+`Degraded` = the tell.
 - Unset GitHub secret = empty string, not error. Non-secret CI needs → `env:`, not `secrets:`.
-- New component → wire into **every** CI path (`docker.yml` `COMPONENTS` + `changes` filter
-  + `go.yml` codegen). Guard `core/internal/buildguard`, run `-count=1`.
+- New component → wire into **every** CI path (an image job in `docker.yml` + `go.yml`
+  `changes` and codegen). Guard `core/internal/buildguard`, run `-count=1`.
 - **Squash-merging a stacked PR auto-closes the PR above it, and GitHub will not reopen
   it.** Retarget dependent PRs to `main` *before* merging the one below.
 - **A squash also drops any change a stacked branch made and then undid**, with no
@@ -295,8 +295,8 @@ deploy, CI, permission or pod-lifecycle paths.
 
 - All changes via feature branch + PR. No direct push to `main`.
 - Secrets never committed; fetched from Infisical at run time.
-- Conventional Commits — `docker.yml`'s `release` job runs `release-it` off them, bumping
-  version/CHANGELOG on every push to `main`.
+- Conventional Commits — `docker.yml`'s `release` job (ukubi-ci `release.yml`) cuts the
+  version tag from them on every push to `main`.
 - Commit trailers carry a little metadata — claims, never evidence. No `Co-Authored-By` naming
   Claude or a model (the owner's global rule). `Agent-Session: <opaque id>` where one exists, and
   `Agent-Definition: <name>@<sha>` on a definition pod. `worker/git-hooks` stamps the

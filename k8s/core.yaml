@@ -28,8 +28,8 @@ automountServiceAccountToken: false
 
 image:
   repository: registry.bnei.lan:5000/agent-fleet-core
-  # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
-  # job on every release tag.
+  # Overridden by k8s/image-core.yaml on the `deploy` branch, which
+  # .github/workflows/docker.yml (ukubi-ci image.yml) bumps on every release.
   tag: "src-ab11b1917552"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
@@ -144,9 +144,8 @@ ingress:
       sourceHeader: ""
 
 env:
-  # The release core reports (dashboard, logs). Set by docker.yml's deploy job:
-  # the image tag is a hash of core's inputs, shared by every release that
-  # doesn't change them, so the version can't come from the image.
+  # The release core reports (dashboard, logs). Set by hand: CI no longer
+  # commits to main.
   - name: FLEET_VERSION
     value: "7.44.3"
   - name: CORE_PORT

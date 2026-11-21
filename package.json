@@ -4,36 +4,9 @@
   "private": true,
   "scripts": {
     "lint": "biome ci .",
-    "format": "biome format --write .",
-    "release": "release-it"
+    "format": "biome format --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
-    "@release-it/conventional-changelog": "^12.0.2",
-    "release-it": "^21.1.1"
-  },
-  "release-it": {
-    "$schema": "https://unpkg.com/release-it@21/schema/release-it.json",
-    "git": {
-      "commitMessage": "chore: release v${version}",
-      "pushArgs": [
-        "--follow-tags",
-        "--atomic"
-      ]
-    },
-    "github": {
-      "release": false
-    },
-    "npm": {
-      "publish": false
-    },
-    "plugins": {
-      "@release-it/conventional-changelog": {
-        "preset": {
-          "name": "angular"
-        },
-        "infile": "CHANGELOG.md"
-      }
-    }
+    "@biomejs/biome": "2.6.4"
   }
 }

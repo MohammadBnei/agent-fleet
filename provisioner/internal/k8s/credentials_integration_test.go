@@ -5,6 +5,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,12 @@ func startAdminPostgres(t *testing.T) (host string, port int32, adminPassword st
 	t.Helper()
 	ctx := context.Background()
 	const password = "admin-test-password"
+
+	// No Docker socket (Forgejo's container runner): CI provides a Postgres
+	// service whose superuser `postgres` has this password, reached by name.
+	if h := os.Getenv("AGENTFLEET_TEST_ADMIN_PG_HOST"); h != "" {
+		return h, 5432, password
+	}
 
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
 		postgres.WithUsername("postgres"),

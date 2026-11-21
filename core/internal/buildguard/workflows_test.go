@@ -11,11 +11,19 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// releaseJobs may hold a writable GITHUB_TOKEN: release-it's version commit
-// and tag, and deploy's image pins. Each runs on a push to main only.
-var releaseJobs = map[string][]string{
-	"docker.yml": {"release", "deploy"},
-}
+// releaseJobs may hold a writable GITHUB_TOKEN in a job of this repo's own
+// steps, each on a push to main only. None does today: the release tag and the
+// image pins come from ukubi-ci's pinned workflows (see ukubiCI).
+var releaseJobs = map[string][]string{}
+
+// ukubiCI is the prefix of a `uses:` job calling a shared workflow pinned by
+// sha. Such a job may be granted write: the called workflow decides from the
+// event payload whether to publish (on Forgejo a `uses:` job's own `if:` is
+// evaluated inside the called jobs, where event_name is workflow_call, so the
+// push gate below cannot be written there).
+const ukubiCI = "MohammadBnei/ukubi-ci/.github/workflows/"
+
+var pinnedSHA = regexp.MustCompile(`@[0-9a-f]{40}$`)
 
 // pushOnly is the conjunct a release job's `if:` must carry, ANDed with the
 // rest: an `||` or a negation could admit another event around it.
@@ -35,6 +43,7 @@ type workflow struct {
 
 type job struct {
 	If          string `yaml:"if"`
+	Uses        string `yaml:"uses"`
 	Permissions any    `yaml:"permissions"`
 }
 
@@ -130,6 +139,9 @@ func TestWorkflowsWriteOnlyInReleaseJobs(t *testing.T) {
 		}
 		for id, j := range w.Jobs {
 			if !writes(j.Permissions) {
+				continue
+			}
+			if strings.HasPrefix(j.Uses, ukubiCI) && pinnedSHA.MatchString(j.Uses) {
 				continue
 			}
 			if !slices.Contains(releaseJobs[name], id) {

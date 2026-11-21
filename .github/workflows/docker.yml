@@ -1,70 +1,38 @@
 name: Build, Test and Deploy
 
-# Builds this repo's six images on ukubi-cluster's own build-runner LXC and
-# pushes them to the in-cluster Zot registry (infra-bootstrap ADR-0034),
-# instead of on a GitHub-hosted runner pushing to Docker Hub. Plus a deploy
-# job (below) that bumps k8s/**/*.yaml's pinned image tags on every release
-# so ArgoCD (core via a two-source Application, values pulled straight from
-# this repo; provisioner via its own standalone plain-manifest Application,
-# see k8s/provisioner/README.md) actually redeploys instead of silently
-# building an image nobody picks up.
+# Tests, then the shared ukubi-ci workflows (v0.11.1, Forgejo Actions):
 #
-# Why the LAN: the old flow was GitHub runner -> build -> push to Docker Hub
-# -> three nodes pull back down a residential uplink. This repo's worker
-# image is the largest thing the cluster pulls (Claude Code, Playwright deps,
-# a Go toolchain) and the provisioner pulls it on every session warm. The
-# registry is LAN-only — `.lan` is a name Let's Encrypt cannot issue for, so
-# there is no public ingress — which means a GitHub-hosted runner could not
-# reach it even if we wanted one, and pushing layers *up* an asymmetric link
-# is the slow direction anyway.
+#  - release.yml cuts the version from Conventional Commits and pushes an
+#    annotated tag on the tested commit. Nothing is committed to main (no
+#    package.json bump, no CHANGELOG edit; CHANGELOG.md stays as history).
+#  - image.yml builds core, migration and executor on the build-runner LXC
+#    (`ukubi-build`, buildah), pushes <sha12> tags to Zot, and for core and
+#    migration commits the pin to a file of its own on the `deploy` branch:
+#    k8s/image-core.yaml (.image.tag) and k8s/image-migration.yaml
+#    (.hooks.migrate.image.tag). ArgoCD has to layer both over k8s/core.yaml
+#    (infra-bootstrap's agent-fleet-core registry entry) before they deploy.
+#    executor has no pin: catalog.go floats on its `latest`, pushed here.
+#  - provisioner, worker and sidecar only build (image-build.yml). Their pins
+#    sit in k8s/provisioner/*.yaml, plain manifests that a standalone
+#    Application syncs from main, and nothing may commit to main any more.
+#    Pushing sha tags nobody pins would only push the pinned src-<hash> tags
+#    out of Zot (it keeps 3 per repo). They move to image.yml once that
+#    Application can read pins from the deploy branch.
 #
-# Why ONE build job instead of the previous three (worker / migration /
-# matrixed Go): a self-hosted runner executes one job at a time. Three jobs
-# with a four-leg matrix means six serial jobs, each re-checking-out and each
-# re-pulling golang:1.27 (~800MB over the WAN) because the previous job's
-# cleanup evicted it. One job, one checkout, one login, one shared image
-# cache. See the /build-runner-ops skill in infra-bootstrap.
-#
-# Registry credentials are native GitHub Actions secrets (REGISTRY_USERNAME /
-# REGISTRY_PASSWORD), NOT Infisical-at-job-time like this workflow used to do
-# for DOCKERHUB_*. That pattern cannot work on the build box: its sudoers
-# grants /usr/bin/buildah and nothing else, so the Infisical CLI's
-# `curl | sudo -E bash` + `sudo apt-get install` bootstrap hangs on a
-# password prompt — and it would re-add a WAN round-trip mid-build, which is
-# the thing this pipeline exists to remove. They are the plaintext
-# counterpart of Infisical's ZOT_HTPASSWD; rotate together
-# (infra-bootstrap docs/secrets.md).
+# On a pull_request every image builds and nothing is pushed: image.yml's own
+# guard decides that from the payload, so the uses: jobs carry no if:
+# (Forgejo evaluates it inside the called jobs, where event_name is
+# workflow_call).
 
 on:
-  # workflow_dispatch is the cutover's seeding path, and it stays afterwards
-  # as the way to measure the loop without cutting a release. It now builds
-  # (main only) whatever the registry lacks and pushes nothing; see build-push.
-  # The history below is why it once pushed.
-  #
-  # The registry starts empty of this repo's images, so flipping k8s/*.yaml to
-  # registry.bnei.lan:5000 while the pinned tag is one only Docker Hub ever
-  # had gives an ImagePullBackOff. And flipping *nothing* is worse, not
-  # safer: the first release after this workflow lands pushes to Zot only,
-  # while deploy's `tag: "..."` sed still bumps a manifest whose repository
-  # says mohammaddocker — pinning core to a Docker Hub tag that was never
-  # pushed there. So: dispatch once to build the CURRENT version into Zot,
-  # confirm the tags exist, then flip the manifests as a no-op rollout of
-  # byte-identical content. Order matters; see the PR body.
   workflow_dispatch:
   pull_request:
   push:
     branches:
       - main
-    # Mirrors the old release.yml's filter. The release commit bumps package.json and
-    # CHANGELOG.md and deploy's commit touches k8s/ — all ignored here, and pushes made
-    # with the built-in GITHUB_TOKEN do not trigger workflows anyway, so the loop is
-    # closed twice over.
-    #
-    # `paths` with negations rather than paths-ignore, because order matters
-    # here and the last match wins: definitions/ and packs/ are mostly .md,
-    # and a merge touching only them must still cut a release, since that is
-    # how they go live (FLEET_VERSION is the provisioner's definitions ref).
-    # The release job's `untested` check mirrors this list.
+    # `paths` with negations rather than paths-ignore, because the last match
+    # wins: definitions/ and packs/ are mostly .md, and a merge touching only
+    # them must still cut a release.
     paths:
       - '**'
       - '!**.md'
@@ -75,299 +43,22 @@ on:
     tags-ignore:
       - '*'
 
-# Read-only by default; the test jobs run PR code. Only release and deploy,
-# which run on a push to main alone, raise their own GITHUB_TOKEN to
-# contents: write. Guarded by core/internal/buildguard
-# (TestWorkflowsWriteOnlyInReleaseJobs).
+# Read-only by default; the test jobs run PR code. Guarded by
+# core/internal/buildguard (TestWorkflowsWriteOnlyInReleaseJobs).
 permissions:
   contents: read
 
-# Three lanes. PR runs get one group per ref and cancel their own older run:
-# only the newest push of a PR is worth building. Push runs share `release`
-# and are never cancelled, only queued. Dispatch gets its own lane: in
-# `release` it could replace a pending push run, and since dispatch never
-# releases, that push's commits would wait for some later merge.
-#
-# They used to share one `release` group with cancel-in-progress, so a PR
-# push cancelled a running main release (v5.6.0 was lost that way, #278
-# shipped late), and back-to-back merges could starve the release of ever
-# finishing a build.
-#
-# GitHub keeps one pending run per group: a third push while one release
-# runs and one waits replaces the waiting one. Nothing is lost by that: the
-# replaced run never reached release-it, and the release job checks out
-# main's tip, so the next release carries its commits. A run that finds
-# nothing new since the last tag (only deploy's bot commit) skips the
-# release entirely; see the release job.
+# Forgejo honours only the workflow-level group. A newer PR push cancels its
+# older run; main runs queue and are never cancelled once a tag may be pushed.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || github.event_name == 'push' && 'release' || 'dispatch' }}
+  group: app-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  REGISTRY: registry.bnei.lan:5000
-  # Plaintext on purpose: a username is not a secret, and holding it as one
-  # cost a release. `secrets.REGISTRY_USERNAME` was never set on this repo, so
-  # buildah got `--username ""` and failed the 3.8.6 tag build with "Must
-  # provide --username with --password-stdin" — a config value that existed in
-  # Infisical, was described in a commit message, and reached nothing. Only the
-  # password is a secret.
-  REGISTRY_USER: ci
-  # The registry password now comes from the shared platform-commons project over OIDC
-  # instead of a repo secret (infra-bootstrap ADR-0049) — one place to rotate it for every
-  # build repo. The identity is bound to a repository allowlist plus event_name
-  # push/workflow_dispatch; a `ref` binding cannot work for a tag-triggered build because
-  # Infisical matches claims exactly and tag refs cannot be enumerated.
-  INFISICAL_DOMAIN: https://infisical.bnei.dev
-  INFISICAL_PROJECT_SLUG: platform-commons-76pb
-  INFISICAL_ENV: dev
-  INFISICAL_IDENTITY_ID: 19807471-d73a-48d4-9e58-1dc34255ef77
-  # The complete set, used verbatim on a release. Also what
-  # core/internal/buildguard's matrix_test greps for: every directory
-  # shipping a Dockerfile must appear in this file, or adding a component
-  # that never builds passes CI. Keep it complete.
-  COMPONENTS: core provisioner sidecar executor worker migration
-  # Part of every image's src-<hash> tag (build-push). Bump it to rebuild all
-  # six when something outside .github/image-inputs.txt changes what a build
-  # produces, such as the buildah flags below.
-  BUILD_SALT: "1"
-
 jobs:
-  # Cuts the version and CHANGELOG, in the same run as the build that follows. This used to
-  # be release.yml, chained to the build by a tag push — which is the only reason this repo
-  # needed a PAT, since a tag pushed with the built-in GITHUB_TOKEN deliberately does not
-  # trigger workflows. Sequential jobs need no trigger.
-  #
-  # `push` only, not dispatch: workflow_dispatch stays the way to measure the build loop
-  # WITHOUT cutting a release, which is what it was added for.
-  release:
-    # Gates on the test legs, which previously gated nothing: build-push only ever needed
-    # `changes`, so a red worker-test never stopped a release or an image. always() because
-    # both tests hang off `changes`, which is skipped outside pull_request — 'skipped' has
-    # to pass here or no release would ever happen on a push.
-    needs: [worker-test, dashboard-test]
-    if: >-
-      always()
-      && github.event_name == 'push'
-      && needs.worker-test.result != 'failure'
-      && needs.dashboard-test.result != 'failure'
-    runs-on: ubuntu-latest
-    # contents: write so release-it can push the version commit and tag with the built-in
-    # token. release-it needs nothing beyond that here — github.release is false in its
-    # config, so it never touches the Releases API.
-    permissions:
-      contents: write
-    outputs:
-      version: ${{ steps.version.outputs.version || steps.check.outputs.version }}
-    steps:
-      # ref: main, not the SHA that triggered the run. A queued run starts after
-      # the previous release pushed its tag and deploy commit; from the
-      # triggering SHA, release-it computes the version from an older tag and
-      # dies on "fatal: tag '6.6.0' already exists" (run 39600330555).
-      - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 0
-
-      # Three outcomes, decided before anything is installed:
-      #  - release: human commits since the last tag. Only when none of them is
-      #    newer than the commit THIS run tested: checking out main can pick up
-      #    a merge whose tests are still running in its own (queued) run, and
-      #    that run releases it once its tests pass.
-      #  - redeploy: nothing new, but the last tag never got its deploy commit
-      #    (its build or deploy failed). Build and deploy that tag again,
-      #    without release-it.
-      #  - skip: only deploy's bot commit since the last tag. release-it would
-      #    still cut a patch (the angular preset bumps patch for any commit) and
-      #    rebuild every image for nothing.
-      - name: Anything to release?
-        id: check
-        env:
-          TESTED: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          last=$(git describe --tags --abbrev=0)
-          # grep's exit 1 (no match) is fine; a git error is not, and must not
-          # read as "no commits".
-          humans() { git log --format=%an "$@" | { grep -vx agent-fleet-ci || [ $? -eq 1 ]; }; }
-          all=$(humans "$last..HEAD")
-          # Same paths as `on.push.paths-ignore`: a docs-only merge gets no
-          # run of its own, so it must not hold this one back. A newer commit
-          # whose run never happens for another reason ([skip ci], a run
-          # cancelled by hand) holds the release until the next merge.
-          # Two calls because a pathspec exclude cannot be re-included:
-          # md under definitions/ and packs/ does trigger a run.
-          untested=$(humans "$TESTED..HEAD" -- . ':(exclude,glob)**/*.md' ':(exclude,glob)k8s/*' ':(exclude)package.json'
-            humans "$TESTED..HEAD" -- definitions packs)
-          if [ -n "$all" ]; then
-            if [ -n "$untested" ]; then
-              echo "main has untested commits past $TESTED; their own run releases them"
-              echo "mode=skip" >> "$GITHUB_OUTPUT"
-            else
-              echo "mode=release" >> "$GITHUB_OUTPUT"
-            fi
-          # Deployed means the manifests pin it, not that a deploy commit
-          # exists: deploy commits nothing when the pin is already right.
-          # k8s/images.env records the release deploy last pinned; the
-          # provisioner grep is the same fact for releases from before that
-          # file, whose images carried the version as their tag. Without it a
-          # pre-images.env tag would be "redeployed" by this workflow, built
-          # from source that compiles the version in and so reports "dev".
-          elif grep -qx "version=$last" k8s/images.env 2>/dev/null \
-            || grep -q "agent-fleet-provisioner:$last\$" k8s/provisioner/deployment.yaml; then
-            echo "nothing new since $last, and it is deployed; skipping the release"
-            echo "mode=skip" >> "$GITHUB_OUTPUT"
-          else
-            echo "$last was never deployed; building and deploying it again"
-            echo "mode=redeploy" >> "$GITHUB_OUTPUT"
-            echo "version=$last" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Bun
-        if: steps.check.outputs.mode == 'release'
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-
-      # release-it 21 and conventional-changelog 12 require Node
-      # ^22.22.2 || ^24.15.0 || >=26. `bun run release` still executes
-      # release-it under node (its bin has a node shebang), so the runner's
-      # default Node is what runs it — pin one that satisfies both.
-      - name: Set up Node
-        if: steps.check.outputs.mode == 'release'
-        uses: actions/setup-node@v5
-        with:
-          node-version: '24.15'
-
-      - name: Install dependencies
-        if: steps.check.outputs.mode == 'release'
-        run: bun install
-
-      - name: git config
-        if: steps.check.outputs.mode == 'release'
-        run: |
-          git config user.name "${GITHUB_ACTOR}"
-          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-
-      - name: Run release-it
-        if: steps.check.outputs.mode == 'release'
-        run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && bun run release
-
-      - name: Read the released version
-        if: steps.check.outputs.mode == 'release'
-        id: version
-        run: |
-          set -euo pipefail
-          v=$(jq -er .version package.json)
-          [ -n "$v" ] || { echo "no version in package.json"; exit 1; }
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-
-  # Precise CI on pull_request: only build the image(s) whose files actually
-  # changed in this PR — nothing is pushed on a PR anyway, so this is pure
-  # CI-time cost, safe to skip. On a real release (push: tags) this filtering
-  # is bypassed entirely and $COMPONENTS is used as-is — a release tag has to
-  # produce a complete, consistent set of images; skipping one because its
-  # dir "didn't change since this PR's diff" would leave deploy's k8s/*.yaml
-  # tag-bump pointing at a tag some image was never actually pushed under.
-  #
-  # Stays on ubuntu-latest deliberately: paths-filter needs no build tooling,
-  # and keeping it off the single serial build runner means it never queues
-  # behind an in-flight release.
-  changes:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    # Setting ANY permissions here resets every other permission to `none`
-    # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
-    # read must be explicit or actions/checkout's own clone fails.
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      dashboard: ${{ steps.filter.outputs.dashboard }}
-      islands: ${{ steps.filter.outputs.islands }}
-      worker: ${{ steps.filter.outputs.worker }}
-      components: ${{ steps.components.outputs.result }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v4
-        id: filter
-        with:
-          filters: |
-            worker:
-              - 'worker/**'
-              - 'proto/**'
-            migration:
-              - 'migration/**'
-              - 'db/migrations/**'
-            proto:
-              - 'proto/**'
-            core:
-              - 'core/**'
-              # The SPA is compiled into core's binary (core/Dockerfile's
-              # spa stage), so a dashboard-only change still has to rebuild
-              # core's image. Without this a dashboard change triggered no
-              # build at all and CI went green having compiled nothing.
-              - 'dashboard/**'
-              # The islands are compiled in the same way (docs/adr/0068).
-              - 'islands/**'
-            dashboard:
-              - 'dashboard/**'
-            # The island shares dashboard/src/gen and transcript.ts.
-            islands:
-              - 'islands/**'
-              - 'dashboard/src/gen/**'
-              - 'dashboard/src/transcript.ts'
-            provisioner:
-              - 'provisioner/**'
-            sidecar:
-              - 'sidecar/**'
-            executor:
-              - 'executor/**'
-      - name: Compute the component list
-        id: components
-        uses: actions/github-script@v7
-        with:
-          # Space-separated string, not JSON: the build job below consumes it
-          # as a shell word list, the same shape as $COMPONENTS. A matrix
-          # would gain nothing — the runner is serial either way.
-          result-encoding: string
-          script: |
-            const proto = ${{ steps.filter.outputs.proto }};
-            // Not named `core` — actions/github-script already injects its
-            // own `core` (the @actions/core toolkit) into this scope;
-            // shadowing it throws "Identifier 'core' has already been
-            // declared".
-            const coreChanged = ${{ steps.filter.outputs.core }};
-            const provisioner = ${{ steps.filter.outputs.provisioner }};
-            const sidecar = ${{ steps.filter.outputs.sidecar }};
-            const executor = ${{ steps.filter.outputs.executor }};
-            // worker's and migration's own filters already include the dirs
-            // that force them to rebuild (proto/** and db/migrations/**), so
-            // they need no proto term here.
-            const worker = ${{ steps.filter.outputs.worker }};
-            const migration = ${{ steps.filter.outputs.migration }};
-            const components = [];
-            if (proto || coreChanged) components.push('core');
-            if (proto || provisioner) components.push('provisioner');
-            if (proto || sidecar) components.push('sidecar');
-            if (proto || executor) components.push('executor');
-            if (worker) components.push('worker');
-            if (migration) components.push('migration');
-            return components.join(' ');
-
-  # worker/'s bun:test suite. It had no CI leg at all until now — CLAUDE.md's
-  # Workflow rules claimed it ran "ahead of the Docker build", and neither
-  # docker.yml nor worker/Dockerfile ran it anywhere, so `bun test` executed
-  # only on whatever machine a human happened to type it on. Found while
-  # merging a PR that rewrote those very tests: CI was green and had not
-  # compiled them, let alone run them.
-  #
-  # Mirrors dashboard-test deliberately, including staying off the build
-  # runner: it needs bun, not buildah, and the self-hosted runner takes one
-  # job at a time.
+  # `bun run test`, not bare `bun test`: the script adds --isolate.
+  # session.test.ts mock.module()s ./sidecarClient.js, which is
+  # process-global and survives mock.restore().
   worker-test:
-    needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -380,23 +71,13 @@ jobs:
       - name: Typecheck
         working-directory: worker
         run: bun run typecheck
-      # `bun run test`, not bare `bun test`: the script adds --isolate.
-      # session.test.ts mock.module()s ./sidecarClient.js, which is
-      # process-global and survives mock.restore(), so without a fresh
-      # module registry per file sidecarClient.test.ts gets the fake
-      # whenever the runner's readdir order puts session.test.ts first.
       - name: Run tests
         working-directory: worker
         run: bun run test
 
-  # The dashboard ships inside core's image rather than one of its own, so it
-  # has no leg in the build below (that builds an image per component).
-  # core's Dockerfile already runs `bun run build`; this is the missing
-  # `bun test`, which otherwise never ran anywhere. Stays on ubuntu-latest —
-  # it needs bun, not buildah, and it should not occupy the build runner.
+  # The dashboard ships inside core's image. `bun run build` is `tsc -b &&
+  # vite build`; only `tsc -b` enforces noUnusedLocals.
   dashboard-test:
-    needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.dashboard == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -409,19 +90,12 @@ jobs:
       - name: Run tests
         working-directory: dashboard
         run: bun test
-      # `tsc --noEmit` is NOT this build: `bun run build` is `tsc -b &&
-      # vite build`, and only `tsc -b` enforces noUnusedLocals. An unused
-      # import has already shipped a broken core image once.
       - name: Build
         working-directory: dashboard
         run: bun run build
 
-  # docs/adr/0068: the <fleet-agent> island. Same shape as dashboard-test.
-  # Its bundle ships inside core's image (core/Dockerfile's islands stage);
-  # this job adds the tests and type checks that stage skips.
+  # docs/adr/0068: the <fleet-agent> island, compiled into core's image.
   islands-test:
-    needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.islands == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -438,525 +112,76 @@ jobs:
         working-directory: islands
         run: bun run build
 
-  build-push:
-    needs: [changes, release]
-    # `!= 'pull_request'` rather than `== 'push'`: workflow_dispatch skips the
-    # `changes` job (it is PR-gated), so its components output is empty and an
-    # `== 'push'` test would silently skip the seeding run this cutover needs.
-    # `release` is skipped outside push and `changes` outside pull_request, so an implicit
-    # success()-on-needs would skip this job in both cases — hence always(). The explicit
-    # release.result test is what stops a failed release from being built: 'skipped' passes
-    # here, 'failure' does not.
-    #
-    # A fork PR never reaches this self-hosted runner: buildah runs as root
-    # there, on the LAN beside the registry the cluster pulls from. This guard
-    # cannot stop a fork that edits this file; only refusing to approve the
-    # run can, so never approve a fork run that touches .github/.
-    if: >-
-      always()
-      && needs.release.result != 'failure'
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && (github.event_name != 'pull_request' || needs.changes.outputs.components != '')
-      && (github.event_name != 'push' || needs.release.outputs.version != '')
-      && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
-    # NOT `ukubi` — that label belongs to the in-cluster runner holding a
-    # ServiceAccount token with `create jobs` in vos/vos-dev (ADR-0022).
-    # Builds must not land there and cluster jobs must not land here.
-    runs-on: [self-hosted, ukubi-build]
-    # A stalled push must not hold the only runner for GitHub's 6h default;
-    # a cold six-image build is ~12 minutes.
-    timeout-minutes: 45
-    # Same reset rule as the `changes` job above: declaring any permissions zeroes the
-    # rest, so contents: read is explicit. id-token mints the OIDC token Infisical checks.
+  # A dry run on a PR (the would-be notes in the summary); a tag on main.
+  release:
+    needs: [worker-test, dashboard-test, islands-test]
     permissions:
-      contents: read
-      id-token: write
-    # Every component's src-<hash> tag, built or skipped, as `name=tag`
-    # words. deploy pins exactly these.
-    outputs:
-      images: ${{ steps.build.outputs.images }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          # The tag release-it just made on a release run; otherwise whatever triggered
-          # us (a PR head, or main on a dispatch). Checking out `main` on a release run
-          # would race the next push and could build a version never tagged.
-          ref: ${{ needs.release.outputs.version || github.ref }}
-          fetch-depth: 0
+      contents: write # release.yml pushes the release tag
+    uses: MohammadBnei/ukubi-ci/.github/workflows/release.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
 
-      # Not baked into the build-runner image: one apt-get was not worth its
-      # own pipeline. Short-circuits in practice, which matters —
-      # build-runner-configure.yml installs buildah, and the `sudo apt-get`
-      # fallback here CANNOT work (sudoers grants /usr/bin/buildah only). If
-      # this ever actually runs, it hangs.
-      - name: Ensure buildah
-        run: command -v buildah || (sudo apt-get update -qq && sudo apt-get install -y -qq buildah)
-
-      # What this run pushes, if anything. The tag itself is per component
-      # and computed in the build step: src-<hash of its inputs>.
-      #
-      # Only a run that deploys pushes. zot keeps the last 3 tags per repo
-      # (plus `latest`), so every push of a tag nothing deploys moves the
-      # deployed one closer to eviction, and a later skip ("the registry has
-      # it") would then pin a tag that is gone or about to be.
-      - name: Decide what to push
-        id: tag
-        run: |
-          set -euo pipefail
-          case "${{ github.event_name }}" in
-            pull_request)
-              echo "push=false" >> "$GITHUB_OUTPUT"
-              ;;
-            workflow_dispatch)
-              # A measurement run on main: builds whatever the registry
-              # doesn't already hold, pushes nothing, deploys nothing.
-              echo "push=false" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              version="${{ needs.release.outputs.version }}"
-              # A re-run of an old run deploys nothing (deploy checks the
-              # same thing), so it pushes nothing either, and must not move
-              # `latest` back.
-              newest=$(git tag --sort=-v:refname | head -1)
-              if [ "$version" = "$newest" ]; then
-                echo "push=true" >> "$GITHUB_OUTPUT"
-                echo "latest=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "::notice::$version is not the newest tag ($newest); building without pushing"
-                echo "push=false" >> "$GITHUB_OUTPUT"
-                echo "latest=false" >> "$GITHUB_OUTPUT"
-              fi
-              ;;
-          esac
-
-      # Guarded with the same condition as the login below, and that guard is load-bearing:
-      # this job also runs on pull_request, while the machine identity is bound to
-      # event_name push/workflow_dispatch. Without the `if`, every PR build would fail here
-      # on a claim it is never going to satisfy — and it does not need the password anyway,
-      # because a PR build does not push.
-      #
-      # Fetches only REGISTRY_PASSWORD, not the whole environment.
-      - name: Read the registry password from Infisical
-        if: steps.tag.outputs.push == 'true'
-        uses: Infisical/secrets-action@v1.0.12
-        with:
-          method: oidc
-          identity-id: ${{ env.INFISICAL_IDENTITY_ID }}
-          oidc-audience: infisical.bnei.dev
-          domain: ${{ env.INFISICAL_DOMAIN }}
-          project-slug: ${{ env.INFISICAL_PROJECT_SLUG }}
-          env-slug: ${{ env.INFISICAL_ENV }}
-          secret-path: /
-          secret-name: REGISTRY_PASSWORD
-          export-type: env
-
-      # GitHub only auto-masks `secrets.*`, and this action's README does not document
-      # masking. An unmasked Infisical value leaked DOCKERHUB_TOKEN in cleartext in this
-      # repo once already.
-      - name: Mask the fetched password
-        if: steps.tag.outputs.push == 'true'
-        run: echo "::add-mask::$REGISTRY_PASSWORD"
-
-      - name: Registry login
-        # Only needed to push; base-image pulls are anonymous. --tls-verify=false
-        # because the registry is plain HTTP (no cert, since Let's Encrypt
-        # cannot issue for `.lan`); anonymous *reads* are open, which is how
-        # the nodes pull without credentials.
-        #
-        # Every buildah call goes through sudo, and they must all agree:
-        # rootless buildah in this unprivileged LXC only gets a single UID
-        # mapping (newuidmap is not permitted), so any image chowning to a
-        # second UID dies with "insufficient UIDs or GIDs available in user
-        # namespace". Mixing them also splits the auth file — login writes
-        # under /run/containers/<uid>/auth.json, so a rootless login is
-        # invisible to a rootful push.
-        if: steps.tag.outputs.push == 'true'
-        run: |
-          set -euo pipefail
-          [ -n "${REGISTRY_PASSWORD:-}" ] || { echo "Infisical returned no REGISTRY_PASSWORD"; exit 1; }
-          printf '%s' "$REGISTRY_PASSWORD" | sudo buildah login \
-            --tls-verify=false \
-            --username "$REGISTRY_USER" \
-            --password-stdin "$REGISTRY"
-
-      - name: Build and push
-        id: build
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_TAG: pr-${{ github.event.pull_request.number }}
-          DO_PUSH: ${{ steps.tag.outputs.push }}
-          PUSH_LATEST: ${{ steps.tag.outputs.latest }}
-          # Only ever non-empty on a pull_request: the `changes` job is
-          # PR-gated, and a skipped job's outputs are ''. So the shell's
-          # fallback to $COMPONENTS below is what gives a release (and a
-          # dispatch) the full set, with no event test needed here.
-          COMPONENT_LIST: ${{ needs.changes.outputs.components }}
-        run: |
-          set -euo pipefail
-          list="${COMPONENT_LIST:-$COMPONENTS}"
-          echo "components: $list"
-          # Part of the hash: every image is rebuilt at least weekly, so the
-          # floating bases (golang:1.27, debian:12-slim, oven/bun:1-slim) and
-          # the unpinned apt installs (CACHE_WEEK) don't go stale forever.
-          #
-          # Accepted costs of hashing this way:
-          #  - the first release of each ISO week rebuilds all six and rolls
-          #    core, the provisioner, the worker prepull and the migrate hook;
-          #  - a _test.go or .md edit under a component's directory rebuilds it
-          #    (the hash is of git trees, not of the build context).
-          BUILD_WEEK=$(date -u +%G-%V)
-
-          # src-<12 hex>: a hash of the git trees of the paths
-          # .github/image-inputs.txt lists for the component, plus the week
-          # and BUILD_SALT. One rev-parse per path, each checked: a failure
-          # inside a loop feeding a pipe is invisible to pipefail, and would
-          # hash a partial list into a tag that looks fine.
-          image_hash() {
-            local ins p id s=""
-            ins=$(sed -n "s/^$1:[[:space:]]*//p" .github/image-inputs.txt)
-            [ -n "$ins" ] || { echo "::error::no inputs for $1 in .github/image-inputs.txt" >&2; return 1; }
-            for p in $ins; do
-              id=$(git rev-parse --verify -q "HEAD:$p") || { echo "::error::$1: input $p is not in HEAD" >&2; return 1; }
-              s+="$p $id"$'\n'
-            done
-            printf '%sweek %s\nsalt %s\n' "$s" "$BUILD_WEEK" "$BUILD_SALT" | sha256sum | cut -c1-12
-          }
-
-          # Skip a component when the registry already has its src tag: same
-          # inputs, same week, so an image built from them exists. Neither
-          # built nor pushed again (a src tag is never re-pushed), and deploy
-          # pins it. Anonymous reads are open; any non-200, a network error
-          # included, means build. Not k8s/images.env: a tag deploy pinned
-          # can still have been evicted by later pushes, while this asks the
-          # registry what it holds right now.
-          in_registry() {
-            curl --connect-timeout 5 --max-time 30 -fsI -o /dev/null \
-              -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-              -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
-              "http://$REGISTRY/v2/agent-fleet-$1/manifests/$2"
-          }
-
-          # `latest` is set by copying the src manifest in the registry, not by
-          # a second buildah push. With every blob already present, buildah
-          # sends that manifest PUT with no credentials, and zot answers 401
-          # (release 6.16.x, 2026-10-21: three attempts in a row, `ci` had
-          # pushed the src tag a second earlier). curl sends them explicitly,
-          # as a config on stdin: no file left behind if the run is killed,
-          # nothing in argv. (Other runner instances on this box share the
-          # `runner` uid and could read /proc/<pid>/environ anyway; this is
-          # defence in depth, not a boundary.) Only when `latest` points elsewhere, so a
-          # skipped component is re-synced too: an earlier newest release
-          # that pushed `latest` but failed to deploy left it on the wrong
-          # image.
-          set_latest() {
-            local c=$1 src=$2 m ct want have attempt cred
-            m=$(mktemp -p "${RUNNER_TEMP:-/tmp}")
-            # curl config syntax: quote the value, escaping \ and ".
-            cred="$REGISTRY_USER:$REGISTRY_PASSWORD"; cred=${cred//\\/\\\\}; cred=${cred//\"/\\\"}
-            local t='--connect-timeout 5 --max-time 60'
-            for attempt in 1 2 3; do
-              if ct=$(curl $t -fsS -D - -o "$m" \
-                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-                    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
-                    "http://$REGISTRY/v2/agent-fleet-$c/manifests/$src" \
-                  | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}') \
-                && [ -n "$ct" ] \
-                && want=$(sha256sum "$m" | cut -d' ' -f1) \
-                && have=$(curl $t -fsI \
-                    -H "Accept: $ct" \
-                    "http://$REGISTRY/v2/agent-fleet-$c/manifests/latest" 2>/dev/null \
-                  | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'; true) \
-                && { [ "$have" = "sha256:$want" ] \
-                     || curl $t -fsS -K - -X PUT -H "Content-Type: $ct" \
-                          --data-binary @"$m" "http://$REGISTRY/v2/agent-fleet-$c/manifests/latest" \
-                          <<<"user = \"$cred\""; }; then
-                rm -f "$m"
-                [ "$have" = "sha256:$want" ] && echo "$c: latest already on $src" || echo "$c: latest -> $src"
-                return 0
-              fi
-              echo "::warning::setting agent-fleet-$c:latest failed (attempt $attempt), retrying"
-              sleep 5
-            done
-            rm -f "$m"
-            echo "::error::setting agent-fleet-$c:latest to $src failed 3 times"
-            return 1
-          }
-
-          : > /tmp/timings.txt
-          images=""
-          total_start=$(date +%s)
-          for c in $list; do
-            h=$(image_hash "$c")
-            src="src-$h"
-            images="$images $c=$src"
-            if in_registry "$c" "$src"; then
-              echo "$c: skip (registry has agent-fleet-$c:$src)"
-              printf '| %s | skip | - | %s |\n' "$c" "$src" >> /tmp/timings.txt
-              if [ "$DO_PUSH" = "true" ] && [ "$PUSH_LATEST" = "true" ]; then
-                # Nothing was built: a registry hiccup here must not block
-                # the deploy of images that already exist.
-                set_latest "$c" "$src" || echo "::warning::agent-fleet-$c:latest not re-synced to $src"
-              fi
-              continue
-            fi
-            # A PR build is never pushed and never tagged `latest`, so it can't
-            # be mistaken for a real image on this shared box.
-            build_args=()
-            # Only Dockerfiles that declare it: buildah warns on an unconsumed
-            # build-arg, and core has no unpinned install to refresh.
-            grep -q '^ARG CACHE_WEEK' "$c/Dockerfile" && build_args+=(--build-arg "CACHE_WEEK=$BUILD_WEEK")
-            if [ "$EVENT" = pull_request ]; then
-              image="$REGISTRY/agent-fleet-$c:$PR_TAG"
-            else
-              image="$REGISTRY/agent-fleet-$c:$src"
-            fi
-            start=$(date +%s)
-            # chroot isolation, and NO --storage-driver: the driver is pinned
-            # to overlay on the box itself (/etc/containers/storage.conf, set
-            # by build-runner-configure.yml) so builds and the prune timer
-            # cannot drift onto different stores. This used to force vfs,
-            # inherited from ADR-0034's abandoned in-cluster attempt where it
-            # was genuinely required; on a real-root LXC it was just slower
-            # and fatter. Measured across all six images: 340s -> 273s.
-            #
-            # --layers: each RUN's result is cached, so an unchanged step
-            # (the worker's 300 MB bun install, the apt layers) is neither
-            # rebuilt nor, having the same digest, pushed again. The cost is
-            # disk on a box shared with other repos. Builder-stage chains are
-            # not parents of a tagged image, so the weekly
-            # `buildah rmi --prune` removes them (one cold Go build a week);
-            # the kept final image's chain survives it.
-            #
-            # Go and bun also get cache mounts (the Dockerfiles), with
-            # agent-fleet-* ids. Nothing prunes those: /go/pkg/mod and the bun
-            # cache grow without bound (watch them with du under
-            # /var/tmp/buildah-cache-0), while Go's build cache trims entries
-            # unused for ~5 days on its own. They are also writable state
-            # shared by every Dockerfile built as root on this box: the same
-            # trust domain as the shared base-image store, no wider.
-            #
-            # --pull=newer: without it a cached base is reused forever, and
-            # the weekly hash change would rebuild on the same stale base.
-            #
-            # Repo-root context for all six — every Dockerfile COPYs go.work /
-            # proto/gen/go / db/migrations as siblings of its own directory.
-            #
-            # No VERSION: core and provisioner read FLEET_VERSION at run time,
-            # which deploy sets. A compiled-in version made every release a
-            # new image for all six, whether their source changed or not.
-            sudo buildah bud \
-              --isolation chroot \
-              --format docker \
-              --layers \
-              --pull=newer \
-              ${build_args[@]+"${build_args[@]}"} \
-              -f "$c/Dockerfile" \
-              -t "$image" \
-              .
-            build_end=$(date +%s)
-            if [ "$DO_PUSH" = "true" ]; then
-              # Only the src tag goes through buildah; `latest` is a manifest
-              # copy afterwards (set_latest), so the box never holds a local
-              # `latest` either.
-              for t in "$src"; do
-                # Retried in the shell: twice on 2026-10-20, right after
-                # cross-repo blob mounts, buildah sent the next write (a blob
-                # POST, then a manifest PUT) with no credentials, got 401 from
-                # zot and did not retry. zot logged the same `ci` user
-                # succeeding a second earlier, so a fresh push goes through.
-                # buildah's own --retry only covers network errors, not a 401.
-                for attempt in 1 2 3; do
-                  if sudo buildah push --tls-verify=false \
-                    "$image" "docker://$REGISTRY/agent-fleet-$c:$t"; then
-                    break
-                  fi
-                  if [ "$attempt" = 3 ]; then
-                    echo "::error::push of agent-fleet-$c:$t failed 3 times"
-                    exit 1
-                  fi
-                  echo "::warning::push of agent-fleet-$c:$t failed (attempt $attempt), retrying"
-                  sleep 5
-                done
-              done
-              if [ "$PUSH_LATEST" = "true" ]; then
-                set_latest "$c" "$src"
-              fi
-            fi
-            end=$(date +%s)
-            # Keep the image just built: its layers are the next build's
-            # cache. Untag every other local image of this component, so the
-            # box holds one tagged chain per component however earlier runs
-            # ended (dispatch, a failed push or deploy, a stale re-run all
-            # leave one behind). Named tags of this repo only — NOT
-            # `rmi --all`, which would evict the base-image cache this box
-            # shares with every other build repo. The listing is grepped by
-            # prefix rather than `--filter reference=`, whose matching of a
-            # host:port prefix depends on the buildah version.
-            #
-            # A PR image is never needed again: rmi removes the part of its
-            # chain no other image uses. Its builder-stage intermediates stay
-            # until the weekly prune, like everyone's.
-            if [ "$EVENT" = pull_request ]; then
-              sudo buildah rmi "$image" || true
-            else
-              sudo buildah images --format '{{.Name}}:{{.Tag}}' \
-                | grep -F "$REGISTRY/agent-fleet-$c:" | grep -vxF "$image" \
-                | xargs -r -n1 sudo buildah rmi || true
-            fi
-            printf '| %s | %s | %s | %s |\n' "$c" "$((build_end - start))" "$((end - build_end))" "$src" >> /tmp/timings.txt
-          done
-          echo "images=${images# }" >> "$GITHUB_OUTPUT"
-          echo "total_seconds=$(( $(date +%s) - total_start ))" >> "$GITHUB_OUTPUT"
-
-      # ADR-0034's verification V10 asks for a number, not an impression: a
-      # latency claim with no measurement cannot be falsified.
-      - name: Timing summary
-        if: always()
-        run: |
-          {
-            echo "### ukubi registry build"
-            echo ""
-            echo "| component | build (s) | push (s) | tag |"
-            echo "|---|---|---|---|"
-            cat /tmp/timings.txt 2>/dev/null || echo "| (none) | | | |"
-            echo ""
-            echo "**Total: ${{ steps.build.outputs.total_seconds }}s** — pushed: \`${{ steps.tag.outputs.push }}\`, latest: \`${{ steps.tag.outputs.latest }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      # The runner outlives the job: drop the registry credential however the
-      # job ended, so the next job on this box does not inherit a login.
-      - name: Registry logout
-        if: always()
-        run: sudo buildah logout "$REGISTRY" || true
-
-  deploy:
-    needs: [release, build-push]
-    # always() + an explicit needs.*.result check, not just
-    # `if: github.event_name == 'push'` — confirmed live on the v1.1.0
-    # release run: the build jobs genuinely succeeded but deploy was still
-    # skipped with zero steps run. A job's implicit default condition is
-    # success()-on-needs, and something in the matrix + upstream-skipped-job
-    # graph shape was tripping that default even though the direct needs were
-    # all green. always() bypasses the implicit check entirely, so the
-    # explicit result comparison below is what actually guards against
-    # deploying a tag whose build failed.
-    if: >-
-      always() && github.event_name == 'push' &&
-      needs.release.result == 'success' &&
-      needs.build-push.result == 'success'
-    runs-on: ubuntu-latest
+  # Repo-root context for every image: each Dockerfile COPYs go.work,
+  # proto/gen/go or db/migrations as siblings of its own directory.
+  core:
+    needs: release
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-core
+      ref: ${{ needs.release.outputs.tag }}
+      dockerfile: core/Dockerfile
+      values-file: k8s/image-core.yaml
+      cancel-in-progress: false
     permissions:
       contents: write
-    # One version for the whole run, from the release job. This was the tag name,
-    # which only worked because the workflow was tag-triggered; on a branch push that is
-    # "main", and this job would have sed-ed `tag: "main"` across every k8s/ manifest.
-    env:
-      VERSION: ${{ needs.release.outputs.version }}
-      IMAGES: ${{ needs.build-push.outputs.images }}
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 0
+      id-token: write
 
-      # Each image is pinned to its own src-<hash> tag, built and pushed this
-      # run or skipped because the registry already had it. The release version
-      # goes into FLEET_VERSION on core and the provisioner instead, so a
-      # release that changes no image (definitions only) still rolls the
-      # provisioner onto the new definitions ref.
-      - name: Pin images and the release version
-        run: |
-          set -euo pipefail
-          # "Re-run failed jobs" on an old run reuses its old version. Pinning
-          # that would silently roll production back past a newer release.
-          newest=$(git tag --sort=-v:refname | head -1)
-          if [ "$VERSION" != "$newest" ]; then
-            echo "::notice::$VERSION is not the newest tag ($newest); not deploying it"
-            exit 0
-          fi
-          fail() { echo "::error::$*"; exit 1; }
-          # Both values are spliced into sed expressions below, in a job
-          # holding contents: write. IMAGES comes from build-push, which
-          # runs on the shared build box: accept exactly the shape it emits.
-          printf '%s\n' "$VERSION" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' \
-            || fail "unexpected VERSION '$VERSION'"
-          bad=$(printf '%s\n' $IMAGES | grep -Evx '[a-z]+=src-[0-9a-f]+' || true)
-          [ -z "$bad" ] || fail "unexpected entries in build-push's images output: $bad"
-          tag_of() { printf '%s\n' $IMAGES | sed -n "s/^$1=//p"; }
+  migration:
+    needs: release
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-migration
+      ref: ${{ needs.release.outputs.tag }}
+      dockerfile: migration/Dockerfile
+      values-file: k8s/image-migration.yaml
+      values-key: .hooks.migrate.image.tag
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
 
-          # What build-push compares against next time. All six, including
-          # executor, which nothing pins (catalog.go floats on its `latest`).
-          {
-            echo "version=$VERSION"
-            for c in $COMPONENTS; do
-              t=$(tag_of "$c")
-              [ -n "$t" ] || fail "build-push reported no tag for $c (images: '$IMAGES')"
-              echo "$c=$t"
-            done
-          } > k8s/images.env
+  executor:
+    needs: release
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-executor
+      ref: ${{ needs.release.outputs.tag }}
+      dockerfile: executor/Dockerfile
+      deploy: false
+      extra-tags: latest
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
 
-          # Helm-values shape (k8s/core.yaml): the `tag:` that follows each
-          # image's `repository:` line — core's own, and the migrate hook's.
-          for c in core migration; do
-            sed -i -E "/repository: registry\.bnei\.lan:5000\/agent-fleet-$c\$/,/^[[:space:]]*tag:/ s/(tag: \")[^\"]+/\1$(tag_of "$c")/" k8s/core.yaml
-          done
-          # Plain-manifest shape (k8s/provisioner/*.yaml): repo:tag as one
-          # string, in the provisioner's image, its WORKER_IMAGE/SIDECAR_IMAGE
-          # env and the worker prepull DaemonSet. Note the literal :5000 in
-          # the registry host: the trailing :[^...]+ is what captures the tag,
-          # and getting that wrong makes the sed silently match nothing.
-          for c in provisioner worker sidecar; do
-            sed -i -E "s#(registry\.bnei\.lan:5000/agent-fleet-$c):[^[:space:]\"]+#\1:$(tag_of "$c")#g" \
-              k8s/provisioner/*.yaml
-          done
-          # The value line right after each `- name: FLEET_VERSION`.
-          sed -i -E "/- name: FLEET_VERSION\$/{n;s/(value: \")[^\"]*/\1$VERSION/}" \
-            k8s/core.yaml k8s/provisioner/deployment.yaml
+  provisioner:
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image-build.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-provisioner
+      dockerfile: provisioner/Dockerfile
 
-          # A no-op sed is the failure mode these guard: the manifests keep
-          # the previous pins and ArgoCD redeploys nothing, with a green
-          # workflow. Check every pin, not just one.
-          for c in core migration; do
-            got=$(sed -n -E "/repository: registry\.bnei\.lan:5000\/agent-fleet-$c\$/,/^[[:space:]]*tag:/ s/.*tag: \"([^\"]+)\".*/\1/p" k8s/core.yaml)
-            [ "$got" = "$(tag_of "$c")" ] || fail "k8s/core.yaml pins agent-fleet-$c at '$got', not $(tag_of "$c")"
-          done
-          for pin in deployment.yaml:provisioner deployment.yaml:worker deployment.yaml:sidecar image-prepull.yaml:worker; do
-            f="k8s/provisioner/${pin%%:*}" c="${pin#*:}"
-            grep -q "registry.bnei.lan:5000/agent-fleet-$c:$(tag_of "$c")\$" "$f" \
-              || fail "$f does not pin agent-fleet-$c:$(tag_of "$c") — check the sed against the manifest's image prefix"
-          done
-          for f in k8s/core.yaml k8s/provisioner/deployment.yaml; do
-            grep -A1 -- "- name: FLEET_VERSION\$" "$f" | grep -q "value: \"$VERSION\"" \
-              || fail "$f: FLEET_VERSION was not set to $VERSION"
-          done
+  worker:
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image-build.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-worker
+      dockerfile: worker/Dockerfile
 
-      # Pushing with the default GITHUB_TOKEN (via actions/checkout's
-      # auto-configured credential) deliberately does NOT trigger other
-      # workflow runs — this commit won't re-enter release.yml's push-to-main
-      # trigger, avoiding the release-it self-triggering loop hit earlier.
-      - name: Commit and push
-        run: |
-          set -euo pipefail
-          git config user.name "agent-fleet-ci"
-          git config user.email "noreply@bnei.dev"
-          git add k8s/
-          if git diff --cached --quiet; then
-            echo "no tag changes to commit"
-            exit 0
-          fi
-          git commit -m "chore(deploy): pin images for ${VERSION}"
-          # A merge can land on main while this release builds. Rebase onto it
-          # rather than lose a built release to a non-fast-forward rejection.
-          # The commit only touches k8s/, which nothing else writes.
-          for attempt in 1 2 3; do
-            if git pull --rebase origin main && git push origin HEAD:main; then
-              exit 0
-            fi
-            echo "::warning::deploy push failed (attempt $attempt), retrying"
-            git rebase --abort 2>/dev/null || true
-            sleep 5
-          done
-          echo "::error::deploy push failed 3 times"
-          exit 1
+  sidecar:
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image-build.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-sidecar
+      dockerfile: sidecar/Dockerfile
