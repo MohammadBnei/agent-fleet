@@ -329,17 +329,14 @@ jobs:
           # The action's own cache would restore on main; the explicit model above is the only cache.
           skip-cache: true
 
-      # -count=1 is load-bearing, not belt-and-braces. core/internal/buildguard's
-      # tests read files OUTSIDE their module (.github/, proto/), which Go's
-      # test cache cannot see — so a cached PASS survives edits to the very
-      # files being guarded. That package's own doc records verifying it live:
-      # removing `executor` from docker.yml still reported PASS until -count=1
-      # forced a real run.
-      #
-      # CI was missing this. actions/setup-go restores ~/.cache/go-build, which
-      # is where the test cache lives, so every buildguard test has been
-      # cacheable here since it was written — the guards were guarding, and CI
-      # was free to not look.
+      # Go's per-package test-result cache is on (no blanket -count=1): a PR job
+      # restores the build cache above, so a package whose inputs did not change
+      # is not run again. The packages the cache cannot judge (a test reading
+      # files outside its module, such as core/internal/buildguard, or the
+      # integration tests' database) run with -count=1 in a second invocation
+      # with the same flags, so the compiled binaries are shared. The list is
+      # computed by .github/scripts/go-test.sh. A main push restores nothing,
+      # so it runs everything anyway.
       #
       # One compile per module: the integration tag is on the race run, not a
       # second non-race `go test`. Every non-integration test passes with the
@@ -359,7 +356,7 @@ jobs:
           # container runner has no Docker socket for testcontainers.
           AGENTFLEET_TEST_DSN: postgres://agentfleet:agentfleet@postgres:5432/agentfleetdb?sslmode=disable
           AGENTFLEET_TEST_ADMIN_PG_HOST: postgres-admin
-        run: go test ./... -race -cover -tags=integration -count=1
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/go-test.sh"
 
       # Last, so it holds what lint and the tests built. Saved under this run's
       # id on every green run, so the newest run's cache is the one the next PR

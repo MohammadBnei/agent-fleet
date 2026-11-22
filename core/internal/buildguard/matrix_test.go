@@ -36,8 +36,9 @@ import (
 //
 // A guard that can be silently cached is worth nothing, so both tests
 // touch the files through a helper that fails loudly if they are missing,
-// and CI must run these with -count=1 (see go.yml). If you run them by
-// hand, do the same.
+// and CI must run these with -count=1: .github/scripts/go-test.sh keeps this
+// package in its uncached invocation, and TestGoTestScriptRunsBuildguardUncached
+// holds it there. If you run them by hand, do the same.
 
 // repoRoot walks up from this package to the module root's parent — the
 // agent-fleet checkout itself.
@@ -256,5 +257,29 @@ func TestEveryCodegenTargetHasAnInstallStep(t *testing.T) {
 					"\"no such file or directory\" while passing locally",
 				component, component)
 		}
+	}
+}
+
+// TestGoTestScriptRunsBuildguardUncached: go.yml hands every module's tests to
+// .github/scripts/go-test.sh, which lets Go's test cache serve most packages.
+// This package reads files outside its module, so a cached PASS would survive
+// edits to the files it guards. The script must keep it in the -count=1 run.
+func TestGoTestScriptRunsBuildguardUncached(t *testing.T) {
+	root := repoRoot(t)
+	script, err := os.ReadFile(filepath.Join(root, ".github", "scripts", "go-test.sh"))
+	if err != nil {
+		t.Fatalf("read go-test.sh: %v", err)
+	}
+	for _, want := range []string{"internal/buildguard", "-count=1"} {
+		if !strings.Contains(string(script), want) {
+			t.Errorf(".github/scripts/go-test.sh no longer mentions %q — buildguard would run from Go's test cache", want)
+		}
+	}
+	wf, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "go.yml"))
+	if err != nil {
+		t.Fatalf("read go.yml: %v", err)
+	}
+	if !strings.Contains(string(wf), ".github/scripts/go-test.sh") {
+		t.Errorf("go.yml does not run .github/scripts/go-test.sh, so the module tests are not split into cached and -count=1 runs")
 	}
 }
