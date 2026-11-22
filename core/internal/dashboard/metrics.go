@@ -178,8 +178,11 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 //
 // The colon is only a tag separator when it comes after the last slash: a
 // registry may carry a port ("reg:5000/worker"), and treating that as a tag
-// would label every cell with a port number.
+// would label every cell with a port number. A digest ("tag@sha256:…", how
+// docker.yml's deploy-branch pins read) is dropped first, or its own colon
+// would show 64 hex characters instead of the tag.
 func imageTag(ref string) string {
+	ref, _, _ = strings.Cut(ref, "@")
 	i := strings.LastIndex(ref, ":")
 	if i < 0 || i < strings.LastIndex(ref, "/") {
 		return ref

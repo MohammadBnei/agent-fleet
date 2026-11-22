@@ -1,0 +1,11 @@
+# Not a real chart: a wrapper so ArgoCD can layer the deploy branch's image
+# pins over these plain manifests (Helm valueFiles are the only thing a
+# multi-source `$deploy` ref can feed). templates/manifests.yaml renders every
+# *.yaml here verbatim, swapping in the pins; with no values it renders them
+# unchanged, so the manifests stay valid to `kubectl apply -f` and their own
+# image refs stay the fallback.
+apiVersion: v2
+name: provisioner
+description: agent-fleet provisioner, plain manifests with deploy-branch image pins
+type: application
+version: 0.1.0

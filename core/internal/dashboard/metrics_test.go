@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -211,6 +212,8 @@ func TestImageTag(t *testing.T) {
 		{"reg:5000/agent-fleet-worker:3.5.4", "3.5.4"},
 		{"agent-fleet-worker", "agent-fleet-worker"},
 		{"", ""},
+		{"reg:5000/agent-fleet-worker:abcdef123456@sha256:" + strings.Repeat("a", 64), "abcdef123456"},
+		{"reg:5000/agent-fleet-worker@sha256:" + strings.Repeat("a", 64), "reg:5000/agent-fleet-worker"},
 	}
 	for _, tt := range tests {
 		if got := imageTag(tt.ref); got != tt.want {

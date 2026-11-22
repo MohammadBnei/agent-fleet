@@ -43,8 +43,24 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   skills/`CLAUDE.md`. Replaces the old per-repo worker PVCs entirely.
 - `image-prepull.yaml` — a DaemonSet on the session nodes that keeps the
   current worker image cached on each, so the scheduler's image locality stops
-  sending every session to whichever node pulled it first. Its tag is bumped
-  with `WORKER_IMAGE`.
+  sending every session to whichever node pulled it first. Its image takes
+  the same `deploy`-branch worker pin as `WORKER_IMAGE`.
+- `Chart.yaml` + `templates/manifests.yaml` — not a chart of its own: they
+  render every manifest here verbatim, with the provisioner, worker and
+  sidecar image refs swapped for the pins `docker.yml` writes to
+  `k8s/image-{provisioner,worker,sidecar}.yaml` on the `deploy` branch
+  (main is never committed to by CI). Without those values files the refs in
+  these manifests are what deploys.
+
+  A pin on `deploy` overrides any image-ref edit here on main, so a rollback
+  is a `deploy` commit (set `k8s/image-<name>.yaml` back to an older
+  `<sha12>@sha256:<digest>` still in Zot), not a main PR. The three pins land
+  as separate commits, so for one sync a new worker can run beside an old
+  sidecar (or the reverse): the worker↔sidecar HTTP/JSON API
+  (`sidecar/internal/localapi`, `worker/src/sidecarClient.ts`) and the proto
+  must stay compatible across one release. `buf breaking` in go.yml guards
+  the proto; nothing guards the HTTP API (each side tests against its own
+  stub), so a change there keeps the old shape for one release.
 - `service.yaml` — ClusterIP; `core`'s gRPC client reaches it at
   `provisioner.agent-fleet.svc.cluster.local:9090`.
 - `infisicalsecret.yaml` — syncs the whole `agent-fleet-nygh`/`dev` Infisical

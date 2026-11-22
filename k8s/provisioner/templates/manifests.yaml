@@ -1,0 +1,36 @@
+{{- /*
+Every *.yaml beside Chart.yaml, verbatim (.Files is not templated), with each
+`registry.bnei.lan:5000/agent-fleet-<name>:<anything>` rewritten to the pin in
+.Values.images.<name>. docker.yml's provisioner, worker and sidecar jobs write
+those pins to k8s/image-<name>.yaml on the deploy branch (values-key
+.images.<name>), and infra-bootstrap's platform-provisioner Application layers
+them. A new manifest file is picked up with no list to update.
+
+ponytail: a regex over raw YAML, not a parse. It only ever matches this
+registry's agent-fleet-<name> refs; if a manifest ever needs a pin outside an
+image string, template that one field instead.
+*/ -}}
+{{- $pins := .Values.images | default dict }}
+{{- $seen := dict }}
+{{- range $name, $pin := $pins }}
+{{-   if not (regexMatch "^[0-9a-f]{12,40}@sha256:[0-9a-f]{64}$" (toString $pin)) }}
+{{-     fail (printf "images.%s: bad pin %q (want <sha12>@sha256:<64 hex>)" $name (toString $pin)) }}
+{{-   end }}
+{{- end }}
+{{- range $path, $_ := .Files.Glob "*.yaml" }}
+{{-   $doc := $.Files.Get $path }}
+{{-   range $name, $pin := $pins }}
+{{-     $re := printf "(registry\\.bnei\\.lan:5000/agent-fleet-%s):[^\\s\"']+" (regexQuoteMeta $name) }}
+{{-     if regexMatch $re $doc }}{{ $_ := set $seen $name true }}{{ end }}
+{{-     $doc = regexReplaceAll $re $doc (printf "${1}:%s" $pin) }}
+{{-   end }}
+---
+# Source: {{ $path }}
+{{ $doc }}
+{{- end }}
+{{- /* A pin no manifest uses is a typo in a values-key or an image name: fail, not ignore. */}}
+{{- range $name, $_ := $pins }}
+{{-   if not (hasKey $seen $name) }}
+{{-     fail (printf "images.%s is pinned but no manifest uses registry.bnei.lan:5000/agent-fleet-%s" $name $name) }}
+{{-   end }}
+{{- end }}

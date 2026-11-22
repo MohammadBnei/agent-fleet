@@ -7,8 +7,9 @@
 # gitops/bootstrap/provisioner-application.yaml) — only its repoURL/path
 # moved, not its shape.
 #
-# The worker/sidecar/provisioner images are pinned and auto-bumped by
-# .github/workflows/docker.yml's deploy job. The e2e-runner image that used to
+# The worker/sidecar/provisioner refs below are only the fallback: docker.yml
+# pins each release's images in k8s/image-<name>.yaml on the deploy branch,
+# and Chart.yaml's template swaps those pins in (README.md). The e2e-runner image that used to
 # float on :latest here is gone with the sandbox (docs/adr/0048 §6) — a session
 # runs one pod, on the worker image.
 apiVersion: apps/v1
@@ -58,10 +59,10 @@ spec:
           periodSeconds: 10
         env:
         # The release this provisioner runs as, and the ref it reads
-        # definitions/ at (docs/adr/0062). Set by docker.yml's deploy job:
-        # the image tag is a hash of the provisioner's inputs, so a
-        # definitions-only release changes only this value, which is what
-        # rolls the pod onto the new definitions.
+        # definitions/ at (docs/adr/0062). Set by hand, as core's is: CI no
+        # longer commits to main, and the deploy-branch pins carry only image
+        # refs, so new images keep reading this tag's definitions until it is
+        # bumped.
         - name: FLEET_VERSION
           value: "7.44.3"
         - name: NAMESPACE

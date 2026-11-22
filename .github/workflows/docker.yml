@@ -5,21 +5,22 @@ name: Build, Test and Deploy
 #  - release.yml cuts the version from Conventional Commits and pushes an
 #    annotated tag on the tested commit. Nothing is committed to main (no
 #    package.json bump, no CHANGELOG edit; CHANGELOG.md stays as history).
-#  - image.yml builds core, migration and executor on the build-runner LXC
+#  - image.yml builds every image (core, migration, executor, provisioner,
+#    worker, sidecar) on every release, on the build-runner LXC
 #    (`ukubi-build`, buildah), pushes <sha12> tags to Zot, and for core and
 #    migration commits the pin to a file of its own on the `deploy` branch:
 #    k8s/image-core.yaml (.image.tag) and k8s/image-migration.yaml
 #    (.hooks.migrate.image.tag). ArgoCD has to layer both over k8s/core.yaml
 #    (infra-bootstrap's agent-fleet-core registry entry) before they deploy.
 #    executor has no pin: catalog.go floats on its `latest`, pushed here.
-#  - provisioner, worker and sidecar are not built here. Their pins sit in
-#    k8s/provisioner/*.yaml, plain manifests that a standalone Application
-#    syncs from main, and nothing may commit to main any more. Pushing sha
-#    tags nobody pins would only push the pinned src-<hash> tags out of Zot
-#    (it keeps 3 per repo). Their build-only jobs (image-build.yml) went with
-#    the PR image builds (owner decision, CI/CD split); they come back as
-#    image.yml calls once that Application can read pins from the deploy
-#    branch.
+#  - provisioner, worker and sidecar pin to k8s/image-<name>.yaml on the same
+#    deploy branch (.images.<name>). k8s/provisioner/ stays plain manifests
+#    that a standalone Application syncs from main; its Chart.yaml is only a
+#    wrapper that swaps those pins into the manifests' image refs, so
+#    infra-bootstrap's platform-provisioner Application can layer them as
+#    Helm valueFiles from a `deploy` ref, as it does for core. Until it does,
+#    the refs in k8s/provisioner/*.yaml deploy, and Zot keeps 3 tags per
+#    repo: three releases evict those src-<hash> refs.
 #
 # No job here runs on a pull_request, so a PR never reaches ukubi-build (the
 # CI/CD split): PRs run the tests in checks.yml on the podman runner, and
@@ -115,3 +116,47 @@ jobs:
       contents: write
       id-token: write
 
+  provisioner:
+    needs: release
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-provisioner
+      ref: ${{ needs.release.outputs.tag }}
+      dockerfile: provisioner/Dockerfile
+      values-file: k8s/image-provisioner.yaml
+      values-key: .images.provisioner
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+
+  worker:
+    needs: release
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-worker
+      ref: ${{ needs.release.outputs.tag }}
+      dockerfile: worker/Dockerfile
+      values-file: k8s/image-worker.yaml
+      values-key: .images.worker
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+
+  sidecar:
+    needs: release
+    uses: MohammadBnei/ukubi-ci/.github/workflows/image.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1
+    with:
+      runs-on: '["ukubi-build"]'
+      image: agent-fleet-sidecar
+      ref: ${{ needs.release.outputs.tag }}
+      dockerfile: sidecar/Dockerfile
+      values-file: k8s/image-sidecar.yaml
+      values-key: .images.sidecar
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
