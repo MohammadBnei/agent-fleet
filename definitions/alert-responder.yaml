@@ -46,9 +46,8 @@ spec:
 
       - {"outcome":"catalogue","selection":{...}}: one catalogue action core will check and queue. The actions are
         restart (kind deployment or statefulset, namespace, name), scale (a Deployment, namespace, name, replicas),
-        delete_pod (namespace, name of a crash-looping pod), sync_app (the ArgoCD Application's name), and, in a
-        low-stakes namespace only, patch (a single field: replicas, resources, a non-secret env value or the restart
-        annotation). Pick one only when the evidence shows it fixes this symptom.
+        delete_pod (namespace, name of a crash-looping pod), and sync_app (the ArgoCD Application's name).
+        Pick one only when the evidence shows it fixes this symptom.
       - {"outcome":"card","card":{"kind":...,"objects":[...],"findings":[...]}}: when the fix is not in the
         catalogue. kind is code_fix, revert_pr, ansible_step or unknown_failure. objects are Kubernetes objects
         (kind, namespace, name); findings are named numbers (restarts, replicas_ready, replicas_desired, cpu_pct,
@@ -66,17 +65,11 @@ spec:
           additionalProperties: false
           required: [action, name]
           properties:
-            action: { enum: [restart, scale, delete_pod, sync_app, patch] }
+            action: { enum: [restart, scale, delete_pod, sync_app] }
             kind: { enum: [deployment, statefulset] }
             namespace: { type: string, maxLength: 63 }
             name: { type: string, maxLength: 253 }
             replicas: { type: integer, minimum: 0, maximum: 50 }
-            field: { enum: [replicas, resources, env, restart] }
-            container: { type: string, maxLength: 63 }
-            envName: { type: string, maxLength: 253 }
-            envValue: { type: string, maxLength: 253 }
-            cpu: { type: string, maxLength: 12 }
-            memory: { type: string, maxLength: 12 }
         card:
           type: object
           additionalProperties: false

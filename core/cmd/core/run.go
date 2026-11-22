@@ -527,7 +527,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	coreSvc.SetResponderCards(responder.Cards{Pool: pool}.List)
 	go agentSvc.RunSpawnReports(ctx, 15*time.Second)
 	go agentSvc.RunBudgets(ctx, time.Minute)
-	remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
+	remSvc := &remediations.Service{Store: remStore}
 	agentSvc.SetCardEffects(agentsvc.CardEffects{
 		Remediate: remSvc.Select,
 		Check:     remSvc.Check,
@@ -554,7 +554,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		dispatcher.SetCharacters(dashboardSvc.WarmForAppend, "client/"+cfg.Bridge.Username)
 		// First responders (docs/adr/0086 §3): an alert a responder definition subscribes to starts its run, and
 		// the webhook files no proposal for it.
-		remSvc := &remediations.Service{Store: remStore, LowStakesPath: cfg.LowStakesPath}
+		remSvc := &remediations.Service{Store: remStore}
 		dispatcher.SetResponders(&responder.Runner{
 			Client: dispatch.Client, Agents: agentSvc, Defs: defs,
 			Filer: responder.Filer{Select: remSvc.Select, Draft: func(ctx context.Context, d decisions.Draft) error {

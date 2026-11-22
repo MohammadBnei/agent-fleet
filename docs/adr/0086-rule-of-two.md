@@ -151,8 +151,7 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   - Core holds no cluster RBAC (`CLAUDE.md:56`).
 - **The executors' roles in `infra-bootstrap`:**
   - The remediation executor takes the mutate verbs `thot-executor` holds today, plus what the catalogue needs:
-    - `apps/deployments`, `statefulsets`, `daemonsets`: `get`, `patch` (restart annotation, `spec.replicas`, the
-      low-stakes field allowlist below);
+    - `apps/deployments`, `statefulsets`, `daemonsets`: `get`, `patch` (restart annotation, `spec.replicas`; the RBAC verb, not a catalogue action *(Amended 2026-11-22: the field allowlist is gone)*);
     - `apps/deployments/scale`: `get`, `update`;
     - `pods`: `get`, `delete`;
     - `argoproj.io/applications`: `get`, `patch` (the `operation` field, sync only).
@@ -182,9 +181,10 @@ not govern what a session reads or writes through its own tools: Bash, `gh`, `gi
   - a target denylist from `infra-bootstrap`: core, the provisioner, Agent Vault, authentik, the databases, the
     ArgoCD controller and the remediation executor itself.
 - **Low-stakes namespaces.** A reviewed list in `infra-bootstrap` (`gitops/bootstrap/fleet-low-stakes.yaml`) names the
-  namespaces where a catalogue selection may also be a free-form fix.
-  - Allowed: a patch limited to a field allowlist (`spec.replicas`, container `resources`, non-secret `env` values, the
-    restart annotation), `delete pod`, and a restart.
+  namespaces where a catalogue selection may also be a free-form fix. *(Amended 2026-11-22: with patch removed
+  there is no free-form fix, so the list gates nothing. Core no longer reads it; `delete pod`, restart, scale and
+  sync apply in any namespace off the denylist. The file stays in `infra-bootstrap`, inert, until a free-form action
+  returns.)*
   - Each such namespace carries the PodSecurity `restricted` label.
   - A namespace is low-stakes only by an owner commit to that file. The game and dev apps start there.
     *(Amended 2026-11-21, owner: once probation's controls are live, an agent's change to this file merges on
@@ -335,7 +335,8 @@ interface and one deck stay.
   (ADR-0082 §3).
 - **Pods per trust tier.** The pods shared a vault and a definition, and doubled the memory. Rejected.
 - **Free-form remediation from alerts.** It is A+B+C. Kept only for the owner's low-stakes namespaces, with a field
-  allowlist and the same executor.
+  allowlist and the same executor. *(Amended 2026-11-22: not built; patch was removed and with it the allowlist
+  and the low-stakes gate.)*
 - **Cordon in the catalogue.** It would breach `infra-bootstrap` ADR-0032's node rule. Left out.
 - **CaMeL-style value tracking:** the principled end state, research-grade for one owner.
 - **Per-action approval:** people approve nearly everything they are asked. Cards are kept for what the catalogue
@@ -378,11 +379,17 @@ forge moves to Forgejo (`git.bnei.dev`). This records decisions and invariants o
 mechanism is designed with its code in the build task named under "Open items". The text above stands wherever this
 does not change it.
 
+*Patch removed 2026-11-22: the executor never implemented it; a settings change is a lasting `values.set` PR (D2) or
+a later executor case. Core no longer accepts the action (migration 000039), and the catalogue is restart, scale,
+delete_pod and sync_app.
+Migration 000039 adds its CHECK `NOT VALID`, so finished patch rows stay as history. The migration that removes
+`scale` must also be `NOT VALID`, or first delete those rows.*
+
 ### Decisions
 
 - **D1. Verbs are lasting or transient.** A lasting verb changes desired state through git, and its PR is the
   reversible act (its undo is a revert PR); a transient verb acts on the running system and is its own undo or records
-  its inverse. The catalogue's five actions are transient; `sync_app`'s undo is partial (§3).
+  its inverse. The catalogue's four actions are transient; `sync_app`'s undo is partial (§3).
 - **D2. `values.set` gets a render check that runs in CI:** a required PR check job, with no secrets and on no
   privileged runner. It never runs in the provisioner, which holds forge tokens.
 - **D3. Agents propose through AGit** (`git push origin HEAD:refs/for/<base>/<topic>`), never from a fork or a

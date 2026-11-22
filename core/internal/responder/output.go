@@ -159,7 +159,7 @@ type Filer struct {
 }
 
 // File turns the structured output of thread's run into a remediations row or a card. A selection core refuses
-// (denylist, rate limit, not low-stakes) becomes a card, so the owner still hears of the alert.
+// (schema, denylist, rate limit) becomes a card, so the owner still hears of the alert.
 func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thread string, g Group, structured string) error {
 	out, err := Parse(structured)
 	if err != nil {
@@ -180,7 +180,7 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 		slog.Info("responder: filed a remediation", "definition", def, "group", g.Key, "remediation", id)
 		return nil
 	}
-	for _, refused := range []error{remediations.ErrInvalid, remediations.ErrDenied, remediations.ErrNotLowStakes, remediations.ErrRateLimited} {
+	for _, refused := range []error{remediations.ErrInvalid, remediations.ErrDenied, remediations.ErrRateLimited} {
 		if errors.Is(err, refused) {
 			slog.Warn("responder: selection refused, filing a card", "definition", def, "group", g.Key, "reason", refused.Error())
 			return f.card(ctx, thread, g, clip("Alert "+g.Name+": the responder's fix was refused: "+refused.Error()+".", 280))

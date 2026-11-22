@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"go.yaml.in/yaml/v3"
 )
 
 // ADR-0086 §3 bounds: one action per target per 10 min, 6 per responder per hour.
@@ -28,12 +26,6 @@ type Row struct {
 	Namespace   string `json:"namespace,omitempty"`
 	Name        string `json:"name"`
 	Replicas    int    `json:"replicas,omitempty"`
-	Field       string `json:"field,omitempty"`
-	Container   string `json:"container,omitempty"`
-	EnvName     string `json:"envName,omitempty"`
-	EnvValue    string `json:"envValue,omitempty"`
-	CPU         string `json:"cpu,omitempty"`
-	Memory      string `json:"memory,omitempty"`
 	MinReplicas int    `json:"minReplicas,omitempty"`
 	MaxReplicas int    `json:"maxReplicas,omitempty"`
 }
@@ -116,7 +108,7 @@ func (s *Store) Pull(ctx context.Context, id string) (Row, error) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return Row{}, err
 	}
-	r := Row{ID: id, Action: p.Action, Kind: p.Kind, Namespace: p.Namespace, Name: p.Name, Field: p.Field, Container: p.Container, EnvName: p.EnvName, EnvValue: p.EnvValue, CPU: p.CPU, Memory: p.Memory, MinReplicas: p.Bounds.Min, MaxReplicas: p.Bounds.Max}
+	r := Row{ID: id, Action: p.Action, Kind: p.Kind, Namespace: p.Namespace, Name: p.Name, MinReplicas: p.Bounds.Min, MaxReplicas: p.Bounds.Max}
 	if p.Replicas != nil {
 		r.Replicas = *p.Replicas
 	}
@@ -159,34 +151,10 @@ type Inserter interface {
 
 // Service is core's remediation API: checks, then one pending row.
 type Service struct {
-	Store         Inserter
-	LowStakesPath string // FLEET_LOW_STAKES: infra-bootstrap's fleet-low-stakes list as mounted
+	Store Inserter
 }
 
-// lowStakes reads the reviewed list on every call; a missing or unparsable file is an empty list (fail closed).
-func (s *Service) lowStakes(ns string) bool {
-	if s.LowStakesPath == "" {
-		return false
-	}
-	b, err := os.ReadFile(s.LowStakesPath)
-	if err != nil {
-		return false
-	}
-	var doc struct {
-		Namespaces []string `yaml:"namespaces"`
-	}
-	if yaml.Unmarshal(b, &doc) != nil {
-		return false
-	}
-	for _, n := range doc.Namespaces {
-		if n == ns {
-			return true
-		}
-	}
-	return false
-}
-
-// Select checks the responder's raw selection against the schema, the denylist and the low-stakes list, then
+// Select checks the responder's raw selection against the schema, and the denylist, then
 // writes the row (rate limits are the store's). It returns the row id.
 func (s *Service) Select(ctx context.Context, responder string, raw []byte, b Bounds) (string, error) {
 	sel, err := s.check(raw, b)
@@ -201,7 +169,7 @@ func (s *Service) check(raw []byte, b Bounds) (Selection, error) {
 	if err != nil {
 		return sel, err
 	}
-	if err := sel.Validate(b, s.lowStakes(sel.Namespace)); err != nil {
+	if err := sel.Validate(b); err != nil {
 		return sel, err
 	}
 	if sel.Denied() {

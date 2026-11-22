@@ -63,25 +63,6 @@ func TestStore_RateLimits(t *testing.T) {
 	}
 }
 
-func TestStore_PullKeepsPatchFields(t *testing.T) {
-	ctx := context.Background()
-	st := NewStore(dbtest.NewPool(t))
-	sel := Selection{Action: ActionPatch, Kind: "deployment", Namespace: "game", Name: "a", Field: "env", Container: "app", EnvName: "LOG_LEVEL", EnvValue: "debug"}
-	id, err := st.Insert(ctx, "r", sel, Bounds{Min: 1, Max: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	row, err := st.Pull(ctx, id)
-	if err != nil || row.Field != "env" || row.Container != "app" || row.EnvName != "LOG_LEVEL" || row.EnvValue != "debug" {
-		t.Fatalf("env: %+v %v", row, err)
-	}
-	res := Selection{Action: ActionPatch, Kind: "deployment", Namespace: "game", Name: "b", Field: "resources", Container: "app", CPU: "500m", Memory: "256Mi"}
-	id, _ = st.Insert(ctx, "r", res, Bounds{})
-	if row, err = st.Pull(ctx, id); err != nil || row.CPU != "500m" || row.Memory != "256Mi" || row.Container != "app" {
-		t.Fatalf("resources: %+v %v", row, err)
-	}
-}
-
 func TestStore_SweepLost(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -145,5 +126,14 @@ func TestStore_SingleUse(t *testing.T) {
 	}
 	if _, err := st.Pull(ctx, "00000000-0000-0000-0000-000000000000"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown id: %v", err)
+	}
+}
+
+// Migration 000039: the CHECK no longer admits 'patch'.
+func TestStore_RefusesPatchAction(t *testing.T) {
+	st := NewStore(dbtest.NewPool(t))
+	sel := Selection{Action: "patch", Kind: "deployment", Namespace: "game", Name: "a"}
+	if _, err := st.Insert(context.Background(), "r", sel, Bounds{}); err == nil {
+		t.Fatal("a patch row was accepted")
 	}
 }

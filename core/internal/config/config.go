@@ -100,10 +100,8 @@ type Config struct {
 	// GitHub repos sync off, and repos keeps whatever rows it has (kind).
 	RepoOverridesPath string
 	// RemediationToken is FLEET_REMEDIATION_TOKEN, the bearer the remediation executor presents to /remediations/
-	// (docs/adr/0086 §3). Empty serves nothing. LowStakesPath is FLEET_LOW_STAKES, infra-bootstrap's reviewed
-	// fleet-low-stakes list as mounted; empty means no namespace is low-stakes.
+	// (docs/adr/0086 §3). Empty serves nothing.
 	RemediationToken string
-	LowStakesPath    string
 
 	// Bridge is core's event-bridge client (docs/adr/0078 §1): BRIDGE_URL,
 	// BRIDGE_TOKEN_URL, BRIDGE_AUTH_HOST, BRIDGE_CLIENT_ID, BRIDGE_USERNAME and
@@ -314,7 +312,6 @@ func Load(getenv func(string) string) (Config, error) {
 		STTToken:              getenv("STT_TOKEN_FLEET"),
 		RepoOverridesPath:     getenv("FLEET_REPO_OVERRIDES"),
 		RemediationToken:      getenv("FLEET_REMEDIATION_TOKEN"),
-		LowStakesPath:         getenv("FLEET_LOW_STAKES"),
 		StopGrace:             l.millis("STOP_GRACE_MS", 30000),
 		IdleTimeout:           l.millis("IDLE_TIMEOUT_MS", 30*60*1000),
 		StartupStall:          l.millis("STARTUP_STALL_MS", 3*60*1000),

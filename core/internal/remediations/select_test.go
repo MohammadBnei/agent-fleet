@@ -5,8 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,108 +46,39 @@ func TestValidate_SchemaPerAction(t *testing.T) {
 		{"rollback", Selection{Action: "rollback", Namespace: "x", Name: "a"}, false},
 		{"bad name", Selection{Action: "sync_app", Name: "a;rm"}, false},
 		{"dotted namespace", Selection{Action: "restart", Kind: "deployment", Namespace: "a.b", Name: "a"}, false},
-		{"restart with container", Selection{Action: "restart", Kind: "deployment", Namespace: "x", Name: "a", Container: "c"}, false},
-		{"restart with env", Selection{Action: "restart", Kind: "deployment", Namespace: "x", Name: "a", EnvName: "A"}, false},
-		{"scale with cpu", Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(2), CPU: "1"}, false},
-		{"delete pod with memory", Selection{Action: "delete_pod", Namespace: "x", Name: "a-1", Memory: "1Gi"}, false},
-		{"sync with envValue", Selection{Action: "sync_app", Name: "game", EnvValue: "x"}, false},
 	}
 	for _, c := range cases {
-		err := c.s.Validate(b, false)
+		err := c.s.Validate(b)
 		if c.ok != (err == nil) || (err != nil && !errors.Is(err, ErrInvalid)) {
 			t.Errorf("%s: %v", c.name, err)
 		}
 	}
-	if err := (Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(2)}).Validate(Bounds{Min: 1, Max: 99}, false); !errors.Is(err, ErrInvalid) {
+	if err := (Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(2)}).Validate(Bounds{Min: 1, Max: 99}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("bounds above the cap: %v", err)
 	}
 }
 
 func TestValidate_UnsetBoundsRefuseReplicas(t *testing.T) {
 	scale := Selection{Action: "scale", Kind: "deployment", Namespace: "x", Name: "a", Replicas: ip(0)}
-	patch := Selection{Action: "patch", Kind: "deployment", Namespace: "x", Name: "a", Field: "replicas", Replicas: ip(0)}
 	for _, b := range []Bounds{{}, {Min: 0, Max: 3}} {
-		if err := scale.Validate(b, true); !errors.Is(err, ErrInvalid) {
+		if err := scale.Validate(b); !errors.Is(err, ErrInvalid) {
 			t.Errorf("scale to zero with %+v: %v", b, err)
-		}
-		if err := patch.Validate(b, true); !errors.Is(err, ErrInvalid) {
-			t.Errorf("patch to zero with %+v: %v", b, err)
 		}
 	}
 	one := 1
-	scale.Replicas, patch.Replicas = &one, &one
-	if scale.Validate(Bounds{}, true) == nil || patch.Validate(Bounds{}, true) == nil {
+	scale.Replicas = &one
+	if scale.Validate(Bounds{}) == nil {
 		t.Error("unset bounds admitted replicas")
 	}
 }
 
-func TestValidate_PatchIsLowStakesAndAllowlisted(t *testing.T) {
-	b := Bounds{Min: 1, Max: 3}
-	p := func(f func(*Selection)) Selection {
-		s := Selection{Action: "patch", Kind: "deployment", Namespace: "game", Name: "a", Field: "env", Container: "app", EnvName: "LOG_LEVEL", EnvValue: "debug"}
-		f(&s)
-		return s
+func TestValidate_PatchIsNotInTheCatalogue(t *testing.T) {
+	s := Selection{Action: "patch", Kind: "deployment", Namespace: "game", Name: "a"}
+	if err := s.Validate(Bounds{Min: 1, Max: 3}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("patch: %v", err)
 	}
-	if err := p(func(*Selection) {}).Validate(b, false); !errors.Is(err, ErrNotLowStakes) {
-		t.Fatalf("outside low-stakes: %v", err)
-	}
-	bad := map[string]Selection{
-		"field off the list": p(func(s *Selection) { s.Field = "image" }),
-		"secretish name":     p(func(s *Selection) { s.EnvName = "API_TOKEN" }),
-		"secretish value":    p(func(s *Selection) { s.EnvValue = "postgres://u:p@h/db?password=x" }),
-		"newline value":      p(func(s *Selection) { s.EnvValue = "a\nb" }),
-		"long value":         p(func(s *Selection) { s.EnvValue = strings.Repeat("a", 129) }),
-		"replicas over": p(func(s *Selection) {
-			s.Field, s.Container, s.EnvName, s.EnvValue, s.Replicas = "replicas", "", "", "", ip(9)
-		}),
-		"resources not quant": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "lots", "1Gi"
-		}),
-		"pod kind":            p(func(s *Selection) { s.Kind = "pod" }),
-		"env with replicas":   p(func(s *Selection) { s.Replicas = ip(2) }),
-		"env with cpu":        p(func(s *Selection) { s.CPU = "500m" }),
-		"resources with env":  p(func(s *Selection) { s.Field, s.CPU, s.Memory, s.EnvName = "resources", "500m", "256Mi", "A" }),
-		"restart with extras": p(func(s *Selection) { s.Field = "restart" }),
-		"memory zero":         p(func(s *Selection) { s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "0" }),
-		"memory millibytes": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "1m"
-		}),
-		"memory tiny": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "1Mi"
-		}),
-		"memory huge": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "999999Gi"
-		}),
-		"cpu zero": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "0", "256Mi"
-		}),
-		"cpu huge": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "100000", "256Mi"
-		}),
-		"cpu tiny": p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "1m", "256Mi"
-		}),
-	}
-	for name, s := range bad {
-		if err := s.Validate(b, true); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
-	good := []Selection{
-		p(func(*Selection) {}),
-		p(func(s *Selection) {
-			s.Field, s.Container, s.EnvName, s.EnvValue, s.Replicas = "replicas", "", "", "", ip(2)
-		}),
-		p(func(s *Selection) {
-			s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "500m", "256Mi"
-		}),
-		p(func(s *Selection) { s.Field, s.EnvName, s.EnvValue, s.CPU, s.Memory = "resources", "", "", "2", "1Gi" }),
-		p(func(s *Selection) { s.Field, s.Container, s.EnvName, s.EnvValue = "restart", "", "", "" }),
-	}
-	for i, s := range good {
-		if err := s.Validate(b, true); err != nil {
-			t.Errorf("good %d: %v", i, err)
-		}
+	if _, err := Parse([]byte(`{"action":"restart","kind":"deployment","namespace":"game","name":"a","field":"env"}`)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a patch-only field: %v", err)
 	}
 }
 
@@ -193,44 +122,26 @@ func (f *fakeInserter) Insert(_ context.Context, _ string, s Selection, _ Bounds
 }
 
 func TestSelect_ChecksBeforeWriting(t *testing.T) {
-	list := filepath.Join(t.TempDir(), "low.yaml")
-	if err := os.WriteFile(list, []byte("namespaces:\n  - game\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	f := &fakeInserter{}
-	svc := &Service{Store: f, LowStakesPath: list}
+	svc := &Service{Store: f}
 	b := Bounds{Min: 1, Max: 3}
 	ctx := context.Background()
 
 	if id, err := svc.Select(ctx, "r", []byte(`{"action":"restart","kind":"deployment","namespace":"game","name":"a"}`), b); err != nil || id != "id1" {
 		t.Fatalf("ok: %q %v", id, err)
 	}
-	patch := `{"action":"patch","kind":"deployment","namespace":"NS","name":"a","field":"restart"}`
-	if _, err := svc.Select(ctx, "r", []byte(strings.Replace(patch, "NS", "game", 1)), b); err != nil {
-		t.Fatalf("patch in low-stakes: %v", err)
+	patch := `{"action":"patch","kind":"deployment","namespace":"NS","name":"a"}`
+	if _, err := svc.Select(ctx, "r", []byte(strings.Replace(patch, "NS", "game", 1)), b); !errors.Is(err, ErrInvalid) {
+		t.Errorf("patch: %v", err)
 	}
-	if _, err := svc.Select(ctx, "r", []byte(strings.Replace(patch, "NS", "other", 1)), b); !errors.Is(err, ErrNotLowStakes) {
-		t.Errorf("patch outside: %v", err)
-	}
-	// The denylist wins even over a listed namespace.
-	if err := os.WriteFile(list, []byte("namespaces:\n  - agent-fleet\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Select(ctx, "r", []byte(strings.Replace(patch, "NS", "agent-fleet", 1)), b); !errors.Is(err, ErrDenied) {
-		t.Errorf("denylist beats the list: %v", err)
+	if _, err := svc.Select(ctx, "r", []byte(`{"action":"restart","kind":"deployment","namespace":"agent-fleet","name":"a"}`), b); !errors.Is(err, ErrDenied) {
+		t.Errorf("denylist: %v", err)
 	}
 	if _, err := svc.Select(ctx, "r", []byte(`{"action":"cordon","name":"n"}`), b); !errors.Is(err, ErrInvalid) {
 		t.Errorf("cordon: %v", err)
 	}
-	n := len(f.got)
-	// Missing or broken list: nothing is low-stakes.
-	for _, path := range []string{"", filepath.Join(t.TempDir(), "absent")} {
-		if _, err := (&Service{Store: f, LowStakesPath: path}).Select(ctx, "r", []byte(strings.Replace(patch, "NS", "game", 1)), b); !errors.Is(err, ErrNotLowStakes) {
-			t.Errorf("list %q: %v", path, err)
-		}
-	}
-	if len(f.got) != n {
-		t.Error("a refused selection was written")
+	if len(f.got) != 1 {
+		t.Errorf("a refused selection was written: %d rows", len(f.got))
 	}
 }
 

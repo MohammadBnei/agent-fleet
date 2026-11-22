@@ -9,25 +9,22 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
-// The catalogue. No cordon, no rollback (ADR-0086 §3). Patch is the free-form fix, low-stakes namespaces only.
+// The catalogue. No cordon, no rollback (ADR-0086 §3).
 const (
 	ActionRestart   = "restart"
 	ActionScale     = "scale"
 	ActionDeletePod = "delete_pod"
 	ActionSyncApp   = "sync_app"
-	ActionPatch     = "patch"
 )
 
 var (
-	ErrInvalid      = errors.New("remediation selection is invalid")
-	ErrDenied       = errors.New("remediation target is on the denylist")
-	ErrNotLowStakes = errors.New("a free-form fix needs a low-stakes namespace")
-	ErrRateLimited  = errors.New("remediation rate limit reached")
-	ErrNotFound     = errors.New("remediation not found or already used")
+	ErrInvalid     = errors.New("remediation selection is invalid")
+	ErrDenied      = errors.New("remediation target is on the denylist")
+	ErrRateLimited = errors.New("remediation rate limit reached")
+	ErrNotFound    = errors.New("remediation not found or already used")
 )
 
 const maxScaleReplicas = 50
@@ -35,18 +32,10 @@ const maxScaleReplicas = 50
 // Selection is the responder's typed output: an action plus its parameters. Unknown fields are refused.
 type Selection struct {
 	Action    string `json:"action"`
-	Kind      string `json:"kind,omitempty"` // restart, scale, patch: deployment or statefulset (scale: deployment)
+	Kind      string `json:"kind,omitempty"` // restart, scale: deployment or statefulset (scale: deployment)
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name"`
-	// scale, and patch field "replicas"
-	Replicas *int `json:"replicas,omitempty"`
-	// patch only: one field of the allowlist, and its typed value.
-	Field     string `json:"field,omitempty"` // replicas | resources | env | restart
-	Container string `json:"container,omitempty"`
-	EnvName   string `json:"envName,omitempty"`
-	EnvValue  string `json:"envValue,omitempty"`
-	CPU       string `json:"cpu,omitempty"`
-	Memory    string `json:"memory,omitempty"`
+	Replicas  *int   `json:"replicas,omitempty"` // scale only
 }
 
 // Bounds is the definition's replica range for scale (ADR-0086 §3), set by the definition, never by the responder.
@@ -65,44 +54,9 @@ func Parse(raw []byte) (Selection, error) {
 
 var (
 	dns1123 = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
-	// A namespace and a container name are DNS labels: no dots, 63 at most.
+	// A namespace is a DNS label: no dots, 63 at most.
 	dnsLabel = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-	cpuQty   = regexp.MustCompile(`^([1-9][0-9]{0,5})(m?)$`)
-	memQty   = regexp.MustCompile(`^([1-9][0-9]{0,5})(Mi|Gi)$`)
-	envName  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	// An env value is not a secret's home: the name must not look like one, and the value stays short and plain.
-	secretish = regexp.MustCompile(`(?i)(key|token|secret|pass|credential|cert|auth|dsn|url)`)
 )
-
-// Resource floors and caps: a patch cannot starve a pod (0, 1m, 1Mi) or ask for a node (100000 cores).
-const (
-	minMilliCPU, maxMilliCPU = 10, 16000
-	minMiB, maxMiB           = 16, 65536
-)
-
-func validCPU(q string) bool {
-	m := cpuQty.FindStringSubmatch(q)
-	if m == nil {
-		return false
-	}
-	n, _ := strconv.Atoi(m[1])
-	if m[2] == "" {
-		n *= 1000
-	}
-	return n >= minMilliCPU && n <= maxMilliCPU
-}
-
-func validMemory(q string) bool {
-	m := memQty.FindStringSubmatch(q)
-	if m == nil {
-		return false
-	}
-	n, _ := strconv.Atoi(m[1])
-	if m[2] == "Gi" {
-		n *= 1024
-	}
-	return n >= minMiB && n <= maxMiB
-}
 
 // inBounds: the definition must have set a range (Max >= 1), and never admits zero replicas, which is an outage.
 func inBounds(b Bounds, n int) bool {
@@ -121,18 +75,6 @@ func only(s Selection, fields ...string) Selection {
 			k.Namespace = s.Namespace
 		case "replicas":
 			k.Replicas = s.Replicas
-		case "field":
-			k.Field = s.Field
-		case "container":
-			k.Container = s.Container
-		case "envName":
-			k.EnvName = s.EnvName
-		case "envValue":
-			k.EnvValue = s.EnvValue
-		case "cpu":
-			k.CPU = s.CPU
-		case "memory":
-			k.Memory = s.Memory
 		}
 	}
 	return k
@@ -147,9 +89,8 @@ func (s Selection) target() string {
 
 func invalid(f string, a ...any) error { return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(f, a...)) }
 
-// Validate is the schema check: per action, exactly the fields it takes. lowStakes says the namespace is on the
-// reviewed list; it alone admits patch.
-func (s Selection) Validate(b Bounds, lowStakes bool) error {
+// Validate is the schema check: per action, exactly the fields it takes.
+func (s Selection) Validate(b Bounds) error {
 	if !dns1123.MatchString(s.Name) {
 		return invalid("name")
 	}
@@ -179,45 +120,8 @@ func (s Selection) Validate(b Bounds, lowStakes bool) error {
 		if s != only(s, "namespace") {
 			return invalid("delete_pod takes only a namespace and name")
 		}
-	case ActionPatch:
-		if !lowStakes {
-			return ErrNotLowStakes
-		}
-		if !workload {
-			return invalid("patch takes a deployment or statefulset")
-		}
-		return s.validatePatch(b)
 	default:
 		return invalid("action %q is not in the catalogue", s.Action)
-	}
-	return nil
-}
-
-// validatePatch is the field allowlist: replicas, container resources, a non-secret env value, the restart annotation.
-func (s Selection) validatePatch(b Bounds) error {
-	base := []string{"kind", "namespace", "field"}
-	switch s.Field {
-	case "replicas":
-		if s.Replicas == nil || !inBounds(b, *s.Replicas) || s != only(s, append(base, "replicas")...) {
-			return invalid("replicas outside the definition's bounds")
-		}
-	case "resources":
-		if !dnsLabel.MatchString(s.Container) || !validCPU(s.CPU) || !validMemory(s.Memory) ||
-			s != only(s, append(base, "container", "cpu", "memory")...) {
-			return invalid("resources take a container, cpu and memory quantities")
-		}
-	case "env":
-		if !dnsLabel.MatchString(s.Container) || !envName.MatchString(s.EnvName) || secretish.MatchString(s.EnvName) ||
-			len(s.EnvValue) > 128 || strings.ContainsAny(s.EnvValue, "\n\r\x00") || secretish.MatchString(s.EnvValue) ||
-			s != only(s, append(base, "container", "envName", "envValue")...) {
-			return invalid("env takes a container and a non-secret name and value")
-		}
-	case "restart":
-		if s != only(s, base...) {
-			return invalid("restart takes no parameters")
-		}
-	default:
-		return invalid("field %q is not on the allowlist", s.Field)
 	}
 	return nil
 }
