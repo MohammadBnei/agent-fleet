@@ -127,7 +127,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
-          cache-dependency-path: '**/go.sum'
+          # Own cache key per consumer: a shared key is saved by whichever job
+          # finishes first and every other job restores that partial cache.
+          cache: false
 
       # setup-go's own module/build cache (keyed on go.sum, enabled by
       # default) doesn't cover `go install`'d binaries under $GOBIN — cache
@@ -229,7 +231,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
-          cache-dependency-path: '**/go.sum'
+          cache-dependency-path: ${{ matrix.module }}/go.sum
 
       # provisioner/internal/git's SyncFleetShared shells out to rsync, which
       # the container runner's image lacks.
@@ -295,7 +297,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
-          cache-dependency-path: '**/go.sum'
+          # Own cache key per consumer: a shared key is saved by whichever job
+          # finishes first and every other job restores that partial cache.
+          cache: false
 
       - name: go test (docs + workflow guards)
         working-directory: core
