@@ -20,8 +20,8 @@ metadata:
   labels:
     app.kubernetes.io/part-of: agent-fleet
 spec:
-  # Paused 2026-11-21 for the GitHub to Forgejo move (owner); restore 1 to resume.
-  replicas: 0
+  # Resumed on Forgejo 2026-11-22 together with core (paused 2026-11-21).
+  replicas: 1
   revisionHistoryLimit: 3
   selector:
     matchLabels:
