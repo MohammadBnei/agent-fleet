@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   trailers:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:

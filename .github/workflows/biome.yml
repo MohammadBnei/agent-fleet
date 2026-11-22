@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   biome:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2

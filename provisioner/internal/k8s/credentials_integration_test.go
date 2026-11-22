@@ -31,6 +31,12 @@ func startAdminPostgres(t *testing.T) (host string, port int32, adminPassword st
 	if h := os.Getenv("AGENTFLEET_TEST_ADMIN_PG_HOST"); h != "" {
 		return h, 5432, password
 	}
+	// A runner with neither a Docker socket nor a superuser Postgres (the Talos
+	// pull-request runner): CI sets this and the main gate runs the tests
+	// (.github/workflows/go.yml, provisioner-mint).
+	if os.Getenv("AGENTFLEET_TEST_NO_ADMIN_PG") != "" {
+		t.Skip("needs a superuser Postgres; run by go.yml's provisioner-mint job on main")
+	}
 
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
 		postgres.WithUsername("postgres"),

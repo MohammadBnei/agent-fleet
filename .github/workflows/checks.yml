@@ -1,4 +1,5 @@
-# worker, dashboard and islands tests, on the podman runner only (ubuntu-latest: rootless, no sudo, no secrets).
+# worker, dashboard and islands tests plus a Dockerfile lint, on the Talos runner (k8s-ubuntu-latest: an
+# ephemeral unprivileged pod, no root, no secrets, ADR-0089).
 # They run on a PR and from docker.yml (workflow_call) on main, whose release and images need them: main never
 # deploys untested code. No image build on a PR (the CI/CD split): images are CD's, built from reviewed main.
 name: checks
@@ -19,11 +20,23 @@ concurrency:
   cancel-in-progress: ${{ github.event.pull_request && true || false }}
 
 jobs:
+  # hadolint on every Dockerfile, in place of the pull-request image build: images are built on main, by CD on
+  # CT 103. Errors fail it; the repo's existing warnings (unpinned apt installs, pipefail) are not this check's
+  # business. ukubi-ci is pinned to the head of its open PR (feat/talos-pr-jobs); re-pin to the release sha once
+  # it is tagged. No if: on a uses: job (Forgejo evaluates it inside the called workflow), so it also runs from
+  # docker.yml on main, where it is cheap.
+  dockerfiles:
+    uses: MohammadBnei/ukubi-ci/.github/workflows/dockerfile-lint.yml@d683f2091575188024f7e1200e619977d9db19ae
+    with:
+      failure-threshold: error
+    permissions:
+      contents: read
+
   # `bun run test`, not bare `bun test`: the script adds --isolate.
   # session.test.ts mock.module()s ./sidecarClient.js, which is
   # process-global and survives mock.restore().
   worker-test:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -42,7 +55,7 @@ jobs:
   # The dashboard ships inside core's image. `bun run build` is `tsc -b &&
   # vite build`; only `tsc -b` enforces noUnusedLocals.
   dashboard-test:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -60,7 +73,7 @@ jobs:
 
   # docs/adr/0068: the <fleet-agent> island, compiled into core's image.
   islands-test:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2

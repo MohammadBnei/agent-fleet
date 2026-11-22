@@ -34,7 +34,7 @@ jobs:
   # Plain git rather than paths-filter + github-script, which talk to
   # GitHub's API.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     outputs:
       proto: ${{ steps.modules.outputs.proto }}
       go-modules: ${{ steps.modules.outputs.result }}
@@ -78,7 +78,7 @@ jobs:
   buf:
     needs: changes
     if: needs.changes.outputs.proto == 'true'
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -224,36 +224,11 @@ jobs:
   go:
     needs: changes
     if: needs.changes.outputs.go-modules != '[]'
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         module: ${{ fromJSON(needs.changes.outputs.go-modules) }}
-    services:
-      postgres:
-        # The alpine tag, as ukubi-bridge's test job: postgres:18 failed to
-        # start under the podman runner (crun: memory.max).
-        image: postgres:18.7-alpine
-        env:
-          POSTGRES_USER: agentfleet
-          POSTGRES_PASSWORD: agentfleet
-          POSTGRES_DB: agentfleetdb
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      # The provisioner's mintPostgres tests need a superuser named postgres
-      # (credentials_integration_test.go), so they get an instance of their own.
-      postgres-admin:
-        image: postgres:18.7-alpine
-        env:
-          POSTGRES_PASSWORD: admin-test-password
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -307,10 +282,29 @@ jobs:
             ${{ steps.cachekeys.outputs.key }}-
             ${{ steps.cachekeys.outputs.prefix }}
 
-      # provisioner/internal/git's SyncFleetShared shells out to rsync, which
-      # the container runner's image lacks.
-      - name: Install rsync
-        run: command -v rsync || { apt-get update -qq && apt-get install -y -qq rsync; }
+      # provisioner/internal/git's SyncFleetShared shells out to rsync. The Talos
+      # runner pod has no root and no apt, so the image has to carry it
+      # (ukubi-ci runner-image); fail with that said, not on a missing binary.
+      - name: Check rsync
+        if: matrix.module == 'provisioner'
+        run: |
+          command -v rsync >/dev/null || { echo "::error::rsync is not in the runner image; ukubi-ci runner-image must bake it, this runner has no root and no apt"; exit 1; }
+
+      # The Talos runner has no services: and no Docker socket, so the database
+      # tests use a disposable database from the dev IntegreSQL (infra-bootstrap
+      # ADR-0088) through ukubi-ci's dev-db action, with DATABASE_URL exported.
+      # No seed command: dbtest applies db/migrations/ into a schema per test
+      # (AGENTFLEET_TEST_DSN), and the template is keyed on those files. Only
+      # core has database tests.
+      # ukubi-ci is pinned to the head of its open PR (feat/talos-pr-jobs);
+      # re-pin to the release sha once it is tagged.
+      - name: Dev database (IntegreSQL)
+        if: matrix.module == 'core'
+        uses: MohammadBnei/ukubi-ci/actions/dev-db@d683f2091575188024f7e1200e619977d9db19ae
+        with:
+          integresql-url: http://integresql.dev-services.svc.cluster.local:5000
+          postgres-host: dev-postgres.dev-services.svc.cluster.local
+          hash-paths: db/migrations
 
       # go vet is not a separate step: golangci-lint's default linters (no
       # config file in this repo) include govet.
@@ -346,17 +340,18 @@ jobs:
       - name: go test (race, integration, real Postgres)
         working-directory: ${{ matrix.module }}
         env:
-          # A container job reaches the service by its name.
-          AGENTFLEET_DB_HOST: postgres
-          AGENTFLEET_DB_PORT: '5432'
-          AGENTFLEET_DB_NAME: agentfleetdb
-          AGENTFLEET_DB_USER: agentfleet
-          AGENTFLEET_DB_PASSWORD: agentfleet
-          # dbtest.NewPool's external-database path (a schema per test): the
-          # container runner has no Docker socket for testcontainers.
-          AGENTFLEET_TEST_DSN: postgres://agentfleet:agentfleet@postgres:5432/agentfleetdb?sslmode=disable
-          AGENTFLEET_TEST_ADMIN_PG_HOST: postgres-admin
+          # dbtest.NewPool's external-database path (a schema per test); empty
+          # for the modules that have no database tests.
+          AGENTFLEET_TEST_DSN: ${{ env.DATABASE_URL }}
+          # mintPostgres needs a superuser named postgres, which the dev Postgres
+          # does not hand out (integresql is NOSUPERUSER). Those tests skip here
+          # and run in the provisioner-mint job on main.
+          AGENTFLEET_TEST_NO_ADMIN_PG: '1'
         run: bash "$GITHUB_WORKSPACE/.github/scripts/go-test.sh"
+
+      - name: Release the dev database
+        if: always() && matrix.module == 'core'
+        uses: MohammadBnei/ukubi-ci/actions/dev-db-release@d683f2091575188024f7e1200e619977d9db19ae
 
       # Last, so it holds what lint and the tests built. Saved under this run's
       # id on every green run, so the newest run's cache is the one the next PR
@@ -370,12 +365,51 @@ jobs:
             ${{ steps.cachekeys.outputs.build }}
           key: ${{ steps.cachekeys.outputs.key }}-${{ github.run_id }}
 
+  # The provisioner's mintPostgres tests need a superuser named postgres
+  # (credentials_integration_test.go). The dev Postgres has none (IntegreSQL's
+  # roles are NOSUPERUSER) and the Talos runner has no services:, so they skip
+  # in the go job and run here instead, on CT 103's podman runner with a
+  # Postgres service of their own. Main only: no pull-request job runs on CT 103.
+  # (A branch cannot be checked by `if:` on event_name here, which is
+  # workflow_call inside a called workflow; github.ref says it.)
+  provisioner-mint:
+    needs: changes
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres-admin:
+        image: postgres:18.7-alpine
+        env:
+          POSTGRES_PASSWORD: admin-test-password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: false
+
+      # -count=1: the tests depend on a live server Go cannot track.
+      - name: go test (mintPostgres, real superuser)
+        working-directory: provisioner
+        env:
+          AGENTFLEET_TEST_ADMIN_PG_HOST: postgres-admin
+        run: go test ./internal/k8s -run 'TestMintPostgres' -race -tags=integration -count=1
+
   # Unfiltered on purpose: the drift it catches (an ADR index row that
   # disagrees with its file, a skill citing a path that was renamed, a
   # workflow handing GITHUB_TOKEN a write scope) comes as often from a
   # code-only PR as from a docs-only one. One package, no Postgres, seconds.
   docs-check:
-    runs-on: ubuntu-latest
+    runs-on: k8s-ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
