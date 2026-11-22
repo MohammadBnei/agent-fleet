@@ -841,6 +841,38 @@ func TestStream(t *testing.T) {
 	}
 }
 
+func TestStreamDropsUncontracted(t *testing.T) {
+	d, agents, _, _ := setup(t)
+	flagged := pr("f", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
+	flagged.Seq = 7
+	flagged.Flags = []string{"uncontracted"}
+	plain := pr("p", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
+	plain.Seq = 8
+	plain.Subject = "forge/MohammadBnei/notes/pr/9"
+	fb := &fakeBridge{msgs: []*bridgev1.SubscribeResponse{{Event: flagged}, {Event: plain}}}
+	d.bridge = fb
+	agents.err["owner"] = nil
+	if err := d.stream(context.Background()); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("stream end: %v", err)
+	}
+	if len(fb.acks) != 2 || fb.acks[0] != 7 || fb.acks[1] != 8 || len(fb.nacks) != 0 {
+		t.Fatalf("acks=%v nacks=%v", fb.acks, fb.nacks)
+	}
+	for _, o := range agents.opens {
+		if o.GetThreadKey() == flagged.Subject {
+			t.Fatalf("the flagged event reached Handle: %v", defsOf(agents.opens))
+		}
+	}
+	if len(agents.opens) == 0 {
+		t.Fatal("the unflagged event did not reach Handle")
+	}
+	// Handle leaves a decision row for any event it routed; the flagged one has none.
+	var n int
+	if err := d.pool.QueryRow(context.Background(), `SELECT count(*) FROM dispatch_decisions WHERE event_id = $1`, flagged.Id).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("the flagged event left %d decision rows (err %v)", n, err)
+	}
+}
+
 type failOn struct {
 	*fakeAgents
 	subject string

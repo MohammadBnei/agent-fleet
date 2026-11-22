@@ -33,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -53,6 +54,9 @@ const (
 	typePRClosed      = forge.Type + "pull_request.closed"
 	typeRun           = forge.Type + "action_run."
 )
+
+// flagUncontracted is the bridge's CloudEvent flag for a type missing from its contract.
+const flagUncontracted = "uncontracted"
 
 // Types core subscribes to. Never a reserved type (infra-bootstrap ADR-0066
 // §3): the bridge refuses one, and TestTypesAvoidReserved checks it here.
@@ -251,6 +255,19 @@ func (d *Dispatcher) stream(ctx context.Context) error {
 		}
 		if !d.ready() {
 			return errNotReady // unsettled: redelivered on the next stream
+		}
+		if slices.Contains(e.GetFlags(), flagUncontracted) {
+			// The bridge has no contract for this type: core must not act on it.
+			// Acked, not nacked: a retry cannot make it contracted.
+			slog.Warn("dispatch: uncontracted event dropped", "type", e.GetType(), "source", e.GetSource(), "seq", e.GetSeq())
+			metrics.UncontractedDropped.WithLabelValues(e.GetType()).Inc()
+			sctx, cancel := context.WithTimeout(ctx, CallTimeout)
+			err = d.bridge.Ack(sctx, Subscription, e.GetSeq())
+			cancel()
+			if err != nil {
+				return fmt.Errorf("settle seq %d: %w", e.GetSeq(), err)
+			}
+			continue
 		}
 		hctx, cancel := context.WithTimeout(ctx, HandleTimeout)
 		herr := d.Handle(hctx, e)

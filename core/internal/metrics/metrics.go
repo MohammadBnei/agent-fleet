@@ -25,6 +25,17 @@ import (
 )
 
 var (
+	// UncontractedDropped counts events core acked and dropped because the
+	// bridge flagged their type as missing from its contract. Any non-zero
+	// rate means contract drift: work core would have acted on is being lost.
+	UncontractedDropped = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agentfleet_dispatch_uncontracted_dropped_total",
+			Help: "Bridge events acked and dropped as uncontracted, by event type",
+		},
+		[]string{"type"},
+	)
+
 	// GrpcRequestsTotal/GrpcDuration cover both RPC surfaces core serves —
 	// CoreService (gRPC, sidecar + provisioner call it) and DashboardService
 	// (ConnectRPC, the SPA calls it) — separated by the `surface` label

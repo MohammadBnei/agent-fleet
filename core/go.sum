@@ -14,6 +14,8 @@ github.com/MohammadBnei/agent-fleet/proto/gen/go v0.0.0-20260809100100-f01096ed1
 github.com/MohammadBnei/agent-fleet/proto/gen/go v0.0.0-20260809100100-f01096ed10ac/go.mod h1:T14aHnLCuO4g/KWreP4fOYfn9l7BzvfmxsaJfmFQIUk=
 github.com/MohammadBnei/ukubi-bridge v0.0.0-20261102142813-b984f3d9d6a0 h1:yd0qCXAOSLct3/mej4Acll0bI2F6Kc4oZlRo4JyzPF8=
 github.com/MohammadBnei/ukubi-bridge v0.0.0-20261102142813-b984f3d9d6a0/go.mod h1:WTr3uxov1HJA+pRLiRrlazGqR1wXGT+j9jsX9sh9lk4=
+github.com/MohammadBnei/ukubi-bridge v0.0.0-20261122220656-92df0b854847 h1:s84QgxVkh3oFm2ajopNuTSdzx88SFnWXaiI51g6jGaA=
+github.com/MohammadBnei/ukubi-bridge v0.0.0-20261122220656-92df0b854847/go.mod h1:4bltw+Oa3YR7GKVJrLyt/OOdGLJUP5smolA9P9DMPx4=
 github.com/MohammadBnei/ukubi-go v0.4.0 h1:fDX+1A9oVef78sQrx1GvZieHa4MWtz4cwvL5Exz043w=
 github.com/MohammadBnei/ukubi-go v0.4.0/go.mod h1:dm6PqGk7HFPZCDfjRMWoLA3n9iWR6bdnABU9vTXO0Sk=
 github.com/aws/aws-sdk-go-v2 v1.47.3 h1:HRoT/MkNi3bjO5xF4dCzLzvVmkvRGHj3/cLINDnJejk=
@@ -236,6 +238,8 @@ golang.org/x/crypto v0.57.0/go.mod h1:Fdz0i5U6CoizGwLda9DttjSk6qlZo25zYNtR+ycvuZ
 golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v0D8zg8gWTRqZa9RBIspLL5mdg=
 golang.org/x/net v0.59.0 h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=
 golang.org/x/net v0.59.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
+golang.org/x/net v0.60.0 h1:79p50tfZlm0J9YfoDsSi639qSXNGVwEzOPLCxM2FsYU=
+golang.org/x/net v0.60.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
 golang.org/x/oauth2 v0.37.0 h1:JUlcxA8oAtauLfiH8FX2/FkAWHAdi0QtGCGc+hofE98=
 golang.org/x/oauth2 v0.37.0/go.mod h1:IxwZNxUULJmpBFf9K/9NTMSIfZZuvuTy1gGxhigP/58=
 golang.org/x/sync v0.23.0 h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=

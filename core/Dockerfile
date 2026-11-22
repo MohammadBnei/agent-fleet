@@ -25,7 +25,7 @@ COPY dashboard/src/transcript.ts /app/dashboard/src/transcript.ts
 COPY islands/ ./
 RUN bun x vite build
 
-FROM golang:1.27 AS build
+FROM golang:1.27.4 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY core ./core

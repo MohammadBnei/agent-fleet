@@ -1,11 +1,11 @@
 module github.com/MohammadBnei/agent-fleet/core
 
-go 1.27.1
+go 1.27.4
 
 require (
 	connectrpc.com/connect v1.21.0
 	github.com/MohammadBnei/agent-fleet/proto/gen/go v0.0.0-20260809100100-f01096ed10ac
-	github.com/MohammadBnei/ukubi-bridge v0.0.0-20261102142813-b984f3d9d6a0
+	github.com/MohammadBnei/ukubi-bridge v0.0.0-20261122220656-92df0b854847
 	github.com/MohammadBnei/ukubi-go v0.4.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
@@ -108,7 +108,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
