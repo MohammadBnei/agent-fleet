@@ -49,8 +49,10 @@ on:
 permissions:
   contents: read
 
-# Forgejo honours only the workflow-level group. Main runs queue and are never
-# cancelled once a tag may be pushed.
+# Forgejo honours only the workflow-level group. Main runs are never cancelled
+# once a tag may be pushed. One group per ref keeps a single run active on main
+# and one pending: a newer push replaces the pending run rather than queueing
+# behind it, so a burst of merges is gated and released as one batch.
 concurrency:
   group: app-${{ github.ref }}
   cancel-in-progress: false
@@ -63,9 +65,19 @@ jobs:
     permissions:
       contents: read
 
+  # The full Go gate: every module, full -race, the integration tests, buf. A pull
+  # request runs only a fast slice of it (go.yml's own trigger). The call is
+  # unconditional (no if: on a uses: job, see above), so a dispatch runs it too.
+  # The release, the images and their pins all hang off `release`, so none of
+  # them happens before it is green. go.yml's concurrency never cancels here.
+  go:
+    uses: ./.github/workflows/go.yml
+    permissions:
+      contents: read
+
   # A tag on main.
   release:
-    needs: checks
+    needs: [checks, go]
     permissions:
       contents: write # release.yml pushes the release tag
     uses: MohammadBnei/ukubi-ci/.github/workflows/release.yml@9af316b5d779b2d5ef3f55b9f11e20b8bf3f6ce8 # v0.11.1

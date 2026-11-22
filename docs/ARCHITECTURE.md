@@ -713,11 +713,14 @@ On a push to `main` (Forgejo Actions, shared ukubi-ci v0.11.1 workflows):
    the `migration` image as a `PreSync` hook on `core`'s Application
    (`docs/adr/0030`); `core` embeds no schema.
 
-`.github/workflows/go.yml` is the Go correctness gate on every push/PR (a push runs only the modules
-its range touched; Go caches follow the pull-request-restores model):
-`golangci-lint` (its default linters include govet) and one
-`go test -race -tags=integration` per module against a real Postgres (a
-single compile), plus `buf lint`/`buf breaking`/a generate-drift check.
+`.github/workflows/go.yml` is the Go correctness gate. A pull request runs the fast gate on the Talos
+runner (`k8s-ubuntu-latest`): only the modules its diff touches, a warm cache (restored and saved), Go's test
+cache for the packages that can use it, and a disposable IntegreSQL database from `ukubi-ci`'s `dev-db`
+action. A push to `main` runs the full gate, called from `docker.yml`: every module, a cold cache (main never
+restores one), `-count=1` for the packages Go's cache cannot judge, and the provisioner's `mintPostgres` tests
+against a superuser Postgres on CT 103. The release, the images and their pins wait for it. Per module it is
+`golangci-lint` (its default linters include govet) and one `go test -race -tags=integration` (a single
+compile), plus `buf lint`/`buf breaking`/a generate-drift check.
 
 ### Observability
 
