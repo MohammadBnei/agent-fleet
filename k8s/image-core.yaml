@@ -1,3 +1,3 @@
 # Image pin, written by ukubi-ci on every deploy; ArgoCD layers it over the default branch's values.
 image:
-  tag: "fe673bac5034@sha256:b092eb416cc2acc9400625eb2529c1f3a425ea1a04a23183d7799cfede0051f3"
+  tag: "f150a415a477@sha256:318d6d2eb7f6d6d4bf664c49d8b99bc948db00ffc4358286dc3f9f6dd3a11a3e"
