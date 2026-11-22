@@ -704,9 +704,11 @@ On a push to `main` (Forgejo Actions, shared ukubi-ci v0.11.1 workflows):
    the `migration` image as a `PreSync` hook on `core`'s Application
    (`docs/adr/0030`); `core` embeds no schema.
 
-`.github/workflows/go.yml` is the Go correctness gate on every push/PR:
-`go vet`, `golangci-lint`, `go test -race`, `-tags=integration` against a
-real Postgres, plus `buf lint`/`buf breaking`/a generate-drift check.
+`.github/workflows/go.yml` is the Go correctness gate on every push/PR (a push runs only the modules
+its range touched; Go caches follow the pull-request-restores model):
+`golangci-lint` (its default linters include govet) and one
+`go test -race -tags=integration` per module against a real Postgres (a
+single compile), plus `buf lint`/`buf breaking`/a generate-drift check.
 
 ### Observability
 
