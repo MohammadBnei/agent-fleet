@@ -51,7 +51,10 @@ type Client struct {
 	URL string // web root, FORGE_URL: https://git.bnei.dev
 	Dir string // the mounted token files
 	// Allow are the owners whose repos count (FORGEJO_OWNERS): anyone can
-	// add ukubi-fleet as a collaborator on a repo of their own.
+	// add ukubi-fleet as a collaborator on a repo of their own. Core's repos
+	// sync trusts owner/repo as identity on a forge switch because creating
+	// a repo under these owners is limited to the owner: never add an org
+	// whose members can create repos.
 	Allow []string
 	// Trusted are the logins whose PRs a review may formally approve or
 	// request changes on (PROVISIONER_TRUSTED_LOGINS), besides ukubi-fleet.

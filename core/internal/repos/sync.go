@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -19,7 +20,9 @@ import (
 )
 
 // GitHubRepo is one entry of the provisioner's ListGitHubRepos: a repo the
-// bot owns or collaborates on (docs/adr/0074).
+// bot owns or collaborates on (docs/adr/0074), on the provisioner's FORGE.
+// The names are GitHub's; with FORGE=forgejo the entries are Forgejo's
+// (ID is Forgejo's repo id, CloneURL https://git.bnei.dev/...).
 type GitHubRepo struct {
 	ID            int64
 	FullName      string
@@ -129,12 +132,48 @@ type row struct {
 	url      string
 	githubID *int64
 	gone     bool
+	busy     bool // active, or an open session references it
 }
+
+// maxBusyForeignPerTick caps the previous forge's active or session-bearing
+// rows hidden in one tick, apart from the shrink guard: above it they stay
+// visible until a human clears them.
+const maxBusyForeignPerTick = 2
 
 // normURL is how a pre-0074 row is matched to its GitHub repo on the first
 // sync (docs/adr/0074 §8): case, a trailing slash and ".git" do not matter.
 func normURL(u string) string {
 	return strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(u), "/"), ".git")
+}
+
+// hostOf is u's lowercased host: https://h/o/r and git@h:o/r alike, "" for
+// a bare path (a test's local origin).
+func hostOf(u string) string {
+	if p, err := url.Parse(u); err == nil && p.Host != "" {
+		return strings.ToLower(p.Hostname())
+	}
+	if _, rest, ok := strings.Cut(u, "@"); ok {
+		h, _, _ := strings.Cut(rest, ":")
+		return strings.ToLower(h)
+	}
+	return ""
+}
+
+// ownerOf is ownerRepo's <owner>.
+func ownerOf(u string) string {
+	o, _, _ := strings.Cut(ownerRepo(u), "/")
+	return o
+}
+
+// ownerRepo is u's lowercased <owner>/<repo>: how a row is carried across a
+// forge switch (FORGE=github to forgejo), where neither the id nor the host
+// survives but the owner/repo path does.
+func ownerRepo(u string) string {
+	parts := strings.Split(strings.ReplaceAll(normURL(u), ":", "/"), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-2] + "/" + parts[len(parts)-1]
 }
 
 // Sync makes repos match gh, a COMPLETE listing, plus ov. One transaction:
@@ -148,14 +187,17 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
-	rs, err := tx.Query(ctx, `SELECT name, url, github_id, gone_since IS NOT NULL FROM repos FOR UPDATE`)
+	rs, err := tx.Query(ctx, `
+		SELECT name, url, github_id, gone_since IS NOT NULL,
+		       active OR EXISTS (SELECT 1 FROM sessions s WHERE s.repo = repos.name AND s.archived_at IS NULL)
+		FROM repos FOR UPDATE`)
 	if err != nil {
 		return 0, fmt.Errorf("repos sync: %w", err)
 	}
 	var rows []row
 	for rs.Next() {
 		var r row
-		if err := rs.Scan(&r.name, &r.url, &r.githubID, &r.gone); err != nil {
+		if err := rs.Scan(&r.name, &r.url, &r.githubID, &r.gone, &r.busy); err != nil {
 			rs.Close()
 			return 0, fmt.Errorf("repos sync: %w", err)
 		}
@@ -165,14 +207,47 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 	if err := rs.Err(); err != nil {
 		return 0, fmt.Errorf("repos sync: %w", err)
 	}
-	byID, byURL, byName := map[int64]*row{}, map[string]*row{}, map[string]*row{}
+	// A row on a host the listing does not name is the previous forge's
+	// (FORGE switched, docs/adr/0086 D3): its id means nothing on this forge,
+	// so it is dropped (here and in the table, else a listed repo holding the
+	// same number would fail github_id's UNIQUE), and the row is matched by
+	// owner/repo instead. Only off github.com: a GitHub listing (FORGE=github)
+	// marks no row foreign, so nothing below changes for it.
+	hosts, owners := map[string]bool{}, map[string]bool{}
+	for _, g := range gh {
+		if h := hostOf(g.CloneURL); h != "" {
+			hosts[h] = true
+		}
+		if o, _, ok := strings.Cut(strings.ToLower(g.FullName), "/"); ok {
+			owners[o] = true
+		}
+	}
+	foreign := map[*row]bool{}
+	var dropIDs []string
+	byID, byURL, byName, byPath := map[int64]*row{}, map[string]*row{}, map[string]*row{}, map[string]*row{}
 	for i := range rows {
 		r := &rows[i]
 		byName[r.name] = r
+		// A host-less URL is foreign too: its id is no more this forge's.
+		if len(hosts) > 0 && !hosts["github.com"] && !hosts[hostOf(r.url)] {
+			foreign[r] = true
+			if p := ownerRepo(r.url); p != "" {
+				byPath[p] = r // gone rows too: a fixed listing brings them back
+			}
+			if r.githubID != nil {
+				r.githubID = nil
+				dropIDs = append(dropIDs, r.name)
+			}
+		}
 		if r.githubID != nil {
 			byID[*r.githubID] = r
 		}
 		byURL[normURL(r.url)] = r
+	}
+	if len(dropIDs) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE repos SET github_id = NULL WHERE name = ANY($1)`, dropIDs); err != nil {
+			return 0, fmt.Errorf("repos sync: drop foreign ids: %w", err)
+		}
 	}
 
 	// Oldest repo first: on a short-name collision the older one keeps the
@@ -207,6 +282,10 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 			// An unadopted (pre-0074) row, or a row whose repo was deleted and
 			// re-created at the same URL (its old id is no longer listed).
 			if r := byURL[normURL(g.CloneURL)]; r != nil && (r.githubID == nil || !listed[*r.githubID]) {
+				cur = r
+			} else if r := byPath[strings.ToLower(g.FullName)]; r != nil && !seen[r] {
+				// Same owner/repo on the previous forge: trusted only because
+				// FORGEJO_OWNERS are owners, never orgs whose members create repos.
 				cur = r
 			}
 		}
@@ -306,15 +385,42 @@ func (s *Store) Sync(ctx context.Context, gh []GitHubRepo, ov map[string]Overrid
 		slog.Warn("repos: cluster access revoked, no matching override", "count", n)
 	}
 
-	var gone []string
+	// The previous forge's unmatched rows never share the shrink guard with
+	// this forge's (else the never-migrated backlog would stop every real
+	// removal). Hidden outside it: a row whose owner the listing does not
+	// carry (opus-tech-hq, left on GitHub), and an idle one (inactive, no
+	// open session). A busy one of a listed owner may be a repo the listing
+	// dropped (ListRepos skips pushable, archived, fork and mirror repos), so
+	// at most maxBusyForeignPerTick are hidden per tick. All stay carried
+	// back by owner/repo within the 7-day grace.
+	var gone, left, busy []string
 	active := 0
 	for i := range rows {
-		if r := &rows[i]; !r.gone {
-			active++
-			if !seen[r] {
-				gone = append(gone, r.name)
+		switch r := &rows[i]; {
+		case r.gone || seen[r]:
+			if !r.gone {
+				active++
 			}
+		case foreign[r] && (!owners[ownerOf(r.url)] || !r.busy):
+			left = append(left, r.name)
+		case foreign[r]:
+			busy = append(busy, r.name)
+		default:
+			active++
+			gone = append(gone, r.name)
 		}
+	}
+	if len(busy) > maxBusyForeignPerTick {
+		slog.Warn("repos: active repos on the previous forge, not listed here; left visible. Clear them by hand once the listing is right: deactivate them in the console, or set gone_since on their rows", "count", len(busy), "repos", busy)
+	} else {
+		left = append(left, busy...)
+	}
+	if len(left) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE repos SET gone_since = now(), updated_at = now() WHERE name = ANY($1)`, left); err != nil {
+			return 0, fmt.Errorf("repos sync: mark left: %w", err)
+		}
+		changed += len(left)
+		slog.Warn("repos: on another forge than the listing's, hidden; deleted after 7 days", "repos", left)
 	}
 	switch {
 	// A token that sees nothing (wrong account, lost scope) answers 200 with

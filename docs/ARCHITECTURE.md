@@ -524,6 +524,14 @@ is the reason.
   allowlisted installations into `repos` (`core/internal/repos/sync.go`, via
   the provisioner's `ListGitHubRepos`); overrides come from infra-bootstrap's
   `gitops/bootstrap/fleet-repo-overrides.yaml`; the console toggles `active`.
+  With the provisioner on `FORGE=forgejo` the same RPC lists the repos
+  `ukubi-fleet` is a read collaborator on under `FORGEJO_OWNERS`, with its read
+  token. On that switch the sync carries each row by owner/repo (Forgejo ids
+  and the host are new; trusted only because repo creation under
+  `FORGEJO_OWNERS` is the owner's alone; never off a github.com listing).
+  Unmatched old-forge rows never share the shrink guard: an absent owner's or
+  an idle (inactive, no open session) row is hidden; busy ones at most 2 per
+  tick, else left visible for a human to clear. Override ids are the forge's.
 - **Credentials: GitHub App + Agent Vault, no secret in a pod**
   ([`adr/0075`](adr/0075-github-app-identity-and-vault-credentials.md),
   [`adr/0065`](adr/0065-agent-vault-and-the-definition-egress-lock.md)). The

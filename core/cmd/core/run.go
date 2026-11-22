@@ -710,10 +710,9 @@ func httpHandler(mux http.Handler, gate, cors func(http.Handler) http.Handler) h
 	return auth.FrameDeny(cors(gate(mux)))
 }
 
-// syncRepos projects the bot's GitHub repos plus infra-bootstrap's overrides
-// into repos (docs/adr/0074). No good overrides read yet in this process, or
-// a failed listing: nothing changes. Off the sessions loop like the vault
-// reconcile, so a slow GitHub cannot delay the sweeps.
+// syncRepos projects the provisioner's FORGE listing plus the overrides into
+// repos (docs/adr/0074). No good overrides yet, or a failed listing: nothing
+// changes. Off the sessions loop, so a slow forge cannot delay the sweeps.
 func syncRepos(ctx context.Context, p *provisionerclient.Client, store *repos.Store, ov *repos.Overrides) {
 	overrides, ok := ov.Load()
 	if !ok {
