@@ -262,7 +262,7 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := func(key string, wake bool) *agentfleetv1.OpenRequest {
-		return &agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "github/o/notes/pr/1", Message: "event", Wake: wake,
+		return &agentfleetv1.OpenRequest{Definition: "d", ThreadKey: "forge/o/notes/pr/1", Message: "event", Wake: wake,
 			Lifecycle: "resident", Visibility: "shared", IdempotencyKey: key, Actor: "MohammadBnei"}
 	}
 
@@ -283,7 +283,7 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 	if _, err := s.Open(bridge, connect.NewRequest(req("e1", true))); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("over capacity: %v", err)
 	}
-	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/1"); open != nil {
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "forge/o/notes/pr/1"); open != nil {
 		t.Fatal("an over-capacity Open left an empty thread holding the key")
 	}
 
@@ -308,7 +308,7 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 	if _, err := s.Open(bridge, connect.NewRequest(req("e2", true))); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("over capacity on an open thread: %v", err)
 	}
-	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/1"); open == nil || open.ID != res.GetThreadId() {
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "forge/o/notes/pr/1"); open == nil || open.ID != res.GetThreadId() {
 		t.Fatal("an over-capacity follow-up archived the existing thread")
 	}
 	if _, err := s.OpenAsAdmin(ctx, "net", "admin-sub", req("proposal:p2", true)); err == nil {
@@ -332,11 +332,11 @@ func TestOpen_DispatcherPaths(t *testing.T) {
 	// events do not land in a session that never ran.
 	dash.warmErr = connect.NewError(connect.CodeUnavailable, errors.New("provisioner down"))
 	other := req("e3", true)
-	other.ThreadKey = "github/o/notes/pr/2"
+	other.ThreadKey = "forge/o/notes/pr/2"
 	if _, err := s.Open(bridge, connect.NewRequest(other)); connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Fatalf("warm failure: %v", err)
 	}
-	if open, _ := store.OpenThread(ctx, "bridge", "d", "github/o/notes/pr/2"); open != nil {
+	if open, _ := store.OpenThread(ctx, "bridge", "d", "forge/o/notes/pr/2"); open != nil {
 		t.Fatal("a fresh thread whose warm failed stayed open")
 	}
 }

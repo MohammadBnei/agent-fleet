@@ -95,6 +95,11 @@ func cardOf(r decisions.Record) *agentfleetv1.Card {
 		c.WriterDefinition = *r.Definition
 	}
 	c.ExpiresAt = timeOrEmpty(r.ExpiresAt)
+	for _, o := range c.GetOptions() {
+		if e := o.GetEffect(); e != nil {
+			e.Lines = decisions.EffectLines(e)
+		}
+	}
 	return c
 }
 

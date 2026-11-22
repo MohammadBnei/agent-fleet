@@ -1796,7 +1796,7 @@ export type Decision = Message<"agentfleet.v1.Decision"> & {
   version: bigint;
 
   /**
-   * owner/name, when the thread is about a GitHub subject.
+   * owner/name, when the thread is about a forge subject.
    *
    * @generated from field: string subject_repo = 14;
    */

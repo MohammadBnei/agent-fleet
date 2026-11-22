@@ -412,7 +412,7 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 			continue
 		}
 		if !loginRe.MatchString(a) {
-			errs = append(errs, fmt.Errorf("actors.allow: %q is not a GitHub login or agent:<definition>", a))
+			errs = append(errs, fmt.Errorf("actors.allow: %q is not a forge login or agent:<definition>", a))
 		}
 	}
 	for _, d := range s.Definitions {

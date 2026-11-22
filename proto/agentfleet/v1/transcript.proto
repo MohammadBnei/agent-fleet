@@ -124,7 +124,7 @@ message ReadTranscriptSinceResponse {
   int64 next_seq = 2;
 }
 
-// The GitHub subject a card is about (docs/adr/0082 §5).
+// The forge subject a card is about (docs/adr/0082 §5).
 message CardSubject {
   // owner/name.
   string repo = 1;
@@ -135,7 +135,7 @@ message CardSubject {
   // Filled by core from the rest; empty for an alert.
   string url = 4;
   // An "alert_group" subject (docs/adr/0086 §4): the first responder's alert group, 16 lowercase hex. It has no
-  // GitHub repo or number; the thread key is alert/<group_key>.
+  // forge repo or number; the thread key is alert/<group_key>.
   string group_key = 5;
   // A "character" subject (docs/adr/0084 amendment A6): the character's definition name. Core files it for a
   // character's budget and the thread key is character/<name>. A card stored before this field carries the name in
@@ -159,6 +159,10 @@ message CardEffect {
   // sha256 (hex) of verb and payload, set by core when the card is filed and
   // checked again before the effect runs: the approval binds to it.
   string payload_hash = 3;
+  // The bound payload as the owner reads it, one "field: value" per line, for
+  // the verbs above (open_pr adds its diff link, on FORGE_URL). Core sets it
+  // when it serves the card; a filed value is dropped.
+  repeated string lines = 4;
 }
 
 message CardOption {

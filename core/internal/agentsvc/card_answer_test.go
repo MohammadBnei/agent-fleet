@@ -86,7 +86,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 	code := connect.CodeOf
 	keep, closeAll := option("Keep them open", "handoff", "yes"), option("Close the threads", "close_threads", "no")
 
-	writer := thread("github/o/r/pr/1")
+	writer := thread("forge/o/r/pr/1")
 	card := draft(writer, 1, closeAll, keep)
 	if g, err := c.GetDecision(ctx, as("root", &agentfleetv1.GetDecisionRequest{Id: card})); err != nil ||
 		g.Msg.GetDecision().GetCard().GetWriterDefinition() != "d" || len(g.Msg.GetDecision().GetCard().GetOptions()) != 2 {
@@ -112,7 +112,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 	}
 
 	// A writer that cannot resume: recorded, not delivered.
-	writer2 := thread("github/o/r/pr/2")
+	writer2 := thread("forge/o/r/pr/2")
 	card2 := draft(writer2, 2, keep, closeAll)
 	dash.warmErr = connect.NewError(connect.CodeFailedPrecondition, decisions.CannotResume(errors.New("definition changed")))
 	res, err = answer("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: card2, OwnText: "leave it"})
@@ -122,7 +122,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 	dash.warmErr = nil
 
 	// A newer card on the subject makes the older one stale.
-	writer3 := thread("github/o/r/pr/3")
+	writer3 := thread("forge/o/r/pr/3")
 	old := draft(writer3, 3, keep, closeAll)
 	newer := draft(writer3, 3, closeAll, keep)
 	if _, err := answer("root", &agentfleetv1.AnswerDecisionRequest{DecisionId: old, OptionId: "1"}); errkeys.Of(err) != errkeys.KeyDecisionStale {
@@ -130,11 +130,11 @@ func TestAnswerDecision_Card(t *testing.T) {
 	}
 
 	// close_threads: every open thread on the subject, any case, any invoker.
-	other := thread("github/O/R/pr/3")
-	elsewhere := thread("github/o/r/pr/4")
+	other := thread("forge/O/R/pr/3")
+	elsewhere := thread("forge/o/r/pr/4")
 	// An Open holding one thread's lock for a moment: the close waits for it
 	// rather than leaving that thread open behind an answered card.
-	held, err := store.TryLock(ctx, threadLock("client:bridge", "d", "github/O/R/pr/3"))
+	held, err := store.TryLock(ctx, threadLock("client:bridge", "d", "forge/O/R/pr/3"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 		_, err := c.AnswerDecision(ctx, req)
 		return err
 	}
-	writer5 := thread("github/o/r/pr/5")
+	writer5 := thread("forge/o/r/pr/5")
 	surfaceCard := draft(writer5, 5, keep, closeAll)
 	lreq := as("root", &agentfleetv1.ListDecisionsRequest{})
 	lreq.Header().Set("X-Origin", "https://game.bnei.dev")
@@ -190,7 +190,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 		t.Errorf("ConfirmCard: %v, %s", err, state(surfaceCard))
 	}
 	// A confirmed close_threads is a card's answer still: its threads close.
-	writer7 := thread("github/o/r/pr/7")
+	writer7 := thread("forge/o/r/pr/7")
 	closeCard := draft(writer7, 7, closeAll, keep)
 	rec, _ = decs.Get(ctx, closeCard)
 	if _, _, err := s.ConfirmCard(ctx, rootID, closeCard, "1", "", rec.Version); err != nil {
@@ -199,7 +199,7 @@ func TestAnswerDecision_Card(t *testing.T) {
 	if got, _ := store.Get(ctx, writer7); got.ArchivedAt == nil {
 		t.Error("a confirmed close_threads left its thread open")
 	}
-	yesCard := draft(thread("github/o/r/pr/6"), 6, keep, closeAll)
+	yesCard := draft(thread("forge/o/r/pr/6"), 6, keep, closeAll)
 	if err := fromSurface(&agentfleetv1.AnswerDecisionRequest{DecisionId: yesCard, OptionId: "1"}); err != nil || state(yesCard) != decisions.Answered {
 		t.Errorf("a surface's reversible yes: %v, %s", err, state(yesCard))
 	}

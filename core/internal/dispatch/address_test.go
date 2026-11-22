@@ -17,7 +17,7 @@ func reviewer(name, repo string) definitions.Head {
 // only, case-insensitive; the exact name still addresses it.
 func TestReviewerAlias(t *testing.T) {
 	comment := func(subject, body string) *bridgev1.CloudEvent {
-		return &bridgev1.CloudEvent{Type: "dev.bnei.github.issue_comment.created", Subject: subject,
+		return &bridgev1.CloudEvent{Type: "dev.bnei.forge.issue_comment.created", Subject: subject,
 			Data: []byte(`{"comment":{"body":"` + body + `"}}`)}
 	}
 	own := reviewer("agent-reviewer-agent-fleet", "MohammadBnei/agent-fleet")
@@ -27,22 +27,22 @@ func TestReviewerAlias(t *testing.T) {
 		e    *bridgev1.CloudEvent
 		want bool
 	}{
-		{"the alias on its repo", own, comment("github/MohammadBnei/agent-fleet/pr/3", "@agent-reviewer please"), true},
-		{"the alias, repo case differs", own, comment("github/mohammadbnei/Agent-Fleet/pr/3", "@agent-reviewer"), true},
-		{"the exact name", own, comment("github/MohammadBnei/agent-fleet/pr/3", "@agent-reviewer-agent-fleet"), true},
-		{"the alias on another repo", own, comment("github/MohammadBnei/notes/pr/3", "@agent-reviewer"), false},
-		{"the alias on a same-named repo of another owner", own, comment("github/evil/agent-fleet/pr/3", "@agent-reviewer"), false},
-		{"the alias for a name without the prefix", reviewer("notes-reviewer", "MohammadBnei/notes"), comment("github/MohammadBnei/notes/pr/3", "@agent-reviewer"), false},
+		{"the alias on its repo", own, comment("forge/MohammadBnei/agent-fleet/pr/3", "@agent-reviewer please"), true},
+		{"the alias, repo case differs", own, comment("forge/mohammadbnei/Agent-Fleet/pr/3", "@agent-reviewer"), true},
+		{"the exact name", own, comment("forge/MohammadBnei/agent-fleet/pr/3", "@agent-reviewer-agent-fleet"), true},
+		{"the alias on another repo", own, comment("forge/MohammadBnei/notes/pr/3", "@agent-reviewer"), false},
+		{"the alias on a same-named repo of another owner", own, comment("forge/evil/agent-fleet/pr/3", "@agent-reviewer"), false},
+		{"the alias for a name without the prefix", reviewer("notes-reviewer", "MohammadBnei/notes"), comment("forge/MohammadBnei/notes/pr/3", "@agent-reviewer"), false},
 		{"the alias for a definition without a GitHub credential", definitions.Head{Name: "agent-reviewer-x", Effective: &definitions.Spec{}},
-			comment("github/MohammadBnei/agent-fleet/pr/3", "@agent-reviewer"), false},
-		{"the alias in code", own, comment("github/MohammadBnei/agent-fleet/pr/3", "`@agent-reviewer`"), false},
+			comment("forge/MohammadBnei/agent-fleet/pr/3", "@agent-reviewer"), false},
+		{"the alias in code", own, comment("forge/MohammadBnei/agent-fleet/pr/3", "`@agent-reviewer`"), false},
 	} {
 		if got := addresses(c.e, names(c.h, c.e.GetSubject())); got != c.want {
 			t.Errorf("%s: addresses %v, want %v", c.name, got, c.want)
 		}
 	}
-	label := &bridgev1.CloudEvent{Type: "dev.bnei.github.pull_request.labeled", Subject: "github/MohammadBnei/agent-fleet/pr/3", ActorLogin: "o",
-		Data: []byte(`{"label":{"name":"agent-reviewer"},"sender":{"login":"o"}}`)}
+	label := &bridgev1.CloudEvent{Type: "dev.bnei.forge.pull_request.label_updated", Subject: "forge/MohammadBnei/agent-fleet/pr/3", ActorLogin: "o",
+		Data: []byte(`{"pull_request":{"labels":[{"name":"agent-reviewer"}]},"sender":{"login":"o"}}`)}
 	if !addresses(label, names(own, label.GetSubject())) {
 		t.Error("the alias label does not address the reviewer")
 	}
@@ -51,7 +51,7 @@ func TestReviewerAlias(t *testing.T) {
 // Slice 5: a hand-off wakes only who its text @mentions, never its publisher.
 func TestHandOffTargets(t *testing.T) {
 	hop := func(from, text string) *bridgev1.CloudEvent {
-		return &bridgev1.CloudEvent{Type: "dev.bnei.agent.handoff", Subject: "github/MohammadBnei/agent-fleet/pr/3",
+		return &bridgev1.CloudEvent{Type: "dev.bnei.agent.handoff", Subject: "forge/MohammadBnei/agent-fleet/pr/3",
 			Actor: "agent", ActorLogin: "agent:" + from, Data: []byte(`{"text":"` + text + `","definition":"` + from + `"}`)}
 	}
 	writer := definitions.Head{Name: "writer", Effective: &definitions.Spec{}}

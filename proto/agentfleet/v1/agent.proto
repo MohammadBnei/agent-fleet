@@ -615,7 +615,7 @@ message Decision {
   string created_at = 12;
   // The decisions version of this decision's last change.
   int64 version = 13;
-  // owner/name, when the thread is about a GitHub subject.
+  // owner/name, when the thread is about a forge subject.
   string subject_repo = 14;
   // An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
   // the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.

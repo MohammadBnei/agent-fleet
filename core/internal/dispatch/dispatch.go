@@ -6,7 +6,7 @@
 // An event goes to the definitions whose owns or subscribes match it and that
 // the bridge client may open, through AgentService.Open as that client. Only
 // an explicit address wakes one (docs/adr/0082 §1-2); the fleet bot's own
-// GitHub events are dropped. A firing alert goes to the alert handler
+// forge events are dropped. A firing alert goes to the alert handler
 // instead, which dedups it against the direct webhook (docs/adr/0078 §6).
 package dispatch
 
@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -50,12 +50,13 @@ const (
 
 	typeAlertFiring   = "dev.bnei.alert.firing"
 	typeAlertResolved = "dev.bnei.alert.resolved"
-	typePRClosed      = "dev.bnei.github.pull_request.closed"
+	typePRClosed      = forge.Type + "pull_request.closed"
+	typeRun           = forge.Type + "action_run."
 )
 
 // Types core subscribes to. Never a reserved type (infra-bootstrap ADR-0066
 // §3): the bridge refuses one, and TestTypesAvoidReserved checks it here.
-var Types = []string{"dev.bnei.github.", "dev.bnei.alert.", "dev.bnei.agent."}
+var Types = []string{forge.Type, "dev.bnei.alert.", "dev.bnei.agent."}
 
 // Tunables; tests shrink them.
 var (
@@ -322,16 +323,11 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 	if strings.HasPrefix(e.GetType(), "dev.bnei.alert.") {
 		return nil
 	}
-	// The fleet bot's own GitHub events (the bridge tags its login
-	// actor=agent, BRIDGE_AGENT_LOGINS) are never delivered: no self-echo,
-	// no synchronize or reopened of its own (docs/adr/0082 §1). Its close
-	// still closes the thread, which delivers nothing: a fleet merge closes
-	// them (§10). Any other close by the fleet asks the owner first.
-	if botEvent(e) && e.GetType() != typePRClosed {
+	if selfEcho(e) {
 		slog.Debug("dispatch: the fleet bot's own event, dropped", "type", e.GetType(), "subject", e.GetSubject())
 		return nil
 	}
-	if repo, n, ok := prOf(e.GetSubject()); ok && d.cards != nil && e.GetType() == typePRClosed && botEvent(e) &&
+	if repo, n, ok := forge.PROf(e.GetSubject()); ok && d.cards != nil && e.GetType() == typePRClosed && botEvent(e) &&
 		!e.GetReplayed() && !mergedIntoDefault(e) {
 		return d.closeCard(ctx, e, repo, n)
 	}
@@ -437,7 +433,7 @@ func owns(o *definitions.Owns, e *bridgev1.CloudEvent) bool {
 		return false
 	}
 	if len(o.Repos) > 0 {
-		full, name := repoOf(e.GetSubject())
+		full, name := forge.RepoOf(e.GetSubject())
 		if name == "" || !slices.ContainsFunc(o.Repos, func(r string) bool { return strings.EqualFold(r, name) || strings.EqualFold(r, full) }) {
 			return false
 		}
@@ -450,21 +446,21 @@ func subscribes(s *definitions.Subscribes, e *bridgev1.CloudEvent) bool {
 	return s != nil && len(s.Types) > 0 && events.TypeMatches(s.Types, e.GetType()) && events.SubjectMatches(s.Subjects, e.GetSubject())
 }
 
-// repoOf reads a GitHub subject, github/<owner>/<repo>/..., as owner/repo
-// and repo.
-func repoOf(subject string) (full, name string) {
-	parts := strings.SplitN(subject, "/", 4)
-	if len(parts) < 3 || parts[0] != "github" || parts[1] == "" || parts[2] == "" {
-		return "", ""
-	}
-	return parts[1] + "/" + parts[2], parts[2]
+// botEvent: a fleet bot's own forge event. The bridge tags its logins
+// (BRIDGE_FORGEJO_AGENT_LOGINS: ukubi-fleet, ukubi-review) actor=agent; a
+// PublishEvent hop is actor=agent too, but never from a forge source.
+func botEvent(e *bridgev1.CloudEvent) bool {
+	return e.GetActor() == "agent" && forge.FromForge(e.GetSource())
 }
 
-// botEvent: the fleet bot's own GitHub event. The bridge tags its login
-// (BRIDGE_AGENT_LOGINS, the ukubi-fleet App's bot) actor=agent; a
-// PublishEvent hop is actor=agent too, but never from a github.com source.
-func botEvent(e *bridgev1.CloudEvent) bool {
-	return e.GetActor() == "agent" && strings.HasPrefix(e.GetSource(), "github.com/")
+// selfEcho: a fleet bot's own forge event, never delivered (docs/adr/0082 §1):
+// no self-echo, no synchronize or reopened of its own. Its close still closes
+// the thread, which delivers nothing: a fleet merge closes them (§10). Any
+// other close by the fleet asks the owner first. A run's result is CI's
+// verdict, not the bot's action: a run an agent's push triggered names the
+// bot as trigger_user, and still routes (as context; nothing it carries wakes).
+func selfEcho(e *bridgev1.CloudEvent) bool {
+	return botEvent(e) && e.GetType() != typePRClosed && !strings.HasPrefix(e.GetType(), typeRun)
 }
 
 // reviewerAlias addresses every per-repo reviewer, agent-reviewer-<x>, on
@@ -476,7 +472,7 @@ const reviewerAlias = "agent-reviewer"
 func names(h definitions.Head, subject string) []string {
 	out := []string{h.Name}
 	if strings.HasPrefix(h.Name, reviewerAlias+"-") && h.Effective != nil {
-		if full, _ := repoOf(subject); full != "" && strings.EqualFold(definitions.GitHubRepo(h.Effective.Credentials), full) {
+		if full, _ := forge.RepoOf(subject); full != "" && strings.EqualFold(definitions.GitHubRepo(h.Effective.Credentials), full) {
 			out = append(out, reviewerAlias)
 		}
 	}
@@ -499,39 +495,58 @@ func handsOff(e *bridgev1.CloudEvent, h definitions.Head) bool {
 }
 
 // addresses: the event's own text addresses one of names. A label naming it,
-// added by the event's actor (the sender), or @name in what the actor wrote:
+// set by the event's actor (the sender), or @name in what the actor wrote:
 // a comment, a review, or the body of the PR or issue they opened. Not the
-// issue's or PR's body under a comment, which its author wrote.
+// issue's or PR's body under a comment, which its author wrote. Forgejo
+// payloads: a review's text is review.content, and a label change is
+// label_updated, for an add or a removal, with no "label" (Forgejo's
+// IssueChangeLabels notifier never sets it): the PR's or issue's labels after
+// the change are what the sender set. Checked against Forgejo v15.0.12:
+// services/webhook/notifier.go:539-553 builds both payloads without Label, and
+// every label write reloads issue.Labels before it notifies
+// (models/issues/issue_label.go:117,165,208,507), which convert.ToAPIIssue
+// then sends (services/convert/issue.go:66-69).
 func addresses(e *bridgev1.CloudEvent, names []string) bool {
+	type labelled struct {
+		Body   string
+		Labels []struct{ Name string }
+	}
 	var p struct {
-		Label  *struct{ Name string } `json:"label"`
 		Sender struct {
 			Login string `json:"login"`
 		} `json:"sender"`
-		PullRequest *struct{ Body string } `json:"pull_request"`
-		Issue       *struct{ Body string } `json:"issue"`
-		Comment     *struct{ Body string } `json:"comment"`
-		Review      *struct{ Body string } `json:"review"`
+		PullRequest *labelled                 `json:"pull_request"`
+		Issue       *labelled                 `json:"issue"`
+		Comment     *struct{ Body string }    `json:"comment"`
+		Review      *struct{ Content string } `json:"review"`
 	}
 	if json.Unmarshal(e.GetData(), &p) != nil {
 		return false
 	}
-	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), "dev.bnei.github."), ".")
-	var body *struct{ Body string }
+	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), forge.Type), ".")
+	var body *string
 	switch {
-	case action == "labeled":
-		return p.Label != nil && slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(p.Label.Name, n) }) &&
-			p.Sender.Login == e.GetActorLogin()
-	case kind == "issue_comment":
-		body = p.Comment
-	case kind == "pull_request_review":
-		body = p.Review
-	case kind == "pull_request" && action == "opened":
-		body = p.PullRequest
-	case kind == "issues" && action == "opened":
-		body = p.Issue
+	case action == "label_updated":
+		on := p.Issue
+		if kind == "pull_request" {
+			on = p.PullRequest
+		}
+		// ponytail: the payload does not say which label changed, so any label change while the definition's
+		// label is on addresses it again. A removal of it never does. Bounded: the sender is the actor actors.allow
+		// admits, and one event is one wake.
+		return on != nil && p.Sender.Login == e.GetActorLogin() && slices.ContainsFunc(on.Labels, func(l struct{ Name string }) bool {
+			return slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(l.Name, n) })
+		})
+	case kind == "issue_comment" && p.Comment != nil:
+		body = &p.Comment.Body
+	case kind == "pull_request_review" && p.Review != nil:
+		body = &p.Review.Content
+	case kind == "pull_request" && action == "opened" && p.PullRequest != nil:
+		body = &p.PullRequest.Body
+	case kind == "issues" && action == "opened" && p.Issue != nil:
+		body = &p.Issue.Body
 	}
-	return body != nil && mentionsAny(body.Body, names)
+	return body != nil && mentionsAny(*body, names)
 }
 
 // mentions: @def in markdown, outside > quote lines, fenced and indented
@@ -675,7 +690,7 @@ func (d *Dispatcher) decide(ctx context.Context, e *bridgev1.CloudEvent, h defin
 // replay, and never a thread that waits on a person, whose follow-ups are
 // context. owns and subscribes only route: what they match without an
 // address is context. An address is a fleet hand-off through PublishEvent
-// (T1) whose text @mentions the definition, or T0's (a GitHub login in the bridge client's actors.allow) label
+// (T1) whose text @mentions the definition, or T0's (a forge login in the bridge client's actors.allow) label
 // naming the definition or @mention of it, in one of our repos. Only a live
 // pod waits: an unanswered request left by a pod that is gone is closed as
 // stale at the next warm (ReserveSlot), so it blocks nothing.
@@ -705,12 +720,12 @@ func (d *Dispatcher) gate(ctx context.Context, e *bridgev1.CloudEvent, h definit
 			slog.Warn("dispatch: agent hand-offs reached their cap on this thread, delivering as context", "definition", def, "subject", e.GetSubject(), "wakes", n)
 			return false, nil
 		}
-	case e.GetActor() == "human" && strings.HasPrefix(e.GetSource(), "github.com/") && addresses(e, names(h, e.GetSubject())):
+	case e.GetActor() == "human" && forge.FromForge(e.GetSource()) && addresses(e, names(h, e.GetSubject())):
 		// Neither of the bridge's trust facts is asked: T0 addressing a stranger's
 		// or a fork's PR wakes too (docs/adr/0082 §2), with only T0's bytes.
 		// A foreign repo (T3) never wakes: the App is public, so anyone may
 		// install it; ours are the repos core syncs (docs/adr/0075 §3-4).
-		full, _ := repoOf(e.GetSubject())
+		full, _ := forge.RepoOf(e.GetSubject())
 		var ours bool
 		if err := d.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM repos WHERE lower(full_name) = lower($1) AND gone_since IS NULL)`,
 			full).Scan(&ours); err != nil || !ours {
@@ -777,8 +792,8 @@ func (d *Dispatcher) deliver(ctx context.Context, e *bridgev1.CloudEvent, h defi
 	switch {
 	case err == nil:
 		return d.finish(ctx, e, h.Name, "delivered")
-	case errors.Is(err, agentsvc.ErrNeedsWake) && strings.HasPrefix(e.GetType(), "dev.bnei.github."):
-		// No open thread and no address: GitHub chatter nobody asked an
+	case errors.Is(err, agentsvc.ErrNeedsWake) && strings.HasPrefix(e.GetType(), forge.Type):
+		// No open thread and no address: forge chatter nobody asked an
 		// agent about, from T0 or anyone. Never a thread, never a proposal
 		// (docs/adr/0082 §1); a hand-off keeps its proposal below.
 		return d.finish(ctx, e, h.Name, "skipped")
@@ -865,16 +880,6 @@ func mergedIntoDefault(e *bridgev1.CloudEvent) bool {
 		return false
 	}
 	return p.PullRequest.Merged && p.PullRequest.Base.Ref != "" && p.PullRequest.Base.Ref == p.Repository.DefaultBranch
-}
-
-// prOf reads a PR subject, github/<owner>/<repo>/pr/<n>.
-func prOf(subject string) (repo string, n int64, ok bool) {
-	parts := strings.Split(subject, "/")
-	if len(parts) != 5 || parts[0] != "github" || parts[3] != "pr" {
-		return "", 0, false
-	}
-	n, err := strconv.ParseInt(parts[4], 10, 64)
-	return parts[1] + "/" + parts[2], n, err == nil && n > 0
 }
 
 func proposalKey(def, thread string) string { return "event:" + def + ":" + thread }
@@ -966,35 +971,35 @@ func Render(e *bridgev1.CloudEvent, wake bool) string {
 			return b.String()
 		}
 	}
-	if !strings.HasPrefix(e.GetType(), "dev.bnei.github.") {
+	if !strings.HasPrefix(e.GetType(), forge.Type) {
 		if len(e.GetData()) > 0 {
 			b.WriteString("\ndata:\n" + quoted(string(e.GetData())) + "\n")
 		}
 		return b.String()
 	}
+	type subject struct {
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+		HTMLURL string `json:"html_url"`
+		Labels  []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
 	var gh struct {
-		PullRequest *struct {
-			Title   string `json:"title"`
-			Body    string `json:"body"`
-			HTMLURL string `json:"html_url"`
-		} `json:"pull_request"`
-		Issue *struct {
-			Title   string `json:"title"`
-			Body    string `json:"body"`
-			HTMLURL string `json:"html_url"`
-		} `json:"issue"`
-		Comment *struct {
+		PullRequest *subject `json:"pull_request"`
+		Issue       *subject `json:"issue"`
+		Comment     *struct {
 			Body    string `json:"body"`
 			HTMLURL string `json:"html_url"`
 		} `json:"comment"`
 		Review *struct {
-			State   string `json:"state"`
-			Body    string `json:"body"`
-			HTMLURL string `json:"html_url"`
+			Body string `json:"content"`
 		} `json:"review"`
-		Label *struct {
-			Name string `json:"name"`
-		} `json:"label"`
+		Run *struct {
+			Title   string `json:"title"`
+			Status  string `json:"status"`
+			HTMLURL string `json:"html_url"`
+		} `json:"run"`
 	}
 	_ = json.Unmarshal(e.GetData(), &gh)
 	quote := func(label, s string) {
@@ -1004,14 +1009,19 @@ func Render(e *bridgev1.CloudEvent, wake bool) string {
 	}
 	// The kind, not what the payload happens to carry: a comment's payload
 	// holds its issue, a review's its PR.
-	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), "dev.bnei.github."), ".")
+	kind, action, _ := strings.Cut(strings.TrimPrefix(e.GetType(), forge.Type), ".")
 	// The subject's title is its author's: in a waking message only when the
 	// thread is ours (thread_owned), or on opened, where the author is the
 	// actor (docs/adr/0082 §2, §12).
 	subjectText := !wake || e.GetThreadOwned() || action == "opened"
-	label := func() {
-		if action == "labeled" && gh.Label != nil {
-			line("label", gh.Label.Name)
+	// A label change carries the labels after it, not the one that changed (addresses).
+	label := func(s *subject) {
+		if action == "label_updated" {
+			var ns []string
+			for _, l := range s.Labels {
+				ns = append(ns, l.Name)
+			}
+			line("labels", strings.Join(ns, ", "))
 		}
 	}
 	switch {
@@ -1022,18 +1032,20 @@ func Render(e *bridgev1.CloudEvent, wake bool) string {
 		line("url", gh.Comment.HTMLURL)
 		quote("comment", gh.Comment.Body)
 	case kind == "pull_request_review" && gh.Review != nil:
-		if gh.PullRequest != nil && subjectText {
-			line("on", gh.PullRequest.Title)
+		if gh.PullRequest != nil {
+			if subjectText {
+				line("on", gh.PullRequest.Title)
+			}
+			line("url", gh.PullRequest.HTMLURL) // a Forgejo review carries no url of its own
 		}
-		line("url", gh.Review.HTMLURL)
-		line("state", gh.Review.State)
+		line("state", action)
 		quote("review", gh.Review.Body)
 	case kind == "pull_request" && gh.PullRequest != nil:
 		if subjectText {
 			line("title", gh.PullRequest.Title)
 		}
 		line("url", gh.PullRequest.HTMLURL)
-		label()
+		label(gh.PullRequest)
 		if action == "opened" {
 			quote("description", gh.PullRequest.Body)
 		}
@@ -1042,10 +1054,16 @@ func Render(e *bridgev1.CloudEvent, wake bool) string {
 			line("title", gh.Issue.Title)
 		}
 		line("url", gh.Issue.HTMLURL)
-		label()
+		label(gh.Issue)
 		if action == "opened" {
 			quote("description", gh.Issue.Body)
 		}
+	case kind == "action_run" && gh.Run != nil:
+		if subjectText {
+			line("title", gh.Run.Title)
+		}
+		line("url", gh.Run.HTMLURL)
+		line("status", gh.Run.Status)
 	}
 	return b.String()
 }

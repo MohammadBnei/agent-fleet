@@ -12,6 +12,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/db"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 )
 
 // version is the release this binary runs as: FLEET_VERSION, which deploy
@@ -41,6 +42,7 @@ func main() {
 	if cfg.Version != "" {
 		version = cfg.Version
 	}
+	forge.URL = cfg.ForgeURL
 
 	// JSON, not slog's default TextHandler — Loki/LogQL queries against
 	// this fleet expect structured logs (same convention the TS services'

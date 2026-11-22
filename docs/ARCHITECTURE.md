@@ -436,7 +436,7 @@ permission tiers instead of a second, fleet-specific gate on top of them
   `git.mode: none`: its vault mints a read-only token (contents, pull requests,
   metadata read), so it fetches `pull/<n>/head` and pushes nothing. Its
   `submit_review` tool calls `CoreService.SubmitReview`, which checks the
-  grant, the session's thread (`github/<owner>/<repo>/pr/<n>`) and the head
+  grant, the session's thread (`forge/<owner>/<repo>/pr/<n>`) and the head
   SHA, and hands the review to `ProvisionerService.PostReview`: the
   provisioner posts the GitHub review and, for approve or changes on an
   owned PR, the `agent-review` commit status, with a token minted for that
@@ -499,7 +499,7 @@ is the reason.
   proposals; a human opens one (`OpenFromProposal`).
 - **Core is on the event bridge** (infra-bootstrap ADR-0060; `adr/0071`,
   `adr/0078`). One dispatcher (`core/internal/dispatch`) consumes
-  `dev.bnei.github.`/`alert.`/`agent.` events and routes each to the
+  `dev.bnei.forge.`/`alert.`/`agent.` events and routes each to the
   definitions that own or subscribe to it, through in-process
   `AgentService.Open` as the `bridge` client. Only an explicit address wakes
   a thread (`adr/0082` §1-2): the owner's label naming the definition, an
@@ -868,6 +868,9 @@ problem. A bad value is handled by the key's class:
   `FLEET_SESSION_KEYS` stops it in `run()` (`requireOIDC` and `auth.New`, see
   Auth below), after the database is opened and naming the variable. `Load` of an
   empty environment succeeds: a missing value is not a problem in `Load`.
+- **Required always:** a malformed `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, and a
+  `FORGE_URL` that is not the provisioner's shape (otherwise every definition's
+  repo URL fails to bind at its first warm), stop the start in `Load` the same way.
 - **The pools' relation** is a warning too: on the values in use (an unparsed
   count is its default), a relation that fails logs `checkCapacity`'s message and
   falls back to all four defaults, which turns the inner pools off.
@@ -925,6 +928,7 @@ the proxy variables) are theirs and not listed.
 | `PROMETHEUS_URL` | in-cluster Prometheus | absolute http(s) URL | the Observability page |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | none (ids minted, nothing exported) | absolute http(s) URL, the OTLP/HTTP traces URL in full (refuses: malformed) | where spans are exported (`adr/0081` §4); the SDK's other `OTEL_*` variables are its own |
 | `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | absolute http(s) URL | files, signed into the presigned URLs: must be browser-reachable |
+| `FORGE_URL` | `https://git.bnei.dev` | an https URL with a host alone: no port, path, userinfo or query; a trailing `/` is dropped, the host lowercased (refuses: anything else, gate on or off, `forge.Base`) | the forge (Forgejo): card and diff links, and the host a definition's repo URL must name (`forge.RepoURL`). Not a forge event's source host, which the bridge fixes (`git.bnei.dev`) |
 | `GARAGE_FILES_BUCKET` | `agent-fleet-files` | any | bucket |
 | `AGENTFLEET_FILES_S3_ACCESS_KEY` | none | any | secret |
 | `AGENTFLEET_FILES_S3_SECRET` | none | any | secret |

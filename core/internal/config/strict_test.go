@@ -27,7 +27,7 @@ func TestLoadDefaults(t *testing.T) {
 		StopGrace: 30 * time.Second, IdleTimeout: 30 * time.Minute, StartupStall: 3 * time.Minute, TurnStall: 90 * time.Second,
 		DecisionWait:     45 * time.Second,
 		SessionRetention: 240 * time.Hour,
-		GarageS3Endpoint: "https://s3.bnei.dev", GarageFilesBucket: "agent-fleet-files",
+		GarageS3Endpoint: "https://s3.bnei.dev", GarageFilesBucket: "agent-fleet-files", ForgeURL: "https://git.bnei.dev",
 		Bridge: bridgeclient.Config{ClientID: "ukubi-bridge-api", Username: "bridge-core", PasswordFile: "/etc/bridge-core/app_password"},
 	}
 	// An empty value cannot be told from an unset one (getenv has one result), and a manifest that renders a
@@ -45,7 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 // refusals: per variable, values that are bad and values that must load. A bad value of a required key refuses the start
-// (required: OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL, while the console gate is on; OTEL_EXPORTER_OTLP_TRACES_ENDPOINT always); a bad value of any other key warns and takes the
+// (required: OIDC_ISSUER_URL and DASHBOARD_PUBLIC_URL, while the console gate is on; OTEL_EXPORTER_OTLP_TRACES_ENDPOINT and FORGE_URL always); a bad value of any other key warns and takes the
 // default. Every key Load validates is here (TestRefusalsCoverEveryRule).
 var refusals = []struct {
 	key  string
@@ -73,6 +73,7 @@ var refusals = []struct {
 	{"DASHBOARD_PUBLIC_URL", []string{"fleet.bnei.dev", "https://", "javascript:alert(1)"}, []string{"https://fleet.bnei.dev", "http://localhost:8080"}},
 	{"OIDC_ISSUER_URL", []string{"authentik.bnei.dev/application/o/fleet/", "file:///x"}, []string{"https://authentik.bnei.dev/application/o/fleet/"}},
 	{"GARAGE_S3_ENDPOINT", []string{"s3.bnei.dev", "s3://bucket"}, []string{"https://s3.bnei.dev"}},
+	{"FORGE_URL", []string{"git.bnei.dev", "ssh://git.bnei.dev", "http://git.bnei.dev", "https://git.bnei.dev:3000", "https://git.bnei.dev/sub", "https://u@git.bnei.dev", "https://git.bnei.dev?x", "https://"}, []string{"https://git.bnei.dev", "https://git.bnei.dev/", "https://Git.Bnei.dev"}},
 	{"BRIDGE_URL", []string{"ukubi-bridge:8080", "tcp://x:1"}, []string{"http://ukubi-bridge.ukubi-bridge.svc.cluster.local:8080"}},
 	{"BRIDGE_TOKEN_URL", []string{"authentik/application/o/token/", "http://"}, []string{"http://platform-authentik-server.authentik.svc.cluster.local/application/o/token/"}},
 	{"BRIDGE_AUTH_HOST", []string{"https://authentik.bnei.dev", "authentik.bnei.dev/", "a b", "user@host", ":443", "authentik.bnei.dev:99999", "authentik.bnei.dev:0", "authentik.bnei.dev:x"}, []string{"authentik.bnei.dev", "authentik.bnei.dev:443"}},
@@ -91,7 +92,7 @@ func defaultsFor(t *testing.T, base map[string]string) Config {
 }
 
 // required is the keys Load refuses on (the rest of refusals warns).
-var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true, "FLEET_DEV_ORIGINS": true, "FLEET_ADMIN_ORIGINS": true, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": true}
+var required = map[string]bool{"OIDC_ISSUER_URL": true, "DASHBOARD_PUBLIC_URL": true, "FLEET_DEV_ORIGINS": true, "FLEET_ADMIN_ORIGINS": true, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": true, "FORGE_URL": true}
 
 // TestLoadRefusals: a bad value of a required key refuses the start; a bad value of any other key loads with one
 // warning naming it and the Config of the same environment without it. Every good value loads with no warning (the
@@ -484,5 +485,12 @@ func TestMaxStandingSessions(t *testing.T) {
 	c, err := Load(env(map[string]string{"MAX_STANDING_SESSIONS": "-1"}))
 	if err != nil || c.MaxStandingSessions != 2 || len(c.Warnings) != 1 {
 		t.Errorf("negative: %d, warnings %v, %v; want the default and one warning", c.MaxStandingSessions, c.Warnings, err)
+	}
+}
+
+// FORGE_URL is kept as forge.Base holds it: the links and the host RepoURL binds are the same string.
+func TestForgeURLNormalized(t *testing.T) {
+	if c := mustLoad(t, map[string]string{"FORGE_URL": "https://Git.Bnei.dev/"}); c.ForgeURL != "https://git.bnei.dev" {
+		t.Errorf("ForgeURL %q", c.ForgeURL)
 	}
 }

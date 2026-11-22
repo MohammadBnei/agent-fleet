@@ -11,7 +11,6 @@ import {
   notDeliveredText,
   OWN_TEXT_MAX_BYTES,
   ownBytes,
-  payloadLines,
   pickArms,
 } from "./CardBody";
 
@@ -239,28 +238,4 @@ test("the not-delivered notice names the card's subject and says the reason once
 test("own text is measured in bytes", () => {
   expect(ownBytes("a".repeat(2000))).toBe(2000);
   expect(ownBytes("é".repeat(1001)) > OWN_TEXT_MAX_BYTES).toBe(true);
-});
-
-test("a core verb's payload is shown, the title as an agent claim, open_pr with its diff", () => {
-  const o = {
-    ...option("1", "Open it", "open_pr", "partial"),
-    effect: {
-      $typeName: "agentfleet.v1.CardEffect",
-      verb: "open_pr",
-      payload: JSON.stringify({
-        repo: "o/r",
-        branch: "fix/x",
-        headSha: "a".repeat(40),
-        title: "Fix x",
-      }),
-    },
-  } as CardOption;
-  expect(payloadLines(o)).toEqual([
-    "branch: fix/x",
-    `headSha: ${"a".repeat(40)}`,
-    "repo: o/r",
-    "title (agent claim): Fix x",
-    `diff: https://github.com/o/r/compare/${"a".repeat(40)}`,
-  ]);
-  expect(payloadLines(option("2", "No", "handoff", "yes"))).toEqual([]);
 });

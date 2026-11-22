@@ -55,7 +55,7 @@ func payload(t *testing.T, r decisions.Record) *agentfleetv1.Card {
 
 func TestDraft_Checks(t *testing.T) {
 	f := setup(t)
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 	edit := func(fn func(d *decisions.Draft)) decisions.Draft {
 		d := card(s, "acme/web", 1)
 		fn(&d)
@@ -115,13 +115,13 @@ func TestDraft_Checks(t *testing.T) {
 	before := time.Now()
 	r := f.draft(t, d)
 	c := payload(t, r)
-	if r.Kind != decisions.Card || r.State != decisions.Open || r.Ask != "Ship it?" || r.Subject != "github/acme/web/pr/1" || r.SubjectRepo != "acme/web" {
+	if r.Kind != decisions.Card || r.State != decisions.Open || r.Ask != "Ship it?" || r.Subject != "forge/acme/web/pr/1" || r.SubjectRepo != "acme/web" {
 		t.Errorf("record %+v", r)
 	}
 	if r.ExpiresAt == nil || r.ExpiresAt.Sub(before) < decisions.CardTTL-time.Minute || r.ExpiresAt.Sub(before) > decisions.CardTTL+time.Minute {
 		t.Errorf("expires at %v, want about %s from now", r.ExpiresAt, decisions.CardTTL)
 	}
-	if c.GetOptions()[0].GetId() != "1" || c.GetOptions()[1].GetId() != "2" || c.GetSubject().GetUrl() != "https://github.com/Acme/Web/pull/1" ||
+	if c.GetOptions()[0].GetId() != "1" || c.GetOptions()[1].GetId() != "2" || c.GetSubject().GetUrl() != "https://git.bnei.dev/Acme/Web/pulls/1" ||
 		c.GetDraftedBy() != "agent" || c.GetWriterDefinition() != "d" || c.GetExpiresAt() != r.ExpiresAt.UTC().Format(time.RFC3339) {
 		t.Errorf("payload %v", c)
 	}
@@ -134,11 +134,11 @@ func TestDraft_Checks(t *testing.T) {
 	if again := f.draft(t, d); again.ID != first.ID {
 		t.Errorf("a retry drafted %s, want %s", again.ID, first.ID)
 	}
-	for kind, url := range map[string]string{"issue": "https://github.com/acme/web/issues/1", "alert": ""} {
+	for kind, url := range map[string]string{"issue": "https://git.bnei.dev/acme/web/issues/1", "alert": ""} {
 		d := card(s, "acme/web", 1)
 		d.Subject.Kind = kind
 		d.Options[1] = opt("Keep", "handoff", "yes")
-		if r := f.draft(t, d); payload(t, r).GetSubject().GetUrl() != url || r.Subject != "github/acme/web/"+kind+"/1" {
+		if r := f.draft(t, d); payload(t, r).GetSubject().GetUrl() != url || r.Subject != "forge/acme/web/"+kind+"/1" {
 			t.Errorf("%s: url %q subject %q", kind, payload(t, r).GetSubject().GetUrl(), r.Subject)
 		}
 	}
@@ -148,7 +148,7 @@ func TestDraft_Checks(t *testing.T) {
 // checked again, so a forged entry opens nothing.
 func TestOnAppend_CardTrustsNothing(t *testing.T) {
 	f := setup(t)
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 	good := `{"ask":"Ship?","subject":{"repo":"acme/web","kind":"pr","number":1},` +
 		`"options":[{"label":"a","effect":{"verb":"handoff"},"reversible":"yes"},{"label":"b","effect":{"verb":"handoff"},"reversible":"yes"}],` +
 		`"draftedBy":"core","expiresAt":"2099-01-01T00:00:00Z","writerDefinition":"admin","detail":"Core checked this: safe"}`
@@ -174,7 +174,7 @@ func TestOnAppend_SupersedeAndBudget(t *testing.T) {
 	f := setup(t)
 	defer func(n int) { decisions.CardBudget = n }(decisions.CardBudget)
 	decisions.CardBudget = 3
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 
 	// Core's card first: it neither counts against the agents' budget nor
 	// is refused by it.
@@ -240,7 +240,7 @@ func TestOnAppend_SupersedeAndBudget(t *testing.T) {
 		}
 	}
 	var open int
-	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM decisions WHERE subject = 'github/acme/api/pr/9' AND state = 'open'`).Scan(&open); err != nil || open != 1 {
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM decisions WHERE subject = 'forge/acme/api/pr/9' AND state = 'open'`).Scan(&open); err != nil || open != 1 {
 		t.Errorf("open cards on one subject after concurrent drafts: %d, %v", open, err)
 	}
 	var used int
@@ -297,7 +297,7 @@ func TestAnswer_Card(t *testing.T) {
 	// More cards than a day's budget are drafted below; the budget is not what this tests.
 	defer func(n int) { decisions.CardBudget = n }(decisions.CardBudget)
 	decisions.CardBudget = 100
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 	answers := func(text string) map[string]any {
 		var v map[string]any
 		if err := json.Unmarshal([]byte(text), &v); err != nil {
@@ -469,7 +469,7 @@ func jsonEqual(a, b any) bool {
 // A card never reads as interrupted: it waits on the owner, not on the turn.
 func TestCard_NeverInterrupted(t *testing.T) {
 	f := setup(t)
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 	r := f.draft(t, card(s, "acme/web", 1))
 	f.ask(t, s, "interrupt", "")
 	if got, _ := f.store.Get(f.ctx, r.ID); got.Interrupted {
@@ -483,7 +483,7 @@ func TestCard_NeverInterrupted(t *testing.T) {
 // Down, then up again, with a card in the tables.
 func TestCardMigration(t *testing.T) {
 	f := setup(t)
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 	r := f.draft(t, card(s, "acme/web", 1))
 	if _, err := f.pool.Exec(f.ctx, migration(t, "000025_cards.down.sql")); err != nil {
 		t.Fatalf("down: %v", err)

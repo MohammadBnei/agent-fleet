@@ -350,7 +350,7 @@ func TestGetCoreVerbShowsPayload(t *testing.T) {
 	}
 	w = get(c, owner, "id=d1&option=4&v=3")
 	b = w.Body.String()
-	for _, want := range []string{"repo: o/r", "branch: fix/x", "title (agent claim): Fix x", "diff: https://github.com/o/r/compare/" + strings.Repeat("a", 40)} {
+	for _, want := range []string{"repo: o/r", "branch: fix/x", "title (agent claim): Fix x", "diff: https://git.bnei.dev/o/r/compare/" + strings.Repeat("a", 40)} {
 		if w.Code != http.StatusOK || !strings.Contains(b, want) {
 			t.Errorf("open_pr lacks %q: %d %s", want, w.Code, b)
 		}

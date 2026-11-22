@@ -458,7 +458,7 @@ message PublishEventRequest {
   string session_id = 1;
   // Under dev.bnei.agent., never a reserved type.
   string type = 2;
-  // The thread it is about, e.g. github/<owner>/<repo>/pr/<n>.
+  // The thread it is about, e.g. forge/<owner>/<repo>/pr/<n>.
   string subject = 3;
   // What the receiving agent reads, quoted.
   string text = 4;
@@ -497,7 +497,7 @@ message PublishEventResponse {
 // post it and relays it to ProvisionerService.PostReview.
 message SubmitReviewRequest {
   string session_id = 1;
-  // owner/name; with pr, must be the session's thread github/<owner>/<repo>/pr/<n>.
+  // owner/name; with pr, must be the session's thread forge/<owner>/<repo>/pr/<n>.
   string repo = 2;
   int64 pr = 3;
   // 40 hex.

@@ -19,7 +19,7 @@ func TestReviewThread(t *testing.T) {
 		return &agentfleetv1.SubmitReviewRequest{SessionId: "s1", Repo: "o/r", Pr: 7, HeadSha: sha, Verdict: "approve", Body: "fine"}
 	}
 	key, err := reviewThread(ok())
-	if err != nil || key != "github/o/r/pr/7" {
+	if err != nil || key != "forge/o/r/pr/7" {
 		t.Fatalf("a good review: %q %v", key, err)
 	}
 	long := ok()

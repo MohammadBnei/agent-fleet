@@ -21,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -541,20 +542,49 @@ spec:
 		t.Fatal(err)
 	}
 	seeded := repo.URL // https://github.com/MohammadBnei/dream-analyst.git
-	for _, url := range []string{"https://github.com/MohammadBnei/dream-analyst-evil.git", "https://github.com/mohammadbnei/dream-analyst.git", "https://github.com/MohammadBnei/dream-analyst/x.git"} {
-		repo.URL = url
-		setRepo(t, pool, repo)
-		if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
-			t.Fatalf("%s: got %v", url, err)
+	// Build plan P4.4: threads and PR numbers are the forge's (FORGE_URL), so the github.com clone is refused too.
+	refuse := func(urls ...string) {
+		t.Helper()
+		for _, url := range urls {
+			repo.URL = url
+			setRepo(t, pool, repo)
+			if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
+				t.Fatalf("FORGE_URL %s, %s: got %v", forge.URL, url, err)
+			}
+			if prov.createCount() != 0 {
+				t.Fatalf("FORGE_URL %s, %s: a pod was created", forge.URL, url)
+			}
+			assertNoLease(t, store, sess.GetId())
 		}
-		if prov.createCount() != 0 {
-			t.Fatalf("%s: a pod was created", url)
-		}
-		assertNoLease(t, store, sess.GetId())
 	}
+	refuse(seeded, "https://github.com/MohammadBnei/dream-analyst",
+		"https://git.bnei.dev/MohammadBnei/dream-analyst-evil.git", "https://git.bnei.dev/mohammadbnei/dream-analyst.git",
+		"https://git.bnei.dev/MohammadBnei/dream-analyst/x.git", "http://git.bnei.dev/MohammadBnei/dream-analyst.git")
+	defer func(u string) { forge.URL = u }(forge.URL)
+	// A FORGE_URL no provisioner runs on (P4.1) binds nothing, not even its own URL.
+	forge.URL = "https://git.bnei.dev:3000"
+	refuse("https://git.bnei.dev:3000/MohammadBnei/dream-analyst.git")
+	// Still configured for GitHub: GitHub's binding, and the forge's URL is the stranger.
+	forge.URL = "https://github.com"
+	refuse("https://git.bnei.dev/MohammadBnei/dream-analyst.git",
+		"https://github.com/MohammadBnei/dream-analyst-evil.git", "https://github.com/mohammadbnei/dream-analyst.git", "https://github.com/MohammadBnei/dream-analyst/x.git")
 	repo.URL = seeded
 	setRepo(t, pool, repo)
 	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
-		t.Fatalf("the bound URL: %v", err)
+		t.Fatalf("the bound GitHub URL: %v", err)
+	}
+	// On the forge (FORGE_URL's host, normalized), its URL binds. The first session goes: concurrency is 1.
+	if err := store.Delete(ctx, sess.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	forge.URL = "https://Git.Bnei.Dev"
+	repo.URL = "https://git.bnei.dev/MohammadBnei/dream-analyst.git"
+	setRepo(t, pool, repo)
+	sess, err = createDef(s, "dev-pusher", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
+		t.Fatalf("the bound forge URL: %v", err)
 	}
 }

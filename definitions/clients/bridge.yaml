@@ -8,7 +8,8 @@ apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentClient
 metadata: { name: bridge }
 spec:
-  # GitHub logins (the event's actor_login), and agent:<definition> for a
+  # Forgejo logins (the event's actor_login; the bots ukubi-fleet and ukubi-review
+  # are agents, never listed), and agent:<definition> for a
   # definition whose PublishEvent hand-offs may wake (docs/adr/0082 slice 5).
   actors: { allow: [MohammadBnei, "agent:agent-reviewer-agent-fleet"] }
   definitions: [agent-reviewer-agent-fleet, alert-responder]

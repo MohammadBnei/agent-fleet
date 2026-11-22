@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
@@ -422,8 +424,8 @@ func TestWithdrawSweptMigration(t *testing.T) {
 // Visibility as ListThreads filters it, the filters, and newest-first pages.
 func TestList(t *testing.T) {
 	f := setup(t)
-	web := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
-	api := f.thread(t, "client:other", "private", "github/acme/api/issue/2")
+	web := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
+	api := f.thread(t, "client:other", "private", "forge/acme/api/issue/2")
 	mine := f.thread(t, "alice", "private", "")
 	console := f.session(t)
 	gone := f.thread(t, "alice", "shared", "")
@@ -634,7 +636,7 @@ func TestWatch(t *testing.T) {
 // suffix, and down restores the columns with a context-only entry in place.
 func TestDropTaintMigration(t *testing.T) {
 	f := setup(t)
-	s := f.thread(t, "client:bridge", "shared", "github/acme/web/pr/1")
+	s := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
 	if _, err := f.pool.Exec(f.ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, context_only)
 		VALUES ($1, 900, 'human', 'a comment', 'discussion', 'ctx', true)`, s); err != nil {
 		t.Fatal(err)
@@ -653,5 +655,77 @@ func TestDropTaintMigration(t *testing.T) {
 	var title string
 	if err := f.pool.QueryRow(f.ctx, `SELECT title FROM proposals WHERE id = $1`, id).Scan(&title); err != nil || title != "owner: handoff on x" {
 		t.Errorf("title after up: %q, %v", title, err)
+	}
+}
+
+// 000038 moves every stored github/ key to forge/ (build plan P4.4) and an open card's link to the forge; a closed
+// card keeps its link, an event's source stays. Down is blind: it turns every forge/ key back into github/, so it is
+// run here first from the forge state core writes now, and up must give that state back, twice.
+func TestForgeSubjectsMigration(t *testing.T) {
+	f := setup(t)
+	pr := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/1")
+	issue := f.thread(t, "client:bridge", "shared", "forge/acme/web/issue/4")
+	closed := f.thread(t, "client:bridge", "shared", "forge/acme/web/pr/9")
+	f.thread(t, "client:bridge", "shared", "agent/acme/web")
+	f.draft(t, card(pr, "acme/web", 1))
+	c := card(issue, "acme/web", 4)
+	c.Subject.Kind = "issue"
+	f.draft(t, c)
+	answered := f.draft(t, card(closed, "acme/web", 9))
+	for _, q := range []string{
+		`UPDATE decisions SET state = 'answered' WHERE id = '` + answered.ID + `'`,
+		`INSERT INTO proposals (repo, source, title, body, definition_name, thread_key, dedup_key)
+		 VALUES ('web', 'event', 't', 'b', 'd', 'forge/acme/web/pr/1', 'event:d:forge/acme/web/pr/1')`,
+		`INSERT INTO dispatch_decisions (source, event_id, definition, wake, thread, hops, by_agent)
+		 VALUES ('github.com/acme/web', '1', 'd', false, 'forge/acme/web/pr/1', 0, false),
+		        ('s', '2', 'd', false, 'xforge/acme/web', 0, false)`,
+	} {
+		if _, err := f.pool.Exec(f.ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snap := func() []string {
+		t.Helper()
+		rows, err := f.pool.Query(f.ctx, `
+			SELECT 'session ' || thread_key FROM sessions WHERE thread_key IS NOT NULL
+			UNION ALL SELECT 'proposal ' || thread_key || ' ' || dedup_key FROM proposals
+			UNION ALL SELECT 'dispatch ' || source || ' ' || thread FROM dispatch_decisions
+			UNION ALL SELECT 'card ' || subject || ' ' || state || ' ' || (payload #>> '{subject,url}') FROM decisions
+			ORDER BY 1`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	forge := snap()
+	if _, err := f.pool.Exec(f.ctx, migration(t, "000038_forge_subjects.down.sql")); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	github := []string{
+		"card github/acme/web/issue/4 open https://github.com/acme/web/issues/4",
+		"card github/acme/web/pr/1 open https://github.com/acme/web/pull/1",
+		"card github/acme/web/pr/9 answered https://git.bnei.dev/acme/web/pulls/9",
+		"dispatch github.com/acme/web github/acme/web/pr/1",
+		"dispatch s xforge/acme/web",
+		"proposal github/acme/web/pr/1 event:d:github/acme/web/pr/1",
+		"session agent/acme/web",
+		"session github/acme/web/issue/4",
+		"session github/acme/web/pr/1",
+		"session github/acme/web/pr/9",
+	}
+	if got := snap(); !slices.Equal(got, github) {
+		t.Errorf("after down:\n got %q\nwant %q", got, github)
+	}
+	for i := range 2 {
+		if _, err := f.pool.Exec(f.ctx, migration(t, "000038_forge_subjects.up.sql")); err != nil {
+			t.Fatalf("up %d: %v", i, err)
+		}
+		if got := snap(); !slices.Equal(got, forge) {
+			t.Errorf("after up %d:\n got %q\nwant %q", i, got, forge)
+		}
 	}
 }

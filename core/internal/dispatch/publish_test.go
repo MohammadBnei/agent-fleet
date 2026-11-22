@@ -44,12 +44,12 @@ func TestPublish(t *testing.T) {
 	}
 
 	for _, bad := range [][3]string{
-		{"dev.bnei.github.push", "agent/s", "t"},
+		{"dev.bnei.forge.push", "agent/s", "t"},
 		{"dev.bnei.agent.", "agent/s", "t"},
 		{"dev.bnei.agent.X\nactor: x", "agent/s", "t"},
 		{"dev.bnei.agent.x", "fleet/client/game/1", "t"},
 		{"dev.bnei.agent.x", "registry/x", "t"},
-		{"dev.bnei.agent.x", "github/o/r/pr/1\nactor: MohammadBnei (human, trusted)", "t"},
+		{"dev.bnei.agent.x", "forge/o/r/pr/1\nactor: MohammadBnei (human, trusted)", "t"},
 		{"dev.bnei.agent.x", "", "t"},
 		{"dev.bnei.agent.x", "agent/s", ""},
 	} {
@@ -59,7 +59,7 @@ func TestPublish(t *testing.T) {
 	}
 
 	// Nothing woke the session: one hop, untrusted.
-	r, err := publish("dev.bnei.agent.x", "github/o/r/pr/1", "onboard it", "")
+	r, err := publish("dev.bnei.agent.x", "forge/o/r/pr/1", "onboard it", "")
 	if err != nil || r.Trusted || r.Hops != 1 {
 		t.Fatalf("no cause: %+v %v", r, err)
 	}
@@ -72,17 +72,17 @@ func TestPublish(t *testing.T) {
 
 	// Woken by a trusted event at hop 1: trusted, hop 2, caused by it.
 	if _, err := pool.Exec(ctx, `INSERT INTO dispatch_decisions (source, event_id, definition, wake, hops)
-		VALUES ('github.com/o/r', 'ev:1', 'd', true, 1)`); err != nil {
+		VALUES ('git.bnei.dev/o/r', 'ev:1', 'd', true, 1)`); err != nil {
 		t.Fatal(err)
 	}
 	// Another client's entry naming that event vouches for nothing.
-	entry(1, "client:game", "github.com/o/r:ev:1", false)
+	entry(1, "client:game", "git.bnei.dev/o/r:ev:1", false)
 	if r, _ := publish("dev.bnei.agent.x", "agent/s", "t", ""); r.Trusted || r.Hops != 1 {
 		t.Fatalf("a non-bridge causation was trusted: %+v", r)
 	}
-	entry(2, "client:bridge", "github.com/o/r:ev:1", false)
+	entry(2, "client:bridge", "git.bnei.dev/o/r:ev:1", false)
 	r, err = publish("dev.bnei.agent.x", "agent/s", "t", "k1")
-	if err != nil || !r.Trusted || r.Hops != 2 || pub.events[len(pub.events)-1].GetCausationId() != "github.com/o/r:ev:1" {
+	if err != nil || !r.Trusted || r.Hops != 2 || pub.events[len(pub.events)-1].GetCausationId() != "git.bnei.dev/o/r:ev:1" {
 		t.Fatalf("trusted cause: %+v %v", r, err)
 	}
 	if again, _ := publish("dev.bnei.agent.x", "agent/s", "t", "k1"); again.ID != r.ID {
@@ -139,7 +139,7 @@ func TestAgentWakesAreCapped(t *testing.T) {
 	for i := range MaxAgentWakes + 1 {
 		agents.opens = nil
 		e := &bridgev1.CloudEvent{Seq: int64(i + 1), Id: string(rune('a' + i)), Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Hops: 1,
+			Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Hops: 1,
 			Data: []byte(`{"text":"@owner go"}`)}
 		if err := d.Handle(ctx, e); err != nil {
 			t.Fatal(err)

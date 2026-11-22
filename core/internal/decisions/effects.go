@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -54,9 +55,9 @@ type BriefFinding struct {
 }
 
 var (
-	fleetRepo   = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
-	headSHA     = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	branchName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
+	fleetRepo  = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
+	headSHA    = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	branchName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
 	// characterName is a definition name (definitions' nameRe).
 	characterName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	findingName   = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
@@ -89,6 +90,7 @@ func bindEffect(e *agentfleetv1.CardEffect) error {
 	bad := func(format string, a ...any) error {
 		return fmt.Errorf("%w: %s: %s", ErrInvalid, e.GetVerb(), fmt.Sprintf(format, a...))
 	}
+	e.Lines = nil // core's to set when it serves the card (agentsvc cardOf)
 	var canon any
 	switch e.GetVerb() {
 	case VerbExecutorStep:
@@ -156,7 +158,7 @@ func bindEffect(e *agentfleetv1.CardEffect) error {
 
 // DiffURL is where the owner reads open_pr's branch at the approved commit.
 func DiffURL(repo, headSHA string) string {
-	return "https://github.com/" + repo + "/compare/" + headSHA
+	return forge.URL + "/" + repo + "/compare/" + headSHA
 }
 
 // EffectLines is a core verb's canonical payload as the owner reads it, one "field: value" per line, so

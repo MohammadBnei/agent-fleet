@@ -176,7 +176,7 @@ func TestSubscribers(t *testing.T) {
 	if got := names(Subscribers(r, "bridge", AlertFiring, "")); strings.Join(got, ",") != "all" {
 		t.Fatalf("a subject glob needs a subject: %v", got)
 	}
-	if got := Subscribers(r, "bridge", "dev.bnei.github.pr", ""); len(got) != 0 {
+	if got := Subscribers(r, "bridge", "dev.bnei.forge.pr", ""); len(got) != 0 {
 		t.Fatalf("another type matches nothing: %v", got)
 	}
 }

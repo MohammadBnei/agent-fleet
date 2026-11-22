@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -158,7 +159,7 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 		sub.Name, sub.Repo = name, ""
 		key = "character/" + name
 	} else if sub.GetKind() == "alert_group" {
-		// docs/adr/0086 §4: a responder's alert group has no GitHub subject. The key is core's, 16 hex.
+		// docs/adr/0086 §4: a responder's alert group has no forge subject. The key is core's, 16 hex.
 		if !groupKey.MatchString(sub.GetGroupKey()) || sub.GetRepo() != "" || sub.GetNumber() != 0 || sub.GetName() != "" {
 			return bad("an alert_group subject is its group_key alone, 16 lowercase hex")
 		}
@@ -173,7 +174,7 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 			return bad("subject.repo %q is not owner/name", repo)
 		}
 		n := strconv.FormatInt(sub.GetNumber(), 10)
-		key = "github/" + strings.ToLower(repo)
+		key = "forge/" + strings.ToLower(repo)
 		switch sub.GetKind() {
 		case "pr", "issue", "alert":
 			if sub.GetNumber() <= 0 {
@@ -188,9 +189,9 @@ func normalize(c *agentfleetv1.Card) (string, error) {
 			return bad(`subject.kind must be "pr", "issue", "alert" or "repo"`)
 		}
 		sub.Url = map[string]string{
-			"pr":    "https://github.com/" + repo + "/pull/" + n,
-			"issue": "https://github.com/" + repo + "/issues/" + n,
-			"repo":  "https://github.com/" + repo,
+			"pr":    forge.URL + "/" + repo + "/pulls/" + n,
+			"issue": forge.URL + "/" + repo + "/issues/" + n,
+			"repo":  forge.URL + "/" + repo,
 		}[sub.GetKind()]
 
 	}

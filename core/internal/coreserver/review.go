@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -91,7 +92,7 @@ func (s *Server) SubmitReview(ctx context.Context, req *agentfleetv1.SubmitRevie
 }
 
 // reviewThread checks a review's arguments and names the thread the session
-// must be on, github/<owner>/<repo>/pr/<n> (dispatch's prOf).
+// must be on, forge/<owner>/<repo>/pr/<n> (forge.PR).
 func reviewThread(req *agentfleetv1.SubmitReviewRequest) (string, error) {
 	switch {
 	case !reviewRepoRe.MatchString(req.GetRepo()):
@@ -107,7 +108,7 @@ func reviewThread(req *agentfleetv1.SubmitReviewRequest) (string, error) {
 	case utf8.RuneCountInString(req.GetBody()) > maxReviewBody:
 		return "", status.Errorf(codes.InvalidArgument, "the body is over %d characters; shorten it", maxReviewBody)
 	}
-	return fmt.Sprintf("github/%s/pr/%d", req.GetRepo(), req.GetPr()), nil
+	return forge.PR(req.GetRepo(), req.GetPr()), nil
 }
 
 // ownRepo: repo is the one GitHub repo the definition's credentials name.

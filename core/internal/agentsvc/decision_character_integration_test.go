@@ -36,7 +36,7 @@ func TestDecisionCharacterJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	plain, err := store.Create(ctx, sessions.CreateParams{Repo: "r", PermissionMode: "default", DefinitionName: "runner", DefinitionSHA: "sha1",
-		Owner: "client:bridge", Visibility: "private", Lifecycle: "single-shot", Invoker: "bridge", ThreadKey: "github/o/r/pr/9"})
+		Owner: "client:bridge", Visibility: "private", Lifecycle: "single-shot", Invoker: "bridge", ThreadKey: "forge/o/r/pr/9"})
 	if err != nil {
 		t.Fatal(err)
 	}

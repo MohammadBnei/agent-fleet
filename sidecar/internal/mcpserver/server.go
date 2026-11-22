@@ -233,7 +233,7 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) *se
 	s.AddTool(mcp.NewTool("publish_event",
 		mcp.WithDescription("Hand work to whichever agent owns or subscribes to it, through the event bridge: an event of `type` on the thread `subject`, carrying `text`. Core records you as its author and how far it is from the person who started the chain; past a few hops it is refused. The receiving agent reads your text quoted. Only for definitions that grant it."),
 		mcp.WithString("type", mcp.Required(), mcp.Description("Event type under dev.bnei.agent., e.g. dev.bnei.agent.registry.onboard")),
-		mcp.WithString("subject", mcp.Required(), mcp.Description("The thread it is about, e.g. github/<owner>/<repo>/pr/<n>")),
+		mcp.WithString("subject", mcp.Required(), mcp.Description("The thread it is about, e.g. forge/<owner>/<repo>/pr/<n>")),
 		mcp.WithString("text", mcp.Required(), mcp.Description("What the receiving agent needs to know and do")),
 		mcp.WithString("idempotencyKey", mcp.Description("Optional: a retry with the same key publishes nothing new")),
 	), publishEventHandler(core))

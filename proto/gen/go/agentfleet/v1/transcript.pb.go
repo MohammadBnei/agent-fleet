@@ -490,7 +490,7 @@ func (x *ReadTranscriptSinceResponse) GetNextSeq() int64 {
 	return 0
 }
 
-// The GitHub subject a card is about (docs/adr/0082 §5).
+// The forge subject a card is about (docs/adr/0082 §5).
 type CardSubject struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// owner/name.
@@ -502,7 +502,7 @@ type CardSubject struct {
 	// Filled by core from the rest; empty for an alert.
 	Url string `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
 	// An "alert_group" subject (docs/adr/0086 §4): the first responder's alert group, 16 lowercase hex. It has no
-	// GitHub repo or number; the thread key is alert/<group_key>.
+	// forge repo or number; the thread key is alert/<group_key>.
 	GroupKey string `protobuf:"bytes,5,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
 	// A "character" subject (docs/adr/0084 amendment A6): the character's definition name. Core files it for a
 	// character's budget and the thread key is character/<name>. A card stored before this field carries the name in
@@ -600,7 +600,11 @@ type CardEffect struct {
 	Payload string `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
 	// sha256 (hex) of verb and payload, set by core when the card is filed and
 	// checked again before the effect runs: the approval binds to it.
-	PayloadHash   string `protobuf:"bytes,3,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	PayloadHash string `protobuf:"bytes,3,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	// The bound payload as the owner reads it, one "field: value" per line, for
+	// the verbs above (open_pr adds its diff link, on FORGE_URL). Core sets it
+	// when it serves the card; a filed value is dropped.
+	Lines         []string `protobuf:"bytes,4,rep,name=lines,proto3" json:"lines,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -654,6 +658,13 @@ func (x *CardEffect) GetPayloadHash() string {
 		return x.PayloadHash
 	}
 	return ""
+}
+
+func (x *CardEffect) GetLines() []string {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
 }
 
 type CardOption struct {
@@ -897,12 +908,13 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x06number\x18\x03 \x01(\x03R\x06number\x12\x10\n" +
 	"\x03url\x18\x04 \x01(\tR\x03url\x12\x1b\n" +
 	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\x12\x12\n" +
-	"\x04name\x18\x06 \x01(\tR\x04name\"]\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\"s\n" +
 	"\n" +
 	"CardEffect\x12\x12\n" +
 	"\x04verb\x18\x01 \x01(\tR\x04verb\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12!\n" +
-	"\fpayload_hash\x18\x03 \x01(\tR\vpayloadHash\"\xa7\x01\n" +
+	"\fpayload_hash\x18\x03 \x01(\tR\vpayloadHash\x12\x14\n" +
+	"\x05lines\x18\x04 \x03(\tR\x05lines\"\xa7\x01\n" +
 	"\n" +
 	"CardOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +

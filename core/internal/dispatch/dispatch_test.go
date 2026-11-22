@@ -122,8 +122,8 @@ func head(name string, o *definitions.Owns, s *definitions.Subscribes, invokers 
 }
 
 func pr(id, typ, actor, login string, trusted bool) *bridgev1.CloudEvent {
-	return &bridgev1.CloudEvent{Seq: 1, Id: id, Source: "github.com/MohammadBnei/notes", Type: typ,
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: actor, ActorLogin: login, ActorTrusted: trusted, ThreadOwned: trusted,
+	return &bridgev1.CloudEvent{Seq: 1, Id: id, Source: "git.bnei.dev/MohammadBnei/notes", Type: typ,
+		Subject: "forge/MohammadBnei/notes/pr/7", Actor: actor, ActorLogin: login, ActorTrusted: trusted, ThreadOwned: trusted,
 		Data: []byte(`{"pull_request":{"title":"Fix it","html_url":"https://x/7","body":"please"},"comment":{"body":"looks good","html_url":"https://x/7#c"},"issue":{"title":"Fix it"}}`)}
 }
 
@@ -134,7 +134,7 @@ func setup(t *testing.T) (*Dispatcher, *fakeAgents, *fakeDefs, *proposals.Store)
 	defs := &fakeDefs{
 		heads: []definitions.Head{
 			head("owner", &definitions.Owns{Repos: []string{"notes"}}, nil, Client),
-			head("observer", nil, &definitions.Subscribes{Types: []string{"dev.bnei.github.issue_comment."}}, Client),
+			head("observer", nil, &definitions.Subscribes{Types: []string{"dev.bnei.forge.issue_comment."}}, Client),
 			head("unlisted", &definitions.Owns{Repos: []string{"notes"}}, nil), // does not list the bridge
 			head("components", &definitions.Owns{Repos: []string{"notes"}, Components: []string{"zot"}}, nil, Client),
 			head("other-repo", &definitions.Owns{Repos: []string{"blog"}}, nil, Client),
@@ -153,7 +153,7 @@ func setup(t *testing.T) (*Dispatcher, *fakeAgents, *fakeDefs, *proposals.Store)
 
 // mention is the owner's comment on pr 7 addressing the definition "owner".
 func mention(id string) *bridgev1.CloudEvent {
-	e := pr(id, "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)
+	e := pr(id, "dev.bnei.forge.issue_comment.created", "human", "MohammadBnei", true)
 	e.Data = []byte(`{"issue":{"title":"Fix it"},"comment":{"body":"@owner looks good","html_url":"https://x/7#c"}}`)
 	return e
 }
@@ -179,8 +179,8 @@ func TestRouteAndGate(t *testing.T) {
 		t.Fatalf("routed to %v", defsOf(agents.opens))
 	}
 	o := agents.opens[0]
-	if !o.GetWake() || o.GetIdempotencyKey() != "github.com/MohammadBnei/notes:c1:owner" ||
-		o.GetThreadKey() != "github/MohammadBnei/notes/pr/7" || o.GetCausationId() != "github.com/MohammadBnei/notes:c1" ||
+	if !o.GetWake() || o.GetIdempotencyKey() != "git.bnei.dev/MohammadBnei/notes:c1:owner" ||
+		o.GetThreadKey() != "forge/MohammadBnei/notes/pr/7" || o.GetCausationId() != "git.bnei.dev/MohammadBnei/notes:c1" ||
 		o.GetVisibility() != "shared" || o.GetActor() != "MohammadBnei" || !strings.Contains(o.GetMessage(), "@owner looks good") {
 		t.Fatalf("open %+v", o)
 	}
@@ -191,10 +191,10 @@ func TestRouteAndGate(t *testing.T) {
 	// What never wakes: an untrusted person, a bot, a machine, an actor
 	// outside actors.allow, a replay.
 	for _, e := range []*bridgev1.CloudEvent{
-		pr("u", "dev.bnei.github.pull_request.synchronize", "human", "stranger", false),
-		pr("b", "dev.bnei.github.pull_request.synchronize", "bot", "renovate[bot]", true),
-		pr("m", "dev.bnei.github.pull_request.synchronize", "machine", "", true),
-		pr("x", "dev.bnei.github.pull_request.synchronize", "human", "trusted-but-not-allowed", true),
+		pr("u", "dev.bnei.forge.pull_request.synchronized", "human", "stranger", false),
+		pr("b", "dev.bnei.forge.pull_request.synchronized", "bot", "renovate[bot]", true),
+		pr("m", "dev.bnei.forge.pull_request.synchronized", "machine", "", true),
+		pr("x", "dev.bnei.forge.pull_request.synchronized", "human", "trusted-but-not-allowed", true),
 		func() *bridgev1.CloudEvent {
 			e := mention("r")
 			e.Replayed = true
@@ -212,14 +212,14 @@ func TestRouteAndGate(t *testing.T) {
 	// A trusted hand-off through PublishEvent addressing @owner wakes.
 	agents.opens = nil
 	hand := &bridgev1.CloudEvent{Seq: 2, Id: "h1", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"text":"@owner onboard"}`)}
+		Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", ActorTrusted: true, Data: []byte(`{"text":"@owner onboard"}`)}
 	if err := d.Handle(ctx, hand); err != nil || len(agents.opens) != 1 || !agents.opens[0].GetWake() {
 		t.Fatalf("hand-off: %v %+v", err, agents.opens)
 	}
 	// Nobody owns it: acked, nothing opened.
 	agents.opens = nil
-	lone := pr("n", "dev.bnei.github.pull_request.opened", "human", "MohammadBnei", true)
-	lone.Subject = "github/MohammadBnei/elsewhere/pr/1"
+	lone := pr("n", "dev.bnei.forge.pull_request.opened", "human", "MohammadBnei", true)
+	lone.Subject = "forge/MohammadBnei/elsewhere/pr/1"
 	if err := d.Handle(ctx, lone); err != nil || len(agents.opens) != 0 {
 		t.Fatalf("unowned: %v %v", err, agents.opens)
 	}
@@ -231,7 +231,7 @@ func TestRouteAndGate(t *testing.T) {
 func TestWakeGate(t *testing.T) {
 	d, agents, _, _ := setup(t)
 	ctx := context.Background()
-	const t0, bot = "MohammadBnei", "ukubi-fleet[bot]"
+	const t0, bot = "MohammadBnei", "ukubi-fleet"
 	n := 0
 	ev := func(typ, actor, login string, trusted bool, data any) *bridgev1.CloudEvent {
 		n++
@@ -246,28 +246,29 @@ func TestWakeGate(t *testing.T) {
 		if login == bot {
 			actor = "agent"
 		}
-		return ev("dev.bnei.github.issue_comment.created", actor, login, trusted, map[string]any{
+		return ev("dev.bnei.forge.issue_comment.created", actor, login, trusted, map[string]any{
 			"issue":   map[string]any{"title": "Fix it", "body": "@owner from the issue"},
 			"comment": map[string]any{"body": body, "html_url": "https://x/7#c"},
 		})
 	}
 	label := func(sender, name string) *bridgev1.CloudEvent {
-		return ev("dev.bnei.github.pull_request.labeled", "human", sender, sender == t0, map[string]any{
-			"label": map[string]any{"name": name}, "sender": map[string]any{"login": sender},
-			"pull_request": map[string]any{"title": "Fix it", "body": "@owner from the PR", "html_url": "https://x/7"},
+		return ev("dev.bnei.forge.pull_request.label_updated", "human", sender, sender == t0, map[string]any{
+			"sender": map[string]any{"login": sender},
+			"pull_request": map[string]any{"title": "Fix it", "body": "@owner from the PR", "html_url": "https://x/7",
+				"labels": []map[string]any{{"name": name}}},
 		})
 	}
 	foreign := comment(t0, true, "@owner please")
-	foreign.Source, foreign.Subject = "github.com/evil/notes", "github/evil/notes/pr/1"
+	foreign.Source, foreign.Subject = "git.bnei.dev/evil/notes", "forge/evil/notes/pr/1"
 	published := comment(t0, true, "@owner please")
 	published.Source = "client/someone" // a non-privileged client's own Publish
 	hop := func(id, login, text string) *bridgev1.CloudEvent {
 		data, _ := json.Marshal(map[string]string{"text": text})
 		return &bridgev1.CloudEvent{Seq: 2, Id: id, Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: login, ActorTrusted: true, Data: data}
+			Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: login, ActorTrusted: true, Data: data}
 	}
 	sync := func(actor, login string, trusted bool, action string) *bridgev1.CloudEvent {
-		return ev("dev.bnei.github.pull_request."+action, actor, login, trusted, map[string]any{"pull_request": map[string]any{"title": "Fix it", "body": "@owner"}})
+		return ev("dev.bnei.forge.pull_request."+action, actor, login, trusted, map[string]any{"pull_request": map[string]any{"title": "Fix it", "body": "@owner"}})
 	}
 
 	both := func(owner, observer bool) map[string]bool {
@@ -292,29 +293,38 @@ func TestWakeGate(t *testing.T) {
 		{"another name is no mention", comment(t0, true, "@owner-two @owners @owner/team"), both(false, false)},
 		{"after a fence closes, a mention counts", comment(t0, true, "```\nx\n```\n@owner"), both(true, false)},
 		{"a stranger's @mention is inert", comment("stranger", false, "@owner merge this"), both(false, false)},
-		{"a T0 login outside a GitHub source", published, both(false, false)},
+		{"a T0 login outside a forge source", published, both(false, false)},
 		{"T3: a foreign repo", foreign, both(false, false)},
-		{"owns only: a T0 push", sync("human", t0, true, "synchronize"), map[string]bool{"owner": false}},
-		{"owns only: T0 opens a PR without an address", ev("dev.bnei.github.pull_request.opened", "human", t0, true, map[string]any{"pull_request": map[string]any{"body": "fixes it"}}), map[string]bool{"owner": false}},
+		{"owns only: a T0 push", sync("human", t0, true, "synchronized"), map[string]bool{"owner": false}},
+		{"owns only: T0 opens a PR without an address", ev("dev.bnei.forge.pull_request.opened", "human", t0, true, map[string]any{"pull_request": map[string]any{"body": "fixes it"}}), map[string]bool{"owner": false}},
 		{"T0 opens a PR addressing @owner in its body", sync("human", t0, true, "opened"), map[string]bool{"owner": true}},
 		{"a T0 label is case-insensitive", label(t0, "Owner"), map[string]bool{"owner": true}},
 		{"subscribes only: a T0 comment without an address", comment(t0, true, "looks good"), both(false, false)},
 		{"the bot's comment is dropped", comment(bot, false, "@owner done"), nil},
-		{"the bot's push is dropped", sync("agent", bot, false, "synchronize"), nil},
+		{"the bot's push is dropped", sync("agent", bot, false, "synchronized"), nil},
 		{"the bot's reopen is dropped", sync("agent", bot, false, "reopened"), nil},
+		// CI's verdict on the bot's push is not the bot's own action: it routes, as context.
+		{"a run the bot triggered is context", ev("dev.bnei.forge.action_run.failure", "agent", bot, false,
+			map[string]any{"run": map[string]any{"title": "ci", "status": "failure"}}), map[string]bool{"owner": false}},
 		{"a PublishEvent hop addressing @owner wakes", hop("hop1", "agent:reviewer", "@owner onboard"), map[string]bool{"owner": true}},
 		{"an untargeted hop is context", hop("hop2", "agent:reviewer", "onboard"), map[string]bool{"owner": false}},
 		{"a hop addressing another is context", hop("hop3", "agent:reviewer", "@reviewer onboard"), map[string]bool{"owner": false}},
 		{"a hop never wakes its publisher", hop("hop4", "agent:owner", "@owner note to self"), map[string]bool{"owner": false}},
 		{"a T0 label naming the definition wakes", label(t0, "owner"), map[string]bool{"owner": true}},
 		{"a T0 label naming nobody", label(t0, "bug"), map[string]bool{"owner": false}},
+		// Forgejo's label_updated is a removal too: the labels after it no longer hold the definition's.
+		{"T0 removing the definition's label", func() *bridgev1.CloudEvent {
+			e := label(t0, "owner")
+			e.Data = []byte(strings.Replace(string(e.Data), `"labels":[{"name":"owner"}]`, `"labels":[]`, 1))
+			return e
+		}(), map[string]bool{"owner": false}},
 		{"a stranger's label", label("stranger", "owner"), map[string]bool{"owner": false}},
 		{"a label T0 did not add", func() *bridgev1.CloudEvent {
 			e := label(t0, "owner")
 			e.Data = []byte(strings.Replace(string(e.Data), `"login":"MohammadBnei"`, `"login":"stranger"`, 1))
 			return e
 		}(), map[string]bool{"owner": false}},
-		{"a T0 login the bridge tags bot", ev("dev.bnei.github.issue_comment.created", "bot", t0, true, map[string]any{"comment": map[string]any{"body": "@owner"}}), both(false, false)},
+		{"a T0 login the bridge tags bot", ev("dev.bnei.forge.issue_comment.created", "bot", t0, true, map[string]any{"comment": map[string]any{"body": "@owner"}}), both(false, false)},
 	} {
 		agents.opens = nil
 		if err := d.Handle(ctx, c.e); err != nil {
@@ -360,27 +370,27 @@ func TestFleetCloseWithoutMergeDraftsACard(t *testing.T) {
 		}
 		return id
 	}
-	thread("github/MohammadBnei/notes/pr/7", true)
-	writer := thread("github/mohammadbnei/notes/pr/7", false)
-	thread("github/MohammadBnei/notes/pr/7", false)
+	thread("forge/MohammadBnei/notes/pr/7", true)
+	writer := thread("forge/mohammadbnei/notes/pr/7", false)
+	thread("forge/MohammadBnei/notes/pr/7", false)
 
 	// A proposal nobody opened, which the close retires either way.
 	agents.err["owner"] = connect.NewError(connect.CodeFailedPrecondition, agentsvc.ErrNeedsWake)
 	if err := d.Handle(ctx, &bridgev1.CloudEvent{Seq: 1, Id: "h", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"please"}`)}); err != nil {
+		Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"please"}`)}); err != nil {
 		t.Fatal(err)
 	}
 	delete(agents.err, "owner")
 
 	closed := func(id, actor, data string) *bridgev1.CloudEvent {
-		e := pr(id, typePRClosed, actor, "ukubi-fleet[bot]", false)
+		e := pr(id, typePRClosed, actor, "ukubi-fleet", false)
 		e.Data = []byte(data)
 		return e
 	}
 	cards := func() (open, all int) {
 		t.Helper()
 		if err := d.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state = 'open'), count(*) FROM decisions
-			WHERE kind = 'card' AND session_id = $1 AND subject = 'github/mohammadbnei/notes/pr/7'`, writer).Scan(&open, &all); err != nil {
+			WHERE kind = 'card' AND session_id = $1 AND subject = 'forge/mohammadbnei/notes/pr/7'`, writer).Scan(&open, &all); err != nil {
 			t.Fatal(err)
 		}
 		return open, all
@@ -419,7 +429,7 @@ func TestFleetCloseWithoutMergeDraftsACard(t *testing.T) {
 
 	// No open thread on the PR: nothing to ask about.
 	e := closed("c7", "agent", notMerged)
-	e.Subject = "github/MohammadBnei/notes/pr/8"
+	e.Subject = "forge/MohammadBnei/notes/pr/8"
 	if err := d.Handle(ctx, e); err != nil {
 		t.Fatal(err)
 	}
@@ -436,14 +446,14 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 	d, agents, _, _ := setup(t)
 	ctx := context.Background()
 	for _, e := range []*bridgev1.CloudEvent{
-		pr("uc", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", false),
-		pr("ur", "dev.bnei.github.pull_request_review.submitted", "human", "MohammadBnei", false),
-		pr("ul", "dev.bnei.github.pull_request.labeled", "human", "MohammadBnei", false),
+		pr("uc", "dev.bnei.forge.issue_comment.created", "human", "MohammadBnei", false),
+		pr("ur", "dev.bnei.forge.pull_request_review.comment", "human", "MohammadBnei", false),
+		pr("ul", "dev.bnei.forge.pull_request.label_updated", "human", "MohammadBnei", false),
 	} {
 		e.ActorTrusted = true // T0 acts, on a thread that is not ours (thread_owned false)
-		e.Data = []byte(`{"issue":{"title":"STRANGER title"},"pull_request":{"title":"STRANGER title","body":"STRANGER body","html_url":"https://x/7"},` +
-			`"comment":{"body":"@owner T0 asks","html_url":"https://x/7#c"},"review":{"state":"commented","body":"@owner T0 asks","html_url":"https://x/7#r"},` +
-			`"label":{"name":"owner"},"sender":{"login":"MohammadBnei"}}`)
+		e.Data = []byte(`{"issue":{"title":"STRANGER title"},"pull_request":{"title":"STRANGER title","body":"STRANGER body","html_url":"https://x/7","labels":[{"name":"owner"}]},` +
+			`"comment":{"body":"@owner T0 asks","html_url":"https://x/7#c"},"review":{"type":"pull_request_review_comment","content":"@owner T0 asks"},` +
+			`"sender":{"login":"MohammadBnei"}}`)
 		agents.opens = nil
 		if err := d.Handle(ctx, e); err != nil {
 			t.Fatal(err)
@@ -463,7 +473,7 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 	// The owner opening a PR on a thread not (yet) ours: opened is the
 	// author's own action, so its title is the owner's words and stays.
 	agents.opens = nil
-	op := pr("uop", "dev.bnei.github.pull_request.opened", "human", "MohammadBnei", false)
+	op := pr("uop", "dev.bnei.forge.pull_request.opened", "human", "MohammadBnei", false)
 	op.ActorTrusted = true
 	op.Data = []byte(`{"pull_request":{"title":"OPENER title","body":"@owner please","html_url":"https://x/7"}}`)
 	if err := d.Handle(ctx, op); err != nil || !agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "OPENER title") {
@@ -471,14 +481,14 @@ func TestUnownedSubjectWakesWithT0BytesOnly(t *testing.T) {
 	}
 	// On a thread that is ours, the waking message carries its title.
 	agents.opens = nil
-	own := pr("uo", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)
+	own := pr("uo", "dev.bnei.forge.issue_comment.created", "human", "MohammadBnei", true)
 	own.Data = []byte(`{"issue":{"title":"OWN title"},"comment":{"body":"@owner T0 asks","html_url":"https://x/7#c"}}`)
 	if err := d.Handle(ctx, own); err != nil || !agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "OWN title") {
 		t.Fatalf("owned thread: %v %+v", err, agents.opens)
 	}
 	// Not waking, the same comment is context, with the subject's title.
 	agents.opens = nil
-	e := pr("uq", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
+	e := pr("uq", "dev.bnei.forge.issue_comment.created", "human", "stranger", false)
 	e.Data = []byte(`{"issue":{"title":"STRANGER title"},"comment":{"body":"hi"}}`)
 	if err := d.Handle(ctx, e); err != nil || agents.opens[0].GetWake() || !strings.Contains(agents.opens[0].GetMessage(), "STRANGER title") {
 		t.Fatalf("context: %v %+v", err, agents.opens)
@@ -494,7 +504,7 @@ func TestBlockedThreadGetsContext(t *testing.T) {
 	var id string
 	if err := d.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, definition_name, definition_sha, owner, invoker, thread_key, visibility)
-		VALUES ('notes', 'owner', 'sha', 'client:bridge', 'bridge', 'github/MohammadBnei/notes/pr/7', 'shared') RETURNING id`).Scan(&id); err != nil {
+		VALUES ('notes', 'owner', 'sha', 'client:bridge', 'bridge', 'forge/MohammadBnei/notes/pr/7', 'shared') RETURNING id`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key) VALUES ($1, 1, 'agent', '?', 'question', 'q1')`, id); err != nil {
@@ -534,7 +544,7 @@ func TestBusyIsNotNacked(t *testing.T) {
 	// errBusy. BusyRetry still fits ~100 retries in it.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	e := pr("b1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	e := pr("b1", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
 	if err := d.Handle(ctx, e); !errors.Is(err, errBusy) {
 		t.Fatalf("busy: %v", err)
 	}
@@ -560,7 +570,7 @@ func TestBusyIsNotNacked(t *testing.T) {
 func TestRevokedActorBecomesProposal(t *testing.T) {
 	d, agents, _, props := setup(t)
 	agents.err["owner"] = connect.NewError(connect.CodePermissionDenied, errors.New("actor is not in this client's actors.allow"))
-	if err := d.Handle(context.Background(), pr("p1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)); err != nil {
+	if err := d.Handle(context.Background(), pr("p1", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)); err != nil {
 		t.Fatal(err)
 	}
 	if open, _ := props.ListOpen(context.Background()); len(open) != 1 || open[0].Event.Definition != "owner" {
@@ -602,7 +612,7 @@ func TestProposals(t *testing.T) {
 	// An untrusted hand-off on a thread nobody has open: a proposal.
 	hop := func(id string) *bridgev1.CloudEvent {
 		return &bridgev1.CloudEvent{Seq: 1, Id: id, Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-			Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"please"}`)}
+			Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"please"}`)}
 	}
 	first, second := hop("s1"), hop("s2")
 	if err := d.Handle(ctx, first); err != nil {
@@ -614,7 +624,7 @@ func TestProposals(t *testing.T) {
 	}
 	// A comment: unaddressed, it never reaches the proposal; the observer's
 	// other FailedPrecondition is a nack, not a proposal.
-	third := pr("s3", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
+	third := pr("s3", "dev.bnei.forge.issue_comment.created", "human", "stranger", false)
 	if err := d.Handle(ctx, third); err == nil || !strings.Contains(err.Error(), "observer") {
 		t.Fatalf("observer's error: %v", err)
 	}
@@ -657,7 +667,7 @@ func TestProposals(t *testing.T) {
 	agents.err["owner"] = connect.NewError(connect.CodeResourceExhausted, errors.New("full"))
 	agents.err["observer"] = nil
 	cap := mention("t1")
-	cap.Subject = "github/MohammadBnei/notes/pr/8"
+	cap.Subject = "forge/MohammadBnei/notes/pr/8"
 	if err := d.Handle(ctx, cap); err != nil {
 		t.Fatal(err)
 	}
@@ -694,9 +704,9 @@ func TestUnaddressedWithoutThreadIsDropped(t *testing.T) {
 		}
 		return *o
 	}
-	push := pr("d1", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
-	stranger := pr("d2", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
-	t0 := pr("d3", "dev.bnei.github.issue_comment.created", "human", "MohammadBnei", true)
+	push := pr("d1", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
+	stranger := pr("d2", "dev.bnei.forge.issue_comment.created", "human", "stranger", false)
+	t0 := pr("d3", "dev.bnei.forge.issue_comment.created", "human", "MohammadBnei", true)
 	for _, e := range []*bridgev1.CloudEvent{push, stranger, t0} {
 		if err := d.Handle(ctx, e); err != nil {
 			t.Fatalf("%s: %v", e.GetId(), err)
@@ -712,7 +722,7 @@ func TestUnaddressedWithoutThreadIsDropped(t *testing.T) {
 	// An open thread takes it as context.
 	agents.err["owner"] = nil
 	agents.opens = nil
-	again := pr("d4", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	again := pr("d4", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
 	if err := d.Handle(ctx, again); err != nil || len(agents.opens) != 1 || agents.opens[0].GetWake() || outcome(again, "owner") != "delivered" {
 		t.Fatalf("open thread: %v %+v", err, agents.opens)
 	}
@@ -721,7 +731,7 @@ func TestUnaddressedWithoutThreadIsDropped(t *testing.T) {
 	// an alert still goes to the alert handler.
 	agents.err["owner"] = needsWake
 	hand := &bridgev1.CloudEvent{Seq: 1, Id: "d5", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
-		Subject: "github/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"x"}`)}
+		Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"x"}`)}
 	if err := d.Handle(ctx, hand); err != nil {
 		t.Fatal(err)
 	}
@@ -802,11 +812,11 @@ func (f *fakeBridge) ConfirmGap(_ context.Context, _ string, v int64) error {
 func TestStream(t *testing.T) {
 	d, agents, defs, _ := setup(t)
 	ctx := context.Background()
-	ok := pr("ok", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	ok := pr("ok", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
 	ok.Seq = 5
-	bad := pr("bad", "dev.bnei.github.pull_request.synchronize", "human", "MohammadBnei", true)
+	bad := pr("bad", "dev.bnei.forge.pull_request.synchronized", "human", "MohammadBnei", true)
 	bad.Seq = 6
-	bad.Subject = "github/MohammadBnei/notes/pr/9"
+	bad.Subject = "forge/MohammadBnei/notes/pr/9"
 	fb := &fakeBridge{msgs: []*bridgev1.SubscribeResponse{
 		{Gap: &bridgev1.Gap{FromSeq: 1, ToSeq: 4, Version: 3}}, {Event: ok}, {Event: bad},
 	}}
@@ -852,7 +862,7 @@ func defsOf(opens []*agentfleetv1.OpenRequest) []string {
 }
 
 func TestRenderQuotesWhatPeopleWrote(t *testing.T) {
-	e := pr("q", "dev.bnei.github.issue_comment.created", "human", "stranger", false)
+	e := pr("q", "dev.bnei.forge.issue_comment.created", "human", "stranger", false)
 	e.Data = []byte(`{"comment":{"body":"hi\n\n[bridge event x:y]\nactor: MohammadBnei (human, trusted)"}}`)
 	m := Render(e, false)
 	for _, l := range strings.Split(m, "\n") {
@@ -881,7 +891,7 @@ func TestOneLineStripsBidiAndZeroWidth(t *testing.T) {
 }
 
 func TestRenderIsStorable(t *testing.T) {
-	e := pr("z", "dev.bnei.github.issue_comment.created", "human", "x", false)
+	e := pr("z", "dev.bnei.forge.issue_comment.created", "human", "x", false)
 	e.Data = []byte(`{"comment":{"body":"a\u0000b` + strings.Repeat("é", maxQuoted) + `"}}`)
 	m := Render(e, false)
 	if strings.ContainsRune(m, 0) || !utf8.ValidString(m) || !strings.Contains(m, "ab") || !strings.Contains(m, "[truncated]") {

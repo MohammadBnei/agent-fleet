@@ -88,8 +88,8 @@ func TestCharacterGetsOnlyT1(t *testing.T) {
 			return e
 		}(), 0},
 		{"a human GitHub event", func() *bridgev1.CloudEvent {
-			e := hop("ok", "dev.bnei.github.issue_comment.created", true, "@keeper hi")
-			e.Source, e.Actor, e.ActorLogin = "github.com/MohammadBnei/notes", "human", "MohammadBnei"
+			e := hop("ok", "dev.bnei.forge.issue_comment.created", true, "@keeper hi")
+			e.Source, e.Actor, e.ActorLogin = "git.bnei.dev/MohammadBnei/notes", "human", "MohammadBnei"
 			return e
 		}(), 0},
 		{"a non-agent subscribed type from an agent", hop("ok", "dev.bnei.alert.firing", true, "@keeper hi"), 0},

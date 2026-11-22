@@ -2238,7 +2238,7 @@ type PublishEventRequest struct {
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Under dev.bnei.agent., never a reserved type.
 	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	// The thread it is about, e.g. github/<owner>/<repo>/pr/<n>.
+	// The thread it is about, e.g. forge/<owner>/<repo>/pr/<n>.
 	Subject string `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
 	// What the receiving agent reads, quoted.
 	Text string `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
@@ -2521,7 +2521,7 @@ func (x *PublishEventResponse) GetHops() int32 {
 type SubmitReviewRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// owner/name; with pr, must be the session's thread github/<owner>/<repo>/pr/<n>.
+	// owner/name; with pr, must be the session's thread forge/<owner>/<repo>/pr/<n>.
 	Repo string `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	Pr   int64  `protobuf:"varint,3,opt,name=pr,proto3" json:"pr,omitempty"`
 	// 40 hex.

@@ -33,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -1579,12 +1580,16 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, re
 		return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, fmt.Errorf("definition %q has no git identity, credentials or limits", name))
 	}
 	// docs/adr/0065 §6: before a pod gets a push credential, the repo it clones
-	// from and pushes to is the one its credentials name. Exact and
-	// case-sensitive, like the vault's own prefix match.
-	if r := definitions.GitHubRepo(eff.Credentials); r != "" && repoCfg.URL != "https://github.com/"+r && repoCfg.URL != "https://github.com/"+r+".git" {
-		return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal,
-			fmt.Errorf("repo %s url %q does not match definition %q's credentials (https://github.com/%s.git)", repoCfg.Name, repoCfg.URL, name, r))
-
+	// from and pushes to is the one its credentials name, on the forge FORGE_URL
+	// names (build plan P4.4): threads and PR numbers are the forge's, so a clone
+	// from any other host would read another PR under the same number. Exact and
+	// case-sensitive, like the vault's own prefix match; FORGE_URL=https://github.com
+	// keeps GitHub's binding.
+	if r := definitions.GitHubRepo(eff.Credentials); r != "" {
+		if want := forge.RepoURL(r); want == "" || (repoCfg.URL != want && repoCfg.URL != want+".git") {
+			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal,
+				fmt.Errorf("repo %s url %q does not match definition %q's credentials (%s/%s.git, FORGE_URL a bare https host)", repoCfg.Name, repoCfg.URL, name, forge.URL, r))
+		}
 	}
 	timeout, err := time.ParseDuration(eff.Limits.Timeout)
 	if err != nil {

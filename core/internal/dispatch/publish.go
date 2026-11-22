@@ -43,10 +43,10 @@ var (
 	// A type and a subject end up as lines of the receiver's message and as a
 	// thread key, so neither may carry whitespace or control characters
 	// (they could forge an envelope line). Subjects are threads the bridge
-	// lets bridge-core publish on and the dispatcher routes: github/ and
+	// lets bridge-core publish on and the dispatcher routes: forge/ and
 	// agent/.
 	typeRe    = regexp.MustCompile(`^dev\.bnei\.agent\.[a-z0-9][a-z0-9._-]*$`)
-	subjectRe = regexp.MustCompile(`^(github|agent)/[A-Za-z0-9._/@:+-]+$`)
+	subjectRe = regexp.MustCompile(`^(forge|agent)/[A-Za-z0-9._/@:+-]+$`)
 )
 
 // ErrPublishRefused is events.ErrPublishRefused: a request PublishEvent will
@@ -76,7 +76,7 @@ func Publish(ctx context.Context, pool *pgxpool.Pool, pub Publisher, sessionID, 
 	case len(typ) > 200 || !typeRe.MatchString(typ):
 		return PublishResult{}, fmt.Errorf("%w: type must be %s followed by lowercase letters, digits, '.', '_' or '-'", ErrPublishRefused, AgentTypePrefix)
 	case len(subject) > 512 || !subjectRe.MatchString(subject):
-		return PublishResult{}, fmt.Errorf("%w: subject must be a github/ or agent/ thread of at most 512 bytes, without spaces", ErrPublishRefused)
+		return PublishResult{}, fmt.Errorf("%w: subject must be a forge/ or agent/ thread of at most 512 bytes, without spaces", ErrPublishRefused)
 	case events.Reserved(typ, subject):
 		return PublishResult{}, fmt.Errorf("%w: %s on %s is a human-facing type or subject", ErrPublishRefused, typ, subject)
 	case text == "" || len(text) > maxPublishText:

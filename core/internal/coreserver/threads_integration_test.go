@@ -329,7 +329,7 @@ func TestSubmitReview_NotesItsEntryBeforePosting(t *testing.T) {
 	if _, err := pool.Exec(ctx, `ALTER TABLE sessions DROP CONSTRAINT sessions_standing_principal`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE sessions SET thread_key = 'github/o/r/pr/1' WHERE id = $1`, id); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET thread_key = 'forge/o/r/pr/1' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	prov, err := provisionerclient.New("127.0.0.1:1", "")

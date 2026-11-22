@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 )
 
 type Config struct {
@@ -228,6 +229,11 @@ type Config struct {
 	GarageFilesAccessKey string
 	GarageFilesSecret    string
 
+	// ForgeURL is FORGE_URL, the forge's web base (default https://git.bnei.dev, no trailing slash): the links on
+	// cards and diffs and the host a definition's repo URL must name (forge.URL, forge.RepoURL; https://github.com
+	// while the provisioner is still FORGE=github). Not the bridge's source host, which the bridge fixes (forge.SourceHost).
+	ForgeURL string
+
 	// Version is the release this binary runs as (FLEET_VERSION, set by deploy on the Deployment); "" = dev.
 	Version string
 	// ClaudeModel is the operator's model override for a repo session whose creator named none (CLAUDE_MODEL,
@@ -322,6 +328,7 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPHost:              getenv("CORE_HTTP_HOST"),
 		InCluster:             getenv("KUBERNETES_SERVICE_HOST") != "",
 		GarageS3Endpoint:      l.url("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
+		ForgeURL:              l.forgeURL("FORGE_URL", "https://git.bnei.dev"),
 		GarageFilesBucket:     l.str("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
 		GarageFilesSecret:     getenv("AGENTFLEET_FILES_S3_SECRET"),
@@ -564,6 +571,20 @@ func (l *loader) urlWith(key, fallback string, bad report) string {
 		return fallback
 	}
 	return v
+}
+
+// forgeURL is FORGE_URL as forge.Base holds it (a trailing slash dropped). A bad one refuses the start: every repo URL
+// a definition binds to the forge would otherwise fail at its first warm.
+func (l *loader) forgeURL(key, fallback string) string {
+	v := l.getenv(key)
+	if v == "" {
+		return fallback
+	}
+	if b := forge.Base(strings.TrimRight(v, "/")); b != "" {
+		return b
+	}
+	l.refuse(key, v, "must be an https URL with a host alone: no port, path, userinfo or query")
+	return fallback
 }
 
 // hostPort is a gRPC dial target as deployed: host:port.

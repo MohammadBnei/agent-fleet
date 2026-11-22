@@ -44,10 +44,10 @@ type Record struct {
 	// Never a card's: it waits on the owner, not on the turn that drafted it.
 	Interrupted bool
 	// owner/name, from a card's subject or a thread keyed
-	// github/<owner>/<name>/...; "" otherwise. A card's is lowercase.
+	// forge/<owner>/<name>/...; "" otherwise. A card's is lowercase.
 	SubjectRepo string
-	// A card's: its subject in thread-key form (github/<owner>/<name>/<kind>/<n>,
-	// or github/<owner>/<name> for a repo), and when it expires.
+	// A card's: its subject in thread-key form (forge/<owner>/<name>/<kind>/<n>,
+	// or forge/<owner>/<name> for a repo), and when it expires.
 	Subject   string
 	ExpiresAt *time.Time
 
@@ -73,7 +73,7 @@ const cols = `
 	d.state = 'open' AND d.kind <> 'card' AND EXISTS (SELECT 1 FROM transcript t
 	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
 	                                AND t.type IN ('interrupt', 'abort')),
-	COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^github/([^/]+/[^/]+)'), ''),
+	COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^forge/([^/]+/[^/]+)'), ''),
 	COALESCE(d.subject, ''), d.expires_at,
 	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL,
 	CASE WHEN s.invoker LIKE 'standing:%' THEN substring(s.invoker from 10) ELSE '' END,
@@ -157,7 +157,7 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 		  AND ($1 OR (s.definition_name IS NOT NULL AND (s.owner = $2 OR ($3 AND s.visibility = 'shared'))))
 		  AND (cardinality($4::text[]) = 0 OR d.state = ANY($4))
 		  AND (cardinality($5::text[]) = 0 OR d.kind = ANY($5))
-		  AND ($6 = '' OR lower(COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^github/([^/]+/[^/]+)'), '')) = lower($6))
+		  AND ($6 = '' OR lower(COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^forge/([^/]+/[^/]+)'), '')) = lower($6))
 		  AND ($7 = '' OR d.session_id::text = $7)
 		  AND (d.created_at, d.id) < ($8, $9::uuid)
 		ORDER BY d.created_at DESC, d.id DESC

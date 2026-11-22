@@ -1145,7 +1145,7 @@ export type PublishEventRequest = Message<"agentfleet.v1.PublishEventRequest"> &
   type: string;
 
   /**
-   * The thread it is about, e.g. github/<owner>/<repo>/pr/<n>.
+   * The thread it is about, e.g. forge/<owner>/<repo>/pr/<n>.
    *
    * @generated from field: string subject = 3;
    */
@@ -1289,7 +1289,7 @@ export type SubmitReviewRequest = Message<"agentfleet.v1.SubmitReviewRequest"> &
   sessionId: string;
 
   /**
-   * owner/name; with pr, must be the session's thread github/<owner>/<repo>/pr/<n>.
+   * owner/name; with pr, must be the session's thread forge/<owner>/<repo>/pr/<n>.
    *
    * @generated from field: string repo = 2;
    */

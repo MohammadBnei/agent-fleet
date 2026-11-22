@@ -188,7 +188,7 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `publish_event` may call it, never with the provisioner token (`adr/0078` §8), and
   nobody can `PromptSession` into one. `DraftCard` is the same: only a definition whose
   pinned spec grants `draft_card`, and `SendMessage` refuses a `card` entry (`adr/0082` §6). `SubmitReview` too:
-  only `submit_review`, only on the session's own `github/<owner>/<repo>/pr/<n>` thread, and core
+  only `submit_review`, only on the session's own `forge/<owner>/<repo>/pr/<n>` thread, and core
   hands it to the provisioner's `PostReview`, which posts the review and the `agent-review` status
   (`adr/0082` §9). A standing character's reach (`adr/0084` §6) is granted the same way: `spawn_worker`
   (only `spawns.allow`, T1, under the principal `standing:<name>`, in the definition pool and the

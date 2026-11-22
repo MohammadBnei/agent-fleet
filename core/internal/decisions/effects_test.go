@@ -132,7 +132,7 @@ func TestEffectLines(t *testing.T) {
 		t.Errorf("open_session: %s", got)
 	}
 	pr := strings.Join(EffectLines(eff(VerbOpenPR, `{"repo":"o/r","branch":"fix/x","headSha":"`+sha40+`","title":"Fix"}`)), "|")
-	if !strings.HasSuffix(pr, "|diff: https://github.com/o/r/compare/"+sha40) {
+	if !strings.HasSuffix(pr, "|diff: https://git.bnei.dev/o/r/compare/"+sha40) {
 		t.Errorf("open_pr: %s", pr)
 	}
 	if EffectLines(eff("handoff", `{"a":1}`)) != nil {

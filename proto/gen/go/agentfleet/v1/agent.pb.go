@@ -3895,7 +3895,7 @@ type Decision struct {
 	CreatedAt  string `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// The decisions version of this decision's last change.
 	Version int64 `protobuf:"varint,13,opt,name=version,proto3" json:"version,omitempty"`
-	// owner/name, when the thread is about a GitHub subject.
+	// owner/name, when the thread is about a forge subject.
 	SubjectRepo string `protobuf:"bytes,14,opt,name=subject_repo,json=subjectRepo,proto3" json:"subject_repo,omitempty"`
 	// An open decision the session was interrupted or aborted after (an INTERRUPT or ABORT entry above request_seq):
 	// the turn that asked has ended. It stays open; AnswerDecision's "withdraw" closes it.
