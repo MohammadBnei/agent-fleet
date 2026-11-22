@@ -9,7 +9,7 @@ import (
 
 func reviewer(name, repo string) definitions.Head {
 	return definitions.Head{Name: name, SHA: "sha", Effective: &definitions.Spec{Credentials: &definitions.Credentials{
-		Vault: "v", Services: []definitions.Service{{Host: "github.com", Paths: []string{"/" + repo + ".git/*"}, Secret: "GH_X"}},
+		Vault: "v", Services: []definitions.Service{{Host: definitions.ForgeGit, Paths: []string{"/" + repo + ".git/*"}, Secret: "GH_X"}},
 	}}}
 }
 

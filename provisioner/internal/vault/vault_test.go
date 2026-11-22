@@ -702,6 +702,23 @@ func TestReconcile_ForgejoHosts(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("services %v, want %v", got, want)
 	}
+	// Core's shape (definitions.VaultSpec): a file's forge and forge-api are two services on the one host.
+	split, sf, _ := setup(t, notesSecrets)
+	split.Hosts = fj
+	if _, err := split.Reconcile(context.Background(), vault.Spec{Name: "dev-notes", Services: []vault.Service{
+		{Host: host, Paths: []string{"/MohammadBnei/notes.git/*"}, Secret: "GH_DEV_NOTES"},
+		{Host: host, Paths: []string{"/api/v1/repos/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+		{Host: "api.anthropic.com", Secret: "CLAUDE_CODE_OAUTH_TOKEN"},
+	}}); err != nil {
+		t.Errorf("forge and forge-api on one host: %v", err)
+	}
+	gotSplit := map[string]string{}
+	for _, s := range services(t, sf, "dev-notes") {
+		gotSplit[s.Host] = s.Auth.Type
+	}
+	if !reflect.DeepEqual(gotSplit, want) {
+		t.Errorf("split services %v, want %v", gotSplit, want)
+	}
 
 	for name, svc := range map[string]vault.Service{
 		"github host":       {Host: "github.com", Paths: []string{"/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},

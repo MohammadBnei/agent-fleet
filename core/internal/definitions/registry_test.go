@@ -49,7 +49,7 @@ func TestEmbedOrigins(t *testing.T) {
 // so, on both wires (Vaults and the pod profile share VaultSpec).
 func TestVaultSpec_ReadOnly(t *testing.T) {
 	spec := func(mode string) *Spec {
-		return &Spec{Git: &Git{Mode: mode}, Credentials: &Credentials{Vault: mode, Services: []Service{{Host: "github.com", Paths: []string{"/o/r/*"}, Secret: "S"}}}}
+		return &Spec{Git: &Git{Mode: mode}, Credentials: &Credentials{Vault: mode, Services: []Service{{Host: ForgeGit, Paths: []string{"/o/r/*"}, Secret: "S"}}}}
 	}
 	r := &Registry{synced: true, lastGood: time.Now(), heads: map[string]Head{
 		"none": {Name: "none", SHA: "s1", Effective: spec("none")},

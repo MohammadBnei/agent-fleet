@@ -79,3 +79,22 @@ func TestRepoURL(t *testing.T) {
 		t.Error("an empty repo bound")
 	}
 }
+
+// Hosts is the provisioner's vault.HostsFor for the forge FORGE_URL names: the vault gets these, so a wrong one is a
+// credential on another host.
+func TestHosts(t *testing.T) {
+	defer func(u string) { URL = u }(URL)
+	for base, want := range map[string]string{
+		"https://github.com":        "github.com api.github.com ",
+		"https://GitHub.com":        "github.com api.github.com ",
+		"https://git.bnei.dev":      "git.bnei.dev git.bnei.dev /api/v1",
+		"https://git.bnei.dev:3000": "  ",
+		"https://api.github.com":    "api.github.com api.github.com /api/v1",
+		"":                          "  ",
+	} {
+		URL = base
+		if git, api, prefix := Hosts(); git+" "+api+" "+prefix != want {
+			t.Errorf("FORGE_URL %q: Hosts = %q %q %q, want %q", base, git, api, prefix, want)
+		}
+	}
+}

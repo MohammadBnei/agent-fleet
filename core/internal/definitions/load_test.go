@@ -139,28 +139,31 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"no services", map[string]string{"credentials": "{ vault: valid-child, services: [] }"}, "credentials.services"},
 		{"wildcard host", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: "*.github.com", paths: ["/o/r/*"], secret: A }] }`}, "host"},
 		{"unknown host", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: gitlab.com, paths: ["/o/r/*"], secret: A }] }`}, "gitlab.com"},
+		// The forge is named, never its host: a literal host is an unknown one, on either forge.
+		{"literal github host", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, `host "github.com" is not in`},
+		{"literal forgejo host", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: git.bnei.dev, paths: ["/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, `host "git.bnei.dev" is not in`},
 		{"duplicate host", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.anthropic.com, secret: A }, { host: api.anthropic.com, secret: B }] }`}, "duplicate"},
 		{"lowercase secret", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: abc }] }"}, "secret"},
 		{"anthropic with paths", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.anthropic.com, paths: ["/v1/*"], secret: A }] }`}, "no paths"},
-		{"github without paths", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: github.com, secret: A }] }"}, "at least one path"},
-		{"credentials ok", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/r.git/*"], secret: GH_VALID_CHILD }, { host: api.github.com, paths: ["/repos/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, ""},
-		{"another vault's PAT", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: GH_OTHER }, { host: api.anthropic.com, secret: B }] }`}, "must be GH_VALID_CHILD"},
+		{"github without paths", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: forge, secret: A }] }"}, "at least one path"},
+		{"credentials ok", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*", "/o/r.git/*"], secret: GH_VALID_CHILD }, { host: forge-api, paths: ["/repos/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		{"another vault's PAT", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: GH_OTHER }, { host: api.anthropic.com, secret: B }] }`}, "must be GH_VALID_CHILD"},
 		{"PAT to the model host", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: GH_VALID_CHILD }] }"}, "GitHub credential"},
 		// docs/adr/0065
 		{"no credentials", map[string]string{"credentials": ""}, "credentials is required"},
-		{"no anthropic", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }] }`}, "api.anthropic.com service"},
+		{"no anthropic", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: A }] }`}, "api.anthropic.com service"},
 		{"agent token key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: AGENT_VAULT_TOKEN }] }"}, "provisioner's own"},
 		{"provisioner key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: FLEET_VAULT_GIT_USERNAME }] }"}, "provisioner's own"},
 		{"github app key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: GITHUB_APP_PRIVATE_KEY }] }"}, "provisioner's own"},
-		{"github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
-		{"api.github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
-		{"push without github", map[string]string{"git": push}, "git.mode push needs a github.com"},
+		{"github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
+		{"api.github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: forge-api, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
+		{"push without github", map[string]string{"git": push}, "git.mode push needs a forge"},
 		// A read-only reviewer: GitHub credentials, but the vault mints read scopes.
-		{"github in none mode", map[string]string{"git": none, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		{"github in none mode", map[string]string{"git": none, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: GH_VALID_CHILD }, { host: api.anthropic.com, secret: B }] }`}, ""},
 		{"none without github ok", map[string]string{"git": none}, ""},
-		{"two repos", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/x.git/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
-		{"two repos-owners", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/reposx/y/*", "/reposz/y/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
-		{"api on another repo", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/x/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
+		{"two repos", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*", "/o/x.git/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
+		{"two repos-owners", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/reposx/y/*", "/reposz/y/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
+		{"api on another repo", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: A }, { host: forge-api, paths: ["/repos/o/x/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
 		// owns / subscribes: shape only
 		{"owns empty string", map[string]string{"owns": `{ repos: [""] }`}, "owns.repos"},
 		{"owns duplicate", map[string]string{"owns": "{ repos: [a, a] }"}, "owns.repos"},
@@ -449,12 +452,12 @@ func TestValidate_RejectsBypassOnAStoredSpec(t *testing.T) {
 
 func TestValidServicePath(t *testing.T) {
 	ok := map[string][]string{
-		"github.com":     {"/o/r/*", "/o/r.git/*", "/opus-tech-hq/workspace.git/*"},
-		"api.github.com": {"/repos/o/r/*"},
+		ForgeGit: {"/o/r/*", "/o/r.git/*", "/opus-tech-hq/workspace.git/*"},
+		ForgeAPI: {"/repos/o/r/*"},
 	}
 	bad := map[string][]string{
-		"github.com":     {"/o/*", "/o/r", "/o/r/**", "/o/*/r/*", "/o/../r/*", "/../r/*", "/o/r%2F/*", "/o/r/x/*", "o/r/*", "/o/r/*x"},
-		"api.github.com": {"/repos/o/*", "/o/r/*", "/repos/o/r/x/*", "/repos/../r/*"},
+		ForgeGit: {"/o/*", "/o/r", "/o/r/**", "/o/*/r/*", "/o/../r/*", "/../r/*", "/o/r%2F/*", "/o/r/x/*", "o/r/*", "/o/r/*x"},
+		ForgeAPI: {"/repos/o/*", "/o/r/*", "/repos/o/r/x/*", "/repos/../r/*"},
 	}
 	for host, ps := range ok {
 		for _, p := range ps {
@@ -555,9 +558,9 @@ func TestGitHubRepo(t *testing.T) {
 	}{
 		{nil, ""},
 		{&Credentials{Services: []Service{{Host: "api.anthropic.com"}}}, ""},
-		{&Credentials{Services: []Service{{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"}}}}, "MohammadBnei/notes"},
-		{&Credentials{Services: []Service{{Host: "api.github.com", Paths: []string{"/repos/o/r/*"}}}}, "o/r"},
-		{&Credentials{Services: []Service{{Host: "github.com", Paths: []string{"/reposlab/notes/*", "/reposlab/notes.git/*"}}}}, "reposlab/notes"},
+		{&Credentials{Services: []Service{{Host: ForgeGit, Paths: []string{"/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"}}}}, "MohammadBnei/notes"},
+		{&Credentials{Services: []Service{{Host: ForgeAPI, Paths: []string{"/repos/o/r/*"}}}}, "o/r"},
+		{&Credentials{Services: []Service{{Host: ForgeGit, Paths: []string{"/reposlab/notes/*", "/reposlab/notes.git/*"}}}}, "reposlab/notes"},
 	} {
 		if got := GitHubRepo(tc.c); got != tc.want {
 			t.Errorf("%+v: %q, want %q", tc.c, got, tc.want)

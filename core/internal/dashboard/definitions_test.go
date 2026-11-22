@@ -524,7 +524,7 @@ spec:
   credentials:
     vault: dev-pusher
     services:
-      - { host: github.com, paths: ["/MohammadBnei/dream-analyst/*", "/MohammadBnei/dream-analyst.git/*"], secret: GH_DEV_PUSHER }
+      - { host: forge, paths: ["/MohammadBnei/dream-analyst/*", "/MohammadBnei/dream-analyst.git/*"], secret: GH_DEV_PUSHER }
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: dream-analyst }
   git: { mode: push, branch: main, identity: { name: p, email: p@bnei.dev } }

@@ -17,7 +17,7 @@ spec:
   credentials:
     vault: dev-notes
     services:
-      - { host: github.com, paths: ["/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"], secret: GH_DEV_NOTES }
+      - { host: forge, paths: ["/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"], secret: GH_DEV_NOTES }
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: notes }
   git: { mode: push, branch: main, identity: { name: fleet-notes-agent, email: fleet-notes-agent@bnei.dev } }

@@ -7,7 +7,7 @@ func TestWidens(t *testing.T) {
 		return &Spec{
 			Tools:        &Tools{Allow: []string{"Read", "Bash(git push:*)"}, Deny: []string{"WebFetch"}},
 			SidecarTools: []string{"send_message"},
-			Credentials:  &Credentials{Vault: "v", Services: []Service{{Host: "api.github.com", Paths: []string{"/repos/a/b"}, Secret: "GH"}}},
+			Credentials:  &Credentials{Vault: "v", Services: []Service{{Host: ForgeAPI, Paths: []string{"/repos/a/b"}, Secret: "GH"}}},
 		}
 	}
 	for _, c := range []struct {

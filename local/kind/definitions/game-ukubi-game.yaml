@@ -12,7 +12,7 @@ spec:
   credentials:
     vault: game-ukubi-game
     services:
-      - { host: github.com, paths: ["/MohammadBnei/ukubi-game/*", "/MohammadBnei/ukubi-game.git/*"], secret: GH_GAME_UKUBI_GAME }
+      - { host: forge, paths: ["/MohammadBnei/ukubi-game/*", "/MohammadBnei/ukubi-game.git/*"], secret: GH_GAME_UKUBI_GAME }
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: ukubi-game }
   git: { mode: push, branch: game/ukubi-game, identity: { name: game-ukubi-game, email: game-ukubi-game@bnei.dev } }

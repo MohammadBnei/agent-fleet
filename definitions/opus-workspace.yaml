@@ -19,8 +19,8 @@ spec:
   credentials:
     vault: opus-workspace
     services:
-      - { host: github.com, paths: ["/opus-tech-hq/workspace/*", "/opus-tech-hq/workspace.git/*"], secret: GH_OPUS_WORKSPACE }
-      - { host: api.github.com, paths: ["/repos/opus-tech-hq/workspace/*"], secret: GH_OPUS_WORKSPACE }
+      - { host: forge, paths: ["/opus-tech-hq/workspace/*", "/opus-tech-hq/workspace.git/*"], secret: GH_OPUS_WORKSPACE }
+      - { host: forge-api, paths: ["/repos/opus-tech-hq/workspace/*"], secret: GH_OPUS_WORKSPACE }
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: opus-workspace }
   git: { mode: push, branch: main, identity: { name: opus-agent, email: opus-agent@bnei.dev } }

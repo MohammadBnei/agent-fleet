@@ -50,8 +50,10 @@ var (
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review", "memory_write",
 		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak", "kubectl_read"}
 	// reachTools are a standing character's alone (ADR-0084 §6).
-	reachTools   = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak"}
-	serviceHosts = []string{"github.com", "api.github.com", "api.anthropic.com"}
+	reachTools = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak"}
+	// serviceHosts: forge and forge-api are the forge FORGE_URL names, its git and its API (VaultSpec maps them to
+	// forge.Hosts), so a file says which credential goes where and the config alone says on which host.
+	serviceHosts = []string{ForgeGit, ForgeAPI, "api.anthropic.com"}
 	lifecycles   = []string{"resident", "single-shot", "standing"}
 )
 
@@ -512,7 +514,7 @@ func validate(name string, s *Spec) error {
 				if strings.HasPrefix(svc.Secret, "GH_") {
 					bad("credentials.services[api.anthropic.com].secret %q: a GH_ key is a GitHub credential", svc.Secret)
 				}
-			case "github.com", "api.github.com":
+			case ForgeGit, ForgeAPI:
 				// docs/adr/0065 §1: a GitHub key is bound to its vault by name,
 				// so no definition can name another's PAT (the provisioner
 				// re-checks this).
@@ -524,7 +526,7 @@ func validate(name string, s *Spec) error {
 				}
 				for _, p := range svc.Paths {
 					if !validServicePath(svc.Host, p) {
-						bad("credentials.services[%s].paths: %q must be exactly /<owner>/<repo>/* or /<owner>/<repo>.git/* (api.github.com: /repos/<owner>/<repo>/*)", svc.Host, p)
+						bad("credentials.services[%s].paths: %q must be exactly /<owner>/<repo>/* or /<owner>/<repo>.git/* (forge-api: /repos/<owner>/<repo>/*)", svc.Host, p)
 					}
 				}
 			}
@@ -541,19 +543,19 @@ func validate(name string, s *Spec) error {
 		var gh, git bool
 		if s.Credentials != nil {
 			for _, x := range s.Credentials.Services {
-				gh = gh || x.Host == "github.com" || x.Host == "api.github.com"
-				git = git || x.Host == "github.com"
+				gh = gh || x.Host == ForgeGit || x.Host == ForgeAPI
+				git = git || x.Host == ForgeGit
 			}
 			if len(repoSet(s.Credentials)) > 1 {
-				bad("credentials: every github.com / api.github.com path must name one <owner>/<repo>")
+				bad("credentials: every forge / forge-api path must name one <owner>/<repo>")
 			}
 		}
 		if s.Git != nil {
 			if gh && s.Git.Mode == "pr" {
-				bad("credentials: github.com / api.github.com services need git.mode push or none (a pr-mode pod holds no GitHub credential)")
+				bad("credentials: forge / forge-api services need git.mode push or none (a pr-mode pod holds no forge credential)")
 			}
 			if s.Git.Mode == "push" && !git {
-				bad("git.mode push needs a github.com credentials service")
+				bad("git.mode push needs a forge credentials service")
 			}
 		}
 	}
@@ -992,7 +994,7 @@ func shapeList(errs *[]error, field string, list []string, forbidden string) {
 // carry no "." / ".." segment and no "%".
 func validServicePath(host, p string) bool {
 	re := githubPath
-	if host == "api.github.com" {
+	if host == ForgeAPI {
 		re = apiPath
 	}
 	if !re.MatchString(p) {
@@ -1019,9 +1021,9 @@ func repoSet(c *Credentials) map[string]bool {
 			}
 			seg := strings.Split(p, "/") // "", owner, repo[.git], "*"
 			switch svc.Host {
-			case "api.github.com":
+			case ForgeAPI:
 				seg = seg[1:] // "", "repos", owner, repo, "*"
-			case "github.com":
+			case ForgeGit:
 			default:
 				continue
 			}

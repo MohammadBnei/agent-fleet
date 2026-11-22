@@ -19,7 +19,7 @@ spec:
   credentials:
     vault: alert-responder
     services:
-      - { host: github.com, paths: ["/MohammadBnei/infra-bootstrap/*", "/MohammadBnei/infra-bootstrap.git/*"], secret: GH_ALERT_RESPONDER }
+      - { host: forge, paths: ["/MohammadBnei/infra-bootstrap/*", "/MohammadBnei/infra-bootstrap.git/*"], secret: GH_ALERT_RESPONDER }
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: infra-bootstrap }
   git: { mode: none, identity: { name: fleet-alert-responder, email: fleet-alert-responder@bnei.dev } }

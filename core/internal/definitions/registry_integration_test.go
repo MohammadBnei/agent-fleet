@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 )
 
 type fakeLister struct {
@@ -356,6 +357,46 @@ func TestRegistry_Vaults(t *testing.T) {
 	}
 	if v := r.Vaults(); len(v) != 0 {
 		t.Fatalf("a deleted definition kept its vault: %v", v)
+	}
+}
+
+// Build plan P4.1: a file names the forge (forge, forge-api) and the vault gets FORGE_URL's hosts, through the real
+// Load, Sync and Vaults: GitHub's two as they always were, or Forgejo's one with the API under /api/v1, and no host at
+// all (which the provisioner refuses) when FORGE_URL has no Base.
+func TestRegistry_VaultsForgeHosts(t *testing.T) {
+	ctx := context.Background()
+	lister := &fakeLister{}
+	r := NewRegistry(dbtest.NewPool(t), lister)
+	lister.set("sha1", map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/pusher.yaml": childYAML("pusher", map[string]string{
+			"git": "{ mode: push, branch: main, identity: { name: a, email: a@b.c } }",
+			"credentials": `{ vault: pusher, services: [{ host: forge, paths: ["/o/r/*", "/o/r.git/*"], secret: GH_PUSHER },
+				{ host: forge-api, paths: ["/repos/o/r/*"], secret: GH_PUSHER }, { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }] }`,
+		}),
+	})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func(u string) { forge.URL = u }(forge.URL)
+	for url, want := range map[string]string{
+		"https://github.com":        "github.com /o/r/*,/o/r.git/* GH_PUSHER; api.github.com /repos/o/r/* GH_PUSHER; api.anthropic.com  CLAUDE_CODE_OAUTH_TOKEN",
+		"https://git.bnei.dev":      "git.bnei.dev /o/r/*,/o/r.git/* GH_PUSHER; git.bnei.dev /api/v1/repos/o/r/* GH_PUSHER; api.anthropic.com  CLAUDE_CODE_OAUTH_TOKEN",
+		"https://Git.Bnei.Dev":      "git.bnei.dev /o/r/*,/o/r.git/* GH_PUSHER; git.bnei.dev /api/v1/repos/o/r/* GH_PUSHER; api.anthropic.com  CLAUDE_CODE_OAUTH_TOKEN",
+		"https://git.bnei.dev:3000": " /o/r/*,/o/r.git/* GH_PUSHER;  /repos/o/r/* GH_PUSHER; api.anthropic.com  CLAUDE_CODE_OAUTH_TOKEN",
+	} {
+		forge.URL = url
+		v := r.Vaults()
+		if len(v) != 1 || v[0].GetName() != "pusher" {
+			t.Fatalf("FORGE_URL %s: vaults %v", url, v)
+		}
+		var got []string
+		for _, svc := range v[0].GetServices() {
+			got = append(got, svc.GetHost()+" "+strings.Join(svc.GetPaths(), ",")+" "+svc.GetSecret())
+		}
+		if g := strings.Join(got, "; "); g != want {
+			t.Errorf("FORGE_URL %s:\n got %s\nwant %s", url, g, want)
+		}
 	}
 }
 

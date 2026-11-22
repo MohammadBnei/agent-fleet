@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/forge"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -490,12 +491,27 @@ func (r *Registry) Vaults() []*agentfleetv1.VaultSpec {
 }
 
 // VaultSpec is a valid effective spec's credentials on the provisioner wire.
-// git.mode none makes the vault mint read-only GitHub scopes.
+// git.mode none makes the vault mint read-only GitHub scopes. forge and
+// forge-api become forge.Hosts (an API path takes its prefix): on GitHub the
+// wire is the file's github.com and api.github.com, on Forgejo FORGE_URL's one
+// host. The provisioner re-checks the hosts against its own FORGE, so a core
+// and a provisioner on different forges refuse the vault.
 func VaultSpec(s *Spec) *agentfleetv1.VaultSpec {
 	c := s.Credentials
+	git, api, prefix := forge.Hosts()
 	v := &agentfleetv1.VaultSpec{Name: c.Vault, ReadOnly: s.Git != nil && s.Git.Mode == "none"}
 	for _, s := range c.Services {
-		v.Services = append(v.Services, &agentfleetv1.VaultService{Host: s.Host, Paths: s.Paths, Secret: s.Secret})
+		host, paths := s.Host, s.Paths
+		switch s.Host {
+		case ForgeGit:
+			host = git
+		case ForgeAPI:
+			host, paths = api, nil
+			for _, p := range s.Paths {
+				paths = append(paths, prefix+p)
+			}
+		}
+		v.Services = append(v.Services, &agentfleetv1.VaultService{Host: host, Paths: paths, Secret: s.Secret})
 	}
 	return v
 }

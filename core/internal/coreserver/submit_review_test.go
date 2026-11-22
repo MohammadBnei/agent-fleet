@@ -49,7 +49,7 @@ func TestReviewThread(t *testing.T) {
 // A reviewer posts only on the repo its reviewed file names.
 func TestOwnRepo(t *testing.T) {
 	eff := definitions.Spec{Credentials: &definitions.Credentials{Services: []definitions.Service{
-		{Host: "github.com", Paths: []string{"/MohammadBnei/agent-fleet/*", "/MohammadBnei/agent-fleet.git/*"}},
+		{Host: definitions.ForgeGit, Paths: []string{"/MohammadBnei/agent-fleet/*", "/MohammadBnei/agent-fleet.git/*"}},
 	}}}
 	for repo, want := range map[string]bool{
 		"MohammadBnei/agent-fleet": true,

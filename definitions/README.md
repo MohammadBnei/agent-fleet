@@ -13,7 +13,7 @@ for kind and dev).
 
 `agent-reviewer-<repo>.yaml` is a repo's PR reviewer: `@agent-reviewer` on a PR
 of the repo its `credentials` name wakes it. It runs in `git.mode: none`, so its
-`github.com` key (`GH_` + the vault name, minted by the provisioner) is
+`forge` key (`GH_` + the vault name, minted by the provisioner) is
 read-only, and it posts only through `submit_review`. The `bridge` client must
 list it in `definitions`, and its `agent:<name>` in `actors.allow` for its
 hand-offs to wake the writer they @mention.
@@ -42,10 +42,16 @@ responder). No client lists a character or its spawn target: Start is the admin'
 Every launchable definition names its vault and services in `credentials`; the
 `secret` fields are **key names** in Infisical project `agent-vault` folder
 `/agent-vault`, which only the provisioner syncs. A missing key fails closed:
-the vault reconcile logs it and a warm is refused naming it. A `github.com` /
-`api.github.com` service's key is always `GH_` + the vault name upper-snaked
-(`dev-notes` → `GH_DEV_NOTES`), and `api.anthropic.com` never takes a `GH_` key:
-the validator and the provisioner both refuse anything else.
+the vault reconcile logs it and a warm is refused naming it. The forge is
+named, not its host: `forge` is its git (`/<owner>/<repo>/*`,
+`/<owner>/<repo>.git/*`) and `forge-api` its API (`/repos/<owner>/<repo>/*`).
+Core puts the host `FORGE_URL` names on the vault: `github.com` and
+`api.github.com` for `https://github.com`, else that one host with the API
+paths under `/api/v1` (Forgejo), and the provisioner refuses any host its own
+`FORGE` does not serve. A `forge` / `forge-api` service's key is always `GH_` +
+the vault name upper-snaked (`dev-notes` → `GH_DEV_NOTES`), and
+`api.anthropic.com` never takes a `GH_` key: the validator and the provisioner
+both refuse anything else.
 
 Onboarding a push definition (example: `dev-notes`):
 
@@ -64,7 +70,7 @@ Onboarding a push definition (example: `dev-notes`):
 3. A private repo also needs the provisioner's bot (`argocd-ukubi-bot`) as a
    read collaborator: the clone cache fetches with the bot's token, not the vault.
 4. Onboard the repo in the console (manage repos → add), with the URL **exactly**
-   `https://github.com/<owner>/<repo>.git` (or without `.git`): the warm refuses
+   `$FORGE_URL/<owner>/<repo>.git` (or without `.git`): the warm refuses
    any other URL for a definition whose credentials name that repo. For
-   `dev-notes`: name `notes`, url `https://github.com/MohammadBnei/notes.git`,
+   `dev-notes`: name `notes`, url `https://git.bnei.dev/MohammadBnei/notes.git`,
    base branch `main`, no image, cluster access off.

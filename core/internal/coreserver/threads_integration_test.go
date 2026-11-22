@@ -321,7 +321,7 @@ func TestSubmitReview_NotesItsEntryBeforePosting(t *testing.T) {
 	ctx := context.Background()
 	thread(t, pool, id, "t", 0)
 	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET effective = '{"sidecarTools":["submit_review"],"mode":{"default":"default","allow":["default"]},
-		"credentials":{"vault":"v","services":[{"host":"github.com","paths":["/o/r.git/*"],"secret":"x"}]}}'::jsonb WHERE name = 'a'`); err != nil {
+		"credentials":{"vault":"v","services":[{"host":"forge","paths":["/o/r.git/*"],"secret":"x"}]}}'::jsonb WHERE name = 'a'`); err != nil {
 		t.Fatal(err)
 	}
 	// A real reviewer is a single-shot session on the PR's thread; the character stands in for it here, so the

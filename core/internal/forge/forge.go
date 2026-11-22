@@ -37,6 +37,20 @@ func RepoURL(repo string) string {
 	return ""
 }
 
+// Hosts is where the forge at Base(URL) serves git and its API, the provisioner's vault.HostsFor: GitHub's two
+// hosts, or one Forgejo host with its API under /api/v1. The provisioner holds FORGE=github to github.com and
+// FORGE=forgejo off it, so the host names the forge. No Base gives "" hosts, which the provisioner refuses.
+func Hosts() (git, api, apiPrefix string) {
+	switch h := strings.TrimPrefix(Base(URL), "https://"); h {
+	case "github.com":
+		return "github.com", "api.github.com", ""
+	case "":
+		return "", "", ""
+	default:
+		return h, h, "/api/v1"
+	}
+}
+
 // SourceHost is the host the bridge puts in every forge event's source. The bridge hardcodes it
 // (internal/forgejo Normalize), so it is not FORGE_URL's: a local or ported FORGE_URL must not stop intake.
 const SourceHost = "git.bnei.dev"

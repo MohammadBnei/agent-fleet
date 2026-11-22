@@ -17,7 +17,7 @@ spec:
   credentials:
     vault: agent-reviewer-agent-fleet
     services:
-      - { host: github.com, paths: ["/MohammadBnei/agent-fleet/*", "/MohammadBnei/agent-fleet.git/*"], secret: GH_AGENT_REVIEWER_AGENT_FLEET }
+      - { host: forge, paths: ["/MohammadBnei/agent-fleet/*", "/MohammadBnei/agent-fleet.git/*"], secret: GH_AGENT_REVIEWER_AGENT_FLEET }
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: agent-fleet }
   git: { mode: none, identity: { name: fleet-reviewer-agent, email: fleet-reviewer-agent@bnei.dev } }

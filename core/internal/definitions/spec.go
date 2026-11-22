@@ -126,6 +126,13 @@ type Credentials struct {
 	Services []Service `yaml:"services" json:"services"`
 }
 
+// A Service's Host is api.anthropic.com, or ForgeGit or ForgeAPI: the forge's git and API, whichever forge FORGE_URL
+// names. VaultSpec puts the real host on the wire.
+const (
+	ForgeGit = "forge"
+	ForgeAPI = "forge-api"
+)
+
 type Service struct {
 	Host   string   `yaml:"host"            json:"host"`
 	Paths  []string `yaml:"paths,omitempty" json:"paths,omitempty"`
