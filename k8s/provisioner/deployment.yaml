@@ -64,7 +64,7 @@ spec:
         # refs, so new images keep reading this tag's definitions until it is
         # bumped.
         - name: FLEET_VERSION
-          value: "7.44.3"
+          value: "7.48.1"
         - name: NAMESPACE
           value: agent-fleet
         # OTLP/HTTP traces URL in full (docs/adr/0081 §4). Unset = no export.
@@ -132,14 +132,30 @@ spec:
           value: agent-fleet.dev/session-node=true
         - name: CORE_GRPC_ADDR
           value: agent-fleet-core.agent-fleet.svc.cluster.local:9090
+        # The forge (docs/adr/0086 amendment D3): the bot users ukubi-fleet
+        # and ukubi-review on git.bnei.dev, their tokens mounted at
+        # FORGEJO_SECRETS_DIR. The repo list is ukubi-fleet's read
+        # collaborations under FORGEJO_OWNERS (default MohammadBnei). Rollback
+        # is FORGE=github with FORGE_URL removed: the App mount and
+        # FLEET_GITHUB_ACCOUNTS below stay for it.
+        - name: FORGE
+          value: forgejo
+        - name: FORGE_URL
+          value: https://git.bnei.dev
+        - name: FORGEJO_SECRETS_DIR
+          value: /var/run/forgejo
         # docs/adr/0075: account ids whose ukubi-fleet installations count
         # (MohammadBnei, opus-tech-hq). The App is public; any other
-        # installation is ignored.
+        # installation is ignored. Read only under FORGE=github.
         - name: FLEET_GITHUB_ACCOUNTS
           value: "43962695,344349211"
         # docs/adr/0082 §9: whose same-repo PRs an agent review may formally
         # approve or request changes on. Anyone else's gets a COMMENT.
+        # PROVISIONER_TRUSTED_LOGINS feeds the GitHub App (FORGE=github),
+        # FORGEJO_TRUSTED_LOGINS the Forgejo client (FORGE=forgejo).
         - name: PROVISIONER_TRUSTED_LOGINS
+          value: MohammadBnei
+        - name: FORGEJO_TRUSTED_LOGINS
           value: MohammadBnei
         # client-go's rest.InClusterConfig() natively trusts the projected
         # ServiceAccount CA — no TLS workaround needed for a Go binary
@@ -158,6 +174,10 @@ spec:
         # docs/adr/0075: the App's id and private key, read per JWT.
         - name: github-app
           mountPath: /var/run/github-app
+          readOnly: true
+        # The Forgejo bots' tokens, one file per key, read per call.
+        - name: forgejo
+          mountPath: /var/run/forgejo
           readOnly: true
         resources:
           requests:
@@ -181,3 +201,8 @@ spec:
         secret:
           secretName: provisioner-github-app
           optional: true
+      # Required: FORGE=forgejo has no other forge credential, so the pod
+      # waits for the Secret rather than start with no repo list.
+      - name: forgejo
+        secret:
+          secretName: provisioner-forgejo

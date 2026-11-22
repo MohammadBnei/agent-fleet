@@ -84,6 +84,11 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   credentials must exist as Secret `infisical/fleet-github-app-universal-auth`
   (created by infra-bootstrap's ADR-0062 setup); without it nothing syncs and
   the provisioner stays on the Infisical files.
+- `infisicalsecret-forgejo.yaml` — syncs folder `/forgejo` of the same
+  `fleet-github-app` project, with the same identity, into Secret
+  `provisioner-forgejo`, mounted at `/var/run/forgejo` (`FORGEJO_SECRETS_DIR`):
+  the bot users' `FORGEJO_FLEET_READ_TOKEN`, `FORGEJO_FLEET_WRITE_TOKEN` and
+  `FORGEJO_REVIEW_TOKEN` for `FORGE=forgejo`. Required: the pod waits for it.
 - `infisicalsecret-agent-vault.yaml` — syncs `agent-fleet-nygh` folder
   `/agent-vault` only into Secret `provisioner-agent-vault`, mounted read-only
   at `/var/run/agent-vault`: the Agent Vault agent token and the credential

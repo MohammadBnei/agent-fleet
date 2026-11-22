@@ -57,7 +57,7 @@ type Client struct {
 	// whose members can create repos.
 	Allow []string
 	// Trusted are the logins whose PRs a review may formally approve or
-	// request changes on (PROVISIONER_TRUSTED_LOGINS), besides ukubi-fleet.
+	// request changes on (FORGEJO_TRUSTED_LOGINS), besides ukubi-fleet.
 	Trusted []string
 	HTTP    *http.Client
 }
