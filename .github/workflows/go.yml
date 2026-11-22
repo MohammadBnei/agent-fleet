@@ -26,8 +26,11 @@ env:
   PROTOC_GEN_CONNECT_GO_VERSION: 'v1.21.0'
 
 jobs:
-  # Precise CI: only run a module's vet/lint/test against what changed. A
-  # proto/ change counts for every Go module. On a push every module runs.
+  # Precise CI: only run a module's lint/test against what changed. A
+  # proto/ change counts for every Go module. On a pull request the range is
+  # base..HEAD, on a push before..sha. Every module runs when there is no
+  # usable base (first push, new branch, a force push whose old tip is not in
+  # the checkout).
   # Plain git rather than paths-filter + github-script, which talk to
   # GitHub's API.
   changes:
@@ -42,10 +45,13 @@ jobs:
       - name: Compute go-modules matrix
         id: modules
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          # Forgejo's push payload carries `before` as GitHub's does (act maps it
+          # to github.event.before); the cat-file check below is the fallback
+          # should it ever be empty or unknown.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          if [ -z "$BASE" ]; then
+          if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
             echo 'proto=true' >> "$GITHUB_OUTPUT"
             echo 'result=["core","provisioner","sidecar","executor"]' >> "$GITHUB_OUTPUT"
             exit 0
@@ -231,7 +237,44 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          # No setup-go cache: the split below is explicit (see "Cache keys").
+          cache: false
+
+      # Cache model (owner decision 2026-11-22): a pull request restores and
+      # saves; push, dispatch and schedule never restore (a PR job can forge
+      # the cache write key, so a restored entry is untrusted on main), they
+      # run cold and only save. Decided here in shell, not in an if:.
+      # CACHE_EPOCH is a user-level Forgejo variable; bump it to purge every cache.
+      - name: Cache keys
+        id: cachekeys
+        env:
+          REF: ${{ github.ref }}
+          EPOCH: ${{ vars.CACHE_EPOCH || 'e1' }}
+          MODULE: ${{ matrix.module }}
+        run: |
+          set -euo pipefail
+          pr=false
+          if [[ "$REF" == refs/pull/* ]]; then pr=true; fi
+          # The module's go.sum plus the workspace's two shared sums.
+          h=$(cat "$MODULE/go.sum" go.work.sum proto/gen/go/go.sum 2>/dev/null | sha256sum | cut -c1-16)
+          {
+            echo "pr=$pr"
+            echo "key=${EPOCH}-go-${MODULE}-${RUNNER_OS}-${h}"
+            echo "prefix=${EPOCH}-go-${MODULE}-${RUNNER_OS}-"
+            echo "mod=$(go env GOMODCACHE)"
+            echo "build=$(go env GOCACHE)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore Go cache
+        id: restore
+        if: steps.cachekeys.outputs.pr == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ steps.cachekeys.outputs.mod }}
+            ${{ steps.cachekeys.outputs.build }}
+          key: ${{ steps.cachekeys.outputs.key }}
+          restore-keys: ${{ steps.cachekeys.outputs.prefix }}
 
       # provisioner/internal/git's SyncFleetShared shells out to rsync, which
       # the container runner's image lacks.
@@ -264,11 +307,13 @@ jobs:
       # is where the test cache lives, so every buildguard test has been
       # cacheable here since it was written — the guards were guarding, and CI
       # was free to not look.
-      - name: go test
-        working-directory: ${{ matrix.module }}
-        run: go test ./... -race -cover -count=1
-
-      - name: go test (integration, real Postgres)
+      #
+      # One compile per module: the integration tag is on the race run, not a
+      # second non-race `go test`. Every non-integration test passes with the
+      # integration env set: the variables are read only by integration-tagged
+      # files (dbtest, credentials_integration_test) and by config's loader, and
+      # no non-integration test depends on their absence.
+      - name: go test (race, integration, real Postgres)
         working-directory: ${{ matrix.module }}
         env:
           # A container job reaches the service by its name.
@@ -281,7 +326,18 @@ jobs:
           # container runner has no Docker socket for testcontainers.
           AGENTFLEET_TEST_DSN: postgres://agentfleet:agentfleet@postgres:5432/agentfleetdb?sslmode=disable
           AGENTFLEET_TEST_ADMIN_PG_HOST: postgres-admin
-        run: go test -tags=integration ./... -count=1
+        run: go test ./... -race -cover -tags=integration -count=1
+
+      # Last, so it holds what lint and the tests built. Skipped on an exact
+      # restore hit (the key already exists); on push nothing restored, so it runs.
+      - name: Save Go cache
+        if: success() && steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ steps.cachekeys.outputs.mod }}
+            ${{ steps.cachekeys.outputs.build }}
+          key: ${{ steps.cachekeys.outputs.key }}
 
   # Unfiltered on purpose: the drift it catches (an ADR index row that
   # disagrees with its file, a skill citing a path that was renamed, a
