@@ -59,6 +59,9 @@ jobs:
           files=$(git diff --name-only "$BASE" HEAD)
           hit() { grep -qE "$1" <<<"$files"; }
           proto=false; hit '^proto/' && proto=true
+          # go.work (toolchain/workspace bump) and this workflow change every
+          # module's build, so they select all four without enabling buf.
+          all=false; hit '^(go\.work|go\.work\.sum|\.github/workflows/go\.yml)$' && all=true
           echo "proto=$proto" >> "$GITHUB_OUTPUT"
           # core: dbtest.NewPool applies db/migrations/ (docs/adr/0030);
           # definitions/ is validated by core's repo_test.go (docs/adr/0062);
@@ -66,10 +69,10 @@ jobs:
           # every module's logguard copy.
           # provisioner: its k8s tests read k8s/core.yaml and k8s/provisioner/.
           m=()
-          { $proto || hit '^(core/|db/migrations/|definitions/|[^/]+/Dockerfile$|\.github/workflows/|[^/]+/internal/logguard/)'; } && m+=('"core"')
-          { $proto || hit '^(provisioner/|k8s/)'; } && m+=('"provisioner"')
-          { $proto || hit '^sidecar/'; } && m+=('"sidecar"')
-          { $proto || hit '^executor/'; } && m+=('"executor"')
+          { $proto || $all || hit '^(core/|db/migrations/|definitions/|[^/]+/Dockerfile$|\.github/workflows/|[^/]+/internal/logguard/)'; } && m+=('"core"')
+          { $proto || $all || hit '^(provisioner/|k8s/)'; } && m+=('"provisioner"')
+          { $proto || $all || hit '^sidecar/'; } && m+=('"sidecar"')
+          { $proto || $all || hit '^executor/'; } && m+=('"executor"')
           echo "result=[$(IFS=,; echo "${m[*]}")]" >> "$GITHUB_OUTPUT"
 
   buf:
@@ -137,17 +140,29 @@ jobs:
           # finishes first and every other job restores that partial cache.
           cache: false
 
-      # setup-go's own module/build cache (keyed on go.sum, enabled by
-      # default) doesn't cover `go install`'d binaries under $GOBIN — cache
-      # those separately, keyed on the pinned plugin versions above, so a
-      # version bump invalidates the cache instead of silently reusing a
-      # stale binary.
-      - name: Cache protoc-gen-go / protoc-gen-go-grpc / protoc-gen-connect-go binaries
+      # setup-go's own cache doesn't cover `go install`'d binaries under $GOBIN.
+      # Same model as the go job: a pull request restores and saves; main never
+      # restores (it would run binaries a PR could have planted), it runs cold
+      # and only saves. Keyed on the pinned plugin versions.
+      - name: Cache keys
+        id: cachekeys
+        env:
+          REF: ${{ github.ref }}
+          EPOCH: ${{ vars.CACHE_EPOCH || 'e1' }}
+        run: |
+          set -euo pipefail
+          pr=false
+          if [[ "$REF" == refs/pull/* ]]; then pr=true; fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "key=${EPOCH}-protoc-gen-${RUNNER_OS}-${PROTOC_GEN_GO_VERSION}-${PROTOC_GEN_GO_GRPC_VERSION}-${PROTOC_GEN_CONNECT_GO_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore protoc-gen binaries
         id: protoc-gen-cache
-        uses: actions/cache@v4
+        if: steps.cachekeys.outputs.pr == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/go/bin
-          key: protoc-gen-${{ runner.os }}-${{ env.PROTOC_GEN_GO_VERSION }}-${{ env.PROTOC_GEN_GO_GRPC_VERSION }}-${{ env.PROTOC_GEN_CONNECT_GO_VERSION }}
+          key: ${{ steps.cachekeys.outputs.key }}
 
       - name: Install protoc-gen-go / protoc-gen-go-grpc / protoc-gen-connect-go
         if: steps.protoc-gen-cache.outputs.cache-hit != 'true'
@@ -193,6 +208,13 @@ jobs:
             exit 1
           fi
           echo "Generated files are up to date"
+
+      - name: Save protoc-gen binaries
+        if: success() && steps.protoc-gen-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/go/bin
+          key: ${{ steps.cachekeys.outputs.key }}
 
   go:
     needs: changes
@@ -295,6 +317,8 @@ jobs:
           # golangci-lint-action v7+ is required for golangci-lint v2.x
           # (v6 only supports v1.x).
           version: v2.14.0
+          # The action's own cache would restore on main; the explicit model above is the only cache.
+          skip-cache: true
 
       # -count=1 is load-bearing, not belt-and-braces. core/internal/buildguard's
       # tests read files OUTSIDE their module (.github/, proto/), which Go's
