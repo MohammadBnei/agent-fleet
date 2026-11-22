@@ -43,7 +43,7 @@ is stale → check code.**
 | k8s client | `client-go` (`provisioner/` — only component with cluster RBAC; a `cluster.read` definition pod's sidecar holds the read-only `fleet-read` token, ADR-0084 §6) |
 | DB | `jackc/pgx/v5` (`core/` only — **sole** `AGENTFLEET_DB_*` holder, `adr/0020` pt1). worker/sidecar/provisioner hold zero DB creds |
 | Deploy | Docker per component. `core` = two-source ArgoCD app (chart from `infra-bootstrap`, values `k8s/core.yaml`). `provisioner` = standalone plain manifests (`k8s/provisioner/`, RBAC `common-app-chart` can't express) |
-| CI/CD | Forgejo Actions on the shared ukubi-ci v0.11.1 workflows: `docker.yml` (tests, then `release.yml` tags the commit, then one `image.yml`/`image-build.yml` call per image on the `ukubi-build` runner; core and migration pins go to the `deploy` branch, never `main`), `go.yml` (vet/lint/test + buf lint/breaking/drift), `biome.yml` (`biome ci .` over every JS/TS package; root `biome.jsonc`, Biome pinned in root `package.json`). **Images build on the `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub** |
+| CI/CD | Forgejo Actions on the shared ukubi-ci v0.11.1 workflows: `docker.yml` (tests, then `release.yml` tags the commit, then one `image.yml` call per deployed image (core, migration, executor) on the `ukubi-build` runner, no PR image build; core and migration pins go to the `deploy` branch, never `main`), `go.yml` (vet/lint/test + buf lint/breaking/drift), `biome.yml` (`biome ci .` over every JS/TS package; root `biome.jsonc`, Biome pinned in root `package.json`). **Images build on the `build-runner` LXC via `buildah` → in-cluster Zot `registry.bnei.lan:5000`, not Docker Hub** |
 
 ## Directory map
 

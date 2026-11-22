@@ -1,0 +1,77 @@
+# worker, dashboard and islands tests, on the podman runner only (ubuntu-latest: rootless, no sudo, no secrets).
+# They run on a PR and from docker.yml (workflow_call) on main, whose release and images need them: main never
+# deploys untested code. No image build on a PR (the CI/CD split): images are CD's, built from reviewed main.
+name: checks
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# A newer PR push cancels the older run; docker.yml's call on main never cancels. The check reads the PR payload,
+# not event_name, which Forgejo reports as workflow_call inside a called workflow.
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event.pull_request && true || false }}
+
+jobs:
+  # `bun run test`, not bare `bun test`: the script adds --isolate.
+  # session.test.ts mock.module()s ./sidecarClient.js, which is
+  # process-global and survives mock.restore().
+  worker-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        working-directory: worker
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: worker
+        run: bun run typecheck
+      - name: Run tests
+        working-directory: worker
+        run: bun run test
+
+  # The dashboard ships inside core's image. `bun run build` is `tsc -b &&
+  # vite build`; only `tsc -b` enforces noUnusedLocals.
+  dashboard-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        working-directory: dashboard
+        run: bun install --frozen-lockfile
+      - name: Run tests
+        working-directory: dashboard
+        run: bun test
+      - name: Build
+        working-directory: dashboard
+        run: bun run build
+
+  # docs/adr/0068: the <fleet-agent> island, compiled into core's image.
+  islands-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        working-directory: islands
+        run: bun install --frozen-lockfile
+      - name: Run tests
+        working-directory: islands
+        run: bun test src
+      - name: Build
+        working-directory: islands
+        run: bun run build

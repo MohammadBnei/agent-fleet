@@ -117,10 +117,11 @@ On a push to `main` (Forgejo Actions, shared ukubi-ci v0.11.1 workflows):
    `registry.bnei.lan:5000`; `executor` also pushes `latest`. `core` and
    `migration` commit their pin to a pin file each (`image-core.yaml`,
    `image-migration.yaml` under k8s/) on the `deploy` branch, which ArgoCD layers
-   over `k8s/core.yaml`. `provisioner`, `worker` and `sidecar` only build
-   (`image-build.yml`): their pins live in `k8s/provisioner/*.yaml` on
-   `main`, which CI no longer writes, so they are bumped by a reviewed PR
-   until that Application reads pins from `deploy`. `FLEET_VERSION` is not
+   over `k8s/core.yaml`. `provisioner`, `worker` and `sidecar` are not built by
+   CI (their build-only jobs went with the PR image builds, CI/CD split):
+   their pins live in `k8s/provisioner/*.yaml` on `main`, which CI no longer
+   writes, so they are bumped by a reviewed PR until that Application reads
+   pins from `deploy`. `FLEET_VERSION` is not
    bumped by CI either. On a PR every image builds and nothing is pushed.
 3. ArgoCD syncs `core` (two-source chart Application) and `provisioner`
    (standalone plain-manifest Application). `db/migrations/` is applied by
