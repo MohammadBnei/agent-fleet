@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
+          no-cache: true
           bun-version: 1.4.2
       # The root install is Biome only; no package's own
       # node_modules is needed to lint it.
