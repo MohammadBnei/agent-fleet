@@ -127,6 +127,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+          # Own cache key per consumer: a shared key is saved by whichever job
+          # finishes first and every other job restores that partial cache.
+          cache: false
 
       # setup-go's own module/build cache (keyed on go.sum, enabled by
       # default) doesn't cover `go install`'d binaries under $GOBIN — cache
@@ -228,16 +231,15 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+          cache-dependency-path: ${{ matrix.module }}/go.sum
 
       # provisioner/internal/git's SyncFleetShared shells out to rsync, which
       # the container runner's image lacks.
       - name: Install rsync
         run: command -v rsync || { apt-get update -qq && apt-get install -y -qq rsync; }
 
-      - name: go vet
-        working-directory: ${{ matrix.module }}
-        run: go vet ./...
-
+      # go vet is not a separate step: golangci-lint's default linters (no
+      # config file in this repo) include govet.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -295,6 +297,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+          # Own cache key per consumer: a shared key is saved by whichever job
+          # finishes first and every other job restores that partial cache.
+          cache: false
 
       - name: go test (docs + workflow guards)
         working-directory: core
