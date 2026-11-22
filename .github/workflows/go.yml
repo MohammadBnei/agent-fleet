@@ -140,20 +140,35 @@ jobs:
           # finishes first and every other job restores that partial cache.
           cache: false
 
-      # setup-go's own module/build cache (keyed on go.sum, enabled by
-      # default) doesn't cover `go install`'d binaries under $GOBIN — cache
-      # those separately, keyed on the pinned plugin versions above, so a
-      # version bump invalidates the cache instead of silently reusing a
-      # stale binary.
-      - name: Cache protoc-gen-go / protoc-gen-go-grpc / protoc-gen-connect-go binaries
+      # setup-go's own cache doesn't cover `go install`'d binaries under $GOBIN.
+      # Same model as the go job: a pull request restores and saves; main never
+      # restores (it would run binaries a PR could have planted), it runs cold
+      # and only saves. Keyed on the pinned plugin versions.
+      - name: Cache keys
+        id: cachekeys
+        env:
+          REF: ${{ github.ref }}
+          EPOCH: ${{ vars.CACHE_EPOCH || 'e1' }}
+        run: |
+          set -euo pipefail
+          pr=false
+          if [[ "$REF" == refs/pull/* ]]; then pr=true; fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "key=${EPOCH}-protoc-gen-${RUNNER_OS}-${PROTOC_GEN_GO_VERSION}-${PROTOC_GEN_GO_GRPC_VERSION}-${PROTOC_GEN_CONNECT_GO_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore protoc-gen binaries
         id: protoc-gen-cache
-        uses: actions/cache@v4
+        if: steps.cachekeys.outputs.pr == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/go/bin
-          key: protoc-gen-${{ runner.os }}-${{ env.PROTOC_GEN_GO_VERSION }}-${{ env.PROTOC_GEN_GO_GRPC_VERSION }}-${{ env.PROTOC_GEN_CONNECT_GO_VERSION }}
+          # Never an exact hit (the run id is new): restore-keys picks the newest
+          # entry, whose binaries match the pinned versions in the key.
+          key: ${{ steps.cachekeys.outputs.key }}-${{ github.run_id }}
+          restore-keys: ${{ steps.cachekeys.outputs.key }}-
 
       - name: Install protoc-gen-go / protoc-gen-go-grpc / protoc-gen-connect-go
-        if: steps.protoc-gen-cache.outputs.cache-hit != 'true'
+        if: steps.protoc-gen-cache.outputs.cache-matched-key == ''
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
@@ -196,6 +211,15 @@ jobs:
             exit 1
           fi
           echo "Generated files are up to date"
+
+      # Only when nothing was restored: the binaries are pinned by version, so a
+      # restored entry needs no refresh. On main nothing restores, so it saves.
+      - name: Save protoc-gen binaries
+        if: success() && steps.protoc-gen-cache.outputs.cache-matched-key == ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/go/bin
+          key: ${{ steps.cachekeys.outputs.key }}-${{ github.run_id }}
 
   go:
     needs: changes
@@ -240,7 +264,48 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          # No setup-go cache: the split below is explicit (see "Cache keys").
+          cache: false
+
+      # Cache model (owner decision 2026-11-22): a pull request restores and
+      # saves; push, dispatch and schedule never restore (a PR job can forge
+      # the cache write key, so a restored entry is untrusted on main), they
+      # run cold and only save. Decided here in shell, not in an if:.
+      # CACHE_EPOCH is a user-level Forgejo variable; bump it to purge every cache.
+      - name: Cache keys
+        id: cachekeys
+        env:
+          REF: ${{ github.ref }}
+          EPOCH: ${{ vars.CACHE_EPOCH || 'e1' }}
+          MODULE: ${{ matrix.module }}
+        run: |
+          set -euo pipefail
+          pr=false
+          if [[ "$REF" == refs/pull/* ]]; then pr=true; fi
+          # The module's go.sum plus the workspace's two shared sums.
+          h=$(cat "$MODULE/go.sum" go.work.sum proto/gen/go/go.sum 2>/dev/null | sha256sum | cut -c1-16)
+          {
+            echo "pr=$pr"
+            echo "key=${EPOCH}-go-${MODULE}-${RUNNER_OS}-${h}"
+            echo "prefix=${EPOCH}-go-${MODULE}-${RUNNER_OS}-"
+            echo "mod=$(go env GOMODCACHE)"
+            echo "build=$(go env GOCACHE)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore Go cache
+        id: restore
+        if: steps.cachekeys.outputs.pr == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ steps.cachekeys.outputs.mod }}
+            ${{ steps.cachekeys.outputs.build }}
+          # Never an exact hit (the run id is new): restore-keys picks the newest
+          # entry for this lockfile, else the newest for this module.
+          key: ${{ steps.cachekeys.outputs.key }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ steps.cachekeys.outputs.key }}-
+            ${{ steps.cachekeys.outputs.prefix }}
 
       # provisioner/internal/git's SyncFleetShared shells out to rsync, which
       # the container runner's image lacks.
@@ -261,6 +326,8 @@ jobs:
           # golangci-lint-action v7+ is required for golangci-lint v2.x
           # (v6 only supports v1.x).
           version: v2.14.0
+          # The action's own cache would restore on main; the explicit model above is the only cache.
+          skip-cache: true
 
       # -count=1 is load-bearing, not belt-and-braces. core/internal/buildguard's
       # tests read files OUTSIDE their module (.github/, proto/), which Go's
@@ -293,6 +360,18 @@ jobs:
           AGENTFLEET_TEST_DSN: postgres://agentfleet:agentfleet@postgres:5432/agentfleetdb?sslmode=disable
           AGENTFLEET_TEST_ADMIN_PG_HOST: postgres-admin
         run: go test ./... -race -cover -tags=integration -count=1
+
+      # Last, so it holds what lint and the tests built. Saved under this run's
+      # id on every green run, so the newest run's cache is the one the next PR
+      # restores and the caches refresh instead of freezing at the first run.
+      - name: Save Go cache
+        if: success()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ steps.cachekeys.outputs.mod }}
+            ${{ steps.cachekeys.outputs.build }}
+          key: ${{ steps.cachekeys.outputs.key }}-${{ github.run_id }}
 
   # Unfiltered on purpose: the drift it catches (an ADR index row that
   # disagrees with its file, a skill citing a path that was renamed, a
