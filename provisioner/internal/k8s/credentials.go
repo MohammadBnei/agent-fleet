@@ -42,6 +42,13 @@ const (
 	mintRetryBackoff  = 50 * time.Millisecond
 )
 
+// mintLockWait bounds mintPostgres' wait for its name's advisory lock. This
+// is a new hard failure: a mint still waiting after 30s fails, and with it the
+// ProvisionService call, with "lock <name>: ... (SQLSTATE 55P03)". Before the
+// lock there was no wait to bound. The caller retries the call. A var so the
+// lock test can shorten it.
+var mintLockWait = 30 * time.Second
+
 func jitter() time.Duration {
 	return time.Duration(mathrand.Intn(50)) * time.Millisecond
 }
@@ -135,6 +142,24 @@ func mintPostgres(ctx context.Context, host string, port int32, adminPassword, n
 		return "", fmt.Errorf("connect as admin: %w", err)
 	}
 	defer func() { _ = conn.Close(ctx) }()
+
+	// Callers minting the same name take turns. Concurrent ALTER ROLE on one
+	// role fails "tuple concurrently updated", and on a loaded host that
+	// outlasted the retry budget below (CI, 8-way). The wait is bounded by a
+	// server-side lock_timeout, not a context deadline: Postgres ends the wait
+	// itself (55P03) and the connection stays clean, so a caller that gives up
+	// leaves no backend queued on the lock. Reset before the DDL so it bounds
+	// this wait only. A session lock, so it holds across CREATE DATABASE;
+	// released when conn closes.
+	if _, err := conn.Exec(ctx, fmt.Sprintf(`SET lock_timeout = %d`, mintLockWait.Milliseconds())); err != nil {
+		return "", fmt.Errorf("lock %s: %w", name, err)
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtext($1))`, name); err != nil {
+		return "", fmt.Errorf("lock %s: %w", name, err)
+	}
+	if _, err := conn.Exec(ctx, `RESET lock_timeout`); err != nil {
+		return "", fmt.Errorf("lock %s: %w", name, err)
+	}
 
 	// Plain sequential statements, not a transaction: Postgres can't run
 	// CREATE DATABASE inside a transaction block.

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -119,5 +120,60 @@ func TestMintPostgres_RaceSafeUnderConcurrentCallers(t *testing.T) {
 	defer conn.Close(ctx)
 	if err := conn.Ping(ctx); err != nil {
 		t.Fatalf("ping after race: %v", err)
+	}
+}
+
+// The race test above can pass without the lock on a quiet host (the retries
+// absorb it), so this one pins the lock itself: a mint waits while its name's
+// lock is held, fails after mintLockWait with Postgres' own lock timeout and
+// creates nothing, then goes through once the lock is free.
+func TestMintPostgres_WaitsForTheNamesLock(t *testing.T) {
+	host, port, adminPassword := startAdminPostgres(t)
+	ctx := context.Background()
+
+	name := "task_locktest"
+	password := derivePassword(adminPassword, name)
+
+	holder, err := pgx.Connect(ctx, fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=disable", adminPassword, host, port))
+	if err != nil {
+		t.Fatalf("connect as admin: %v", err)
+	}
+	defer holder.Close(ctx) //nolint:errcheck
+	for _, q := range []string{`DROP DATABASE IF EXISTS ` + name, `DROP ROLE IF EXISTS ` + name} {
+		if _, err := holder.Exec(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	roleExists := func() bool {
+		t.Helper()
+		var ok bool
+		if err := holder.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, name).Scan(&ok); err != nil {
+			t.Fatalf("pg_roles: %v", err)
+		}
+		return ok
+	}
+
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_lock(hashtext($1))`, name); err != nil {
+		t.Fatalf("take the lock: %v", err)
+	}
+	old := mintLockWait
+	mintLockWait = 300 * time.Millisecond
+	t.Cleanup(func() { mintLockWait = old })
+	_, err = mintPostgres(ctx, host, port, adminPassword, name, password)
+	if err == nil || !strings.HasPrefix(err.Error(), "lock "+name+":") || !isPgCode(err, "55P03") {
+		t.Fatalf("mintPostgres with its name's lock held: %v, want a \"lock %s:\" lock_timeout (55P03) error", err, name)
+	}
+	if roleExists() {
+		t.Fatal("role created while its name's lock was held")
+	}
+
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_unlock(hashtext($1))`, name); err != nil {
+		t.Fatalf("release the lock: %v", err)
+	}
+	if _, err := mintPostgres(ctx, host, port, adminPassword, name, password); err != nil {
+		t.Fatalf("mintPostgres after release: %v", err)
+	}
+	if !roleExists() {
+		t.Fatal("no role after the lock was released")
 	}
 }
