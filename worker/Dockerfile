@@ -277,6 +277,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 \
 RUN printf '#!/bin/sh\nexec bunx "$@"\n' > /usr/local/bin/npx \
     && chmod 755 /usr/local/bin/npx
 
+# tea, the Gitea/Forgejo CLI, beside gh while the fleet moves to Forgejo
+# (git.bnei.dev; gh goes after the build plan's P5). Static Go binary, pinned
+# like rtk and uv above and also by sha256, since gitea.com publishes a digest
+# only for the .xz (the raw binary below hashes the same as that .xz unpacked).
+# Down here, not beside gh, so a bump rebuilds one small layer.
+#
+# No `tea login add` and no config file: with GITEA_INSTANCE_URL set, tea builds
+# its login from env, and with GITEA_TOKEN unset it takes GH_TOKEN, which is the
+# vault placeholder the provisioner already sets (provisioner/internal/k8s/pod.go
+# VaultPlaceholder). The pod never holds a Forgejo token: the vault is meant to
+# overwrite the Authorization header on the wire, as it does for gh. Not yet:
+# that needs build plan P4.1. Today repoNoProxy (provisioner/internal/k8s/pod.go)
+# sends .bnei.dev direct, past the egress router, and vault.OwnerHosts has no
+# Forgejo host, so tea's placeholder and the AGit push both fail auth. P4.1 takes
+# git.bnei.dev out of repoNoProxy (open point m3) and adds its vault service.
+# ponytail: GH_TOKEN doubles as tea's placeholder; set GITEA_TOKEN in the pod
+# env when gh and GH_TOKEN go.
+ARG TEA_VERSION=0.16.0
+ARG TEA_SHA256=9c142c8a0b31485eea2387031c1c404f12b7141075eb4ffbd7ced49441590636
+RUN curl -fsSL -o /usr/local/bin/tea https://gitea.com/gitea/tea/releases/download/v${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64 \
+    && echo "${TEA_SHA256}  /usr/local/bin/tea" | sha256sum -c - \
+    && chmod 755 /usr/local/bin/tea \
+    && tea --version
+ENV GITEA_INSTANCE_URL=https://git.bnei.dev
+
 # entrypoint.sh is 100755 in git, and COPY keeps the mode.
 COPY --chown=bun:bun worker ./
 

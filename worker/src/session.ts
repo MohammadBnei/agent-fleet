@@ -87,6 +87,14 @@ const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ
 const FLEET_ASK_RULES = [
   "Bash(git push:*)",
   "Bash(gh:*)",
+  // tea is gh's Forgejo twin (worker/Dockerfile): `tea api` reaches the whole
+  // Forgejo API, and `tea pr approve`/`merge` are outward acts. Of the
+  // Forgejo API, this list covers tea, curl and wget, nothing else.
+  // ponytail: prefix match on the command's first word. A wrapper the target
+  // repo allows (`Bash(rtk:*)` makes `rtk tea pr approve` an allow) or an
+  // interpreter (python/bun fetch) skips it, the same gap gh has; the real
+  // ceiling is the fleet account being read-only plus the vault (P4.1).
+  "Bash(tea:*)",
   "Bash(rm:*)",
   "Bash(sudo:*)",
   "Bash(kubectl:*)",
@@ -750,10 +758,11 @@ export function playwrightMcpServer() {
     // stay together.
     args: ["--headless", "--isolated", "--browser", "chromium"],
     // docs/adr/0075 §7: the browser goes direct, never through the pod's
-    // proxy. Through it, a page's script would reach GitHub and Anthropic as
-    // the fleet: the vault injects the credential on the wire, and
-    // api.github.com answers CORS with *. Chromium reads these from env; an
-    // empty value is no proxy. Egress is open, so direct works.
+    // proxy. Through it, a page's script would reach GitHub and Anthropic (and
+    // Forgejo, once the vault holds its token) as the fleet: the vault injects
+    // the credential on the wire, and api.github.com answers CORS with *.
+    // Chromium reads these from env; an empty value is no proxy. Egress is
+    // open, so direct works.
     env: {
       HTTPS_PROXY: "",
       https_proxy: "",
@@ -1958,7 +1967,8 @@ export async function runSession(): Promise<SessionResult> {
         // It also merges the target repo's .claude/settings.json
         // permissions.allow, and an allow rule removes canUseTool from the
         // path entirely (same authority as allowedTools above). What stops a
-        // repo self-approving its own `gh api` is FLEET_ASK_RULES, injected
+        // repo self-approving its own `gh api`, `tea` or Forgejo API call is
+        // FLEET_ASK_RULES, injected
         // above through `settings` rather than shipped in fleet-shared's own
         // settings.json (docs/adr/0052): the evaluator returns on the first
         // matching ask rule, before any allow rule and before the permission

@@ -37,21 +37,37 @@ type slowProvisioner struct {
 	calls             map[string]int
 	resume            map[string]int64 // the last create's resume_from_seq
 	inFlight, maxLive int
+	overlaps          int // times a create joined one already in flight
 }
 
 func (p *slowProvisioner) CreateWorkerPod(_ context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
 	p.mu.Lock()
 	p.calls[req.GetSessionId()]++
 	p.resume[req.GetSessionId()] = req.GetResumeFromSeq()
+	seen := p.overlaps
 	p.inFlight++
 	p.maxLive = max(p.maxLive, p.inFlight)
+	if p.inFlight >= 2 {
+		p.overlaps++
+	}
 	failing, running := p.fail > 0, p.stillRunning
 	if failing {
 		p.fail--
 	}
 	p.mu.Unlock()
 
-	time.Sleep(p.delay)
+	// Held until another create overlaps this one or delay runs out: overlap
+	// is then a fact of the call order, not of wall-clock, and creates that
+	// run one at a time each wait the full delay and never see two. Latched
+	// (overlaps), so the first to leave cannot strand the other.
+	for deadline := time.Now().Add(p.delay); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		p.mu.Lock()
+		joined := p.overlaps > seen
+		p.mu.Unlock()
+		if joined {
+			break
+		}
+	}
 
 	p.mu.Lock()
 	p.inFlight--
@@ -165,11 +181,12 @@ func TestPostMessage_ConcurrentSendsToAColdSessionWarmOnceInOrder(t *testing.T) 
 
 // Two sessions never wait on each other's provisioner.
 func TestPostMessage_TwoSessionsWarmInParallel(t *testing.T) {
-	const delay = 500 * time.Millisecond
-	f := newRaceFixture(t, delay, 0)
+	// A ceiling, not a duration: each create returns as soon as the other is
+	// in flight, so the overlap never races the clock. Serialised creates
+	// wait it out twice and fail with peak 1.
+	f := newRaceFixture(t, 5*time.Second, 0)
 	a, b := f.session(t), f.session(t)
 
-	start := time.Now()
 	var wg sync.WaitGroup
 	for _, id := range []string{a, b} {
 		wg.Go(func() {
@@ -180,11 +197,10 @@ func TestPostMessage_TwoSessionsWarmInParallel(t *testing.T) {
 	}
 	wg.Wait()
 
+	// The overlap is the proof (slowProvisioner holds each create for the
+	// other). A wall-clock bound was flaky on a loaded runner (1.04s against 2×500ms).
 	if f.prov.peak() != 2 {
 		t.Errorf("at most %d creates in flight at once, want 2: one session's warm blocked the other's", f.prov.peak())
-	}
-	if took := time.Since(start); took >= 2*delay {
-		t.Errorf("two warms took %v, as long as two in a row", took)
 	}
 }
 

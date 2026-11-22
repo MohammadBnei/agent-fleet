@@ -36,7 +36,7 @@ being implied by a pod boundary.
 
 What is deliberately NOT on it:
 
-- **Anything outward-facing.** `git push`, `gh pr create`, `gh api` — these
+- **Anything outward-facing.** `git push`, `gh pr create`, `gh api`, `tea` — these
   are the actions a human is agreeing to when they approve, and every result
   is a PR. Approving them is the review.
 - **Anything destructive or unscoped.** No bare `rm`, no `sudo`, no
@@ -78,7 +78,7 @@ settings and approve its own outward-facing commands.
 
 That counterweight is `FLEET_ASK_RULES` in `worker/src/session.ts`, passed to
 `query()` through `settings` (scope `flagSettings`, always collected). It is
-the same list, doing the same job — `git push`, `gh`, `rm`, `sudo`, `kubectl`,
+the same list, doing the same job — `git push`, `gh`, `tea`, `rm`, `sudo`, `kubectl`,
 `curl`, `wget`, `env` — and it is deliberately **not** a `permissions.ask`
 block in this file, because it must stay one list in one place. Injected
 per-session it is the list `canUseTool` also reasons about; shipped as a file

@@ -127,12 +127,25 @@ func TestListAndWatchCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close() //nolint:errcheck
+	// Frames arrive on a channel so the test can also wait out a quiet window.
+	frames := make(chan []*agentfleetv1.Character)
+	go func() {
+		defer close(frames)
+		for st.Receive() {
+			select {
+			case frames <- st.Msg().GetCharacters():
+			case <-wctx.Done():
+				return
+			}
+		}
+	}()
 	frame := func() []*agentfleetv1.Character {
 		t.Helper()
-		if !st.Receive() {
+		f, ok := <-frames
+		if !ok {
 			t.Fatalf("stream ended: %v", st.Err())
 		}
-		return st.Msg().GetCharacters()
+		return f
 	}
 	if base := frame(); len(base) != 2 {
 		t.Fatalf("baseline has %d characters, want 2", len(base))
@@ -140,16 +153,29 @@ func TestListAndWatchCharacters(t *testing.T) {
 
 	// A turn runs in chat: agent output above its head entry and above the last result.
 	add("chat", "agent", "assistant", "thinking")
-	if ch := frame(); len(ch) != 1 || ch[0].GetName() != "ada" || ch[0].GetState() != "running" || ch[0].GetRunningTurn().GetThread() != "chat" ||
+	// A poll straddling the insert can send a half-new frame first (its
+	// runtime and thread queries are separate reads), so wait for running.
+	// followup: characters() should read in one REPEATABLE READ snapshot; then this loop goes.
+	ch := frame()
+	for len(ch) == 1 && ch[0].GetState() == "idle" {
+		ch = frame()
+	}
+	if len(ch) != 1 || ch[0].GetName() != "ada" || ch[0].GetState() != "running" || ch[0].GetRunningTurn().GetThread() != "chat" ||
 		ch[0].GetRunningTurn().GetStartedAt() == "" || !ch[0].GetThreads()[1].GetRunning() {
 		t.Fatalf("running: %v", ch)
+	}
+	// Once running, it stays running: with nothing written, a quiet poll sends nothing, so any frame here is a flap.
+	select {
+	case f, ok := <-frames:
+		t.Fatalf("frame with nothing written after running (ok=%v): %v", ok, f)
+	case <-time.After(6 * characterPoll):
 	}
 	// The turn ends; the day's one turn is spent, and core's budget card is open on it.
 	add("chat", "worker", "result", `{"subtype":"success"}`)
 	if err := s.ReportBudgets(ctx); err != nil {
 		t.Fatal(err)
 	}
-	var ch []*agentfleetv1.Character
+	ch = nil
 	for len(ch) == 0 || ch[0].GetOpenCards() == 0 || ch[0].GetState() != "held" {
 		ch = frame()
 	}

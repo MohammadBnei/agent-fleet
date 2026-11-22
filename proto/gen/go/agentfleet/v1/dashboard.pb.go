@@ -214,7 +214,7 @@ type CreateSessionRequest struct {
 	//
 	// Picking "auto" is not a small convenience: canUseTool then answers
 	// everything except ExitPlanMode and a Bash running rm/sudo, so git push,
-	// gh, kubectl, curl, wget and env all stop reaching a human for that
+	// gh, tea, kubectl, curl, wget and env all stop reaching a human for that
 	// session. The UI has to say so where the choice is made.
 	PermissionMode *string `protobuf:"bytes,7,opt,name=permission_mode,json=permissionMode,proto3,oneof" json:"permission_mode,omitempty"`
 	// A definition name (docs/adr/0062). When set, repo, model and

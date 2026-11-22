@@ -12,12 +12,12 @@ import { client } from "./connectClient";
 // autoModeStillAsksCommand asks for rm/sudo, ExitPlanMode asks in every mode,
 // auto included (the one exception is the retry a late plan approval asks
 // for, docs/adr/0082 §5), and everything else in
-// FLEET_ASK_RULES — git push, gh, kubectl, curl, wget, env — is answered by
+// FLEET_ASK_RULES — git push, gh, tea, kubectl, curl, wget, env — is answered by
 // the worker in auto. Naming them matters: "every result is a PR, and
 // approving it is the review" stops being true the moment git push is
 // unattended, and env is what puts GH_TOKEN in a rendered transcript.
 export const AUTO_MODE_WARNING =
-  "The agent stops asking for the rest of this session — including git push, gh, kubectl, curl, wget and env. Only rm and sudo still come to you, and so does the next plan.";
+  "The agent stops asking for the rest of this session — including git push, gh, tea, kubectl, curl, wget and env. Only rm and sudo still come to you, and so does the next plan.";
 
 // The launch/switch modes the dashboard offers, shared so the actions menu and
 // the new-session dialog cannot drift apart on what exists or what it is

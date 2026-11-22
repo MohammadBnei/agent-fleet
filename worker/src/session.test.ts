@@ -608,7 +608,7 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect(
     (queryOptions?.settings as { permissions?: { ask?: string[] } })
       ?.permissions?.ask,
-  ).toContain("Bash(gh:*)");
+  ).toEqual(expect.arrayContaining(["Bash(gh:*)", "Bash(tea:*)"]));
   expect(queryOptions?.plugins).toBeUndefined();
 }, 10000);
 
@@ -2242,7 +2242,9 @@ test("definition session: query() options come from the spec, and the stream car
     }
   ).permissions;
   expect(perms.deny).toEqual(["Edit(.git/**)"]);
-  expect(perms.ask).toContain("Bash(gh:*)");
+  expect(perms.ask).toEqual(
+    expect.arrayContaining(["Bash(gh:*)", "Bash(tea:*)"]),
+  );
   expect(queryOptions?.effort).toBe("medium");
   expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
   expect(queryOptions?.systemPrompt).toBe("Keep pages small.");

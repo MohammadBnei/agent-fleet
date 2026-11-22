@@ -8,7 +8,7 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   **read-only Bash** (`ls`, `head`, `stat`, `diff`, `git log`, …) — those
   gate nothing the free `Read` tool doesn't already give you. `cat` is
   deliberately NOT on that list: use `Read`. Bash that
-  *changes* something still prompts, and `git push`, `gh`, `rm`, `sudo`,
+  *changes* something still prompts, and `git push`, `gh`, `tea`, `rm`, `sudo`,
   `kubectl`, `curl`, `wget`, `env` are held prompting by `FLEET_ASK_RULES` in
   the worker, which outranks every permission mode. In `auto` the worker
   answers them for you — only `rm` and `sudo` still reach a human
@@ -46,6 +46,41 @@ before reporting it as working.
 one thing you cannot start yourself, because it needs cluster permissions this
 pod does not have. Instances are shared **per repo**: another session may be
 using the same database, so namespace what you create.
+
+## Proposing a change on Forgejo
+
+A repo whose `origin` is on `git.bnei.dev` (Forgejo) takes a PR through AGit,
+never through a branch:
+
+```
+git push origin HEAD:refs/for/<base>/<topic> -o title="<title>" -o description="<one line>"
+tea pr edit <n> --description-file body.md
+```
+
+- Push options are single-line: git refuses one with a newline in it and
+  pushes nothing. So `title` and `description` are one line each, and the full
+  body (what changed, the proof, test edits) goes on with `tea pr edit`
+  afterwards. `<n>` ends the PR URL the push prints; `tea pr` lists them too.
+- `<base>` is the repo's default branch. `<topic>` is a short kebab name for
+  this work, ending in the first 8 characters of `$SESSION_ID`. Every fleet
+  session pushes as the same Forgejo account, and Forgejo keys an AGit PR on
+  account plus topic, so the suffix is what keeps one session's push from
+  updating another session's PR.
+- To update the PR, commit and push to the same `refs/for/<base>/<topic>` again.
+  Rewritten history needs `-o force-push=true` as well.
+- Never push a branch or a tag. The fleet's Forgejo account is read-only, so the
+  server refuses both.
+- Read with `tea`: `tea pr` lists, `tea pr <n> --comments` shows the PR with its
+  reviews and comments, `tea pr review-comments <n>` the line comments, and
+  `tea api '/repos/{owner}/{repo}/…'` the rest. Outside a `git.bnei.dev` clone,
+  add `--repo <owner>/<repo>`.
+- `tea pr edit` on your own PR (title, body) is the one write you make with
+  `tea`. Never approve or merge with it: an approval from the fleet's account
+  does not count, the reviewer agent's is the only one that does.
+- Until the vault serves `git.bnei.dev` (build plan P4.1), the push and `tea`
+  both fail authentication. Say so in your result rather than retrying.
+
+GitHub repos keep `gh`, as before.
 
 ## Other sessions
 

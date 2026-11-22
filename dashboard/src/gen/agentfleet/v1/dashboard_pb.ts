@@ -113,7 +113,7 @@ export type CreateSessionRequest = Message<"agentfleet.v1.CreateSessionRequest">
    *
    * Picking "auto" is not a small convenience: canUseTool then answers
    * everything except ExitPlanMode and a Bash running rm/sudo, so git push,
-   * gh, kubectl, curl, wget and env all stop reaching a human for that
+   * gh, tea, kubectl, curl, wget and env all stop reaching a human for that
    * session. The UI has to say so where the choice is made.
    *
    * @generated from field: optional string permission_mode = 7;
