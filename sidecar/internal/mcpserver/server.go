@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -132,7 +134,18 @@ func New(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) http.Handler
 // list the agent will see.
 // kube is nil unless the pod holds the cluster.read grant and a trust set with B (ADR-0084 §6); then kubectl_read exists.
 func newMCPServer(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) *server.MCPServer {
-	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
+	opts := []server.ServerOption{server.WithToolCapabilities(true)}
+	if core != nil {
+		opts = append(opts, server.WithToolFilter(grantFilter(func(ctx context.Context) ([]string, bool, error) {
+			resp, err := core.GetTask(ctx)
+			if err != nil {
+				return nil, false, err
+			}
+			spec := resp.GetAgentSpec()
+			return spec.GetSidecarTools(), spec != nil, nil
+		})))
+	}
+	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", opts...)
 
 	s.AddTool(mcp.NewTool("send_message",
 		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via dashboard/Discord). The response's nextIndex is the sinceIndex for wait_for_messages."),
@@ -1058,5 +1071,52 @@ func viewLogsHandler(core LogViewer) server.ToolHandlerFunc {
 		// parameters don't already do.
 		return mcp.NewToolResultText(truncate(logsText, maxLogsBytes,
 			"Narrow the query rather than re-running it as-is: lower `limit`, raise `level`, shorten `duration`, or set `start_time`/`end_time` around the window you care about.")), nil
+	}
+}
+
+// grantFilter narrows tools/list to the definition's sidecarTools, so the model
+// is never offered a tool it would only be denied (a weaker model calls whatever
+// is listed, and each denial costs a turn). mcp-go also runs the filter on
+// tools/call, so an ungranted tool is neither listed nor callable here; core's
+// definitionMethods and the worker's canUseTool still decide every call. A repo
+// session has no spec and sees every tool. The spec is pinned for the session,
+// so the first successful read is kept; a failed read advertises everything for
+// that listing or call (core still decides) and is retried on the next one.
+//
+// specFetchTimeout bounds the spec read behind tools/list.
+const specFetchTimeout = 3 * time.Second
+
+func grantFilter(fetch func(context.Context) (tools []string, definition bool, err error)) server.ToolFilterFunc {
+	var mu sync.Mutex
+	var granted map[string]bool // nil until a read succeeds
+	var definition bool
+	return func(ctx context.Context, all []mcp.Tool) []mcp.Tool {
+		mu.Lock()
+		defer mu.Unlock()
+		if granted == nil {
+			// Bounded: a gRPC call to an unreachable core waits for a connection
+			// with no deadline, and tools/list must never hang the model's start.
+			fctx, cancel := context.WithTimeout(ctx, specFetchTimeout)
+			tools, def, err := fetch(fctx)
+			cancel()
+			if err != nil {
+				slog.Warn("tools/list: spec unavailable, advertising every tool", "error", err)
+				return all
+			}
+			definition, granted = def, map[string]bool{}
+			for _, t := range tools {
+				granted[t] = true
+			}
+		}
+		if !definition {
+			return all
+		}
+		out := make([]mcp.Tool, 0, len(granted))
+		for _, t := range all {
+			if granted[t.Name] {
+				out = append(out, t)
+			}
+		}
+		return out
 	}
 }
