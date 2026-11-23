@@ -42,7 +42,7 @@ in several ways:
 - **Empty threads.** Hitting the cap after `CreateThread` leaves an empty thread holding the key.
 - **Inbox flood.** No definition lists `bridge` today, so treating "no owner" as a proposal would put every
   push and comment on every repo in the inbox.
-- **Duplicate alerts.** Alerts now reach core twice: directly at `/webhook/alertmanager` and through the bridge.
+- **Duplicate alerts.** *(Gone: [ADR-0087](0087-alerts-reach-the-fleet-only-through-responders.md) deletes the direct path.)* Alerts now reach core twice: directly at `/webhook/alertmanager` and through the bridge.
 
 ## Decision
 
@@ -162,7 +162,7 @@ in several ways:
      when opened, a comment, a review), quoted up to 16 KiB with every line indented (`> `), so it cannot pass for
      an envelope line, and never the whole webhook payload.
 
-6. **One proposal per alert, whichever path delivers it first.**
+6. **One proposal per alert, whichever path delivers it first.** *(Amended 2026-11-23 by [ADR-0087](0087-alerts-reach-the-fleet-only-through-responders.md): no alert proposal is filed, and the direct webhook is gone.)*
    - Alerts reach core directly (`/webhook/alertmanager`, kept so an outage of the bridge or authentik never
      silences an alert) and through the bridge.
    - Both paths call the existing `proposals.Create` with the alert's fingerprint as `dedup_key`, under the

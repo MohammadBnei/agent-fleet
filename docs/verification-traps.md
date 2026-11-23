@@ -209,8 +209,8 @@ since the feature was written.
 - **`fleet.bnei.dev` now has exactly one lock, and the IngressRoute matches on
   host with no path constraint.** So every path core serves on 8080 is public
   unless the in-app gate refuses it, and **a new exempt path is a new public
-  endpoint**. Currently exempt (exact paths): `/healthz`, `/auth/{login,callback,logout,me}`, `/webhook/alertmanager`
-  (its own bearer token, refuses when unset).
+  endpoint**. Currently exempt (exact paths): `/healthz`, `/auth/{login,callback,logout,me,done}`
+  (inert) and the `/islands/` prefix.
 - **A signature-valid session cookie is not authorization.** `platform-admins`
   was once checked only at the OIDC callback. The gate (403) and
   `ConnectInterceptor` (`PermissionDenied`) now re-check it on every request

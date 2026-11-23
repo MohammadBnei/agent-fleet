@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-08-11
 **Supersedes:** ADR-0035
+**Amended 2026-11-23:** the alert to proposal step is superseded by [ADR-0087](0087-alerts-reach-the-fleet-only-through-responders.md)
 
 ## Context
 

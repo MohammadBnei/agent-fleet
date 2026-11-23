@@ -24,8 +24,8 @@ hand-offs to wake the writer they @mention.
 single-shot only, `git.mode: none` (no GitHub write), a typed `output.schema` and a `subscribes` naming the alerts it
 answers. The `bridge` client must list it. The dispatcher starts one run per alert group (key `alert:<groupKey>`, 10 min
 cooldown, held firings coalesced), with the trust set `A·B`; core files its output as a remediation row or a card.
-A client's own `Invoke` of a responder is refused. While a responder subscribes to an alert, `/webhook/alertmanager`
-files no proposal for it.
+A client's own `Invoke` of a responder is refused. An alert reaches the fleet only through a responder
+(`docs/adr/0087`): one no responder subscribes to is acked and files nothing.
 
 ## Characters (`docs/adr/0084`)
 

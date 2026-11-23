@@ -263,7 +263,6 @@ unless the in-app gate refuses it:
 | `/agentfleet.v1.AgentService/*` | yes, any audience group; CORS only for `embed.origins` |
 | `/healthz`, `/auth/{login,callback,logout,me,done}` (exact) | no — inert |
 | `/islands/*` | no — static bundles, no data (`adr/0068`) |
-| `/webhook/alertmanager` | no — its own bearer token, refuses when unset |
 
 **A new exempt path is a new public endpoint.** The gate wraps the whole mux
 with an explicit exempt list precisely so a forgotten route fails closed rather
@@ -288,7 +287,7 @@ try.
 
 | Pod:port | Admitted from |
 |---|---|
-| core `:8080` | `traefik` namespace; Alertmanager and Grafana in `monitoring` (both post `/webhook/alertmanager` to the ClusterIP directly, not through the ingress) |
+| core `:8080` | `traefik` namespace |
 | core `:9090` | worker pods (`agent-fleet.dev/component=worker`) and the provisioner, same namespace only |
 | core `:9091` | namespaces labelled `fleet.bnei.dev/client` — never `agent-fleet` itself |
 | core `:9093` | Prometheus |
@@ -493,10 +492,11 @@ is the reason.
   `adr/0048`): it says that a session needs a human, never what. No slash
   commands, threads or relayed replies — Discord has no authorization model,
   so a button there would let anyone in the channel approve a `Bash`.
-- **Proposals hold untrusted machine-initiated work**: alerts
-  (`core/internal/alertwebhook`), schedules (`core/internal/schedules`) and
-  bridge events from untrusted actors (`source='event'`) file deduped
-  proposals; a human opens one (`OpenFromProposal`).
+- **Proposals hold untrusted machine-initiated work**: schedules
+  (`core/internal/schedules`) and bridge events from untrusted actors
+  (`source='event'`) file deduped proposals; a human opens one
+  (`OpenFromProposal`). Alerts file none: they reach the fleet only through a
+  first responder (`adr/0087`).
 - **Core is on the event bridge** (infra-bootstrap ADR-0060; `adr/0071`,
   `adr/0078`). One dispatcher (`core/internal/dispatch`) consumes
   `dev.bnei.forge.`/`alert.`/`agent.` events and routes each to the
@@ -942,9 +942,6 @@ the proxy variables) are theirs and not listed.
 | `AGENTFLEET_FILES_S3_SECRET` | none | any | secret |
 | `DISCORD_BOT_TOKEN` | none | any | secret; unset runs without Discord |
 | `DISCORD_TRIGGER_CHANNEL_ID` | none | any | channel for "needs a human" posts |
-| `ALERT_WEBHOOK_TOKEN` | none | any | secret; unset makes the alert webhook refuse (`adr/0037`) |
-| `THOT_DISCORD_CHANNEL_ID` | none | any | passed to the alert webhook, which keeps it for config compatibility |
-| `THOT_REPO` | `infra-bootstrap` | any | the repo an alert's proposal is filed against (and its session runs on) |
 | `BRIDGE_URL` | none | absolute http(s) URL | the event bridge; unset runs without it (`adr/0078`) |
 | `BRIDGE_TOKEN_URL` | none | absolute http(s) URL | authentik's token endpoint, by its in-cluster Service |
 | `BRIDGE_AUTH_HOST` | none | host or `host:port` (port 1-65535) | the public Host the token request carries |

@@ -242,7 +242,7 @@ interface and one deck stay.
     in the provisioner.
   - `executor_step` is declared and refused, in the error "until ADR-0072's executor exists".
   - The `alert` subject is the `alert_group` kind S06 added (thread key `alert/<groupKey>`).
-- **The alert webhook.** `/webhook/alertmanager` keeps filing alert proposals.
+- **The alert webhook.** *Amended 2026-11-23 by [ADR-0087](0087-alerts-reach-the-fleet-only-through-responders.md): core's webhook and every alert proposal are gone; an alert reaches the fleet only through a responder.* `/webhook/alertmanager` keeps filing alert proposals.
   - Today `OpenFromProposal` posts the proposal's body as a `human` entry (`core/internal/dashboard/server.go:419`).
     For an alert proposal, the body is posted as an `agent`-authored context entry labelled with its source instead,
     and the opened session is marked supervised: the owner's click with alert text inside.
