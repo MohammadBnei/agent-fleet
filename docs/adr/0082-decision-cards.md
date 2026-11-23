@@ -4,9 +4,9 @@
   Amended by [ADR-0086](0086-rule-of-two.md) (2026-11-21, D3, D7): on Forgejo, `ukubi-review`'s approval is the only
   agent approval that counts, its token stays with the provisioner, and agents merge after a fleet review on §5's
   paths too, under probation once its controls are live (§9, §11).
-  *Proposed amendment 2026-11-23 in [ADR-0086](0086-rule-of-two.md) (waiting for the owner): core's card verbs carry
-  a per-verb deadline and are refused after it, so §5's "whenever it comes" no longer holds for them; the game answers
-  them through core's card frame, the one response an admin origin may frame (§5, §7).*
+  *Proposed amendment 2026-11-23 in [ADR-0086](0086-rule-of-two.md) (waiting for the owner): a card on an alert
+  subject goes stale when its alert resolves, and the game answers core's card verbs through core's card frame, the
+  one response an admin origin may frame (§5, §7).*
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
   (no proposal; alerts and hand-offs keep theirs). Slice 2's first PR:
@@ -163,8 +163,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      gets "pending, decision <id>" and carries on with what does not need the answer, or ends its turn. This is the
      question pattern of ADR-0050 and ADR-0058, made general. A parked session holds no pod.
    - **An answer is a message.** Whenever it comes, core appends it to the session (warm then append), which
-     wakes a parked session. *(Proposed amendment 2026-11-23, ADR-0086 E5 and E8: not for a card with a deadline, which
-     refuses an answer after it; `DECISION_WAIT` is not that deadline.)* A question's answer is its text or choice. A plan approval moves the session out of
+     wakes a parked session. A question's answer is its text or choice. A plan approval moves the session out of
      plan mode. A permission approval records a one-time grant bound to the session and the exact tool input:
      the agent retries, and the gate lets that one call through, once. A denial arrives as a message too.
    - **Every kind is a card** (slice 7). Core builds a card view over a question, permission or plan, so one
@@ -175,7 +174,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - **A card's answer runs its bound effect** (§6) instead of reaching a session.
    - **Nothing goes stale behind the owner's back.** The warm-time closing of unanswered requests goes. A decision
      closes when answered, withdrawn (its session archived, or the agent withdraws it), stale (§6, pinned state
-     moved) or, for a card only, at `expires_at`.
+     moved) or, for a card only, at `expires_at`. *(Proposed amendment 2026-11-23, ADR-0086 E5: a card on an
+     `alert/<groupKey>` subject also goes stale when that alert resolves, with a note in its thread.)*
    - **Waits over 45 s:** the worker's gate waits on a plain timer. An MCP tool's wait (`AskUserQuestion`) is
      bounded by the agent's MCP client deadline (60 s today, see `blockingWaitMs`), so a longer `DECISION_WAIT`
      needs that deadline raised to match; the build verifies it live before the default moves.
