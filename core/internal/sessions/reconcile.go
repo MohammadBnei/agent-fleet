@@ -181,15 +181,23 @@ func (l *Loop) publishLiveStateGauge(ctx context.Context) {
 // Asking Kubernetes is strictly better: it is the thing that actually knows,
 // and it cannot be wrong in the same direction as the pod it describes.
 func (l *Loop) reconcilePodPhases(ctx context.Context) {
-	live, err := l.provisioner.ListWorkerPods(ctx)
-	if err != nil {
-		slog.Error("sessions loop: list worker pods failed", "error", err)
-		return
-	}
-
+	// Rows FIRST, pods second, and every write conditional on the phase the
+	// row had here. This loop holds no send lock, so a model switch (which
+	// tears the pod down and writes TERMINATED under that lock) can land
+	// between the two reads. Pods-then-rows read a stale "pod up" next to the
+	// fresh TERMINATED and wrote RUNNING over it, so the next message saw a
+	// live pod and was appended instead of warming. Rows-then-pods cannot see
+	// TERMINATED beside a stale pod, and a switch that lands after the rows
+	// read changes the phase, so the conditional write below loses.
 	rows, err := l.sessions.List(ctx, 500, "")
 	if err != nil {
 		slog.Error("sessions loop: list sessions failed", "error", err)
+		return
+	}
+
+	live, err := l.provisioner.ListWorkerPods(ctx)
+	if err != nil {
+		slog.Error("sessions loop: list worker pods failed", "error", err)
 		return
 	}
 
@@ -215,7 +223,7 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 			// real is repaired on the next pass instead of staying invisible
 			// forever. That is what makes the age gate below safe to have.
 			if want := podPhaseFromK8s(k8sPhase); want != "" && (s.PodPhase == nil || *s.PodPhase != want) {
-				if err := l.sessions.SetPodPhase(ctx, s.ID, want, ""); err != nil {
+				if _, err := l.sessions.SetPodPhaseIf(ctx, s.ID, s.PodPhase, want, ""); err != nil {
 					slog.Error("sessions loop: phase sync failed", "sessionId", s.ID, "error", err)
 				}
 			}
@@ -267,7 +275,7 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 		// was never created.
 		slog.Warn("sessions loop: reconciling orphaned pod_phase",
 			"sessionId", s.ID, "wasPhase", *s.PodPhase)
-		if err := l.sessions.SetPodPhase(ctx, s.ID, "POD_PHASE_TERMINATED",
+		if _, err := l.sessions.SetPodPhaseIf(ctx, s.ID, s.PodPhase, "POD_PHASE_TERMINATED",
 			"reconciled: no live worker Job — its terminal event was lost"); err != nil {
 			slog.Error("sessions loop: reconcile write failed", "sessionId", s.ID, "error", err)
 			continue

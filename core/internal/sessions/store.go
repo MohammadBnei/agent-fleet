@@ -1150,6 +1150,28 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 	return nil
 }
 
+// SetPodPhaseIf is SetPodPhase that only writes while the row still reads
+// `from` (nil: no phase yet), reporting whether it did. The reconcile loop
+// decides from a snapshot; without this a stale snapshot overwrites a phase a
+// locked path (a model switch's TERMINATED) wrote in between.
+func (s *Store) SetPodPhaseIf(ctx context.Context, id string, from *string, phase, message string) (bool, error) {
+	var msg *string
+	if message != "" {
+		msg = &message
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE sessions SET pod_phase = $2, pod_message = $3, updated_at = now(),
+		       restart_after = CASE WHEN lifecycle = 'standing' AND $2 IN ('POD_PHASE_TERMINATED', 'POD_PHASE_CRASHED')
+		                            THEN now() ELSE restart_after END
+		WHERE id = $1 AND pod_phase IS NOT DISTINCT FROM $4
+	`, id, phase, msg, from)
+	if err != nil {
+		slog.Error("sessions SetPodPhaseIf", "sessionId", id, "phase", phase, "error", err)
+		return false, fmt.Errorf("set pod phase: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // SetPodImages records the images the provisioner actually stamped onto this
 // session's pod, and the release that built it, straight from
 // CreateWorkerPodResponse.
@@ -1817,4 +1839,16 @@ func (s *Store) MarkSpawnReported(ctx context.Context, id string) error {
 		return fmt.Errorf("mark spawn reported: %w", err)
 	}
 	return nil
+}
+
+// SetModel saves a repo session's model (SetSessionModel). A definition
+// session's model is its pinned model.default, so none is written for one; the
+// caller refuses those first, and false says the row was not changed.
+func (s *Store) SetModel(ctx context.Context, id, model string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET model = $2, updated_at = now() WHERE id = $1 AND definition_name IS NULL`, id, model)
+	if err != nil {
+		slog.Error("sessions SetModel", "sessionId", id, "error", err)
+		return false, fmt.Errorf("set model: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }

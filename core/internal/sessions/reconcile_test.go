@@ -23,9 +23,13 @@ type fakeProvisioner struct {
 	tornWorkers []string
 	swept       []string
 	calls       []string // "teardown:<id>" and "sweep:<id>", in call order
+	onList      func()   // runs inside ListWorkerPods: a write landing between the reconcile's two reads
 }
 
 func (f *fakeProvisioner) ListWorkerPods(ctx context.Context) (map[string]string, error) {
+	if f.onList != nil {
+		f.onList()
+	}
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -821,5 +825,39 @@ func TestClaimEndedRun_RechecksTheEnd(t *testing.T) {
 		if s, err := store.Get(ctx, id); err != nil || s.ArchivedAt != nil {
 			t.Errorf("%s archived: %+v %v", id, s, err)
 		}
+	}
+}
+
+// The model-switch race: reconcile reads the rows, the switch (holding the
+// send lock reconcile does not take) tears the pod down and writes TERMINATED,
+// then reconcile's pod listing still shows the pod. RUNNING must not be
+// written over the switch's TERMINATED, or the next message sees a live pod,
+// is appended instead of warming, and is lost.
+func TestReconcilePodPhases_DoesNotOverwriteAConcurrentTerminated(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "switching"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_SCHEDULED", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	fake := &fakeProvisioner{livePods: map[string]string{id: "Running"}}
+	fake.onList = func() {
+		if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", "stopped for a model switch"); err != nil {
+			t.Errorf("switch write: %v", err)
+		}
+	}
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	loop.reconcilePodPhases(ctx)
+
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_TERMINATED" {
+		t.Fatalf("phase = %v, want the switch's TERMINATED kept", s.PodPhase)
 	}
 }

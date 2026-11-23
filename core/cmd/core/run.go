@@ -53,6 +53,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/ratings"
 	"github.com/MohammadBnei/agent-fleet/core/internal/remediations"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
@@ -347,6 +348,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	dashboardSvc.SetPacks(packStore)
 	grantStore := grants.NewStore(pool)
 	dashboardSvc.SetGrants(grantStore)
+	dashboardSvc.SetRatings(ratings.NewStore(pool))
+	dashboardSvc.SetGatewayModels(cfg.GatewayModels)
 	dashboardSvc.SetDecisions(decisionStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
