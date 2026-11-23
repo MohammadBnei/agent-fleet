@@ -12,8 +12,10 @@ fleet's own source (`core`, `provisioner`, `sidecar`, `worker`) and deploy
 config (`k8s/`).
 
 The primary forge is Forgejo; GitHub is a push mirror. CI runs as Forgejo
-Actions on the Talos runners (label `k8s-ubuntu-latest`); the workflow files
-still live in `.github/workflows/`. Merges go through the Forgejo API as a
+Actions; the workflow files still live in `.github/workflows/`. PR checks run
+on the Talos runners (label `k8s-ubuntu-latest`), the `provisioner-mint` job
+(a Postgres service) on `ubuntu-latest` (LXC podman runners), and image builds
+on `ukubi-build` (the build-runner LXC). Merges go through the Forgejo API as a
 rebase merge after green CI and a fresh review.
 
 ## Quickstart
