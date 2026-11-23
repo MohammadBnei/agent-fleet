@@ -46,6 +46,42 @@ var (
 		[]string{"definition"},
 	)
 
+	// Card events (core/internal/cardevents, docs/adr/0078 amendment). Enabled is 1 when the bridge client is
+	// configured; Pending counts the card rows whose state the bridge has not accepted yet; LastSuccess is seeded
+	// at start and renewed only when the bridge answers a publish. CardEventsOff and CardEventsStuck alert on
+	// Enabled and Pending (infra-bootstrap's agent-fleet rules).
+	CardEventsEnabled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_card_events_enabled",
+		Help: "1 when core's bridge client is configured, so card events can be published",
+	})
+	CardEventsPublished = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agentfleet_card_events_published_total",
+			Help: "Card events the bridge accepted (or already had), by event type",
+		},
+		[]string{"type"},
+	)
+	CardEventsRefused = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "agentfleet_card_events_refused_total",
+		Help: "Card events the bridge refused as invalid; the card is parked, never retried",
+	})
+	CardEventsPending = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_card_events_pending",
+		Help: "Card rows whose state the bridge has not accepted yet",
+	})
+	CardEventsParked = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_card_events_parked",
+		Help: "Card rows the bridge refused (InvalidArgument, PermissionDenied) and core no longer retries",
+	})
+	CardEventsLost = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "agentfleet_card_events_lost_total",
+		Help: "Open cards already published to the bridge that a session hard delete removed, with no terminal event",
+	})
+	CardEventsLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_card_events_last_success_timestamp_seconds",
+		Help: "When the bridge last answered a card event publish (seeded at start); ages while no card changes",
+	})
+
 	// GrpcRequestsTotal/GrpcDuration cover both RPC surfaces core serves —
 	// CoreService (gRPC, sidecar + provisioner call it) and DashboardService
 	// (ConnectRPC, the SPA calls it) — separated by the `surface` label

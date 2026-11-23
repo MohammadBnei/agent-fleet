@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 )
 
 // capLockKey serializes the read-decide-provision sequence in ReserveSlot.
@@ -1692,6 +1693,11 @@ func (s *Store) archive(ctx context.Context, id string) error {
 // so a session with history can actually be removed. That FK pair was the
 // entire reason deleted_at existed.
 func (s *Store) Delete(ctx context.Context, id string) error {
+	// An open card the bridge already has gets no terminal event once its row cascades away: count it.
+	var lost int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM decisions WHERE session_id = $1 AND kind = 'card' AND state = 'open' AND bridge_state = 'open'`, id).Scan(&lost); err != nil {
+		slog.Error("sessions Delete: count published open cards", "sessionId", id, "error", err)
+	}
 	tag, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, id)
 	if err != nil {
 		slog.Error("sessions Delete", "sessionId", id, "error", err)
@@ -1700,6 +1706,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	metrics.CardEventsLost.Add(float64(lost))
 	slog.Info("sessions Delete", "sessionId", id)
 	return nil
 }
