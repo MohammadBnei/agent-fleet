@@ -17,15 +17,13 @@ const missingKey = `{"type":"error","error":{"type":"api_error","message":"fleet
 // New proxies to upstream. keyFile is read on every request; sessionID is
 // stamped over whatever identity the client sent.
 func New(upstream *url.URL, keyFile, sessionID string) http.Handler {
-	rp := httputil.NewSingleHostReverseProxy(upstream)
+	rp := &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) { pr.SetURL(upstream) }}
 	rp.FlushInterval = -1 // SSE: every chunk goes out as it arrives
 	rp.Transport = &http.Transport{
 		ResponseHeaderTimeout: 10 * time.Minute, // a long first token; the body streams for as long as it needs
 		IdleConnTimeout:       90 * time.Second,
 		DisableCompression:    true,
 	}
-	dir := rp.Director
-	rp.Director = func(r *http.Request) { dir(r); r.Host = upstream.Host }
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A browser page cannot reach this loopback listener's key.
 		if r.Header.Get("Origin") != "" {

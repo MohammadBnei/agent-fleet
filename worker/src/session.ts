@@ -324,6 +324,108 @@ export function sdkMode(mode: PermissionMode): PermissionMode {
   return mode === "auto" ? "default" : mode;
 }
 
+// A model id that is not a Claude id runs through the sidecar's gateway route
+// (the fleet's llm-gateway). Claude ids and an unset model stay on the
+// subscription, byte for byte.
+export const isGatewayModel = (model: string | undefined): model is string =>
+  !!model && !model.startsWith("claude-");
+
+// Set once per process, from the effective model at startup; read by the
+// result log line and push.
+let gatewayRoute = false;
+// The effective model of this pod: constant for its life, since a model switch
+// restarts the pod. Stamped on every result so core never infers it.
+let podModel = "";
+
+// The context size of a thread's last API call (input + cache read + cache
+// write of its last main-agent assistant message). The result's top-level
+// `usage` rolls up every call of the turn, so it is not the context.
+const lastContext = new Map<string, number>();
+// The previous result's modelUsage per thread, to turn the SDK's process-
+// cumulative counters into the turn's own share.
+const prevModelUsage = new Map<string, ModelUsage>();
+
+function modelUsageDelta(key: string, cur: unknown): ModelUsage | undefined {
+  if (!cur || typeof cur !== "object" || Array.isArray(cur)) return undefined;
+  const prev = prevModelUsage.get(key) ?? {};
+  const prompt = (u?: ModelUsage[string]) =>
+    (u?.inputTokens ?? 0) +
+    (u?.cacheReadInputTokens ?? 0) +
+    (u?.cacheCreationInputTokens ?? 0);
+  const out: ModelUsage = {};
+  for (const [m, c] of Object.entries(cur as ModelUsage)) {
+    let p: ModelUsage[string] | undefined = prev[m];
+    // A counter that went down is a restarted process: the total counts whole.
+    if (
+      (c?.outputTokens ?? 0) < (p?.outputTokens ?? 0) ||
+      prompt(c) < prompt(p)
+    )
+      p = {};
+    out[m] = {
+      inputTokens: (c?.inputTokens ?? 0) - (p?.inputTokens ?? 0),
+      outputTokens: (c?.outputTokens ?? 0) - (p?.outputTokens ?? 0),
+      cacheReadInputTokens:
+        (c?.cacheReadInputTokens ?? 0) - (p?.cacheReadInputTokens ?? 0),
+      cacheCreationInputTokens:
+        (c?.cacheCreationInputTokens ?? 0) - (p?.cacheCreationInputTokens ?? 0),
+      costUSD: (c?.costUSD ?? 0) - (p?.costUSD ?? 0),
+    };
+  }
+  prevModelUsage.set(key, cur as ModelUsage);
+  return out;
+}
+
+// The env the claude process gets on the gateway route: the OAuth token goes
+// away, the sidecar's loopback route stands in for the API, and every model
+// slot (including subagents) is the one gateway id. contextTokens comes from
+// the session row; absent, the CLI keeps its own default.
+export function gatewayEnv(
+  base: NodeJS.ProcessEnv,
+  id: string,
+  contextTokens?: number,
+): NodeJS.ProcessEnv {
+  const { CLAUDE_CODE_OAUTH_TOKEN: _drop, ...rest } = base;
+  return {
+    ...rest,
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:9094",
+    ANTHROPIC_AUTH_TOKEN: "fleet-gateway-placeholder",
+    ANTHROPIC_MODEL: id,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: id,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: id,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: id,
+    CLAUDE_CODE_SUBAGENT_MODEL: id,
+    ...(contextTokens
+      ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(contextTokens) }
+      : {}),
+    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    // Venice errors reach the CLI as an opaque 502; the default retries burn
+    // about 2.5 minutes before the turn fails.
+    CLAUDE_CODE_MAX_RETRIES: "2",
+  };
+}
+
+// FLEET_ASK_RULES as one matcher, for the gateway route's auto mode: the
+// SDK runs in default there, so canUseTool sees every call and this decides
+// which ones still park. Same boundary class as AUTO_MODE_STILL_ASKS_BASH.
+const ASK_RULE_BASH = new RegExp(
+  `(^|[\\s;&|('"/])(${FLEET_ASK_RULES.map((r) =>
+    /^Bash\((.+):\*\)$/.exec(r)?.[1]?.replace(/ /g, "\\s+"),
+  )
+    .filter(Boolean)
+    .join("|")})(\\s|$)`,
+);
+
+export function matchesAskRule(
+  toolName: string,
+  input: Record<string, unknown>,
+): boolean {
+  return (
+    toolName === "Bash" &&
+    typeof input.command === "string" &&
+    ASK_RULE_BASH.test(input.command)
+  );
+}
+
 // Mirrors core/internal/definitions/load.go's toolCeiling: the tools a
 // definition can ever be allowed. Outside it a call is denied, not asked.
 const DEFINITION_TOOL_CEILING = new Set([
@@ -914,6 +1016,7 @@ type ModelUsage = Record<
     outputTokens?: number;
     cacheReadInputTokens?: number;
     cacheCreationInputTokens?: number;
+    costUSD?: number;
   }
 >;
 
@@ -1201,7 +1304,7 @@ async function logSdkMessage(
         }
       | undefined;
     const summed = sumModelUsage(msg.modelUsage);
-    activeRecorder()?.endTurn({
+    const turnDeltas = activeRecorder()?.endTurn({
       uuid: typeof msg.uuid === "string" ? msg.uuid : undefined,
       isError: Boolean(msg.is_error),
       subtype: typeof msg.subtype === "string" ? msg.subtype : undefined,
@@ -1218,10 +1321,24 @@ async function logSdkMessage(
         : undefined,
       models: summed?.models,
     });
+    // Per-turn KPI fields. The model is the one that wrote the most output
+    // this turn; the deltas are the recorder's (cumulative totals minus the
+    // previous result in this process). On the gateway route the SDK prices
+    // an unknown id wrongly, so its cost is null here and the console reads
+    // the gateway's own numbers.
+    const mu = (msg.modelUsage ?? {}) as ModelUsage;
+    const model = Object.entries(mu).sort(
+      (a, b) => (b[1]?.outputTokens ?? 0) - (a[1]?.outputTokens ?? 0),
+    )[0]?.[0];
     log("info", `${actor} result`, {
       subtype: msg.subtype,
+      isError: Boolean(msg.is_error),
       numTurns: msg.num_turns,
-      totalCostUsd: msg.total_cost_usd,
+      totalCostUsd: gatewayRoute ? null : msg.total_cost_usd,
+      ...(gatewayRoute ? { sdkCostUsd: msg.total_cost_usd } : {}),
+      model,
+      route: gatewayRoute ? "gateway" : "subscription",
+      ...turnDeltas,
       inputTokens: usage?.input_tokens,
       outputTokens: usage?.output_tokens,
       cacheReadInputTokens: usage?.cache_read_input_tokens,
@@ -1259,7 +1376,12 @@ async function pushResult(
     structured_output: msg.structured_output,
     consumedSeq: consumed,
     numTurns: msg.num_turns,
-    totalCostUsd: msg.total_cost_usd,
+    totalCostUsd: gatewayRoute ? null : msg.total_cost_usd,
+    route: gatewayRoute ? "gateway" : "subscription",
+    ...(gatewayRoute ? { sdkCostUsd: msg.total_cost_usd } : {}),
+    model: podModel || undefined,
+    contextTokens: lastContext.get(th?.key ?? "main"),
+    modelUsageDelta: modelUsageDelta(th?.key ?? "main", msg.modelUsage),
     durationMs: msg.duration_ms,
     durationApiMs: msg.duration_api_ms,
     isError: msg.is_error,
@@ -1390,6 +1512,9 @@ export async function runSession(): Promise<SessionResult> {
   // docs/adr/0067 §4: set for a definition session only. Everything below
   // that reads it narrows; a repo session (no spec) runs exactly as before.
   const spec = session.agentSpec;
+  const effModel = session.model || MODEL;
+  gatewayRoute = isGatewayModel(effModel);
+  podModel = effModel ?? "";
   const outputFormat = outputFormatFor(spec);
   // Remembered approvals (docs/adr/0076 §3): this session's and its
   // definition's live grants at warm, plus any a human makes while it runs.
@@ -1648,7 +1773,7 @@ export async function runSession(): Promise<SessionResult> {
         cwd: WORKTREE_PATH,
         // The row's model, else CLAUDE_MODEL, else none at all: Claude Code
         // picks (docs/adr/0077). `||`, so an empty string is never passed.
-        ...(session.model || MODEL ? { model: session.model || MODEL } : {}),
+        ...(effModel ? { model: effModel } : {}),
         // Continues the prior conversation instead of starting fresh when
         // this pod is warming an existing session (Phase 4's Warm action) —
         // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
@@ -1664,7 +1789,8 @@ export async function runSession(): Promise<SessionResult> {
         // Use the task's permission mode from the database, falling back to
         // "default" if not set. This ensures the mode is restored on resume
         // instead of always resetting to "default".
-        permissionMode: spec ? sdkMode(currentMode) : currentMode,
+        permissionMode:
+          spec || gatewayRoute ? sdkMode(currentMode) : currentMode,
         // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
         // (docs/adr/0053).
         //
@@ -1687,6 +1813,7 @@ export async function runSession(): Promise<SessionResult> {
         // tools.deny (docs/adr/0067 §4) sits beside them, flag scope, so it holds
         // in every mode, including the calls canUseTool never sees.
         settings: {
+          ...(gatewayRoute ? { skipWebFetchPreflight: true } : {}),
           permissions: {
             ask: FLEET_ASK_RULES,
             ...(spec?.toolsDeny.length ? { deny: spec.toolsDeny } : {}),
@@ -1712,7 +1839,9 @@ export async function runSession(): Promise<SessionResult> {
           ...(spec ? [WORKTREE_PATH] : []),
         ],
         env: {
-          ...process.env,
+          ...(gatewayRoute
+            ? gatewayEnv(process.env, effModel!, session.contextTokens)
+            : process.env),
           ...gitHooksEnv(process.env),
           ...(session.definitionSha
             ? { FLEET_DEFINITION_SHA: session.definitionSha }
@@ -1856,14 +1985,35 @@ export async function runSession(): Promise<SessionResult> {
           // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
           // leaving `auto` is a live control request, so this has to read what
           // the session is in now.
+          // On the gateway route the SDK is in default, so this is the only
+          // auto there is: rm and sudo are denied outright (docs/adr/0088 —
+          // nobody is there to read a prompt for them), any other ask-rule
+          // call parks, everything else runs.
+          if (
+            !spec &&
+            gatewayRoute &&
+            currentMode === "auto" &&
+            autoModeStillAsksCommand(
+              toolName,
+              toolInput as Record<string, unknown>,
+            )
+          ) {
+            return {
+              behavior: "deny",
+              message:
+                "rm and sudo are not allowed in auto on this model route",
+            };
+          }
           if (
             !spec &&
             currentMode === "auto" &&
             toolName !== "ExitPlanMode" &&
-            !autoModeStillAsksCommand(
-              toolName,
-              toolInput as Record<string, unknown>,
-            )
+            !(gatewayRoute
+              ? matchesAskRule(toolName, toolInput as Record<string, unknown>)
+              : autoModeStillAsksCommand(
+                  toolName,
+                  toolInput as Record<string, unknown>,
+                ))
           ) {
             return { behavior: "allow", updatedInput: toolInput };
           }
@@ -2053,7 +2203,7 @@ export async function runSession(): Promise<SessionResult> {
   ): Promise<string | null> {
     for (const t of threads.values()) {
       const failure = await t.q
-        .setPermissionMode(spec ? sdkMode(mode) : mode)
+        .setPermissionMode(spec || gatewayRoute ? sdkMode(mode) : mode)
         .then(() => null)
         .catch((err) => String(err));
       if (failure !== null) return failure;
@@ -2795,7 +2945,8 @@ export async function runSession(): Promise<SessionResult> {
         // default.
         if (
           msg.permissionMode &&
-          msg.permissionMode !== (spec ? sdkMode(currentMode) : currentMode)
+          msg.permissionMode !==
+            (spec || gatewayRoute ? sdkMode(currentMode) : currentMode)
         ) {
           log("warn", "SDK launched in a different permission mode", {
             taskId: SESSION_ID,
@@ -2805,7 +2956,7 @@ export async function runSession(): Promise<SessionResult> {
           // A definition session never adopts what the SDK reports: the gate
           // keeps reading the mode the spec allowed (definitionDecision is
           // what decides there, not the SDK's mode).
-          if (!spec) {
+          if (!spec && !gatewayRoute) {
             currentMode = msg.permissionMode;
             await sidecar.savePermissionMode(currentMode).catch((err) =>
               log("warn", "savePermissionMode failed", {
@@ -2822,6 +2973,14 @@ export async function runSession(): Promise<SessionResult> {
       );
 
       if (msg.type === "assistant") {
+        const u = msg.message.usage;
+        if (u && !msg.parent_tool_use_id)
+          lastContext.set(
+            th.key,
+            (u.input_tokens ?? 0) +
+              (u.cache_read_input_tokens ?? 0) +
+              (u.cache_creation_input_tokens ?? 0),
+          );
         for (const block of msg.message.content ?? []) {
           if (block.type === "text") finalText = block.text;
           if (block.type === "tool_use" && block.name === SIDECAR_ASK)

@@ -31,6 +31,7 @@ const savedModels: string[] = [];
 // The row's model and effort as GET /task returns them (docs/adr/0077).
 let sessionModel: string | undefined;
 let sessionEffort: string | undefined;
+let sessionContextTokens: number | undefined;
 const savedPermissionModes: string[] = [];
 let nextSeq = 1;
 // A definition session's spec as GET /task returns it; null = a repo session.
@@ -121,6 +122,7 @@ mock.module("./sidecarClient.js", () => ({
     permissionMode: sessionPermissionMode,
     model: sessionModel,
     effort: sessionEffort,
+    contextTokens: sessionContextTokens,
     ...(sessionAgentSpec
       ? {
           agentSpec: sessionAgentSpec,
@@ -431,6 +433,8 @@ const { FLEET_TRAILER } = await import("./gitHooks.js");
 const {
   runSession,
   sumModelUsage,
+  gatewayEnv,
+  matchesAskRule,
   formatAnswerTurn,
   humanTurn,
   authorLabel,
@@ -457,6 +461,7 @@ beforeEach(() => {
   savedModels.length = 0;
   sessionModel = undefined;
   sessionEffort = undefined;
+  sessionContextTokens = undefined;
   savedPermissionModes.length = 0;
   humanMessageHandler = null;
   mockMessageText = "mock agent message";
@@ -4066,3 +4071,180 @@ test("a late plan approval on a fresh pod does not re-ask", async () => {
   pushHuman("", "abort");
   await promise;
 }, 10000);
+
+// Gateway route: a model id that is not claude-*.
+describe("gateway route", () => {
+  async function start(model: string, mode = "default") {
+    sessionModel = model;
+    sessionEffort = "high";
+    sessionContextTokens = 256000;
+    sessionPermissionMode = mode;
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("go");
+    await Bun.sleep(50);
+    return promise;
+  }
+  const stop = async (p: Promise<unknown>) => {
+    pushHuman("", "abort");
+    await p;
+  };
+
+  test("env, settings and options differ from a claude session", async () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "tok";
+    const p = start("kimi-k2-7-code");
+    await Bun.sleep(100);
+    const env = queryOptions!.env as Record<string, string>;
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(env).toMatchObject({
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:9094",
+      ANTHROPIC_AUTH_TOKEN: "fleet-gateway-placeholder",
+      ANTHROPIC_MODEL: "kimi-k2-7-code",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "kimi-k2-7-code",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "kimi-k2-7-code",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "kimi-k2-7-code",
+      CLAUDE_CODE_SUBAGENT_MODEL: "kimi-k2-7-code",
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: "256000",
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    });
+    expect(
+      (queryOptions!.settings as Record<string, unknown>).skipWebFetchPreflight,
+    ).toBe(true);
+    expect(queryOptions?.effort).toBe("high");
+    expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
+    expect(env.CLAUDE_CODE_MAX_RETRIES).toBe("2");
+    pushHuman("", "abort");
+    await p;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  }, 10000);
+
+  test("a claude session keeps its env, effort and thinking", async () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "tok";
+    const p = start("claude-sonnet-5");
+    await Bun.sleep(100);
+    const env = queryOptions!.env as Record<string, string>;
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("tok");
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(queryOptions!.settings as object).not.toHaveProperty(
+      "skipWebFetchPreflight",
+    );
+    expect(queryOptions?.effort).toBe("high");
+    expect(queryOptions?.thinking).toEqual({ type: "adaptive" });
+    pushHuman("", "abort");
+    await p;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  }, 10000);
+
+  test("no contextTokens: the env var is left out", () => {
+    expect(gatewayEnv({}, "x")).not.toHaveProperty(
+      "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+    );
+  });
+
+  test("auto runs the SDK in default; rm/sudo deny, other ask-rule calls park, the rest run", async () => {
+    const p = start("kimi-k2-7-code", "auto");
+    await Bun.sleep(100);
+    expect(queryOptions?.permissionMode).toBe("default");
+    const allowed = await capturedCanUseTool!("Write", { file_path: "x" });
+    expect((allowed as { behavior: string }).behavior).toBe("allow");
+    const ok = await capturedCanUseTool!("Bash", { command: "bun test" });
+    expect((ok as { behavior: string }).behavior).toBe("allow");
+    for (const command of ["sudo ls", "bash -c 'rm -rf x'"]) {
+      const denied = await capturedCanUseTool!("Bash", { command });
+      expect((denied as { behavior: string }).behavior).toBe("deny");
+    }
+    for (const command of ["git push origin x", "kubectl get po"]) {
+      let resolved = false;
+      void capturedCanUseTool!("Bash", { command }).then(
+        () => (resolved = true),
+      );
+      await Bun.sleep(20);
+      expect(resolved).toBe(false);
+    }
+    expect(findPermissionRequest("Bash")).toBeDefined();
+    await stop(p);
+  }, 10000);
+
+  test("a claude session in auto is unchanged: SDK mode auto", async () => {
+    const p = start("claude-sonnet-5", "auto");
+    await Bun.sleep(100);
+    expect(queryOptions?.permissionMode).toBe("auto");
+    await stop(p);
+  }, 10000);
+
+  test("matchesAskRule", () => {
+    expect(matchesAskRule("Bash", { command: "git status" })).toBe(false);
+    expect(matchesAskRule("Bash", { command: "git push" })).toBe(true);
+    expect(matchesAskRule("Bash", { command: "echo hi && curl x" })).toBe(true);
+    expect(matchesAskRule("Bash", { command: "gitk" })).toBe(false);
+    expect(matchesAskRule("Write", { command: "rm x" })).toBe(false);
+  });
+
+  test("result log line: model, route, deltas, null cost; push flags the route", async () => {
+    sessionModel = "kimi-k2-7-code";
+    forceResult = {
+      subtype: "success",
+      num_turns: 2,
+      total_cost_usd: 9.9,
+      usage: { input_tokens: 5, output_tokens: 5 },
+      modelUsage: {
+        "kimi-k2-7-code": { inputTokens: 100, outputTokens: 40 },
+        "claude-haiku-4-5": { inputTokens: 10, outputTokens: 2 },
+      },
+    };
+    const lines: string[] = [];
+    const origLog = console.log;
+    console.log = (s: string) => lines.push(s);
+    try {
+      await relayOnce([]);
+    } finally {
+      console.log = origLog;
+    }
+    const line = lines
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((l) => typeof l.msg === "string" && l.msg.endsWith("result"));
+    expect(line).toMatchObject({
+      model: "kimi-k2-7-code",
+      route: "gateway",
+      totalCostUsd: null,
+      sdkCostUsd: 9.9,
+      inputTokensDelta: 110,
+      outputTokensDelta: 42,
+    });
+    const pushed = pushedMessages.find((m) => m.type === "result");
+    expect(JSON.parse(pushed!.text)).toMatchObject({
+      route: "gateway",
+      totalCostUsd: null,
+      sdkCostUsd: 9.9,
+    });
+  }, 10000);
+
+  test("a claude result keeps its cost and says subscription", async () => {
+    sessionModel = "claude-opus-5";
+    forceResult = {
+      subtype: "success",
+      num_turns: 1,
+      total_cost_usd: 0.5,
+      modelUsage: { "claude-opus-5": { inputTokens: 1, outputTokens: 2 } },
+    };
+    const lines: string[] = [];
+    const origLog = console.log;
+    console.log = (s: string) => lines.push(s);
+    try {
+      await relayOnce([]);
+    } finally {
+      console.log = origLog;
+    }
+    const line = lines
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((l) => typeof l.msg === "string" && l.msg.endsWith("result"));
+    expect(line).toMatchObject({
+      route: "subscription",
+      totalCostUsd: 0.5,
+      model: "claude-opus-5",
+    });
+    expect(line).not.toHaveProperty("sdkCostUsd");
+    const pushed = pushedMessages.find((m) => m.type === "result");
+    expect(JSON.parse(pushed!.text)).toMatchObject({ route: "subscription" });
+  }, 10000);
+});

@@ -92,6 +92,8 @@ export async function getSession(): Promise<{
   model?: string;
   // docs/adr/0077: a repo session's chosen effort level; absent = the CLI's.
   effort?: string;
+  // Gateway ids only: the model's context window, from core's table.
+  contextTokens?: number;
   agentSpec?: AgentSpec;
   agentSpecSha?: string;
   // The agent-fleet commit the definition is pinned at, for the hook's

@@ -95,7 +95,7 @@ func TestStreamsWithoutBuffering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	buf := make([]byte, 64)
 	done := make(chan string, 1)
 	go func() { n, _ := resp.Body.Read(buf); done <- string(buf[:n]) }()
