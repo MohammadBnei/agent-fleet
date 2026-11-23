@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -23,6 +24,7 @@ const (
 	credKeyLease      = "lease"
 	credKeyVaultProxy = "vault-proxy"
 	credKeyThot       = "thot-token"
+	credKeyGateway    = "GATEWAY_KEY"
 
 	// Path env the sidecar and the kubectl shim read (the value is a path).
 	LeaseIDFileEnv       = "LEASE_ID_FILE"
@@ -108,4 +110,14 @@ func (c *Client) DeleteCredSecret(ctx context.Context, taskID string) {
 	if err := ignoreNotFound(c.Core.CoreV1().Secrets(c.Namespace).Delete(ctx, CredSecretName(taskID), metav1.DeleteOptions{})); err != nil {
 		slog.Warn("k8s DeleteCredSecret", "sessionId", taskID, "error", err)
 	}
+}
+
+// gatewayKey is the llm-gateway key for this pod (docs/adr/0088): a definition's
+// own, a repo session's shared console key, "" when none was provisioned.
+func (c *Client) gatewayKey(spec WorkerPodSpec) string {
+	suffix := "CONSOLE"
+	if spec.Definition != nil {
+		suffix = strings.ToUpper(strings.ReplaceAll(spec.Definition.Name, "-", "_"))
+	}
+	return c.GatewayKeys[suffix]
 }

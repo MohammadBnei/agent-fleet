@@ -50,7 +50,7 @@ var envReaders = map[string][]string{
 // InClusterConfig, grpc's and net/http's proxy variables.
 var envReadsAllowed = map[string][]string{
 	// The one reader: FromProcess hands os.Getenv to Load.
-	"internal/config/config.go": {"os.Getenv"},
+	"internal/config/config.go": {"os.Getenv", "os.Environ"},
 	// git runs with the process's environment on purpose: PATH to find git, HOME
 	// and the ambient git auth the "using ambient git auth" warning names, and
 	// the App's credential variables appended to it. Child process, not config.

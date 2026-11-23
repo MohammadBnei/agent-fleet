@@ -246,11 +246,42 @@ type Config struct {
 	// count as owned, and those get a COMMENT anyway, so every review is a
 	// COMMENT plus the agent-review status.
 	TrustedLogins []string
+	// GatewayURL is the llm-gateway a worker pod's sidecar proxies to
+	// (FLEET_GATEWAY_URL, docs/adr/0088), forwarded as the sidecar's env.
+	GatewayURL string
+	// GatewayKeys are the llm-gateway keys in this process's environment, by
+	// the suffix after GatewayKeyPrefix: CONSOLE for repo sessions, the
+	// upper-cased definition name (dashes to underscores) for a definition.
+	// They arrive through envFrom, so they are read once at start (the runbook's
+	// provisioner rollout). FromProcess fills it; Load cannot enumerate.
+	GatewayKeys map[string]string
 }
+
+// GatewayKeyPrefix names the provisioner's llm-gateway key variables.
+const GatewayKeyPrefix = "LLM_GATEWAY_KEY_FLEET_"
 
 // FromProcess is the provisioner's configuration from its environment: the
 // one call that reads it, and the only one in this module that does.
-func FromProcess() (Config, error) { return Load(os.Getenv) }
+func FromProcess() (Config, error) {
+	c, err := Load(os.Getenv)
+	c.GatewayKeys = gatewayKeys(os.Environ())
+	return c, err
+}
+
+// gatewayKeys picks the non-empty GatewayKeyPrefix variables out of environ.
+func gatewayKeys(environ []string) map[string]string {
+	var keys map[string]string
+	for _, kv := range environ {
+		k, v, _ := strings.Cut(kv, "=")
+		if suffix, ok := strings.CutPrefix(k, GatewayKeyPrefix); ok && suffix != "" && v != "" {
+			if keys == nil {
+				keys = map[string]string{}
+			}
+			keys[suffix] = v
+		}
+	}
+	return keys
+}
 
 // Load is the provisioner's configuration from getenv (FromProcess passes
 // os.Getenv, a test a map). An optional variable that is set but invalid does
@@ -326,6 +357,7 @@ func Load(getenv func(string) string) (Config, error) {
 		ClaudeModel:               getenv("CLAUDE_MODEL"),
 		MaxTurns:                  getenv("MAX_TURNS"),
 		TracesEndpoint:            getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+		GatewayURL:                env("FLEET_GATEWAY_URL", "http://llm-gateway.llm-gateway.svc.cluster.local:8080"),
 	}
 	c.TrustedLogins = list(getenv("PROVISIONER_TRUSTED_LOGINS"))
 	c.ForgejoOwners = list(env("FORGEJO_OWNERS", "MohammadBnei"))

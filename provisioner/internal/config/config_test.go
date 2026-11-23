@@ -174,7 +174,7 @@ func TestLoad(t *testing.T) {
 		"FLEET_GIT_URL_REWRITE": "http://forge.local/", "FLEET_VERSION": "v1.2.3", "CLAUDE_MODEL": "m", "MAX_TURNS": "9",
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://otel:4318/v1/traces", "PROVISIONER_TRUSTED_LOGINS": " MohammadBnei, ,other ",
 		"FORGE": "forgejo", "FORGE_URL": "https://forge.test/", "FORGEJO_SECRETS_DIR": "/fj", "FORGEJO_OWNERS": "a, b",
-		"FORGEJO_TRUSTED_LOGINS": "fj",
+		"FORGEJO_TRUSTED_LOGINS": "fj", "FLEET_GATEWAY_URL": "http://gw:1",
 	}
 	c, err := Load(func(k string) string { return env[k] })
 	if err != nil {
@@ -191,7 +191,7 @@ func TestLoad(t *testing.T) {
 		Version: "v1.2.3", ClaudeModel: "m", MaxTurns: "9", TracesEndpoint: "http://otel:4318/v1/traces",
 		TrustedLogins: []string{"MohammadBnei", "other"},
 		Forge:         "forgejo", ForgeURL: "https://forge.test", ForgejoSecretsDir: "/fj", ForgejoOwners: []string{"a", "b"},
-		ForgejoTrustedLogins: []string{"fj"},
+		ForgejoTrustedLogins: []string{"fj"}, GatewayURL: "http://gw:1",
 	}
 	if !reflect.DeepEqual(c, want) { // Warnings is nil too: every value here is good
 		t.Errorf("set:\n got %+v\nwant %+v", c, want)
@@ -207,6 +207,7 @@ func TestLoad(t *testing.T) {
 		AgentVaultProxy: DefaultAgentVaultProxy, AgentVaultSecretsDir: "/var/run/agent-vault", GitHubAppDir: "/var/run/github-app",
 		GitAuthorName: "ukubi", GitAuthorEmail: "ukubi@bnei.dev",
 		Forge: "github", ForgeURL: "https://github.com", ForgejoSecretsDir: "/var/run/forgejo", ForgejoOwners: []string{"MohammadBnei"},
+		GatewayURL: "http://llm-gateway.llm-gateway.svc.cluster.local:8080",
 	}
 	// Through getenv a blank variable and an unset one are the same "", so there is one case.
 	if c, err := Load(func(string) string { return "" }); err != nil || !reflect.DeepEqual(c, defaults) {
@@ -393,5 +394,15 @@ func TestDurationText(t *testing.T) {
 		if got := durationText(in); got != want {
 			t.Errorf("durationText(%v) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestGatewayKeys(t *testing.T) {
+	got := gatewayKeys([]string{"LLM_GATEWAY_KEY_FLEET_CONSOLE=a", "LLM_GATEWAY_KEY_FLEET_MY_DEF=b=c", "LLM_GATEWAY_KEY_FLEET_EMPTY=", "LLM_GATEWAY_KEY_FLEET_=x", "OTHER=z"})
+	if !reflect.DeepEqual(got, map[string]string{"CONSOLE": "a", "MY_DEF": "b=c"}) {
+		t.Errorf("%v", got)
+	}
+	if gatewayKeys(nil) != nil {
+		t.Error("no keys must stay nil")
 	}
 }

@@ -35,6 +35,7 @@ func TestImages(t *testing.T) {
 		"LogLevel":              "LogLevel",
 		"CoreGRPCAddr":          "CoreGRPCAddr",
 		"ThotAuthToken":         "ThotAuthToken",
+		"GatewayURL":            "GatewayURL",
 		"ExecutorAddr":          "ExecutorAddr",
 		"PostgresImage":         "PostgresImage",
 		"RedisImage":            "RedisImage",
@@ -43,7 +44,7 @@ func TestImages(t *testing.T) {
 		"ClaudeModel":           "ClaudeModel",
 		"MaxTurns":              "MaxTurns",
 	}
-	special := map[string]bool{"Version": true, "SessionNodeSelector": true, "ForgeHosts": true}
+	special := map[string]bool{"Version": true, "SessionNodeSelector": true, "ForgeHosts": true, "GatewayKeys": true}
 	for i := 0; i < iv.NumField(); i++ {
 		name := iv.Type().Field(i).Name
 		if special[name] {

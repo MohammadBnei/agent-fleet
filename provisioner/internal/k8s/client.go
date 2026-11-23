@@ -57,6 +57,9 @@ type Client struct {
 	// name vs kind-local's unprefixed one).
 	CoreGRPCAddr  string
 	ThotAuthToken string
+	// GatewayURL and GatewayKeys: the llm-gateway route (docs/adr/0088), see config.
+	GatewayURL  string
+	GatewayKeys map[string]string
 	// Where the cluster-access ingredient's kubectl shim sends argv
 	// (docs/adr/0037).
 	ExecutorAddr string
@@ -113,6 +116,7 @@ func newClient(core kubernetes.Interface, dyn dynamic.Interface, namespace strin
 		SessionNodeSelector:  cfg.SessionNodeSelector,
 		LogLevel:             cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
+		GatewayURL:    cfg.GatewayURL, GatewayKeys: cfg.GatewayKeys,
 		ExecutorAddr:  cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
@@ -138,6 +142,8 @@ type Images struct {
 	LogLevel              string
 	CoreGRPCAddr          string
 	ThotAuthToken         string
+	GatewayURL            string
+	GatewayKeys           map[string]string
 	ExecutorAddr          string
 	PostgresImage         string
 	RedisImage            string

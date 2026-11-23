@@ -892,10 +892,20 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	case spec.RepoVault != nil:
 		vaultProxy, vaultHosts = spec.RepoVault.ProxyURL, c.forgeHosts().OwnerHosts()
 	}
+	gatewayKey := c.gatewayKey(spec)
 	for i := range podSpec.InitContainers {
 		sc := &podSpec.InitContainers[i]
 		if sc.Name != "sidecar" {
 			continue
+		}
+		// docs/adr/0088: the gateway key reaches only the sidecar. Absent, the
+		// file is not mounted and the loopback route answers 503.
+		sc.Env = append(sc.Env,
+			corev1.EnvVar{Name: "FLEET_GATEWAY_URL", Value: c.GatewayURL},
+			corev1.EnvVar{Name: "FLEET_GATEWAY_KEY_FILE", Value: credDir + "/" + credKeyGateway})
+		if gatewayKey != "" {
+			creds[credKeyGateway] = gatewayKey
+			sidecarKeys = append(sidecarKeys, credKeyGateway)
 		}
 		if vaultProxy != "" {
 			creds[credKeyVaultProxy] = vaultProxy

@@ -301,8 +301,8 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	if e := spec.EndpointSelector.MatchExpressions; len(e) != 1 || e[0].Key != DefinitionLabel || e[0].Operator != "Exists" {
 		t.Errorf("selector %+v, want %s Exists", e, DefinitionLabel)
 	}
-	if len(spec.Egress) != 3 {
-		t.Fatalf("%d egress rules, want vault, core, DNS", len(spec.Egress))
+	if len(spec.Egress) != 4 {
+		t.Fatalf("%d egress rules, want vault, core, llm-gateway, DNS", len(spec.Egress))
 	}
 
 	var provPolicy networkingv1.NetworkPolicy
@@ -317,7 +317,7 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	coreHost, corePort := hostPort(config.DefaultCoreGRPCAddr)
 	vaultHost, vaultPort := hostPort(config.DefaultAgentVaultProxy)
 
-	vaultRule, coreRule, dnsRule := spec.Egress[0], spec.Egress[1], spec.Egress[2]
+	vaultRule, coreRule, gwRule, dnsRule := spec.Egress[0], spec.Egress[1], spec.Egress[2], spec.Egress[3]
 	wantVault := map[string]string{"k8s:io.kubernetes.pod.namespace": "agent-vault", "app.kubernetes.io/name": "agent-vault"}
 	if len(vaultRule.ToEndpoints) != 1 || !maps.Equal(vaultRule.ToEndpoints[0].MatchLabels, wantVault) || len(vaultRule.ToEntities) > 0 {
 		t.Errorf("vault rule %+v", vaultRule)
@@ -331,6 +331,11 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	if len(coreRule.ToPorts) != 1 || !slices.Equal(coreRule.ToPorts[0].Ports, []port{{corePort, "TCP"}}) {
 		t.Errorf("core ports %+v, want only CoreService %s", coreRule.ToPorts, corePort)
 	}
+	wantGW := map[string]string{"k8s:io.kubernetes.pod.namespace": "llm-gateway"}
+	if len(gwRule.ToEndpoints) != 1 || !maps.Equal(gwRule.ToEndpoints[0].MatchLabels, wantGW) || len(gwRule.ToEntities) > 0 ||
+		len(gwRule.ToPorts) != 1 || !slices.Equal(gwRule.ToPorts[0].Ports, []port{{"4000", "TCP"}}) || gwRule.ToPorts[0].Rules != nil {
+		t.Errorf("llm-gateway rule %+v, want the llm-gateway namespace on :4000 only", gwRule)
+	}
 	wantDNS := map[string]string{"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
 	if len(dnsRule.ToEndpoints) != 1 || !maps.Equal(dnsRule.ToEndpoints[0].MatchLabels, wantDNS) || len(dnsRule.ToEntities) > 0 || len(dnsRule.ToPorts) != 1 ||
 		!slices.Equal(dnsRule.ToPorts[0].Ports, []port{{"53", "UDP"}, {"53", "TCP"}}) || dnsRule.ToPorts[0].Rules == nil {
@@ -340,8 +345,8 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	for _, d := range dnsRule.ToPorts[0].Rules.DNS {
 		names = append(names, d.MatchName)
 	}
-	if !slices.Equal(names, []string{vaultHost, coreHost}) {
-		t.Errorf("dns matchNames %v, want [%s %s]", names, vaultHost, coreHost)
+	if !slices.Equal(names, []string{vaultHost, coreHost, "llm-gateway.llm-gateway.svc.cluster.local"}) {
+		t.Errorf("dns matchNames %v, want [%s %s llm-gateway.llm-gateway.svc.cluster.local]", names, vaultHost, coreHost)
 	}
 	for _, n := range names {
 		if strings.Count(n, ".") < 4 {

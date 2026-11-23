@@ -319,6 +319,8 @@ func images(cfg config.Config, version string) k8s.Images {
 		SidecarImage:          cfg.SidecarImage,
 		Version:               version,
 		ThotAuthToken:         cfg.ThotAuthToken,
+		GatewayURL:            cfg.GatewayURL,
+		GatewayKeys:           cfg.GatewayKeys,
 		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,
 		SessionStorageClass:   cfg.SessionStorageClass,

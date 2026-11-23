@@ -52,6 +52,10 @@
                   "path": "lease"
                 },
                 {
+                  "key": "GATEWAY_KEY",
+                  "path": "GATEWAY_KEY"
+                },
+                {
                   "key": "vault-proxy",
                   "path": "vault-proxy"
                 }
@@ -154,6 +158,14 @@
               {
                 "name": "GIT_CONFIG_VALUE_0",
                 "value": "*"
+              },
+              {
+                "name": "FLEET_GATEWAY_URL",
+                "value": "http://gw.test:8080"
+              },
+              {
+                "name": "FLEET_GATEWAY_KEY_FILE",
+                "value": "/run/fleet/cred/GATEWAY_KEY"
               },
               {
                 "name": "FLEET_VAULT_PROXY_FILE",
