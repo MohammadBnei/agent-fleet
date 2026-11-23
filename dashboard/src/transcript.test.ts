@@ -26,6 +26,7 @@ import {
   resultDelta,
   subagentRuns,
   withOptimistic,
+  withoutAllowedDenials,
 } from "./transcript";
 
 test("deniedToolUseIds marks the denied call itself, not every call with the same reason", () => {
@@ -519,6 +520,50 @@ test("a stamped request with no interrupt after it is not interrupted", () => {
   const stamped = stampedPerm("Edit");
   const [p] = findPendingPermissions([interrupt, stamped]);
   expect(p.interrupted).toBe(false);
+});
+
+test("a result after a stamped permission ends the turn that asked, not a plan's", () => {
+  const stamped = stampedPerm("Bash", { command: "curl x" });
+  const plan = stampedPerm("ExitPlanMode", { plan: "p" });
+  const [p, q] = findPendingPermissions([
+    stamped,
+    plan,
+    full(TranscriptEntryType.RESULT, "{}"),
+  ]);
+  expect(p.interrupted).toBe(true);
+  expect(q.interrupted).toBe(false);
+  // Still open and answerable.
+  expect(p.stamped).toBe(true);
+});
+
+test("a permission the owner allowed is not a denial in the turn that parked it", () => {
+  const input = { command: "curl x" };
+  const req = stampedPerm("Bash", input);
+  const other = stampedPerm("Bash", { command: "rm y" });
+  const allow = {
+    ...full(TranscriptEntryType.PERMISSION_RESPONSE, '{"behavior":"allow"}'),
+    replyTo: req.seq,
+  } as TranscriptEntry;
+  const result = {
+    permissionDenials: [
+      { tool_name: "Bash", tool_input: input },
+      { tool_name: "Bash", tool_input: { command: "rm y" } },
+    ],
+  };
+  const out = withoutAllowedDenials(
+    result,
+    [req, other, allow],
+    1_000_000_000n,
+  );
+  expect(out.permissionDenials).toEqual([
+    { tool_name: "Bash", tool_input: { command: "rm y" } },
+  ]);
+  // Nothing allowed: untouched.
+  expect(withoutAllowedDenials(result, [req], 1_000_000_000n)).toBe(result);
+  // An allow after this turn's result is another turn's: the denial stays.
+  expect(withoutAllowedDenials(result, [req, other, allow], req.seq - 1n)).toBe(
+    result,
+  );
 });
 
 test("a withdrawn request is no longer pending and reads as withdrawn", () => {

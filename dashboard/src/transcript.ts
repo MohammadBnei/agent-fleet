@@ -102,11 +102,19 @@ export type PendingPermission<E extends EntryLike = TranscriptEntry> = {
   interrupted: boolean;
 };
 
-function endedAfter<E extends EntryLike>(entries: E[], seq: bigint): boolean {
+// `resultEnds`: a stamped permission's turn also ends with its result (core's
+// decisions.TurnEndedSQL, the same rule); a plan or a question ends its turn on
+// purpose, so a result is not an end for those.
+function endedAfter<E extends EntryLike>(
+  entries: E[],
+  seq: bigint,
+  resultEnds = false,
+): boolean {
   return entries.some(
     (later) =>
       (later.type === TranscriptEntryType.INTERRUPT ||
-        later.type === TranscriptEntryType.ABORT) &&
+        later.type === TranscriptEntryType.ABORT ||
+        (resultEnds && later.type === TranscriptEntryType.RESULT)) &&
       later.seq > seq,
   );
 }
@@ -141,7 +149,11 @@ export function findPendingPermissions<E extends EntryLike>(
     );
     if (answered) continue;
     const stamped = parsed.nb === 1;
-    const interrupted = endedAfter(entries, e.seq);
+    const interrupted = endedAfter(
+      entries,
+      e.seq,
+      stamped && parsed.tool !== "ExitPlanMode",
+    );
     if (interrupted && !stamped) continue;
     out.push({
       entry: e,
@@ -1032,7 +1044,7 @@ export type SdkResultSummary = {
     cache_creation_input_tokens?: number;
   };
   modelUsage?: Record<string, SdkModelUsage>;
-  permissionDenials?: { tool_name?: string }[];
+  permissionDenials?: { tool_name?: string; tool_input?: unknown }[];
   errors?: string[];
   // Stamped by the worker.
   model?: string;
@@ -1090,6 +1102,42 @@ export function resultDelta(
     totalCostUsd: sub(cur.totalCostUsd, prev.totalCostUsd),
     durationApiMs: sub(cur.durationApiMs, prev.durationApiMs),
     modelUsage: cur.modelUsage ? modelUsage : undefined,
+  };
+}
+
+// The SDK counts the "pending" answer a parked call got as a permission denial.
+// When the owner went on to allow that very call it was not denied, so a result
+// does not count it: keyed by tool and input, which the request and the SDK's
+// denial both carry as the agent sent them.
+export function withoutAllowedDenials(
+  result: SdkResultSummary,
+  entries: TranscriptEntry[],
+  resultSeq: bigint,
+): SdkResultSummary {
+  if (!result.permissionDenials?.length) return result;
+  const outcomes = resolvedPermissionDecisions(entries);
+  const key = (tool: unknown, input: unknown) =>
+    `${String(tool)}\0${JSON.stringify(input)}`;
+  const allowed = new Set<string>();
+  for (const e of entries) {
+    // Only requests before this turn's result: a later one is another turn's.
+    if (e.seq > resultSeq) continue;
+    if (
+      e.type !== TranscriptEntryType.PERMISSION_REQUEST ||
+      outcomes.get(e.seq) !== "allow"
+    )
+      continue;
+    try {
+      const req = JSON.parse(e.text) as { tool?: unknown; input?: unknown };
+      allowed.add(key(req.tool, req.input));
+    } catch {}
+  }
+  if (allowed.size === 0) return result;
+  return {
+    ...result,
+    permissionDenials: result.permissionDenials.filter(
+      (d) => !allowed.has(key(d.tool_name, d.tool_input)),
+    ),
   };
 }
 

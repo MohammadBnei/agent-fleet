@@ -28,6 +28,7 @@ import {
   permissionDenyMessages,
   resolvedPermissionDecisions,
   resultDelta,
+  withoutAllowedDenials,
   type SdkResultSummary,
   type SdkToolResult,
   shortTool,
@@ -842,7 +843,15 @@ export function SessionFeed({
           <TranscriptEntryView
             entry={entry}
             compact={compact}
-            result={summary ? resultDelta(summary, prev) : null}
+            result={
+              summary
+                ? withoutAllowedDenials(
+                    resultDelta(summary, prev),
+                    entries,
+                    entry.seq,
+                  )
+                : null
+            }
           />
         </div>,
       );
