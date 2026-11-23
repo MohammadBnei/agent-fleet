@@ -1,6 +1,6 @@
 ---
 name: fleet-ops
-description: Onboard a new target repo (install the ukubi-fleet GitHub App), walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
+description: Onboard a new target repo (give the ukubi-fleet bot user read access on Forgejo), walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
 user-invocable: true
 allowed-tools:
   - Read
@@ -9,7 +9,6 @@ allowed-tools:
   - Bash(git status *)
   - Bash(git log *)
   - Bash(psql *)
-  - Bash(gh *)
 ---
 
 # /fleet-ops — operate the agent-fleet deployment
@@ -21,29 +20,26 @@ with no message has no pod at all (`docs/adr/0048` §1).
 
 ## 1. Onboard a new target repo
 
-A repo is in the fleet while the GitHub App `ukubi-fleet` is installed on it
-by an allowlisted account (`docs/adr/0075` §4, amending `0074`). No
-manifest, no redeploy, no console form:
+With `FORGE=forgejo` (the deployed setting in `k8s/provisioner/deployment.yaml`) a repo is in the
+fleet while the bot user `ukubi-fleet` is a **read** collaborator on it and its owner is in
+`FORGEJO_OWNERS` (provisioner default `MohammadBnei`). A write-access bot is listed in an
+ERROR log line, not in the fleet (`provisioner/internal/forgejo/forgejo.go`). No manifest, no
+redeploy, no console form:
 
-1. **GitHub**: install `ukubi-fleet` on the repo. Both installations
-   (MohammadBnei, opus-tech-hq; `FLEET_GITHUB_ACCOUNTS` in
-   `k8s/provisioner/deployment.yaml`) are set to "All repositories", so a new
-   repo under either account joins on its own. Core's 60s tick inserts the row
-   (installations are re-listed every 10 min, so a new account takes up to
-   that). The base branch is the repo's GitHub default branch. An installation
-   by any other account is ignored and logged; remove it by hand. The repo
-   arrives **active**; to keep the fleet off it, switch it off in the
-   console's Settings → Repos (an inactive repo starts no new session; open
-   ones keep working).
+1. **Forgejo**: add `ukubi-fleet` as a read collaborator on the repo. Core's 60s tick inserts the
+   row; the base branch is the repo's default branch. The repo arrives **active**; to keep the
+   fleet off it, switch it off in the console's Settings → Repos (an inactive repo starts no
+   new session; open ones keep working). OPEN: whether the reviewer bot `ukubi-review` needs a
+   grant per repo, and where trusted logins are managed beyond `FORGEJO_TRUSTED_LOGINS`.
 2. **Only if the defaults are wrong**: add an entry to infra-bootstrap's
    `gitops/bootstrap/fleet-repo-overrides.yaml`, keyed by `owner/repo` with
-   the repo's GitHub `id` (`gh api repos/<owner>/<repo> --jq .id`):
+   the repo's forge `id` (Forgejo's repo id, from its API: `GET /api/v1/repos/<owner>/<repo>`):
 
-   - `name`: the fleet name, when the GitHub name collides with another
+   - `name`: the fleet name, when the forge name collides with another
      repo's or definitions already use a different one.
    - `baseBranch`: when the fleet should not work off the default branch.
    - `image`: the container image this repo's sessions run. Blank means the
-     fleet's default worker image, which carries bun, Go, git, `gh` and the
+     fleet's default worker image, which carries bun, Go, git and the
      Claude Code CLI (see `worker/Dockerfile` for the real list — it does
      *not* include `golangci-lint` or `buf`). Set it only when the repo needs
      a toolchain the default lacks (`docs/adr/0048` §6).
@@ -54,12 +50,11 @@ manifest, no redeploy, no console form:
 
    An entry whose `id` does not match is ignored with an ERROR. An empty file
    revokes every override; a missing one changes nothing.
-3. **Removal**: take the repo out of the App's installation (or delete it).
-   The repo is hidden on the next tick and its row is deleted 7 days later,
-   once no open session references it. More than 2 repos vanishing in one
-   tick changes nothing and logs an ERROR (shrink guard): check the
-   provisioner's `github app:` log lines first. To keep the fleet off a repo
-   without removing it, switch it off in Settings → Repos instead.
+3. **Removal**: remove the bot's access (or delete the repo). The repo is hidden on the next tick
+   and its row is deleted 7 days later, once no open session references it. More than 2 repos
+   vanishing in one tick changes nothing and logs an ERROR (shrink guard): check the
+   provisioner's `forgejo:` log lines first. To keep the fleet off a repo without removing it,
+   switch it off in Settings → Repos instead.
 
 There is nothing else to configure. No profile, no start command, no e2e
 preview, no `run_command` — `docs/adr/0048` §6 deleted all of it along with

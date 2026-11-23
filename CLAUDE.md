@@ -15,7 +15,7 @@ is shorthand for `agent-fleet/docs/adr/NNNN`.
 principles structural vs still aspirational. Parent = `infra-bootstrap/VISION.md`.
 Read it deciding *whether* to build. Read others deciding *what*.
 
-Submoduled into [`infra-bootstrap`](https://github.com/MohammadBnei/infra-bootstrap)
+Submoduled into `infra-bootstrap` (Forgejo, GitHub push mirror)
 at `agent-fleet/`. That repo owns cluster (k8s, ArgoCD, ingress, secrets backend);
 this one owns fleet source + deploy config.
 
@@ -212,7 +212,9 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `FLEET_GIT_AUTHOR_NAME`/`FLEET_GIT_AUTHOR_EMAIL` (`ukubi <ukubi@bnei.dev>`, set on the
   provisioner); a definition pod as its reviewed file's `git.identity` (`adr/0064`). Both
   reach the worker as `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. No `gh api user`: `/user` refuses
-  installation tokens. The GitHub identity is the App `ukubi-fleet`.
+  installation tokens. The forge identities are the Forgejo bot users `ukubi-fleet` and
+  `ukubi-review` (`FORGE=forgejo`, `k8s/provisioner/deployment.yaml`); the GitHub App
+  `ukubi-fleet` stays wired only as the `FORGE=github` rollback.
 - Claude Code auths via subscription OAuth (`CLAUDE_CODE_OAUTH_TOKEN`), not a metered API
   key. No cost cap by design. Exception: a non-Claude model runs through llm-gateway on a
   budget-bounded key held by the sidecar (`adr/0088`).
@@ -238,20 +240,20 @@ go wrong, and a fragment that gets misread is worse than a few extra words.
 - A second pod so that one tool can skip a permission prompt (`docs/adr/0048` §6).
 - Reintroducing a status enum, a queue, a lease-renewal heartbeat, or a retry counter
   (`docs/adr/0048` §2).
-- Fleet-managed `infra-bootstrap` cluster ops — kubespray, ansible, pigsty. That is the
-  parent repo's own `CLAUDE.md` boundary, and it is blocked here too.
+- Fleet-managed `infra-bootstrap` cluster or host ops (terraform, Talos, Proxmox). That is
+  the parent repo's own `CLAUDE.md` boundary, and it is blocked here too.
 
 ## Current targets
 
-Every repo of the GitHub App `ukubi-fleet`'s allowlisted installations
-(`adr/0074` as amended by `adr/0075` §4; both installations are "All
-repositories"): core projects them into the `repos` table each minute, and
-overrides (name, base branch, image, cluster access) come only from
-infra-bootstrap's `gitops/bootstrap/fleet-repo-overrides.yaml`. The console
-writes one field, `active` (Settings → Repos): installation = what the fleet
-can reach, active = what it uses. An inactive repo starts no new session; open
-ones keep working. Onboarding = install the App (or create the repo under an
-installed account); the repo arrives active. No per-repo Deployment/PVC.
+With `FORGE=forgejo` (the deployed setting, `k8s/provisioner/deployment.yaml`) the repo list is
+the Forgejo repos the bot user `ukubi-fleet` has read access to, under the owners in
+`FORGEJO_OWNERS` (provisioner default `MohammadBnei`). Core projects them into the `repos`
+table each minute, and overrides (name, base branch, image, cluster access) come only from
+infra-bootstrap's `gitops/bootstrap/fleet-repo-overrides.yaml`. The console writes one field,
+`active` (Settings → Repos): access = what the fleet can reach, active = what it uses. An
+inactive repo starts no new session; open ones keep working. No per-repo Deployment/PVC.
+`FORGE=github` (the App's allowlisted installations, `adr/0074`, `adr/0075` §4) is the
+rollback path. Onboarding steps: `/fleet-ops`.
 
 ## Verification traps
 
@@ -263,14 +265,12 @@ deploy, CI, permission or pod-lifecycle paths.
 - `tsc --noEmit` ≠ build. Real cmd `bun run build` (`tsc -b && vite build`).
 - PR build never pushes an image. Check registry, not CI. Only last 3 tags + `latest` kept.
 - `kubectl apply --dry-run=server` creates no pod. ArgoCD `Synced`+`Degraded` = the tell.
-- Unset GitHub secret = empty string, not error. Non-secret CI needs → `env:`, not `secrets:`.
+- Unset CI secret = empty string, not error. Non-secret CI needs → `env:`, not `secrets:`.
 - New component → wire into **every** CI path (an image job in `docker.yml` + `go.yml`
   `changes` and codegen). Guard `core/internal/buildguard`, run `-count=1`.
-- **Squash-merging a stacked PR auto-closes the PR above it, and GitHub will not reopen
-  it.** Retarget dependent PRs to `main` *before* merging the one below.
-- **A squash also drops any change a stacked branch made and then undid**, with no
-  conflict. After merging a stack, `ls` the files the upper PR claimed to delete — the PR
-  diff will not tell you.
+- **Stacked PRs.** The forge merges by rebase (Forgejo API `{"Do":"rebase"}`). After merging a
+  stack, `ls` the files the upper PR claimed to delete and retarget dependents before merging
+  the one below: a PR diff will not show a change a stacked branch made and then undid.
 - Bound port ≠ reachable service ≠ working capability. Verify the capability doing its job.
 - Wide rename can swap two same-typed fields silently. Check call sites where old and new
   names now collide.
@@ -299,20 +299,19 @@ deploy, CI, permission or pod-lifecycle paths.
 - Secrets never committed; fetched from Infisical at run time.
 - Conventional Commits — `docker.yml`'s `release` job (ukubi-ci `release.yml`) cuts the
   version tag from them on every push to `main`.
-- Commit trailers carry a little metadata — claims, never evidence. No `Co-Authored-By` naming
-  Claude or a model (the owner's global rule). `Agent-Session: <opaque id>` where one exists, and
-  `Agent-Definition: <name>@<sha>` on a definition pod. `worker/git-hooks` stamps the
-  `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` form in repo pods only (a definition pod
-  gets none); the check accepts it, and it names no Claude. No model ids, no URLs,
-  no "Generated with" footer. CI enforces part of it: `trailers.yml` scans every commit of a PR
-  (message, author and committer) plus its title and body and refuses a Claude or Anthropic
-  co-author or identity, a Claude-Session trailer, claude.ai/claude.com links, a generated-with
-  footer and model names (`.github/scripts/check-trailers.py`, self-tested by
-  `check_trailers_test.py`). Other URLs, and the trailers' content beyond that, are not checked.
-  A squash merge turns each commit author into a `Co-authored-by:` line on `main`, so a
-  laptop or cloud session authors its commits as `ukubi-agent <noreply@bnei.dev>` (pods keep
-  the `ukubi <ukubi@bnei.dev>` / `git.identity` author above). The check still accepts
-  legacy `ukubi-claude-*` for old history; new commits must not use it.
+- Commits: no `Co-Authored-By` naming Claude or a model, no "Generated with" footer, no model
+  ids. In pods `worker/git-hooks` (the `commit-msg` hook) rewrites the message: it strips every
+  co-author, generated-with, `Claude-Session` and `Agent-*` line, then adds
+  `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` (repo pods only), `Agent-Session: <id>` and,
+  on a definition pod, `Agent-Definition: <name>@<sha>`. Agents add nothing themselves. Laptop
+  and cloud sessions author as `ukubi-agent <noreply@bnei.dev>`; pods keep the `ukubi` /
+  `git.identity` author above. CI enforces part of it: `trailers.yml` scans every commit of a
+  PR (message, author, committer) plus its title and body and refuses a Claude or Anthropic
+  co-author or identity, a `Claude-Session` trailer, claude.ai/claude.com links, a
+  generated-with footer and model names (`.github/scripts/check-trailers.py`, self-tested by
+  `check_trailers_test.py`). The legacy `ukubi-claude-*` author is accepted for old history only.
+- Merge: Forgejo API with `{"Do":"rebase"}` after green CI and a fresh review. Never an admin
+  override.
 - `worker/`: `bun:test` for coordination logic cheap to mock (SDK streaming-input `query()`,
   sidecar local HTTP client). Runs in CI ahead of Docker build. Also `bun run typecheck`.
 - `core/`, `provisioner/`, `sidecar/`: `go test`. Table-driven units, `client-go` fake

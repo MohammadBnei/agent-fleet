@@ -119,8 +119,8 @@ Definitions are reviewed config, not code (`docs/adr/0062`, pod profile
 3. `go test ./internal/definitions/` in `core/` runs
    `TestRepoDefinitions` (`repo_test.go`), the same validator core runs at
    sync. CI fails on any invalid non-abstract definition.
-4. Its `workspace.repo` must be a row in `repos` (the GitHub App installed
-   on it, `docs/adr/0074`/`0075`), and `credentials` key names must exist in
+4. Its `workspace.repo` must be a row in `repos` (the bot user `ukubi-fleet` has read access
+   on it under Forgejo, or the App is installed on it under `FORGE=github`; `docs/adr/0074`/`0075`), and `credentials` key names must exist in
    Infisical project `agent-vault`, folder `/agent-vault`: a missing one
    fails the warm closed, naming it.
 5. It goes live at the next **release tag**, not on merge: the provisioner

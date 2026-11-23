@@ -1,6 +1,6 @@
 ---
 name: fleet-debug
-description: Diagnose a stuck or failed agent-fleet session — session row and pod_phase, the transcript, worker/sidecar/provisioner logs, Agent Vault and GitHub App credentials, and known failure modes. Use when a session has gone quiet, never got a pod, never opened a PR, or a worker looks stuck/crashed.
+description: Diagnose a stuck or failed agent-fleet session — session row and pod_phase, the transcript, worker/sidecar/provisioner logs, Agent Vault and the forge credentials, and known failure modes. Use when a session has gone quiet, never got a pod, never opened a PR, or a worker looks stuck/crashed.
 user-invocable: true
 allowed-tools:
   - Read
@@ -123,13 +123,14 @@ fresh, syncs `fleet-shared/` and the session's `/genome` (context packs,
 fails before any pod exists fails here: clone/fetch of the cache, PVC
 creation, a vault refusal (§5), or the Job create itself.
 
-## 5. Credentials: Agent Vault and the GitHub App
+## 5. Credentials: Agent Vault and the forge
 
-No pod holds a real GitHub or Anthropic token (`docs/adr/0065`,
+No pod holds a real forge or Anthropic token (`docs/adr/0065`,
 `docs/adr/0075`). The worker has placeholders; the vault injects the real
 value on the wire.
 
-- **The GitHub App** (`provisioner/internal/github/app.go`): the provisioner
+- **Forgejo (`FORGE=forgejo`, the deployed setting)**: the provisioner alone holds the bot tokens (files under `FORGEJO_SECRETS_DIR`, `provisioner/internal/forgejo/forgejo.go`); log lines start with `forgejo:`. OPEN: the failure modes seen live.
+- **The GitHub App, only under `FORGE=github`, the rollback** (`provisioner/internal/github/app.go`): the provisioner
   alone holds the key (files under `GITHUB_APP_DIR`), mints 1h installation
   tokens and re-mints with <30m left. Only installations by accounts in
   `FLEET_GITHUB_ACCOUNTS` count. Log lines start with `github app:` —
@@ -139,8 +140,8 @@ value on the wire.
 - **Repo pods** use their owner's vault (`owner-<login>`), refreshed by the
   provisioner on its own 5-minute tick (`grpcserver: owner vault refresh`
   errors). In the pod, `HTTPS_PROXY` is the sidecar's egress router
-  (`127.0.0.1:9093`, `sidecar/internal/egress`): only `github.com`,
-  `api.github.com` and `api.anthropic.com` go to the vault; everything else
+  (`127.0.0.1:9093`, `sidecar/internal/egress`): the forge hosts
+  (`git.bnei.dev` under Forgejo) and `api.anthropic.com` go to the vault; everything else
   goes direct. `git push`/`gh` failing with auth errors while other HTTPS
   works points here. Commits are authored `FLEET_GIT_AUTHOR_*` (`ukubi`).
 - **Definition pods** use their definition's vault, reconciled from
