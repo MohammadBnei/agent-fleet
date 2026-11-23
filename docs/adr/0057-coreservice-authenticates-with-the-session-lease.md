@@ -37,7 +37,7 @@ outside that.
    **random**, not derived from a session id that gets published in Discord deep
    links. It is **per-pod**, not per-session-forever. It **rotates on every
    warm**. It lives only in the component that holds the database
-   ([ADR-0020](0020-core-owns-postgres-and-commands-the-provisioner.md) point 1).
+   ([ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md) point 1).
    And it requires **no key handed to the provisioner**, which already holds
    `GH_TOKEN` and the fleet's only cluster RBAC.
 
@@ -128,5 +128,5 @@ authenticator specifically.
   topology rather than establishing identity, and gives no attribution. Still
   worth having underneath.
 - **Kubernetes ServiceAccount tokens + `TokenReview`.** Rejected: core
-  deliberately holds no cluster RBAC ([ADR-0020](0020-core-owns-postgres-and-commands-the-provisioner.md)
+  deliberately holds no cluster RBAC ([ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md)
   point 1), and `TokenReview` would require it.

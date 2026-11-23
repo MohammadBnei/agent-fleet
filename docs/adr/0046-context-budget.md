@@ -5,7 +5,7 @@
 - **Date:** 2026-08-13
 - **Relates to:** [ADR-0039](0039-e2e-pod-is-the-worker-sandbox.md) (whose
   routing decision is the root cause), [ADR-0021](0021-continuous-streaming-session.md)
-  / [ADR-0029](0029-session-is-the-durable-unit.md) (the unbounded session this
+  / [ADR-0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md) (the unbounded session this
   operates on), [ADR-0009](0009-rtk-ponytail-baked-into-worker-image.md) (rtk,
   the fleet's only prior token measure), [ADR-0044](0044-e2e-pod-outlives-the-app.md)
   (static tool registration, left intact)
