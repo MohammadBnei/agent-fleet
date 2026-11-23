@@ -2007,6 +2007,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
 	case "card":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD
+	case "model_switch":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

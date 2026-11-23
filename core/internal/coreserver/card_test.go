@@ -49,3 +49,12 @@ func TestSendMessage_RefusesCard(t *testing.T) {
 		t.Errorf("got %v, want InvalidArgument", err)
 	}
 }
+
+func TestSendMessage_RefusesModelSwitch(t *testing.T) {
+	_, err := (&Server{}).SendMessage(context.Background(), &agentfleetv1.SendMessageRequest{
+		SessionId: "s1", From: "agent", Text: "{}", Type: agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("got %v, want InvalidArgument", err)
+	}
+}

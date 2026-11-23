@@ -173,6 +173,10 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	if typ == "card" {
 		return nil, status.Error(codes.InvalidArgument, "a card is drafted with DraftCard, not sent")
 	}
+	// The same for a model switch: only SetSessionModel writes one.
+	if typ == "model_switch" {
+		return nil, status.Error(codes.InvalidArgument, "a model switch is made with SetSessionModel, not sent")
+	}
 	if typ == "permission_request" && req.ReplyToSeq == nil {
 		if seq, ok, err := s.askOnce(ctx, req.GetSessionId(), req.GetText()); err != nil {
 			return nil, fmt.Errorf("SendMessage: %w", err)
@@ -1059,6 +1063,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
 	case "card":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD
+	case "model_switch":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
@@ -1096,6 +1102,8 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "interrupt"
 	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD:
 		return "card"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH:
+		return "model_switch"
 	default:
 		return ""
 	}
