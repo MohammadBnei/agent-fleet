@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 )
@@ -89,7 +90,7 @@ func TestStreamTranscript_StillDeliversEntries(t *testing.T) {
 	// there would deadlock against the deadline every time, which is exactly
 	// how this test first failed.
 	//
-	// It repeats because broadcast drops rather than queues when no subscriber
+	// It repeats because a poll finds nobody to tell when no subscriber
 	// is attached yet, and the handler subscribes some microseconds after the
 	// request lands.
 	//
@@ -107,7 +108,7 @@ func TestStreamTranscript_StillDeliversEntries(t *testing.T) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				hub.broadcast("chatty", &agentfleetv1.TranscriptEntry{SessionId: "chatty", Seq: 0, Text: "first"})
+				hub.pollOnce(context.Background(), &fakeStore{entries: []transcript.Entry{{Seq: 0, Text: "first", Type: "discussion"}}})
 			}
 		}
 	}()

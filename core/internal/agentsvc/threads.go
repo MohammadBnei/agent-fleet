@@ -315,9 +315,8 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 		return err
 	}
 	cursor := req.Msg.GetSinceSeq()
-	// The hub's cursor is shared by every subscriber of a session and seeded
-	// by the first, so it gets the store's head, never the caller's since:
-	// a member must not be able to stop everyone else's live view.
+	// The hub only wakes this stream: it is subscribed at the store's head, and
+	// the entries come from this stream's own cursor (the caller's since).
 	head, err := s.transcr.LatestSeq(ctx, t.ID)
 	if err != nil {
 		return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
