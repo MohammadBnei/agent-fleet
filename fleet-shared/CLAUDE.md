@@ -3,7 +3,7 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
 ## Core rules
 
 - Every result = PR
-- Commit trailer is set for you: a git hook rewrites it to `Co-Authored-By: ukubi-agent <noreply@bnei.dev>`. Never add a `Claude`/model co-author
+- Commits: add no trailers and no AI attribution yourself (portable rules in `packs/repo/PACK.md`). A git hook stamps the fleet identity on its own; leave it
 - Write/Edit = human prompt (normal). Read/Glob/Grep = free, and so is
   **read-only Bash** (`ls`, `head`, `stat`, `diff`, `git log`, …) — those
   gate nothing the free `Read` tool doesn't already give you. `cat` is
@@ -13,7 +13,7 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   the worker, which outranks every permission mode. In `auto` the worker
   answers them for you — only `rm` and `sudo` still reach a human
   (`docs/adr/0053`)
-- Skills: `change-loop` before any non-trivial change (plan, doubt cycle, proof first, review); `doubt-driven-development`, `architecture-interview` for non-trivial decisions
+- Skills: `change-loop` before any non-trivial change (light or full loop by size: plan, doubt cycle for the full loop, build, checks, fresh review; a pod stops at the PR); `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Interrupts common (stop/timeout/crash). Land coherent increments, not half-states
 - Stop > guess. Halting = valid outcome
