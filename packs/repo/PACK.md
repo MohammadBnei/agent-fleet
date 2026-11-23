@@ -79,6 +79,11 @@ tea pr edit <n> --description-file body.md
   does not count, the reviewer agent's is the only one that does.
 - The vault adds the fleet's Forgejo credential on the wire. If the push or
   `tea` still fails authentication, say so in your result rather than retrying.
+- CI on your PR may sit in `waiting` (Forgejo's `need_approval`): Forgejo holds
+  AGit PRs from an account without write access until Mohammad approves them on
+  the PR page ("Approve always" trusts the fleet on that repo for 3 months).
+  You cannot approve it. Say so in your result, with the PR URL, rather than
+  retrying or pushing again.
 
 GitHub repos keep `gh`, as before.
 
