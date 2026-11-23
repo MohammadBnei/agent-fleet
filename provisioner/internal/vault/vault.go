@@ -329,9 +329,11 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	// services the way a missing key does (docs/adr/0075 §5).
 	if s.ReadOnly {
 		// Only a mint is read-only: every other source of the GitHub key is
-		// the mounted file, a writable PAT.
-		if _, _, ok := specRepo(s, c.Hosts); c.Forge == nil || !ok {
-			return fmt.Errorf("vault %s: read-only needs a GitHub App and one GitHub repo", s.Name)
+		// the mounted file, a writable PAT. A spec naming no forge repo holds
+		// no forge key at all (a first responder: model credential only), so
+		// there is nothing to make read-only.
+		if _, _, ok := specRepo(s, c.Hosts); ok && c.Forge == nil {
+			return fmt.Errorf("vault %s: read-only needs a GitHub App to mint the forge key", s.Name)
 		}
 	}
 	if c.Forge != nil {

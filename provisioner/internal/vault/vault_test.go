@@ -502,6 +502,28 @@ func TestReconcile_ReadOnlyMintsReadOnlyAndNeverFallsBack(t *testing.T) {
 	}
 }
 
+// A read-only spec with no forge service (alert-responder: the model
+// credential only) holds no forge key, so it reconciles with no App and
+// never reads a GH_ file.
+func TestReconcile_ReadOnlyWithoutForgeServiceHoldsNoForgeKey(t *testing.T) {
+	c, f, _ := setup(t, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth-sentinel-value", "GH_ALERT_RESPONDER": "ghp-writable"})
+	spec := vault.Spec{Name: "alert-responder", ReadOnly: true, Services: []vault.Service{
+		{Host: "api.anthropic.com", Secret: "CLAUDE_CODE_OAUTH_TOKEN"},
+	}}
+	if _, err := c.Reconcile(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := f.Get("alert-responder")
+	if v.Creds["CLAUDE_CODE_OAUTH_TOKEN"] != "oauth-sentinel-value" {
+		t.Errorf("model credential = %q", v.Creds["CLAUDE_CODE_OAUTH_TOKEN"])
+	}
+	for k := range v.Creds {
+		if strings.HasPrefix(k, "GH_") {
+			t.Errorf("a forge key reached a vault that names no forge repo: %s", k)
+		}
+	}
+}
+
 // Flipping read_only either way revokes every session, like a widening: a pod
 // pinned read-only must not inherit a write token, and the reverse is a
 // change too (plan item 4). Unchanged, it stays a no-op.
