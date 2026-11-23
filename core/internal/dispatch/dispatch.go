@@ -6,8 +6,8 @@
 // An event goes to the definitions whose owns or subscribes match it and that
 // the bridge client may open, through AgentService.Open as that client. Only
 // an explicit address wakes one (docs/adr/0082 §1-2); the fleet bot's own
-// forge events are dropped. An alert goes only to the first responders that subscribe to it; one nobody
-// subscribes to is acked (docs/adr/0087).
+// forge events are dropped. An alert goes to the first responders that subscribe to it; one nobody
+// subscribes to waits as a proposal the owner opens as a session (alertProposal).
 package dispatch
 
 import (
@@ -113,6 +113,7 @@ type Definitions interface {
 
 // Proposals is proposals.Store.
 type Proposals interface {
+	Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (string, bool, error)
 	CreateEvent(ctx context.Context, repo, dedupKey, title, body, payloadJSON string, ev proposals.Event) (string, bool, error)
 	FoldEvent(ctx context.Context, repo, dedupKey, marker, text string) (bool, error)
 	DismissUnopened(ctx context.Context, repo, dedupKey string) (bool, error)
@@ -132,7 +133,7 @@ type Dispatcher struct {
 	// source is the bridge client source core's own publishes carry. Both unset: no hand-off reaches a character.
 	warm   func(ctx context.Context, sessionID string) (podName string, release func(), err error)
 	source string
-	// responders runs the alert groups first-responder definitions subscribe to; nil: every alert is acked.
+	// responders runs the alert groups first-responder definitions subscribe to; nil: every alert is a proposal.
 	responders *responder.Runner
 	router     *responder.Router
 
@@ -358,21 +359,19 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 	return errors.Join(errs...)
 }
 
-// alert: an alert reaches the fleet only through a first responder (docs/adr/0086 §3-§4, 0087). One no responder
-// subscribes to is acked: Alertmanager has already posted it to Discord and the bridge keeps it. It never opens a
-// thread (it is machine), so no other definition sees it.
-func (d *Dispatcher) alert(_ context.Context, e *bridgev1.CloudEvent) error {
+// alert: an alert a first responder subscribes to starts its run (docs/adr/0086 §3-§4, 0087). Any other alert
+// waits as a proposal the owner opens as a session, or dismisses (alertProposal); Alertmanager has already posted it
+// to Discord. It never opens a thread (it is machine), so no definition sees it.
+func (d *Dispatcher) alert(ctx context.Context, e *bridgev1.CloudEvent) error {
 	if e.GetReplayed() {
 		return nil
 	}
-	if d.responders == nil {
-		slog.Debug("dispatch: alert acked, no responders configured", "id", e.GetId())
-		return nil
+	var subs []definitions.Head
+	if d.responders != nil {
+		subs = responder.Subscribers(d.defs, Client, e.GetType(), e.GetSubject())
 	}
-	subs := responder.Subscribers(d.defs, Client, e.GetType(), e.GetSubject())
 	if len(subs) == 0 {
-		slog.Debug("dispatch: alert acked, no responder subscribes to it", "id", e.GetId(), "type", e.GetType())
-		return nil
+		return d.alertProposal(ctx, e)
 	}
 	g, ok := responder.GroupOf(e.GetData())
 	if !ok {

@@ -1,5 +1,5 @@
 # OFF since 2026-11-23 (owner): no invoker and the bridge client does not list it, so no alert starts a run and
-# alerts reach Discord only. The text below describes the responder when it is on.
+# alerts wait as proposals the owner opens as sessions. The text below describes the responder when it is on.
 #
 # First responder for cluster alerts (docs/adr/0086 §3, docs/adr/0087). The bridge's dispatcher invokes one
 # single-shot run per Alertmanager alert group; the alert text is untrusted data, so the run holds A·B (it reads, it

@@ -13,6 +13,6 @@ spec:
   # definition whose PublishEvent hand-offs may wake (docs/adr/0082 slice 5).
   actors: { allow: [MohammadBnei, "agent:agent-reviewer-agent-fleet"] }
   # alert-responder is not listed (owner 2026-11-23): a run per alert group cost too much CPU and memory
-  # for an answer that cannot close the issue. Alerts reach Discord only; core acks them (dispatch.alert).
+  # for an answer that cannot close the issue. Alerts wait as proposals the owner opens (dispatch.alertProposal).
   # Add it back to turn the first responder on again.
   definitions: [agent-reviewer-agent-fleet]

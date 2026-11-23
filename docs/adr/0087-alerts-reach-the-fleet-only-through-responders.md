@@ -103,3 +103,10 @@ A first responder must look at the cluster before it answers. Without that, its 
    `[A-Za-z0-9 _:.-]`), set by whoever writes the rule, into the investigating session as "title (agent claim)"; the
    owner sees the payload on the confirm page and the session asks before every tool. The repo is looked up by name,
    so a renamed or inactive fleet repo makes Investigate refuse with the card left open.
+6. **Responder off, proposals back (owner, 2026-11-24).** A run per alert group cost a pod's CPU and memory for an
+   answer that could not close the issue, so `alert-responder` is off (the bridge client does not list it, its
+   `invokers` is empty). An alert no responder takes now waits as an alert proposal again, as before this ADR: core's
+   dispatcher files it on `infra-bootstrap`, deduped on the fingerprint, and a resolved alert dismisses it while
+   unopened. Nothing runs until the owner opens it as a session (`OpenFromProposal`, body labelled untrusted alert
+   text) or dismisses it. Only the bridge path files; `/webhook/alertmanager` stays deleted. The responder path is
+   unchanged and takes precedence for any responder turned back on.

@@ -27,9 +27,10 @@ cooldown, held firings coalesced), with the trust set `A·B`; core files its out
 It investigates read-only first: `kubectl_read` (`cluster.read`), `view_logs` (`cluster.logNamespaces`) and
 `query_metrics`, all tagged B. Its workspace is `agent-fleet`, since core never runs a definition on a cluster-access repo.
 A client's own `Invoke` of a responder is refused. An alert reaches the fleet only through a responder
-(`docs/adr/0087`): one no responder subscribes to is acked and files nothing.
+(`docs/adr/0087`); one no responder subscribes to waits as a proposal on `infra-bootstrap` that the owner opens
+as a session or dismisses (a resolved alert dismisses it while unopened).
 It is off for now (owner, 2026-11-23: too much CPU and memory for an answer that cannot close the issue):
-the bridge client does not list it and its `invokers` is empty, so every alert is acked and reaches Discord only.
+the bridge client does not list it and its `invokers` is empty, so every alert waits as a proposal.
 
 ## Characters (`docs/adr/0084`)
 
