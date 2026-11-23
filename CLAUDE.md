@@ -310,8 +310,7 @@ deploy, CI, permission or pod-lifecycle paths.
   co-author or identity, a `Claude-Session` trailer, claude.ai/claude.com links, a
   generated-with footer and model names (`.github/scripts/check-trailers.py`, self-tested by
   `check_trailers_test.py`). The legacy `ukubi-claude-*` author is accepted for old history only.
-- Merge: Forgejo API with `{"Do":"rebase"}` after green CI and a fresh review. Never an admin
-  override.
+- Merging: see the workspace `CLAUDE.md` (Forgejo API, rebase).
 - `worker/`: `bun:test` for coordination logic cheap to mock (SDK streaming-input `query()`,
   sidecar local HTTP client). Runs in CI ahead of Docker build. Also `bun run typecheck`.
 - `core/`, `provisioner/`, `sidecar/`: `go test`. Table-driven units, `client-go` fake
