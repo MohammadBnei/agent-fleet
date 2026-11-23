@@ -1375,10 +1375,15 @@ func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
 // pointer leaves that column untouched (COALESCE falls back to the current
 // value), so a title can be set without clobbering a description. Like
 // SetPermissionMode, a plain column write with no side effects.
+//
+// A title the session already has is kept: the owner's, from the new-session
+// dialog, wins over the agent's own, and the agent sets one only when there is
+// none. ponytail: that also means the agent cannot retitle itself later; a
+// title_source column if it should.
 func (s *Store) UpdateMeta(ctx context.Context, id string, title, description *string) error {
 	_, err := s.pool.Exec(ctx,
 		`UPDATE sessions
-		    SET title = COALESCE($2, title),
+		    SET title = CASE WHEN COALESCE(title, '') = '' THEN COALESCE($2, title) ELSE title END,
 		        description = COALESCE($3, description),
 		        updated_at = now()
 		  WHERE id = $1`, id, title, description)

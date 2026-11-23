@@ -154,10 +154,21 @@ export function NewSessionDialog({
       const res = await client.createSession(
         definition
           ? // Repo, model and mode come from the definition; core refuses them here.
-            { definition, title: title.trim() || labelFrom(text) }
+            {
+              definition,
+              title: title.trim() || undefined,
+              description: title.trim()
+                ? undefined
+                : labelFrom(text) || undefined,
+            }
           : {
               repo,
-              title: title.trim() || labelFrom(text),
+              // Omitted when blank so the agent can title the session itself; the
+              // list falls back to `description`, a label copy of the first line.
+              title: title.trim() || undefined,
+              description: title.trim()
+                ? undefined
+                : labelFrom(text) || undefined,
               // Carried on CreateSession itself rather than a setPermissionMode call
               // afterwards. The worker reads session.permissionMode once at startup,
               // and the first message is what provisions the pod, so the old

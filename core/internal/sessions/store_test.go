@@ -836,8 +836,11 @@ func contains(ids []string, id string) bool {
 func TestUpdateMeta_LeavesOmittedFieldUnchanged(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(dbtest.NewPool(t))
-	// newSession creates with title "t", description "d".
-	id := newSession(t, ctx, store)
+	// No owner title, so the agent may set one.
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Description: "d"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 
 	newTitle := "renamed"
 	if err := store.UpdateMeta(ctx, id, &newTitle, nil); err != nil {
@@ -867,6 +870,54 @@ func TestUpdateMeta_LeavesOmittedFieldUnchanged(t *testing.T) {
 	}
 	if s.Title == nil || *s.Title != "renamed" {
 		t.Errorf("title clobbered by a description-only update, got %v", s.Title)
+	}
+}
+
+// An untitled session (the dialog sends no title when none is typed) takes the
+// agent's; a titled one refuses it.
+func TestUpdateMeta_UntitledTakesTheAgentsTitle(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	untitled, err := store.Create(ctx, CreateParams{Repo: "agent-fleet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	titled, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "mine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := "agent's"
+	for _, id := range []string{untitled, titled} {
+		if err := store.UpdateMeta(ctx, id, &agent, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, want := range map[string]string{untitled: "agent's", titled: "mine"} {
+		s, err := store.Get(ctx, id)
+		if err != nil || s.Title == nil || *s.Title != want {
+			t.Errorf("title = %v (err %v), want %q", s.Title, err, want)
+		}
+	}
+}
+
+// The owner's title from the new-session dialog wins over the agent's own.
+func TestUpdateMeta_KeepsTheOwnersTitle(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	id := newSession(t, ctx, store) // title "t", given at creation
+	agentTitle, desc := "the agent's title", "about"
+	if err := store.UpdateMeta(ctx, id, &agentTitle, &desc); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Title == nil || *s.Title != "t" {
+		t.Errorf("owner title overwritten: %v", s.Title)
+	}
+	if s.Description != "about" {
+		t.Errorf("description not updated: %q", s.Description)
 	}
 }
 
