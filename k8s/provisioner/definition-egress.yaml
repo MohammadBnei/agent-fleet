@@ -42,6 +42,15 @@ spec:
     - ports:
       - port: "9090"
         protocol: TCP
+  # llm-gateway (docs/adr/0088): the sidecar's gateway route, port 4000 judged
+  # on the backend pod after the Service's :8080 DNAT. Any pod of the namespace.
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: llm-gateway
+    toPorts:
+    - ports:
+      - port: "4000"
+        protocol: TCP
   - toEndpoints:
     - matchLabels:
         k8s:io.kubernetes.pod.namespace: kube-system
@@ -56,3 +65,4 @@ spec:
         dns:
         - matchName: agent-vault.agent-vault.svc.cluster.local
         - matchName: agent-fleet-core.agent-fleet.svc.cluster.local
+        - matchName: llm-gateway.llm-gateway.svc.cluster.local
