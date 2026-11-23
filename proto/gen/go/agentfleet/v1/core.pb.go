@@ -949,6 +949,10 @@ type Session struct {
 	// passes no model and Claude Code picks (docs/adr/0077). A repo session's
 	// row then records the model the SDK's init reported.
 	Model *string `protobuf:"bytes,22,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	// The context window of a gateway model (non-claude-* id), filled by core
+	// from its model map (core/internal/models). Unset for a subscription model:
+	// the provisioner and worker cannot import the map.
+	ContextTokens *int32 `protobuf:"varint,30,opt,name=context_tokens,json=contextTokens,proto3,oneof" json:"context_tokens,omitempty"`
 	// Last time a transcript entry was appended — the clock the idle sweep and
 	// the retention GC both read. RFC3339. Unset for a session with no
 	// activity yet.
@@ -1099,6 +1103,13 @@ func (x *Session) GetModel() string {
 		return *x.Model
 	}
 	return ""
+}
+
+func (x *Session) GetContextTokens() int32 {
+	if x != nil && x.ContextTokens != nil {
+		return *x.ContextTokens
+	}
+	return 0
 }
 
 func (x *Session) GetLastActiveAt() string {
@@ -4932,7 +4943,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\"*\n" +
 	"\x16RequestServiceResponse\x12\x10\n" +
-	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\x92\t\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\xd1\t\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -4944,22 +4955,23 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\v \x01(\tH\x03R\tlastError\x88\x01\x01\x12-\n" +
 	"\x10agent_session_id\x18\f \x01(\tH\x04R\x0eagentSessionId\x88\x01\x01\x12\x19\n" +
-	"\x05model\x18\x16 \x01(\tH\x05R\x05model\x88\x01\x01\x12)\n" +
-	"\x0elast_active_at\x18\r \x01(\tH\x06R\flastActiveAt\x88\x01\x01\x12,\n" +
-	"\x0fpermission_mode\x18\x0e \x01(\tH\aR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
+	"\x05model\x18\x16 \x01(\tH\x05R\x05model\x88\x01\x01\x12*\n" +
+	"\x0econtext_tokens\x18\x1e \x01(\x05H\x06R\rcontextTokens\x88\x01\x01\x12)\n" +
+	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
+	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"live_state\x18\x11 \x01(\tR\tliveState\x12+\n" +
 	"\x11pending_decisions\x18\x13 \x01(\x05R\x10pendingDecisions\x12\x1e\n" +
-	"\bswept_at\x18\x14 \x01(\tH\bR\asweptAt\x88\x01\x01\x12$\n" +
-	"\varchived_at\x18\x15 \x01(\tH\tR\n" +
+	"\bswept_at\x18\x14 \x01(\tH\tR\asweptAt\x88\x01\x01\x12$\n" +
+	"\varchived_at\x18\x15 \x01(\tH\n" +
+	"R\n" +
 	"archivedAt\x88\x01\x01\x12&\n" +
-	"\fworker_image\x18\x17 \x01(\tH\n" +
-	"R\vworkerImage\x88\x01\x01\x12(\n" +
-	"\rsidecar_image\x18\x18 \x01(\tH\vR\fsidecarImage\x88\x01\x01\x12,\n" +
-	"\x0fdefinition_name\x18\x19 \x01(\tH\fR\x0edefinitionName\x88\x01\x01\x12*\n" +
-	"\x0edefinition_sha\x18\x1a \x01(\tH\rR\rdefinitionSha\x88\x01\x01\x12\x1b\n" +
-	"\x06effort\x18\x1b \x01(\tH\x0eR\x06effort\x88\x01\x01\x12(\n" +
-	"\rfleet_version\x18\x1c \x01(\tH\x0fR\ffleetVersion\x88\x01\x01\x12\x1b\n" +
+	"\fworker_image\x18\x17 \x01(\tH\vR\vworkerImage\x88\x01\x01\x12(\n" +
+	"\rsidecar_image\x18\x18 \x01(\tH\fR\fsidecarImage\x88\x01\x01\x12,\n" +
+	"\x0fdefinition_name\x18\x19 \x01(\tH\rR\x0edefinitionName\x88\x01\x01\x12*\n" +
+	"\x0edefinition_sha\x18\x1a \x01(\tH\x0eR\rdefinitionSha\x88\x01\x01\x12\x1b\n" +
+	"\x06effort\x18\x1b \x01(\tH\x0fR\x06effort\x88\x01\x01\x12(\n" +
+	"\rfleet_version\x18\x1c \x01(\tH\x10R\ffleetVersion\x88\x01\x01\x12\x1b\n" +
 	"\ttrust_set\x18\x1d \x01(\tR\btrustSetB\b\n" +
 	"\x06_titleB\f\n" +
 	"\n" +
@@ -4968,6 +4980,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\v_last_errorB\x13\n" +
 	"\x11_agent_session_idB\b\n" +
 	"\x06_modelB\x11\n" +
+	"\x0f_context_tokensB\x11\n" +
 	"\x0f_last_active_atB\x12\n" +
 	"\x10_permission_modeB\v\n" +
 	"\t_swept_atB\x0e\n" +

@@ -314,3 +314,13 @@ func TestGatewayKillSwitch(t *testing.T) {
 		t.Errorf("want the kill-switch message, got %v", err)
 	}
 }
+
+func TestSessionToProtoContextTokens(t *testing.T) {
+	gw, cl := "zai-org-glm-5", "claude-opus-5"
+	if got := SessionToProto(sessions.Session{Model: &gw}).ContextTokens; got == nil || *got != 198000 {
+		t.Errorf("gateway context_tokens = %v, want 198000", got)
+	}
+	if SessionToProto(sessions.Session{Model: &cl}).ContextTokens != nil || SessionToProto(sessions.Session{}).ContextTokens != nil {
+		t.Error("claude/no model must leave context_tokens unset")
+	}
+}

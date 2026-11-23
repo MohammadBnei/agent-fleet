@@ -1905,7 +1905,14 @@ func rfc3339(t *time.Time) *string {
 }
 
 func SessionToProto(t sessions.Session) *agentfleetv1.Session {
+	var ctxTokens *int32
+	if t.Model != nil {
+		if i, ok := models.Gateway(*t.Model); ok {
+			ctxTokens = &i.ContextTokens
+		}
+	}
 	return &agentfleetv1.Session{
+		ContextTokens:  ctxTokens,
 		Id:             t.ID,
 		Repo:           t.Repo,
 		Title:          t.Title,

@@ -226,6 +226,10 @@ message Session {
   // passes no model and Claude Code picks (docs/adr/0077). A repo session's
   // row then records the model the SDK's init reported.
   optional string model = 22;
+  // The context window of a gateway model (non-claude-* id), filled by core
+  // from its model map (core/internal/models). Unset for a subscription model:
+  // the provisioner and worker cannot import the map.
+  optional int32 context_tokens = 30;
 
   // Last time a transcript entry was appended — the clock the idle sweep and
   // the retention GC both read. RFC3339. Unset for a session with no
