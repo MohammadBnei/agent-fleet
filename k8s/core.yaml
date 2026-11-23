@@ -147,6 +147,10 @@ env:
   # commits to main.
   - name: FLEET_VERSION
     value: "8.0.0"
+  # Non-Claude models through llm-gateway (docs/adr/0088). "on" offers and warms
+  # them; anything else hides and refuses them (the kill switch).
+  - name: FLEET_GATEWAY_MODELS
+    value: "on"
   - name: CORE_PORT
     value: "8080"
   - name: CORE_GRPC_PORT
