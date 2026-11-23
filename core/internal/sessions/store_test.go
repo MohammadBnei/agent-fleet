@@ -130,6 +130,68 @@ func TestCreate_MakesARowWithNoPodAndNoLease(t *testing.T) {
 	}
 }
 
+// A pod that spoke is running: the 60s reconcile alone moved the row off
+// SCHEDULED, so a working pod read "scheduled" for up to a minute. A human's
+// message proves nothing about the pod.
+func TestTouchActive_APodThatSpokeIsRunning(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	id := newSession(t, ctx, store)
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_SCHEDULED", ""); err != nil {
+		t.Fatal(err)
+	}
+	phase := func() string {
+		t.Helper()
+		sess, err := store.Get(ctx, id)
+		if err != nil || sess.PodPhase == nil {
+			t.Fatalf("get: %v", err)
+		}
+		return *sess.PodPhase
+	}
+	if err := store.TouchActive(ctx, id, "human", "discussion"); err != nil {
+		t.Fatal(err)
+	}
+	if got := phase(); got != "POD_PHASE_SCHEDULED" {
+		t.Errorf("after a human message: %s, want SCHEDULED", got)
+	}
+	if err := store.TouchActive(ctx, id, "agent", "assistant"); err != nil {
+		t.Fatal(err)
+	}
+	if got := phase(); got != "POD_PHASE_RUNNING" {
+		t.Errorf("after the agent spoke: %s, want RUNNING", got)
+	}
+	// Core's own entries are not the pod speaking.
+	for _, from := range []string{"fleet", "system"} {
+		if err := store.SetPodPhase(ctx, id, "POD_PHASE_SCHEDULED", ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.TouchActive(ctx, id, from, "system"); err != nil {
+			t.Fatal(err)
+		}
+		if got := phase(); got != "POD_PHASE_SCHEDULED" {
+			t.Errorf("after a %s entry: %s, want SCHEDULED", from, got)
+		}
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_PROVISIONING", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.TouchActive(ctx, id, "fleet", "system"); err != nil {
+		t.Fatal(err)
+	}
+	if got := phase(); got != "POD_PHASE_PROVISIONING" {
+		t.Errorf("after a fleet entry: %s, want PROVISIONING", got)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", "stopped"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.TouchActive(ctx, id, "agent", "result"); err != nil {
+		t.Fatal(err)
+	}
+	if got := phase(); got != "POD_PHASE_TERMINATED" {
+		t.Errorf("a torn-down pod came back as %s", got)
+	}
+}
+
 // ReserveSlot resets the per-pod state, and getting this wrong is how
 // docs/adr/0040's dead-pod hole reopens: a sweep would act on the PREVIOUS
 // pod's history and tear down the replacement seconds after it started.

@@ -1423,6 +1423,11 @@ func (s *Store) TouchActive(ctx context.Context, id, from, entryType string) err
 		    last_entry_from = $2,
 		    last_entry_type = $3,
 		    activity_seen = activity_seen OR $2 <> 'human',
+		    -- A pod that spoke is running: the 60s reconcile was the only
+		    -- thing that moved the row off SCHEDULED, so a working pod read
+		    -- "scheduled" for up to a minute.
+		    pod_phase = CASE WHEN $2 = 'agent' AND pod_phase IN ('POD_PHASE_PROVISIONING', 'POD_PHASE_CREATED', 'POD_PHASE_SCHEDULED')
+		                     THEN 'POD_PHASE_RUNNING' ELSE pod_phase END,
 		    updated_at = now()
 		WHERE id = $1
 	`, id, from, entryType)
