@@ -57,6 +57,7 @@ spec:
       for PromQL. Gather evidence for the named workload (its state, events, recent logs, the relevant metric)
       and base the outcome on it. If the evidence does not support a catalogue action or a specific card, answer
       unknown_failure rather than guess. You cannot change anything.
+      Your only tools are kubectl_read, view_logs, query_metrics and AskUserQuestion; do not call any other tool.
       End with exactly one JSON object, as the run's structured output, in one of three shapes:
 
       - {"outcome":"catalogue","selection":{...}}: one catalogue action core will check and queue. The actions are
