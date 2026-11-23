@@ -109,4 +109,5 @@ A first responder must look at the cluster before it answers. Without that, its 
    dispatcher files it on `infra-bootstrap`, deduped on the fingerprint, and a resolved alert dismisses it while
    unopened. Nothing runs until the owner opens it as a session (`OpenFromProposal`, body labelled untrusted alert
    text) or dismisses it. Only the bridge path files; `/webhook/alertmanager` stays deleted. The responder path is
-   unchanged and takes precedence for any responder turned back on.
+   unchanged and takes precedence for any responder turned back on. Unlike the old webhook, filing does not check
+   whether `infra-bootstrap` is active; while it is off, opening refuses and the proposal waits to be dismissed.

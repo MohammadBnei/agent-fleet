@@ -528,8 +528,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		}))
 	}
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
-	// definition threads through agentSvc as client bridge. An alert reaches the
-	// fleet only through a first responder (docs/adr/0087).
+	// definition threads through agentSvc as client bridge. An alert goes to a first
+	// responder, or else waits as a proposal (docs/adr/0087 §6).
 	if defs != nil {
 		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore)
 		dispatcher.SetCards(decisionStore, activityStore)
