@@ -73,6 +73,10 @@ const (
 	// or dispatch's own cards), never through SendMessage. The owner's choice
 	// comes back as an ANSWER replying to it.
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_CARD TranscriptEntryType = 15
+	// Written only by core's SetSessionModel: `text` is a JSON {from, to} of
+	// the model ids. Marks the seam where the model changed; the worker
+	// ignores it.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH TranscriptEntryType = 16
 )
 
 // Enum value maps for TranscriptEntryType.
@@ -94,6 +98,7 @@ var (
 		13: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE",
 		14: "TRANSCRIPT_ENTRY_TYPE_INTERRUPT",
 		15: "TRANSCRIPT_ENTRY_TYPE_CARD",
+		16: "TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH",
 	}
 	TranscriptEntryType_value = map[string]int32{
 		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED":         0,
@@ -112,6 +117,7 @@ var (
 		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE": 13,
 		"TRANSCRIPT_ENTRY_TYPE_INTERRUPT":           14,
 		"TRANSCRIPT_ENTRY_TYPE_CARD":                15,
+		"TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH":        16,
 	}
 )
 
@@ -934,7 +940,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x11writer_definition\x18\x06 \x01(\tR\x10writerDefinition\x12\x1d\n" +
 	"\n" +
 	"drafted_by\x18\a \x01(\tR\tdraftedBy\x12\x16\n" +
-	"\x06detail\x18\b \x01(\tR\x06detail*\xe7\x04\n" +
+	"\x06detail\x18\b \x01(\tR\x06detail*\x8f\x05\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
@@ -952,7 +958,8 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"(TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST\x10\f\x12-\n" +
 	")TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE\x10\r\x12#\n" +
 	"\x1fTRANSCRIPT_ENTRY_TYPE_INTERRUPT\x10\x0e\x12\x1e\n" +
-	"\x1aTRANSCRIPT_ENTRY_TYPE_CARD\x10\x0fBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x1aTRANSCRIPT_ENTRY_TYPE_CARD\x10\x0f\x12&\n" +
+	"\"TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH\x10\x10BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once

@@ -63,6 +63,21 @@ const (
 	// DashboardServiceWarmSessionProcedure is the fully-qualified name of the DashboardService's
 	// WarmSession RPC.
 	DashboardServiceWarmSessionProcedure = "/agentfleet.v1.DashboardService/WarmSession"
+	// DashboardServiceSetSessionModelProcedure is the fully-qualified name of the DashboardService's
+	// SetSessionModel RPC.
+	DashboardServiceSetSessionModelProcedure = "/agentfleet.v1.DashboardService/SetSessionModel"
+	// DashboardServiceRateTurnProcedure is the fully-qualified name of the DashboardService's RateTurn
+	// RPC.
+	DashboardServiceRateTurnProcedure = "/agentfleet.v1.DashboardService/RateTurn"
+	// DashboardServiceRateSessionProcedure is the fully-qualified name of the DashboardService's
+	// RateSession RPC.
+	DashboardServiceRateSessionProcedure = "/agentfleet.v1.DashboardService/RateSession"
+	// DashboardServiceListSessionRatingsProcedure is the fully-qualified name of the DashboardService's
+	// ListSessionRatings RPC.
+	DashboardServiceListSessionRatingsProcedure = "/agentfleet.v1.DashboardService/ListSessionRatings"
+	// DashboardServiceListModelStatsProcedure is the fully-qualified name of the DashboardService's
+	// ListModelStats RPC.
+	DashboardServiceListModelStatsProcedure = "/agentfleet.v1.DashboardService/ListModelStats"
 	// DashboardServiceMarkSeenProcedure is the fully-qualified name of the DashboardService's MarkSeen
 	// RPC.
 	DashboardServiceMarkSeenProcedure = "/agentfleet.v1.DashboardService/MarkSeen"
@@ -205,6 +220,15 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	WarmSession(context.Context, *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error)
+	// Repo sessions only: stops the pod (never StopSession), saves the model;
+	// the next message warms on it.
+	SetSessionModel(context.Context, *connect.Request[v1.SetSessionModelRequest]) (*connect.Response[v1.SetSessionModelResponse], error)
+	// Thumb on one result entry, score + note on a whole session. Admin-gated
+	// like every method here.
+	RateTurn(context.Context, *connect.Request[v1.RateTurnRequest]) (*connect.Response[v1.RateTurnResponse], error)
+	RateSession(context.Context, *connect.Request[v1.RateSessionRequest]) (*connect.Response[v1.RateSessionResponse], error)
+	ListSessionRatings(context.Context, *connect.Request[v1.ListSessionRatingsRequest]) (*connect.Response[v1.ListSessionRatingsResponse], error)
+	ListModelStats(context.Context, *connect.Request[v1.ListModelStatsRequest]) (*connect.Response[v1.ListModelStatsResponse], error)
 	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
 	ArchiveSession(context.Context, *connect.Request[v1.ArchiveSessionRequest]) (*connect.Response[v1.ArchiveSessionResponse], error)
 	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
@@ -360,6 +384,36 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceWarmSessionProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("WarmSession")),
+			connect.WithClientOptions(opts...),
+		),
+		setSessionModel: connect.NewClient[v1.SetSessionModelRequest, v1.SetSessionModelResponse](
+			httpClient,
+			baseURL+DashboardServiceSetSessionModelProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("SetSessionModel")),
+			connect.WithClientOptions(opts...),
+		),
+		rateTurn: connect.NewClient[v1.RateTurnRequest, v1.RateTurnResponse](
+			httpClient,
+			baseURL+DashboardServiceRateTurnProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RateTurn")),
+			connect.WithClientOptions(opts...),
+		),
+		rateSession: connect.NewClient[v1.RateSessionRequest, v1.RateSessionResponse](
+			httpClient,
+			baseURL+DashboardServiceRateSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RateSession")),
+			connect.WithClientOptions(opts...),
+		),
+		listSessionRatings: connect.NewClient[v1.ListSessionRatingsRequest, v1.ListSessionRatingsResponse](
+			httpClient,
+			baseURL+DashboardServiceListSessionRatingsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListSessionRatings")),
+			connect.WithClientOptions(opts...),
+		),
+		listModelStats: connect.NewClient[v1.ListModelStatsRequest, v1.ListModelStatsResponse](
+			httpClient,
+			baseURL+DashboardServiceListModelStatsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListModelStats")),
 			connect.WithClientOptions(opts...),
 		),
 		markSeen: connect.NewClient[v1.MarkSeenRequest, v1.MarkSeenResponse](
@@ -611,6 +665,11 @@ type dashboardServiceClient struct {
 	interrupt           *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
 	warmSession         *connect.Client[v1.WarmSessionRequest, v1.WarmSessionResponse]
+	setSessionModel     *connect.Client[v1.SetSessionModelRequest, v1.SetSessionModelResponse]
+	rateTurn            *connect.Client[v1.RateTurnRequest, v1.RateTurnResponse]
+	rateSession         *connect.Client[v1.RateSessionRequest, v1.RateSessionResponse]
+	listSessionRatings  *connect.Client[v1.ListSessionRatingsRequest, v1.ListSessionRatingsResponse]
+	listModelStats      *connect.Client[v1.ListModelStatsRequest, v1.ListModelStatsResponse]
 	markSeen            *connect.Client[v1.MarkSeenRequest, v1.MarkSeenResponse]
 	archiveSession      *connect.Client[v1.ArchiveSessionRequest, v1.ArchiveSessionResponse]
 	listProposals       *connect.Client[v1.ListProposalsRequest, v1.ListProposalsResponse]
@@ -700,6 +759,31 @@ func (c *dashboardServiceClient) SetPermissionMode(ctx context.Context, req *con
 // WarmSession calls agentfleet.v1.DashboardService.WarmSession.
 func (c *dashboardServiceClient) WarmSession(ctx context.Context, req *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error) {
 	return c.warmSession.CallUnary(ctx, req)
+}
+
+// SetSessionModel calls agentfleet.v1.DashboardService.SetSessionModel.
+func (c *dashboardServiceClient) SetSessionModel(ctx context.Context, req *connect.Request[v1.SetSessionModelRequest]) (*connect.Response[v1.SetSessionModelResponse], error) {
+	return c.setSessionModel.CallUnary(ctx, req)
+}
+
+// RateTurn calls agentfleet.v1.DashboardService.RateTurn.
+func (c *dashboardServiceClient) RateTurn(ctx context.Context, req *connect.Request[v1.RateTurnRequest]) (*connect.Response[v1.RateTurnResponse], error) {
+	return c.rateTurn.CallUnary(ctx, req)
+}
+
+// RateSession calls agentfleet.v1.DashboardService.RateSession.
+func (c *dashboardServiceClient) RateSession(ctx context.Context, req *connect.Request[v1.RateSessionRequest]) (*connect.Response[v1.RateSessionResponse], error) {
+	return c.rateSession.CallUnary(ctx, req)
+}
+
+// ListSessionRatings calls agentfleet.v1.DashboardService.ListSessionRatings.
+func (c *dashboardServiceClient) ListSessionRatings(ctx context.Context, req *connect.Request[v1.ListSessionRatingsRequest]) (*connect.Response[v1.ListSessionRatingsResponse], error) {
+	return c.listSessionRatings.CallUnary(ctx, req)
+}
+
+// ListModelStats calls agentfleet.v1.DashboardService.ListModelStats.
+func (c *dashboardServiceClient) ListModelStats(ctx context.Context, req *connect.Request[v1.ListModelStatsRequest]) (*connect.Response[v1.ListModelStatsResponse], error) {
+	return c.listModelStats.CallUnary(ctx, req)
 }
 
 // MarkSeen calls agentfleet.v1.DashboardService.MarkSeen.
@@ -920,6 +1004,15 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	WarmSession(context.Context, *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error)
+	// Repo sessions only: stops the pod (never StopSession), saves the model;
+	// the next message warms on it.
+	SetSessionModel(context.Context, *connect.Request[v1.SetSessionModelRequest]) (*connect.Response[v1.SetSessionModelResponse], error)
+	// Thumb on one result entry, score + note on a whole session. Admin-gated
+	// like every method here.
+	RateTurn(context.Context, *connect.Request[v1.RateTurnRequest]) (*connect.Response[v1.RateTurnResponse], error)
+	RateSession(context.Context, *connect.Request[v1.RateSessionRequest]) (*connect.Response[v1.RateSessionResponse], error)
+	ListSessionRatings(context.Context, *connect.Request[v1.ListSessionRatingsRequest]) (*connect.Response[v1.ListSessionRatingsResponse], error)
+	ListModelStats(context.Context, *connect.Request[v1.ListModelStatsRequest]) (*connect.Response[v1.ListModelStatsResponse], error)
 	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
 	ArchiveSession(context.Context, *connect.Request[v1.ArchiveSessionRequest]) (*connect.Response[v1.ArchiveSessionResponse], error)
 	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
@@ -1071,6 +1164,36 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceWarmSessionProcedure,
 		svc.WarmSession,
 		connect.WithSchema(dashboardServiceMethods.ByName("WarmSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceSetSessionModelHandler := connect.NewUnaryHandler(
+		DashboardServiceSetSessionModelProcedure,
+		svc.SetSessionModel,
+		connect.WithSchema(dashboardServiceMethods.ByName("SetSessionModel")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRateTurnHandler := connect.NewUnaryHandler(
+		DashboardServiceRateTurnProcedure,
+		svc.RateTurn,
+		connect.WithSchema(dashboardServiceMethods.ByName("RateTurn")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRateSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceRateSessionProcedure,
+		svc.RateSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("RateSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceListSessionRatingsHandler := connect.NewUnaryHandler(
+		DashboardServiceListSessionRatingsProcedure,
+		svc.ListSessionRatings,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListSessionRatings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceListModelStatsHandler := connect.NewUnaryHandler(
+		DashboardServiceListModelStatsProcedure,
+		svc.ListModelStats,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListModelStats")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceMarkSeenHandler := connect.NewUnaryHandler(
@@ -1329,6 +1452,16 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceSetPermissionModeHandler.ServeHTTP(w, r)
 		case DashboardServiceWarmSessionProcedure:
 			dashboardServiceWarmSessionHandler.ServeHTTP(w, r)
+		case DashboardServiceSetSessionModelProcedure:
+			dashboardServiceSetSessionModelHandler.ServeHTTP(w, r)
+		case DashboardServiceRateTurnProcedure:
+			dashboardServiceRateTurnHandler.ServeHTTP(w, r)
+		case DashboardServiceRateSessionProcedure:
+			dashboardServiceRateSessionHandler.ServeHTTP(w, r)
+		case DashboardServiceListSessionRatingsProcedure:
+			dashboardServiceListSessionRatingsHandler.ServeHTTP(w, r)
+		case DashboardServiceListModelStatsProcedure:
+			dashboardServiceListModelStatsHandler.ServeHTTP(w, r)
 		case DashboardServiceMarkSeenProcedure:
 			dashboardServiceMarkSeenHandler.ServeHTTP(w, r)
 		case DashboardServiceArchiveSessionProcedure:
@@ -1454,6 +1587,26 @@ func (UnimplementedDashboardServiceHandler) SetPermissionMode(context.Context, *
 
 func (UnimplementedDashboardServiceHandler) WarmSession(context.Context, *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.WarmSession is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) SetSessionModel(context.Context, *connect.Request[v1.SetSessionModelRequest]) (*connect.Response[v1.SetSessionModelResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SetSessionModel is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RateTurn(context.Context, *connect.Request[v1.RateTurnRequest]) (*connect.Response[v1.RateTurnResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RateTurn is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RateSession(context.Context, *connect.Request[v1.RateSessionRequest]) (*connect.Response[v1.RateSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RateSession is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListSessionRatings(context.Context, *connect.Request[v1.ListSessionRatingsRequest]) (*connect.Response[v1.ListSessionRatingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListSessionRatings is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListModelStats(context.Context, *connect.Request[v1.ListModelStatsRequest]) (*connect.Response[v1.ListModelStatsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListModelStats is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error) {

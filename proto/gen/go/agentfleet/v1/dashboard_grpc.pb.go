@@ -29,6 +29,11 @@ const (
 	DashboardService_Interrupt_FullMethodName           = "/agentfleet.v1.DashboardService/Interrupt"
 	DashboardService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.DashboardService/SetPermissionMode"
 	DashboardService_WarmSession_FullMethodName         = "/agentfleet.v1.DashboardService/WarmSession"
+	DashboardService_SetSessionModel_FullMethodName     = "/agentfleet.v1.DashboardService/SetSessionModel"
+	DashboardService_RateTurn_FullMethodName            = "/agentfleet.v1.DashboardService/RateTurn"
+	DashboardService_RateSession_FullMethodName         = "/agentfleet.v1.DashboardService/RateSession"
+	DashboardService_ListSessionRatings_FullMethodName  = "/agentfleet.v1.DashboardService/ListSessionRatings"
+	DashboardService_ListModelStats_FullMethodName      = "/agentfleet.v1.DashboardService/ListModelStats"
 	DashboardService_MarkSeen_FullMethodName            = "/agentfleet.v1.DashboardService/MarkSeen"
 	DashboardService_ArchiveSession_FullMethodName      = "/agentfleet.v1.DashboardService/ArchiveSession"
 	DashboardService_ListProposals_FullMethodName       = "/agentfleet.v1.DashboardService/ListProposals"
@@ -95,6 +100,15 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	WarmSession(ctx context.Context, in *WarmSessionRequest, opts ...grpc.CallOption) (*WarmSessionResponse, error)
+	// Repo sessions only: stops the pod (never StopSession), saves the model;
+	// the next message warms on it.
+	SetSessionModel(ctx context.Context, in *SetSessionModelRequest, opts ...grpc.CallOption) (*SetSessionModelResponse, error)
+	// Thumb on one result entry, score + note on a whole session. Admin-gated
+	// like every method here.
+	RateTurn(ctx context.Context, in *RateTurnRequest, opts ...grpc.CallOption) (*RateTurnResponse, error)
+	RateSession(ctx context.Context, in *RateSessionRequest, opts ...grpc.CallOption) (*RateSessionResponse, error)
+	ListSessionRatings(ctx context.Context, in *ListSessionRatingsRequest, opts ...grpc.CallOption) (*ListSessionRatingsResponse, error)
+	ListModelStats(ctx context.Context, in *ListModelStatsRequest, opts ...grpc.CallOption) (*ListModelStatsResponse, error)
 	MarkSeen(ctx context.Context, in *MarkSeenRequest, opts ...grpc.CallOption) (*MarkSeenResponse, error)
 	ArchiveSession(ctx context.Context, in *ArchiveSessionRequest, opts ...grpc.CallOption) (*ArchiveSessionResponse, error)
 	ListProposals(ctx context.Context, in *ListProposalsRequest, opts ...grpc.CallOption) (*ListProposalsResponse, error)
@@ -292,6 +306,56 @@ func (c *dashboardServiceClient) WarmSession(ctx context.Context, in *WarmSessio
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WarmSessionResponse)
 	err := c.cc.Invoke(ctx, DashboardService_WarmSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) SetSessionModel(ctx context.Context, in *SetSessionModelRequest, opts ...grpc.CallOption) (*SetSessionModelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSessionModelResponse)
+	err := c.cc.Invoke(ctx, DashboardService_SetSessionModel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) RateTurn(ctx context.Context, in *RateTurnRequest, opts ...grpc.CallOption) (*RateTurnResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RateTurnResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RateTurn_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) RateSession(ctx context.Context, in *RateSessionRequest, opts ...grpc.CallOption) (*RateSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RateSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RateSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) ListSessionRatings(ctx context.Context, in *ListSessionRatingsRequest, opts ...grpc.CallOption) (*ListSessionRatingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSessionRatingsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListSessionRatings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) ListModelStats(ctx context.Context, in *ListModelStatsRequest, opts ...grpc.CallOption) (*ListModelStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListModelStatsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListModelStats_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -713,6 +777,15 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	WarmSession(context.Context, *WarmSessionRequest) (*WarmSessionResponse, error)
+	// Repo sessions only: stops the pod (never StopSession), saves the model;
+	// the next message warms on it.
+	SetSessionModel(context.Context, *SetSessionModelRequest) (*SetSessionModelResponse, error)
+	// Thumb on one result entry, score + note on a whole session. Admin-gated
+	// like every method here.
+	RateTurn(context.Context, *RateTurnRequest) (*RateTurnResponse, error)
+	RateSession(context.Context, *RateSessionRequest) (*RateSessionResponse, error)
+	ListSessionRatings(context.Context, *ListSessionRatingsRequest) (*ListSessionRatingsResponse, error)
+	ListModelStats(context.Context, *ListModelStatsRequest) (*ListModelStatsResponse, error)
 	MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error)
 	ArchiveSession(context.Context, *ArchiveSessionRequest) (*ArchiveSessionResponse, error)
 	ListProposals(context.Context, *ListProposalsRequest) (*ListProposalsResponse, error)
@@ -836,6 +909,21 @@ func (UnimplementedDashboardServiceServer) SetPermissionMode(context.Context, *S
 }
 func (UnimplementedDashboardServiceServer) WarmSession(context.Context, *WarmSessionRequest) (*WarmSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WarmSession not implemented")
+}
+func (UnimplementedDashboardServiceServer) SetSessionModel(context.Context, *SetSessionModelRequest) (*SetSessionModelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSessionModel not implemented")
+}
+func (UnimplementedDashboardServiceServer) RateTurn(context.Context, *RateTurnRequest) (*RateTurnResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RateTurn not implemented")
+}
+func (UnimplementedDashboardServiceServer) RateSession(context.Context, *RateSessionRequest) (*RateSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RateSession not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListSessionRatings(context.Context, *ListSessionRatingsRequest) (*ListSessionRatingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSessionRatings not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListModelStats(context.Context, *ListModelStatsRequest) (*ListModelStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListModelStats not implemented")
 }
 func (UnimplementedDashboardServiceServer) MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MarkSeen not implemented")
@@ -1144,6 +1232,96 @@ func _DashboardService_WarmSession_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).WarmSession(ctx, req.(*WarmSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_SetSessionModel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSessionModelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).SetSessionModel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_SetSessionModel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).SetSessionModel(ctx, req.(*SetSessionModelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_RateTurn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RateTurnRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RateTurn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RateTurn_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RateTurn(ctx, req.(*RateTurnRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_RateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RateSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RateSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RateSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RateSession(ctx, req.(*RateSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_ListSessionRatings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSessionRatingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListSessionRatings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListSessionRatings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListSessionRatings(ctx, req.(*ListSessionRatingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_ListModelStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListModelStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListModelStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListModelStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListModelStats(ctx, req.(*ListModelStatsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1892,6 +2070,26 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WarmSession",
 			Handler:    _DashboardService_WarmSession_Handler,
+		},
+		{
+			MethodName: "SetSessionModel",
+			Handler:    _DashboardService_SetSessionModel_Handler,
+		},
+		{
+			MethodName: "RateTurn",
+			Handler:    _DashboardService_RateTurn_Handler,
+		},
+		{
+			MethodName: "RateSession",
+			Handler:    _DashboardService_RateSession_Handler,
+		},
+		{
+			MethodName: "ListSessionRatings",
+			Handler:    _DashboardService_ListSessionRatings_Handler,
+		},
+		{
+			MethodName: "ListModelStats",
+			Handler:    _DashboardService_ListModelStats_Handler,
 		},
 		{
 			MethodName: "MarkSeen",

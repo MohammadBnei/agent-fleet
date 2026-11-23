@@ -60,6 +60,10 @@ enum TranscriptEntryType {
   // or dispatch's own cards), never through SendMessage. The owner's choice
   // comes back as an ANSWER replying to it.
   TRANSCRIPT_ENTRY_TYPE_CARD = 15;
+  // Written only by core's SetSessionModel: `text` is a JSON {from, to} of
+  // the model ids. Marks the seam where the model changed; the worker
+  // ignores it.
+  TRANSCRIPT_ENTRY_TYPE_MODEL_SWITCH = 16;
 }
 
 message TranscriptEntry {

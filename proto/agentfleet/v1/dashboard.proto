@@ -217,6 +217,76 @@ message MarkSeenRequest {
 
 message MarkSeenResponse {}
 
+message SetSessionModelRequest {
+  string session_id = 1;
+  string model = 2;
+}
+
+message SetSessionModelResponse {}
+
+message RateTurnRequest {
+  string session_id = 1;
+  // The result entry's seq.
+  int64 seq = 2;
+  // +1 or -1.
+  int32 value = 3;
+  string note = 4;
+}
+
+message RateTurnResponse {}
+
+message RateSessionRequest {
+  string session_id = 1;
+  // 1..5.
+  int32 score = 2;
+  string note = 3;
+}
+
+message RateSessionResponse {}
+
+message ListSessionRatingsRequest {
+  string session_id = 1;
+}
+
+message TurnThumb {
+  // The result entry's seq.
+  int64 seq = 1;
+  // +1 or -1.
+  int32 value = 2;
+}
+
+message ListSessionRatingsResponse {
+  repeated TurnThumb thumbs = 1;
+  // 1..5; 0 when the session has no score.
+  int32 score = 2;
+  string note = 3;
+}
+
+message ListModelStatsRequest {
+  // Look-back window; 0 means 30.
+  int32 days = 1;
+}
+
+message ModelStat {
+  string model = 1;
+  // "subscription" | "gateway".
+  string route = 2;
+  int64 sessions = 3;
+  int64 input_tokens = 4;
+  int64 output_tokens = 5;
+  double billed_usd = 6;
+  double list_usd = 7;
+  int64 thumbs_up = 8;
+  int64 thumbs_down = 9;
+  double avg_score = 10;
+  int64 scores = 11;
+  int64 error_results = 12;
+}
+
+message ListModelStatsResponse {
+  repeated ModelStat stats = 1;
+}
+
 message WarmSessionRequest {
   string session_id = 1;
 }
@@ -679,6 +749,15 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc WarmSession(WarmSessionRequest) returns (WarmSessionResponse);
+  // Repo sessions only: stops the pod (never StopSession), saves the model;
+  // the next message warms on it.
+  rpc SetSessionModel(SetSessionModelRequest) returns (SetSessionModelResponse);
+  // Thumb on one result entry, score + note on a whole session. Admin-gated
+  // like every method here.
+  rpc RateTurn(RateTurnRequest) returns (RateTurnResponse);
+  rpc RateSession(RateSessionRequest) returns (RateSessionResponse);
+  rpc ListSessionRatings(ListSessionRatingsRequest) returns (ListSessionRatingsResponse);
+  rpc ListModelStats(ListModelStatsRequest) returns (ListModelStatsResponse);
   rpc MarkSeen(MarkSeenRequest) returns (MarkSeenResponse);
   rpc ArchiveSession(ArchiveSessionRequest) returns (ArchiveSessionResponse);
   rpc ListProposals(ListProposalsRequest) returns (ListProposalsResponse);
