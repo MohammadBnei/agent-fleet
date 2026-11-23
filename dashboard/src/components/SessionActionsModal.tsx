@@ -93,6 +93,8 @@ export function SessionActionsModal({
               currentMode={session.permissionMode}
               podPhase={session.podPhase}
               liveState={session.liveState}
+              currentModel={session.model}
+              canSetModel={!session.definitionName}
               onAutoClick={() => setAutoOpen(true)}
             />
             <button

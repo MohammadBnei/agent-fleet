@@ -1034,6 +1034,9 @@ export type SdkResultSummary = {
   modelUsage?: Record<string, SdkModelUsage>;
   permissionDenials?: { tool_name?: string }[];
   errors?: string[];
+  // Stamped by the worker.
+  model?: string;
+  route?: string;
 };
 export function parseSdkResultSummary(text: string): SdkResultSummary | null {
   try {

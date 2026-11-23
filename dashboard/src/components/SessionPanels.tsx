@@ -8,7 +8,9 @@ import type {
   ToolCallSummary,
 } from "../transcript";
 import { trustLabel } from "../trustLabel";
+import { routeOf } from "../modelRoute";
 import { ActionsMenu } from "./ActionsMenu";
+import { SessionScore } from "./Ratings";
 import { TickBar, todoProgress } from "./TickBar";
 
 // TODOS / CHANGES / AGENTS / SESSION. Desktop puts these in a fixed 266px
@@ -263,6 +265,13 @@ export function SessionPanel({
             title rows no longer carry it. */}
         <Fact label="id" value={shortId(session.id)} />
         <Fact label="model" value={session.model || model || "—"} />
+        {routeOf(session.model || model) && (
+          <Fact label="route" value={routeOf(session.model || model)} />
+        )}
+        {/* What the pod's SDK init reported, when it differs from the pick. */}
+        {model && session.model && model !== session.model && (
+          <Fact label="reported" value={model} />
+        )}
         <Fact label="mode" value={session.permissionMode || "default"} />
         {/* Only when picked at creation (docs/adr/0077); otherwise the CLI's
             own, or a definition's thinking.default. */}
@@ -303,9 +312,13 @@ export function SessionPanel({
         currentMode={session.permissionMode}
         podPhase={session.podPhase}
         liveState={session.liveState}
+        currentModel={session.model}
+        canSetModel={!session.definitionName}
         onAutoClick={onAutoClick}
         onRestart={onRestart}
       />
+      {/* Archive is the only terminal state; rate it there, editable. */}
+      {session.archivedAt && <SessionScore sessionId={session.id} />}
     </div>
   );
 }

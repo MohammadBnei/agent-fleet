@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { PERMISSION_MODES } from "../approvePlan";
 import { client } from "../connectClient";
 import { isPodPhaseLive } from "../sessionState";
@@ -42,6 +42,8 @@ export function ActionsMenu({
   onAutoClick,
   onRestart,
   liveState,
+  currentModel,
+  canSetModel,
 }: {
   sessionId: string;
   // Whether ANY action anywhere on the page is in flight, not just this
@@ -76,7 +78,21 @@ export function ActionsMenu({
   // while there is one — on a finished-but-still-warm session it was a button
   // that could do nothing.
   liveState?: string;
+  // Repo sessions only (SetSessionModel refuses a definition session).
+  currentModel?: string;
+  canSetModel?: boolean;
 }) {
+  // ListRepos.models is core's pickable list; kill-switch-off hides gateway ids.
+  const [models, setModels] = useState<string[]>([]);
+  useEffect(() => {
+    if (!canSetModel) return;
+    client
+      .listRepos({})
+      .then((r) => setModels(r.models))
+      .catch(() => {});
+  }, [canSetModel]);
+  // A refused switch reads next to the control, not in the generic error modal.
+  const [modelErr, setModelErr] = useState("");
   const live = isPodPhaseLive(podPhase);
   const turnRunning = !["done", "idle"].includes(liveState ?? "");
   return (
@@ -121,9 +137,9 @@ export function ActionsMenu({
       ) : (
         // A swept session cannot be warmed: the retention GC removed its
         // working directory and its SDK state, so the pod would come up with
-        // nothing to resume. An archived one CAN — archiving says "I'm done
-        // with this", not "this is sealed".
-        !sweptAt && (
+        // nothing to resume. An archived one is finished: no warm.
+        !sweptAt &&
+        !archivedAt && (
           <ActionButton
             className={BTN}
             busy={isBusy("action:warm")}
@@ -202,6 +218,57 @@ export function ActionsMenu({
           </li>
         ))}
       </ul>
+      {canSetModel && !archivedAt && models.length > 0 && (
+        <>
+          <ActionButton
+            className={BTN}
+            busy={isBusy("action:model")}
+            disabled={busy}
+            title="Stops the pod; the next message warms on the new model"
+            popoverTarget="popover-model"
+            style={{ anchorName: "--anchor-model" } as CSSProperties}
+          >
+            model: {currentModel || "default"} ▾
+          </ActionButton>
+          <ul
+            className="dropdown menu menu-sm bg-base-100 rounded-box shadow w-64 p-1"
+            popover="auto"
+            id="popover-model"
+            style={{ positionAnchor: "--anchor-model" } as CSSProperties}
+          >
+            {models.map((m) => (
+              <li key={m}>
+                <button
+                  type="button"
+                  className={m === currentModel ? "active" : undefined}
+                  popoverTarget="popover-model"
+                  popoverTargetAction="hide"
+                  onClick={() =>
+                    run(async () => {
+                      setModelErr("");
+                      try {
+                        await client.setSessionModel({ sessionId, model: m });
+                      } catch (e) {
+                        setModelErr(
+                          (e as Error).message.replace(/^\[[a-z_]+\]\s*/, ""),
+                        );
+                      }
+                    }, "action:model")
+                  }
+                >
+                  {m === currentModel ? "✓ " : ""}
+                  {m}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {modelErr && (
+            <span role="alert" className="basis-full text-xs text-error">
+              {modelErr}
+            </span>
+          )}
+        </>
+      )}
     </div>
   );
 }
