@@ -7,7 +7,7 @@
   ([ADR-0075](0075-github-app-identity-and-vault-credentials.md)) and the CI/CD split as a precondition; see the
   amendment, a decision record whose mechanisms are open items.
 - **Amendment 2026-11-23 (Proposed, waiting for the owner):** write cards answered in the game through core's card
-  frame, a card tied to an alert withdrawn when the alert resolves, an answer recorded only while the card is open,
+  frame, a card tied to an alert turned stale when the alert resolves, an answer recorded only while the card is open,
   never an approval on closing, and the answering surface recorded; amends §4 and ADR-0082 §5, §7 (see the amendment).
 - **Would amend:**
   - [ADR-0082](0082-decision-cards.md):
@@ -257,7 +257,7 @@ interface and one deck stay.
 - **The game** stays an ADR-0082 §7 surface for cards: list, watch and answer, with only reversible "yes" answered in
   place. Steer stays in the console, behind a link.
   *(Proposed amendment 2026-11-23: card verbs are answered in the game through core's card frame while the card is
-  open; see E1 to E6.)*
+  open; see the amendment.)*
   *(Amended 2026-11-17, owner: start and stop for characters move to `AgentService`, owner-only; see [ADR-0084](0084-long-lived-agents.md) amendment 2026-11-17.)*
 - **Load.**
   - ADR-0082 §8's daily card budget is split per trigger tier, so cards filed for untrusted triggers cannot spend the
@@ -468,7 +468,7 @@ Each holds whatever mechanism implements it, and each can be checked.
   field-level check for `definitions/*.yaml` (`trust`, `invokers`, `subscribes`) and
   `definitions/clients/*.yaml` (`actors.allow`, `definitions`), and the merge-time check that refuses them (P2.2, P5).
 
-## Amendment 2026-11-23 (Proposed): write cards answered in the game, withdrawn when their alert resolves
+## Amendment 2026-11-23 (Proposed): write cards answered in the game, and turned stale when their alert resolves
 
 **Status: Proposed, waiting for the owner's approval.** It changes the fleet's trust rules, so nothing here is built
 or holds until the owner accepts it. The text above stands until then, and afterwards wherever this does not change it.
@@ -483,8 +483,8 @@ move in the fight pauses on its card with a countdown (plan/29 §6.2, §6.8). Tw
 
 The owner's decisions:
 - a write card is answered in the game, not only on the confirm page;
-- a card stays open for the owner to answer whenever he wants, until `CardTTL` or until its reason is gone: core
-  withdraws a card tied to an alert when that alert resolves, since a fix for a resolved alert is stale;
+- a card stays open for the owner to answer whenever he wants, until `CardTTL` or until its reason is gone: a card tied
+  to an alert turns stale when that alert resolves, since a fix for a resolved alert is stale;
 - the fight's countdown is feel only: when it runs out, ops-lead falls back to reads and the monster gains ground on
   screen (plan/29 §6.2). It never closes the card;
 - any admin may answer (`AnswersCards()`, `platform-admins`). The friends who join a fight are admins, never public
@@ -497,11 +497,13 @@ click whatever it draws. It guarantees four things:
 - **G1. Core renders the stored card.** The option, its effect and its fields come from the row, Go-rendered by core,
   never from the surface's own code.
 - **G2. Only a human on core's origin submits.** The answer is a signed same-origin POST on core's origin, top level
-  only (`frame-ancestors 'none'`). A script on the game origin can neither read the page nor submit it.
+  only (`frame-ancestors 'none'` and `X-Frame-Options: DENY`). A script on the game origin can neither read the page
+  nor submit it.
 - **G3. A recent sign-in.** It needs a sign-in under 10 minutes old (`core/internal/auth/session.go:83`), else it
   sends the admin to log in again (`reauth=1`).
-- **G4. Exactly the bound effect.** The answer names the option and the card version, and core checks the payload
-  hash again (§4, ADR-0082 §6).
+- **G4. Exactly the bound effect.** The page signs one option: the URL is `?id&option&v`, the option is in the token's
+  HMAC (`claim.Option`), the token lives 5 minutes (`confirm.go` `tokenTTL`), and a GET on a moved version is
+  refused. Core checks the payload hash again on the answer (§4, ADR-0082 §6).
 
 Answering a write card from the game's own script through `AnswerDecision` would keep G4 and lose G1 to G3: an injected
 script could answer a write card itself. That is the reason the rule above exists, and it is not given up.
@@ -510,13 +512,24 @@ script could answer a write card itself. That is the reason the rule above exist
 
 - **E1. The game answers a write card through core's card frame.** A new core path, `/decisions/card?id&v`, renders
   one card with the confirm page's own renderer and answers on the same signed same-origin POST.
-  - It is the only response core lets be framed, and only by `FLEET_ADMIN_ORIGINS` (`frame-ancestors` names them
-    exactly; every other response keeps `frame-ancestors 'none'`). Islands and `embed.origins` never frame it.
+  - It is the only response core lets be framed, and only by `FLEET_ADMIN_ORIGINS`: on that path core drops
+    `X-Frame-Options: DENY` (set by `auth.FrameDeny`) and sends its own CSP with `frame-ancestors` naming the admin
+    origins exactly, in place of `confirm.Handler`'s `frame-ancestors 'none'`. Every other response keeps both
+    headers as they are. Islands and `embed.origins` never frame it.
+  - **Same-site only.** The session cookie is `SameSite=Lax` (`core/internal/auth/session.go:192`), so a framed GET
+    carries it only from a same-site parent. An admin origin that frames the card must be same-site with core
+    (`bnei.dev`); core checks that at config load and refuses to start otherwise.
+  - **Signed out in the frame.** For a request with `Sec-Fetch-Dest: iframe`, the gate answers a "sign in" page whose
+    link targets `_top`, never a 302 to `/auth/login` inside the frame (authentik refuses to be framed).
+  - **Every option, each signed.** The frame shows every option of the card, each with its own signed token (the
+    confirm page's claim, one per option), or a choose-then-confirm step inside the frame that signs the chosen one.
+    The frame reloads itself when the game sees the card change on `WatchDecisions` (the game reloads it, by URL), and
+    when its tokens near their 5-minute expiry.
   - The game's owner page embeds it in the dock (a full-width sheet on the phone). The game draws the fight around it;
-    the card itself, its buttons and its answer are core's. G1, G2 and G4 hold: the game's script cannot read the
-    frame, change what it shows or submit it, since the frame is cross-origin.
-  - The frame sends nothing to its parent. The game learns the outcome from `WatchDecisions`, as it learns every card
-    change today, and plays the strike only after core has confirmed the answer there.
+    the card itself, its buttons and its answer are core's. G1 and G4 hold, and G2 becomes "a human clicked inside
+    core's frame" (E12): the game's script cannot read the frame, change what it shows or submit it, since the frame
+    is cross-origin.
+  - The frame sends nothing to its parent. The game learns the outcome from `WatchDecisions` (E13).
   - It applies to the card verbs core files (`catalogue`, `open_pr`, `open_session`) and to any other card option that
     is not reversible "yes". A reversible "yes" option on an agent's card is still answered in place, as ADR-0082 §7
     allows. Answering a card verb through the game's script stays refused with `agent.decision_confirm_required`,
@@ -530,50 +543,86 @@ script could answer a write card itself. That is the reason the rule above exist
     Deployment `x` in namespace `y`");
   - the writer (the responder definition and its set, `A·B`), the agent's text labelled "agent claim", and the short
     payload hash;
-  - for a card tied to an alert, whether that alert still fires, as core last saw it;
-  - an irreversible option takes a second click, as in the console.
+  - for a card tied to an alert, whether that alert still fires, from E5's set;
+  - an irreversible option takes a held or typed confirmation (E12).
   The fight's countdown is the game's, drawn outside the frame. The frame shows no countdown, since nothing in core
   closes the card on a timer short of `CardTTL`.
 - **E3. A recent sign-in, sized for a fight.** The frame answers only under a sign-in under 30 minutes old, checked
-  from the session's `auth_time` as the confirm page does. When the fight starts, the game sends the admin through a
-  top-level login with `reauth=1` if the sign-in is older, so no time in the fight is spent on a login. The confirm
-  page keeps its 10 minutes. A frame past the window shows "sign in again" and answers nothing.
-- **E4. A card stays open until it is answered, its `CardTTL` passes, or its reason is gone.** No card verb gets a
-  shorter deadline, and nothing in the game closes a card. `CardTTL` (`core/internal/decisions/card.go:65`, 7 days)
-  stays every card's `expires_at`.
-- **E5. Core withdraws a card tied to an alert when that alert resolves.**
-  - A card on the subject `alert/<groupKey>` (§4) turns `stale` when the dispatcher takes the
-    `dev.bnei.alert.resolved` event (`core/internal/dispatch/dispatch.go:52`) for that group key, once no alert under
-    the key still fires.
-  - `stale` is the existing state for "the pinned state moved" (ADR-0082 §5-§6), and a resolved alert is exactly that.
-    An answer to it is refused with `agent.decision_stale`, which every surface already handles. `expired` keeps its
-    meaning (`CardTTL` passed) and `withdrawn` keeps its own (the session archived, or the agent withdrew).
-  - Core appends a note to the card's thread from a fixed template: "card c withdrawn: alert <groupKey> resolved at
-    <time>, no action". The frame and the console show the same line.
-  - An alert that fires again later is a new responder run (§3), which may file a new card. A withdrawn card never
-    reopens.
-- **E6. A card is answered only while it is still open, by the database's clock.** The update that records the answer
-  (the `state = 'open'` update in `core/internal/decisions/decisions.go`) also requires `expires_at > now()`, and core
-  runs the effect only when that update changed the row. Today the check is on the record read before the answer, in
-  Go time (`answer.go:109`), so an answer racing a withdrawal or an expiry could still be recorded and run; that gap
-  closes. An answer recorded first runs its effect even if the alert resolves while the effect runs.
-- **E7. Closing never approves.** No option runs on expiry or withdrawal, the recommended one included. There is no
-  default answer, no "approve if nobody objects" and no auto-approve on any surface (ADR-0082 §7).
+  from the session's `auth_time` (`AuthAt`, held only in core's `__Host-` cookie) as the confirm page does. The confirm
+  page keeps its 10 minutes.
+  - The game cannot read `AuthAt` today: `/auth/me` returns `authenticated`, `email` and `groups`. `/auth/me` gains
+    `auth_at`, so the game sends the admin through a top-level login with `reauth=1` when a fight starts with an older
+    sign-in, and no time in the fight is spent on a login.
+  - Past the window, the frame itself shows "sign in again" with a `_top` link and answers nothing, whatever the game
+    did.
+- **E4. A card stays open until it is answered, its `CardTTL` passes, or it turns stale.** No card verb gets a shorter
+  deadline, and nothing in the game closes a card. `CardTTL` (`core/internal/decisions/card.go:65`, 7 days) stays
+  every card's `expires_at`.
+- **E5. A card tied to an alert turns stale when its alert resolves.**
+  - **What core knows today is not enough.** The group key hashes `alertname`, `namespace` and `service`
+    (`responder/route.go` `GroupOf`), so one key covers several alerts. `Router.Resolve` keeps only `firingSince` per
+    (definition, group), in memory, lost on a restart, and one resolved event clears it. `Dispatcher.alert` drops
+    replayed events and acks an alert no responder subscribes to before the router sees it.
+  - **The mechanism: a persisted set of firing fingerprints per group key.** Core stores, per group key, the
+    Alertmanager fingerprints of the alerts that fire. Every `dev.bnei.alert.firing` and `.resolved` event feeds it,
+    whether or not a responder subscribes, before `Dispatcher.alert` acks or routes. A firing event adds its
+    fingerprints and a resolved one removes them. When the set for a key empties, the open card on `alert/<groupKey>`
+    (§4) turns `stale`.
+  - **Rejected: asking Alertmanager** (`/api/v2/alerts`) at resolve time. It is new egress from core to a new host.
+  - It fails safe either way: a set that is wrong leaves a card open too long or turns it stale too early, and turning
+    a card stale never acts.
+  - **A run started by a resolve files no write card.** `Router.Resolve` starts a responder run when the group has
+    fired for at least `GroupInterval` (§3). A card that run filed on `alert/<key>` would supersede the old one
+    (`card.go:320`) and stay open for a resolved alert. Core refuses a card verb (`catalogue`, `open_pr`,
+    `open_session`) from a run whose trigger was a resolved event; the run's other output stands.
+  - **`stale` here means "superseded, or its alert resolved".** In code, `stale` is "a newer card on its subject
+    replaced it" (`decisions.go:36-37`, `card.go:320`); a payload that moved returns `ErrStale` and the card stays
+    open (§4). A resolved alert joins that meaning. An answer to it is refused with `agent.decision_stale`, which every
+    surface already handles. `expired` keeps its meaning (`CardTTL` passed) and `withdrawn` keeps its own (the session
+    archived, or the agent withdrew).
+  - **The note.** Core appends, from a fixed template, "card c turned stale: alert <groupKey> resolved at <time>, no
+    action" to the card's thread. That thread is an ended single-shot run, so the note is context-only
+    (`transcript.WithContextOnly`): stored and shown, with no warm. The frame and the console show it.
+  - An alert that fires again later is a new responder run (§3), which may file a new card. A stale card never reopens.
+- **E6. The answer is recorded only while the card is open; this stays as built.** `OnAppend` → `cardReply`
+  (`card.go:358-381`) locks the card `FOR UPDATE` and refuses a stale or expired card, or one with
+  `expires_at <= now()`, by the database's clock. The answer's update carries `state = 'open'`
+  (`decisions.go:298`), and `runEffect` runs after the append. `answer.go:109` is only a Go-time pre-check. E5's
+  turn to stale takes the same row lock, so an answer and a resolve are ordered: an answer recorded first runs its
+  effect, and an answer after the turn is refused. A race test covers it.
+- **E7. Closing never approves.** No option runs when a card expires or turns stale, the recommended one included.
+  There is no default answer, no "approve if nobody objects" and no auto-approve on any surface (ADR-0082 §7).
 - **E8. What the agent sees.** The responder that asked for the card is a single-shot run that has ended (§3), so no
-  session waits on it. `list_responder_cards` and `ListDecisions` show the card as `stale` with E5's note. A character
-  (ops-lead in a fight) reads that; it never re-files a card verb, since core files them alone.
+  session waits on it. `ListDecisions` and `list_responder_cards` show the card's state, `stale`; E5's note is in the
+  thread, not in those typed fields. A character (ops-lead in a fight) reads that; it never re-files a card verb, since
+  core files them alone.
 - **E9. `DECISION_WAIT` is unchanged.** It stays what ADR-0082 §5 says: how long an asking session waits before it
   carries on. Permission and plan decisions, and a session's questions, get no deadline: their answers still arrive as
   messages whenever they come.
 - **E10. Who answered, and from where, is recorded.** Each answer stores `answered_by` (the admin's login, as today),
   plus, in a migration:
-  - `answered_via`: `console`, `confirm` or `frame:<admin origin>`;
+  - `answered_via`: `console`, `confirm` or `frame`. Core cannot see the framing origin at the answer: the POST's
+    `Origin` is core's own, `Referrer-Policy` is `same-origin`, and the page runs no script to read
+    `ancestorOrigins`. So `frame` is set when the GET that rendered the token came with `Sec-Fetch-Dest: iframe`, and
+    is signed into the token. Core adds the origin (`frame:<origin>`) only when `FLEET_ADMIN_ORIGINS` has a single
+    entry;
   - `auth_time`: the sign-in's time, which E3 checked.
   The console's card history, the card's thread note ("owner chose option k of card c", ADR-0082 §6) and the fight's
-  transcript show the login and the surface. A withdrawn or expired card records no answerer.
+  transcript show the login and the surface. A stale or expired card records no answerer.
 - **E11. Any admin answers.** The frame and the confirm page accept `AnswersCards()`: a `platform-admins` member in the
   console or on an admin origin. The game server's client bearer, an island and a guest are refused, as today. The
   friends in a fight are admins, so they answer like the owner; each answer carries its own login (E10).
+- **E12. Clickjacking controls.** Every click lands in the same framed document, so a script on the admin origin can
+  choose the card id, size the frame to one button, and stage a double click. The frame adds cheap controls:
+  - its buttons stay disabled until the frame has been visible for a minimum time (default 800 ms, owner may change),
+    measured with IntersectionObserver v2 `trackVisibility` where the browser has it;
+  - below a minimum frame size the frame shows nothing to click;
+  - an irreversible option takes a held press or a typed confirmation, not a second click.
+  The residual G2 is "a human clicked inside core's frame", not "a human chose on core's own page".
+- **E13. The strike and a failed effect.** `WatchDecisions` sends changed ids; the game reads the card and plays the
+  strike when it turns `answered`. The effect runs after and may still fail (a busy fleet, a provisioner outage). Core
+  writes that to the card's thread (§4); the game shows it as the strike rebounding, the building unrepaired, and the
+  failure line from the thread, never a success.
 
 ### What stays
 
@@ -587,7 +636,7 @@ script could answer a write card itself. That is the reason the rule above exist
 - **Steer stays in the console.** Stop, start and close of characters are as ADR-0084 A4 has them. The fight's
   "redirect" is a message, not a card answer, and its path is not decided here.
 - **Re-checks stay.** Core checks the payload hash and the target when the answer is recorded and again before running
-  (§4); a moved target makes the card stale.
+  (§4); a moved payload is refused with `agent.decision_stale` and the card stays open.
 - **No new surface call.** The frame is a core-served page, not an `AgentService` method; `surfaceCalls` is unchanged.
 
 ### Would amend
@@ -596,7 +645,7 @@ script could answer a write card itself. That is the reason the rule above exist
   only through core's card frame (E1) or the confirm page. "The game stays an ADR-0082 §7 surface … with only reversible
   'yes' answered in place" gains: and card verbs through the frame.
 - [ADR-0082](0082-decision-cards.md):
-  - §5, "Nothing goes stale behind the owner's back": a card on an alert subject also goes stale when its alert
+  - §5, "Nothing goes stale behind the owner's back": a card on an alert subject also turns stale when its alert
     resolves (E5); the answer fields gain `answered_via` and `auth_time` (E10);
   - §7: core's card frame is the one response an admin origin may frame (E1), with its own sign-in window (E3);
   - slice 6's "The game's in-place answering is a later ukubi-game PR": it is the frame, embedded by that PR.
@@ -604,23 +653,31 @@ script could answer a write card itself. That is the reason the rule above exist
 
 ### Consequences
 
-- The game can show a write card in the fight and answer it there, with the same four guarantees as the confirm page,
-  G3's window widened from 10 to 30 minutes.
+- The game can show a write card in the fight and answer it there. G1 and G4 hold as on the confirm page, G2 narrows to
+  "a human clicked inside core's frame" (E12), and G3's window widens from 10 to 30 minutes.
 - The owner answers a card whenever he wants, in the fight or later. The fight's countdown changes the picture only;
   it never decides anything in production.
-- A fix for a resolved alert can no longer be chosen: the card leaves when the alert does.
-- One response is framable. A script on an admin origin can still lay out the page so the admin clicks the frame by
-  mistake (clickjacking); it cannot click, read or change it. The second click for irreversible options and the typed
-  effect text are the checks left.
+- A fix for a resolved alert can no longer be chosen: the card turns stale when the alert's firing set empties.
+- One response is framable, and E12's controls are the checks against clickjacking.
 - The work it implies:
-  - **core:** the resolved-alert withdrawal in the dispatcher, with its thread note; the open-only check in the
-    answer's update and the effect only on a changed row; the `/decisions/card` frame in `core/internal/confirm`,
-    its `frame-ancestors` for `FLEET_ADMIN_ORIGINS` and its 30-minute sign-in check;
-    `agent.decision_confirm_required` naming the frame URL; the migration for `answered_via` and `auth_time`; tests for
-    an answer racing a withdrawal, an answer after one on every path, a frame from a non-admin origin, and the frame's
-    header.
-  - **ukubi-game (a later PR):** the frame in the dock, the fight's countdown as feel only, the re-sign-in when a
-    fight starts, the strike on `WatchDecisions`' confirmed change, and no answer of a card verb from its own script.
+  - **core:**
+    - the persisted firing-fingerprint set per group key (a migration), fed by every alert event before
+      `Dispatcher.alert` acks or routes, and the turn to stale with its context-only note when a set empties;
+    - refusing card verbs from a run triggered by a resolved event;
+    - the `/decisions/card` frame in `core/internal/confirm`: one signed token per option (or choose-then-confirm),
+      E12's controls, and the 30-minute sign-in check;
+    - framing: no `X-Frame-Options: DENY` on that path (`auth.FrameDeny`), its own CSP with `frame-ancestors` for
+      `FLEET_ADMIN_ORIGINS` (in place of `confirm.Handler`'s `'none'`), and, for `Sec-Fetch-Dest: iframe`, the gate's
+      "sign in" page with a `_top` link instead of a 302 to `/auth/login`;
+    - the same-site check on `FLEET_ADMIN_ORIGINS` at config load;
+    - `/auth/me` gains `auth_at`;
+    - `agent.decision_confirm_required` naming the frame URL;
+    - the migration for `answered_via` and `auth_time`, with `frame` signed into the token from `Sec-Fetch-Dest`;
+    - tests: an answer racing the turn to stale, a late answer on every path, a frame from a non-admin origin, the
+      frame's headers, the signed-out frame, and a resolve-triggered run's card verb refused.
+  - **ukubi-game (a later PR):** the frame in the dock, reloaded on `WatchDecisions` changes; the fight's countdown as
+    feel only; the re-sign-in from `/auth/me`'s `auth_at` when a fight starts; the strike on `answered` and E13's
+    failure picture; and no answer of a card verb from its own script.
   - **console:** `answered_via` in the card history.
 
 ### Note: a game-drawn strike

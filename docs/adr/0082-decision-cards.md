@@ -5,7 +5,7 @@
   agent approval that counts, its token stays with the provisioner, and agents merge after a fleet review on §5's
   paths too, under probation once its controls are live (§9, §11).
   *Proposed amendment 2026-11-23 in [ADR-0086](0086-rule-of-two.md) (waiting for the owner): a card on an alert
-  subject goes stale when its alert resolves, and the game answers core's card verbs through core's card frame, the
+  subject turns stale when its alert resolves, and the game answers core's card verbs through core's card frame, the
   one response an admin origin may frame (§5, §7).*
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
@@ -175,7 +175,7 @@ write. It was heavy, automatic by default, and still rested on matching bot even
    - **Nothing goes stale behind the owner's back.** The warm-time closing of unanswered requests goes. A decision
      closes when answered, withdrawn (its session archived, or the agent withdraws it), stale (§6, pinned state
      moved) or, for a card only, at `expires_at`. *(Proposed amendment 2026-11-23, ADR-0086 E5: a card on an
-     `alert/<groupKey>` subject also goes stale when that alert resolves, with a note in its thread.)*
+     `alert/<groupKey>` subject also turns stale when that alert resolves, with a note in its thread.)*
    - **Waits over 45 s:** the worker's gate waits on a plain timer. An MCP tool's wait (`AskUserQuestion`) is
      bounded by the agent's MCP client deadline (60 s today, see `blockingWaitMs`), so a longer `DECISION_WAIT`
      needs that deadline raised to match; the build verifies it live before the default moves.
