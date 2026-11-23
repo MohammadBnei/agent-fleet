@@ -47,8 +47,16 @@ func TestParse(t *testing.T) {
 
 func TestAskIsCoreWrittenAndCapped(t *testing.T) {
 	c := CardRequest{Kind: "code_fix", Findings: []Finding{{"restarts", 7}, {"cpu_pct", 91.5}}, Objects: []Object{{"deployment", "game", "api"}}}
-	if got := c.Ask(Group{Name: "KubePodCrashLooping"}); got != "Alert KubePodCrashLooping needs a code fix. restarts=7 cpu_pct=91.5 deployment/game/api" {
+	if got := c.Ask(Group{Name: "KubePodCrashLooping"}); got != "Alert KubePodCrashLooping: the responder found it needs a code fix. restarts=7 cpu_pct=91.5 deployment/game/api" {
 		t.Fatalf("ask: %q", got)
+	}
+	// An unknown_failure that names nothing says where the alert fired, in the third person, never "Alert alert".
+	u := CardRequest{Kind: "unknown_failure"}
+	if got := u.Ask(Group{Name: "alert", Where: "namespace/ci job/forgejo-actions"}); got != "An alert: the responder could not name the cause. namespace/ci job/forgejo-actions" {
+		t.Fatalf("ask: %q", got)
+	}
+	if g := (Group{Name: "KubeX", Namespace: "game"}); g.Title() != "Alert: KubeX (game)" || (Group{Name: "KubeX"}).Title() != "Alert: KubeX" {
+		t.Fatalf("title %q", g.Title())
 	}
 	for range maxList {
 		c.Objects = append(c.Objects, Object{"deployment", strings.Repeat("a", 50), strings.Repeat("b", 50)})

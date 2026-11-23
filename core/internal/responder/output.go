@@ -52,12 +52,13 @@ type Finding struct {
 	Value float64 `json:"value"`
 }
 
-// cardKinds is the fixed enum, with the words the owner reads. A rollback is a revert PR (ADR-0086 §3).
+// cardKinds is the fixed enum, with the words the owner reads after "the responder". The responder is always the
+// third person and the owner is "you": a card never uses "I". A rollback is a revert PR (ADR-0086 §3).
 var cardKinds = map[string]string{
-	"code_fix":        "needs a code fix",
-	"revert_pr":       "needs a revert",
-	"ansible_step":    "needs an Ansible step",
-	"unknown_failure": "failed in a way I could not name",
+	"code_fix":        "found it needs a code fix",
+	"revert_pr":       "found it needs a revert",
+	"ansible_step":    "found it needs an Ansible step",
+	"unknown_failure": "could not name the cause",
 }
 
 var (
@@ -129,7 +130,7 @@ func contains(l []string, v string) bool {
 // Ask is the card's text, written by core from the checked request and the alert name core resolved.
 func (c CardRequest) Ask(g Group) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Alert %s %s.", g.Name, cardKinds[c.Kind])
+	fmt.Fprintf(&b, "%s: the responder %s.", g.label(), cardKinds[c.Kind])
 	for _, f := range c.Findings {
 		b.WriteString(" " + f.Name + "=" + strconv.FormatFloat(f.Value, 'f', -1, 64))
 	}
@@ -140,7 +141,19 @@ func (c CardRequest) Ask(g Group) string {
 		}
 		b.WriteString(o.Name)
 	}
+	// A card that names nothing (unknown_failure) still says where the alert fired, from the group's own labels.
+	if len(c.Objects) == 0 && len(c.Findings) == 0 && g.Where != "" {
+		b.WriteString(" " + g.Where)
+	}
 	return clip(b.String(), 280)
+}
+
+// label is "Alert <name>", or "An alert" when the alertname was not a plain identifier.
+func (g Group) label() string {
+	if g.Name == "" || g.Name == "alert" {
+		return "An alert"
+	}
+	return "Alert " + g.Name
 }
 
 func clip(s string, n int) string {
@@ -183,7 +196,7 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 	for _, refused := range []error{remediations.ErrInvalid, remediations.ErrDenied, remediations.ErrRateLimited} {
 		if errors.Is(err, refused) {
 			slog.Warn("responder: selection refused, filing a card", "definition", def, "group", g.Key, "reason", refused.Error())
-			return f.card(ctx, thread, g, clip("Alert "+g.Name+": the responder's fix was refused: "+refused.Error()+".", 280))
+			return f.card(ctx, thread, g, clip(g.label()+": the responder's fix was refused: "+refused.Error()+".", 280))
 		}
 	}
 	return err
@@ -191,7 +204,7 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 
 // Unanswered is the card for a run that ended without a usable answer, written by core.
 func (f Filer) Unanswered(ctx context.Context, thread string, g Group) error {
-	return f.card(ctx, thread, g, clip("Alert "+g.Name+": the responder could not answer. Look at it yourself.", 280))
+	return f.card(ctx, thread, g, clip(g.label()+": the responder could not answer. Look at it yourself.", 280))
 }
 
 func (f Filer) card(ctx context.Context, thread string, g Group, ask string) error {
@@ -201,6 +214,6 @@ func (f Filer) card(ctx context.Context, thread string, g Group, ask string) err
 	return f.Draft(ctx, decisions.Draft{
 		SessionID: thread, From: "system", IdempotencyKey: "responder-card:" + thread, Ask: ask,
 		Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: g.Key},
-		Options: []*agentfleetv1.CardOption{handoff("I will handle it"), handoff("Dismiss")},
+		Options: []*agentfleetv1.CardOption{handoff("You handle it"), handoff("Dismiss")},
 	})
 }

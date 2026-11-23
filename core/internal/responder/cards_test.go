@@ -34,7 +34,7 @@ func TestCards_List(t *testing.T) {
 	draft := func(key, ask string, sub *agentfleetv1.CardSubject) {
 		t.Helper()
 		if _, err := ds.Draft(ctx, tr, decisions.Draft{SessionID: thread, From: "system", IdempotencyKey: key, Ask: ask, Subject: sub,
-			Options: []*agentfleetv1.CardOption{handoff("I will handle it"), handoff("Dismiss")}}); err != nil {
+			Options: []*agentfleetv1.CardOption{handoff("You handle it"), handoff("Dismiss")}}); err != nil {
 			t.Fatal(err)
 		}
 	}

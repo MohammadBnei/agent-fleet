@@ -32,6 +32,18 @@ const maxBatch = 20
 type Group struct {
 	Key  string
 	Name string
+	// Namespace and Where are typed label values core checked (DNS-1123 names): the card's fallback subject when the
+	// responder names no object, and the session title.
+	Namespace string
+	Where     string
+}
+
+// Title is the alert session's title: "Alert: <alertname> (<namespace>)".
+func (g Group) Title() string {
+	if g.Namespace == "" {
+		return "Alert: " + g.Name
+	}
+	return "Alert: " + g.Name + " (" + g.Namespace + ")"
 }
 
 type alertDoc struct {
@@ -47,13 +59,29 @@ func GroupOf(raw json.RawMessage) (g Group, ok bool) {
 		return Group{}, false
 	}
 	h := sha256.Sum256([]byte(strings.Join([]string{a.Labels["alertname"], a.Labels["namespace"], a.Labels["service"]}, "\x00")))
-	return Group{Key: hex.EncodeToString(h[:8]), Name: safeName(a.Labels["alertname"])}, true
+	g = Group{Key: hex.EncodeToString(h[:8]), Name: safeName(a.Labels["alertname"]), Namespace: dnsLabel(a.Labels["namespace"])}
+	var where []string
+	for _, k := range []string{"namespace", "deployment", "pod", "job"} {
+		if v := dnsLabel(a.Labels[k]); v != "" {
+			where = append(where, k+"/"+v)
+		}
+	}
+	g.Where = strings.Join(where, " ")
+	return g, true
+}
+
+// dnsLabel is v when it is a plain DNS-1123 name, else "": a label value reaches an owner's card.
+func dnsLabel(v string) string {
+	if len(v) > 253 || !dns1123.MatchString(v) {
+		return ""
+	}
+	return v
 }
 
 // safeName is the alertname when it is a plain identifier, else "alert": the name reaches an owner's card, and a
 // label is whatever its writer chose.
 func safeName(s string) string {
-	if s == "" || len(s) > 80 || strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:.-") != "" {
+	if s == "" || len(s) > 80 || strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:.- ") != "" {
 		return "alert"
 	}
 	return s

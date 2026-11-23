@@ -33,6 +33,9 @@ func TestGroupOf(t *testing.T) {
 	if g, _ := GroupOf(alert("firing", "bad name\nwith lines", "", "")); g.Name != "alert" {
 		t.Fatalf("an alertname that is not an identifier must not reach a card: %q", g.Name)
 	}
+	if g, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"Deploy failed: x.build","namespace":"ci","job":"forgejo-actions","pod":"Bad Pod"}}`)); g.Name != "Deploy failed: x.build" || g.Where != "namespace/ci job/forgejo-actions" || g.Title() != "Alert: Deploy failed: x.build (ci)" {
+		t.Fatalf("group %+v", g)
+	}
 	if _, ok := GroupOf(json.RawMessage(`[1]`)); ok {
 		t.Fatal("a non-object is no alert")
 	}
