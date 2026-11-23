@@ -1,9 +1,63 @@
 Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session's own PVC — no worktrees since `docs/adr/0048`. Target repo's CLAUDE.md wins for codebase details.
 
+<!-- PORTABLE-RULES:START -->
+## Portable rules
+
+These rules hold everywhere, including fleet pods. Fleet pods get a copy in
+agent-fleet `packs/repo/PACK.md`; `claude-config/tools/check-portable.sh`
+keeps the two equal.
+
+### How a change is made
+
+- The change loop is defined in mountain `plan/16-dev-rules.md`. In short:
+  plan the whole batch, interview the owner on open decisions, have one fresh
+  agent doubt the plan, build, check, open the PR, get a fresh review, merge.
+- Small and medium fixes (one bug, a few files) happen inline: edit, run the
+  fast checks, commit. A multi-agent workflow is only for a large fan-out.
+- Plan from the top down and close every gap you can see. Stop thinking only
+  where building or a spike would answer faster.
+- A fresh review sits between every PR and its merge. The reviewer is an agent
+  that did not write the change and reads the diff with the repo, not a
+  builder's report.
+- Merge on green CI plus that review, unless the repo or the owner says the
+  owner merges. Never merge with an admin override.
+- Fix the root cause. If bugs survive a long fix round, the structure is
+  wrong: find the duplicated owner or path and consolidate it, do not patch
+  row by row.
+- Anything the owner will see or feel (rendering, motion, UI) gets a hands-on
+  look on the final commit before merge. Screenshots from builders and green
+  checks are not that look.
+- Base UI proposals on patterns from shipped games and apps, cite them, then
+  offer options. Do not invent layouts.
+
+### Commits
+
+- Add no trailers and no AI attribution: no `Co-Authored-By`, no
+  `Agent-Session`, no "Generated with" footer, in commits, PRs or comments.
+  Where a hook adds an identity on its own, leave it alone and add nothing.
+- Conventional Commit subjects, one commit per concern. A PR may hold several
+  concerns; each commit must be revertable on its own.
+
+### Running agents
+
+- Pick the model per agent: haiku for mechanical work, sonnet for builders,
+  tests and fixes, opus for design and review.
+- Builders run fast checks only (typecheck, unit tests, `go test` on touched
+  packages). Heavy suites run once per round, not per edit.
+- Review and fix are separate agents. One fixer per round owns every finding
+  and looks for the structural cause first.
+- Every CI watch has a deadline of 15 minutes or less. Write the loop with an
+  explicit end time; agents ignore a bare "use a timeout".
+- After any browser or stack run, close the browsers and kill the stacks, then
+  check `ps` and `lsof` for leftovers.
+- Never message an agent that a running workflow owns; its reply bypasses the
+  workflow and stalls it.
+<!-- PORTABLE-RULES:END -->
+
 ## Repo session rules
 
 - Every result = PR
-- Commit trailer is set for you: a git hook rewrites it to `Co-Authored-By: ukubi-agent <noreply@bnei.dev>`. Never add a `Claude`/model co-author
+- Commits: the git hook adds the fleet identity on its own; add nothing yourself
 - Write/Edit = human prompt (normal). Read/Glob/Grep = free, and so is
   **read-only Bash** (`ls`, `head`, `stat`, `diff`, `git log`, …) — those
   gate nothing the free `Read` tool doesn't already give you. `cat` is
@@ -13,14 +67,14 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   the worker, which outranks every permission mode. In `auto` the worker
   answers them for you — only `rm` and `sudo` still reach a human
   (`docs/adr/0053`)
-- Skills: `change-loop` before any non-trivial change (plan, doubt cycle, proof first, review); `doubt-driven-development`, `architecture-interview` for non-trivial decisions
+- Skills: `change-loop` before any non-trivial change; `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Never edit ARCHITECTURE.md/DECISIONS.md/docs/adr/ to match your work — propose changes explicitly
 
 ## Your pod
 
 One pod. Your repo is at `/workspace`, on node-local disk. `Bash` runs
-everything: builds, tests, installs, git, `gh`. There is no second pod and no
+everything: builds, tests, installs, git. There is no second pod and no
 `run_command` — that was the e2e sandbox, deleted in `docs/adr/0048`.
 
 - Caches (`/cache`) are yours and survive a warm. First install on a NEW
@@ -84,8 +138,6 @@ tea pr edit <n> --description-file body.md
   the PR page ("Approve always" trusts the fleet on that repo for 3 months).
   You cannot approve it. Say so in your result, with the PR URL, rather than
   retrying or pushing again.
-
-GitHub repos keep `gh`, as before.
 
 ## Other sessions
 

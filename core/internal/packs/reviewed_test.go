@@ -64,4 +64,13 @@ func TestRepoPacksParse(t *testing.T) {
 	if len(bad) != 0 || good["fleet"].Text == "" || good["repo"].Text == "" {
 		t.Fatalf("good %v, bad %v", good, bad)
 	}
+	// ParseReviewed enforces the caps itself; pin that the real repo pack carries
+	// its skills and the portable rules block, and sits inside the caps.
+	r := good["repo"]
+	if len(r.Skills) == 0 || !strings.Contains(r.Text, "<!-- PORTABLE-RULES:START -->") || !strings.Contains(r.Text, "<!-- PORTABLE-RULES:END -->") {
+		t.Fatalf("repo pack: %d skills, portable markers missing", len(r.Skills))
+	}
+	if text, skills := composedSize([]Version{r}); text > maxReviewedText || skills > maxReviewedSkills {
+		t.Fatalf("repo pack %d text / %d skill bytes, max %d / %d", text, skills, maxReviewedText, maxReviewedSkills)
+	}
 }
