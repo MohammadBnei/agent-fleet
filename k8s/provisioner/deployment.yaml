@@ -64,7 +64,7 @@ spec:
         # refs, so new images keep reading this tag's definitions until it is
         # bumped.
         - name: FLEET_VERSION
-          value: "8.3.0"
+          value: "8.4.0"
         - name: NAMESPACE
           value: agent-fleet
         # OTLP/HTTP traces URL in full (docs/adr/0081 §4). Unset = no export.
