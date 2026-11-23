@@ -146,7 +146,7 @@ env:
   # The release core reports (dashboard, logs). Set by hand: CI no longer
   # commits to main.
   - name: FLEET_VERSION
-    value: "8.0.0"
+    value: "8.1.0"
   # Non-Claude models through llm-gateway (docs/adr/0088). "on" offers and warms
   # them; anything else hides and refuses them (the kill switch).
   - name: FLEET_GATEWAY_MODELS
