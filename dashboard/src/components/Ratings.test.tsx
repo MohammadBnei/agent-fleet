@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ModelStat } from "../gen/agentfleet/v1/dashboard_pb";
-import {
-  ModelStatsTable,
-  SessionScore,
-  statRow,
-  TurnRating,
-} from "./Ratings";
+import { ModelStatsTable, SessionScore, statRow, TurnRating } from "./Ratings";
 
 const stat = (over: Partial<ModelStat> = {}): ModelStat =>
   ({
@@ -26,9 +21,12 @@ const stat = (over: Partial<ModelStat> = {}): ModelStat =>
   }) as ModelStat;
 
 test("stat row shows avg score only when scored", () => {
-  expect(statRow(stat())[8]).toBe("4.3");
-  expect(statRow(stat({ scores: 0n }))[8]).toBe("—");
+  expect(statRow(stat())[7]).toBe("4.3");
+  expect(statRow(stat({ scores: 0n }))[7]).toBe("—");
+  expect(statRow(stat())[4]).toBe("$0.50");
   expect(statRow(stat())[5]).toBe("$0.50");
+  expect(statRow(stat())[3]).toBe("1.2k / 300");
+  expect(statRow(stat())[0]).toBe("glm-5");
 });
 
 test("table renders a row per model and an empty note", () => {

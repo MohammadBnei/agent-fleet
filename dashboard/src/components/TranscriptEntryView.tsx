@@ -2,6 +2,7 @@ import {
   type TranscriptEntry,
   TranscriptEntryType,
 } from "../gen/agentfleet/v1/transcript_pb";
+import { resultRoute } from "../modelRoute";
 import {
   asDisplayMarkdown,
   parseSdkResultSummary,
@@ -12,7 +13,6 @@ import {
   type SdkResultSummary,
   type SdkSignal,
 } from "../transcript";
-import { resultRoute } from "../modelRoute";
 import { Collapse } from "./Collapse";
 import { JsonView } from "./JsonView";
 import { Markdown } from "./Markdown";

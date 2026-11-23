@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { GrantsPanel } from "../components/GrantsPanel";
 import { PacksPanel } from "../components/PacksPanel";
+import { ModelStatsPanel } from "../components/Ratings";
 import { ReposPanel } from "../components/ReposPanel";
 import { Segmented } from "../components/Segmented";
 import type { FeedWidth } from "../useFeedWidth";
@@ -11,7 +12,13 @@ import type { Theme } from "../useTheme";
 // switch and the sign-out link: a third editor (context packs) made a menu of
 // modals the wrong shape. Each section is the full editor, inline.
 
-type Section = "packs" | "grants" | "repos" | "appearance" | "account";
+type Section =
+  | "packs"
+  | "grants"
+  | "repos"
+  | "models"
+  | "appearance"
+  | "account";
 
 const SECTIONS: readonly { value: Section; label: string; hint: string }[] = [
   { value: "packs", label: "Packs", hint: "What agents load at start" },
@@ -21,6 +28,7 @@ const SECTIONS: readonly { value: Section; label: string; hint: string }[] = [
     hint: "Approvals remembered for a definition",
   },
   { value: "repos", label: "Repos", hint: "Repos in the fleet" },
+  { value: "models", label: "Models", hint: "Usage and ratings per model" },
   { value: "appearance", label: "Appearance", hint: "Theme and text width" },
   { value: "account", label: "Account", hint: "Who is signed in" },
 ];
@@ -110,6 +118,7 @@ export function Settings({
           {section === "packs" && <PacksPanel />}
           {section === "grants" && <GrantsPanel />}
           {section === "repos" && <ReposPanel />}
+          {section === "models" && <ModelStatsPanel />}
           {section === "appearance" && (
             <div className="flex flex-col gap-4 max-w-sm">
               <h3 className="font-semibold text-base">Appearance</h3>

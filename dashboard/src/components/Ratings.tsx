@@ -3,8 +3,25 @@ import { client } from "../connectClient";
 import type { ModelStat } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "./InlineError";
 
-// Local state only: the API has no read-back, so "current" is what this tab
-// last sent. A reload shows neutral; a click overwrites the stored rating.
+// ListSessionRatings is read once per session and shared by every thumb in the
+// feed; a rate invalidates the entry so the next mount reads the stored value.
+const ratingsCache = new Map<
+  string,
+  Promise<{
+    thumbs: { seq: bigint; value: number }[];
+    score: number;
+    note: string;
+  }>
+>();
+function storedRatings(sessionId: string) {
+  let p = ratingsCache.get(sessionId);
+  if (!p) {
+    p = client.listSessionRatings({ sessionId });
+    ratingsCache.set(sessionId, p);
+    p.catch(() => ratingsCache.delete(sessionId));
+  }
+  return p;
+}
 
 // Thumbs on a result line. RateTurn has no "clear", so the active thumb
 // clicked again just re-sends it.
@@ -17,11 +34,26 @@ export function TurnRating({
 }) {
   const [value, setValue] = useState<1 | -1 | 0>(0);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    storedRatings(sessionId)
+      .then((r) => {
+        const t = r.thumbs.find((x) => x.seq === seq);
+        if (live && t) setValue(t.value === 1 ? 1 : -1);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [sessionId, seq]);
   function rate(v: 1 | -1) {
     setError("");
     client
       .rateTurn({ sessionId, seq, value: v, note: "" })
-      .then(() => setValue(v))
+      .then(() => {
+        ratingsCache.delete(sessionId);
+        setValue(v);
+      })
       .catch((e: Error) => setError(e.message));
   }
   const cls = (on: boolean) =>
@@ -57,11 +89,26 @@ export function SessionScore({ sessionId }: { sessionId: string }) {
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    storedRatings(sessionId)
+      .then((r) => {
+        if (!live || r.score === 0) return;
+        setScore(r.score);
+        setNote(r.note);
+        setSaved(true);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [sessionId]);
   function send(next: number, text: string) {
     setError("");
     client
       .rateSession({ sessionId, score: next, note: text })
       .then(() => {
+        ratingsCache.delete(sessionId);
         setScore(next);
         setSaved(true);
       })
@@ -101,60 +148,100 @@ export function SessionScore({ sessionId }: { sessionId: string }) {
 }
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
-const tok = (n: bigint) => Number(n).toLocaleString();
+
+// 12,000 -> 12k, 1,250,000 -> 1.3M: the full figure never fits a phone.
+export function compact(n: bigint): string {
+  const v = Number(n);
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(v >= 1e5 ? 0 : 1)}k`;
+  return String(v);
+}
+
+// The vendor prefix says nothing the route column does not; the title keeps the id.
+export function shortModel(id: string): string {
+  return id.replace(/^(claude|zai-org|z-ai)-/, "");
+}
 
 export const STAT_HEAD = [
   "model",
   "route",
   "sessions",
-  "tokens in",
-  "tokens out",
+  "tokens in/out",
   "billed",
-  "up",
-  "down",
+  "list",
+  "rated",
   "avg score",
   "errors",
 ];
 
 export function statRow(s: ModelStat): string[] {
   return [
-    s.model,
+    shortModel(s.model),
     s.route,
     String(s.sessions),
-    tok(s.inputTokens),
-    tok(s.outputTokens),
+    `${compact(s.inputTokens)} / ${compact(s.outputTokens)}`,
     usd(s.billedUsd),
-    String(s.thumbsUp),
-    String(s.thumbsDown),
+    usd(s.listUsd),
+    `${s.thumbsUp} up / ${s.thumbsDown} down`,
     s.scores > 0n ? s.avgScore.toFixed(1) : "—",
     String(s.errorResults),
   ];
 }
 
+// A table from md up, one stacked card per model below it: the same rows
+// either way, so the two cannot drift apart.
 export function ModelStatsTable({ stats }: { stats: ModelStat[] }) {
   if (stats.length === 0)
     return <div className="text-xs text-dim2">No sessions in this window.</div>;
   return (
-    <div className="overflow-x-auto">
-      <table className="table table-xs">
-        <thead>
-          <tr>
-            {STAT_HEAD.map((h) => (
-              <th key={h}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {stats.map((s) => (
-            <tr key={`${s.model}/${s.route}`}>
-              {statRow(s).map((c, i) => (
-                <td key={STAT_HEAD[i]}>{c}</td>
+    <>
+      <div className="hidden md:block">
+        <table className="table table-xs w-full">
+          <thead>
+            <tr>
+              {STAT_HEAD.map((h) => (
+                <th key={h}>{h}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {stats.map((s) => (
+              <tr key={`${s.model}/${s.route}`}>
+                {statRow(s).map((c, i) => (
+                  <td
+                    key={STAT_HEAD[i]}
+                    title={i === 0 ? s.model : undefined}
+                    className="whitespace-nowrap"
+                  >
+                    {c}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-col gap-2 md:hidden">
+        {stats.map((s) => (
+          <dl
+            key={`${s.model}/${s.route}`}
+            className="border border-line p-2 text-xs grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5"
+          >
+            {statRow(s).map((c, i) => (
+              <div key={STAT_HEAD[i]} className="contents">
+                <dt className="text-dim2">{STAT_HEAD[i]}</dt>
+                <dd
+                  className={i === 0 ? "font-semibold" : undefined}
+                  title={i === 0 ? s.model : undefined}
+                >
+                  {c}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ))}
+      </div>
+    </>
   );
 }
 

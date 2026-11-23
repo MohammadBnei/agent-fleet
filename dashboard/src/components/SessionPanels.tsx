@@ -1,5 +1,6 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { imageTag } from "../imageTag";
+import { routeOf } from "../modelRoute";
 import { shortId } from "../sessionState";
 import type {
   BackgroundTask,
@@ -8,7 +9,6 @@ import type {
   ToolCallSummary,
 } from "../transcript";
 import { trustLabel } from "../trustLabel";
-import { routeOf } from "../modelRoute";
 import { ActionsMenu } from "./ActionsMenu";
 import { SessionScore } from "./Ratings";
 import { TickBar, todoProgress } from "./TickBar";
