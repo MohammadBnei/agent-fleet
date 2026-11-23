@@ -260,12 +260,17 @@ signals plan apply.
    commit order and `version` also moves on a spent grant. **Known losses:** a card that opens and closes between two
    ticks publishes only its last state (plus `opened` first); a session's hard delete (`sessions.Store.Delete`) cascades
    its cards away, so an `opened` card already published gets no terminal event (counted by
-   `agentfleet_card_events_lost_total`; the data carries `expires_at`, so a consumer closes it on its own). The migration
+   `agentfleet_card_events_lost_total`, which counts every card the bridge has seen open and not closed, in whatever state
+   its row had reached; the data carries `expires_at`, so a consumer closes it on its own). A card that is parked never publishes its later transitions, so a consumer keeps a dangling `opened` (the gauge counts it,
+   `lost_total` does not). The migration
    leaves open cards unpublished, so the deploy publishes one burst of `opened`; closed cards are marked published.
 3. **Refusals.** `InvalidArgument` and `PermissionDenied` (retrying cannot help) are logged at Error, counted and parked
    in `decisions.bridge_parked`, out of the pick. `Unauthenticated`, `Unavailable` and `DeadlineExceeded` back off to
    five minutes and retry, and the loop never stops; the card stays pending and later cards wait behind it
-   (`CardEventsStuck` fires).
+   (`CardEventsStuck` fires); any other code (Unknown, Internal, ResourceExhausted) blocks the head of the line the same way.
+   Parking is permanent; after fixing a bridge grant, unpark with `UPDATE decisions SET bridge_parked = false WHERE bridge_parked`.
+   Migration 000042 also installs a trigger that refuses any write moving a decision back to `open`, which the ce_id
+   `card/<id>/<state>` dedup relies on.
 4. **R2.** `agentfleet_card_events_enabled`, `_published_total{type}`, `_refused_total`, `_pending`, `_parked`, `_lost_total`
    and `_last_success_timestamp_seconds` (seeded at start, renewed when the bridge answers a publish, so it ages while no
    card changes: alert on `pending` and `parked`, not on its age). The alert rules live with the other core rules in
