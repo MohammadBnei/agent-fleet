@@ -77,7 +77,7 @@ A first responder must look at the cluster before it answers. Without that, its 
 *Added 2026-11-23, from the first live responder QA.*
 
 1. **One voice.** A card names the responder in the third person ("Alert X: the responder could not name the cause")
-   and the owner as "you" (option "You handle it"). Core writes both. An alertname with a space is plain text and stays;
+   and the owner as "you" (options "Investigate" and "Dismiss"). Core writes both. An alertname with a space is plain text and stays;
    one that is not (newline, symbols) reads "An alert", never "Alert alert". A card that names no object or finding
    (`unknown_failure`) appends where the alert fired from the group's own labels (`namespace`, `deployment`, `pod`,
    `job`, each a DNS-1123 name core checked): typed fields only.
@@ -93,3 +93,10 @@ A first responder must look at the cluster before it answers. Without that, its 
    `component`/`namespace`; core refuses a job off the list, a job with a namespace, and a job from any session that is
    not a definition session. The selector is built by core from the two checked values: no free LogQL. `alert-responder`
    holds `forgejo-actions`. Risk accepted: job logs hold whatever a CI job printed, B data read by a B-tagged tool.
+5. **Card options (2026-11-23).** The old "You handle it" and "Dismiss" both only recorded a handoff to a run that had
+   ended. "Investigate" is now an `open_session` effect: core binds a brief of the group's repo (the CI alert's repo
+   by name, else `infra-bootstrap`), its title (80 characters at most) and the card's typed findings, never the
+   responder's text. "Dismiss" stays a handoff and the card takes the owner's own words as an optional reason; either
+   is recorded and resumes nothing (item 2). The console says "Closes the card; nothing runs" for a handoff on an
+   `alert_group` card. The responder's prompt lists its four tools; it had tried `journal_search` and
+   `set_session_meta`, both denied.
