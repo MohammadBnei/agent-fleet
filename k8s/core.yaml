@@ -97,10 +97,8 @@ service:
 # Consequence worth re-reading before adding a route: this IngressRoute matches
 # on HOST with no path constraint, so every path core serves on 8080 is now
 # public unless the in-app gate refuses it. What the gate exempts (exact paths) —
-# /healthz, /auth/{login,callback,logout,me}, /webhook/alertmanager — is
-# therefore internet-reachable.
-# The webhook keeps its own bearer token and refuses when it is unset; the other
-# two are inert. A new exempt path is a new public endpoint.
+# /healthz, /auth/{login,callback,logout,me,done} — is therefore
+# internet-reachable; they are inert. A new exempt path is a new public endpoint.
 #
 # /metrics is NOT exempt and is not served on 8080 at all: core carries it on
 # 9093 (extraPorts.metrics above), which this route does not reach. Exempting it
@@ -167,11 +165,6 @@ env:
     value: "http://platform-alloy.monitoring.svc.cluster.local:4318/v1/traces"
   - name: PROVISIONER_GRPC_ADDR
     value: "provisioner.agent-fleet.svc.cluster.local:9090"
-  # A firing Alertmanager alert becomes a thot task (docs/adr/0037).
-  # ALERT_WEBHOOK_TOKEN comes from the Infisical secret; without it the
-  # endpoint refuses every request rather than serving it open. Set
-  # THOT_DISCORD_CHANNEL_ID here to route alert threads to a dedicated
-  # channel — unset, they land in the normal trigger channel.
   - name: MAX_IN_FLIGHT_TASKS
     value: "5"
   # docs/adr/0062: defined-agent sessions draw from a pool INSIDE the cap
@@ -404,9 +397,7 @@ extraManifests:
       policyTypes:
         - Ingress
       ingress:
-        # :8080 console. Traefik (the IngressRoute above); Alertmanager and
-        # Grafana post /webhook/alertmanager (alerts -> thot tasks) to the
-        # ClusterIP, not through the ingress. This refuses a worker pod's
+        # :8080 console. Traefik (the IngressRoute above). This refuses a worker pod's
         # direct connection only: anything Traefik proxies (a worker going
         # through fleet.bnei.dev included, or any namespace's IngressRoute,
         # since allowCrossNamespace is on) arrives as Traefik. The in-app gate
@@ -416,14 +407,6 @@ extraManifests:
             - namespaceSelector:
                 matchLabels:
                   kubernetes.io/metadata.name: traefik
-            - namespaceSelector:
-                matchLabels:
-                  kubernetes.io/metadata.name: monitoring
-              podSelector:
-                matchExpressions:
-                  - key: app.kubernetes.io/name
-                    operator: In
-                    values: [alertmanager, grafana]
           ports:
             - port: 8080
               protocol: TCP
