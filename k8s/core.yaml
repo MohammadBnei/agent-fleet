@@ -25,6 +25,12 @@
 replicaCount: 1
 
 # docs/adr/0086 §6: core needs no cluster access, so it gets no API token.
+# Its own ServiceAccount (infra-bootstrap gitops/platform/bridge-bounds), not
+# the namespace's `default` that worker pods share: the bridge row bridge-core
+# names it ("sa": agent-fleet:bridge-core), and an admission policy keeps any
+# other pod from minting a ukubi-bridge token as it. No RBAC. The projected
+# token below is the only credential it mounts.
+serviceAccountName: bridge-core
 automountServiceAccountToken: false
 
 image:
@@ -260,6 +266,10 @@ env:
     value: "authentik.bnei.dev"
   - name: BRIDGE_PASSWORD_FILE
     value: /etc/bridge-core/app_password
+  # The projected ServiceAccount token wins over the app password when set;
+  # the password stays until the bridge row drops it.
+  - name: BRIDGE_TOKEN_FILE
+    value: /var/run/secrets/bridge/token
 
 # The whole ConfigMap as a directory, never subPath: a subPath mount never
 # sees updates. optional: a missing ConfigMap is an empty directory, which
@@ -277,12 +287,24 @@ extraVolumes:
     secret:
       secretName: bridge-core
       optional: true
+  # core's identity to the bridge: a pod-bound token for audience ukubi-bridge,
+  # renewed by the kubelet at 80% of its hour.
+  - name: bridge-token
+    projected:
+      sources:
+        - serviceAccountToken:
+            audience: ukubi-bridge
+            expirationSeconds: 3600
+            path: token
 extraVolumeMounts:
   - name: fleet-repo-overrides
     mountPath: /etc/fleet-repo-overrides
     readOnly: true
   - name: bridge-core
     mountPath: /etc/bridge-core
+    readOnly: true
+  - name: bridge-token
+    mountPath: /var/run/secrets/bridge
     readOnly: true
 
 podLabels:

@@ -2,7 +2,9 @@
 // ADR-0060/0066, docs/adr/0078 §1). Core signs in as the authentik service
 // account bridge-core with a client_credentials grant; its app password is an
 // optional mounted file, re-read before every call, so core starts and runs
-// whether or not the bridge is configured.
+// whether or not the bridge is configured. With TokenFile set it presents its
+// projected ServiceAccount token instead (the bridge verifies it as the
+// client row's "sa"): no grant, the token file re-read at every call.
 package bridgeclient
 
 import (
@@ -37,6 +39,7 @@ type Config struct {
 	ClientID     string // the ukubi-bridge-api provider
 	Username     string // bridge-core
 	PasswordFile string // the mounted app password
+	TokenFile    string // the projected ServiceAccount token (audience ukubi-bridge); when set it is used and the app password is not
 }
 
 type Client struct {
@@ -71,6 +74,36 @@ func (c *Client) password() (string, error) {
 	return pw, nil
 }
 
+// tokenCheck is password's twin for TokenFile: the same not-configured
+// refusals, and a constant cache key, since the file renews under the same
+// client.
+func (c *Client) tokenCheck() (string, error) {
+	if c.cfg.URL == "" {
+		return "", fmt.Errorf("%w: BRIDGE_URL is unset", ErrNotConfigured)
+	}
+	if _, err := fileToken(c.cfg.TokenFile).Token(); err != nil {
+		return "", fmt.Errorf("%w: projected token file %s: %v", ErrNotConfigured, c.cfg.TokenFile, err)
+	}
+	return "token:" + c.cfg.TokenFile, nil
+}
+
+// fileToken is the projected ServiceAccount token (audience ukubi-bridge,
+// expirationSeconds 3600), read from its file at every call: the kubelet
+// renews the file at 80% of its life, so nothing is cached and nothing stale.
+type fileToken string
+
+func (f fileToken) Token() (*oauth2.Token, error) {
+	b, err := os.ReadFile(string(f))
+	if err != nil {
+		return nil, err
+	}
+	t := strings.TrimSpace(string(b))
+	if t == "" {
+		return nil, errors.New("token file is empty")
+	}
+	return &oauth2.Token{AccessToken: t, TokenType: "Bearer"}, nil
+}
+
 // hostRewrite sends the token request to authentik's in-cluster Service as
 // its public host, so the issuer matches what the bridge pins and nothing
 // depends on Cloudflare (infra-bootstrap ADR-0066 §1).
@@ -97,7 +130,13 @@ func (c *Client) API() (bridgev1connect.BridgeServiceClient, error) {
 // session is the client and its token source, rebuilt when the password
 // changed.
 func (c *Client) session() (bridgev1connect.BridgeServiceClient, oauth2.TokenSource, error) {
-	pw, err := c.password()
+	var pw string
+	var err error
+	if c.cfg.TokenFile != "" {
+		pw, err = c.tokenCheck() // never changes the client: the source re-reads the file itself
+	} else {
+		pw, err = c.password()
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,16 +145,21 @@ func (c *Client) session() (bridgev1connect.BridgeServiceClient, oauth2.TokenSou
 	if c.api != nil && pw == c.pw {
 		return c.api, c.src, nil
 	}
-	cc := clientcredentials.Config{
-		ClientID:       c.cfg.ClientID,
-		TokenURL:       c.cfg.TokenURL,
-		EndpointParams: url.Values{"username": {c.cfg.Username}, "password": {pw}},
-		AuthStyle:      oauth2.AuthStyleInParams,
+	var src oauth2.TokenSource
+	if c.cfg.TokenFile != "" {
+		src = fileToken(c.cfg.TokenFile)
+	} else {
+		cc := clientcredentials.Config{
+			ClientID:       c.cfg.ClientID,
+			TokenURL:       c.cfg.TokenURL,
+			EndpointParams: url.Values{"username": {c.cfg.Username}, "password": {pw}},
+			AuthStyle:      oauth2.AuthStyleInParams,
+		}
+		tokenHTTP := &http.Client{Timeout: 15 * time.Second, Transport: hostRewrite{host: c.cfg.AuthHost, base: http.DefaultTransport}}
+		// The token source reuses a token until 10 s before it expires
+		// (oauth2's expiry delta), above the bridge's 5 s floor for a stream.
+		src = cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenHTTP))
 	}
-	tokenHTTP := &http.Client{Timeout: 15 * time.Second, Transport: hostRewrite{host: c.cfg.AuthHost, base: http.DefaultTransport}}
-	// The token source reuses a token until 10 s before it expires
-	// (oauth2's expiry delta), above the bridge's 5 s floor for a stream.
-	src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenHTTP))
 	bearer := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			if err := c.authorize(src, req.Header()); err != nil {

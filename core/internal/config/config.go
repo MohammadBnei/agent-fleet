@@ -332,6 +332,7 @@ func Load(getenv func(string) string) (Config, error) {
 		ClientID:     l.str("BRIDGE_CLIENT_ID", "ukubi-bridge-api"),
 		Username:     l.str("BRIDGE_USERNAME", "bridge-core"),
 		PasswordFile: l.str("BRIDGE_PASSWORD_FILE", "/etc/bridge-core/app_password"),
+		TokenFile:    l.str("BRIDGE_TOKEN_FILE", ""),
 	}
 	if len(l.warns) > nb {
 		c.Bridge.URL = ""

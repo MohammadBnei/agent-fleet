@@ -91,3 +91,45 @@ func TestPublishSignsInAsTheServiceAccount(t *testing.T) {
 		t.Fatalf("a rotated password did not sign in again: %q", grants)
 	}
 }
+
+func TestPublishWithTheProjectedToken(t *testing.T) {
+	fb := &fakeBridge{}
+	mux := http.NewServeMux()
+	mux.Handle(bridgev1connect.NewBridgeServiceHandler(fb))
+	bridge := httptest.NewServer(mux)
+	defer bridge.Close()
+
+	tokFile := filepath.Join(t.TempDir(), "token")
+	// A password file that exists and a token URL that would fail: the token file wins, no grant is made.
+	pwFile := filepath.Join(t.TempDir(), "app_password")
+	if err := os.WriteFile(pwFile, []byte("s3cret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := New(Config{URL: bridge.URL, TokenURL: "http://127.0.0.1:1/", PasswordFile: pwFile, TokenFile: tokFile})
+
+	if err := c.Publish(context.Background(), &bridgev1.CloudEvent{Id: "1"}); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("no token file: %v, want ErrNotConfigured", err)
+	}
+	if err := os.WriteFile(tokFile, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Publish(context.Background(), &bridgev1.CloudEvent{Id: "1"}); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("empty token file: %v, want ErrNotConfigured", err)
+	}
+	if err := os.WriteFile(tokFile, []byte("sa-token-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Publish(context.Background(), &bridgev1.CloudEvent{Id: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	// The kubelet renews the file: the next call carries the new token.
+	if err := os.WriteFile(tokFile, []byte("sa-token-2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Publish(context.Background(), &bridgev1.CloudEvent{Id: "2"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fb.auth) != 2 || fb.auth[0] != "Bearer sa-token-1" || fb.auth[1] != "Bearer sa-token-2" {
+		t.Fatalf("authorization %q, want the file's token at each call", fb.auth)
+	}
+}

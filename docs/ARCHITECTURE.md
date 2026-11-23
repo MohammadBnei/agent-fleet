@@ -953,6 +953,7 @@ the proxy variables) are theirs and not listed.
 | `BRIDGE_CLIENT_ID` | `ukubi-bridge-api` | any | authentik client id |
 | `BRIDGE_USERNAME` | `bridge-core` | any | the service account |
 | `BRIDGE_PASSWORD_FILE` | `/etc/bridge-core/app_password` | any path | its app password, re-read before each call; absent runs without the bridge |
+| `BRIDGE_TOKEN_FILE` | none | any path | core's projected ServiceAccount token (audience `ukubi-bridge`), re-read at every call; when set it is used instead of the app password (`adr/0078` amendment) |
 
 #### Auth (`core/`, `adr/0056`)
 
