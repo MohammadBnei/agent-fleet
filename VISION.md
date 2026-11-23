@@ -19,8 +19,8 @@ holds shape. This is the part with a metabolism.
 
 It is also, for now, a foetus in an artificial womb. It is gestating inside
 a substrate that is still being built around it, on borrowed circulation:
-source from GitHub, base images from Docker Hub, identity from a GitHub App
-(`ukubi-fleet`, `docs/adr/0075`). It works, and it is not yet self-contained.
+source from Forgejo (GitHub is a push mirror), base images from Docker Hub,
+identity from Forgejo bot users (`ukubi-fleet`; the GitHub App of `docs/adr/0075` is the rollback). It works, and it is not yet self-contained.
 
 **The metaphor is literal here, not analogical.** Elsewhere "cells" is a
 figure of speech. In this repo it is the actual design:
@@ -55,7 +55,7 @@ detail; this is only the mapping.
 | 2 · Declared intent is truth | The docs are canonical and alerts feed the audit loop, but nothing yet diffs *declared intent* against reality — `mission-drift` lives in the parent and is report-only | **Partial** |
 | 5 · Staged, checkpointed repair | Per-session volumes and PRs give the shape; nothing enforces that an *interrupted* run leaves a valid state, and interruption is the common case | **Partial** |
 | 4 · Genome authored *(spec edits)* | Nothing stops an agent editing a spec to make its own work compliant. Only a rule in the `packs/repo` context pack (and `fleet-shared/CLAUDE.md`) — the weakest tier | **Rule only** |
-| 1 · Self-contained substrate | Fleet images build and live in-cluster (Zot); source on GitHub, base images from Docker Hub, identity a GitHub App (`ukubi-fleet`) | **Partial** |
+| 1 · Self-contained substrate | Fleet images build and live in-cluster (Zot); source on Forgejo (GitHub push mirror), base images from Docker Hub, identity Forgejo bot users (`ukubi-fleet`) | **Partial** |
 | — · Known gap: the build box | Every repo's CI builds as root on one shared build-runner box — PRs and unprotected app repos included. Accepted for now (2026-10-22) | **Accepted gap** |
 
 Two things worth noticing.
@@ -109,7 +109,7 @@ light QA.
 The gate is the stages, not a person standing at one of them. A human comes in
 where the process asks for one: interview rounds and the doubts a cycle
 escalates. Merge follows code review in the process. Today only CI's own stages
-(lint, test, build) leave a check a ruleset can require; the stages before
+(lint, test, build) leave a check branch protection can require; the stages before
 the PR and the code review leave none yet. Making each stage leave checkable
 evidence, and then requiring it, is how principle 8 becomes structural.
 

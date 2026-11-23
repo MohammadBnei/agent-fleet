@@ -160,8 +160,8 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **The fleet leaves the git business.** Per session the provisioner fetches
   the shared clone cache, runs one `git clone --shared` into the session's
   directory, and seeds its config dir. No worktree, no branch, no naming
-  convention, no sweep — the agent runs `git checkout -b` and `gh pr create`
-  itself. `gc.auto=0` on the cache clones, because a `git gc` there can prune
+  convention, no sweep — the agent runs `git checkout -b` and opens its PR
+  itself (on Forgejo, by AGit push). `gc.auto=0` on the cache clones, because a `git gc` there can prune
   objects a live session's `alternates` still references. See
   [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
 - **Storage is split by access pattern, not by uniformity.** Two volumes,
