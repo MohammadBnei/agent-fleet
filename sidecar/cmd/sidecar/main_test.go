@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	uktel "github.com/MohammadBnei/ukubi-go/telemetry"
@@ -134,5 +135,13 @@ func TestKubeRead_NeedsGrantAndB(t *testing.T) {
 		if got := kubeRead(c.cfg, nil) != nil; got != c.want {
 			t.Errorf("%+v: served %v, want %v", c.cfg, got, c.want)
 		}
+	}
+}
+
+// The gateway route carries the pod's gateway key, so it binds loopback only.
+func TestGatewayServer_BindsLoopback(t *testing.T) {
+	u, _ := url.Parse("http://gw:8080")
+	if got := gatewayServer("9094", u, "", "s").Addr; got != "127.0.0.1:9094" {
+		t.Errorf("gateway listener Addr = %q, want 127.0.0.1:9094", got)
 	}
 }

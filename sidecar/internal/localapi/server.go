@@ -441,6 +441,9 @@ func taskHandler(core *coreclient.Client) http.HandlerFunc {
 		if session.Effort != nil {
 			response["effort"] = *session.Effort
 		}
+		if session.ContextTokens != nil {
+			response["contextTokens"] = *session.ContextTokens
+		}
 		// How long the gate waits on a decision (docs/adr/0082 §5); 0 is
 		// the worker's own default.
 		response["decisionWaitMs"] = resp.GetDecisionWaitMs()

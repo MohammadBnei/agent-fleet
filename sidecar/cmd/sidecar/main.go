@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/config"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/egress"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/gateway"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/memory"
@@ -151,12 +153,27 @@ func main() {
 		}
 	}()
 
+	// docs/adr/0088: the worker's ANTHROPIC_BASE_URL on a gateway-model session.
+	gwURL, err := url.Parse(cfg.GatewayURL)
+	if err != nil {
+		slog.Error("FLEET_GATEWAY_URL", "error", err)
+		os.Exit(1)
+	}
+	gatewayServer := gatewayServer(cfg.GatewayPort, gwURL, cfg.GatewayKeyFile, taskID)
+	go func() {
+		slog.Info("sidecar gateway listening", "addr", gatewayServer.Addr)
+		if err := gatewayServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("gateway server exited", "error", err)
+		}
+	}()
+
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = mcpServer.Shutdown(shutdownCtx)
 	_ = localAPIServer.Shutdown(shutdownCtx)
 	_ = healthServer.Shutdown(shutdownCtx)
+	_ = gatewayServer.Shutdown(shutdownCtx)
 	// After the servers: their last requests' spans are in the batch.
 	if err := tr.Shutdown(); err != nil {
 		slog.Warn("traces", "err", err)
@@ -204,6 +221,13 @@ func servers(tr *uktel.Tracing, core *coreclient.Client, mem mcpserver.MemoryWri
 	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: tr.Handler("sidecar mcp", withAccessLog("sidecar mcp", mcpserver.New(core, mem, kube))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: tr.Handler("sidecar local api", withAccessLog("sidecar local api", localapi.New(core))), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)},
 		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core)), ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
+}
+
+// gatewayServer is the loopback route to llm-gateway. No WriteTimeout: a
+// stream lasts as long as the model talks. It holds the pod's gateway key, so
+// like mcp and local api it never binds beyond loopback.
+func gatewayServer(port string, upstream *url.URL, keyFile, sessionID string) *http.Server {
+	return &http.Server{Addr: "127.0.0.1:" + port, Handler: withAccessLog("sidecar gateway", gateway.New(upstream, keyFile, sessionID)), ReadHeaderTimeout: 10 * time.Second, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 }
 
 // withAccessLog logs one line per request (method, path, status, duration)

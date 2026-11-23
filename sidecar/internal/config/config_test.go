@@ -21,17 +21,20 @@ func TestLoad(t *testing.T) {
 		"FLEET_TRUST_SET": "AB", "FLEET_AGENT_NAME": "kai", "FLEET_MEMORY_ROOT": "/m",
 		"FLEET_CLUSTER_READ": "1", "FLEET_CLUSTER_LOG_NAMESPACES": "agent-fleet,monitoring",
 		"KUBERNETES_SERVICE_HOST": "10.233.0.1", "KUBERNETES_SERVICE_PORT": "443",
+		"FLEET_GATEWAY_KEY_FILE": "/k", "FLEET_GATEWAY_URL": "http://gw:1", "GATEWAY_PORT": "7",
 	}))
 	want := Config{LogLevel: "debug", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "core:1", WorktreePath: "/wt", MCPPort: "2",
 		LocalAPIPort: "3", HealthPort: "4", VaultProxy: "http://t:p@v:5", VaultHosts: "a.test,b.test", EgressPort: "6",
 		TracesEndpoint: "http://otel:4318/v1/traces", TrustSet: "AB", AgentName: "kai", MemoryRoot: "/m",
-		ClusterRead: true, ClusterLogNamespaces: "agent-fleet,monitoring", KubeAPIHost: "10.233.0.1", KubeAPIPort: "443"}
+		ClusterRead: true, ClusterLogNamespaces: "agent-fleet,monitoring", KubeAPIHost: "10.233.0.1", KubeAPIPort: "443",
+		GatewayKeyFile: "/k", GatewayURL: "http://gw:1", GatewayPort: "7"}
 	if err != nil || c != want {
 		t.Errorf("set: %+v, %v\nwant %+v", c, err, want)
 	}
 
 	defaults := Config{LogLevel: "info", SessionID: "s1", LeaseID: "l1", CoreGRPCAddr: "agent-fleet-core.agent-fleet.svc.cluster.local:9090",
-		WorktreePath: "/workspace", MCPPort: "9090", LocalAPIPort: "9091", HealthPort: "9092", EgressPort: "9093", MemoryRoot: "/memory"}
+		WorktreePath: "/workspace", MCPPort: "9090", LocalAPIPort: "9091", HealthPort: "9092", EgressPort: "9093", MemoryRoot: "/memory",
+		GatewayURL: "http://llm-gateway.llm-gateway.svc.cluster.local:8080", GatewayPort: "9094"}
 	// Through getenv a blank variable and an unset one are the same "", so there is one case.
 	if c, err := Load(getenv(map[string]string{"SESSION_ID": "s1", "LEASE_ID": "l1"})); err != nil || c != defaults {
 		t.Errorf("unset: %+v, %v\nwant %+v", c, err, defaults)

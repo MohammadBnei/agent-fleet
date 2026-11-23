@@ -25,7 +25,7 @@ type specRecorder struct {
 
 func (f *specRecorder) GetSession(context.Context, *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
 	return &agentfleetv1.GetSessionResponse{
-		Session:        &agentfleetv1.Session{Id: "s1", Effort: proto.String("high"), DefinitionSha: proto.String("d3f")},
+		Session:        &agentfleetv1.Session{Id: "s1", Effort: proto.String("high"), ContextTokens: proto.Int32(198000), DefinitionSha: proto.String("d3f")},
 		AgentSpec:      &agentfleetv1.AgentSpec{ToolsAllow: []string{"Read"}, SidecarTools: []string{"send_message"}, MaxTurns: 60},
 		AgentSpecSha:   "abc",
 		DecisionWaitMs: 45000,
@@ -72,11 +72,12 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 		t.Fatal(err)
 	}
 	var task struct {
-		AgentSpec    map[string]any `json:"agentSpec"`
-		AgentSpecSha string         `json:"agentSpecSha"`
-		Effort       string         `json:"effort"`
-		DefSha       string         `json:"definitionSha"`
-		DecisionWait int            `json:"decisionWaitMs"`
+		AgentSpec     map[string]any `json:"agentSpec"`
+		AgentSpecSha  string         `json:"agentSpecSha"`
+		Effort        string         `json:"effort"`
+		ContextTokens int            `json:"contextTokens"`
+		DefSha        string         `json:"definitionSha"`
+		DecisionWait  int            `json:"decisionWaitMs"`
 	}
 	err = json.NewDecoder(resp.Body).Decode(&task)
 	_ = resp.Body.Close()
@@ -87,6 +88,9 @@ func TestAgentSpec_ShaFlowsFromTheWorkerToCore(t *testing.T) {
 		t.Fatalf("/task: %+v, want the spec in camelCase with every field and its sha", task)
 	}
 	// docs/adr/0077: the row's effort reaches the worker.
+	if task.ContextTokens != 198000 {
+		t.Fatalf("/task contextTokens %d, want 198000", task.ContextTokens)
+	}
 	if task.Effort != "high" {
 		t.Fatalf("/task effort %q, want high", task.Effort)
 	}

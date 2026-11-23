@@ -88,6 +88,13 @@ type Config struct {
 	// KubeAPIHost and KubeAPIPort are the kubelet-injected KUBERNETES_SERVICE_HOST/PORT: the API server's ClusterIP,
 	// which kubectl_read dials because the egress lock's DNS allowlist refuses kubernetes.default.svc (#434).
 	KubeAPIHost, KubeAPIPort string
+	// GatewayKeyFile is the credential file holding the llm-gateway key
+	// (FLEET_GATEWAY_KEY_FILE, docs/adr/0088). Read per request, so a rotation
+	// needs no restart. Missing or empty answers 503 on the gateway route.
+	GatewayKeyFile string
+	// GatewayURL is the llm-gateway the loopback route proxies to
+	// (FLEET_GATEWAY_URL) and GatewayPort the route's loopback port.
+	GatewayURL, GatewayPort string
 }
 
 // FromProcess is the sidecar's configuration from its environment: the one call
@@ -141,6 +148,9 @@ func Load(getenv func(string) string) (Config, error) {
 		ClusterLogNamespaces: getenv("FLEET_CLUSTER_LOG_NAMESPACES"),
 		KubeAPIHost:          getenv("KUBERNETES_SERVICE_HOST"),
 		KubeAPIPort:          getenv("KUBERNETES_SERVICE_PORT"),
+		GatewayKeyFile:       getenv("FLEET_GATEWAY_KEY_FILE"),
+		GatewayURL:           env("FLEET_GATEWAY_URL", "http://llm-gateway.llm-gateway.svc.cluster.local:8080"),
+		GatewayPort:          env("GATEWAY_PORT", "9094"),
 	}
 
 	var errs []error
