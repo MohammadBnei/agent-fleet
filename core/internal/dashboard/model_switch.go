@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MohammadBnei/agent-fleet/core/internal/models"
 	"log/slog"
 	"time"
 
@@ -69,10 +70,10 @@ func refuse(code connect.Code, format string, a ...any) error {
 func (w *modelSwitcher) switchModel(ctx context.Context, sessionID, model string) error {
 	// The gateway check comes first and alone: a gateway id may not be in
 	// validModels yet, and a disabled one must say why.
-	gw, known := gatewayModels[model]
+	_, known := models.Gateway(model)
 	switch {
-	case isGatewayRoute(model) && known && !w.gateway:
-		return refuse(connect.CodeFailedPrecondition, "%s", errGatewayDisabled)
+	case known && !w.gateway:
+		return refuse(connect.CodeFailedPrecondition, "%s", models.DisabledMsg)
 	case !known && !isValidModel(model):
 		return refuse(connect.CodeInvalidArgument, "invalid model %q", model)
 	}
@@ -115,15 +116,16 @@ func (w *modelSwitcher) switchModel(ctx context.Context, sessionID, model string
 		}
 	}
 	// A smaller window than the transcript already fills would fail on the
-	// first message. claude-* ids have no check.
-	if known && w.results != nil {
+	// first message.
+	window, hasWindow := models.ContextWindow(model)
+	if hasWindow && w.results != nil {
 		last, ok, err := w.results.LastResult(ctx, sessionID)
 		if err != nil {
 			return errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
 		// ContextTokens is 0 on results from before the worker sent it: no check then.
-		if ok && last.ContextTokens > gw.ContextTokens {
-			return refuse(connect.CodeFailedPrecondition, "the transcript is %d tokens and %s takes %d", last.ContextTokens, model, gw.ContextTokens)
+		if ok && last.ContextTokens > int64(window) {
+			return refuse(connect.CodeFailedPrecondition, "the transcript is %d tokens and %s takes %d", last.ContextTokens, model, window)
 		}
 	}
 

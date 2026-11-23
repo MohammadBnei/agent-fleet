@@ -102,8 +102,6 @@ type Server struct {
 	grants *grants.Store
 	// ratings stores thumbs and scores and aggregates per-model usage; nil answers Unavailable.
 	ratings ratingStore
-	// gatewayModels is the FLEET_GATEWAY_MODELS kill switch: off refuses every non-Claude model id.
-	gatewayModels bool
 	// decisions is what AnswerQuestion and RespondToPermission answer
 	// through (SetDecisions).
 	decisions *decisions.Store
@@ -114,9 +112,6 @@ type Server struct {
 }
 
 // SetEventOpener installs how an event proposal opens its definition's thread.
-// SetGatewayModels turns the gateway-model kill switch on or off.
-func (s *Server) SetGatewayModels(on bool) { s.gatewayModels = on }
-
 func (s *Server) SetEventOpener(f func(ctx context.Context, p *proposals.Proposal, adminSub string) (string, error)) {
 	s.openEvent = f
 }

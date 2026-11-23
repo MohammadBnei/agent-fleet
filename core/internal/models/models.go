@@ -33,6 +33,27 @@ func Gateway(id string) (Info, bool) {
 	return i, ok
 }
 
+// claudeContext is the window of each claude-* id the dashboard offers. The repo records no
+// other figure for them, so all are 200000 (the standard window, not the 1M beta).
+var claudeContext = map[string]int32{
+	"claude-opus-5-5":            200000,
+	"claude-opus-5":              200000,
+	"claude-opus-4-8":            200000,
+	"claude-sonnet-5":            200000,
+	"claude-haiku-4-5":           200000,
+	"claude-sonnet-4-5-20250929": 200000,
+	"claude-opus-4-5-20251101":   200000,
+}
+
+// ContextWindow is the context window of a gateway or known claude-* id; ok is false otherwise.
+func ContextWindow(id string) (int32, bool) {
+	if i, ok := gateway[id]; ok {
+		return i.ContextTokens, true
+	}
+	w, ok := claudeContext[id]
+	return w, ok
+}
+
 // IDs lists the gateway model ids (unsorted).
 func IDs() []string {
 	out := make([]string, 0, len(gateway))

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"errors"
+	"github.com/MohammadBnei/agent-fleet/core/internal/models"
 	"log/slog"
 	"slices"
 	"strings"
@@ -161,9 +162,8 @@ func modelStats(aggs map[string]*ratings.Agg) []*agentfleetv1.ModelStat {
 		if a.Scores > 0 {
 			st.AvgScore = float64(a.ScoreSum) / float64(a.Scores)
 		}
-		if model != "unknown" && isGatewayRoute(model) {
+		if p, ok := models.Gateway(model); ok {
 			st.Route = "gateway"
-			p := gatewayModels[model] // an id off the map prices at 0
 			st.ListUsd = float64(a.InputTokens)*p.InUSD/1e6 + float64(a.OutputTokens)*p.OutUSD/1e6
 			st.BilledUsd = st.ListUsd
 		}

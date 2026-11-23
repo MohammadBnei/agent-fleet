@@ -357,7 +357,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// stop an unapproved task ever getting a pod, and two implementations
 	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
 	// prevent.
-	dashboardSvc.SetGatewayModels(cfg.GatewayModels)
 	coreSvc.SetWarmFunc(dashboardSvc.WarmForAppend)
 	// The exit-window re-warm (docs/adr/0070 §6): warm itself puts the new
 	// pod's cursor just past the exit result's consumedSeq. WarmForAnswer, so

@@ -129,6 +129,7 @@ func TestSwitchRefusals(t *testing.T) {
 		{"turn running", working, "on", "claude-sonnet-5", nil, connect.CodeFailedPrecondition, "a turn is running"},
 		{"swept", swept, "on", "claude-sonnet-5", nil, connect.CodeFailedPrecondition, "swept"},
 		{"window too small", big, "on", "zai-org-glm-5", &ratings.Result{ContextTokens: 210000}, connect.CodeFailedPrecondition, "takes 198000"},
+		{"claude window too small", big, "on", "claude-sonnet-5", &ratings.Result{ContextTokens: 250000}, connect.CodeFailedPrecondition, "takes 200000"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,8 +152,8 @@ func TestSwitchRefusals(t *testing.T) {
 	}
 }
 
-func TestSwitchClaudeTargetHasNoWindowCheck(t *testing.T) {
-	f := &fakeSwitch{t: idleLive("zai-org-glm-5"), goneAt: 1, last: ratings.Result{Usage: ratings.TopUsage{InputTokens: 900000}}, haveLast: true}
+func TestSwitchToClaudeThatFitsIsAllowed(t *testing.T) {
+	f := &fakeSwitch{t: idleLive("zai-org-glm-5"), goneAt: 1, last: ratings.Result{ContextTokens: 150000}, haveLast: true}
 	if err := f.switcher().switchModel(context.Background(), "s1", "claude-sonnet-5"); err != nil {
 		t.Fatal(err)
 	}
