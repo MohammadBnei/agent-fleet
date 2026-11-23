@@ -232,8 +232,10 @@ Each step is one PR, merged by the user.
   every CA variable at it except `NODE_EXTRA_CA_CERTS`, which adds to Node's
   roots and takes `ca.pem`.
 - **`NO_PROXY`** for repo pods: loopback, core, the vault, `.cluster.local`,
-  `.svc`, `.bnei.lan`, `.bnei.dev`, `10.233.0.0/18`, `10.233.64.0/18`,
-  `192.168.1.0/24`.
+  `.svc`, `.bnei.lan`, `10.233.0.0/18`, `10.233.64.0/18`,
+  `192.168.1.0/24`. (`.bnei.dev` was listed until 2026-11-23: it sent
+  `git.bnei.dev` past the router, so the forge credential never applied;
+  the router dials other `*.bnei.dev` names direct.)
 - **Removed:** `GH_TOKEN` and the real `CLAUDE_CODE_OAUTH_TOKEN` from every
   pod, `ConfigureAuth` and `gh` from the provisioner, the worker's
   `configureGitAuth` (`gh api user`), `EnsureRepoCachedForSession`.
