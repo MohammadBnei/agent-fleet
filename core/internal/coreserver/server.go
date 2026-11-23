@@ -198,6 +198,9 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}
+	if typ == "result" {
+		logUsage(ctx, req.GetSessionId(), req.GetText(), seq)
+	}
 	// A permission request is the moment a session stops making progress and
 	// starts waiting on a person, so it is the moment worth telling them about.
 	if typ == "permission_request" {
