@@ -140,8 +140,7 @@ value on the wire.
 - **Repo pods** use their owner's vault (`owner-<login>`), refreshed by the
   provisioner on its own 5-minute tick (`grpcserver: owner vault refresh`
   errors). In the pod, `HTTPS_PROXY` is the sidecar's egress router
-  (`127.0.0.1:9093`, `sidecar/internal/egress`): the forge hosts
-  (`git.bnei.dev` under Forgejo) and `api.anthropic.com` go to the vault; everything else
+  (`127.0.0.1:9093`, `sidecar/internal/egress`): the forge's hosts and `api.anthropic.com` go to the vault; everything else
   goes direct. `git push`/`gh` failing with auth errors while other HTTPS
   works points here. Commits are authored `FLEET_GIT_AUTHOR_*` (`ukubi`).
 - **Definition pods** use their definition's vault, reconciled from
