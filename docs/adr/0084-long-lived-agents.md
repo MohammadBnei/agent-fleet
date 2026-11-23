@@ -309,6 +309,9 @@ What is left is a trusted agent that lives on.
 - **`ViewLogs` and `QueryMetrics` are tagged B.**
   - `ViewLogs` is scoped to the namespace list below.
   - `QueryMetrics` is a read-only PromQL relay over core's existing `promclient`.
+  - **Amended 2026-11-23:** `view_logs`, `query_metrics` and `cluster.logNamespaces` are also a first responder's
+    (`trust.untrusted: B`, ADR-0087), not only a standing character's. A responder holds A·B and these are reads
+    tagged B. `spawn_worker`, `wait_for_result`, `open_issue`, `list_responder_cards` and `speak` stay standing-only.
 - **`OpenIssue` is tagged C**, limited to `owns.repos`.
 - **Cluster reads are a per-definition grant (`cluster.read: true`).**
   - It goes to a dedicated ServiceAccount whose token is mounted in the sidecar only, after ADR-0086 §6 has cleaned

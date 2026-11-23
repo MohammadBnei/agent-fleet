@@ -39,3 +39,24 @@ that filed proposals for alerts, plus a fallback that filed one when a responder
   (`increase(agentfleet_responder_start_failed_total[15m]) > 0`, warning, in infra-bootstrap's Prometheus rules).
 - The unset env vars may still be set in infra. Core ignores unknown env vars, so nothing breaks. Removing them is a
   follow-up in infra-bootstrap.
+
+## A responder investigates read-only
+
+*Added 2026-11-23.*
+
+A first responder must look at the cluster before it answers. Without that, its prompt can only answer
+`unknown_failure`.
+
+1. **The reads.** `alert-responder` holds `kubectl_read` (`cluster.read`), `view_logs` (Loki, over
+   `cluster.logNamespaces`) and `query_metrics` (PromQL through core). All three are tagged B. A responder holds A·B
+   (ADR-0086), so it reads and never acts. Core's `AuthorizeKubeRead`, `ViewLogs` and `QueryMetrics` already check
+   the stored set for B and the pinned definition's grants. Nothing else changes at run time.
+2. **The validator.** `view_logs`, `query_metrics` and `cluster.logNamespaces` were standing-only (ADR-0084 §6). They
+   now also validate on a definition with `trust.untrusted: B`. `spawn_worker`, `wait_for_result`, `open_issue`,
+   `list_responder_cards` and `speak` stay standing-only. A responder cannot spawn, open issues or speak.
+3. **The workspace is `agent-fleet`.** The responder no longer points at infra-bootstrap, a cluster-access repo, so
+   the `definition sessions never run on a cluster-access repo` refusal in Consequences above no longer applies. The
+   cluster reads come from `cluster.read`, not from the repo. Like `ops-lead`, the pod holds the model credential
+   only: no GitHub key.
+4. **What still blocks a launch** is outside this repo: the vault `alert-responder` in Infisical agent-vault with
+   `CLAUDE_CODE_OAUTH_TOKEN`, and the fleet-read ServiceAccount and Roles in infra-bootstrap (#462).
