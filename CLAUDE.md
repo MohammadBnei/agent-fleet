@@ -132,7 +132,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   its tool surface (`adr/0067` §4, `worker/src/session.ts`): `settingSources: ["user"]`, so the
   repo's project allow rules are never read; `allowedTools` holds only the definition's
   `sidecarTools`; built-ins stop at a fixed ceiling; `tools.deny` sits in flag scope; every other
-  call goes through `canUseTool` (`definitionDecision`).
+  call goes through `canUseTool` (`definitionDecision`). The sidecar's `tools/list` is narrowed to the same `sidecarTools` (`mcpserver.grantFilter`, from the
+  session's spec): an ungranted tool is neither listed nor callable at the sidecar, and core and `canUseTool` still decide every call.
 - **A definition pod holds no real secret** (`adr/0065`). Credentials live in Agent Vault
   (infra-bootstrap ADR-0061); the **provisioner is its only client** (member agent token in
   Infisical project `agent-vault` `/agent-vault`, mounted, never in core) and reconciles each valid
