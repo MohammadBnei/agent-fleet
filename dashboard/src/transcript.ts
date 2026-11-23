@@ -528,6 +528,27 @@ export function parseSdkToolResult(text: string): SdkToolResult | null {
   }
 }
 
+// The request seq a parked call's own result names: the worker answers a call
+// it parked "Pending (request seq N). ..." (a retry of one already parked says
+// "Duplicate of pending request seq N"). The call did not fail; it is waiting
+// on the owner, or was let through after the owner allowed it. null for any
+// other result.
+export function parkedRequestSeq(info: SdkToolResult | null): bigint | null {
+  if (info?.isError !== true) return null;
+  const c = info.content;
+  const text =
+    typeof c === "string"
+      ? c
+      : Array.isArray(c)
+        ? c.map((b) => (b as { text?: unknown })?.text ?? "").join("")
+        : "";
+  const m =
+    /^(?:Pending \(request seq|Duplicate of pending request seq) (\d+)/.exec(
+      text,
+    );
+  return m ? BigInt(m[1]) : null;
+}
+
 // Pairs an ASSISTANT (tool_use) entry with its USER (tool_result) entry via
 // the Anthropic content-block id<->tool_use_id correlation worker/src/
 // session.ts's logSdkMessage now carries — without this, a tool call and

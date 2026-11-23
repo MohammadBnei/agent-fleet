@@ -454,7 +454,9 @@ function ResultView({
             .join(", ")}
         </div>
       )}
-      {models.length > 1 && (
+      {/* The SDK's per-model dollars are Claude prices: wrong off the
+          subscription, hidden like the summary line's. */}
+      {models.length > 1 && resultRoute(r) !== "gateway" && (
         <div className="text-xs text-dim2">
           {models
             .map(

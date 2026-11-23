@@ -17,7 +17,9 @@ import {
   findPendingPermissions,
   PANEL_OWNED_SIGNALS,
   PANEL_OWNED_TOOLS,
+  type PermissionOutcome,
   pairedResultSeqs,
+  parkedRequestSeq,
   parseAnswers,
   parseSdkResultSummary,
   parseSdkSignal,
@@ -28,12 +30,12 @@ import {
   permissionDenyMessages,
   resolvedPermissionDecisions,
   resultDelta,
-  withoutAllowedDenials,
   type SdkResultSummary,
   type SdkToolResult,
   shortTool,
   summarizeToolInput,
   type ToolCallPair,
+  withoutAllowedDenials,
 } from "../transcript";
 import { CardBody } from "./CardBody";
 import { Collapse } from "./Collapse";
@@ -151,8 +153,12 @@ function ToolGroup({
   compact,
   elapsedById,
   deniedIds,
+  decisions,
 }: {
   pairs: ToolCallPair[];
+  // Each permission request's outcome (resolvedPermissionDecisions). A call the
+  // worker parked comes back as an error result too, and is not a failure.
+  decisions: Map<bigint, PermissionOutcome>;
   compact?: boolean;
   // Calls a human denied (deniedToolUseIds). A denied call comes back as an
   // error tool_result, and the row said "failed" — in warning orange — for a
@@ -196,7 +202,9 @@ function ToolGroup({
               errored &&
               pair.callInfo.id !== undefined &&
               deniedIds.has(pair.callInfo.id);
-            const failed = errored && !denied;
+            const parkedSeq = parkedRequestSeq(pair.resultInfo);
+            const parked = errored && !denied && parkedSeq !== null;
+            const failed = errored && !denied && !parked;
             const inFlight = !pair.result;
             const elapsed = pair.callInfo.id
               ? elapsedById.get(pair.callInfo.id)
@@ -220,7 +228,7 @@ function ToolGroup({
                     className={`w-1.5 h-1.5 rounded-full flex-none ${
                       failed
                         ? "bg-warning"
-                        : denied
+                        : denied || parked
                           ? "bg-dim2"
                           : inFlight
                             ? "bg-info animate-fpulse"
@@ -259,9 +267,13 @@ function ToolGroup({
                       ? "failed"
                       : denied
                         ? "denied"
-                        : inFlight
-                          ? `running${elapsed ? ` · ${elapsed}s` : ""}`
-                          : "ok"}
+                        : parked
+                          ? decisions.get(parkedSeq as bigint) === "allow"
+                            ? "allowed"
+                            : "waiting for you"
+                          : inFlight
+                            ? `running${elapsed ? ` · ${elapsed}s` : ""}`
+                            : "ok"}
                   </span>
                 </button>
               </div>
@@ -432,6 +444,7 @@ export function SessionFeed({
         compact={compact}
         elapsedById={elapsedById}
         deniedIds={deniedIds}
+        decisions={decisions}
       />,
     );
   };
@@ -455,6 +468,8 @@ export function SessionFeed({
   // after every turn — six in a short session. A rule now marks a change in
   // WHICH files are touched; the running line counts are the CHANGES panel's.
   let lastChangedPaths: string | null = null;
+  // A pending decision left to the dock: something at every density.
+  let docked = false;
 
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
@@ -503,7 +518,10 @@ export function SessionFeed({
       }
       if (typeof parsed.tool !== "string") continue;
       const isPending = pendingSeqs.has(entry.seq);
-      if (isPending && dockPendingDecision) continue;
+      if (isPending && dockPendingDecision) {
+        docked = true;
+        continue;
+      }
       flush();
       const permissionKey = `permission:${entry.seq}`;
       const respond = (
@@ -560,7 +578,10 @@ export function SessionFeed({
       const answerEntry = entries
         .slice(idx + 1)
         .find((e) => answersQuestion(e, entry));
-      if (!answerEntry && dockPendingDecision) continue;
+      if (!answerEntry && dockPendingDecision) {
+        docked = true;
+        continue;
+      }
       flush();
       out.push(
         <div key={key} id={`entry-${key}`}>
@@ -946,6 +967,10 @@ export function SessionFeed({
 
   if (out.length === 0) {
     if (hasPendingMessage) return null;
+    if (docked)
+      return (
+        <div className="text-sm text-dim2">A decision is waiting below.</div>
+      );
     return (
       <div className="text-sm text-dim2">
         {density === "everything"
