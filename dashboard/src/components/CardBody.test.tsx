@@ -172,6 +172,24 @@ test("each option shows its reversibility and core's own effect words", () => {
   expect(html).toContain("Closes every thread on");
 });
 
+test("a core-written alert_group card says nothing runs on a handoff", () => {
+  const html = render(
+    card({
+      subject: {
+        $typeName: "agentfleet.v1.CardSubject",
+        kind: "alert_group",
+        groupKey: "0123456789abcdef",
+      } as Card["subject"],
+      options: [
+        option("1", "Dismiss", "handoff", "yes"),
+        option("2", "Other", "handoff", "yes"),
+      ],
+    }),
+  );
+  expect(html).toContain("Closes the card; nothing runs");
+  expect(html).not.toContain("Sends your choice to the agent");
+});
+
 // The first click on an irreversible option only arms it; nothing is sent
 // until the confirm.
 test("an irreversible option is not armed until it is clicked", () => {

@@ -277,6 +277,9 @@ func effectText(o *agentfleetv1.CardOption, s *agentfleetv1.CardSubject) string 
 	}
 	// choose, handoff and any other verb.
 	if v != "close_threads" {
+		if s.GetKind() == "alert_group" {
+			return "Closes the card; nothing runs"
+		}
 		return "Sends your choice to the agent"
 	}
 	if s.GetKind() == "repo" {

@@ -44,14 +44,16 @@ const coreVerbText: Record<string, string> = {
   executor_step: "Refused: the executor does not exist yet",
 };
 
-function effectText(o: CardOption, subject: string): string {
+function effectText(o: CardOption, subject: string, kind?: string): string {
   const v = o.effect?.verb ?? "";
   if (v in coreVerbText) {
     return `${coreVerbText[v]} (hash ${(o.effect?.payloadHash ?? "").slice(0, 12)})`;
   }
   return v === "close_threads"
     ? `Closes every thread on ${subject}`
-    : "Sends your choice to the agent";
+    : kind === "alert_group"
+      ? "Closes the card; nothing runs" // core-written responder card: its run already ended
+      : "Sends your choice to the agent";
 }
 
 // The not-delivered notice. agentsvc owns the reason's words; this only
@@ -206,7 +208,7 @@ export function CardBody({
               </span>
             </span>
             <span className="block text-xs text-dim [overflow-wrap:anywhere]">
-              {effectText(o, subject)}
+              {effectText(o, subject, card.subject?.kind)}
             </span>
             {/* The bound payload as the owner reads it, so an approval runs bytes that were shown (docs/adr/0086 §4): core's
                 decisions.EffectLines, served on the effect. */}

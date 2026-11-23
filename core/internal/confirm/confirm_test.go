@@ -337,6 +337,13 @@ func TestEffectText(t *testing.T) {
 	}
 }
 
+func TestEffectTextAlertGroup(t *testing.T) {
+	s := &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef"}
+	if got := effectText(&agentfleetv1.CardOption{Effect: &agentfleetv1.CardEffect{Verb: "handoff"}}, s); got != "Closes the card; nothing runs" {
+		t.Errorf("%q", got)
+	}
+}
+
 // A reversible "yes" core verb is not answered in place (a surface is sent here by agentsvc.confirmFirst), and
 // the owner is shown the bound payload's fields, the title labelled an agent claim, and open_pr's diff.
 func TestGetCoreVerbShowsPayload(t *testing.T) {
