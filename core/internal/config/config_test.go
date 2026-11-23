@@ -164,3 +164,11 @@ func TestLoadDevOrigins(t *testing.T) {
 		t.Errorf("admin origin, gate off: %q, %v", c.AdminOrigins, err)
 	}
 }
+
+func TestGatewayModelsKillSwitch(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "on": true, "true": false, "ON": false, "off": false} {
+		if got := mustLoad(t, map[string]string{"FLEET_GATEWAY_MODELS": v}).GatewayModels; got != want {
+			t.Errorf("FLEET_GATEWAY_MODELS=%q: %v, want %v", v, got, want)
+		}
+	}
+}

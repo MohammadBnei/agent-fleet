@@ -929,6 +929,7 @@ the proxy variables) are theirs and not listed.
 | `FLEET_ADMIN_ORIGINS` | none | comma-separated exact origins `https://host[:port]` (refuses: malformed, a path, userinfo, a wildcard, or http with the gate on) | our app surfaces where an admin answers cards in place, with CORS on AgentService; anything not reversible "yes" goes through core's confirm page, which may return there (docs/adr/0082 §7). Checked before embed origins: never an island |
 | `FLEET_VERSION` | none | any | the release reported (`dev` without it) |
 | `CLAUDE_MODEL` | none | any | the operator's model override (`adr/0077`) |
+| `FLEET_GATEWAY_MODELS` | off | `on` or anything else | kill switch for non-Claude (llm-gateway) model ids: off hides and refuses them |
 | `FLEET_PROVISIONER_TOKEN` | none | any | secret: the provisioner's bearer to `CoreService` |
 | `FLEET_CORE_PROVISIONER_TOKEN` | none | any | secret: core's bearer to `ProvisionerService` (`adr/0069`) |
 | `FLEET_CLIENT_TOKEN_<NAME>` | none | any | secret: a registered client's bearer; the name is its definition's `tokenRef`, read at match time (`adr/0066` §3) |

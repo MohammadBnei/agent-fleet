@@ -231,6 +231,9 @@ type Config struct {
 	// ClaudeModel is the operator's model override for a repo session whose creator named none (CLAUDE_MODEL,
 	// docs/adr/0077); "" stores NULL and Claude Code picks.
 	ClaudeModel string
+	// GatewayModels is the kill switch for non-Claude (llm-gateway) model ids: FLEET_GATEWAY_MODELS=on enables
+	// them, anything else (the default) hides and refuses them.
+	GatewayModels bool
 	// TokenEnv reads the variable a registered client's tokenRef names (docs/adr/0066 §3): the names come from
 	// the synced definitions, so they are read by name at match time, through the same getenv.
 	TokenEnv func(string) string
@@ -281,6 +284,7 @@ func Load(getenv func(string) string) (Config, error) {
 	c := Config{
 		Version:               getenv("FLEET_VERSION"),
 		ClaudeModel:           getenv("CLAUDE_MODEL"),
+		GatewayModels:         getenv("FLEET_GATEWAY_MODELS") == "on",
 		TokenEnv:              getenv,
 		Port:                  l.port("CORE_PORT", "8080"),
 		GRPCPort:              l.port("CORE_GRPC_PORT", "9090"),

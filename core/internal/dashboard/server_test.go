@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -139,7 +140,7 @@ func TestValidModels_AreRealModelIDs(t *testing.T) {
 		t.Error("claude-haiku-4-5-20250929 is back — that is Sonnet 4.5's date on Haiku's name; " +
 			"it passes this allowlist and then 404s at the API")
 	}
-	for _, m := range pickableModels() {
+	for _, m := range pickableModels(true) {
 		if !validModels[m] || strings.Contains(m, "-20") {
 			t.Errorf("pickableModels offers %q: want only validModels' aliases, no dated snapshot", m)
 		}
@@ -291,4 +292,25 @@ func TestGetTranscript_OpensOnTheNewestPageAndWalksBack(t *testing.T) {
 
 func (*recordingStore) AppendAuthored(context.Context, string, transcript.Author, string, string, string, *int64) (int64, error) {
 	return 0, nil
+}
+
+func TestGatewayKillSwitch(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		s := &Server{gatewayModels: on}
+		for _, m := range []string{"zai-org-glm-5", "deepseek-v4-1-flash"} {
+			err := s.checkModelEnabled(m)
+			if on == (err != nil) {
+				t.Errorf("on=%v %s: err %v", on, m, err)
+			}
+			if got := slices.Contains(pickableModels(on), m); got != on {
+				t.Errorf("on=%v: pickable(%s) = %v", on, m, got)
+			}
+		}
+		if err := s.checkModelEnabled("claude-opus-5"); err != nil {
+			t.Errorf("claude id refused: %v", err)
+		}
+	}
+	if err := (&Server{}).checkModelEnabled("kimi-k2-7-code"); err == nil || !strings.Contains(err.Error(), "FLEET_GATEWAY_MODELS") {
+		t.Errorf("want the kill-switch message, got %v", err)
+	}
 }

@@ -37,6 +37,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/grants"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/models"
 	"github.com/MohammadBnei/agent-fleet/core/internal/packs"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
@@ -74,6 +75,8 @@ type Server struct {
 	// model is the operator's override for a repo session whose creator named none (config.ClaudeModel,
 	// CLAUDE_MODEL): "" stores NULL, so Claude Code picks (docs/adr/0077).
 	model string
+	// gatewayModels is the FLEET_GATEWAY_MODELS kill switch (SetGatewayModels).
+	gatewayModels bool
 
 	// fileDiffs is where GetFileDiff parks a request for the sidecar's next
 	// telemetry tick to pick up. nil disables the RPC (it answers NO_POD),
@@ -231,6 +234,9 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 		model = s.fallbackModel()
 	case model != "" && !isValidModel(model):
 		return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, fmt.Errorf("invalid model %q", model))
+	}
+	if err := s.checkModelEnabled(model); err != nil {
+		return nil, err
 	}
 	// Reaches the SDK verbatim as `effort`, like mode via launchMode.
 	if effort != "" && !slices.Contains(definitions.EffortLevels, effort) {
@@ -569,9 +575,12 @@ func defaultModelOf(s *definitions.Spec) string {
 
 // pickableModels is validModels minus the dated snapshots kept only so old
 // rows stay valid: what the New Session dialog offers (ListRepos.models).
-func pickableModels() []string {
+func pickableModels(gateway bool) []string {
 	var out []string
 	for m := range validModels {
+		if _, gw := models.Gateway(m); gw && !gateway {
+			continue
+		}
 		if !datedModel.MatchString(m) {
 			out = append(out, m)
 		}
@@ -602,6 +611,12 @@ var validModels = map[string]bool{
 	"claude-opus-4-8":  true,
 	"claude-sonnet-5":  true,
 	"claude-haiku-4-5": true,
+	// Gateway ids (internal/models), offered only while FLEET_GATEWAY_MODELS=on.
+	"zai-org-glm-5":                        true,
+	"z-ai-glm-5-3":                         true,
+	"kimi-k2-7-code":                       true,
+	"qwen3-coder-480b-a35b-instruct-turbo": true,
+	"deepseek-v4-1-flash":                  true,
 	// Kept so sessions created on them stay re-selectable.
 	"claude-sonnet-4-5-20250929": true,
 	"claude-opus-4-5-20251101":   true,
@@ -609,6 +624,18 @@ var validModels = map[string]bool{
 
 func isValidModel(model string) bool {
 	return validModels[model]
+}
+
+// SetGatewayModels is the FLEET_GATEWAY_MODELS kill switch: false (the default)
+// hides gateway ids and refuses them in createSession and warm.
+func (s *Server) SetGatewayModels(on bool) { s.gatewayModels = on }
+
+// checkModelEnabled refuses a gateway model id while the kill switch is off.
+func (s *Server) checkModelEnabled(model string) error {
+	if _, gw := models.Gateway(model); gw && !s.gatewayModels {
+		return errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, errors.New(models.DisabledMsg))
+	}
+	return nil
 }
 
 // maxTranscriptPage bounds every GetTranscript response. It was the only
@@ -1270,6 +1297,11 @@ func (s *Server) warm(ctx context.Context, sessionID string, answer bool) (podNa
 	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return "", nil
 	}
+	if t.Model != nil {
+		if err := s.checkModelEnabled(*t.Model); err != nil {
+			return "", err
+		}
+	}
 	// A swept session has had its working directory and SDK state reclaimed,
 	// so there is nothing to resume into — booting a pod would hand the agent
 	// an empty directory and a resume id pointing at a deleted transcript.
@@ -1683,7 +1715,7 @@ func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.
 	for i, r := range list {
 		out[i] = repoToProto(r)
 	}
-	return connect.NewResponse(&agentfleetv1.ListReposResponse{Repos: out, Models: pickableModels()}), nil
+	return connect.NewResponse(&agentfleetv1.ListReposResponse{Repos: out, Models: pickableModels(s.gatewayModels)}), nil
 }
 
 // SyncRepo refreshes the provisioner's clone cache for one repo. Until this
