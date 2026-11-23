@@ -30,6 +30,14 @@ func TestUsageRows(t *testing.T) {
 	}
 }
 
+func TestUsageRowsPriceCacheReadsAtTheCachedRate(t *testing.T) {
+	body := `{"modelUsageDelta":{"deepseek-v4-1-flash":{"inputTokens":158084,"outputTokens":19734,"cacheReadInputTokens":2409122,"cacheCreationInputTokens":0,"costUSD":2.67}}}`
+	rows := usageRows(body)
+	if len(rows) != 1 || math.Abs(rows[0].BilledUSD-0.0891) > 0.001 {
+		t.Errorf("rows = %+v, want billed about 0.089", rows)
+	}
+}
+
 type countHandler struct{ n *atomic.Int64 }
 
 func (h countHandler) Enabled(context.Context, slog.Level) bool { return true }

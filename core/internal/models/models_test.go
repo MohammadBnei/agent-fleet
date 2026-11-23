@@ -33,10 +33,23 @@ func TestRouteAndGateway(t *testing.T) {
 }
 
 func TestBilledUSD(t *testing.T) {
-	if got := BilledUSD("zai-org-glm-5", 1_000_000, 500_000, 0); math.Abs(got-2.6) > 1e-9 {
+	if got := BilledUSD("zai-org-glm-5", 1_000_000, 500_000, 0, 0); math.Abs(got-2.6) > 1e-9 {
 		t.Errorf("glm-5 = %v, want 2.6", got)
 	}
-	if BilledUSD("claude-opus-5", 1e6, 1e6, 1e6) != 0 {
+	if BilledUSD("claude-opus-5", 1e6, 1e6, 1e6, 1e6) != 0 {
 		t.Error("subscription must bill 0")
+	}
+}
+
+// A real turn: cache reads are most of the input, and bill at the cached price.
+func TestBilledUSD_CacheReadUsesTheCachedPrice(t *testing.T) {
+	got := BilledUSD("deepseek-v4-1-flash", 158084, 19734, 2409122, 0)
+	if math.Abs(got-0.0891) > 0.001 {
+		t.Errorf("deepseek turn = %v, want about 0.089", got)
+	}
+	for _, id := range IDs() {
+		if i, _ := Gateway(id); i.CacheInUSD <= 0 || i.CacheInUSD >= i.InUSD {
+			t.Errorf("%s: cached price %v must be set and below the input price %v", id, i.CacheInUSD, i.InUSD)
+		}
 	}
 }

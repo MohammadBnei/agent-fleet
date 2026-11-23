@@ -37,7 +37,7 @@ func usageRows(body string) []usageRow {
 	var out []usageRow
 	for m, u := range b.Delta {
 		r := usageRow{Model: m, Route: models.Route(m), Input: u.InputTokens, Output: u.OutputTokens, CacheRead: u.CacheReadInputTokens}
-		r.BilledUSD = models.BilledUSD(m, u.InputTokens, u.OutputTokens, u.CacheReadInputTokens+u.CacheCreationInputTokens)
+		r.BilledUSD = models.BilledUSD(m, u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
 		r.ListUSD = u.CostUSD // subscription: the SDK's price for that model
 		if r.Route == models.RouteGateway {
 			r.ListUSD = r.BilledUSD // the SDK cost is wrong for unknown ids

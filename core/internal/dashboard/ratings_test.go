@@ -126,6 +126,18 @@ func TestModelStatsRoutePriceAndAverage(t *testing.T) {
 	}
 }
 
+// Cache reads bill at the model's cached-input price, in the table as in the
+// usage line: a turn with 158084 in, 19734 out and 2409122 cache read on
+// deepseek is about $0.089.
+func TestModelStatsPricesCacheReads(t *testing.T) {
+	got := modelStats(map[string]*ratings.Agg{
+		"deepseek-v4-1-flash": {Sessions: 1, InputTokens: 158084 + 2409122, CacheReadTokens: 2409122, OutputTokens: 19734},
+	})
+	if d := got[0].BilledUsd - 0.0891; d > 0.001 || d < -0.001 || got[0].ListUsd != got[0].BilledUsd {
+		t.Errorf("deepseek: billed %v list %v, want about 0.089", got[0].BilledUsd, got[0].ListUsd)
+	}
+}
+
 func TestListSessionRatingsReadsBack(t *testing.T) {
 	s := &Server{ratings: &fakeRatings{}}
 	r, err := s.ListSessionRatings(context.Background(), connect.NewRequest(&agentfleetv1.ListSessionRatingsRequest{SessionId: sid}))

@@ -10,6 +10,9 @@ import "strings"
 type Info struct {
 	ContextTokens int32
 	InUSD, OutUSD float64 // per 1M tokens
+	// CacheInUSD is the price of an input token read from the cache, per 1M.
+	// Billing a cache read at InUSD overstated a cache-heavy turn about tenfold.
+	CacheInUSD float64
 }
 
 const (
@@ -20,11 +23,11 @@ const (
 )
 
 var gateway = map[string]Info{
-	"zai-org-glm-5":                        {198000, 1.00, 3.20},
-	"z-ai-glm-5-3":                         {1000000, 1.75, 5.50},
-	"kimi-k2-7-code":                       {256000, 0.75, 3.50},
-	"qwen3-coder-480b-a35b-instruct-turbo": {256000, 0.35, 1.50},
-	"deepseek-v4-1-flash":                  {1000000, 0.30, 1.20},
+	"zai-org-glm-5":                        {198000, 1.00, 3.20, 0.20},
+	"z-ai-glm-5-3":                         {1000000, 1.75, 5.50, 0.325},
+	"kimi-k2-7-code":                       {256000, 0.75, 3.50, 0.16},
+	"qwen3-coder-480b-a35b-instruct-turbo": {256000, 0.35, 1.50, 0.04},
+	"deepseek-v4-1-flash":                  {1000000, 0.30, 1.20, 0.0075},
 }
 
 // Gateway returns the gateway model's info; ok is false for any other id.
@@ -73,11 +76,12 @@ func Route(id string) string {
 }
 
 // BilledUSD prices tokens on the gateway map; 0 for a subscription or unknown id.
-// Cache tokens count as input: gateway models report no cache discount.
-func BilledUSD(id string, in, out, cache int64) float64 {
+// in is the uncached input, cacheWrite is billed as input, cacheRead at the
+// model's cached-input price.
+func BilledUSD(id string, in, out, cacheRead, cacheWrite int64) float64 {
 	i, ok := Gateway(id)
 	if !ok {
 		return 0
 	}
-	return float64(in+cache)/1e6*i.InUSD + float64(out)/1e6*i.OutUSD
+	return float64(in+cacheWrite)/1e6*i.InUSD + float64(out)/1e6*i.OutUSD + float64(cacheRead)/1e6*i.CacheInUSD
 }

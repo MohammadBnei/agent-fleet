@@ -111,15 +111,17 @@ func (s *Store) SessionRatings(ctx context.Context, sessionID string) (thumbs []
 
 // Agg is one model's totals over a window.
 type Agg struct {
-	Sessions     int64
-	InputTokens  int64
-	OutputTokens int64
-	SDKCostUSD   float64
-	ErrorResults int64
-	ThumbsUp     int64
-	ThumbsDown   int64
-	ScoreSum     int64
-	Scores       int64
+	Sessions    int64
+	InputTokens int64
+	// CacheReadTokens is the part of InputTokens read from the cache.
+	CacheReadTokens int64
+	OutputTokens    int64
+	SDKCostUSD      float64
+	ErrorResults    int64
+	ThumbsUp        int64
+	ThumbsDown      int64
+	ScoreSum        int64
+	Scores          int64
 }
 
 // Stats aggregates, per model, the result entries since `since` and the
@@ -184,6 +186,7 @@ func (s *Store) Stats(ctx context.Context, since time.Time) (map[string]*Agg, er
 			for m, u := range d {
 				a := agg(m)
 				a.InputTokens += u.Prompt()
+				a.CacheReadTokens += u.CacheReadTokens
 				a.OutputTokens += u.OutputTokens
 				a.SDKCostUSD += u.CostUSD
 				if !seen[m] {

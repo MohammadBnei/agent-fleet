@@ -164,7 +164,7 @@ func modelStats(aggs map[string]*ratings.Agg) []*agentfleetv1.ModelStat {
 		}
 		if p, ok := models.Gateway(model); ok {
 			st.Route = "gateway"
-			st.ListUsd = float64(a.InputTokens)*p.InUSD/1e6 + float64(a.OutputTokens)*p.OutUSD/1e6
+			st.ListUsd = float64(a.InputTokens-a.CacheReadTokens)*p.InUSD/1e6 + float64(a.CacheReadTokens)*p.CacheInUSD/1e6 + float64(a.OutputTokens)*p.OutUSD/1e6
 			st.BilledUsd = st.ListUsd
 		}
 		out = append(out, st)
