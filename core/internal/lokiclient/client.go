@@ -39,12 +39,15 @@ func New(lokiURL string) *Client {
 type QueryRequest struct {
 	TaskID    string // Optional - filter by task-id label
 	Namespace string // "agent-fleet", "default", etc.
-	Component string // "worker", "sidecar", "core", "provisioner", "app"
-	AppName   string // Optional - for component="app"
-	Level     string // "debug", "info", "warn", "error" (empty = all)
-	Start     time.Time
-	End       time.Time
-	Limit     int // Max 1000
+	// Job is an off-cluster Loki job label (docs/adr/0090): the selector is job (and ActionsTask) alone, no namespace.
+	Job         string
+	ActionsTask string
+	Component   string // "worker", "sidecar", "core", "provisioner", "app"
+	AppName     string // Optional - for component="app"
+	Level       string // "debug", "info", "warn", "error" (empty = all)
+	Start       time.Time
+	End         time.Time
+	Limit       int // Max 1000
 }
 
 // LogEntry represents a single log entry returned from Loki.

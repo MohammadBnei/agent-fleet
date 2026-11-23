@@ -858,6 +858,10 @@ message ViewLogsRequest {
   int32 limit = 6;            // Default 50, max 1000
   string start_time = 7;      // Optional: RFC3339 timestamp, overrides duration
   string end_time = 8;        // Optional: RFC3339 timestamp (default: now)
+  // Optional: an off-cluster Loki job (e.g. "forgejo-actions"), instead of component and namespace. Only a
+  // definition session whose cluster.logJobs names it may read one (docs/adr/0087 amendment).
+  string job = 9;
+  string actions_task = 10;   // Optional with job: a Forgejo Actions task id (digits)
 }
 
 message ViewLogsResponse {

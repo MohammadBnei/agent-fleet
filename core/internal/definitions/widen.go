@@ -18,7 +18,7 @@ func Widens(old, next *Spec) (ceiling, vault bool) {
 	}
 	ceiling = !subset(newTools.Allow, oldTools.Allow) || !subset(oldTools.Deny, newTools.Deny) ||
 		!subset(next.SidecarTools, old.SidecarTools) || !subset(spawnList(next), spawnList(old)) ||
-		!subset(logList(next), logList(old)) ||
+		!subset(logList(next), logList(old)) || !subset(jobList(next), jobList(old)) ||
 		(next.Cluster != nil && next.Cluster.Read && (old.Cluster == nil || !old.Cluster.Read))
 	vault = !vaultCovers(old.Credentials, next.Credentials)
 	return ceiling, vault
@@ -70,4 +70,11 @@ func logList(s *Spec) []string {
 		return nil
 	}
 	return s.Cluster.LogNamespaces
+}
+
+func jobList(s *Spec) []string {
+	if s.Cluster == nil {
+		return nil
+	}
+	return s.Cluster.LogJobs
 }

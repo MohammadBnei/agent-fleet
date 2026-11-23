@@ -216,3 +216,9 @@ func TestBuildSelector(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildLogQL_Job(t *testing.T) {
+	if got := buildLogQL(QueryRequest{Job: "forgejo-actions", ActionsTask: "42"}); got != `{job="forgejo-actions", actions_task="42"}` {
+		t.Errorf("job query: %s", got)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -1111,14 +1112,19 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 
 // --- Log querying (Loki queries, docs/adr/0013) ---
 
+var actionsTask = regexp.MustCompile(`^[0-9]{1,12}$`)
+
 // ViewLogs queries Loki for logs and returns formatted text for agent consumption.
 // Supports both duration-based queries (e.g., "last 1h") and explicit timestamp ranges.
 func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest) (*agentfleetv1.ViewLogsResponse, error) {
-	if req.GetComponent() == "" {
+	if req.GetComponent() == "" && req.GetJob() == "" {
 		return nil, fmt.Errorf("component is required")
 	}
-	if err := s.scopeLogs(ctx, req.GetNamespace()); err != nil {
+	if err := s.scopeLogs(ctx, req.GetNamespace(), req.GetJob()); err != nil {
 		return nil, err
+	}
+	if t := req.GetActionsTask(); t != "" && (req.GetJob() == "" || !actionsTask.MatchString(t)) {
+		return nil, fmt.Errorf("actions_task is digits and needs job")
 	}
 
 	// Extract taskId from context metadata (sidecar includes it)
@@ -1153,7 +1159,7 @@ func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest
 
 	// Apply defaults
 	namespace := req.GetNamespace()
-	if namespace == "" {
+	if namespace == "" && req.GetJob() == "" {
 		namespace = "agent-fleet"
 	}
 	limit := int(req.GetLimit())
@@ -1166,14 +1172,16 @@ func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest
 
 	// Query Loki
 	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
-		TaskID:    taskID,
-		Namespace: namespace,
-		Component: req.GetComponent(),
-		AppName:   req.GetAppName(),
-		Level:     req.GetLevel(),
-		Start:     start,
-		End:       end,
-		Limit:     limit,
+		TaskID:      taskID,
+		Namespace:   namespace,
+		Job:         req.GetJob(),
+		ActionsTask: req.GetActionsTask(),
+		Component:   req.GetComponent(),
+		AppName:     req.GetAppName(),
+		Level:       req.GetLevel(),
+		Start:       start,
+		End:         end,
+		Limit:       limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("query Loki: %w", err)

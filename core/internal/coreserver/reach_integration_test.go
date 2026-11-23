@@ -422,3 +422,44 @@ func TestQueryMetrics_GrantAndBounds(t *testing.T) {
 		t.Errorf("no grant: %v", err)
 	}
 }
+
+// A definition's cluster.logJobs is the only way to read an off-cluster Loki job (no namespace): the job must be
+// listed, takes no namespace, and a repo session or the provisioner never gets one.
+func TestViewLogs_DefinitionJobScope(t *testing.T) {
+	s, id, repoID := reachCharacter(t, `{"sidecarTools":["view_logs"],"cluster":{"logJobs":["forgejo-actions"]}}`)
+	var queried []lokiclient.QueryRequest
+	s.loki = &mockLokiClient{queryFunc: func(_ context.Context, r lokiclient.QueryRequest) ([]lokiclient.LogEntry, error) {
+		queried = append(queried, r)
+		return nil, nil
+	}}
+	as := func(session string) context.Context {
+		return metadata.NewIncomingContext(context.Background(), metadata.Pairs(mdSessionID, session))
+	}
+	view := func(ctx context.Context, r *agentfleetv1.ViewLogsRequest) error {
+		_, err := s.ViewLogs(ctx, r)
+		return err
+	}
+	if err := view(as(id), &agentfleetv1.ViewLogsRequest{Job: "forgejo-actions", ActionsTask: "42"}); err != nil {
+		t.Fatalf("a listed job: %v", err)
+	}
+	for name, r := range map[string]*agentfleetv1.ViewLogsRequest{
+		"another job":   {Job: "kube-apiserver-audit"},
+		"a job with ns": {Job: "forgejo-actions", Namespace: "agent-fleet"},
+		"a namespace":   {Component: "app", Namespace: "agent-fleet"},
+	} {
+		if err := view(as(id), r); code(err) != codes.PermissionDenied {
+			t.Errorf("%s: %v, want PermissionDenied", name, err)
+		}
+	}
+	if err := view(as(id), &agentfleetv1.ViewLogsRequest{Job: "forgejo-actions", ActionsTask: `1"}`}); err == nil {
+		t.Error("a task id that is not digits reached Loki")
+	}
+	for _, ctx := range []context.Context{as(repoID), context.Background()} {
+		if err := view(ctx, &agentfleetv1.ViewLogsRequest{Job: "forgejo-actions"}); code(err) != codes.PermissionDenied {
+			t.Errorf("a job without a definition session: %v", err)
+		}
+	}
+	if len(queried) != 1 || queried[0].Job != "forgejo-actions" || queried[0].ActionsTask != "42" || queried[0].Namespace != "" {
+		t.Errorf("queries: %+v", queried)
+	}
+}

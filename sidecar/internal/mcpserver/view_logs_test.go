@@ -13,7 +13,7 @@ type mockCoreClient struct {
 	viewLogsFunc func(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error)
 }
 
-func (m *mockCoreClient) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error) {
+func (m *mockCoreClient) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime, job, actionsTask string) (string, error) {
 	if m.viewLogsFunc != nil {
 		return m.viewLogsFunc(ctx, component, appName, namespace, level, duration, limit, startTime, endTime)
 	}

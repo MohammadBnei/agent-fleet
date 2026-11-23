@@ -94,6 +94,8 @@ type Cluster struct {
 	Read bool `yaml:"read,omitempty" json:"read,omitempty"`
 	// LogNamespaces are the namespaces view_logs may read for a character (ADR-0084 §6); empty means none.
 	LogNamespaces []string `yaml:"logNamespaces,omitempty" json:"logNamespaces,omitempty"`
+	// LogJobs are the off-cluster Loki job labels (no namespace: ADR-0090) view_logs may read, e.g. forgejo-actions.
+	LogJobs []string `yaml:"logJobs,omitempty" json:"logJobs,omitempty"`
 }
 
 // Trust is the definition's half of docs/adr/0086 §2. Untrusted names the one letter (B or C) a session keeps

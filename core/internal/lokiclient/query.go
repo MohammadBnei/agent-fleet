@@ -20,6 +20,13 @@ func buildLogQL(req QueryRequest) string {
 	// A stream label is also the only thing that works for e2e-preview pods:
 	// their output is the target app's (vite, code-server, Chromium), not the
 	// fleet's JSON, so any `| json`-based filter discards all of it.
+	if req.Job != "" {
+		sel := fmt.Sprintf(`{job=%q`, req.Job)
+		if req.ActionsTask != "" {
+			sel += fmt.Sprintf(`, actions_task=%q`, req.ActionsTask)
+		}
+		return sel + "}" // plain lines, no `| json`; core checked both values
+	}
 	selector := buildSelector(req.Namespace, req.Component, req.AppName, req.TaskID)
 	parts = append(parts, selector)
 

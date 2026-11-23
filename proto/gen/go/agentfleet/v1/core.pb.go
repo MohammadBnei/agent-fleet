@@ -4745,15 +4745,19 @@ func (x *QueryLogsResponse) GetTotalCount() int32 {
 
 // For agents via MCP tool - supports both duration and explicit timestamps
 type ViewLogsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Component     string                 `protobuf:"bytes,1,opt,name=component,proto3" json:"component,omitempty"`                  // Required
-	AppName       string                 `protobuf:"bytes,2,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`       // Optional
-	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`                  // Optional (default "agent-fleet")
-	Level         string                 `protobuf:"bytes,4,opt,name=level,proto3" json:"level,omitempty"`                          // Optional (empty = all)
-	Duration      string                 `protobuf:"bytes,5,opt,name=duration,proto3" json:"duration,omitempty"`                    // "1h"|"30m"|"24h" (default "1h") - ignored if start_time set
-	Limit         int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`                         // Default 50, max 1000
-	StartTime     string                 `protobuf:"bytes,7,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"` // Optional: RFC3339 timestamp, overrides duration
-	EndTime       string                 `protobuf:"bytes,8,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`       // Optional: RFC3339 timestamp (default: now)
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Component string                 `protobuf:"bytes,1,opt,name=component,proto3" json:"component,omitempty"`                  // Required
+	AppName   string                 `protobuf:"bytes,2,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`       // Optional
+	Namespace string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`                  // Optional (default "agent-fleet")
+	Level     string                 `protobuf:"bytes,4,opt,name=level,proto3" json:"level,omitempty"`                          // Optional (empty = all)
+	Duration  string                 `protobuf:"bytes,5,opt,name=duration,proto3" json:"duration,omitempty"`                    // "1h"|"30m"|"24h" (default "1h") - ignored if start_time set
+	Limit     int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`                         // Default 50, max 1000
+	StartTime string                 `protobuf:"bytes,7,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"` // Optional: RFC3339 timestamp, overrides duration
+	EndTime   string                 `protobuf:"bytes,8,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`       // Optional: RFC3339 timestamp (default: now)
+	// Optional: an off-cluster Loki job (e.g. "forgejo-actions"), instead of component and namespace. Only a
+	// definition session whose cluster.logJobs names it may read one (docs/adr/0087 amendment).
+	Job           string `protobuf:"bytes,9,opt,name=job,proto3" json:"job,omitempty"`
+	ActionsTask   string `protobuf:"bytes,10,opt,name=actions_task,json=actionsTask,proto3" json:"actions_task,omitempty"` // Optional with job: a Forgejo Actions task id (digits)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4840,6 +4844,20 @@ func (x *ViewLogsRequest) GetStartTime() string {
 func (x *ViewLogsRequest) GetEndTime() string {
 	if x != nil {
 		return x.EndTime
+	}
+	return ""
+}
+
+func (x *ViewLogsRequest) GetJob() string {
+	if x != nil {
+		return x.Job
+	}
+	return ""
+}
+
+func (x *ViewLogsRequest) GetActionsTask() string {
+	if x != nil {
+		return x.ActionsTask
 	}
 	return ""
 }
@@ -5285,7 +5303,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x11QueryLogsResponse\x121\n" +
 	"\aentries\x18\x01 \x03(\v2\x17.agentfleet.v1.LogEntryR\aentries\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xea\x01\n" +
+	"totalCount\"\x9f\x02\n" +
 	"\x0fViewLogsRequest\x12\x1c\n" +
 	"\tcomponent\x18\x01 \x01(\tR\tcomponent\x12\x19\n" +
 	"\bapp_name\x18\x02 \x01(\tR\aappName\x12\x1c\n" +
@@ -5295,7 +5313,10 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x1d\n" +
 	"\n" +
 	"start_time\x18\a \x01(\tR\tstartTime\x12\x19\n" +
-	"\bend_time\x18\b \x01(\tR\aendTime\"/\n" +
+	"\bend_time\x18\b \x01(\tR\aendTime\x12\x10\n" +
+	"\x03job\x18\t \x01(\tR\x03job\x12!\n" +
+	"\factions_task\x18\n" +
+	" \x01(\tR\vactionsTask\"/\n" +
 	"\x10ViewLogsResponse\x12\x1b\n" +
 	"\tlogs_text\x18\x01 \x01(\tR\blogsText*d\n" +
 	"\fCoreErrorKey\x12\x1e\n" +

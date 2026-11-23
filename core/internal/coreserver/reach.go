@@ -210,21 +210,31 @@ func callerSession(ctx context.Context) string {
 
 // scopeLogs is ViewLogs' rule for a definition session (docs/adr/0084 §6): it needs the view_logs grant, and the
 // namespace must be named and on cluster.logNamespaces. A repo session or the provisioner is unchanged.
-func (s *Server) scopeLogs(ctx context.Context, namespace string) error {
+func (s *Server) scopeLogs(ctx context.Context, namespace, job string) error {
 	sid := callerSession(ctx)
-	if sid == "" {
-		return nil
+	var t *sessions.Session
+	if sid != "" {
+		var err error
+		if t, err = s.sessions.Get(ctx, sid); err != nil {
+			return status.Errorf(codes.NotFound, "session %s: %v", sid, err)
+		}
 	}
-	t, err := s.sessions.Get(ctx, sid)
-	if err != nil {
-		return status.Errorf(codes.NotFound, "session %s: %v", sid, err)
+	// An off-cluster job is a definition session's grant alone: a repo session or the provisioner has none.
+	if job != "" && (t == nil || t.DefinitionName == nil) {
+		return status.Error(codes.PermissionDenied, "only a definition session may read a log job")
 	}
-	if t.DefinitionName == nil {
+	if t == nil || t.DefinitionName == nil {
 		return nil
 	}
 	spec, err := s.granted(ctx, sid, "view_logs")
 	if err != nil {
 		return err
+	}
+	if job != "" {
+		if namespace != "" || spec.Cluster == nil || !slices.Contains(spec.Cluster.LogJobs, job) {
+			return status.Errorf(codes.PermissionDenied, "job %q is not on this definition's cluster.logJobs (a job takes no namespace)", job)
+		}
+		return nil
 	}
 	if spec.Cluster == nil || !slices.Contains(spec.Cluster.LogNamespaces, namespace) {
 		return status.Errorf(codes.PermissionDenied, "namespace %q is not on this definition's cluster.logNamespaces", namespace)

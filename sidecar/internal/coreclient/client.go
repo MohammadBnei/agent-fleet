@@ -467,16 +467,18 @@ func (c *Client) StreamHumanMessages(ctx context.Context, sinceSeq int64, onEntr
 // logs from worker, sidecar, or deployed applications during e2e tests.
 // Supports both duration-based queries and explicit RFC3339 timestamp ranges.
 // Returns formatted log text suitable for agent consumption.
-func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error) {
+func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime, job, actionsTask string) (string, error) {
 	resp, err := c.rpc.ViewLogs(ctx, &agentfleetv1.ViewLogsRequest{
-		Component: component,
-		AppName:   appName,
-		Namespace: namespace,
-		Level:     level,
-		Duration:  duration,
-		Limit:     limit,
-		StartTime: startTime,
-		EndTime:   endTime,
+		Component:   component,
+		AppName:     appName,
+		Namespace:   namespace,
+		Level:       level,
+		Duration:    duration,
+		Limit:       limit,
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Job:         job,
+		ActionsTask: actionsTask,
 	})
 	if err != nil {
 		return "", fmt.Errorf("ViewLogs: %w", err)

@@ -762,8 +762,19 @@ func validateReach(errs *[]error, s *Spec) {
 	if has("kubectl_read") && (s.Cluster == nil || !s.Cluster.Read) {
 		bad("sidecarTools: kubectl_read needs cluster.read")
 	}
-	if has("view_logs") && (s.Cluster == nil || len(s.Cluster.LogNamespaces) == 0) {
-		bad("sidecarTools: view_logs needs cluster.logNamespaces")
+	if has("view_logs") && (s.Cluster == nil || len(s.Cluster.LogNamespaces)+len(s.Cluster.LogJobs) == 0) {
+		bad("sidecarTools: view_logs needs cluster.logNamespaces or cluster.logJobs")
+	}
+	if s.Cluster != nil && len(s.Cluster.LogJobs) > 0 {
+		if !readsOK {
+			bad("cluster.logJobs: only a standing definition or a first responder may read logs")
+		}
+		shapeList(errs, "cluster.logJobs", s.Cluster.LogJobs, "")
+		for _, j := range s.Cluster.LogJobs {
+			if !dns1123Label.MatchString(j) {
+				bad("cluster.logJobs: %q is not a plain job label", j)
+			}
+		}
 	}
 	if s.Cluster != nil && len(s.Cluster.LogNamespaces) > 0 {
 		if !readsOK {

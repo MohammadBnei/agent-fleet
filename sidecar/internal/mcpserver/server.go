@@ -316,7 +316,9 @@ func newMCPServer(core *coreclient.Client, mem MemoryWriter, kube *KubeRead) *se
 
 	s.AddTool(mcp.NewTool("view_logs",
 		mcp.WithDescription("View recent logs from fleet components or deployed apps. Supports duration-based queries (duration) or explicit ranges (start_time/end_time, RFC3339). Your own session's logs are the \"worker\" component — including whatever your app writes to stdout, since it runs in this same pod."),
-		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|app")),
+		mcp.WithString("component", mcp.Description("Which component: worker|sidecar|core|provisioner|app. Required unless job is set.")),
+		mcp.WithString("job", mcp.Description("An off-cluster Loki job your definition may read (cluster.logJobs), e.g. forgejo-actions, instead of component and namespace.")),
+		mcp.WithString("actions_task", mcp.Description("With job=forgejo-actions: the Forgejo Actions task id (digits), from the alert's log hint.")),
 		mcp.WithString("app_name", mcp.Description("For component=app, the deployed app's name — usually this task's own repo name. Repos are dashboard-managed (docs/adr/0028), so there is no fixed list.")),
 		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
 		mcp.WithString("level", mcp.Description("Filter by level: debug|info|warn|error (default: all)")),
@@ -1018,18 +1020,22 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 
 // LogViewer is the interface for viewing logs. Implemented by *coreclient.Client and mockable in tests.
 type LogViewer interface {
-	ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error)
+	ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime, job, actionsTask string) (string, error)
 }
 
 func viewLogsHandler(core LogViewer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		component := req.GetString("component", "")
-		if component == "" {
-			return mcp.NewToolResultError("component is required"), nil
+		job, actionsTask := req.GetString("job", ""), req.GetString("actions_task", "")
+		if component == "" && job == "" {
+			return mcp.NewToolResultError("component (or job) is required"), nil
 		}
 
 		appName := req.GetString("app_name", "")
 		namespace := req.GetString("namespace", "agent-fleet")
+		if job != "" {
+			namespace = "" // a job has no namespace
+		}
 		level := req.GetString("level", "")
 		duration := req.GetString("duration", "1h")
 		limit := int32(req.GetInt("limit", 50))
@@ -1038,7 +1044,7 @@ func viewLogsHandler(core LogViewer) server.ToolHandlerFunc {
 
 		slog.Info("mcp view_logs", "component", component, "namespace", namespace, "level", level, "duration", duration, "start_time", startTime, "end_time", endTime)
 
-		logsText, err := core.ViewLogs(ctx, component, appName, namespace, level, duration, limit, startTime, endTime)
+		logsText, err := core.ViewLogs(ctx, component, appName, namespace, level, duration, limit, startTime, endTime, job, actionsTask)
 		if err != nil {
 			slog.Error("mcp view_logs", "error", err)
 			return nil, fmt.Errorf("view_logs: %w", err)
