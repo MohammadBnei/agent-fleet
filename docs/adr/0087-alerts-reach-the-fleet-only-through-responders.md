@@ -71,3 +71,25 @@ A first responder must look at the cluster before it answers. Without that, its 
    `ops-lead`.
 5. **What still blocks a launch** is outside this repo: the vault `alert-responder` in Infisical agent-vault with
    `CLAUDE_CODE_OAUTH_TOKEN`, and the fleet-read ServiceAccount and Roles in infra-bootstrap (#462).
+
+## Responder cards, run end and CI logs
+
+*Added 2026-11-23, from the first live responder QA.*
+
+1. **One voice.** A card names the responder in the third person ("Alert X: the responder could not name the cause")
+   and the owner as "you" (option "You handle it"). Core writes both. An alertname with a space is plain text and stays;
+   one that is not (newline, symbols) reads "An alert", never "Alert alert". A card that names no object or finding
+   (`unknown_failure`) appends where the alert fired from the group's own labels (`namespace`, `deployment`, `pod`,
+   `job`, each a DNS-1123 name core checked): typed fields only.
+2. **An answered alert card ends the run.** A first responder is single-shot (ADR-0086 §3) and ended with its card.
+   An `alert_group` card's answer closes the card and stays in the transcript, but warms and resumes nothing (the
+   rule ADR-0084 §9 set for a character's card), so no second structured output can be filed.
+3. **Titles.** `InvokeRequest.title` (optional) names a run in the session list; the dispatcher sends
+   `Alert: <alertname> (<namespace>)`. Empty keeps the idempotency key.
+4. **CI job logs.** Forgejo job logs ship to Loki as `{job="forgejo-actions", actions_task=...}` with no `namespace`
+   (infra-bootstrap ADR-0090), so `cluster.logNamespaces` can never name them. A definition gets
+   `cluster.logJobs`, an allowlist of Loki job labels validated like `logNamespaces` (standing or first responder,
+   DNS-1123, a widening refuses a re-pin in place). `view_logs` takes `job` (and `actions_task`, digits) instead of
+   `component`/`namespace`; core refuses a job off the list, a job with a namespace, and a job from any session that is
+   not a definition session. The selector is built by core from the two checked values: no free LogQL. `alert-responder`
+   holds `forgejo-actions`. Risk accepted: job logs hold whatever a CI job printed, B data read by a B-tagged tool.
