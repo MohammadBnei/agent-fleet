@@ -228,8 +228,12 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(ctx context.C
 	ans := cardAnswer{Card: r.ID}
 	handoff := true
 	// A card core filed about a character (its budget) is the owner's to answer, not the character's to read: the
-	// answer closes the card and stays in the transcript, but no turn starts, no pod wakes (docs/adr/0084 §9).
-	if c.GetSubject().GetKind() == "character" {
+	// answer closes the card and stays in the transcript, but no turn starts, no pod wakes (docs/adr/0084 §9). A
+	// first responder's alert_group card is the same: its run is single-shot and ended with the card (docs/adr/0086
+	// §3), so the answer never resumes it for a second output.
+	subj := c.GetSubject().GetKind()
+	coreOnly := subj == "character" || subj == "alert_group"
+	if coreOnly {
 		ctx = transcript.WithContextOnly(ctx)
 	}
 	if a.OwnText != "" {
@@ -243,7 +247,7 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(ctx context.C
 			return 0, fmt.Errorf("%w: card %s has no option %q", ErrInvalid, r.ID, a.OptionID)
 		}
 		o := c.GetOptions()[i]
-		handoff = o.GetEffect().GetVerb() == "handoff" && c.GetSubject().GetKind() != "character"
+		handoff = o.GetEffect().GetVerb() == "handoff" && !coreOnly
 		ans.OptionID = o.GetId()
 		ans.Answers = map[string]string{c.GetAsk(): fmt.Sprintf("owner chose option %s of card %s: %s (agent claim, owner-chosen)", o.GetId(), r.ID, o.GetLabel())}
 	}

@@ -502,6 +502,28 @@ func (w *warmer) WarmForAnswer(ctx context.Context, id string) (string, func(), 
 	return p, func() {}, err
 }
 
+// An answered alert_group card closes and records, but resumes nothing: the responder's run is single-shot
+// (docs/adr/0086 §3), so no second structured output can follow.
+func TestAnswer_AlertGroupCardResumesNothing(t *testing.T) {
+	f := setup(t)
+	s := f.thread(t, "client:bridge", "private", "")
+	r := f.draft(t, decisions.Draft{
+		SessionID: s, From: "system", Ask: "An alert: the responder could not name the cause.",
+		Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef"},
+		Options: []*agentfleetv1.CardOption{opt("You handle it", "handoff", "yes"), opt("Dismiss", "handoff", "yes")},
+	})
+	fx := &effects{tr: f.tr}
+	if _, err := f.answerCard(t, fx, r.ID, decisions.Reply{OptionID: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if fx.warms != nil {
+		t.Errorf("an alert card answer warmed %v", fx.warms)
+	}
+	if got, _ := f.store.Get(f.ctx, r.ID); got.State != decisions.Answered {
+		t.Errorf("card %+v", got)
+	}
+}
+
 // docs/adr/0086 §4: a responder's card is on an alert group, not a GitHub subject, and only core files one.
 func TestDraft_AlertGroupSubject(t *testing.T) {
 	f := setup(t)
@@ -510,7 +532,7 @@ func TestDraft_AlertGroupSubject(t *testing.T) {
 		return decisions.Draft{
 			SessionID: s, From: "system", Ask: "Alert Down needs a code fix.",
 			Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: key},
-			Options: []*agentfleetv1.CardOption{opt("I will handle it", "handoff", "yes"), opt("Dismiss", "handoff", "yes")},
+			Options: []*agentfleetv1.CardOption{opt("You handle it", "handoff", "yes"), opt("Dismiss", "handoff", "yes")},
 		}
 	}
 	r := f.draft(t, group("0123456789abcdef"))
