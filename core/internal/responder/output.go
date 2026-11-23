@@ -182,7 +182,7 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 	case OutcomeNothing:
 		return nil
 	case OutcomeCard:
-		return f.card(ctx, thread, g, out.Card.Ask(g))
+		return f.card(ctx, thread, g, out.Card.Ask(g), out.Card.Findings)
 	}
 	b := remediations.Bounds{}
 	if spec.Trust != nil && spec.Trust.Scale != nil {
@@ -196,7 +196,7 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 	for _, refused := range []error{remediations.ErrInvalid, remediations.ErrDenied, remediations.ErrRateLimited} {
 		if errors.Is(err, refused) {
 			slog.Warn("responder: selection refused, filing a card", "definition", def, "group", g.Key, "reason", refused.Error())
-			return f.card(ctx, thread, g, clip(g.label()+": the responder's fix was refused: "+refused.Error()+".", 280))
+			return f.card(ctx, thread, g, clip(g.label()+": the responder's fix was refused: "+refused.Error()+".", 280), nil)
 		}
 	}
 	return err
@@ -204,16 +204,36 @@ func (f Filer) File(ctx context.Context, def string, spec *definitions.Spec, thr
 
 // Unanswered is the card for a run that ended without a usable answer, written by core.
 func (f Filer) Unanswered(ctx context.Context, thread string, g Group) error {
-	return f.card(ctx, thread, g, clip(g.label()+": the responder could not answer. Look at it yourself.", 280))
+	return f.card(ctx, thread, g, clip(g.label()+": the responder could not answer. Look at it yourself.", 280), nil)
 }
 
-func (f Filer) card(ctx context.Context, thread string, g Group, ask string) error {
-	handoff := func(label string) *agentfleetv1.CardOption {
-		return &agentfleetv1.CardOption{Label: label, Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}}
+// investigateRepo is the fleet repo an "Investigate" session starts on: the CI alert's repo by its name (the label is
+// owner/name, the fleet names repos by name alone), else the onboarded cluster repo.
+func (g Group) investigateRepo() string {
+	if _, name, ok := strings.Cut(g.Repo, "/"); ok && name != "" {
+		return name
+	}
+	return "infra-bootstrap"
+}
+
+// card files the owner's card. "Investigate" is an open_session effect carrying only core's own typed fields (the
+// group's repo and title, the checked findings); "Dismiss" is a handoff that takes an optional reason. The run
+// already ended, so an answer is only recorded (decisions answerCard, coreOnly).
+func (f Filer) card(ctx context.Context, thread string, g Group, ask string, findings []Finding) error {
+	brief := decisions.Brief{Repo: g.investigateRepo(), Title: clip(g.Title(), 80)}
+	for _, fd := range findings {
+		brief.Findings = append(brief.Findings, decisions.BriefFinding{Name: fd.Name, Value: fd.Value})
+	}
+	payload, err := json.Marshal(brief)
+	if err != nil {
+		return err
 	}
 	return f.Draft(ctx, decisions.Draft{
-		SessionID: thread, From: "system", IdempotencyKey: "responder-card:" + thread, Ask: ask,
+		SessionID: thread, From: "system", IdempotencyKey: "responder-card:" + thread, Ask: ask, WriteOwn: true,
 		Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: g.Key},
-		Options: []*agentfleetv1.CardOption{handoff("You handle it"), handoff("Dismiss")},
+		Options: []*agentfleetv1.CardOption{
+			{Label: "Investigate", Reversible: "partial", Effect: &agentfleetv1.CardEffect{Verb: decisions.VerbOpenSession, Payload: string(payload)}},
+			{Label: "Dismiss", Reversible: "yes", Effect: &agentfleetv1.CardEffect{Verb: "handoff"}},
+		},
 	})
 }

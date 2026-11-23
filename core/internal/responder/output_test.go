@@ -127,8 +127,18 @@ func TestFileCard(t *testing.T) {
 	if d.From != "system" || d.SessionID != "th" || d.Subject.GetKind() != "alert_group" || d.Subject.GetGroupKey() != "0123456789abcdef" {
 		t.Fatalf("a card is core's, on the alert group: %+v", d)
 	}
-	if len(d.Options) != 2 {
+	if len(d.Options) != 2 || !d.WriteOwn || d.Options[1].GetLabel() != "Dismiss" || d.Options[1].GetEffect().GetVerb() != "handoff" {
 		t.Fatalf("options: %v", d.Options)
+	}
+	inv := d.Options[0]
+	if inv.GetLabel() != "Investigate" || inv.GetEffect().GetVerb() != decisions.VerbOpenSession ||
+		inv.GetEffect().GetPayload() != `{"repo":"infra-bootstrap","title":"Alert: A","findings":[{"name":"restarts","value":3}]}` {
+		t.Fatalf("investigate: %v", inv)
+	}
+	g := Group{Key: "0123456789abcdef", Name: "A", Repo: "MohammadBnei/agent-fleet", Job: "test"}
+	if err := f.filer().Unanswered(context.Background(), "th", g); err != nil ||
+		!strings.Contains(f.drafts[1].Options[0].GetEffect().GetPayload(), `"repo":"agent-fleet"`) {
+		t.Fatalf("a CI alert investigates its own repo: %v %v", err, f.drafts[1].Options[0])
 	}
 }
 
