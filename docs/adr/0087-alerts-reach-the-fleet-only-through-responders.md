@@ -32,11 +32,14 @@ that filed proposals for alerts, plus a fallback that filed one when a responder
 ## Consequences
 
 - Until a responder can run, an alert reaches only Discord and the bridge event log.
-- Today `alert-responder` always fails with `failed_precondition: definition sessions never run on a cluster-access
-  repo`, because `THOT_REPO` points at infra-bootstrap. The owner is deciding between two fixes: point the responder
-  at a repo without cluster access, or allow definitions on one.
+- `alert-responder` used to fail with `failed_precondition: definition sessions never run on a cluster-access repo`,
+  because its `workspace: { repo: infra-bootstrap }` tripped the cluster-access check (`dashboard/server.go`, create
+  and warm). Its workspace is now `agent-fleet`, which fixes that. It still cannot launch until its vault exists.
 - The failure is loud: an error log line, the counter, and an alert rule on it
   (`increase(agentfleet_responder_start_failed_total[15m]) > 0`, warning, in infra-bootstrap's Prometheus rules).
+  ResponderRunCannotStart is routed to Discord only (infra #558), so a responder that cannot start never answers its
+  own failure alert. A core shutdown during the invoke wait is not counted. An alert whose data is not a JSON object
+  is counted once per subscribing responder.
 - The unset env vars may still be set in infra. Core ignores unknown env vars, so nothing breaks. Removing them is a
   follow-up in infra-bootstrap.
 

@@ -97,7 +97,7 @@ service:
 # Consequence worth re-reading before adding a route: this IngressRoute matches
 # on HOST with no path constraint, so every path core serves on 8080 is now
 # public unless the in-app gate refuses it. What the gate exempts (exact paths) —
-# /healthz, /auth/{login,callback,logout,me,done} — is therefore
+# /healthz, /auth/{login,callback,logout,me,done}, and the /islands/ prefix — is therefore
 # internet-reachable; they are inert. A new exempt path is a new public endpoint.
 #
 # /metrics is NOT exempt and is not served on 8080 at all: core carries it on

@@ -376,7 +376,11 @@ func (d *Dispatcher) alert(_ context.Context, e *bridgev1.CloudEvent) error {
 	}
 	g, ok := responder.GroupOf(e.GetData())
 	if !ok {
-		slog.Warn("dispatch: an alert a responder answers is not a JSON object, acked without a run", "id", e.GetId())
+		// Acked, so no dead letter, but no run starts: loud and counted once per responder (docs/adr/0087).
+		for _, h := range subs {
+			slog.Error("dispatch: an alert a responder answers is not a JSON object, the alert reaches no session", "id", e.GetId(), "definition", h.Name)
+			metrics.ResponderStartFailed.WithLabelValues(h.Name).Inc()
+		}
 		return nil
 	}
 	for _, h := range subs {

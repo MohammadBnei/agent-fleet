@@ -170,10 +170,10 @@ func TestSubscribers(t *testing.T) {
 		}
 		return
 	}
-	if got := names(Subscribers(r, "bridge", AlertFiring, "alert/game/api")); strings.Join(got, ",") != "all,game" {
+	if got := names(Subscribers(r, "bridge", "dev.bnei.alert.firing", "alert/game/api")); strings.Join(got, ",") != "all,game" {
 		t.Fatalf("got %v: only B responders the client may open, matching subject", got)
 	}
-	if got := names(Subscribers(r, "bridge", AlertFiring, "")); strings.Join(got, ",") != "all" {
+	if got := names(Subscribers(r, "bridge", "dev.bnei.alert.firing", "")); strings.Join(got, ",") != "all" {
 		t.Fatalf("a subject glob needs a subject: %v", got)
 	}
 	if got := Subscribers(r, "bridge", "dev.bnei.forge.pr", ""); len(got) != 0 {

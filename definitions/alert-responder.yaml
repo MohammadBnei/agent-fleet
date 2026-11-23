@@ -13,7 +13,8 @@
 # session there (dashboard createSession, definitionWarmable); the cluster reads come from cluster.read instead.
 # Not launchable until the vault `alert-responder` exists in Infisical agent-vault /agent-vault with
 # CLAUDE_CODE_OAUTH_TOKEN (the warm says what is missing). The bridge client lists it (clients/bridge.yaml).
-# Until it launches, core files each alert as an ordinary proposal (a run that cannot start falls back to it).
+# Until it launches, an alert reaches only Discord and the bridge log: core files nothing for a run that cannot
+# start, and counts it (agentfleet_responder_start_failed_total, docs/adr/0087).
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
 metadata: { name: alert-responder }

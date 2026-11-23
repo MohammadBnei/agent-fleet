@@ -14,12 +14,14 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -996,8 +998,29 @@ func TestTwoRespondersAndARefusedInvoke(t *testing.T) {
 	}
 
 	// Data that is not an alert object is acked with a warning, not nacked into a dead letter.
+	c1, c2 := metrics.ResponderStartFailed.WithLabelValues("r1"), metrics.ResponderStartFailed.WithLabelValues("r2")
+	b1, b2 := testutil.ToFloat64(c1), testutil.ToFloat64(c2)
 	bad := &bridgev1.CloudEvent{Id: "a3", Type: typeAlertFiring, Data: []byte(`["fingerprint"]`)}
 	if err := d.Handle(context.Background(), bad); err != nil {
 		t.Fatal(err)
+	}
+	if testutil.ToFloat64(c1)-b1 != 1 || testutil.ToFloat64(c2)-b2 != 1 {
+		t.Fatal("a non-object alert counts once per subscribing responder")
+	}
+}
+
+// A responder known when the stream starts has its counter series at 0 before any failure.
+func TestInitResponderCounterCreatesSeries(t *testing.T) {
+	d, _, defs, _ := setup(t)
+	h := head("resp-series", nil, &definitions.Subscribes{Types: []string{"dev.bnei.alert."}}, Client)
+	h.Effective.Trust = &definitions.Trust{Untrusted: "B"}
+	defs.heads = append(defs.heads, h)
+	before := testutil.CollectAndCount(metrics.ResponderStartFailed)
+	d.initResponderCounter()
+	if got := testutil.CollectAndCount(metrics.ResponderStartFailed); got != before+1 {
+		t.Fatalf("one new series per known responder: %d -> %d", before, got)
+	}
+	if v := testutil.ToFloat64(metrics.ResponderStartFailed.WithLabelValues("resp-series")); v != 0 {
+		t.Fatalf("starts at 0: %v", v)
 	}
 }

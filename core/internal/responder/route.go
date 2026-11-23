@@ -17,9 +17,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 )
 
-// AlertFiring is the bridge event type of a firing Alertmanager alert.
-const AlertFiring = "dev.bnei.alert.firing"
-
 // Tunables, docs/adr/0086 §3: the per-group wake cooldown, and the Alertmanager route's group_interval, which a
 // resolved alert must outlast to pass.
 var (
@@ -232,8 +229,7 @@ type Registry interface {
 }
 
 // Subscribers are the first responders that answer an event of this type and subject, and that client may open
-// (two-sided agreement, as for every other route). The webhook asks with no subject: a responder that filters on
-// one is still woken through the bridge and the webhook's proposal stays.
+// (two-sided agreement, as for every other route). An empty subject matches only a responder with no subject filter.
 func Subscribers(reg Registry, client, typ, subject string) []definitions.Head {
 	heads, _ := reg.List()
 	var out []definitions.Head

@@ -125,3 +125,18 @@ func TestRunnerStopsOnARefusal(t *testing.T) {
 		t.Fatalf("a refusal is not retried: %d", len(f.invokes))
 	}
 }
+
+// A rollout (core's own context done) during the "no room" wait is not a failed start.
+func TestRunnerShutdownIsNotCounted(t *testing.T) {
+	f := &fakeAgents{fail: []error{connect.NewError(connect.CodeResourceExhausted, errors.New("full"))}}
+	r := newRunner(f, &fakeFiler{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r.Ctx = ctx
+	c := metrics.ResponderStartFailed.WithLabelValues("resp-shutdown")
+	before := testutil.ToFloat64(c)
+	r.Start("resp-shutdown", Group{Key: "k"}, nil)
+	if got := testutil.ToFloat64(c) - before; got != 0 {
+		t.Fatalf("shutdown must not count: %v", got)
+	}
+}
