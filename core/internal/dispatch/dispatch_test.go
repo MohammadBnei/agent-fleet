@@ -16,7 +16,6 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
-	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
@@ -103,18 +102,6 @@ func contains(l []string, v string) bool {
 	return false
 }
 
-type fakeAlerts struct{ filed, resolved int }
-
-func (f *fakeAlerts) File(_ context.Context, raw json.RawMessage) (bool, error) {
-	if !strings.Contains(string(raw), "fingerprint") {
-		return false, alertwebhook.ErrSkipped
-	}
-	f.filed++
-	return true, nil
-}
-
-func (f *fakeAlerts) Resolve(context.Context, json.RawMessage) error { f.resolved++; return nil }
-
 func head(name string, o *definitions.Owns, s *definitions.Subscribes, invokers ...string) definitions.Head {
 	return definitions.Head{Name: name, SHA: "sha", Effective: &definitions.Spec{
 		Invokers: invokers, Owns: o, Subscribes: s, Workspace: &definitions.Workspace{Kind: "repo", Repo: "notes"},
@@ -148,7 +135,7 @@ func setup(t *testing.T) (*Dispatcher, *fakeAgents, *fakeDefs, *proposals.Store)
 	if _, err := pool.Exec(context.Background(), `INSERT INTO repos (name, url, full_name) VALUES ('notes', 'https://github.com/MohammadBnei/notes.git', 'MohammadBnei/notes')`); err != nil {
 		t.Fatal(err)
 	}
-	return New(pool, nil, agents, defs, props, &fakeAlerts{}), agents, defs, props
+	return New(pool, nil, agents, defs, props), agents, defs, props
 }
 
 // mention is the owner's comment on pr 7 addressing the definition "owner".
@@ -728,7 +715,7 @@ func TestUnaddressedWithoutThreadIsDropped(t *testing.T) {
 	}
 
 	// Not GitHub chatter: an untrusted hand-off still files a proposal, and
-	// an alert still goes to the alert handler.
+	// an alert with no responder is acked.
 	agents.err["owner"] = needsWake
 	hand := &bridgev1.CloudEvent{Seq: 1, Id: "d5", Source: "client/bridge-core", Type: "dev.bnei.agent.handoff",
 		Subject: "forge/MohammadBnei/notes/pr/7", Actor: "agent", ActorLogin: "agent:reviewer", Data: []byte(`{"text":"x"}`)}
@@ -738,17 +725,19 @@ func TestUnaddressedWithoutThreadIsDropped(t *testing.T) {
 	if open, _ := props.ListOpen(ctx); len(open) != 1 || outcome(hand, "owner") != "proposal" {
 		t.Fatalf("hand-off: %d proposals, outcome %s", len(open), outcome(hand, "owner"))
 	}
-	al := d.alerts.(*fakeAlerts)
 	if err := d.Handle(ctx, &bridgev1.CloudEvent{Id: "d6", Source: "alertmanager", Type: typeAlertFiring, Subject: "alert/fp", Actor: "machine",
-		Data: []byte(`{"fingerprint":"fp"}`)}); err != nil || al.filed != 1 {
-		t.Fatalf("alert: %v filed=%d", err, al.filed)
+		Data: []byte(`{"fingerprint":"fp"}`)}); err != nil {
+		t.Fatalf("alert: %v", err)
+	}
+	if open, _ := props.ListOpen(ctx); len(open) != 1 {
+		t.Fatalf("an alert files no proposal: %d open", len(open))
 	}
 }
 
-func TestAlerts(t *testing.T) {
-	d, agents, _, _ := setup(t)
+// docs/adr/0087: an alert no responder subscribes to is acked and files nothing, whatever its shape.
+func TestAlertsWithoutAResponderFileNothing(t *testing.T) {
+	d, agents, _, props := setup(t)
 	ctx := context.Background()
-	al := d.alerts.(*fakeAlerts)
 	for _, e := range []*bridgev1.CloudEvent{
 		{Id: "a1", Source: "alertmanager", Type: typeAlertFiring, Subject: "alert/fp", Actor: "machine", Data: []byte(`{"fingerprint":"fp"}`)},
 		{Id: "a2", Source: "alertmanager", Type: typeAlertFiring, Subject: "alert/x", Actor: "machine", Data: []byte(`{}`)},
@@ -758,8 +747,8 @@ func TestAlerts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if al.filed != 1 || al.resolved != 1 || len(agents.opens) != 0 {
-		t.Fatalf("filed=%d resolved=%d opens=%d", al.filed, al.resolved, len(agents.opens))
+	if open, _ := props.ListOpen(ctx); len(open) != 0 || len(agents.opens) != 0 || len(agents.invokes) != 0 {
+		t.Fatalf("proposals=%d opens=%d invokes=%d", len(open), len(agents.opens), len(agents.invokes))
 	}
 }
 
@@ -935,10 +924,9 @@ func TestRenderIsStorable(t *testing.T) {
 }
 
 // docs/adr/0086 §3-§4: an alert a first responder subscribes to starts its run through InvokeUntrusted, keyed by the
-// alert group, and files no proposal; an alert no responder answers still goes to the alert handler.
+// alert group, and files no proposal; an alert no responder answers is acked.
 func TestAlertsGoToAFirstResponder(t *testing.T) {
-	d, agents, defs, _ := setup(t)
-	al := d.alerts.(*fakeAlerts)
+	d, agents, defs, props := setup(t)
 	resp := head("resp", nil, &definitions.Subscribes{Types: []string{"dev.bnei.alert."}}, Client)
 	resp.Effective.Trust = &definitions.Trust{Untrusted: "B"}
 	defs.heads = append(defs.heads, resp)
@@ -959,25 +947,24 @@ func TestAlertsGoToAFirstResponder(t *testing.T) {
 	if err := d.Handle(context.Background(), fire("a2")); err != nil {
 		t.Fatal(err)
 	}
-	if al.filed != 0 {
-		t.Fatalf("an alert a responder answers files no proposal, filed=%d", al.filed)
+	if open, _ := props.ListOpen(context.Background()); len(open) != 0 {
+		t.Fatalf("an alert a responder answers files no proposal, open=%d", len(open))
 	}
 	if len(agents.invokes) != 1 || agents.invokes[0].GetDefinition() != "resp" || !strings.HasPrefix(agents.invokes[0].GetIdempotencyKey(), "alert:") ||
 		!strings.Contains(agents.invokes[0].GetInput(), "<untrusted-alert>") {
 		t.Fatalf("the first firing starts one run, the repeat is held by the cooldown: %+v", agents.invokes)
 	}
 
-	// Without a responder (the bridge client no longer lists it) the proposal path is back.
+	// Without a responder (the bridge client no longer lists it) the alert is acked and nothing runs.
 	defs.clients[0].Spec.Definitions = defs.clients[0].Spec.Definitions[:len(defs.clients[0].Spec.Definitions)-1]
-	if err := d.Handle(context.Background(), fire("a3")); err != nil || al.filed != 1 {
-		t.Fatalf("no responder: err %v filed %d", err, al.filed)
+	if err := d.Handle(context.Background(), fire("a3")); err != nil || len(agents.invokes) != 1 {
+		t.Fatalf("no responder: err %v invokes %d", err, len(agents.invokes))
 	}
 }
 
-// Two responders on one group are two runs under two keys, and an invoke core refuses still files the alert.
+// Two responders on one group are two runs under two keys, and an invoke core refuses files nothing.
 func TestTwoRespondersAndARefusedInvoke(t *testing.T) {
-	d, agents, defs, _ := setup(t)
-	al := d.alerts.(*fakeAlerts)
+	d, agents, defs, props := setup(t)
 	for _, n := range []string{"r1", "r2"} {
 		h := head(n, nil, &definitions.Subscribes{Types: []string{"dev.bnei.alert."}}, Client)
 		h.Effective.Trust = &definitions.Trust{Untrusted: "B"}
@@ -1004,14 +991,13 @@ func TestTwoRespondersAndARefusedInvoke(t *testing.T) {
 	if err := d.Handle(context.Background(), e2); err != nil {
 		t.Fatal(err)
 	}
-	if al.filed == 0 {
-		t.Fatal("an alert whose run could not start must still be filed for the owner")
+	if open, _ := props.ListOpen(context.Background()); len(open) != 0 {
+		t.Fatalf("an alert whose run could not start files no proposal: %d open", len(open))
 	}
 
-	// Data that is not an alert object falls through to the proposal path, not into silence.
-	before := al.filed
+	// Data that is not an alert object is acked with a warning, not nacked into a dead letter.
 	bad := &bridgev1.CloudEvent{Id: "a3", Type: typeAlertFiring, Data: []byte(`["fingerprint"]`)}
-	if err := d.Handle(context.Background(), bad); err != nil || al.filed != before+1 {
-		t.Fatalf("err %v filed %d->%d", err, before, al.filed)
+	if err := d.Handle(context.Background(), bad); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -174,7 +174,7 @@ func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
 	// Exempt paths stay reachable for the same caller — /auth/me in particular
 	// has to answer them, or the SPA cannot say who is signed in.
 	open := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
-	for _, p := range []string{"/healthz", "/webhook/alertmanager", "/auth/me", "/auth/callback"} {
+	for _, p := range []string{"/healthz", "/auth/me", "/auth/callback"} {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: cookie})
 		rec := httptest.NewRecorder()

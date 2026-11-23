@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,7 +30,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
-	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/announce"
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
@@ -411,7 +409,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// The console federates to authentik (infra-bootstrap ADR-0041).
 	//
 	// FAILS CLOSED, unlike every other optional secret core reads. An unset
-	// ALERT_WEBHOOK_TOKEN disables a webhook; an unset OIDC config must not
+	// optional token disables its endpoint; an unset OIDC config must not
 	// disable the gate, because the Infisical operator renders a stale or empty
 	// Secret often enough that core would then come up completely open and look
 	// perfectly healthy. Refusing to start is loud; serving unauthenticated is
@@ -479,24 +477,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		dashboardSvc,
 		errkeys.WithInterceptors(connectInterceptors(tr, true, authInterceptors...)...),
 	)
-	// docs/adr/0037: an alert becomes a thot session — but only after a human
-	// opens the proposal it files (docs/adr/0048). Registered even when the
-	// token is unset: the handler then refuses with 503, which is a far
-	// better signal than a route that silently doesn't exist.
-	//
-	// dc is nil when no bot token is configured, and a nil Notifier disables
-	// the notification without disabling the webhook.
-	var alertNotifier alertwebhook.Notifier
-	if dc != nil {
-		alertNotifier = dc
-	}
-	alertHandler := alertwebhook.New(proposalStore, alertNotifier, alertwebhook.Config{
-		Token:     cfg.AlertWebhookToken,
-		Repo:      cfg.ThotRepo,
-		ChannelID: cfg.ThotDiscordChannel,
-	})
-	alertHandler.SetInactive(repoStore.Inactive)
-	mux.Handle("/webhook/alertmanager", alertHandler)
 	remStore := remediations.NewStore(pool)
 	mux.Handle(remediations.Path, remediations.Handler(remStore, cfg.RemediationToken))
 	go func() { // a pulled row with no report in 15 min has an unknown outcome: mark it lost and say so
@@ -542,18 +522,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		}))
 	}
 	// The bridge's dispatcher (docs/adr/0071, 0078 §5): events reach
-	// definition threads through agentSvc as client bridge, and a firing
-	// alert reaches the same handler as /webhook/alertmanager.
+	// definition threads through agentSvc as client bridge. An alert reaches the
+	// fleet only through a first responder (docs/adr/0087).
 	if defs != nil {
-		var alerts dispatch.Alerts
-		if cfg.ThotRepo != "" {
-			alerts = alertHandler
-		}
-		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore, alerts)
+		dispatcher := dispatch.New(pool, bridge, agentSvc, defs, proposalStore)
 		dispatcher.SetCards(decisionStore, activityStore)
 		dispatcher.SetCharacters(dashboardSvc.WarmForAppend, "client/"+cfg.Bridge.Username)
-		// First responders (docs/adr/0086 §3): an alert a responder definition subscribes to starts its run, and
-		// the webhook files no proposal for it.
+		// First responders (docs/adr/0086 §3): an alert a responder definition subscribes to starts its run.
 		remSvc := &remediations.Service{Store: remStore}
 		dispatcher.SetResponders(&responder.Runner{
 			Client: dispatch.Client, Agents: agentSvc, Defs: defs,
@@ -566,11 +541,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			return dispatch.OpenProposal(ctx, agentSvc, p, sub)
 		})
 		if cfg.Bridge.URL != "" {
-			// Only while the dispatcher runs does a responder answer: without it the webhook files every alert.
-			// B definitions take no subject filter (validateTrust), so a type match is the whole question.
-			alertHandler.SetSkip(func(json.RawMessage) bool {
-				return len(responder.Subscribers(defs, dispatch.Client, responder.AlertFiring, "")) > 0
-			})
 			go dispatcher.Run(ctx)
 		}
 	}

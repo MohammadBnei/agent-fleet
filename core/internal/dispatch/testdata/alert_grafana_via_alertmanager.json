@@ -1,5 +1,0 @@
-{"status":"firing",
-"labels":{"__alert_rule_uid__":"plain","alertname":"PlainFiring","grafana_folder":"T","severity":"warning"},
-"annotations":{"__alert_rule_namespace_uid__":"eg54614yfsxkwf","__orgId__":"1","__value_string__":"[ var='A' labels={} type='math' value=1 ], [ var='C' labels={} type='threshold' value=1 ]","__values__":"{\"A\":1,\"C\":1}","summary":"plain"},
-"startsAt":"2026-11-22T23:48:50Z","endsAt":"0001-01-01T00:00:00Z",
-"generatorURL":"http://localhost:3000/alerting/grafana/plain/view","fingerprint":"fd821c9ea845b489"}

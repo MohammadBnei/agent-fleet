@@ -1,4 +1,0 @@
-{"status":"firing",
-"labels":{"alertname":"EtcdDown","namespace":"kube-system","severity":"critical"},
-"annotations":{"summary":"etcd is down"},"startsAt":"2026-10-18T09:00:00.123Z","endsAt":"0001-01-01T00:00:00Z",
-"generatorURL":"http://prometheus/graph?g0.expr=up==0","fingerprint":"abc123"}

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/events"
 )
@@ -80,7 +80,7 @@ func Input(g Group, batch []json.RawMessage) string {
 		b.WriteString("<untrusted-alert>\n")
 		line := func(k, v string) {
 			if v != "" {
-				b.WriteString(k + ": " + alertwebhook.Untrusted(v) + "\n")
+				b.WriteString(k + ": " + Untrusted(v) + "\n")
 			}
 		}
 		line("Status", a.Status)
@@ -248,4 +248,29 @@ func Subscribers(reg Registry, client, typ, subject string) []definitions.Head {
 		}
 	}
 	return out
+}
+
+// maxFieldRunes caps one alert field in the prompt. The full text stays in the bridge event.
+const maxFieldRunes = 500
+
+// Untrusted is untrusted for the first responders' input (docs/adr/0086 §3): one alert field, flattened to a
+// single line that cannot leave its fence. Control and format characters (newlines, bidi overrides) become a
+// space, angle brackets become look-alikes so no field can close the block, and the result is capped.
+func Untrusted(s string) string {
+	out := make([]rune, 0, min(len(s), maxFieldRunes))
+	for _, r := range s {
+		if len(out) == maxFieldRunes {
+			return string(out) + "…"
+		}
+		switch {
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), unicode.In(r, unicode.Zl, unicode.Zp):
+			r = ' '
+		case r == '<':
+			r = '‹'
+		case r == '>':
+			r = '›'
+		}
+		out = append(out, r)
+	}
+	return string(out)
 }

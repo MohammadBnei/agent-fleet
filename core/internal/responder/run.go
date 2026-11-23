@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -41,9 +42,7 @@ type Runner struct {
 		MayOpen(client, definition string) (definitions.Head, bool)
 	}
 	Filer Filer
-	// Fallback files one alert as an ordinary proposal; it is the answer when no run could start.
-	Fallback func(ctx context.Context, raw json.RawMessage)
-	Wait     func(wg func()) // tests run the goroutine inline; nil is `go`
+	Wait  func(wg func()) // tests run the goroutine inline; nil is `go`
 }
 
 // Start invokes def for the batch's group and files its result in the background. The key is the definition, the
@@ -59,15 +58,11 @@ func (r *Runner) Start(def string, g Group, batch []json.RawMessage) {
 	go run()
 }
 
-// noThread: no run exists to answer, so each firing in the batch is filed as an ordinary proposal.
-func (r *Runner) noThread(def string, g Group, batch []json.RawMessage, why string, err error) {
-	slog.Error("responder: "+why+", filing the alert as a proposal", "definition", def, "group", g.Key, "error", err)
-	if r.Fallback == nil {
-		return
-	}
-	for _, raw := range batch {
-		r.Fallback(r.Ctx, raw)
-	}
+// noThread: no run exists to answer. Nothing is filed: the alert reaches Discord and the bridge log only
+// (docs/adr/0087), so this is loud and counted.
+func (r *Runner) noThread(def string, g Group, why string, err error) {
+	slog.Error("responder: "+why+", the alert reaches no session", "definition", def, "group", g.Key, "error", err)
+	metrics.ResponderStartFailed.WithLabelValues(def).Inc()
 }
 
 // noResult: the run ended without a usable answer, so core files a card saying so. The owner always hears.
@@ -83,7 +78,7 @@ func (r *Runner) run(def string, g Group, key string, batch []json.RawMessage) {
 	defer cancel()
 	actx, err := r.Agents.AsClient(ctx, r.Client)
 	if err != nil {
-		r.noThread(def, g, batch, "no client", err)
+		r.noThread(def, g, "no client", err)
 		return
 	}
 	input := Input(g, batch)
@@ -95,12 +90,12 @@ func (r *Runner) run(def string, g Group, key string, batch []json.RawMessage) {
 			break
 		}
 		if c := connect.CodeOf(err); (c != connect.CodeResourceExhausted && c != connect.CodeAborted) || try >= InvokeTries {
-			r.noThread(def, g, batch, "invoke failed", err)
+			r.noThread(def, g, "invoke failed", err)
 			return
 		}
 		select {
 		case <-ctx.Done():
-			r.noThread(def, g, batch, "the fleet had no room before the run's life ended", ctx.Err())
+			r.noThread(def, g, "the fleet had no room before the run's life ended", ctx.Err())
 			return
 		case <-time.After(InvokeRetry):
 		}

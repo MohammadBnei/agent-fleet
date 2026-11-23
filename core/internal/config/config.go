@@ -39,10 +39,6 @@ type Config struct {
 	DBPassword            string
 	DiscordBotToken       string
 	DiscordTriggerChannel string
-	// Alert path (docs/adr/0037). An empty token disables the webhook
-	// rather than serving it unauthenticated — it creates tasks, and a
-	// thot task runs an agent with cluster access.
-	AlertWebhookToken string
 	// ProvisionerToken authenticates the provisioner to CoreService. It holds
 	// no session lease — it exists before any pod does — so it is the one
 	// caller that needs a shared secret rather than a per-session credential.
@@ -54,8 +50,6 @@ type Config struct {
 	// rotates on its own and a leaked header exposes one direction only. It is
 	// not isolation: both pods sync the whole scope, so each holds both keys.
 	CoreProvisionerToken string
-	ThotDiscordChannel   string
-	ThotRepo             string
 	LokiURL              string
 	// PrometheusURL backs the dashboard's Observability page. The service
 	// name is the kube-prometheus-stack release's, which the chart mangles
@@ -300,11 +294,8 @@ func Load(getenv func(string) string) (Config, error) {
 		DBPassword:            getenv("AGENTFLEET_DB_PASSWORD"),
 		DiscordBotToken:       getenv("DISCORD_BOT_TOKEN"),
 		DiscordTriggerChannel: getenv("DISCORD_TRIGGER_CHANNEL_ID"),
-		AlertWebhookToken:     getenv("ALERT_WEBHOOK_TOKEN"),
 		ProvisionerToken:      getenv("FLEET_PROVISIONER_TOKEN"),
 		CoreProvisionerToken:  getenv("FLEET_CORE_PROVISIONER_TOKEN"),
-		ThotDiscordChannel:    getenv("THOT_DISCORD_CHANNEL_ID"),
-		ThotRepo:              l.str("THOT_REPO", "infra-bootstrap"),
 		LokiURL:               l.url("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
 		PrometheusURL:         l.url("PROMETHEUS_URL", "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090"),
 		ProvisionerGRPCAddr:   l.hostPort("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),

@@ -36,6 +36,16 @@ var (
 		[]string{"type"},
 	)
 
+	// ResponderStartFailed counts alert groups whose first-responder run could not start (docs/adr/0087). The alert
+	// then reaches no session, only Discord and the bridge log; any increase is alertable.
+	ResponderStartFailed = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agentfleet_responder_start_failed_total",
+			Help: "Responder runs that could not start, by definition; the alert reaches no session",
+		},
+		[]string{"definition"},
+	)
+
 	// GrpcRequestsTotal/GrpcDuration cover both RPC surfaces core serves —
 	// CoreService (gRPC, sidecar + provisioner call it) and DashboardService
 	// (ConnectRPC, the SPA calls it) — separated by the `surface` label

@@ -171,7 +171,7 @@ func TestSafeReturnTo(t *testing.T) {
 // The gate is an allowlist, and a route that nobody exempted must fail closed.
 // Gating one handler instead would make every future route public by default.
 func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
-	exemptCases := []string{"/healthz", "/webhook/alertmanager", "/auth/login", "/auth/callback", "/auth/logout", "/auth/me", "/auth/done", "/islands/fleet-agent.js"}
+	exemptCases := []string{"/healthz", "/auth/login", "/auth/callback", "/auth/logout", "/auth/me", "/auth/done", "/islands/fleet-agent.js"}
 	for _, p := range exemptCases {
 		if !exempt(p) {
 			t.Errorf("%s must be reachable without a session", p)
@@ -184,7 +184,7 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 	// method rather than merely unblocking the scrape (#230).
 	gatedCases := []string{"/", "/metrics", "/sessions/abc", "/agentfleet.v1.DashboardService/ListSessions", "/authsomething", "/some/new/route",
 		// Prefix matching once let these through to the SPA fallback's 200 shell.
-		"/healthzX", "/healthz/x", "/webhook/alertmanagerX", "/auth/", "/auth/nonexistent",
+		"/healthzX", "/healthz/x", "/webhook/alertmanager", "/auth/", "/auth/nonexistent",
 		// Only the /islands/ prefix, with its slash, and only escaped as the mux sees it.
 		"/islands", "/islandsX", "/x/islands/a.js", "/auth/doneX"}
 	for _, p := range gatedCases {
@@ -200,18 +200,17 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 func TestGate_EncodedSlashIsNotExempt(t *testing.T) {
 	o := &OIDC{signer: mustSigner(t, "key-one")}
 	mux := http.NewServeMux()
-	for _, p := range []string{"/healthz", "/webhook/alertmanager", "/auth/me", "/auth/callback"} {
+	for _, p := range []string{"/healthz", "/auth/me", "/auth/callback"} {
 		mux.HandleFunc(p, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	handler := o.Gate(AdminOnly)(mux)
 
 	for p, want := range map[string]int{
-		"/auth/me":                http.StatusOK, // positive control
-		"/auth%2Fme":              http.StatusUnauthorized,
-		"/auth%2Fcallback":        http.StatusUnauthorized,
-		"/webhook%2Falertmanager": http.StatusUnauthorized,
-		"/healthz%2F":             http.StatusUnauthorized,
+		"/auth/me":         http.StatusOK, // positive control
+		"/auth%2Fme":       http.StatusUnauthorized,
+		"/auth%2Fcallback": http.StatusUnauthorized,
+		"/healthz%2F":      http.StatusUnauthorized,
 	} {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		req.Header.Set("Sec-Fetch-Mode", "cors")

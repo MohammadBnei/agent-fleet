@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -91,14 +93,18 @@ func TestRunnerFilesACardForARunWithNoResult(t *testing.T) {
 	}
 }
 
-func TestRunnerFallsBackToAProposalWhenNoRunStarts(t *testing.T) {
+func TestRunnerFilesNothingAndCountsWhenNoRunStarts(t *testing.T) {
 	f := &fakeAgents{fail: []error{connect.NewError(connect.CodeFailedPrecondition, errors.New("no letter"))}}
-	r := newRunner(f, &fakeFiler{})
-	var filed []string
-	r.Fallback = func(_ context.Context, raw json.RawMessage) { filed = append(filed, string(raw)) }
-	r.Start("resp", Group{Key: "k"}, []json.RawMessage{json.RawMessage(`{"a":1}`), json.RawMessage(`{"a":2}`)})
-	if len(f.invokes) != 1 || len(filed) != 2 {
-		t.Fatalf("a refused invoke files each alert as a proposal, not nothing: invokes %d filed %v", len(f.invokes), filed)
+	fi := &fakeFiler{}
+	r := newRunner(f, fi)
+	c := metrics.ResponderStartFailed.WithLabelValues("resp-nostart")
+	before := testutil.ToFloat64(c)
+	r.Start("resp-nostart", Group{Key: "k"}, []json.RawMessage{json.RawMessage(`{"a":1}`), json.RawMessage(`{"a":2}`)})
+	if len(f.invokes) != 1 || len(fi.selected) != 0 || len(fi.drafts) != 0 {
+		t.Fatalf("a refused invoke files nothing: invokes %d, %+v", len(f.invokes), fi)
+	}
+	if got := testutil.ToFloat64(c) - before; got != 1 {
+		t.Fatalf("the counter goes up once per failed start: %v", got)
 	}
 }
 

@@ -30,8 +30,6 @@ func FromContext(ctx context.Context) (Identity, bool) {
 // closed — visibly broken beats silently open.
 //
 //   - /healthz is the kubelet probe.
-//   - /webhook/alertmanager has its own bearer token (ALERT_WEBHOOK_TOKEN) and
-//     is called in-cluster over the Service URL, never with a browser cookie.
 //   - /auth/{login,callback,logout,me} are the four routes run.go registers.
 //   - /auth/done is the static page the island's sign-in popup lands on and
 //     closes (docs/adr/0068 §3). It carries no data.
@@ -42,13 +40,12 @@ func FromContext(ctx context.Context) (Identity, bool) {
 // on CORE_METRICS_PORT (9093), which no IngressRoute reaches. Exempting it here
 // would publish every target repo name and RPC method (#230, docs/adr/0059).
 var exemptPaths = map[string]bool{
-	"/healthz":              true,
-	"/webhook/alertmanager": true,
-	"/auth/login":           true,
-	"/auth/callback":        true,
-	"/auth/logout":          true,
-	"/auth/me":              true,
-	"/auth/done":            true,
+	"/healthz":       true,
+	"/auth/login":    true,
+	"/auth/callback": true,
+	"/auth/logout":   true,
+	"/auth/me":       true,
+	"/auth/done":     true,
 }
 
 // islandsPrefix is matched on the escaped path like everything here; the file

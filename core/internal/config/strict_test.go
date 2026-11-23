@@ -18,7 +18,6 @@ func TestLoadDefaults(t *testing.T) {
 	want := Config{
 		Port: "8080", GRPCPort: "9090", MetricsPort: "9093", ClientPort: "9091", LogLevel: "info",
 		DBHost: "postgres.bnei.lan", DBPort: 5432, DBName: "agentfleetdb", DBUser: "dbuser_agentfleet",
-		ThotRepo:            "infra-bootstrap",
 		LokiURL:             "http://platform-loki.monitoring.svc.cluster.local:3100",
 		PrometheusURL:       "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090",
 		ProvisionerGRPCAddr: "provisioner.agent-fleet.svc.cluster.local:9090",

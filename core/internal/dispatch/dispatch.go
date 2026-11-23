@@ -6,8 +6,8 @@
 // An event goes to the definitions whose owns or subscribes match it and that
 // the bridge client may open, through AgentService.Open as that client. Only
 // an explicit address wakes one (docs/adr/0082 §1-2); the fleet bot's own
-// forge events are dropped. A firing alert goes to the alert handler
-// instead, which dedups it against the direct webhook (docs/adr/0078 §6).
+// forge events are dropped. An alert goes only to the first responders that subscribe to it; one nobody
+// subscribes to is acked (docs/adr/0087).
 package dispatch
 
 import (
@@ -27,7 +27,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/agentsvc"
-	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
@@ -119,19 +118,12 @@ type Proposals interface {
 	DismissUnopened(ctx context.Context, repo, dedupKey string) (bool, error)
 }
 
-// Alerts is alertwebhook.Handler.
-type Alerts interface {
-	File(ctx context.Context, raw json.RawMessage) (bool, error)
-	Resolve(ctx context.Context, raw json.RawMessage) error
-}
-
 type Dispatcher struct {
 	pool   *pgxpool.Pool
 	bridge Bridge
 	agents Agents
 	defs   Definitions
 	props  Proposals
-	alerts Alerts // nil: alerts are acked and dropped (no alert repo configured)
 	// cards drafts the "close threads" card into tr; nil closes a fleet
 	// close's threads as before (SetCards).
 	cards *decisions.Store
@@ -140,15 +132,15 @@ type Dispatcher struct {
 	// source is the bridge client source core's own publishes carry. Both unset: no hand-off reaches a character.
 	warm   func(ctx context.Context, sessionID string) (podName string, release func(), err error)
 	source string
-	// responders runs the alert groups first-responder definitions subscribe to; nil: every alert is a proposal.
+	// responders runs the alert groups first-responder definitions subscribe to; nil: every alert is acked.
 	responders *responder.Runner
 	router     *responder.Router
 
 	lastNote string // the last "not configured" reason logged
 }
 
-func New(pool *pgxpool.Pool, bridge Bridge, agents Agents, defs Definitions, props Proposals, alerts Alerts) *Dispatcher {
-	return &Dispatcher{pool: pool, bridge: bridge, agents: agents, defs: defs, props: props, alerts: alerts}
+func New(pool *pgxpool.Pool, bridge Bridge, agents Agents, defs Definitions, props Proposals) *Dispatcher {
+	return &Dispatcher{pool: pool, bridge: bridge, agents: agents, defs: defs, props: props}
 }
 
 // SetCards turns the fleet bot's close of a PR it did not merge into the
@@ -161,21 +153,9 @@ func (d *Dispatcher) SetCharacters(warm func(context.Context, string) (string, f
 	d.warm, d.source = warm, source
 }
 
-// SetResponders turns on docs/adr/0086 §3: an alert a first responder subscribes to starts its run (r) instead of
-// filing a proposal.
+// SetResponders turns on docs/adr/0086 §3: an alert a first responder subscribes to starts its run (r).
 func (d *Dispatcher) SetResponders(r *responder.Runner) {
 	d.responders = r
-	if r.Fallback == nil {
-		// A run that could not start must not lose its alert: it files the way an unanswered alert does.
-		r.Fallback = func(ctx context.Context, raw json.RawMessage) {
-			if d.alerts == nil {
-				return
-			}
-			if _, err := d.alerts.File(ctx, raw); err != nil && !errors.Is(err, alertwebhook.ErrSkipped) {
-				slog.Error("dispatch: filing a responder's alert as a proposal failed", "error", err)
-			}
-		}
-	}
 	d.router = &responder.Router{Start: r.Start}
 }
 
@@ -233,11 +213,23 @@ func (d *Dispatcher) ready() bool {
 	return slices.ContainsFunc(d.defs.Clients(), func(c definitions.Client) bool { return c.Name == Client })
 }
 
+// initResponderCounter makes agentfleet_responder_start_failed_total visible at 0 for each responder known now,
+// so increase() sees its first failure. A responder added later shows up with its first failure.
+func (d *Dispatcher) initResponderCounter() {
+	heads, _ := d.defs.List()
+	for _, h := range heads {
+		if h.SHA != "" && h.Effective.Responder() {
+			metrics.ResponderStartFailed.WithLabelValues(h.Name)
+		}
+	}
+}
+
 // stream is one Subscribe call, read to its end.
 func (d *Dispatcher) stream(ctx context.Context) error {
 	if !d.ready() {
 		return errNotReady
 	}
+	d.initResponderCounter()
 	st, err := d.bridge.Subscribe(ctx, &bridgev1.SubscribeRequest{Name: Subscription, Types: Types})
 	if err != nil {
 		return err
@@ -366,42 +358,35 @@ func (d *Dispatcher) Handle(ctx context.Context, e *bridgev1.CloudEvent) error {
 	return errors.Join(errs...)
 }
 
-// alert: a firing alert files a proposal, deduped against the direct webhook
-// on its fingerprint; a resolved one dismisses it if nobody opened it. An
-// alert never opens a thread (it is machine), so no definition sees it.
-func (d *Dispatcher) alert(ctx context.Context, e *bridgev1.CloudEvent) error {
+// alert: an alert reaches the fleet only through a first responder (docs/adr/0086 §3-§4, 0087). One no responder
+// subscribes to is acked: Alertmanager has already posted it to Discord and the bridge keeps it. It never opens a
+// thread (it is machine), so no other definition sees it.
+func (d *Dispatcher) alert(_ context.Context, e *bridgev1.CloudEvent) error {
 	if e.GetReplayed() {
 		return nil
 	}
-	// A first responder takes the alert, and nothing is filed twice (docs/adr/0086 §3-§4).
-	if d.responders != nil {
-		if subs := responder.Subscribers(d.defs, Client, e.GetType(), e.GetSubject()); len(subs) > 0 {
-			if g, ok := responder.GroupOf(e.GetData()); ok {
-				for _, h := range subs {
-					if e.GetType() == typeAlertFiring {
-						d.router.Fire(h.Name, g, e.GetData())
-					} else {
-						d.router.Resolve(h.Name, g, e.GetData())
-					}
-				}
-				return nil
-			}
-			slog.Warn("dispatch: an alert a responder answers is not a JSON object, filing it as a proposal", "id", e.GetId())
+	if d.responders == nil {
+		slog.Debug("dispatch: alert acked, no responders configured", "id", e.GetId())
+		return nil
+	}
+	subs := responder.Subscribers(d.defs, Client, e.GetType(), e.GetSubject())
+	if len(subs) == 0 {
+		slog.Debug("dispatch: alert acked, no responder subscribes to it", "id", e.GetId(), "type", e.GetType())
+		return nil
+	}
+	g, ok := responder.GroupOf(e.GetData())
+	if !ok {
+		slog.Warn("dispatch: an alert a responder answers is not a JSON object, acked without a run", "id", e.GetId())
+		return nil
+	}
+	for _, h := range subs {
+		if e.GetType() == typeAlertFiring {
+			d.router.Fire(h.Name, g, e.GetData())
+		} else {
+			d.router.Resolve(h.Name, g, e.GetData())
 		}
 	}
-	if d.alerts == nil {
-		return nil
-	}
-	var err error
-	if e.GetType() == typeAlertFiring {
-		_, err = d.alerts.File(ctx, e.GetData())
-	} else {
-		err = d.alerts.Resolve(ctx, e.GetData())
-	}
-	if errors.Is(err, alertwebhook.ErrSkipped) {
-		return nil
-	}
-	return err
+	return nil
 }
 
 // route is every definition that owns or subscribes to e and that the bridge
