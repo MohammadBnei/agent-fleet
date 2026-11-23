@@ -13,6 +13,7 @@ import {
 import { SessionActionsModal } from "../components/SessionActionsModal";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { client } from "../connectClient";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { routeOf } from "../modelRoute";
 import { sessionLabel } from "../sessionLabel";
@@ -138,6 +139,7 @@ function NeedsYouCard({
   picked,
   onPick,
   summary,
+  card,
   onSelect,
   onDelete,
   reload,
@@ -147,6 +149,7 @@ function NeedsYouCard({
   picked: boolean;
   onPick: (shiftKey: boolean) => void;
   summary?: ListSummary;
+  card?: Decision;
   onSelect: () => void;
   onDelete: () => void;
   reload: () => void;
@@ -181,7 +184,12 @@ function NeedsYouCard({
             </div>
           )}
         </div>
-        <DecisionInline session={session} summary={summary} reload={reload} />
+        <DecisionInline
+          session={session}
+          summary={summary}
+          card={card}
+          reload={reload}
+        />
       </NotchCard>
       <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
@@ -511,6 +519,7 @@ function CompactRow({
 export function SessionList({
   sessions,
   summaries,
+  cards,
   needsYouIds,
   answerableIds,
   onSelect,
@@ -521,6 +530,8 @@ export function SessionList({
 }: {
   sessions: Session[];
   summaries: Map<string, ListSummary>;
+  // Open card decisions by session id (App's deck).
+  cards?: Map<string, Decision>;
   needsYouIds: Set<string>;
   answerableIds: Set<string>;
   onSelect: (id: string) => void;
@@ -623,6 +634,7 @@ export function SessionList({
               picked={selected.has(t.id)}
               onPick={pick(t.id)}
               summary={summaries.get(t.id)}
+              card={cards?.get(t.id)}
               onSelect={() => onSelect(t.id)}
               onDelete={() => onDelete(t.id)}
               reload={reload}

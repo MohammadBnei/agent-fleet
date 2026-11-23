@@ -2,6 +2,7 @@ import { type ReactNode, useState } from "react";
 import { approvePlan, planFeedback } from "../approvePlan";
 import { client } from "../connectClient";
 import { withdrawDecision } from "../decisions";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { optimistic } from "../optimistic";
 import { isPodPhaseLive } from "../sessionState";
@@ -12,6 +13,7 @@ import {
 } from "../transcript";
 import { ActionButton } from "./ActionButton";
 import { AutoModeConfirm } from "./AutoModeConfirm";
+import { CardBody } from "./CardBody";
 import { InterruptedBar } from "./DecisionDock";
 import { DiffLines } from "./DiffLines";
 import { InlineError } from "./InlineError";
@@ -134,7 +136,25 @@ function PermissionBody({
   );
 }
 
-export function DecisionInline({
+// A card has no transcript summary, so it arrives as the Decision the deck
+// already holds; CardBody is what the deck and the session feed answer it with.
+// A card with no payload (still being written) falls through to the generic line.
+export function DecisionInline(props: InlineProps) {
+  const { card, reload, summary } = props;
+  // A pending permission or question blocks the live worker and dies with its
+  // pod; a card is durable and can wait, so the transcript decision wins.
+  const transcriptPending =
+    summary?.pendingPermission || summary?.pendingQuestion;
+  // Keyed by decision id: a superseding card must not inherit the previous
+  // card's armed option, draft or sent notice.
+  if (card?.card && !transcriptPending)
+    return <CardBody key={card.id} decision={card} reload={reload} />;
+  return <TranscriptDecision {...props} />;
+}
+
+type InlineProps = Parameters<typeof TranscriptDecision>[0];
+
+function TranscriptDecision({
   session,
   summary,
   reload,
@@ -154,6 +174,7 @@ export function DecisionInline({
   // console vouches for. Placed under the console's own header line, not
   // above it, or the label seems to vouch for the kind line too.
   claimLabel?: boolean;
+  card?: Decision;
 }) {
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");

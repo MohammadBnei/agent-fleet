@@ -9,6 +9,7 @@ import { NewSessionDialog } from "./components/NewSessionDialog";
 import { Segmented } from "./components/Segmented";
 import { client } from "./connectClient";
 import { type DeckItem, deckItems, fetchWithdrawn } from "./decisions";
+import { DecisionKind } from "./gen/agentfleet/v1/agent_pb";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
@@ -480,6 +481,20 @@ export default function App() {
     [summaryAnswerableIds, items],
   );
 
+  // Open card decisions by session: a card has no transcript summary, so the
+  // list rows render it from the Decision the deck already fetched.
+  const cards = useMemo(
+    () =>
+      new Map(
+        items.flatMap((i) =>
+          i.decision?.kind === DecisionKind.CARD
+            ? [[i.session.id, i.decision] as const]
+            : [],
+        ),
+      ),
+    [items],
+  );
+
   const counts = useMemo(() => {
     // The deck, not pendingDecisions: that raw count includes sessions whose
     // pod is gone (and archived ones), so the badge would show work waiting on
@@ -533,6 +548,7 @@ export default function App() {
     answerableIds,
     sessions: filteredSessions,
     summaries,
+    cards,
     needsYouIds,
     onSelect: selectSession,
     onDelete: deleteSession,

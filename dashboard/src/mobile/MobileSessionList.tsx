@@ -10,6 +10,7 @@ import {
 import { SessionActionsModal } from "../components/SessionActionsModal";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { client } from "../connectClient";
+import type { Decision } from "../gen/agentfleet/v1/agent_pb";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import {
   AutoBadge,
@@ -51,6 +52,7 @@ import { useToggleSet } from "../useToggleSet";
 function NeedsYouCard({
   session,
   summary,
+  card,
   onSelect,
   onActions,
   reload,
@@ -58,6 +60,7 @@ function NeedsYouCard({
 }: {
   session: Session;
   summary?: ListSummary;
+  card?: Decision;
   onSelect: () => void;
   onActions: () => void;
   reload: () => void;
@@ -98,6 +101,7 @@ function NeedsYouCard({
       <DecisionInline
         session={session}
         summary={summary}
+        card={card}
         layout="stacked"
         reload={reload}
         onAskLater={onAskLater}
@@ -337,6 +341,7 @@ function StuckCard({
 export function MobileSessionList({
   sessions,
   summaries,
+  cards,
   needsYouIds,
   answerableIds,
   onSelect,
@@ -347,6 +352,7 @@ export function MobileSessionList({
 }: {
   sessions: Session[];
   summaries: Map<string, ListSummary>;
+  cards?: Map<string, Decision>;
   needsYouIds: Set<string>;
   answerableIds: Set<string>;
   onSelect: (id: string) => void;
@@ -416,6 +422,7 @@ export function MobileSessionList({
             session={t}
             onActions={() => setActionsFor(t)}
             summary={summaries.get(t.id)}
+            card={cards?.get(t.id)}
             onSelect={() => onSelect(t.id)}
             reload={reload}
             onAskLater={() => setDeferred((prev) => new Set(prev).add(t.id))}
