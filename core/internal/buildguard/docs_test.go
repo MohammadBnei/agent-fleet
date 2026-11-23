@@ -153,3 +153,21 @@ func TestDocsSkillPathsExist(t *testing.T) {
 		t.Errorf("skill cites a path that does not exist: %s", m)
 	}
 }
+
+// TestChangeLoopSkillCopiesEqual: fleet-shared/skills/change-loop is a
+// second copy of packs/repo/skills/change-loop until ADR-0063 removes it.
+// Two copies of a mirror of mountain plan/16 drift unless something says so.
+func TestChangeLoopSkillCopiesEqual(t *testing.T) {
+	root := repoRoot(t)
+	a, err := os.ReadFile(filepath.Join(root, "packs", "repo", "skills", "change-loop", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "fleet-shared", "skills", "change-loop", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a) != string(b) {
+		t.Error("packs/repo and fleet-shared change-loop SKILL.md differ: copy one over the other")
+	}
+}
