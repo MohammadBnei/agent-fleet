@@ -213,7 +213,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   reach the worker as `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. No `gh api user`: `/user` refuses
   installation tokens. The GitHub identity is the App `ukubi-fleet`.
 - Claude Code auths via subscription OAuth (`CLAUDE_CODE_OAUTH_TOKEN`), not a metered API
-  key. No cost cap by design.
+  key. No cost cap by design. Exception: a non-Claude model runs through llm-gateway on a
+  budget-bounded key held by the sidecar (`adr/0088`).
 - Secrets only via Infisical (project `agent-fleet-nygh`). Never committed.
 
 ## Forbidden patterns

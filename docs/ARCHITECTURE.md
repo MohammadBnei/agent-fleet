@@ -457,7 +457,9 @@ permission tiers instead of a second, fleet-specific gate on top of them
   concept left to cap.
 - **No cost cap.** Claude Code authenticates via `CLAUDE_CODE_OAUTH_TOKEN`
   (subscription), not a metered API key, so `total_cost_usd` in SDK
-  results is notional, not a real charge.
+  results is notional, not a real charge. Non-Claude models are the exception:
+  they go through llm-gateway on a budget-bounded key
+  ([`adr/0088`](adr/0088-fleet-sessions-on-non-claude-models-through-llm-gateway.md)).
 - Every SDK message (not just the final result) is logged
   (`worker/src/session.ts`'s `logSdkMessage`), and every assistant text
   block is relayed into the transcript (`sidecar.pushMessage`) — added
