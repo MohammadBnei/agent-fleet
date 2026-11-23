@@ -26,7 +26,9 @@ metadata: { name: alert-responder }
 spec:
   extends: workspace-base
   audience: { group: platform-admins }
-  invokers: [bridge]
+  # Off (owner 2026-11-23): no invoker, so no alert starts a run; clients/bridge.yaml says why. Restore
+  # `invokers: [bridge]` and the bridge listing together to turn it back on.
+  invokers: []
   credentials:
     vault: alert-responder
     services:
