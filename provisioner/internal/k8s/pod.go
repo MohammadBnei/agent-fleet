@@ -386,12 +386,15 @@ func withGitURLRewrite(env []corev1.EnvVar, rewrite, forgeHost, sessionID string
 func (c *Client) forgeHosts() vault.Hosts { return cmp.Or(c.ForgeHosts, vault.GitHub) }
 
 // repoNoProxy is what a repo pod reaches directly (docs/adr/0075 §7, spike
-// PR4a): the cluster, the LAN and the split-horizon names. The vault refuses
-// private ranges, so these would fail through it. The apex bnei.dev too:
-// Go's matcher reads ".bnei.dev" as subdomains only. Hostnames as well as CIDRs:
-// bun and python ignore CIDR entries. The CIDRs are the live cluster's
-// (kubespray: services 10.233.0.0/18, pods 10.233.64.0/18).
-var repoNoProxy = []string{".cluster.local", ".svc", ".bnei.lan", ".bnei.dev", "bnei.dev", "10.233.0.0/18", "10.233.64.0/18", "192.168.1.0/24"}
+// PR4a): the cluster, the LAN and the .bnei.lan names. The vault refuses
+// private ranges, so these would fail through it. Not .bnei.dev: git.bnei.dev
+// is the forge, which must reach the sidecar's router to get its credential
+// from the vault (open point m3; infra-bootstrap pins git.bnei.dev to its public
+// address in the vault pod). The router tunnels every other *.bnei.dev host
+// direct, so their split-horizon LAN addresses still work. Hostnames as well
+// as CIDRs: bun and python ignore CIDR entries. The CIDRs are the live
+// cluster's (services 10.233.0.0/18, pods 10.233.64.0/18).
+var repoNoProxy = []string{".cluster.local", ".svc", ".bnei.lan", "10.233.0.0/18", "10.233.64.0/18", "192.168.1.0/24"}
 
 // repoWorkerEnv is definitionWorkerEnv for a repo pod (docs/adr/0075 §7).
 // Its HTTPS_PROXY is the sidecar's egress router, which holds the vault

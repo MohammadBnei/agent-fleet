@@ -154,7 +154,7 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `api.anthropic.com:443` to the model token; every other host passes through. Egress stays
   open, and the worker's `HTTPS_PROXY` is the sidecar's egress router (`127.0.0.1:9093`): only
   those three hosts go to the vault, with the token the sidecar alone holds; the rest goes
-  direct (so h2/gRPC work). `NO_PROXY` covers the cluster, the LAN and `.bnei.dev`, and the CA vars name
+  direct (so h2/gRPC work). `NO_PROXY` covers the cluster, the LAN and `.bnei.lan` (not `.bnei.dev`: `git.bnei.dev` must reach the vault), and the CA vars name
   `bundle.pem` (system roots + vault root). Same 12h cap, per-warm token, revoke paths and
   local-only clone as a definition pod; commits as `FLEET_GIT_AUTHOR_*` (`ukubi`). The
   provisioner refreshes owner vaults on its own 5-min tick. Golden test pins the Job.

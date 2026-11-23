@@ -119,8 +119,8 @@ tea pr edit <n> --description-file body.md
 - `tea pr edit` on your own PR (title, body) is the one write you make with
   `tea`. Never approve or merge with it: an approval from the fleet's account
   does not count, the reviewer agent's is the only one that does.
-- Until the vault serves `git.bnei.dev` (build plan P4.1), the push and `tea`
-  both fail authentication. Say so in your result rather than retrying.
+- The vault adds the fleet's Forgejo credential on the wire. If the push or
+  `tea` still fails authentication, say so in your result rather than retrying.
 
 GitHub repos keep `gh`, as before.
 

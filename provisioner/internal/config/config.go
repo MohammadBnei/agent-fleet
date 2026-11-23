@@ -191,20 +191,16 @@ type Config struct {
 	// on any host but github.com (the App's hosts are fixed) or FORGE=forgejo
 	// on github.com.
 	//
-	// Open point m3, read from infra-bootstrap on 2026-11-21, not tested from
-	// a pod: in-cluster DNS (CoreDNS -> Talos host DNS -> Pi-hole
-	// 192.168.1.55, split horizon) answers git.bnei.dev with 192.168.1.214,
-	// the forgejo CT, which terminates TLS with a publicly trusted Let's
-	// Encrypt certificate (lego, DNS-01; infra-bootstrap ADR-0078 Decision 10),
-	// so the system roots suffice and no CA is configured here. Only the
-	// provisioner's own direct calls (API, its git) are known to work. A pod's
-	// credentialed request is not: a repo pod's NO_PROXY holds .bnei.dev and
-	// 192.168.1.0/24 (k8s repoNoProxy), so git.bnei.dev bypasses the sidecar
-	// and the owner vault and goes bare, and a definition pod's request goes
-	// through Agent Vault, whose egress refuses private ranges (ADR-0065), so
-	// 192.168.1.214 is refused. Until git.bnei.dev leaves repo pods' NO_PROXY
-	// and Agent Vault allows 192.168.1.214:443 (or resolves git.bnei.dev
-	// publicly), the vault wiring for it is unreachable (build plan P4.x).
+	// Open point m3, closed 2026-11-23: in-cluster DNS (split horizon)
+	// answers git.bnei.dev with 192.168.1.214, the forgejo CT, which Agent
+	// Vault's egress refuses (private ranges, ADR-0065: "netguard: connection
+	// to 192.168.1.214 blocked"). infra-bootstrap pins git.bnei.dev to its
+	// public Cloudflare address in the vault pod's /etc/hosts, and repo pods no
+	// longer list .bnei.dev in NO_PROXY (k8s repoNoProxy), so a push goes
+	// through the sidecar's router to the owner vault, which injects the
+	// Forgejo token. The CT's certificate is publicly trusted Let's Encrypt
+	// (ADR-0078 Decision 10), so no CA is configured here. The provisioner's
+	// own direct calls (API, its git) still take the LAN address.
 	ForgeURL string
 	// ForgejoSecretsDir holds the Forgejo bots' tokens as files
 	// (FORGEJO_SECRETS_DIR; internal/forgejo names them), the ADR-0086 §6 way:
