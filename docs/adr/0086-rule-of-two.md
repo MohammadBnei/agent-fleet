@@ -6,6 +6,9 @@
   probation for §5's protected paths, the Forgejo bot users
   ([ADR-0075](0075-github-app-identity-and-vault-credentials.md)) and the CI/CD split as a precondition; see the
   amendment, a decision record whose mechanisms are open items.
+- **Amendment 2026-11-23 (Proposed, waiting for the owner):** write cards answered in the game through core's card
+  frame, a per-verb deadline set at filing, refusal and expiry at it, never an approval on expiry, and the answering
+  surface recorded; amends §4 and ADR-0082 §5, §7 (see the amendment).
 - **Would amend:**
   - [ADR-0082](0082-decision-cards.md):
     - §1: an alert wakes a first-responder definition (§3);
@@ -223,6 +226,7 @@ interface and one deck stay.
   - Each carries a canonical `payload` and its `payload_hash` (sha256 of verb and payload). Core checks the hash
     again when the owner answers; a payload that moved is stale and the card stays open.
   - A surface never answers one in place, even if reversible "yes": it goes through the confirm page.
+    *(Proposed amendment 2026-11-23: a surface answers one only through core's card frame or the confirm page; see E1.)*
   - `catalogue` runs `remediations.Service.Select` for the writer's definition (the schema, denylist and rate limits
     again, the executor's checks at pull). `open_pr` is the provisioner's `OpenPullRequest`: it refuses a branch that
     moved past the approved commit, and core files and runs it only for a `BC` writer.
@@ -252,6 +256,8 @@ interface and one deck stay.
   running; a moved target makes the card stale (ADR-0082 §6).
 - **The game** stays an ADR-0082 §7 surface for cards: list, watch and answer, with only reversible "yes" answered in
   place. Steer stays in the console, behind a link.
+  *(Proposed amendment 2026-11-23: card verbs are answered in the game through core's card frame, before their
+  deadline; see E1 to E5.)*
   *(Amended 2026-11-17, owner: start and stop for characters move to `AgentService`, owner-only; see [ADR-0084](0084-long-lived-agents.md) amendment 2026-11-17.)*
 - **Load.**
   - ADR-0082 §8's daily card budget is split per trigger tier, so cards filed for untrusted triggers cannot spend the
@@ -461,3 +467,186 @@ Each holds whatever mechanism implements it, and each can be checked.
 - Owner-only gating on Forgejo: the path globs for the secrets, vault, egress, RBAC and enforcement files, the
   field-level check for `definitions/*.yaml` (`trust`, `invokers`, `subscribes`) and
   `definitions/clients/*.yaml` (`actors.allow`, `definitions`), and the merge-time check that refuses them (P2.2, P5).
+
+## Amendment 2026-11-23 (Proposed): write cards answered in the game, and a real countdown
+
+**Status: Proposed, waiting for the owner's approval.** It changes the fleet's trust rules, so nothing here is built
+or holds until the owner accepts it. The text above stands until then, and afterwards wherever this does not change it.
+
+Owner decisions of 2026-11-23 (mountain plan/29 §6 and §7, "Owner decisions on §7's pending items", items 2 and 3).
+The ukubi game shows an alert as a monster fight, and a write move in the fight pauses on its card with a countdown
+(plan/29 §6.2, §6.8). Two rules stand in the way today:
+- §4: "A surface never answers one in place, even if reversible 'yes': it goes through the confirm page." ADR-0082
+  slice 6: "The game's in-place answering is a later ukubi-game PR."
+- ADR-0082 §5: "An answer is a message. Whenever it comes, core appends it." So a countdown in the game cannot mean
+  "nothing writes": an answer after it still runs.
+
+The owner's decisions: a write card is answered in the game, not only on the confirm page; when the card's countdown
+ends the card is withdrawn, so a late answer cannot run; any admin may answer (`AnswersCards()`, `platform-admins`).
+The friends who join a fight are admins, never public guests.
+
+### What the confirm page guarantees today
+
+The confirm page (`core/internal/confirm`, ADR-0082 §7) exists because a script injected into an admin origin can
+click whatever it draws. It guarantees four things:
+- **G1. Core renders the stored card.** The option, its effect and its fields come from the row, Go-rendered by core,
+  never from the surface's own code.
+- **G2. Only a human on core's origin submits.** The answer is a signed same-origin POST on core's origin, top level
+  only (`frame-ancestors 'none'`). A script on the game origin can neither read the page nor submit it.
+- **G3. A recent sign-in.** It needs a sign-in under 10 minutes old (`core/internal/auth/session.go:83`), else it
+  sends the admin to log in again (`reauth=1`).
+- **G4. Exactly the bound effect.** The answer names the option and the card version, and core checks the payload
+  hash again (§4, ADR-0082 §6).
+
+Answering a write card from the game's own script through `AnswerDecision` would keep G4 and lose G1 to G3: an injected
+script could answer a write card itself. That is the reason the rule above exists, and it is not given up.
+
+### Decisions
+
+- **E1. The game answers a write card through core's card frame.** A new core path, `/decisions/card?id&v`, renders
+  one card with the confirm page's own renderer and answers on the same signed same-origin POST.
+  - It is the only response core lets be framed, and only by `FLEET_ADMIN_ORIGINS` (`frame-ancestors` names them
+    exactly; every other response keeps `frame-ancestors 'none'`). Islands and `embed.origins` never frame it.
+  - The game's owner page embeds it in the dock (a full-width sheet on the phone). The game draws the fight around it;
+    the card itself, its buttons and its answer are core's. G1, G2 and G4 hold: the game's script cannot read the
+    frame, change what it shows or submit it, since the frame is cross-origin.
+  - The frame sends nothing to its parent. The game learns the outcome from `WatchDecisions`, as it learns every card
+    change today, and plays the strike then.
+  - It applies to the card verbs core files (`catalogue`, `open_pr`, `open_session`) and to any other card option that
+    is not reversible "yes". A reversible "yes" option on an agent's card is still answered in place, as ADR-0082 §7
+    allows. Answering a card verb through the game's script stays refused with `agent.decision_confirm_required`,
+    whose URL now names the frame path as well as the confirm page.
+  - The confirm page stays, unchanged, for the console's links and for any admin who wants it top level.
+- **E2. What the frame shows before a write answer.** All of it comes from the stored card:
+  - the verb and its typed fields: the catalogue action and its parameters, the target's object ids, for `open_pr`
+    the repo, the approved commit and the diff link, for `open_session` the letters it starts with (`BC`) and that it
+    is supervised;
+  - each option's reversibility (`yes`, `partial`, `no`) and the effect in words from core's fixed template ("restart
+    Deployment `x` in namespace `y`");
+  - the writer (the responder definition and its set, `A·B`), the agent's text labelled "agent claim", and the short
+    payload hash;
+  - the countdown, counted down from the card's `expires_at` as core sent it (E4), never from a timer the game sets;
+  - an irreversible option takes a second click, as in the console.
+- **E3. A recent sign-in, sized for a fight.** The frame answers only under a sign-in under 30 minutes old (default,
+  owner may change), checked from the session's `auth_time` as the confirm page does. When the fight starts, the game
+  sends the admin through a top-level login with `reauth=1` if the sign-in is older, so no countdown is spent on a
+  login. The confirm page keeps its 10 minutes. A frame past the window shows "sign in again" and answers nothing.
+- **E4. Every card verb core files has a deadline, set when it is filed.** Core writes `expires_at` from the verb,
+  not from `CardTTL` (`core/internal/decisions/card.go:65`, 7 days). Defaults, owner may change:
+
+  | Verb | Deadline | Why |
+  |---|---|---|
+  | `catalogue` (transient, reversible `yes` or `partial`) | 10 min | it acts on the system as it is now; the responder's cooldown is 10 min (§3), so the next run on a group that still fires files a fresh card with fresh findings |
+  | `open_pr` (lasting, undone by a revert PR) | 24 h | a change through git waits for the owner; core still refuses a branch or PR that moved |
+  | `open_session` | 24 h | it starts a supervised session; nothing in the world moves meanwhile |
+  | `executor_step` (refused today) | 10 min | when built, the same as `catalogue`, since a playbook step acts on the system now |
+
+  - A card holding an irreversible option never gets a longer deadline than the table gives its verb.
+  - Agent-drafted cards (`handoff`, `close_threads`) and core's other cards (budget, unmerged close) keep `CardTTL`.
+    This amendment does not shorten them.
+  - Nothing extends a deadline. A card that expires is gone; a new card is a new decision.
+- **E5. At the deadline the card is withdrawn, and a late answer cannot run.**
+  - The answer is recorded only if it lands before `expires_at`, by the database's clock, in the same statement that
+    records it: the update in `decisions.go` (the `state = 'open'` update) also requires `expires_at > now()`, and core
+    runs the effect only when that update changed the row. Today the check is on the record read before the answer,
+    in Go time (`answer.go:109`), so an answer racing the deadline could still be recorded; that gap closes.
+  - Past it, every answer path (the frame, the confirm page, the console, `AnswerDecision`) is refused with
+    `agent.decision_expired` and does nothing. The frame shows "This card expired at <time>. Nothing ran."
+  - `ExpireCards` (`card.go:119`) turns it `expired`, which `WatchDecisions` sends at once. `expired` is ADR-0082 §7's
+    "closes as no action", and it is what the owner calls withdrawn; the `withdrawn` state keeps its meaning (the
+    session archived, or the agent withdrew). It runs today on core's 60 s session tick (`core/cmd/core/run.go:200`);
+    it moves to its own 15 s tick (default), so a game showing 0 s sees the card leave within that. The refusal does
+    not wait on the sweep.
+  - An answer recorded before the deadline runs its effect even if the effect finishes after it. The decision is the
+    answer's time, not the effect's.
+- **E6. Expiry never approves.** No option runs on expiry, the recommended one included. There is no default answer,
+  no "approve if nobody objects" and no auto-approve on any surface. What happens on expiry is what happens if the
+  owner says nothing: nothing writes (ADR-0082 §7, and plan/29 §6.2: "the mob gains ground on screen only, never in
+  production").
+- **E7. What the agent sees.** The responder that asked for the card is a single-shot run that has ended (§3), so no
+  session waits on it.
+  - On expiry core appends a note to the card's thread from a fixed template: "card c expired at <time>, no action".
+    This is the same path as an effect that fails after the answer (§4).
+  - `list_responder_cards` and `ListDecisions` show the card as `expired`, with its `expires_at`. A character (ops-lead
+    in a fight) reads that and proposes again only through a new responder run or its own card path; it never re-files
+    a card verb (core files them alone).
+- **E8. `DECISION_WAIT` is not the countdown.** It stays what ADR-0082 §5 says: how long an asking session waits before
+  it carries on. It applies to a session's own question, permission and plan decisions, and their answers still arrive
+  as messages whenever they come. A card verb has no asking session and no `DECISION_WAIT`; its countdown is `expires_at`
+  (E4). ADR-0082 §5's "An answer is a message. Whenever it comes" now excludes cards with a deadline, which are refused
+  after it.
+- **E9. Who answered, and from where, is recorded.** Each answer stores `answered_by` (the admin's login, as today),
+  plus, in a migration:
+  - `answered_via`: `console`, `confirm` or `frame:<admin origin>`;
+  - `auth_time`: the sign-in's time, which E3 checked.
+  The console's card history, the card's thread note ("owner chose option k of card c", ADR-0082 §6) and the fight's
+  transcript show the login and the surface. An expired card records no answerer: `answered_by` stays empty and the
+  state is `expired`.
+- **E10. Any admin answers.** The frame and the confirm page accept `AnswersCards()`: a `platform-admins` member in the
+  console or on an admin origin. The game server's client bearer, an island and a guest are refused, as today. The
+  friends in a fight are admins, so they answer like the owner; each answer carries its own login (E9).
+
+### What stays
+
+- **Guests never reach the fleet.** A public guest never sees the frame, a card or a fight's transcript (plan/29 §7
+  decision 3).
+- **Card verbs are filed by core alone.** The sidecar's `draft_card` still offers `handoff` and `close_threads` only.
+  The responder still asks through its typed output (§3), and the alert-responder remains the scout: nothing here
+  changes who files cards or what a responder may hold (`A·B`, no C method).
+- **The Rule of Two holds.** An answer is a T0 choice of one bound effect (§1 "supervised"). `open_session` still
+  starts at `BC`, supervised, in `default` permission mode. No session's set widens.
+- **Steer stays in the console.** Stop, start and close of characters are as ADR-0084 A4 has them. The fight's
+  "redirect" is a message, not a card answer, and its path is not decided here.
+- **Re-checks stay.** Core checks the payload hash and the target when the answer is recorded and again before running
+  (§4); a moved target makes the card stale.
+- **No new surface call.** The frame is a core-served page, not an `AgentService` method; `surfaceCalls` is unchanged.
+
+### Would amend
+
+- §4 of this ADR: "A surface never answers one in place … it goes through the confirm page" reads: a surface answers one
+  only through core's card frame (E1) or the confirm page. "The game stays an ADR-0082 §7 surface … with only reversible
+  'yes' answered in place" gains: and card verbs through the frame.
+- [ADR-0082](0082-decision-cards.md):
+  - §5, "An answer is a message. Whenever it comes": not for a card with a deadline (E5, E8);
+  - §5's table: `expires_at` is set per verb for core's card verbs (E4); the answer fields gain `answered_via` and
+    `auth_time` (E9);
+  - §7: core's card frame is the one response an admin origin may frame (E1), with its own sign-in window (E3);
+  - slice 6's "The game's in-place answering is a later ukubi-game PR": it is the frame, embedded by that PR.
+- `CLAUDE.md`'s auth row and ADR-0082's `frame-ancestors 'none'` everywhere: one path is framable by the admin origins.
+
+### Consequences
+
+- The game can show a write card in the fight and answer it there, with the same four guarantees as the confirm page,
+  G3's window widened from 10 to 30 minutes.
+- The countdown is real: what the game shows is `expires_at`, and core refuses an answer after it.
+- An owner who is away misses transient cards. That is intended: they expire, nothing writes, and the next responder
+  run files a fresh one while the alert still fires. Lasting cards wait a day.
+- One response is framable. A script on an admin origin can still lay out the page so the admin clicks the frame by
+  mistake (clickjacking); it cannot click, read or change it. The second click for irreversible options and the typed
+  effect text are the checks left.
+- The work it implies:
+  - **core:** per-verb `expires_at` at filing; the deadline in the answer's update and the effect only on a changed
+    row; `ExpireCards` on its own 15 s tick, appending the thread note; the `/decisions/card` frame in `core/internal/confirm`,
+    its `frame-ancestors` for `FLEET_ADMIN_ORIGINS`, its 30-minute sign-in check; `agent.decision_confirm_required`
+    naming the frame URL; the migration for `answered_via` and `auth_time`; tests for a racing answer, a late answer
+    on every path, a frame from a non-admin origin, and the frame's header.
+  - **ukubi-game (a later PR):** the frame in the dock, the countdown from `expires_at`, the re-sign-in when a fight
+    starts, the strike on `WatchDecisions`' change, and no answer of a card verb from its own script.
+  - **console:** `answered_via` in the card history.
+
+### Open questions
+
+- **Owner away versus a short deadline.** plan/29 §6.6 says "with the owner away … every write card waits", and §6.2
+  starts the countdown at 60 s. A deadline set when the card is filed cannot be both. E4 picks 10 min for transient
+  cards and lets the next responder run re-file. The alternative is a narrowing call: when an admin opens a card in a
+  fight, core shortens its `expires_at` to 60 s (never lengthens it). It is safe (shortening runs nothing) but is a
+  new surface call. Owner to choose.
+- **The sign-in window.** 30 minutes (E3) versus the confirm page's 10. A longer fight needs a re-sign-in mid-fight, or
+  a longer window.
+- **The frame versus a game-drawn button.** plan/29 §6.8 has "approve (a heavy strike lands the change)". Under E1 the
+  click is on core's frame, not on the game's sword. Answering through the game's own script would make the strike
+  the answer, but gives up G1 to G3 for every admin origin. A per-answer passkey (WebAuthn, the payload hash as the
+  challenge) would keep a human in the loop with a game-drawn button; it needs passkeys in authentik first.
+- **Permission and plan decisions.** E8 leaves their late answers running, as the owner's decision names write cards
+  only. Under `auto` (ADR-0061) few reach a human; if the owner wants a countdown on them too, it is another amendment
+  of ADR-0082 §5.

@@ -4,6 +4,9 @@
   Amended by [ADR-0086](0086-rule-of-two.md) (2026-11-21, D3, D7): on Forgejo, `ukubi-review`'s approval is the only
   agent approval that counts, its token stays with the provisioner, and agents merge after a fleet review on §5's
   paths too, under probation once its controls are live (§9, §11).
+  *Proposed amendment 2026-11-23 in [ADR-0086](0086-rule-of-two.md) (waiting for the owner): core's card verbs carry
+  a per-verb deadline and are refused after it, so §5's "whenever it comes" no longer holds for them; the game answers
+  them through core's card frame, the one response an admin origin may frame (§5, §7).*
 - **Built:** rollout slice 1 in `core/internal/dispatch` (`gate`, `addresses`, `Render`, `oneLine`): the address-only
   wake, the bot's own events dropped, and an unaddressed GitHub event on a subject with no open thread acked and dropped
   (no proposal; alerts and hand-offs keep theirs). Slice 2's first PR:
@@ -57,7 +60,8 @@
   `core/internal/confirm` serves `/decisions/confirm` behind the gate: core renders the stored option, needs a sign-in
   under 10 minutes old (login `reauth=1`: `prompt=login`, `max_age=0`, the ID token's `auth_time` in the cookie's
   `a`), and answers on a signed same-origin POST through `agentsvc.ConfirmCard`, then returns to an admin origin.
-  The game's in-place answering is a later ukubi-game PR.
+  The game's in-place answering is a later ukubi-game PR. *(Proposed amendment 2026-11-23, ADR-0086 E1: for write
+  cards, that PR embeds core's card frame.)*
 - **Built (slice 7, PR A):** every kind is a card, §5's note: `decisions.CardView` is a card's own payload or the
   view core builds for a question, permission or plan (`Card.detail`, field 8, holds the full request), on every
   `Decision.card`. `AnswerDecision` maps a card-answering principal's `option_id` or own words on another kind onto
@@ -159,7 +163,8 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      gets "pending, decision <id>" and carries on with what does not need the answer, or ends its turn. This is the
      question pattern of ADR-0050 and ADR-0058, made general. A parked session holds no pod.
    - **An answer is a message.** Whenever it comes, core appends it to the session (warm then append), which
-     wakes a parked session. A question's answer is its text or choice. A plan approval moves the session out of
+     wakes a parked session. *(Proposed amendment 2026-11-23, ADR-0086 E5 and E8: not for a card with a deadline, which
+     refuses an answer after it; `DECISION_WAIT` is not that deadline.)* A question's answer is its text or choice. A plan approval moves the session out of
      plan mode. A permission approval records a one-time grant bound to the session and the exact tool input:
      the agent retries, and the gate lets that one call through, once. A denial arrives as a message too.
    - **Every kind is a card** (slice 7). Core builds a card view over a question, permission or plan, so one
@@ -208,6 +213,9 @@ write. It was heavy, automatic by default, and still rested on matching bot even
      2 minutes and fails closed without it, and the session keeps `auth_time`, never the time of the callback.
      Afterwards it returns to a URL on one of the admin origins, exactly.
    - Creating a card sends a notification. An expired card closes as "no action": ignoring never approves.
+   - *(Proposed amendment 2026-11-23, ADR-0086 E1 to E3: an admin origin may frame core's `/decisions/card`, which
+     renders and answers like the confirm page under a sign-in under 30 minutes old; every other response keeps
+     `frame-ancestors 'none'`.)*
 8. **Load.**
    - At most one open card per subject; later inputs fold into it (`FoldEvent`).
    - A daily card budget per definition, with a digest card for the overflow. Cards count toward the thread's wake cap
