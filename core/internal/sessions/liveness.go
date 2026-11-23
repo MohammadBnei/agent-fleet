@@ -84,7 +84,12 @@ func DeriveLiveState(t *Session, now time.Time, turnStall time.Duration) LiveSta
 	// reported the session unblocked while the others were still waiting,
 	// and it sat there stalled with nobody notified. Counting the unanswered
 	// ones cannot go wrong that way (docs/adr/0048).
-	if t.PendingDecisions > 0 {
+	//
+	// An open permission whose turn has ended (an interrupt, a stop or a
+	// result after it) is not counted: it stays open and answerable, but the
+	// turn that asked is gone, so it no longer says anything about what the
+	// session is doing now (EndedDecisions).
+	if t.PendingDecisions-t.EndedDecisions > 0 {
 		switch state {
 		case LiveStateIdle, LiveStateDone, LiveStateStalled:
 			return LiveStateBlocked
@@ -111,7 +116,10 @@ func deriveTurnState(t *Session, now time.Time, turnStall time.Duration) LiveSta
 		lastFrom = *t.LastEntryFrom
 	}
 
-	if lastType == "result" {
+	// An interrupt ends the turn at once; the worker's own result may never
+	// come when nothing was running, and the session then read "working" for
+	// good.
+	if lastType == "result" || lastType == "interrupt" {
 		// Finished. Whether that counts as `done` depends only on whether
 		// a human has opened it since it went quiet.
 		if t.SeenAt == nil || (t.LastActiveAt != nil && t.SeenAt.Before(*t.LastActiveAt)) {

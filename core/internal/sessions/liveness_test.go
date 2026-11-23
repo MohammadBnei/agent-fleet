@@ -41,6 +41,25 @@ func TestDeriveLiveState(t *testing.T) {
 			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
 			want: LiveStateWorking,
 		},
+		{
+			// The agent heard "pending", ended its turn and the request is
+			// still open: the turn that asked is gone, so the session is not
+			// blocked on it (it stays open and answerable).
+			name: "an open permission whose turn ended does not block",
+			task: Session{PodPhase: live, PendingDecisions: 1, EndedDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
+			want: LiveStateDone,
+		},
+		{
+			name: "a question still blocks after the turn ended",
+			task: Session{PodPhase: live, PendingDecisions: 2, EndedDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
+			want: LiveStateBlocked,
+		},
+		{
+			// A soft interrupt when nothing was running leaves no result.
+			name: "an interrupt ends the turn",
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("interrupt"), LastEntryFrom: ptr("human")},
+			want: LiveStateDone,
+		},
 		// An older worker's unstamped permission or plan really blocks its
 		// pod, so it reads Blocked whatever the last entry is.
 		{

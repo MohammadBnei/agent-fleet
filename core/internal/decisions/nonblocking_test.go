@@ -242,6 +242,41 @@ func TestInterrupted(t *testing.T) {
 	}
 }
 
+// A stamped permission's turn also ends with its result (the agent heard
+// "pending" and ended its turn): it reads interrupted and no longer counts
+// toward the session's blocked state, but stays open. A question or a plan
+// ends its turn on purpose, so a result changes neither.
+func TestTurnEnded_ResultEndsAPermissionNotAQuestion(t *testing.T) {
+	f := setup(t)
+	s := f.session(t)
+	perm := f.ask(t, s, "permission_request", `{"tool":"Bash","input":{"command":"curl x"},"nb":1}`)
+	question := f.ask(t, s, "question", `{"questions":[]}`)
+	plan := f.ask(t, s, "permission_request", `{"tool":"ExitPlanMode","input":{"plan":"p"},"nb":1}`)
+	read := func(seq int64) decisions.Record {
+		t.Helper()
+		r, err := f.store.Request(f.ctx, s, seq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	sess, _ := f.sessions.Get(f.ctx, s)
+	if sess.PendingDecisions != 3 || sess.EndedDecisions != 0 {
+		t.Fatalf("before the result: pending %d ended %d, want 3 and 0", sess.PendingDecisions, sess.EndedDecisions)
+	}
+	f.ask(t, s, "result", `{}`)
+	if r := read(perm); !r.Interrupted || r.State != decisions.Open {
+		t.Errorf("permission after a result: interrupted %v state %s, want true and open", r.Interrupted, r.State)
+	}
+	if read(question).Interrupted || read(plan).Interrupted {
+		t.Error("a result ended a question or a plan")
+	}
+	sess, _ = f.sessions.Get(f.ctx, s)
+	if sess.PendingDecisions != 3 || sess.EndedDecisions != 1 {
+		t.Errorf("after the result: pending %d ended %d, want 3 and 1", sess.PendingDecisions, sess.EndedDecisions)
+	}
+}
+
 // Withdraw closes an open decision with nothing appended; twice is
 // AlreadyAnswered.
 func TestWithdraw(t *testing.T) {

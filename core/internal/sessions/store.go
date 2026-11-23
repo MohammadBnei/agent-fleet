@@ -103,6 +103,11 @@ type Session struct {
 	// answering one decision marked the session unblocked while others were
 	// still waiting, and it sat stalled with nobody notified.
 	PendingDecisions int `json:"pendingDecisions"`
+	// EndedDecisions is the part of PendingDecisions that no longer says the
+	// session is waiting: open permissions whose turn has ended
+	// (turnEndedSQL). Read time only, nothing is rewritten: the
+	// decision stays open and answerable.
+	EndedDecisions int `json:"-"`
 	// BlockingDecisions is the part of PendingDecisions an older worker
 	// really is blocked on: open permissions and plans without the "nb": 1
 	// stamp (docs/adr/0082 §5), whose canUseTool promise waits with no time
@@ -206,6 +211,14 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // docs/adr/0048 made description a vestigial label that new sessions leave
 // empty, so "nobody writes NULL" is a convention, and one row is enough to blank
 // the console. Title stays a pointer; it is optional on the wire too.
+// turnEndedSQL is decisions.TurnEndedSQL for the decisions row d (the same
+// rule, written out here because decisions imports transcript, whose tests
+// import this package): an interrupt or abort after the request, or a result
+// after a permission's.
+const turnEndedSQL = `EXISTS (SELECT 1 FROM transcript t
+	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
+	                                AND (t.type IN ('interrupt', 'abort') OR (d.kind = 'permission' AND d.payload->'nb' = '1'::jsonb AND t.type = 'result')))`
+
 const selectCols = `
 	s.id, s.repo, s.title, COALESCE(s.description, ''),
 	s.pod_phase, s.pod_message, s.last_error, s.lease_id,
@@ -222,7 +235,10 @@ const selectCols = `
 	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('question', 'permission', 'plan')) AS park_decisions,
 	(SELECT count(*) FROM decisions d
 	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind IN ('permission', 'plan')
-	     AND d.payload -> 'nb' IS DISTINCT FROM '1'::jsonb) AS blocking_decisions`
+	     AND d.payload -> 'nb' IS DISTINCT FROM '1'::jsonb) AS blocking_decisions,
+	(SELECT count(*) FROM decisions d
+	   WHERE d.session_id = s.id AND d.state = 'open' AND d.kind = 'permission'
+	     AND d.payload -> 'nb' = '1'::jsonb AND ` + turnEndedSQL + `) AS ended_decisions`
 
 func scanSession(row pgx.Row) (*Session, error) {
 	var s Session
@@ -237,7 +253,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.DefinitionName, &s.DefinitionSHA,
 		&s.Owner, &s.Visibility, &s.Invoker, &s.Lifecycle, &s.CreatedAt, &s.TrustSet,
 		&s.StartedBy, &s.StoppedAt,
-		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions,
+		&s.PendingDecisions, &s.ParkDecisions, &s.BlockingDecisions, &s.EndedDecisions,
 	)
 	if err != nil {
 		return nil, err

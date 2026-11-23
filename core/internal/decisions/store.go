@@ -65,14 +65,21 @@ type Store struct{ pool *pgxpool.Pool }
 
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
+// TurnEndedSQL is true for a decision row d whose asking turn has ended: an
+// interrupt or abort came after the request, or, for a permission, the turn's
+// result did (the agent heard "pending" and ended its turn on it). Derived at
+// read time; no state is written. A question or a plan ends its turn on
+// purpose, so a result does not end those; a card is never read this way.
+const TurnEndedSQL = `EXISTS (SELECT 1 FROM transcript t
+	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
+	                                AND (t.type IN ('interrupt', 'abort') OR (d.kind = 'permission' AND d.payload->'nb' = '1'::jsonb AND t.type = 'result')))`
+
 const cols = `
 	d.id::text, d.kind, d.session_id::text, d.request_seq, d.state, d.ask,
 	COALESCE(d.payload::text, ''), COALESCE(d.tool, ''), COALESCE(d.answer::text, ''),
 	COALESCE(d.answered_by, ''), d.answered_at, d.version, d.created_at, d.grantable,
 	COALESCE(d.payload -> 'nb' = '1'::jsonb, false),
-	d.state = 'open' AND d.kind <> 'card' AND EXISTS (SELECT 1 FROM transcript t
-	                              WHERE t.session_id = d.session_id AND t.seq > d.request_seq
-	                                AND t.type IN ('interrupt', 'abort')),
+	d.state = 'open' AND d.kind <> 'card' AND ` + TurnEndedSQL + `,
 	COALESCE(substring(COALESCE(d.subject, s.thread_key) from '^forge/([^/]+/[^/]+)'), ''),
 	COALESCE(d.subject, ''), d.expires_at,
 	s.owner, s.visibility, s.definition_name, s.archived_at IS NOT NULL,
