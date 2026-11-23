@@ -185,8 +185,13 @@ export class SpanRecorder {
   }
 
   /** Closes the turn at its result message and sends its spans. */
-  endTurn(r: TurnResult): void {
+  endTurn(r: TurnResult): {
+    inputTokensDelta?: number;
+    outputTokensDelta?: number;
+  } {
     this.begin();
+    const deltas: { inputTokensDelta?: number; outputTokensDelta?: number } =
+      {};
     const attrs: WireSpan["attrs"] = {
       "gen_ai.operation.name": "invoke_agent",
     };
@@ -219,8 +224,10 @@ export class SpanRecorder {
         this.prev.cost = r.totalCostUsd;
       }
       if (t) {
-        attrs["gen_ai.usage.input_tokens"] = delta(t.input, this.prev.input);
-        attrs["gen_ai.usage.output_tokens"] = delta(t.output, this.prev.output);
+        deltas.inputTokensDelta = delta(t.input, this.prev.input);
+        deltas.outputTokensDelta = delta(t.output, this.prev.output);
+        attrs["gen_ai.usage.input_tokens"] = deltas.inputTokensDelta;
+        attrs["gen_ai.usage.output_tokens"] = deltas.outputTokensDelta;
         attrs["gen_ai.usage.cache_read.input_tokens"] = delta(
           t.cacheRead,
           this.prev.cacheRead,
@@ -239,6 +246,7 @@ export class SpanRecorder {
       }
     }
     this.finish(r.uuid, r.isError ? "error" : "ok", attrs);
+    return deltas;
   }
 
   private finish(
