@@ -24,6 +24,8 @@ hand-offs to wake the writer they @mention.
 single-shot only, `git.mode: none` (no GitHub write), a typed `output.schema` and a `subscribes` naming the alerts it
 answers. The `bridge` client must list it. The dispatcher starts one run per alert group (key `alert:<groupKey>`, 10 min
 cooldown, held firings coalesced), with the trust set `A·B`; core files its output as a remediation row or a card.
+It investigates read-only first: `kubectl_read` (`cluster.read`), `view_logs` (`cluster.logNamespaces`) and
+`query_metrics`, all tagged B. Its workspace is `agent-fleet`, since core never runs a definition on a cluster-access repo.
 A client's own `Invoke` of a responder is refused. An alert reaches the fleet only through a responder
 (`docs/adr/0087`): one no responder subscribes to is acked and files nothing.
 
