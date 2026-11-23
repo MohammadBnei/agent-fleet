@@ -1,3 +1,3 @@
 # Image pin, written by ukubi-ci on every deploy; ArgoCD layers it over the default branch's values.
 images:
-  worker: "4c5745078413@sha256:335fe520adff5b6b0223864605efe9b66aa3a9d0499c033a7fe50c646c78c121"
+  worker: "fa71c8e95b7e@sha256:44f0dd6a86f6ce1c4c35202f57b67b25641d1b7da77a56bd99e7c4e1bf068fd4"
