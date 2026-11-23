@@ -5,11 +5,33 @@ end-to-end (plan → code → tests → docs), driven from a web dashboard, runn
 on `ukubi-cluster`.
 
 This repo is submoduled into
-[`infra-bootstrap`](https://github.com/MohammadBnei/infra-bootstrap) at
+`infra-bootstrap` at
 `agent-fleet/` — that's where the cluster itself (Kubernetes, ArgoCD,
 ingress, secrets backend) is provisioned and documented. This repo holds the
 fleet's own source (`core`, `provisioner`, `sidecar`, `worker`) and deploy
 config (`k8s/`).
+
+The primary forge is Forgejo; GitHub is a push mirror. CI runs as Forgejo
+Actions on the Talos runners (label `k8s-ubuntu-latest`); the workflow files
+still live in `.github/workflows/`. Merges go through the Forgejo API as a
+rebase merge after green CI and a fresh review.
+
+## Quickstart
+
+No Makefile: each component has its own commands, the same ones CI runs
+(`.github/workflows/`). Go (workspace `go.work`), Bun, and `buf` for the protos.
+
+```bash
+bun install --frozen-lockfile && bun run lint   # biome ci, repo root
+(cd core && go test ./...)                      # likewise provisioner, sidecar, executor
+(cd worker && bun install --frozen-lockfile && bun run typecheck && bun run test)
+(cd dashboard && bun install --frozen-lockfile && bun test src && bun run build)
+(cd proto && buf lint)                          # buf generate after editing .proto files
+```
+
+To run the whole fleet against a disposable kind cluster, see
+[`local/kind/README.md`](./local/kind/README.md); to test the dashboard in a
+browser, the `/dashboard-e2e` skill (`.claude/skills/dashboard-e2e/SKILL.md`).
 
 ## Status
 
@@ -53,7 +75,8 @@ session when a trusted human caused them; untrusted machine-initiated work
   `@anthropic-ai/claude-agent-sdk`). Single-shot: runs one streaming-input
   Agent SDK session per pod, resumable in the next pod. Permission prompts
   are reproduced through `canUseTool` and answered by a human in the
-  dashboard. The agent itself commits, pushes and opens a PR via `gh`.
+  dashboard. The agent itself commits and pushes its proposal to the forge as a PR
+  (AGit on Forgejo, see `packs/repo/PACK.md`).
 - `executor/` — Go: the cluster-access shim installed as `kubectl` in a
   cluster-access session; the fleet's only process holding cluster RBAC on
   an agent's behalf
@@ -93,5 +116,5 @@ Only the Application/ApplicationSet registration itself lives in
   manifests live in this repo (`k8s/provisioner/`) and register as a
   standalone Application in `infra-bootstrap`.
 - Per `infra-bootstrap`'s own `CLAUDE.md`, this fleet does **not** manage
-  `infra-bootstrap`'s own cluster ops (kubespray/ansible/pigsty) — that's
+  `infra-bootstrap`'s own cluster ops (Terraform, Talos, Proxmox) — that's
   explicitly blocked until revisited (see `docs/DECISIONS.md`).
