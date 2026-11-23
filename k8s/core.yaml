@@ -146,7 +146,7 @@ env:
   # The release core reports (dashboard, logs). Set by hand: CI no longer
   # commits to main.
   - name: FLEET_VERSION
-    value: "7.44.3"
+    value: "8.0.0"
   - name: CORE_PORT
     value: "8080"
   - name: CORE_GRPC_PORT
