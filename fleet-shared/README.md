@@ -125,3 +125,24 @@ image's baked-in location into `$CLAUDE_CONFIG_DIR/plugins` by
 `enabledPlugins`/`extraKnownMarketplaces` in `settings.json` is what
 actually turns them on, since `SyncFleetShared` overwrites
 `$CLAUDE_CONFIG_DIR/settings.json` from here every dispatch.
+
+## Which pods can load a plugin
+
+- **Repo sessions** read `settingSources: ["user", "project"]`
+  (`worker/src/session.ts`, `settingSources`; `docs/adr/0049`,
+  `docs/adr/0063` §6). The user scope is this directory's `settings.json`
+  (`enabledPlugins`, `extraKnownMarketplaces`) plus the `plugins/` tree
+  `worker/entrypoint.sh` copies from the image, so the baked plugins load in
+  every repo pod. The target repo's own `.claude/settings.json` is also read,
+  so a plugin or marketplace it declares is a candidate to load too. The
+  egress lock of `docs/adr/0065` §5 selects definition pods only; nothing in
+  the code stops a repo pod from reaching a marketplace. Whether a marketplace
+  plugin that is not baked actually installs and loads in a repo pod is OPEN:
+  no test in this repo drives it.
+- **Definition sessions** use `settingSources: ["user"]`
+  (`docs/adr/0067` §4): the baked user-scope plugins load, the target repo's
+  plugins are never read, and a marketplace fetch meets the definition
+  egress lock (`docs/adr/0065` §5, `docs/adr/0063` §6), so a plugin that is
+  not baked cannot be added at run time.
+- Context packs (`packs/`) carry text and skills only; a plugin file in a
+  reviewed pack fails the pack (`core/internal/packs/reviewed.go`).
