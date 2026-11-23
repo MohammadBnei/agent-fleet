@@ -4204,6 +4204,15 @@ describe("gateway route", () => {
     await stop(p);
   }, 10000);
 
+  test("the session started line shows the fleet mode, not the SDK's default", async () => {
+    const p = start("kimi-k2-7-code", "auto");
+    await Bun.sleep(100);
+    const init = systemPayloads().find((x) => x.model !== undefined);
+    expect(queryOptions?.permissionMode).toBe("default");
+    expect(init?.permissionMode).toBe("auto");
+    await stop(p);
+  }, 10000);
+
   test("a claude session in auto is unchanged: SDK mode auto", async () => {
     const p = start("claude-sonnet-5", "auto");
     await Bun.sleep(100);

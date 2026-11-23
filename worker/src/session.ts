@@ -3013,7 +3013,15 @@ export async function runSession(): Promise<SessionResult> {
       }
       await logSdkMessage(
         "agent",
-        msg as { type: string; [key: string]: unknown },
+        // Where the SDK runs in default for the fleet's own auto (the gateway
+        // route, a definition), the init line says the fleet's mode: "default"
+        // there is an internal detail that read as a contradiction.
+        msg.type === "system" &&
+          msg.subtype === "init" &&
+          (spec || gatewayRoute) &&
+          msg.permissionMode === sdkMode(currentMode)
+          ? { ...msg, permissionMode: currentMode }
+          : (msg as { type: string; [key: string]: unknown }),
       );
 
       if (msg.type === "assistant") {
