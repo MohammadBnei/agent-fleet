@@ -1,3 +1,6 @@
+# OFF since 2026-11-23 (owner): no invoker and the bridge client does not list it, so no alert starts a run and
+# alerts reach Discord only. The text below describes the responder when it is on.
+#
 # First responder for cluster alerts (docs/adr/0086 §3, docs/adr/0087). The bridge's dispatcher invokes one
 # single-shot run per Alertmanager alert group; the alert text is untrusted data, so the run holds A·B (it reads, it
 # never acts) and core files whatever it answers: a catalogue selection becomes a remediations row, a card request
@@ -13,7 +16,7 @@
 # agent-fleet, not infra-bootstrap: infra-bootstrap is a cluster-access repo and core never runs a definition
 # session there (dashboard createSession, definitionWarmable); the cluster reads come from cluster.read instead.
 # Not launchable until the vault `alert-responder` exists in Infisical agent-vault /agent-vault with
-# CLAUDE_CODE_OAUTH_TOKEN (the warm says what is missing). The bridge client lists it (clients/bridge.yaml).
+# CLAUDE_CODE_OAUTH_TOKEN (the warm says what is missing). When on, the bridge client lists it (clients/bridge.yaml).
 # Until it launches, an alert reaches only Discord and the bridge log: core files nothing for a run that cannot
 # start, and counts it (agentfleet_responder_start_failed_total, docs/adr/0087).
 #

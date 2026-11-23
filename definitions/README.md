@@ -28,6 +28,8 @@ It investigates read-only first: `kubectl_read` (`cluster.read`), `view_logs` (`
 `query_metrics`, all tagged B. Its workspace is `agent-fleet`, since core never runs a definition on a cluster-access repo.
 A client's own `Invoke` of a responder is refused. An alert reaches the fleet only through a responder
 (`docs/adr/0087`): one no responder subscribes to is acked and files nothing.
+It is off for now (owner, 2026-11-23: too much CPU and memory for an answer that cannot close the issue):
+the bridge client does not list it and its `invokers` is empty, so every alert is acked and reaches Discord only.
 
 ## Characters (`docs/adr/0084`)
 
