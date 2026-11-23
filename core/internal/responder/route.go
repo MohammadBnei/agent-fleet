@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -36,14 +37,23 @@ type Group struct {
 	// responder names no object, and the session title.
 	Namespace string
 	Where     string
+	// Repo and Job are the CI alert's labels (owner/name, and the CI job name): it has no namespace.
+	Repo, Job string
 }
 
-// Title is the alert session's title: "Alert: <alertname> (<namespace>)".
+// Title is the alert session's title: "Alert: <alertname> (<namespace>)", or (<repo> <job>) for a CI alert.
 func (g Group) Title() string {
-	if g.Namespace == "" {
-		return "Alert: " + g.Name
+	t := g.label()
+	if g.Name != "" && g.Name != "alert" {
+		t = "Alert: " + g.Name
 	}
-	return "Alert: " + g.Name + " (" + g.Namespace + ")"
+	switch {
+	case g.Namespace != "":
+		return t + " (" + g.Namespace + ")"
+	case g.Repo != "" || g.Job != "":
+		return t + " (" + strings.TrimSpace(g.Repo+" "+g.Job) + ")"
+	}
+	return t
 }
 
 type alertDoc struct {
@@ -61,14 +71,29 @@ func GroupOf(raw json.RawMessage) (g Group, ok bool) {
 	h := sha256.Sum256([]byte(strings.Join([]string{a.Labels["alertname"], a.Labels["namespace"], a.Labels["service"]}, "\x00")))
 	g = Group{Key: hex.EncodeToString(h[:8]), Name: safeName(a.Labels["alertname"]), Namespace: dnsLabel(a.Labels["namespace"])}
 	var where []string
-	for _, k := range []string{"namespace", "deployment", "pod", "job"} {
+	for _, k := range []string{"namespace", "deployment", "pod"} {
 		if v := dnsLabel(a.Labels[k]); v != "" {
 			where = append(where, k+"/"+v)
+		}
+	}
+	// job is the scrape job on a Prometheus alert (the exporter, not where it fired), so only a namespace-less
+	// alert, the CI rule, names it, with its repo.
+	if g.Namespace == "" {
+		if len(a.Labels["repo"]) <= 253 && repoRe.MatchString(a.Labels["repo"]) {
+			g.Repo = a.Labels["repo"]
+			where = append(where, "repo/"+g.Repo)
+		}
+		if v := dnsLabel(a.Labels["job"]); v != "" {
+			g.Job = v
+			where = append(where, "job/"+v)
 		}
 	}
 	g.Where = strings.Join(where, " ")
 	return g, true
 }
+
+// repoRe is a repo label, owner/name, each a DNS-1123 name (253 bytes at most).
+var repoRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
 // dnsLabel is v when it is a plain DNS-1123 name, else "": a label value reaches an owner's card.
 func dnsLabel(v string) string {
@@ -81,7 +106,7 @@ func dnsLabel(v string) string {
 // safeName is the alertname when it is a plain identifier, else "alert": the name reaches an owner's card, and a
 // label is whatever its writer chose.
 func safeName(s string) string {
-	if s == "" || len(s) > 80 || strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:.- ") != "" {
+	if strings.TrimSpace(s) != s || s == "" || len(s) > 80 || strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:.- ") != "" {
 		return "alert"
 	}
 	return s

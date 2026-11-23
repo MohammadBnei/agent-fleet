@@ -33,8 +33,14 @@ func TestGroupOf(t *testing.T) {
 	if g, _ := GroupOf(alert("firing", "bad name\nwith lines", "", "")); g.Name != "alert" {
 		t.Fatalf("an alertname that is not an identifier must not reach a card: %q", g.Name)
 	}
-	if g, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"Deploy failed: x.build","namespace":"ci","job":"forgejo-actions","pod":"Bad Pod"}}`)); g.Name != "Deploy failed: x.build" || g.Where != "namespace/ci job/forgejo-actions" || g.Title() != "Alert: Deploy failed: x.build (ci)" {
+	if g, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"Deploy pipeline failed on main","repo":"acme/agent-fleet","job":"migration.build","pod":"Bad Pod"}}`)); g.Where != "repo/acme/agent-fleet job/migration.build" || g.Title() != "Alert: Deploy pipeline failed on main (acme/agent-fleet migration.build)" {
 		t.Fatalf("group %+v", g)
+	}
+	if g, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"KubeDown","namespace":"ci","job":"kube-state-metrics"}}`)); g.Where != "namespace/ci" || g.Title() != "Alert: KubeDown (ci)" {
+		t.Fatalf("group %+v", g)
+	}
+	if g, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"  "}}`)); g.Title() != "An alert" {
+		t.Fatalf("title %q", g.Title())
 	}
 	if _, ok := GroupOf(json.RawMessage(`[1]`)); ok {
 		t.Fatal("a non-object is no alert")
