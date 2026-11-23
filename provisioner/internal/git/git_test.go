@@ -17,7 +17,15 @@ import (
 // git repo, no mocking" convention the grpcserver tests use.
 func newOriginRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	return initRepoAt(t, t.TempDir())
+}
+
+// initRepoAt makes dir (and its parents) a repo with one commit.
+func initRepoAt(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{{"init", "-b", "main"}, {"add", "README.md"}, {"commit", "-m", "init"}} {
 		if args[0] == "add" {
 			if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello"), 0o644); err != nil {
@@ -457,5 +465,213 @@ func TestPrefetchWanted_UnseenRepoAgesFromStart(t *testing.T) {
 	m.start = time.Now().Add(-2 * time.Hour)
 	if m.prefetchWanted("r", time.Hour) {
 		t.Fatal("unseen for a whole window: want dropped")
+	}
+}
+
+// forgeMove sets up the GitHub -> Forgejo move: git.example is the configured
+// forge, serving owner/repo from a local origin at <forge>/owner/repo, and
+// https://github.com/ leads nowhere. The url.insteadOf rules live in a
+// throwaway global gitconfig, with the system one and inherited GIT_CONFIG_*
+// env switched off, so neither the host's nor a CI runner's git config can
+// reach the test, and nothing touches the network. The origin is a real
+// directory spelled exactly as the forge URL the warm uses: Linux is
+// case-sensitive, so `Owner/Repo.git` would not find `owner/repo` there. It
+// returns a Manager whose "repo" cache was cloned from that origin with its
+// origin still on github.com, the origin repo, and the cache's path.
+func forgeMove(t *testing.T) (*Manager, string, string) {
+	t.Helper()
+	forge, gone := t.TempDir(), t.TempDir()
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_COUNT", "0")
+	gitConfig(t, "url."+forge+"/.insteadOf", "https://git.example/")
+	gitConfig(t, "url."+gone+"/.insteadOf", "https://github.com/")
+	origin := initRepoAt(t, filepath.Join(forge, "owner", "repo"))
+	m := NewManager(t.TempDir())
+	m.ForgeHost = "git.example"
+	ctx := context.Background()
+	if _, err := m.EnsureRepoCloned(ctx, "repo", origin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.run(ctx, m.repoPath("repo"), "remote", "set-url", "origin", "https://github.com/Owner/Repo.git"); err != nil {
+		t.Fatal(err)
+	}
+	return m, origin, m.repoPath("repo")
+}
+
+// gitConfig adds key=value to forgeMove's throwaway global gitconfig.
+func gitConfig(t *testing.T, key, value string) {
+	t.Helper()
+	cmd := exec.Command("git", "config", "--global", "--add", key, value)
+	cmd.Dir = filepath.Dir(os.Getenv("GIT_CONFIG_GLOBAL")) // no repo around it to discover
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config %s: %v: %s", key, err, out)
+	}
+}
+
+func originURL(t *testing.T, m *Manager, path string) string {
+	t.Helper()
+	out, err := m.run(context.Background(), path, "config", "--get", "remote.origin.url")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// A cache cloned before the forge move is re-pointed in place, never
+// re-cloned (open sessions' --shared clones read its objects), on both paths
+// that carry repos.url: the console's sync and a warm.
+func TestForgeMove_RepointsTheCacheInPlace(t *testing.T) {
+	const forgeURL = "https://git.example/owner/repo" // case and .git differ from the cache's
+	for name, sync := range map[string]func(*Manager) error{
+		"sync": func(m *Manager) error {
+			_, err := m.EnsureRepoCloned(context.Background(), "repo", forgeURL)
+			return err
+		},
+		"warm": func(m *Manager) error { return m.EnsureRepoFetched(context.Background(), "repo", forgeURL) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, origin, path := forgeMove(t)
+			tip := commitIn(t, origin)
+			if err := sync(m); err != nil {
+				t.Fatal(err)
+			}
+			if got := originURL(t, m, path); got != forgeURL {
+				t.Errorf("origin %q, want %q", got, forgeURL)
+			}
+			if got := m.originHead(context.Background(), path); got != tip {
+				t.Errorf("origin/HEAD %s, want the forge's tip %s", got, tip)
+			}
+		})
+	}
+}
+
+// docs/adr/0065 §6: only the host may change, and only onto the configured
+// forge. Another owner or repo, or another host, is a different repo.
+func TestForgeMove_RefusesAnythingButAHostMoveOntoTheForge(t *testing.T) {
+	for name, repoURL := range map[string]string{
+		"owner":     "https://git.example/Other/Repo.git",
+		"repo":      "https://git.example/Owner/Other.git",
+		"not forge": "https://elsewhere.example/Owner/Repo.git",
+		"scheme":    "http://git.example/Owner/Repo.git",
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, _, path := forgeMove(t)
+			if err := m.EnsureRepoFetched(context.Background(), "repo", repoURL); err == nil || !strings.Contains(err.Error(), "does not match repos.url") {
+				t.Errorf("a cache from another repo was accepted: %v", err)
+			}
+			if got := originURL(t, m, path); got != "https://github.com/Owner/Repo.git" {
+				t.Errorf("origin re-pointed to %q", got)
+			}
+		})
+	}
+}
+
+// A forge that lacks the repo leaves the cache's origin as it was: the
+// re-point is undone when its fetch fails, so a guess never strands a cache.
+func TestForgeMove_FailedFetchRestoresTheOrigin(t *testing.T) {
+	m, _, path := forgeMove(t)
+	if _, err := m.run(context.Background(), path, "remote", "set-url", "origin", "https://github.com/Owner/Missing.git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EnsureRepoFetched(context.Background(), "repo", "https://git.example/Owner/Missing.git"); err == nil {
+		t.Fatal("a fetch from a repo the forge lacks succeeded")
+	}
+	if got := originURL(t, m, path); got != "https://github.com/Owner/Missing.git" {
+		t.Errorf("origin left at %q after a failed fetch", got)
+	}
+}
+
+// The prefetch has no repos.url, so it never re-points: a failing origin
+// fetch stays a failure (logged with backoff) until a warm or sync heals it,
+// even when the same owner/repo exists on the forge.
+func TestForgeMove_PrefetchNeverRepoints(t *testing.T) {
+	m, _, path := forgeMove(t)
+	if err := m.PrefetchRepos(context.Background(), time.Hour, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if n := m.prefetchFails["repo"]; n != 1 {
+		t.Errorf("prefetch failures %d, want 1: the github.com origin leads nowhere", n)
+	}
+	if got := originURL(t, m, path); got != "https://github.com/Owner/Repo.git" {
+		t.Errorf("the prefetch re-pointed the cache to %q", got)
+	}
+}
+
+// A re-pointed fetch killed by the caller's deadline still restores the
+// origin: the restore runs on a ctx of its own. The forge's upload-pack
+// sleeps (no CPU) past the deadline.
+func TestForgeMove_ExpiredCtxStillRestoresTheOrigin(t *testing.T) {
+	m, _, path := forgeMove(t)
+	gitConfig(t, "remote.origin.uploadpack", "sleep 2; git-upload-pack")
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	if err := m.EnsureRepoFetched(ctx, "repo", "https://git.example/owner/repo"); err == nil {
+		t.Fatal("a fetch past its deadline succeeded")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the fetch failed before the deadline: the test proves nothing")
+	}
+	if got := originURL(t, m, path); got != "https://github.com/Owner/Repo.git" {
+		t.Errorf("origin left at %q after a fetch past its deadline", got)
+	}
+}
+
+// The console's sync re-points only via forgeMoved: for any other mismatch it
+// fetches the cache's own origin, as before, and leaves the origin alone.
+func TestForgeMove_SyncLeavesOtherMismatchesAlone(t *testing.T) {
+	for name, repoURL := range map[string]string{
+		"owner":     "https://git.example/Other/Repo.git",
+		"repo":      "https://git.example/Owner/Other.git",
+		"not forge": "https://elsewhere.example/Owner/Repo.git",
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, origin, path := forgeMove(t)
+			// github.com serves the cache's own repo here, so its fetch works
+			// (the longest insteadOf wins over forgeMove's github.com rule).
+			gitConfig(t, "url."+origin+".insteadOf", "https://github.com/Owner/Repo.git")
+			tip := commitIn(t, origin)
+			if _, err := m.EnsureRepoCloned(context.Background(), "repo", repoURL); err != nil {
+				t.Fatal(err)
+			}
+			if got := originURL(t, m, path); got != "https://github.com/Owner/Repo.git" {
+				t.Errorf("sync re-pointed the cache to %q", got)
+			}
+			if got := m.originHead(context.Background(), path); got != tip {
+				t.Errorf("origin/HEAD %s, want its own origin's tip %s", got, tip)
+			}
+		})
+	}
+}
+
+func TestForgeMoved(t *testing.T) {
+	const gh = "https://github.com/Owner/Repo.git"
+	for _, c := range []struct {
+		name, forge, origin, repoURL string
+		want                         bool
+	}{
+		{"host move", "git.example", gh, "https://git.example/Owner/Repo.git", true},
+		{"case and .git", "git.example", "https://GitHub.com/owner/repo", "https://Git.Example/Owner/Repo.git", true},
+		{"no forge host", "", gh, "https://git.example/Owner/Repo.git", false},
+		{"same host", "github.com", gh, gh, false},
+		{"not the forge", "git.example", gh, "https://elsewhere.example/Owner/Repo.git", false},
+		{"forge with a port", "git.example", gh, "https://git.example:443/Owner/Repo.git", false},
+		{"userinfo on repoURL", "git.example", gh, "https://tok@git.example/Owner/Repo.git", false},
+		{"userinfo on both", "git.example", "https://tok@github.com/Owner/Repo.git", "https://tok@git.example/Owner/Repo.git", false},
+		{"no forge host, hostless repoURL", "", gh, "https:///Owner/Repo.git", false},
+		{"userinfo on origin", "git.example", "https://u:p@github.com/Owner/Repo.git", "https://git.example/Owner/Repo.git", false},
+		{"trailing slash", "git.example", gh, "https://git.example/Owner/Repo.git/", false},
+		{"escaped slash", "git.example", gh, "https://git.example/Owner%2FRepo.git", false},
+		{"dot-dot", "git.example", gh, "https://git.example/Other/../Owner/Repo.git", false},
+		{"scp origin", "git.example", "git@github.com:Owner/Repo.git", "https://git.example/Owner/Repo.git", false},
+		{"scp repoURL", "git.example", gh, "git@git.example:Owner/Repo.git", false},
+		{"scheme", "git.example", gh, "http://git.example/Owner/Repo.git", false},
+		{"owner", "git.example", gh, "https://git.example/Other/Repo.git", false},
+		{"no path", "git.example", "https://github.com", "https://git.example", false},
+	} {
+		m := &Manager{ForgeHost: c.forge}
+		if got := m.forgeMoved(c.origin, c.repoURL); got != c.want {
+			t.Errorf("%s: forgeMoved(%q, %q) = %v, want %v", c.name, c.origin, c.repoURL, got, c.want)
+		}
 	}
 }

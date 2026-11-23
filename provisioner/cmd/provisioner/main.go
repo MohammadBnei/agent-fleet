@@ -129,6 +129,7 @@ func main() {
 	var fg forge.Forge = app
 	configured := app.Configured
 	gitMgr.GitEnv = app.GitEnv
+	gitMgr.ForgeHost = cfg.ForgeHost()
 	if cfg.Forge == "forgejo" {
 		fj := forgejo.New(cfg.ForgeURL, cfg.ForgejoSecretsDir, cfg.ForgejoOwners)
 		fj.Trusted = cfg.ForgejoTrustedLogins

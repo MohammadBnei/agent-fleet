@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,6 +53,11 @@ type Manager struct {
 	// no token reaches argv, which run() quotes in errors. An error falls back
 	// to the ambient git credentials.
 	GitEnv func(context.Context) ([]string, error)
+	// ForgeHost is the configured forge's host (FORGE_URL's, no port). A warm
+	// cache whose origin names the same owner/repo on another host is
+	// re-pointed to it (forgeMoved): the GitHub -> Forgejo move left both
+	// caches on github.com. Unset re-points nothing.
+	ForgeHost string
 
 	// fleetSharedReady: <root>/fleet-shared holds a usable checkout this
 	// process has refreshed at least once (possibly stale, if the last
@@ -216,10 +222,11 @@ func (m *Manager) ensureFetched(ctx context.Context, repo, repoURL string) (err 
 	}
 	defer lock.Unlock()
 	// docs/adr/0065 §6: the URL a definition clones from is bound to repos.url.
-	// ensureLocked never re-points a warm cache, so check it did not come from
-	// somewhere else first. No cache yet: the clone below uses repoURL.
+	// ensureLocked re-points a warm cache only for a forge move (same
+	// owner/repo, onto the configured forge's host), so check it did not come
+	// from anywhere else first. No cache yet: the clone below uses repoURL.
 	if origin, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url"); err == nil &&
-		!strings.EqualFold(strings.TrimSuffix(origin, ".git"), strings.TrimSuffix(repoURL, ".git")) {
+		!sameURL(origin, repoURL) && !m.forgeMoved(origin, repoURL) {
 		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; delete %s on the provisioner's workspace PVC and the next warm re-clones from repos.url (the console's sync only fetches)", repo, origin, repoURL, m.repoPath(repo))
 	}
 	_, err = m.ensureLocked(ctx, repo, repoURL)
@@ -230,9 +237,31 @@ func (m *Manager) ensureFetched(ctx context.Context, repo, repoURL string) (err 
 func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncResult, error) {
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
+		// A forge move is re-pointed, never re-cloned: open sessions' --shared
+		// clones read their objects from this directory. A fetch that then
+		// fails puts the old origin back, so a repo the forge lacks keeps the
+		// cache it had; on a ctx of its own, so a fetch killed by the warm's
+		// deadline still restores. Only forgeMoved re-points: any other
+		// mismatch fetches the cache's own origin, as before.
+		moved := ""
+		if origin, err := m.run(ctx, path, "config", "--get", "remote.origin.url"); err == nil && m.forgeMoved(origin, repoURL) {
+			if _, err := m.run(ctx, path, "remote", "set-url", "origin", repoURL); err != nil {
+				return SyncResult{}, err
+			}
+			moved = origin
+		}
 		before := m.originHead(ctx, path)
 		if _, err := m.run(ctx, path, "fetch", "origin"); err != nil {
+			if moved != "" {
+				rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreTimeout)
+				_, rerr := m.run(rctx, path, "remote", "set-url", "origin", moved)
+				cancel()
+				err = errors.Join(err, rerr)
+			}
 			return SyncResult{}, err
+		}
+		if moved != "" {
+			slog.Info("git: repo cache re-pointed to the configured forge", "repo", repo, "from", moved, "to", repoURL)
 		}
 		after := m.originHead(ctx, path)
 		res := SyncResult{Head: after}
@@ -252,6 +281,31 @@ func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncR
 		return SyncResult{}, err
 	}
 	return SyncResult{Cloned: true, Head: m.originHead(ctx, path)}, m.disableAutoGC(ctx, path)
+}
+
+// restoreTimeout bounds putting a cache's origin back after a failed
+// re-pointed fetch: a local config write, detached from the caller's ctx.
+const restoreTimeout = 10 * time.Second
+
+// sameURL: the same remote, ignoring case and a trailing .git.
+func sameURL(a, b string) bool {
+	return strings.EqualFold(strings.TrimSuffix(a, ".git"), strings.TrimSuffix(b, ".git"))
+}
+
+// forgeMoved: origin and repoURL differ only by host (same scheme and
+// owner/repo, case- and .git-insensitive), and repoURL's host is ForgeHost.
+// Any other difference is a different repo, never re-pointed (docs/adr/0065
+// §6). Neither may carry credentials: both URLs are logged on a move (one
+// side's userinfo already fails the comparison, so repoURL's is checked).
+func (m *Manager) forgeMoved(origin, repoURL string) bool {
+	o, oerr := url.Parse(origin)
+	u, uerr := url.Parse(repoURL)
+	if oerr != nil || uerr != nil || m.ForgeHost == "" || o.Host == "" || u.User != nil ||
+		!strings.EqualFold(u.Host, m.ForgeHost) || strings.EqualFold(o.Host, u.Host) || strings.Trim(u.Path, "/") == "" {
+		return false
+	}
+	o.Host = u.Host
+	return sameURL(o.String(), u.String())
 }
 
 // originHead resolves the cache's origin/HEAD, or "" if it has none. `git
@@ -921,10 +975,12 @@ func (m *Manager) prefetchOne(ctx context.Context, repo string, perFetch time.Du
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), perFetch)
 	defer cancel()
 	// The cache's own origin is the URL: the origin check in ensureFetched
-	// then passes by construction, and the cache is never re-pointed.
-	url, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url")
+	// then passes by construction, and the prefetch never re-points a cache.
+	// It has no repos.url, the only authority for where a cache comes from:
+	// a cache a forge move stranded heals on its first warm or console sync.
+	origin, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url")
 	if err != nil {
 		return err
 	}
-	return m.ensureFetched(ctx, repo, url)
+	return m.ensureFetched(ctx, repo, origin)
 }
