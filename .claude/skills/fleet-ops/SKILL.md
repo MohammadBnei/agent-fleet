@@ -39,7 +39,7 @@ redeploy, no console form:
      repo's or definitions already use a different one.
    - `baseBranch`: when the fleet should not work off the default branch.
    - `image`: the container image this repo's sessions run. Blank means the
-     fleet's default worker image, which carries bun, Go, git and the
+     fleet's default worker image, which carries bun, Go, git, gh, tea and the
      Claude Code CLI (see `worker/Dockerfile` for the real list — it does
      *not* include `golangci-lint` or `buf`). Set it only when the repo needs
      a toolchain the default lacks (`docs/adr/0048` §6).

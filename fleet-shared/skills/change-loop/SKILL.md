@@ -5,7 +5,7 @@ description: How a change is made in ukubi's repos (pick the light or full loop 
 
 # How a change is made: the ukubi dev rules
 
-A mirror of mountain `plan/16-dev-rules.md` (revision 2, 2026-11-23) for pods that have no mountain checkout, re-synced by hand when plan/16 changes; plan/16 is authoritative. Pod deltas: **a fleet pod stops at the PR** (its Forgejo account is read-only: a reviewer and the owner merge, see the repo pack's Forgejo section), and a pod has no worktrees (one clone on its own PVC). The target repo's own CLAUDE.md wins on its conventions (test commands, gates, who merges).
+A mirror of mountain `plan/16-dev-rules.md` (revision 2, 2026-11-23) for pods that have no mountain checkout, re-synced by hand when plan/16 changes; plan/16 is authoritative. Pod deltas: **a fleet pod stops at the PR** (its Forgejo account is read-only: a laptop or main-thread session merges after the fresh review and green CI, or the owner where the repo says so; see the repo pack's Forgejo section), and a pod has no worktrees (one clone on its own PVC). The target repo's own CLAUDE.md wins on its conventions (test commands, gates, who merges).
 
 ## 1. Pick the loop by size
 | Change | Loop |
@@ -18,7 +18,7 @@ The size decides the tool: a workflow is only for a large fan-out build. A chang
 ## 2. Light loop
 1. A short plan in your head or the PR: what changes, what stays, each claim about today's code checked.
 2. Edit, run the fast checks (typecheck, unit tests, `go test` on the touched packages), commit.
-3. Open the PR and stop. A fresh review of its diff (section 3 step 9); a reviewer and the owner merge (section 4).
+3. Open the PR and stop. A fresh review of its diff (section 3 step 9); a laptop or main-thread session, or the owner, merges it (section 4).
 
 No workflow, no doubt agent, no interview. Anything the owner will see or feel still gets a hands-on look first (section 3 step 9).
 
@@ -37,7 +37,7 @@ Workflow (only when the build fans out):
 Main thread:
 8. **Open the PR,** one per repo per batch, with one Conventional Commit per concern, each revertable alone.
 9. **A fresh review of the PR diff,** by an agent that did not build the change; it reads the diff with the repo, not a builder's report. Every finding is fixed or answered in the PR. For anything the owner will see or feel, look at it yourself on the final commit.
-10. **Stop at the PR.** A reviewer and the owner merge it on green CI (section 4); infra-bootstrap is merged by the owner.
+10. **Stop at the PR.** A laptop or main-thread session merges it after the fresh review and green CI (section 4); infra-bootstrap is merged by the owner only.
 
 ## 4. Checks, CI and merging
 - **Tests guard disasters only** (no crash, the page boots, the world builds valid, the sim is deterministic): the whole net runs in under 60 s, in virtual time, and red means a real bug. No browser or GPU gate runs, no snapshot goldens of the world. Feel and UI detail are the owner's playthrough.
