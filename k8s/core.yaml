@@ -679,6 +679,87 @@ dashboards:
               { "expr": "sum by (taskId) (max_over_time({namespace=\"agent-fleet\", container=\"worker\"} | json | msg =~ \".+ result\" | unwrap inputTokens [$__interval]))", "legendFormat": "{{taskId}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
             ]
           }
+          ,{
+            "id": 16,
+            "type": "row",
+            "title": "Models (usage line)",
+            "description": "Usage panels read core's `usage` line; error and rating panels read the worker result line and core's `rating` line.",
+            "collapsed": false,
+            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
+            "panels": []
+          }
+          ,{
+            "id": 17,
+            "type": "timeseries",
+            "title": "Tokens per model",
+            "description": "Core logs one `usage` line per model per worker result; the values are the turn's own share, so each panel sums them per model. Input plus output.",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (model) (sum_over_time({namespace=\"agent-fleet\", pod=~\"agent-fleet-core-.*\"} | json | msg=\"usage\" | unwrap inputTokens [$__interval])) + sum by (model) (sum_over_time({namespace=\"agent-fleet\", pod=~\"agent-fleet-core-.*\"} | json | msg=\"usage\" | unwrap outputTokens [$__interval]))", "legendFormat": "{{model}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
+          ,{
+            "id": 18,
+            "type": "timeseries",
+            "title": "Billed USD per model",
+            "description": "Core logs one `usage` line per model per worker result; the values are the turn's own share, so each panel sums them per model. Gateway models only (price map in core/internal/models); subscription is 0.",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (model) (sum_over_time({namespace=\"agent-fleet\", pod=~\"agent-fleet-core-.*\"} | json | msg=\"usage\" | unwrap billedUsd [$__interval]))", "legendFormat": "{{model}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
+          ,{
+            "id": 19,
+            "type": "timeseries",
+            "title": "Sessions per model",
+            "description": "Results produced on each model in the interval.",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 66 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "count by (model) (count_over_time({namespace=\"agent-fleet\", pod=~\"agent-fleet-core-.*\"} | json | msg=\"usage\" [$__interval]))", "legendFormat": "{{model}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
+          ,{
+            "id": 20,
+            "type": "timeseries",
+            "title": "Error results per model",
+            "description": "Worker result lines that ended in an error (subtype error_*, or is_error set), per model. Gateway failures from the upstream arrive here as opaque errors; the llm-gateway log has the reason.",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 66 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (model) (count_over_time({namespace=\"agent-fleet\", container=\"worker\"} | json | msg =~ \".+ result\" | subtype =~ \"error.*\" or isError=\"true\" [$__interval]))", "legendFormat": "{{model}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
+          ,{
+            "id": 21,
+            "type": "timeseries",
+            "title": "Turn thumbs per model",
+            "description": "Thumbs (+1 up, -1 down) logged by core's `rating` line, per model.",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 74 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (model, value) (count_over_time({namespace=\"agent-fleet\", pod=~\"agent-fleet-core-.*\"} | json | msg=\"rating\" | kind=\"thumb\" [$__interval]))", "legendFormat": "{{model}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
+          ,{
+            "id": 22,
+            "type": "timeseries",
+            "title": "Average session score per model",
+            "description": "Mean of the 1-5 session scores logged by core's `rating` line, per model.",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 74 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "avg by (model) (avg_over_time({namespace=\"agent-fleet\", pod=~\"agent-fleet-core-.*\"} | json | msg=\"rating\" | kind=\"score\" | unwrap value [$__interval]))", "legendFormat": "{{model}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
         ]
       }
 
