@@ -451,6 +451,15 @@ func TestViewLogs_DefinitionJobScope(t *testing.T) {
 			t.Errorf("%s: %v, want PermissionDenied", name, err)
 		}
 	}
+	for name, r := range map[string]*agentfleetv1.ViewLogsRequest{
+		"no task":   {Job: "forgejo-actions"},
+		"a level":   {Job: "forgejo-actions", ActionsTask: "42", Level: "error"},
+		"component": {Job: "forgejo-actions", ActionsTask: "42", Component: "core"},
+	} {
+		if err := view(as(id), r); err == nil {
+			t.Errorf("%s: a job query reached Loki", name)
+		}
+	}
 	if err := view(as(id), &agentfleetv1.ViewLogsRequest{Job: "forgejo-actions", ActionsTask: `1"}`}); err == nil {
 		t.Error("a task id that is not digits reached Loki")
 	}

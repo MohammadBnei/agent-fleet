@@ -209,7 +209,8 @@ func callerSession(ctx context.Context) string {
 }
 
 // scopeLogs is ViewLogs' rule for a definition session (docs/adr/0084 §6): it needs the view_logs grant, and the
-// namespace must be named and on cluster.logNamespaces. A repo session or the provisioner is unchanged.
+// namespace must be named and on cluster.logNamespaces, or a job (no namespace) on cluster.logJobs (ADR-0087
+// amends §6). A repo session or the provisioner is unchanged.
 func (s *Server) scopeLogs(ctx context.Context, namespace, job string) error {
 	sid := callerSession(ctx)
 	var t *sessions.Session

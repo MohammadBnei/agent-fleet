@@ -1126,6 +1126,11 @@ func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest
 	if t := req.GetActionsTask(); t != "" && (req.GetJob() == "" || !actionsTask.MatchString(t)) {
 		return nil, fmt.Errorf("actions_task is digits and needs job")
 	}
+	// A job grant is one CI task's log, not every repo's: the task is required, and the filters that would
+	// silently not apply are refused.
+	if req.GetJob() != "" && (req.GetActionsTask() == "" || req.GetLevel() != "" || req.GetComponent() != "" || req.GetAppName() != "") {
+		return nil, fmt.Errorf("job needs actions_task and takes no level, component or app_name")
+	}
 
 	// Extract taskId from context metadata (sidecar includes it)
 	taskID := extractTaskIDFromMetadata(ctx)
