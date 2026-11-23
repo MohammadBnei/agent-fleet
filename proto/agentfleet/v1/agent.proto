@@ -537,6 +537,8 @@ message InvokeRequest {
   string definition = 1;
   string input = 2;
   string idempotency_key = 3;
+  // The run's title in the session list; the idempotency key when empty.
+  string title = 4;
 }
 
 message InvokeResponse {

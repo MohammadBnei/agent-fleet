@@ -52,8 +52,8 @@ func TestRunnerInvokesUntrustedThenFiles(t *testing.T) {
 		{State: "done", StructuredOutput: `{"outcome":"catalogue","selection":{"action":"restart","name":"api"}}`},
 	}}
 	fi := &fakeFiler{}
-	newRunner(f, fi).Start("resp", Group{Key: "0123456789abcdef"}, []json.RawMessage{json.RawMessage(`{}`)})
-	if len(f.invokes) != 1 || f.invokes[0].GetDefinition() != "resp" || !strings.Contains(f.invokes[0].GetInput(), "<untrusted-alert>") ||
+	newRunner(f, fi).Start("resp", Group{Key: "0123456789abcdef", Name: "KubeX", Namespace: "game"}, []json.RawMessage{json.RawMessage(`{}`)})
+	if len(f.invokes) != 1 || f.invokes[0].GetTitle() != "Alert: KubeX (game)" || f.invokes[0].GetDefinition() != "resp" || !strings.Contains(f.invokes[0].GetInput(), "<untrusted-alert>") ||
 		!strings.HasPrefix(f.invokes[0].GetIdempotencyKey(), "alert:0123456789abcdef:") {
 		t.Fatalf("invoke: %+v", f.invokes)
 	}

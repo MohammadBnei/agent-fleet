@@ -147,11 +147,15 @@ func (s *Server) run(ctx context.Context, p Principal, m *agentfleetv1.InvokeReq
 			return nil, errkeys.Connect(connect.CodeResourceExhausted, errkeys.KeyThreadCap, fmt.Errorf("this client has %d unfinished runs; wait for some first", n))
 		}
 		// Cut on a rune boundary: Postgres refuses invalid UTF-8.
-		n := min(len(key), maxTitle)
-		for n > 0 && n < len(key) && !utf8.RuneStart(key[n]) {
+		title := m.GetTitle()
+		if title == "" {
+			title = key
+		}
+		n := min(len(title), maxTitle)
+		for n > 0 && n < len(title) && !utf8.RuneStart(title[n]) {
 			n--
 		}
-		title := key[:n]
+		title = title[:n]
 		if t, err = s.dash.CreateThread(ctx, head, title, sessions.CreateParams{
 			Owner: owner, Visibility: "private", Lifecycle: singleShot, Invoker: p.Client,
 			TrustSet: trustSet,

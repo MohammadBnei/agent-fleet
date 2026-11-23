@@ -88,7 +88,7 @@ func (r *Runner) run(def string, g Group, key string, batch []json.RawMessage) {
 	input := Input(g, batch)
 	var thread string
 	for try := 0; ; try++ {
-		res, err := r.Agents.InvokeUntrusted(actx, connect.NewRequest(&agentfleetv1.InvokeRequest{Definition: def, Input: input, IdempotencyKey: key}))
+		res, err := r.Agents.InvokeUntrusted(actx, connect.NewRequest(&agentfleetv1.InvokeRequest{Definition: def, Input: input, IdempotencyKey: key, Title: g.Title()}))
 		if err == nil {
 			thread = res.Msg.GetThreadId()
 			break

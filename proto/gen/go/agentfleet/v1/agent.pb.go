@@ -3586,8 +3586,10 @@ type InvokeRequest struct {
 	Definition     string                 `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
 	Input          string                 `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The run's title in the session list; the idempotency key when empty.
+	Title         string `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InvokeRequest) Reset() {
@@ -3637,6 +3639,13 @@ func (x *InvokeRequest) GetInput() string {
 func (x *InvokeRequest) GetIdempotencyKey() string {
 	if x != nil {
 		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *InvokeRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
 	}
 	return ""
 }
@@ -4821,13 +4830,14 @@ const file_agentfleet_v1_agent_proto_rawDesc = "" +
 	"definition\x12\x1d\n" +
 	"\n" +
 	"thread_key\x18\x02 \x01(\tR\tthreadKey\"\x15\n" +
-	"\x13CloseThreadResponse\"n\n" +
+	"\x13CloseThreadResponse\"\x84\x01\n" +
 	"\rInvokeRequest\x12\x1e\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\tR\n" +
 	"definition\x12\x14\n" +
 	"\x05input\x18\x02 \x01(\tR\x05input\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"-\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
+	"\x05title\x18\x04 \x01(\tR\x05title\"-\n" +
 	"\x0eInvokeResponse\x12\x1b\n" +
 	"\tthread_id\x18\x01 \x01(\tR\bthreadId\"-\n" +
 	"\x0eInvokeCapacity\x12\x1b\n" +
