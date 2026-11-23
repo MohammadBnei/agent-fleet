@@ -237,3 +237,37 @@ in several ways:
 5. `PublishEvent` and the tool.
 6. Live, once the cluster is up: infra-bootstrap delivers the `bridge-core` Secret, and a PR event opens
    a definition thread end to end.
+
+## Amendment 2026-11-23: card events, and core's identity is its ServiceAccount
+
+Signals plan rows I and B2. Rules R1 (the ce_id from the fact), R2 (a flow never fails silently), R3 (one reviewed
+ACL row per client, a projected ServiceAccount token) and R5 (fail closed) of the signals plan apply.
+
+1. **Card events.** Core publishes every state a decision card reaches, as
+   `dev.bnei.fleet.card.opened|answered|expired|stale|withdrawn` (`internal/cardevents`). Only `kind = 'card'` rows;
+   a permission decision is not announced. The subject is the card's thread key, `forge/<owner>/<repo>/pr/<n>` (or
+   `issue`, `alert`, a bare repo) or `alert/<group key>` (both already under the bridge-core row's prefixes), a
+   character card `agent/character/<name>` (under the existing `agent/` prefix, so the row gains no new subject
+   prefix), and `fleet/session/<id>` for a card with none. The `ce_id` is `card/<decision id>/<state>/<version>`;
+   `version` only grows, so a republish is a duplicate the bridge drops. The data holds ids, the subject, who drafted it
+   and for which definition, the chosen option id and two times, never the ask, a label or the owner's own words. The
+   CloudEvent time is the transition: `created_at` for opened, `answered_at`, `expires_at` for expired, the publish
+   time for stale and withdrawn (nothing stamps them).
+2. **Current state, not a queue.** `decisions.bridge_state` (000040) holds the last state the bridge accepted; a tick
+   (15 s) publishes the rows whose `state` differs, in `version` order, and sets it with `WHERE state = <published>`,
+   so a newer transition stays pending. No high-water cursor: `nextval` order is not commit order and `version` also
+   moves on a spent grant. **Known loss:** a card that opens and closes between two ticks publishes only its last
+   state. There is no nudge: transcript appends are too frequent to wake it. Cards that exist at migration are marked
+   published (no flood). An `InvalidArgument` from the bridge (retrying cannot help) is logged at Error, counted and
+   parked by setting `bridge_state` anyway; any other error backs off to five minutes and retries, and the loop never
+   stops.
+3. **R2.** `agentfleet_card_events_enabled`, `_published_total{type}`, `_refused_total`, `_pending` and
+   `_last_success_timestamp_seconds` (seeded at start, renewed when the bridge answers a publish, so it ages while no card
+   changes: alert on `pending`, not on its age). `CardEventsOff` and `CardEventsStuck` live with the other core rules in
+   infra-bootstrap.
+4. **Core signs in with its ServiceAccount.** Core runs as `agent-fleet/bridge-core`, not the namespace `default`
+   that worker pods share, with a projected token (audience `ukubi-bridge`, 3600 s) at `BRIDGE_TOKEN_FILE`, re-read at
+   every call (`internal/bridgeclient`). When set it replaces the app password grant; the password path stays until
+   the bridge row drops it. The ServiceAccount and the admission policy that keeps any other pod from minting a
+   `ukubi-bridge` token live in infra-bootstrap and merge first: a Deployment naming a missing ServiceAccount is refused.
+   The bridge row carries `"sa": "agent-fleet:bridge-core"`.
