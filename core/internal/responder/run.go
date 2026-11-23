@@ -61,6 +61,10 @@ func (r *Runner) Start(def string, g Group, batch []json.RawMessage) {
 // noThread: no run exists to answer. Nothing is filed: the alert reaches Discord and the bridge log only
 // (docs/adr/0087), so this is loud and counted.
 func (r *Runner) noThread(def string, g Group, why string, err error) {
+	if r.Ctx.Err() != nil { // core is shutting down: a rollout is not a failed start
+		slog.Info("responder: core stopping, "+why, "definition", def, "group", g.Key, "error", err)
+		return
+	}
 	slog.Error("responder: "+why+", the alert reaches no session", "definition", def, "group", g.Key, "error", err)
 	metrics.ResponderStartFailed.WithLabelValues(def).Inc()
 }
@@ -95,10 +99,6 @@ func (r *Runner) run(def string, g Group, key string, batch []json.RawMessage) {
 		}
 		select {
 		case <-ctx.Done():
-			if r.Ctx.Err() != nil { // core is shutting down: a rollout is not a failed start
-				slog.Info("responder: core is shutting down before the run could start", "definition", def, "group", g.Key)
-				return
-			}
 			r.noThread(def, g, "the fleet had no room before the run's life ended", ctx.Err())
 			return
 		case <-time.After(InvokeRetry):

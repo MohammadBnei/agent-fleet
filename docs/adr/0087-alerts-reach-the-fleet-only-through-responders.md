@@ -52,7 +52,7 @@ A first responder must look at the cluster before it answers. Without that, its 
 
 1. **The reads.** `alert-responder` holds `kubectl_read` (`cluster.read`), `view_logs` (Loki, over
    `cluster.logNamespaces`) and `query_metrics` (PromQL through core). All three are tagged B. A responder holds A·B
-   (ADR-0086), so it reads and never acts. Core's `AuthorizeKubeRead`, `ViewLogs` and `QueryMetrics` already check
+   (ADR-0086): it holds no C method, though its typed output can select an unattended catalogue action (C, ADR-0086 §1). Core's `AuthorizeKubeRead`, `ViewLogs` and `QueryMetrics` already check
    the stored set for B and the pinned definition's grants. Nothing else changes at run time.
 2. **The validator.** `view_logs`, `query_metrics` and `cluster.logNamespaces` were standing-only (ADR-0084 §6). They
    now also validate on a definition with `trust.untrusted: B`. `spawn_worker`, `wait_for_result`, `open_issue`,
@@ -61,5 +61,13 @@ A first responder must look at the cluster before it answers. Without that, its 
    the `definition sessions never run on a cluster-access repo` refusal in Consequences above no longer applies. The
    cluster reads come from `cluster.read`, not from the repo. Like `ops-lead`, the pod holds the model credential
    only: no GitHub key.
-4. **What still blocks a launch** is outside this repo: the vault `alert-responder` in Infisical agent-vault with
+4. **Accepted risk.** Alert text can steer a responder that now reads B data. It has no free-text output, no write
+   tool and egress only to the vault proxy and core. What remains: object names in a card or selection (up to 8 of
+   253 characters, DNS-1123) can encode what it read, and `ops-lead` reads those cards; `ops-lead` already holds the
+   same reads, so no new B-to-C path opens. Which deployment a catalogue action restarts leaks a few bits per action
+   (rate-limited, 6 an hour, one per target per 10 minutes). Query text lands in Prometheus, Loki, API-server and
+   core logs. `view_logs` reads every pod of a granted namespace, other sessions' workers included in
+   `agent-fleet`, while `extractTaskIDFromMetadata` stays a TODO. `query_metrics` has no namespace scope, as for
+   `ops-lead`.
+5. **What still blocks a launch** is outside this repo: the vault `alert-responder` in Infisical agent-vault with
    `CLAUDE_CODE_OAUTH_TOKEN`, and the fleet-read ServiceAccount and Roles in infra-bootstrap (#462).

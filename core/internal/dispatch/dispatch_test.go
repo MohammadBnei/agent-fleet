@@ -1015,6 +1015,7 @@ func TestInitResponderCounterCreatesSeries(t *testing.T) {
 	h := head("resp-series", nil, &definitions.Subscribes{Types: []string{"dev.bnei.alert."}}, Client)
 	h.Effective.Trust = &definitions.Trust{Untrusted: "B"}
 	defs.heads = append(defs.heads, h)
+	metrics.ResponderStartFailed.DeleteLabelValues("resp-series") // the registry is global: -count=2 reruns
 	before := testutil.CollectAndCount(metrics.ResponderStartFailed)
 	d.initResponderCounter()
 	if got := testutil.CollectAndCount(metrics.ResponderStartFailed); got != before+1 {
