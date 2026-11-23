@@ -33,6 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/announce"
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/cardevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/confirm"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
@@ -244,6 +245,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		slog.Info("BRIDGE_URL is unset: no session announcements (docs/adr/0078)")
 	}
 	go announcer.Run(ctx, 30*time.Second)
+	// Card state changes to the bridge (docs/adr/0078 amendment); a blank BRIDGE_URL leaves it idle.
+	go cardevents.New(pool, bridge, cfg.Bridge.URL != "").Run(ctx, 15*time.Second)
 
 	// A schedule files a proposal, which a human opens — there is no separate
 	// service to reach, so the scheduler always runs.
