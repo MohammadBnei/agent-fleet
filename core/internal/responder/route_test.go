@@ -218,3 +218,17 @@ func TestIdleGroupsArePruned(t *testing.T) {
 		t.Fatalf("idle groups must go once out of cooldown: %d left", len(r.groups))
 	}
 }
+
+// Two repos failing the same namespace-less CI rule are two groups, two runs; a namespaced alert keeps its key.
+func TestGroupOf_CIRepoSplitsGroup(t *testing.T) {
+	a, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"Deploy pipeline failed on main","repo":"ukubi/a","job":"build"}}`))
+	b, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"Deploy pipeline failed on main","repo":"ukubi/b","job":"build"}}`))
+	if a.Key == b.Key {
+		t.Fatalf("two repos share group key %s", a.Key)
+	}
+	n1, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"X","namespace":"ns","repo":"ukubi/a"}}`))
+	n2, _ := GroupOf(json.RawMessage(`{"labels":{"alertname":"X","namespace":"ns","repo":"ukubi/b"}}`))
+	if n1.Key != n2.Key {
+		t.Fatalf("a namespaced alert's key moved with repo")
+	}
+}

@@ -68,7 +68,12 @@ func GroupOf(raw json.RawMessage) (g Group, ok bool) {
 	if json.Unmarshal(raw, &a) != nil {
 		return Group{}, false
 	}
-	h := sha256.Sum256([]byte(strings.Join([]string{a.Labels["alertname"], a.Labels["namespace"], a.Labels["service"]}, "\x00")))
+	parts := []string{a.Labels["alertname"], a.Labels["namespace"], a.Labels["service"]}
+	if a.Labels["namespace"] == "" {
+		// A namespace-less alert (the CI rule) is per repo and job: two repos failing must be two groups.
+		parts = append(parts, a.Labels["repo"], a.Labels["job"])
+	}
+	h := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	g = Group{Key: hex.EncodeToString(h[:8]), Name: safeName(a.Labels["alertname"]), Namespace: dnsLabel(a.Labels["namespace"])}
 	var where []string
 	for _, k := range []string{"namespace", "deployment", "pod"} {
@@ -137,7 +142,7 @@ func Input(g Group, batch []json.RawMessage) string {
 		line("Alert", a.Labels["alertname"])
 		line("Summary", a.Annotations["summary"])
 		line("Description", a.Annotations["description"])
-		for _, k := range []string{"namespace", "service", "pod", "severity", "instance"} {
+		for _, k := range []string{"namespace", "service", "pod", "severity", "instance", "repo", "job", "actions_task"} {
 			line(k, a.Labels[k])
 		}
 		b.WriteString("</untrusted-alert>\n")
