@@ -178,6 +178,9 @@ func (c *Client) session() (bridgev1connect.BridgeServiceClient, oauth2.TokenSou
 func (c *Client) authorize(src oauth2.TokenSource, h http.Header) error {
 	t, err := src.Token()
 	if err != nil {
+		if c.cfg.TokenFile != "" {
+			return fmt.Errorf("projected token %s: %w", c.cfg.TokenFile, err)
+		}
 		return fmt.Errorf("authentik grant as %s: %w", c.cfg.Username, err)
 	}
 	h.Set("Authorization", "Bearer "+t.AccessToken)

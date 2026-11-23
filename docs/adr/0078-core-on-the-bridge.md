@@ -257,7 +257,9 @@ ACL row per client, a projected ServiceAccount token) and R5 (fail closed) of th
    (15 s) publishes the rows whose `state` differs, in `version` order, and sets it with `WHERE state = <published>`,
    so a newer transition stays pending. No high-water cursor: `nextval` order is not commit order and `version` also
    moves on a spent grant. **Known loss:** a card that opens and closes between two ticks publishes only its last
-   state. There is no nudge: transcript appends are too frequent to wake it. Cards that exist at migration are marked
+   state. A second: a session's hard delete (`sessions.Store.Delete`) cascades its decisions away, so an `opened` card
+   already published gets no terminal event; the data carries `expires_at`, so a consumer closes it on its own. A card
+   error other than `InvalidArgument` stops the tick, so later cards wait behind it (`CardEventsStuck` fires). There is no nudge: transcript appends are too frequent to wake it. Cards that exist at migration are marked
    published (no flood). An `InvalidArgument` from the bridge (retrying cannot help) is logged at Error, counted and
    parked by setting `bridge_state` anyway; any other error backs off to five minutes and retries, and the loop never
    stops.

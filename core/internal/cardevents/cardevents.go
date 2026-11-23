@@ -3,7 +3,9 @@
 // keeps the last state the bridge accepted per card (decisions.bridge_state)
 // and publishes again whenever the card's state differs, on a tick:
 // current state, like announce, not a queue (docs/adr/0048 §2). A card
-// that opens and closes between two ticks publishes only its last state.
+// that opens and closes between two ticks publishes only its last state, and
+// a session's hard delete cascades its cards away with no terminal event; the
+// data carries expires_at so a consumer can close an orphaned open card.
 //
 // The event carries no free text: never the ask, the option labels or the
 // owner's own words.
@@ -111,14 +113,11 @@ type row struct {
 }
 
 // Tick publishes, in version order, up to Batch cards whose state differs
-// from the one the bridge accepted, and refreshes the pending count. A failure
-// that concerns every card (the bridge unreachable, not configured) stops it.
+// from the one the bridge accepted, and refreshes the pending count. Any error
+// but InvalidArgument stops the tick, so every later card waits behind it
+// (head-of-line: a subject outside the grant, a type not yet granted);
+// CardEventsStuck fires.
 func (e *Events) Tick(ctx context.Context) error {
-	var pending int64
-	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM decisions WHERE kind = 'card' AND state IS DISTINCT FROM bridge_state`).Scan(&pending); err != nil {
-		return err
-	}
-	metrics.CardEventsPending.Set(float64(pending))
 	rows, err := e.pool.Query(ctx, `
 		SELECT d.id::text, d.session_id::text, d.state, COALESCE(d.subject, ''), d.version, d.created_at, d.answered_at, d.expires_at,
 		       COALESCE(d.answer ->> 'optionId', ''), COALESCE(d.payload::text, '{}'), s.definition_name
@@ -136,10 +135,20 @@ func (e *Events) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var perr error
 	for _, c := range cards {
-		if err := e.publish(ctx, c); err != nil {
-			return err
+		if perr = e.publish(ctx, c); perr != nil {
+			break
 		}
+	}
+	// Counted after the drain (also after a failure), so steady churn does not read as stuck.
+	var pending int64
+	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM decisions WHERE kind = 'card' AND state IS DISTINCT FROM bridge_state`).Scan(&pending); err != nil {
+		return err
+	}
+	metrics.CardEventsPending.Set(float64(pending))
+	if perr != nil {
+		return perr
 	}
 	if len(cards) > 0 {
 		return nil
@@ -200,6 +209,9 @@ func (e *Events) publish(ctx context.Context, c row) error {
 	}
 	if c.optionID != "" {
 		data["option_id"] = c.optionID
+	}
+	if c.expiresAt != nil { // lets a consumer close an orphaned open card (a deleted session emits no terminal event)
+		data["expires_at"] = c.expiresAt.UTC().Format(time.RFC3339)
 	}
 	b, _ := json.Marshal(data)
 	typ := TypePrefix + c.state
