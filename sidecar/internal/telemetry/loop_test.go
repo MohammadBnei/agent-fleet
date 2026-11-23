@@ -91,7 +91,7 @@ func TestComputeSummary_ModifiedAndNewFile(t *testing.T) {
 func TestDiffsJSON_ChangeMadeOutsideAToolCall(t *testing.T) {
 	dir := newTestWorktree(t)
 	// sed, a formatter, a codegen script — the case with no tool input.
-	cmd := exec.Command("sed", "-i", "s/two/TWO/", "a.txt")
+	cmd := exec.Command("perl", "-pi", "-e", "s/two/TWO/", "a.txt")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("sed: %v: %s", err, out)
