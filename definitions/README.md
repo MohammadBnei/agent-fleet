@@ -39,6 +39,17 @@ definition its `spawns.allow` names, `ops-worker.yaml` (a spawn target must be s
 responder). No client lists a character or its spawn target: Start is the admin's, and `spawns.allow` replaces
 `invokers`. `cluster.read` mounts the fleet-read token (infra-bootstrap #462) in the sidecar.
 
+## Model (`docs/adr/0077`)
+
+`model: { default, allow }` is optional; absent, Claude Code picks. Ids come from `definitions.ModelCeiling`: the
+`claude-*` ids run on the subscription, the other ids (`zai-org-glm-5`, `z-ai-glm-5-3`, `kimi-k2-7-code`,
+`qwen3-coder-480b-a35b-instruct-turbo`, `deepseek-v4-1-flash`) run through the llm-gateway. Core refuses a gateway id
+unless `FLEET_GATEWAY_MODELS=on`. No new YAML field: the route is the id.
+
+The `api.anthropic.com` credentials service is required only when the model is absent or a `claude-*` id is in
+`default` or `allow`. A definition whose models are all gateway ids needs no vault Anthropic secret; its gateway key is
+`LLM_GATEWAY_KEY_FLEET_<DEFINITION_NAME>` (uppercase, dashes to underscores).
+
 ## Credentials and onboarding (`docs/adr/0065`)
 
 Every launchable definition names its vault and services in `credentials`; the

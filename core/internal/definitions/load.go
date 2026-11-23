@@ -34,7 +34,9 @@ var (
 	// ModelCeiling must stay a subset of the console's validModels
 	// (dashboard/ceiling_test.go), or a definition could name a model the
 	// console would refuse.
-	ModelCeiling = []string{"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
+	// Gateway ids (internal/models) ride the llm-gateway, not the subscription.
+	ModelCeiling = []string{"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
+		"zai-org-glm-5", "z-ai-glm-5-3", "kimi-k2-7-code", "qwen3-coder-480b-a35b-instruct-turbo", "deepseek-v4-1-flash"}
 	// ModeCeiling: the modes that keep canUseTool in the loop. auto is the
 	// fleet's auto, not the SDK's: the worker runs a definition session in
 	// auto with the SDK in default, so every call that is not auto-safe still
@@ -455,6 +457,11 @@ func validate(name string, s *Spec) error {
 		return present
 	}
 
+	// The provisioner names a definition's gateway key by its upper-cased name; "console" is
+	// the repo sessions' shared key (provisioner/internal/k8s/credsecret.go gatewayKey).
+	if name == "console" {
+		bad(`definition name "console" is reserved for the repo sessions' shared llm-gateway key`)
+	}
 	if need(s.Audience != nil, "audience") && !slices.Contains(knownGroups, s.Audience.Group) {
 		bad("audience.group %q is not a known group %v", s.Audience.Group, knownGroups)
 	}
@@ -539,7 +546,7 @@ func validate(name string, s *Spec) error {
 	// none mode (docs/adr/0082 slice 5: the vault mints read scopes), and every GitHub
 	// path names the one repo the warm binds repos.url to.
 	if !s.Abstract {
-		if need(s.Credentials != nil, "credentials") && !slices.ContainsFunc(s.Credentials.Services, func(x Service) bool { return x.Host == "api.anthropic.com" }) {
+		if need(s.Credentials != nil, "credentials") && usesClaude(s.Model) && !slices.ContainsFunc(s.Credentials.Services, func(x Service) bool { return x.Host == "api.anthropic.com" }) {
 			bad("credentials need an api.anthropic.com service: a definition pod's model credential is the vault's")
 		}
 		var gh, git bool
@@ -1152,4 +1159,14 @@ func validatePersona(errs *[]error, s *Spec) {
 			bad("relations[%d].kind %q must be one of %v", i, r.Kind, relationKinds)
 		}
 	}
+}
+
+// usesClaude: a pod needs the vault's api.anthropic.com credential when it
+// may run a Claude model: no model set (Claude Code picks) or a claude-* id in
+// default/allow. A gateway-only model rides the sidecar's gateway route.
+func usesClaude(m *Model) bool {
+	if m == nil {
+		return true
+	}
+	return strings.HasPrefix(m.Default, "claude-") || slices.ContainsFunc(m.Allow, func(id string) bool { return strings.HasPrefix(id, "claude-") })
 }

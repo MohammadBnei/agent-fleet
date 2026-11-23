@@ -152,6 +152,10 @@ func TestLoad_ChildRules(t *testing.T) {
 		// docs/adr/0065
 		{"no credentials", map[string]string{"credentials": ""}, "credentials is required"},
 		{"no anthropic", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: A }] }`}, "api.anthropic.com service"},
+		// gateway ids: the vault's anthropic service is needed only when a claude-* id may run
+		{"gateway only without anthropic ok", map[string]string{"model": "{ default: zai-org-glm-5, allow: [zai-org-glm-5, kimi-k2-7-code] }", "git": none, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: GH_VALID_CHILD }] }`}, ""},
+		{"gateway default claude allowed needs anthropic", map[string]string{"model": "{ default: zai-org-glm-5, allow: [zai-org-glm-5, claude-opus-5] }", "git": none, "credentials": `{ vault: valid-child, services: [{ host: forge, paths: ["/o/r/*"], secret: GH_VALID_CHILD }] }`}, "api.anthropic.com service"},
+		{"gateway model unknown id", map[string]string{"model": "{ default: glm-9, allow: [glm-9] }"}, "glm-9"},
 		{"agent token key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: AGENT_VAULT_TOKEN }] }"}, "provisioner's own"},
 		{"provisioner key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: FLEET_VAULT_GIT_USERNAME }] }"}, "provisioner's own"},
 		{"github app key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: GITHUB_APP_PRIVATE_KEY }] }"}, "provisioner's own"},
@@ -926,4 +930,14 @@ var personaCases = []struct{ name, persona, want string }{
 	{"bad to", "{ display_name: Ada, home: world, relations: [{ to: \"Not A Name\", kind: friend }] }", "persona.relations[0].to"},
 	{"17 relations", "{ display_name: Ada, home: world, relations: [" + strings.TrimSuffix(strings.Repeat("{ to: other, kind: friend }, ", 17), ", ") + "] }", "persona.relations has 17"},
 	{"unknown key", "{ display_name: Ada, home: world, mood: sad }", "mood"},
+}
+
+func TestValidate_ReservesConsole(t *testing.T) {
+	err := validate("console", &Spec{Abstract: true})
+	if err == nil || !strings.Contains(err.Error(), `"console" is reserved`) {
+		t.Fatalf("err = %v", err)
+	}
+	if err := validate("consoles", &Spec{Abstract: true}); err != nil {
+		t.Fatalf("consoles: %v", err)
+	}
 }
