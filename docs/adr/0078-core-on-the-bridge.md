@@ -237,3 +237,36 @@ in several ways:
 5. `PublishEvent` and the tool.
 6. Live, once the cluster is up: infra-bootstrap delivers the `bridge-core` Secret, and a PR event opens
    a definition thread end to end.
+
+## Amendment 2026-11-23: card events
+
+Signals plan row I. Rules R1 (the ce_id from the fact), R2 (a flow never fails silently) and R5 (fail closed) of the
+signals plan apply.
+
+1. **Card events.** Core publishes every state a decision card reaches, as
+   `dev.bnei.fleet.card.opened|answered|expired|stale|withdrawn` (`internal/cardevents`); the `open` state is the type
+   `opened`. Only `kind = 'card'` rows; a permission decision is not announced. The subject is the card's thread key,
+   `forge/<owner>/<repo>/pr/<n>` (or `issue`, `alert`, a bare repo) or `alert/<group key>` (both already under the
+   bridge-core row's prefixes), a character card `agent/character/<name>` (under the existing `agent/` prefix), and
+   `fleet/session/<id>` for a card with none. The `ce_id` is `card/<decision id>/<state>`: each state is published once
+   and no writer moves a card back to `open` (a test scans for it), so a republish is a duplicate the bridge drops. A
+   card first seen already closed publishes `opened` first, at `created_at`. The data holds ids, the subject, who
+   drafted it and for which definition, the chosen option id (only `1`..`3`) and the times, never the ask, a label or the
+   owner's own words. The CloudEvent time is the transition: `created_at` for opened, `answered_at`, `expires_at` for
+   expired, the publish time for stale and withdrawn (nothing stamps them).
+2. **Current state, not a queue.** `decisions.bridge_state` (000042) holds the last state the bridge accepted; a tick
+   (15 s) publishes the rows whose `state` differs, in `version` order (a partial index serves the pick), and sets it
+   with `WHERE state = <published>`, so a newer transition stays pending. No high-water cursor: `nextval` order is not
+   commit order and `version` also moves on a spent grant. **Known losses:** a card that opens and closes between two
+   ticks publishes only its last state (plus `opened` first); a session's hard delete (`sessions.Store.Delete`) cascades
+   its cards away, so an `opened` card already published gets no terminal event (counted by
+   `agentfleet_card_events_lost_total`; the data carries `expires_at`, so a consumer closes it on its own). The migration
+   leaves open cards unpublished, so the deploy publishes one burst of `opened`; closed cards are marked published.
+3. **Refusals.** `InvalidArgument` and `PermissionDenied` (retrying cannot help) are logged at Error, counted and parked
+   in `decisions.bridge_parked`, out of the pick. `Unauthenticated`, `Unavailable` and `DeadlineExceeded` back off to
+   five minutes and retry, and the loop never stops; the card stays pending and later cards wait behind it
+   (`CardEventsStuck` fires).
+4. **R2.** `agentfleet_card_events_enabled`, `_published_total{type}`, `_refused_total`, `_pending`, `_parked`, `_lost_total`
+   and `_last_success_timestamp_seconds` (seeded at start, renewed when the bridge answers a publish, so it ages while no
+   card changes: alert on `pending` and `parked`, not on its age). The alert rules live with the other core rules in
+   infra-bootstrap.
