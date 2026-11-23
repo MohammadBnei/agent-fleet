@@ -793,6 +793,23 @@ export function formatAnswerTurn(
 // failing at it.
 export const SIDECAR_MCP_TIMEOUT_MS = 90_000;
 
+// The free text a retry may rewrite without changing what runs, per tool:
+// the same fields core drops from a grant's match key (decisions.matchDrops).
+const LABEL_FIELDS: Record<string, string[]> = {
+  Bash: ["description"],
+  Agent: ["description"],
+  Task: ["description"],
+  WebFetch: ["prompt"],
+};
+export function withoutLabel(
+  tool: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...input };
+  for (const k of LABEL_FIELDS[tool] ?? []) delete out[k];
+  return out;
+}
+
 // How long canUseTool holds a call on a human before answering "pending"
 // (docs/adr/0082 §5: nothing blocks). core's DECISION_WAIT_MS, sent through
 // GET /task. 0 or absent is an older core or sidecar, which answers none of
@@ -1575,6 +1592,13 @@ export async function runSession(): Promise<SessionResult> {
     number,
     { tool: string; input: Record<string, unknown> }
   >();
+  // Calls the owner allowed after this pod had let them go, waiting for the
+  // agent's retry. The retry runs when it is the same call (the same match as
+  // core's grant: a Bash `description` is only a label). This is the pod's own
+  // memory of the answer, so the retry does not depend on the grant lookup
+  // coming back: a retry that parked again as a new request made the allow
+  // pointless.
+  const allowedRetries: { tool: string; input: Record<string, unknown> }[] = [];
   // One-time grants this pod spent (decision ids), so the late answer of a
   // decision whose retry already ran is not delivered as a second turn.
   const spentDecisions = new Set<string>();
@@ -2015,6 +2039,22 @@ export async function runSession(): Promise<SessionResult> {
                   toolInput as Record<string, unknown>,
                 ))
           ) {
+            return { behavior: "allow", updatedInput: toolInput };
+          }
+          // The retry of a call the owner allowed after it had parked.
+          const retryAt = allowedRetries.findIndex(
+            (a) =>
+              a.tool === toolName &&
+              isDeepStrictEqual(
+                withoutLabel(a.tool, a.input),
+                withoutLabel(toolName, toolInput as Record<string, unknown>),
+              ),
+          );
+          if (nonBlocking && toolName !== "ExitPlanMode" && retryAt >= 0) {
+            allowedRetries.splice(retryAt, 1);
+            // Burns core's grant for it as well, so the one allow is spent
+            // once, not twice.
+            await spendGrant(toolName, toolInput as Record<string, unknown>);
             return { behavior: "allow", updatedInput: toolInput };
           }
           // Where the gate would ask: a human may already have approved this
@@ -2598,6 +2638,7 @@ export async function runSession(): Promise<SessionResult> {
             }
             // Only a plan this pod held: its input is what the retry must match.
             if (plan && call) planRetry = call.input;
+            if (!plan && call) allowedRetries.push(call);
             push(th, `Approved: retry request seq ${seq} once.`);
           } else if (decision.behavior === "deny") {
             push(th, `Request seq ${seq} was denied. ${reason}`);
@@ -2610,6 +2651,7 @@ export async function runSession(): Promise<SessionResult> {
         if (entry.type === "permission_mode") {
           const mode = entry.text as PermissionMode;
           planRetry = undefined;
+          allowedRetries.length = 0;
 
           // Every mode switch is a live control request again (docs/adr/0053).
           // adr/0052's bypass-boundary relaunch is gone with the mode that
@@ -2685,6 +2727,7 @@ export async function runSession(): Promise<SessionResult> {
         if (standing && /^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
           // One thread starts over: its SDK session id is dropped and the next entry opens a fresh one.
           planRetry = undefined;
+          allowedRetries.length = 0;
           if (th.outstanding > 0)
             resolveAllPendingDeny("Conversation cleared.", true, true);
           await sidecar
@@ -2702,6 +2745,7 @@ export async function runSession(): Promise<SessionResult> {
         if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
           aborted = true;
           planRetry = undefined;
+          allowedRetries.length = 0;
           // record=true: this pod ends itself without an interrupt/abort entry,
           // and every dashboard surface reads one of those as resolving whatever
           // was pending — so without the record, a card sits "waiting for a

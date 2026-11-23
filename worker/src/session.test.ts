@@ -3290,6 +3290,45 @@ describe("non-blocking decisions", () => {
     await promise;
   }, 10000);
 
+  test("an owner allow after the wait lets the agent's identical retry through, once, even if its grant lookup misses", async () => {
+    sessionDecisionWaitMs = 30;
+    const promise = runSession();
+    await Bun.sleep(20);
+
+    await capturedCanUseTool!("Bash", {
+      command: "curl -s example.test",
+      description: "fetch",
+    });
+    const seq = requestSeq("Bash");
+    pushHuman(
+      JSON.stringify({ behavior: "allow", decisionId: "d-5" }),
+      "permission_response",
+      seq,
+    );
+    await Bun.sleep(20);
+
+    // Another command is not the one that was allowed.
+    forcedRequestSeq = null;
+    const other = await capturedCanUseTool!("Bash", {
+      command: "curl -s other.test",
+    });
+    expect(other.behavior).toBe("deny");
+    // The same command, whatever it says about itself, runs.
+    const retry = await capturedCanUseTool!("Bash", {
+      command: "curl -s example.test",
+      description: "fetch the page again",
+    });
+    expect(retry.behavior).toBe("allow");
+    // Once: a second identical call asks again.
+    const again = await capturedCanUseTool!("Bash", {
+      command: "curl -s example.test",
+    });
+    expect(again.behavior).toBe("deny");
+
+    pushHuman("", "abort");
+    await promise;
+  }, 10000);
+
   test("an allow for a call no longer parked pushes one retry turn; a deny pushes its reason", async () => {
     sessionDecisionWaitMs = 30;
     const promise = runSession();
