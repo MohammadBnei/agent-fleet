@@ -16,6 +16,10 @@
 # CLAUDE_CODE_OAUTH_TOKEN (the warm says what is missing). The bridge client lists it (clients/bridge.yaml).
 # Until it launches, an alert reaches only Discord and the bridge log: core files nothing for a run that cannot
 # start, and counts it (agentfleet_responder_start_failed_total, docs/adr/0087).
+#
+# Model: GLM 5.3 on Venice through llm-gateway (docs/adr/0088, owner 2026-11-23). The sidecar injects the
+# definition's own gateway key, LLM_GATEWAY_KEY_FLEET_ALERT_RESPONDER (provisioner env, budget-capped in
+# llm-gateway). The api.anthropic.com service stays for the vault; no Claude id is allowed, so no fallback.
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
 metadata: { name: alert-responder }
@@ -28,6 +32,7 @@ spec:
     services:
       - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: agent-fleet }
+  model: { default: z-ai-glm-5-3, allow: [z-ai-glm-5-3] }
   git: { mode: none, identity: { name: fleet-alert-responder, email: fleet-alert-responder@bnei.dev } }
   lifecycle: { allow: [single-shot] }
   subscribes: { types: ["dev.bnei.alert."] }
