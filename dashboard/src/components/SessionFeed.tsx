@@ -853,7 +853,8 @@ export function SessionFeed({
       entry.type === TranscriptEntryType.APPROVE ||
       entry.type === TranscriptEntryType.ABORT ||
       entry.type === TranscriptEntryType.INTERRUPT ||
-      entry.type === TranscriptEntryType.PERMISSION_MODE
+      entry.type === TranscriptEntryType.PERMISSION_MODE ||
+      entry.type === TranscriptEntryType.MODEL_SWITCH
     ) {
       if (!visibility.quiet) continue;
       flush();

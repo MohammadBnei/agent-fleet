@@ -12,9 +12,11 @@ import {
   type SdkResultSummary,
   type SdkSignal,
 } from "../transcript";
+import { resultRoute } from "../modelRoute";
 import { Collapse } from "./Collapse";
 import { JsonView } from "./JsonView";
 import { Markdown } from "./Markdown";
+import { TurnRating } from "./Ratings";
 
 // The single renderer for a transcript entry that isn't a card (question,
 // permission, tool-call pair) — those stay with the feed loops that own
@@ -414,7 +416,8 @@ function ResultView({
   const outTok = formatTokens(r.usage?.output_tokens);
   const parts = [
     `${r.numTurns ?? "?"} turns`,
-    `$${(r.totalCostUsd ?? 0).toFixed(3)}`,
+    // The SDK prices every token at Claude rates; wrong off the subscription.
+    resultRoute(r) !== "gateway" && `$${(r.totalCostUsd ?? 0).toFixed(3)}`,
     wall && api ? `${wall} (${api} api)` : wall,
     inTok && `${inTok} in`,
     outTok && `${outTok} out`,
@@ -432,6 +435,7 @@ function ResultView({
       >
         {parts.join(" · ")}
       </LogLine>
+      <TurnRating sessionId={entry.sessionId} seq={entry.seq} />
       {r.errors && r.errors.length > 0 && (
         <AlertRow
           tone="error"
@@ -636,6 +640,18 @@ export function TranscriptEntryView({
     return (
       <LogLine badge="interrupted" badgeClass="info" compact={compact}>
         {entry.text || "current turn interrupted"}
+      </LogLine>
+    );
+  }
+  if (entry.type === TranscriptEntryType.MODEL_SWITCH) {
+    let text = entry.text;
+    try {
+      const j = JSON.parse(entry.text) as { from?: string; to?: string };
+      text = `${j.from || "default"} → ${j.to}`;
+    } catch {}
+    return (
+      <LogLine badge="model" badgeClass="info" compact={compact}>
+        {text}
       </LogLine>
     );
   }
