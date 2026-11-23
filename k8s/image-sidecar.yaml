@@ -1,3 +1,3 @@
 # Image pin, written by ukubi-ci on every deploy; ArgoCD layers it over the default branch's values.
 images:
-  sidecar: "f3093c31a604@sha256:d8ca416e3c610243a6b88480b0cdcf32d0e21c7987065597fedc8155ac00f183"
+  sidecar: "38f95da2ef05@sha256:40f77bbf02f1de8db3194fa47d5f306461bd9ea62bc289e4737efe3dc7d9b225"
