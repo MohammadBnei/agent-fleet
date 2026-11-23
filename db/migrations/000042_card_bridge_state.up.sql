@@ -10,3 +10,11 @@ ALTER TABLE decisions ADD COLUMN bridge_state TEXT, ADD COLUMN bridge_parked BOO
 UPDATE decisions SET bridge_state = state WHERE kind = 'card' AND state <> 'open';
 CREATE INDEX decisions_card_unpublished_idx ON decisions (version)
   WHERE kind = 'card' AND NOT bridge_parked AND state IS DISTINCT FROM bridge_state;
+
+-- ce_id card/<id>/<state> publishes each state once: no card may leave a terminal state for 'open'.
+CREATE FUNCTION decisions_never_reopen() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'decision % cannot move from % back to open', OLD.id, OLD.state;
+END $$;
+CREATE TRIGGER decisions_never_reopen BEFORE UPDATE OF state ON decisions
+  FOR EACH ROW WHEN (NEW.state = 'open' AND OLD.state <> 'open') EXECUTE FUNCTION decisions_never_reopen();

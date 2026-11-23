@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -423,6 +425,49 @@ func TestDelete_CascadesTranscriptAndDetachesProposals(t *testing.T) {
 	}
 	if orphaned != 1 {
 		t.Errorf("proposal should survive with session_id NULL, got %d such rows", orphaned)
+	}
+}
+
+// A card the bridge saw open and that left open before its terminal event went out (Archive withdraws it) is
+// lost when the session is deleted; so is one already closed whose event is pending. A card the bridge
+// never saw, or already saw close, is not.
+func TestDelete_CountsCardsTheBridgeStillHasOpen(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	id := newSession(t, ctx, store)
+	for i, c := range []struct{ state, bridge string }{
+		{"withdrawn", "open"}, {"answered", "open"}, {"open", "open"}, // lost
+		{"open", ""}, {"withdrawn", "withdrawn"}, // not lost
+	} {
+		if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject, bridge_state)
+			VALUES ('card', $1, $2, $3, $4, NULLIF($5, ''))`, id, i+1, c.state, fmt.Sprintf("s/%d", i), c.bridge); err != nil {
+			t.Fatalf("insert card: %v", err)
+		}
+	}
+	before := testutil.ToFloat64(metrics.CardEventsLost)
+	if err := store.Delete(ctx, id); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got := testutil.ToFloat64(metrics.CardEventsLost) - before; got != 3 {
+		t.Errorf("lost = %v, want 3", got)
+	}
+	if err := store.Delete(ctx, id); err != ErrNotFound {
+		t.Errorf("second delete = %v, want ErrNotFound", err)
+	}
+}
+
+// Migration 000042's trigger: no writer, parameterised or not, reopens a closed decision.
+func TestDecisionsCannotReopen(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	id := newSession(t, ctx, store)
+	if _, err := pool.Exec(ctx, `INSERT INTO decisions (kind, session_id, request_seq, state, subject) VALUES ('card', $1, 1, 'withdrawn', 's/1')`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE decisions SET state = $2 WHERE session_id = $1`, id, "open"); err == nil {
+		t.Error("a withdrawn decision was reopened")
 	}
 }
 
