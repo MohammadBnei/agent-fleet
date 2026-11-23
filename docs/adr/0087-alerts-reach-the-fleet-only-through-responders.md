@@ -97,6 +97,9 @@ A first responder must look at the cluster before it answers. Without that, its 
    ended. "Investigate" is now an `open_session` effect: core binds a brief of the group's repo (the CI alert's repo
    by name, else `infra-bootstrap`), its title (80 characters at most) and the card's typed findings, never the
    responder's text. "Dismiss" stays a handoff and the card takes the owner's own words as an optional reason; either
-   is recorded and resumes nothing (item 2). The console says "Closes the card; nothing runs" for a handoff on an
-   `alert_group` card. The responder's prompt lists its four tools; it had tried `journal_search` and
-   `set_session_meta`, both denied.
+   is recorded and resumes nothing (item 2), own words included. The console says "Closes the card; nothing runs" for
+   a handoff on an `alert_group` card. The responder's prompt lists its tools; it had tried `journal_search` and
+   `set_session_meta`, both denied. Accepted risk: the brief's title carries the alertname (up to 80 characters of
+   `[A-Za-z0-9 _:.-]`), set by whoever writes the rule, into the investigating session as "title (agent claim)"; the
+   owner sees the payload on the confirm page and the session asks before every tool. The repo is looked up by name,
+   so a renamed or inactive fleet repo makes Investigate refuse with the card left open.

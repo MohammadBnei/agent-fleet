@@ -524,6 +524,27 @@ func TestAnswer_AlertGroupCardResumesNothing(t *testing.T) {
 	}
 }
 
+// A reason typed on a core-only alert card (WriteOwn) is recorded, and still wakes nothing.
+func TestAnswer_AlertGroupCardOwnTextResumesNothing(t *testing.T) {
+	f := setup(t)
+	s := f.thread(t, "client:bridge", "private", "")
+	r := f.draft(t, decisions.Draft{
+		SessionID: s, From: "system", Ask: "Alert X: the responder could not name the cause.", WriteOwn: true,
+		Subject: &agentfleetv1.CardSubject{Kind: "alert_group", GroupKey: "0123456789abcdef"},
+		Options: []*agentfleetv1.CardOption{opt("Look later", "handoff", "yes"), opt("Dismiss", "handoff", "yes")},
+	})
+	fx := &effects{tr: f.tr}
+	if _, err := f.answerCard(t, fx, r.ID, decisions.Reply{OwnText: "noise from a test rule"}); err != nil {
+		t.Fatal(err)
+	}
+	if fx.warms != nil {
+		t.Errorf("own words on an alert card warmed %v", fx.warms)
+	}
+	if got, _ := f.store.Get(f.ctx, r.ID); got.State != decisions.Answered {
+		t.Errorf("card %+v", got)
+	}
+}
+
 // docs/adr/0086 §4: a responder's card is on an alert group, not a GitHub subject, and only core files one.
 func TestDraft_AlertGroupSubject(t *testing.T) {
 	f := setup(t)

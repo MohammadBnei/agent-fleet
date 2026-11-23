@@ -226,13 +226,14 @@ func answerCard(ctx context.Context, r Record, a Reply, reply func(ctx context.C
 		return 0, fmt.Errorf("card %s: %w", r.ID, err)
 	}
 	ans := cardAnswer{Card: r.ID}
-	handoff := true
 	// A card core filed about a character (its budget) is the owner's to answer, not the character's to read: the
 	// answer closes the card and stays in the transcript, but no turn starts, no pod wakes (docs/adr/0084 §9). A
 	// first responder's alert_group card is the same: its run is single-shot and ended with the card (docs/adr/0086
 	// §3), so the answer never resumes it for a second output.
 	subj := c.GetSubject().GetKind()
 	coreOnly := subj == "character" || subj == "alert_group"
+	// Own words on a core-only card resume nothing either: only an agent's card hands its answer back.
+	handoff := !coreOnly
 	if coreOnly {
 		ctx = transcript.WithContextOnly(ctx)
 	}
