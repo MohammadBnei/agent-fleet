@@ -14,6 +14,7 @@ import type { Session } from "../gen/agentfleet/v1/core_pb";
 import {
   AutoBadge,
   DefinitionBadge,
+  RouteBadge,
   SectionHeading,
 } from "../pages/SessionList";
 import { relativeTime } from "../relativeTime";
@@ -75,6 +76,7 @@ function NeedsYouCard({
           {session.definitionName && (
             <DefinitionBadge name={session.definitionName} />
           )}
+          <RouteBadge model={session.model} />
           {todos.length > 0 && (
             <TickBar
               todos={todos}
@@ -211,6 +213,7 @@ function WorkingCard({
         {session.definitionName && (
           <DefinitionBadge name={session.definitionName} />
         )}
+        <RouteBadge model={session.model} />
         {session.permissionMode === "auto" && <AutoBadge className="ml-auto" />}
         {todos.length > 0 && (
           <span
@@ -274,6 +277,7 @@ function QuietRow({
         {session.definitionName && (
           <DefinitionBadge name={session.definitionName} />
         )}
+        <RouteBadge model={session.model} />
       </button>
       <RowActionsButton onOpen={onActions} inline />
     </div>

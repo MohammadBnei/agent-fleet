@@ -14,6 +14,7 @@ import { SessionActionsModal } from "../components/SessionActionsModal";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { client } from "../connectClient";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { routeOf } from "../modelRoute";
 import { sessionLabel } from "../sessionLabel";
 import {
   activityLabel,
@@ -58,6 +59,21 @@ export function DefinitionBadge({ name }: { name: string }) {
       title={`defined agent ${name}`}
     >
       def:{name}
+    </span>
+  );
+}
+
+// A gateway session (a non-Claude model through Venice) cannot be told from a
+// subscription one in a list row without it; a subscription session is the
+// default and carries no chip.
+export function RouteBadge({ model }: { model?: string | null }) {
+  if (routeOf(model) !== "gateway") return null;
+  return (
+    <span
+      className="text-2xs text-dim2 border border-line px-1.5 py-px flex-none"
+      title={`${model} · gateway (Venice)`}
+    >
+      gateway
     </span>
   );
 }
@@ -156,6 +172,7 @@ function NeedsYouCard({
           {session.definitionName && (
             <DefinitionBadge name={session.definitionName} />
           )}
+          <RouteBadge model={session.model} />
 
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
@@ -228,6 +245,7 @@ function StuckRow({
           {session.definitionName && (
             <DefinitionBadge name={session.definitionName} />
           )}
+          <RouteBadge model={session.model} />
           <span className="ml-auto text-sm text-warning min-w-0 truncate">
             {stuckLabel(session)}
             {stuckFor ? ` · ${stuckFor}` : ""}
@@ -308,6 +326,7 @@ function FinishedRow({
         {session.definitionName && (
           <DefinitionBadge name={session.definitionName} />
         )}
+        <RouteBadge model={session.model} />
         {/* No "no PR" on the other branch: the fleet does not track PRs (the
             column went with adr/0048), so it said "no PR" on every row,
             including the ones that opened one. */}
@@ -394,6 +413,7 @@ function WorkingRow({
         {session.definitionName && (
           <DefinitionBadge name={session.definitionName} />
         )}
+        <RouteBadge model={session.model} />
         {session.permissionMode === "auto" && <AutoBadge />}
 
         {provisioning ? (
@@ -470,6 +490,7 @@ function CompactRow({
         {session.definitionName && (
           <DefinitionBadge name={session.definitionName} />
         )}
+        <RouteBadge model={session.model} />
         {badge && (
           <span
             className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}

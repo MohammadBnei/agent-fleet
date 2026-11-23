@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { PERMISSION_MODES } from "../approvePlan";
 import { client } from "../connectClient";
+import { groupModels } from "../modelRoute";
 import { isPodPhaseLive } from "../sessionState";
 import { ActionButton } from "./ActionButton";
 
@@ -171,53 +172,61 @@ export function ActionsMenu({
       {/* Native Popover API + CSS anchor positioning. Only one ActionsMenu is
           mounted at a time (desktop xor mobile, or the list's modal while no
           detail is open), so a static anchor/id pair is safe. */}
-      <ActionButton
-        className={BTN}
-        busy={isBusy("action:mode")}
-        disabled={busy}
-        popoverTarget="popover-mode"
-        style={{ anchorName: "--anchor-mode" } as CSSProperties}
-      >
-        mode:{" "}
-        {(
-          MODES.find((m) => m.value === currentMode)?.label ??
-          currentMode ??
-          "?"
-        ).toLowerCase()}{" "}
-        ▾
-      </ActionButton>
-      <ul
-        className="dropdown menu menu-sm bg-base-100 rounded-box shadow w-44 p-1"
-        popover="auto"
-        id="popover-mode"
-        style={{ positionAnchor: "--anchor-mode" } as CSSProperties}
-      >
-        {MODES.map((m) => (
-          <li key={m.value}>
-            <button
-              type="button"
-              className={m.value === currentMode ? "active" : undefined}
-              // Dismiss on pick, natively. The mode only changes on the wire,
-              // and leaving the menu open over an unchanged label is what made
-              // this feel like the click was dropped.
-              popoverTarget="popover-mode"
-              popoverTargetAction="hide"
-              onClick={() =>
-                "confirm" in m && m.confirm
-                  ? onAutoClick()
-                  : run(
-                      () =>
-                        client.setPermissionMode({ sessionId, mode: m.value }),
-                      "action:mode",
-                    )
-              }
-            >
-              {m.value === currentMode ? "✓ " : ""}
-              {m.label}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {/* An archived session is finished: no model, no warm, no mode. */}
+      {!archivedAt && (
+        <>
+          <ActionButton
+            className={BTN}
+            busy={isBusy("action:mode")}
+            disabled={busy}
+            popoverTarget="popover-mode"
+            style={{ anchorName: "--anchor-mode" } as CSSProperties}
+          >
+            mode:{" "}
+            {(
+              MODES.find((m) => m.value === currentMode)?.label ??
+              currentMode ??
+              "?"
+            ).toLowerCase()}{" "}
+            ▾
+          </ActionButton>
+          <ul
+            className="dropdown menu menu-sm bg-base-100 rounded-box shadow w-44 p-1"
+            popover="auto"
+            id="popover-mode"
+            style={{ positionAnchor: "--anchor-mode" } as CSSProperties}
+          >
+            {MODES.map((m) => (
+              <li key={m.value}>
+                <button
+                  type="button"
+                  className={m.value === currentMode ? "active" : undefined}
+                  // Dismiss on pick, natively. The mode only changes on the wire,
+                  // and leaving the menu open over an unchanged label is what made
+                  // this feel like the click was dropped.
+                  popoverTarget="popover-mode"
+                  popoverTargetAction="hide"
+                  onClick={() =>
+                    "confirm" in m && m.confirm
+                      ? onAutoClick()
+                      : run(
+                          () =>
+                            client.setPermissionMode({
+                              sessionId,
+                              mode: m.value,
+                            }),
+                          "action:mode",
+                        )
+                  }
+                >
+                  {m.value === currentMode ? "✓ " : ""}
+                  {m.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {canSetModel && !archivedAt && models.length > 0 && (
         <>
           <ActionButton
@@ -236,31 +245,36 @@ export function ActionsMenu({
             id="popover-model"
             style={{ positionAnchor: "--anchor-model" } as CSSProperties}
           >
-            {models.map((m) => (
-              <li key={m}>
-                <button
-                  type="button"
-                  className={m === currentModel ? "active" : undefined}
-                  popoverTarget="popover-model"
-                  popoverTargetAction="hide"
-                  onClick={() =>
-                    run(async () => {
-                      setModelErr("");
-                      try {
-                        await client.setSessionModel({ sessionId, model: m });
-                      } catch (e) {
-                        setModelErr(
-                          (e as Error).message.replace(/^\[[a-z_]+\]\s*/, ""),
-                        );
-                      }
-                    }, "action:model")
-                  }
-                >
-                  {m === currentModel ? "✓ " : ""}
-                  {m}
-                </button>
-              </li>
-            ))}
+            {groupModels(models).flatMap((g) => [
+              <li key={g.route} className="menu-title">
+                {g.label}
+              </li>,
+              ...g.models.map((m) => (
+                <li key={m}>
+                  <button
+                    type="button"
+                    className={m === currentModel ? "active" : undefined}
+                    popoverTarget="popover-model"
+                    popoverTargetAction="hide"
+                    onClick={() =>
+                      run(async () => {
+                        setModelErr("");
+                        try {
+                          await client.setSessionModel({ sessionId, model: m });
+                        } catch (e) {
+                          setModelErr(
+                            (e as Error).message.replace(/^\[[a-z_]+\]\s*/, ""),
+                          );
+                        }
+                      }, "action:model")
+                    }
+                  >
+                    {m === currentModel ? "✓ " : ""}
+                    {m}
+                  </button>
+                </li>
+              )),
+            ])}
           </ul>
           {modelErr && (
             <span role="alert" className="basis-full text-xs text-error">

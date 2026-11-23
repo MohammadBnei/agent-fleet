@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
 import { client } from "../connectClient";
 import type { AgentDefinition, Repo } from "../gen/agentfleet/v1/dashboard_pb";
+import { groupModels } from "../modelRoute";
 import { activeRepos } from "../repoFilter";
 import { queueFirstMessage } from "../useSessionDetail";
 import { InlineError } from "./InlineError";
@@ -308,10 +309,21 @@ export function NewSessionDialog({
                   title={model === "" ? FLEET_MODEL_DEFAULT_HINT : undefined}
                 >
                   <option value="">{FLEET_MODEL_DEFAULT}</option>
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
+                  {groupModels(models).map((g) => (
+                    <optgroup
+                      key={g.route}
+                      label={
+                        g.route === "gateway"
+                          ? `${g.label} · billed per token`
+                          : `${g.label} · included`
+                      }
+                    >
+                      {g.models.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>

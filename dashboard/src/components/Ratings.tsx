@@ -162,6 +162,11 @@ export function shortModel(id: string): string {
   return id.replace(/^(claude|zai-org|z-ai)-/, "");
 }
 
+// A session is scored once, as a whole, and the score is filed under the model
+// that did most of its work; a session that switched models is not split.
+export const SCORE_NOTE =
+  "A session score counts toward the session's most-used model.";
+
 export const STAT_HEAD = [
   "model",
   "route",
@@ -200,7 +205,9 @@ export function ModelStatsTable({ stats }: { stats: ModelStat[] }) {
           <thead>
             <tr>
               {STAT_HEAD.map((h) => (
-                <th key={h}>{h}</th>
+                <th key={h} title={h === "avg score" ? SCORE_NOTE : undefined}>
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
@@ -258,6 +265,9 @@ export function ModelStatsPanel() {
     <div className="flex flex-col gap-3">
       <h3 className="text-sm font-semibold">Models, last 7 days</h3>
       {error && <InlineError message={error} />}
+      {stats && stats.length > 0 && (
+        <p className="text-xs text-dim2">{SCORE_NOTE}</p>
+      )}
       {stats && <ModelStatsTable stats={stats} />}
     </div>
   );
