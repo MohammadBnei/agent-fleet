@@ -789,6 +789,14 @@ func TestLoad_Reach(t *testing.T) {
 		return m
 	}
 	shot := map[string]string{"lifecycle": "{ allow: [single-shot] }"}
+	responder := func(kv map[string]string) map[string]string {
+		m := map[string]string{"lifecycle": "{ allow: [single-shot] }", "trust": "{ untrusted: B }", "git": "{ mode: none, identity: { name: a, email: a@b.c } }",
+			"output": "{ schema: { type: object } }", "subscribes": "{ types: [dev.bnei.alert.] }"}
+		for k, v := range kv {
+			m[k] = v
+		}
+		return m
+	}
 	cases := []struct {
 		name string
 		kv   map[string]string
@@ -812,7 +820,12 @@ func TestLoad_Reach(t *testing.T) {
 		{"kubectl_read needs cluster.read", standing(map[string]string{"sidecarTools": "[AskUserQuestion, kubectl_read]"}), "kubectl_read needs cluster.read"},
 		{"kubectl_read", standing(map[string]string{"sidecarTools": "[AskUserQuestion, kubectl_read]", "cluster": "{ read: true }"}), ""},
 		{"query_metrics", standing(map[string]string{"sidecarTools": "[AskUserQuestion, query_metrics]"}), ""},
-		{"query_metrics on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, query_metrics]"}, "standing character's tool"},
+		{"query_metrics on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, query_metrics]"}, "first responder's tool"},
+		{"responder reads", responder(map[string]string{"sidecarTools": "[AskUserQuestion, kubectl_read, view_logs, query_metrics]", "cluster": "{ read: true, logNamespaces: [agent-fleet] }"}), ""},
+		{"responder view_logs needs namespaces", responder(map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]"}), "view_logs needs cluster.logNamespaces"},
+		{"responder spawn_worker", responder(map[string]string{"sidecarTools": "[AskUserQuestion, spawn_worker]", "spawns": "{ allow: [worker] }"}), "standing character's tool"},
+		{"responder open_issue", responder(map[string]string{"sidecarTools": "[AskUserQuestion, open_issue]", "owns": "{ repos: [a/b] }"}), "standing character's tool"},
+		{"view_logs on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, view_logs]", "cluster": "{ logNamespaces: [agent-fleet] }"}, "first responder's tool"},
 		{"speak", standing(map[string]string{"sidecarTools": "[AskUserQuestion, speak]"}), ""},
 		{"speak on a worker", map[string]string{"sidecarTools": "[AskUserQuestion, speak]"}, "standing character's tool"},
 		{"bad namespace", standing(map[string]string{"cluster": "{ logNamespaces: [\"A b\"] }"}), "not a namespace name"},

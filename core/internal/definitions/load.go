@@ -50,7 +50,9 @@ var (
 	sidecarCeiling = []string{"AskUserQuestion", "send_message", "wait_for_messages", "set_session_meta", "publish_event", "draft_card", "submit_review", "memory_write",
 		"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak", "kubectl_read"}
 	// reachTools are a standing character's alone (ADR-0084 §6).
-	reachTools = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "view_logs", "query_metrics", "speak"}
+	reachTools = []string{"spawn_worker", "wait_for_result", "open_issue", "list_responder_cards", "speak"}
+	// readTools are reads tagged B (ADR-0086): a standing character's, and a first responder's (A·B reads, never acts).
+	readTools = []string{"view_logs", "query_metrics"}
 	// serviceHosts: forge and forge-api are the forge FORGE_URL names, its git and its API (VaultSpec maps them to
 	// forge.Hosts), so a file says which credential goes where and the config alone says on which host.
 	serviceHosts = []string{ForgeGit, ForgeAPI, "api.anthropic.com"}
@@ -717,9 +719,13 @@ func validateReach(errs *[]error, s *Spec) {
 	if s.Abstract {
 		return // a parent's grants are judged on the child that inherits them
 	}
+	readsOK := standing || s.Responder()
 	for _, t := range s.SidecarTools {
 		if slices.Contains(reachTools, t) && !standing {
 			bad("sidecarTools: %q is a standing character's tool (lifecycle standing)", t)
+		}
+		if slices.Contains(readTools, t) && !readsOK {
+			bad("sidecarTools: %q is a standing character's or a first responder's tool (lifecycle standing, or trust.untrusted B)", t)
 		}
 	}
 	has := func(t string) bool { return slices.Contains(s.SidecarTools, t) }
@@ -753,8 +759,8 @@ func validateReach(errs *[]error, s *Spec) {
 		bad("sidecarTools: view_logs needs cluster.logNamespaces")
 	}
 	if s.Cluster != nil && len(s.Cluster.LogNamespaces) > 0 {
-		if !standing {
-			bad("cluster.logNamespaces: only a standing definition may read logs")
+		if !readsOK {
+			bad("cluster.logNamespaces: only a standing definition or a first responder may read logs")
 		}
 		shapeList(errs, "cluster.logNamespaces", s.Cluster.LogNamespaces, "")
 		for _, n := range s.Cluster.LogNamespaces {
