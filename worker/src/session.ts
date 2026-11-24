@@ -160,8 +160,14 @@ const PLAN_MODE_STILL_ASKS = new Set([
 // slips through. The ceiling is that this is a convenience gate on a mode a
 // human explicitly chose, not a sandbox; the upgrade path is the SDK's own
 // tree-sitter-bash if that ever stops being true.
-// The end is a boundary too: `xargs rm` at the end of a line, or `xargs rm;x`.
-const AUTO_MODE_STILL_ASKS_BASH = /(^|[\s;&|('"`/])(sudo|rm)(?=[\s;&|)'"`]|$)/;
+// The end is a boundary too (`xargs rm`, `xargs rm;x`, `rm>log x`), and so is a
+// backslash (`\rm`).
+const AUTO_MODE_STILL_ASKS_BASH =
+  /(^|[\s;&|('"`/\\])(sudo|rm)(?=[\s;&|)'"`<>\\]|$)/;
+
+// A definition's own rules keep the narrower match: theirs is an allowlist of
+// reviewed prefixes, and `git commit -m "drop rm"` is one of them.
+const DEFINITION_STILL_ASKS_BASH = /(^|[\s;&|('"/])(sudo|rm)\s/;
 
 function autoModeStillAsksCommand(
   toolName: string,
@@ -617,7 +623,7 @@ function ruleRuns(
 ): boolean {
   if (PATH_TOOLS[toolName]) return mode === "auto" || isGrant;
   if (toolName === "Bash" && typeof input.command === "string") {
-    if (autoModeStillAsksCommand(toolName, input)) return false;
+    if (DEFINITION_STILL_ASKS_BASH.test(input.command)) return false;
     const prefix = BASH_PREFIX_RULE.exec(rule)?.[1];
     if (prefix !== undefined) {
       // A git prefix gets the argument check, so one the table does not name

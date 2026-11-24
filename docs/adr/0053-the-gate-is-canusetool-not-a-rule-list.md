@@ -90,6 +90,9 @@ ask-rule match, a classifier fallback, a passthrough — gets a deterministic
 fleet answer. Whether the classifier runs is therefore no longer load-bearing,
 which is the part ADR-0052 could not verify.
 
+*Amended 2026-11-24:* the match also ends at the end of the command or at a shell delimiter, and a backslash counts as a
+boundary; the pattern is `AUTO_MODE_STILL_ASKS_BASH`. A definition's own rules keep the pattern above.
+
 The leading character class is what makes the match worth anything: `rm` at the
 head of a line is the case nobody writes. `bash -c "rm -rf /workspace"`, `sh -c
 'rm -rf dist'` and `/bin/rm -rf x` are what an agent actually emits, and the
