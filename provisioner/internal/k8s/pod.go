@@ -232,6 +232,9 @@ type WorkerPodSpec struct {
 	RepoVault *RepoVault
 	// Memory gives a long-lived agent's pod its memory repos (docs/adr/0086 §5).
 	Memory *MemoryProfile
+	// SharedGatewayKey lets a definition pod with no key of its own take the shared
+	// definitions key (docs/adr/0088 amendment). Core sets it only for a gateway model.
+	SharedGatewayKey bool
 }
 
 // RepoVault is the vault half of the definition profile, for a repo session:

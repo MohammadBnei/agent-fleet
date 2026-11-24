@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,12 +113,33 @@ func (c *Client) DeleteCredSecret(ctx context.Context, taskID string) {
 	}
 }
 
+// SharedDefinitionsKey is the suffix of the key shared by definitions that have none of their own.
+const SharedDefinitionsKey = "DEFINITIONS"
+
 // gatewayKey is the llm-gateway key for this pod (docs/adr/0088): a definition's
-// own, a repo session's shared console key, "" when none was provisioned.
+// own, else (only when core said the session's model is a gateway id, so a pod
+// that never uses the gateway never holds a budget) the shared definitions key;
+// a repo session's shared console key; "" when none was provisioned. A
+// definition never gets the console key.
 func (c *Client) gatewayKey(spec WorkerPodSpec) string {
-	suffix := "CONSOLE"
-	if spec.Definition != nil {
-		suffix = strings.ToUpper(strings.ReplaceAll(spec.Definition.Name, "-", "_"))
+	if spec.Definition == nil {
+		return c.GatewayKeys["CONSOLE"]
 	}
-	return c.GatewayKeys[suffix]
+	if k := c.GatewayKeys[strings.ToUpper(strings.ReplaceAll(spec.Definition.Name, "-", "_"))]; k != "" {
+		return k
+	}
+	if spec.SharedGatewayKey {
+		return c.GatewayKeys[SharedDefinitionsKey]
+	}
+	return ""
+}
+
+// GatewayKeyNames is the suffixes of the keys this process holds, sorted. Never the values.
+func (c *Client) GatewayKeyNames() []string {
+	names := make([]string, 0, len(c.GatewayKeys))
+	for k := range c.GatewayKeys {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }

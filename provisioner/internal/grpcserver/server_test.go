@@ -632,3 +632,19 @@ func TestListDefinitionFiles(t *testing.T) {
 		}
 	})
 }
+
+// GetVersion tells core which gateway key NAMES exist, never a value.
+func TestGetVersion_GatewayKeyNamesOnly(t *testing.T) {
+	s, c, _ := newTestServer(t)
+	c.GatewayKeys = map[string]string{"DEFINITIONS": "do-not-leak", "CONSOLE": "do-not-leak"}
+	resp, err := s.GetVersion(context.Background(), &agentfleetv1.GetVersionRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.GetGatewayKeyNames(); len(got) != 2 || got[0] != "CONSOLE" || got[1] != "DEFINITIONS" {
+		t.Fatalf("names = %v", got)
+	}
+	if strings.Contains(resp.String(), "do-not-leak") {
+		t.Fatal("a key value is in the response")
+	}
+}

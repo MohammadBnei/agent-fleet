@@ -398,6 +398,8 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		Definition:    definition,
 		RepoVault:     repoVault,
 		Memory:        memory,
+		// Only a definition pod reads it (k8s gatewayKey).
+		SharedGatewayKey: req.GetDefinitionSharedGatewayKey(),
 	})
 	endPod(err)
 	if err != nil {
@@ -807,6 +809,8 @@ func (s *Server) GetVersion(_ context.Context, _ *agentfleetv1.GetVersionRequest
 		Version:      s.version,
 		WorkerImage:  worker,
 		SidecarImage: sidecar,
+		// Names only: the values never leave this process.
+		GatewayKeyNames: s.k8sc.GatewayKeyNames(),
 	}, nil
 }
 
