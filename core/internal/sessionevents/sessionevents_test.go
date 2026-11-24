@@ -12,7 +12,7 @@ var at = time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
 func sample() session {
 	arch := at.Add(time.Hour)
 	return session{id: "s1", repo: "acme/web", title: "fix login", definition: "ops-lead", lifecycle: "standing",
-		threadKey: "main", createdAt: at, archivedAt: &arch}
+		createdAt: at, archivedAt: &arch}
 }
 
 func TestNoTextInData(t *testing.T) {
@@ -26,6 +26,9 @@ func TestNoTextInData(t *testing.T) {
 	}
 	var d map[string]any
 	_ = json.Unmarshal(turnEvent(s, turn{seq: 7, threadKey: "main", at: at, text: body}).Data, &d)
+	if _, has := base(s, at)["thread_key"]; has {
+		t.Error("thread_key belongs to turn events only")
+	}
 	allowed := map[string]bool{"session_id": true, "kind": true, "repo": true, "definition": true, "title": true, "thread_key": true,
 		"seq": true, "duration_ms": true, "is_error": true, "occurred_at": true}
 	for k := range d {
@@ -72,3 +75,23 @@ func TestKind(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+func TestTitleClamp(t *testing.T) {
+	long := strings.Repeat("é", 300)
+	cases := []struct{ in, want string }{
+		{"fix\nlogin\x00\x1b[31m", "fixlogin[31m"},
+		{"  \n\t ", ""},
+		{long, strings.Repeat("é", 120)},
+		{"a\u2028b", "ab"},
+	}
+	for _, c := range cases {
+		if got := cleanTitle(c.in); got != c.want {
+			t.Errorf("cleanTitle(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	s := sample()
+	s.title = "\n"
+	if _, has := base(s, at)["title"]; has {
+		t.Error("an empty title must be omitted")
+	}
+}

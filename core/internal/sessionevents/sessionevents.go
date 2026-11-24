@@ -6,7 +6,8 @@
 //
 // The events carry ids, kind, repo, definition, title, thread key and timings.
 // Never a prompt, a reply, a result's text or a file path. Sessions and
-// result entries that exist when migration 000043 runs are marked published.
+// result entries that exist when migration 000045 runs are marked published:
+// a session open at deploy gets no opened event, its later turns and its ended do flow.
 //
 // ended is published when a session is archived. A hard delete removes the
 // row with no ended event; it is counted (agentfleet_session_events_lost_total).
@@ -18,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"
@@ -44,6 +47,7 @@ type Events struct {
 	backoff time.Duration
 	retryAt time.Time
 	note    string
+	fails   map[string]failure // per-session backoff, in memory
 }
 
 func New(pool *pgxpool.Pool, pub cardevents.Publisher, enabled bool) *Events {
@@ -51,7 +55,7 @@ func New(pool *pgxpool.Pool, pub cardevents.Publisher, enabled bool) *Events {
 		metrics.SessionEventsEnabled.Set(1)
 	}
 	metrics.SessionEventsLastSuccess.SetToCurrentTime()
-	return &Events{pool: pool, pub: pub, now: time.Now}
+	return &Events{pool: pool, pub: pub, now: time.Now, fails: map[string]failure{}}
 }
 
 // Run ticks every interval; after a failure it backs off and never stops.
@@ -89,11 +93,11 @@ func (e *Events) settle(err error) {
 }
 
 type session struct {
-	id, repo, title, definition, lifecycle, threadKey string
-	createdAt                                         time.Time
-	archivedAt                                        *time.Time
-	state                                             *string
-	turnSeq                                           int64
+	id, repo, title, definition, lifecycle string
+	createdAt                              time.Time
+	archivedAt, parkedAt                   *time.Time
+	state                                  *string
+	turnSeq                                int64
 }
 
 type turn struct {
@@ -103,23 +107,47 @@ type turn struct {
 	text      string
 }
 
+// ParkRetry is how long a parked session waits before core tries it again, so one
+// transient refusal cannot silence a session for good.
+var ParkRetry = 6 * time.Hour
+
+// skipErr: this session failed in a way that is not the bridge being down. The tick goes on.
+type skipErr struct{ err error }
+
+func (s skipErr) Error() string { return s.err.Error() }
+func (s skipErr) Unwrap() error { return s.err }
+
+type failure struct {
+	n     int
+	until time.Time
+}
+
 // Tick publishes, per session in creation order: opened, its unpublished
 // results in seq order, then ended. A refusal retrying cannot fix
-// (InvalidArgument, PermissionDenied) parks the session; any other error
-// stops the tick.
+// (InvalidArgument, PermissionDenied) parks the session. An unavailable or
+// unauthenticated bridge, or a database error, stops the tick; any other error on
+// one session skips only that session, with its own backoff.
 func (e *Events) Tick(ctx context.Context) error {
+	now := e.now()
+	skip := []string{}
+	for id, f := range e.fails {
+		if now.Before(f.until) {
+			skip = append(skip, id)
+		}
+	}
 	rows, err := e.pool.Query(ctx, `
 		SELECT s.id::text, s.repo, COALESCE(s.title, ''), COALESCE(s.definition_name, ''), COALESCE(s.lifecycle, ''),
-		       COALESCE(s.thread_key, ''), s.created_at, s.archived_at, s.bridge_state, s.bridge_turn_seq
+		       s.created_at, s.archived_at, s.bridge_parked_at, s.bridge_state, s.bridge_turn_seq
 		  FROM sessions s
-		 WHERE NOT s.bridge_parked AND (`+differs+` OR `+unsentTurns+`)
-		 ORDER BY s.created_at, s.id LIMIT $1`, cardevents.Batch)
+		 WHERE (s.bridge_parked_at IS NULL OR s.bridge_parked_at < $3) AND s.id::text <> ALL($2::text[])
+		   AND (`+differs+` OR `+unsentTurns+`)
+		 ORDER BY s.created_at, s.id LIMIT $1`, cardevents.Batch, skip, now.Add(-ParkRetry))
 	if err != nil {
 		return err
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (session, error) {
 		var s session
-		err := r.Scan(&s.id, &s.repo, &s.title, &s.definition, &s.lifecycle, &s.threadKey, &s.createdAt, &s.archivedAt, &s.state, &s.turnSeq)
+		err := r.Scan(&s.id, &s.repo, &s.title, &s.definition, &s.lifecycle, &s.createdAt, &s.archivedAt, &s.parkedAt, &s.state, &s.turnSeq)
 		return s, err
 	})
 	if err != nil {
@@ -127,14 +155,28 @@ func (e *Events) Tick(ctx context.Context) error {
 	}
 	var perr error
 	for _, s := range list {
-		if perr = e.publish(ctx, s); perr != nil {
+		err := e.publish(ctx, s)
+		var sk skipErr
+		switch {
+		case err == nil:
+			delete(e.fails, s.id)
+		case errors.As(err, &sk):
+			f := e.fails[s.id]
+			f.n++
+			f.until = now.Add(min(cardevents.BackoffMin<<(f.n-1), cardevents.BackoffMax))
+			e.fails[s.id] = f
+			slog.Warn("sessionevents: publish failed for one session, skipped", "session", s.id, "retryAt", f.until, "error", sk.err)
+		default:
+			perr = err
+		}
+		if perr != nil {
 			break
 		}
 	}
 	// ponytail: counts sessions, not events; one session with 50 unsent turns is 1.
 	var pending, parked int64
-	if err := e.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE NOT s.bridge_parked AND (`+differs+` OR `+unsentTurns+`)),
-		count(*) FILTER (WHERE s.bridge_parked) FROM sessions s`).Scan(&pending, &parked); err != nil {
+	if err := e.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE s.bridge_parked_at IS NULL AND (`+differs+` OR `+unsentTurns+`)),
+		count(*) FILTER (WHERE s.bridge_parked_at IS NOT NULL) FROM sessions s`).Scan(&pending, &parked); err != nil {
 		return err
 	}
 	metrics.SessionEventsPending.Set(float64(pending))
@@ -157,21 +199,24 @@ func (e *Events) Tick(ctx context.Context) error {
 
 const (
 	differs = `s.bridge_state IS DISTINCT FROM CASE WHEN s.archived_at IS NULL THEN 'opened' ELSE 'ended' END`
-	// An empty result is not a turn.
-	unsentTurns = `EXISTS (SELECT 1 FROM transcript t WHERE t.session_id = s.id AND t.type = 'result' AND t.text <> '' AND t.seq > s.bridge_turn_seq)`
+	// A result counts as a turn when it has text and, for an archived session, was written before the archive:
+	// nothing is published after ended.
+	unsentTurns = `EXISTS (SELECT 1 FROM transcript t WHERE t.session_id = s.id AND t.type = 'result' AND t.text <> ''
+		AND t.seq > s.bridge_turn_seq AND (s.archived_at IS NULL OR t.created_at <= s.archived_at))`
 )
 
 func (e *Events) publish(ctx context.Context, s session) error {
 	if s.state == nil {
-		if parked, err := e.send(ctx, openedEvent(s)); err != nil || parked {
-			return e.finish(ctx, s, parked, err)
+		if parked, err := e.send(ctx, s, openedEvent(s)); err != nil || parked {
+			return err
 		}
 		if _, err := e.pool.Exec(ctx, `UPDATE sessions SET bridge_state = 'opened' WHERE id = $1::uuid AND bridge_state IS NULL`, s.id); err != nil {
 			return err
 		}
 	}
 	rows, err := e.pool.Query(ctx, `SELECT seq, thread_key, created_at, text FROM transcript
-		WHERE session_id = $1::uuid AND type = 'result' AND text <> '' AND seq > $2 ORDER BY seq LIMIT $3`, s.id, s.turnSeq, turnsPerTick)
+		WHERE session_id = $1::uuid AND type = 'result' AND text <> '' AND seq > $2
+		  AND ($4::timestamptz IS NULL OR created_at <= $4) ORDER BY seq LIMIT $3`, s.id, s.turnSeq, turnsPerTick, s.archivedAt)
 	if err != nil {
 		return err
 	}
@@ -183,8 +228,8 @@ func (e *Events) publish(ctx context.Context, s session) error {
 		return err
 	}
 	for _, t := range turns {
-		if parked, err := e.send(ctx, turnEvent(s, t)); err != nil || parked {
-			return e.finish(ctx, s, parked, err)
+		if parked, err := e.send(ctx, s, turnEvent(s, t)); err != nil || parked {
+			return err
 		}
 		if _, err := e.pool.Exec(ctx, `UPDATE sessions SET bridge_turn_seq = $2 WHERE id = $1::uuid AND bridge_turn_seq < $2`, s.id, t.seq); err != nil {
 			return err
@@ -192,38 +237,41 @@ func (e *Events) publish(ctx context.Context, s session) error {
 	}
 	switch {
 	case s.archivedAt != nil && len(turns) < turnsPerTick:
-		parked, err := e.send(ctx, endedEvent(s))
-		if err != nil || parked {
-			return e.finish(ctx, s, parked, err)
+		if parked, err := e.send(ctx, s, endedEvent(s)); err != nil || parked {
+			return err
 		}
-		_, err = e.pool.Exec(ctx, `UPDATE sessions SET bridge_state = 'ended' WHERE id = $1::uuid AND archived_at IS NOT NULL`, s.id)
-		return err
+		if _, err := e.pool.Exec(ctx, `UPDATE sessions SET bridge_state = 'ended' WHERE id = $1::uuid AND archived_at IS NOT NULL`, s.id); err != nil {
+			return err
+		}
 	case s.archivedAt == nil && s.state != nil && *s.state == "ended":
 		// Unarchived again: back to opened, no event (a later archive has its own ce_id).
-		_, err = e.pool.Exec(ctx, `UPDATE sessions SET bridge_state = 'opened' WHERE id = $1::uuid AND archived_at IS NULL`, s.id)
-		return err
+		if _, err := e.pool.Exec(ctx, `UPDATE sessions SET bridge_state = 'opened' WHERE id = $1::uuid AND archived_at IS NULL`, s.id); err != nil {
+			return err
+		}
 	}
-	return nil
-}
-
-func (e *Events) finish(ctx context.Context, s session, parked bool, err error) error {
-	if err != nil {
-		return err
+	if s.parkedAt != nil { // the bridge took what it refused before
+		_, err = e.pool.Exec(ctx, `UPDATE sessions SET bridge_parked_at = NULL WHERE id = $1::uuid`, s.id)
 	}
-	_, err = e.pool.Exec(ctx, `UPDATE sessions SET bridge_parked = true WHERE id = $1::uuid`, s.id)
 	return err
 }
 
-func (e *Events) send(ctx context.Context, ev *bridgev1.CloudEvent) (parked bool, err error) {
+// send publishes one event. parked: the bridge refused it for good, and the session is parked.
+func (e *Events) send(ctx context.Context, s session, ev *bridgev1.CloudEvent) (parked bool, err error) {
 	pctx, cancel := context.WithTimeout(ctx, cardevents.PublishTimeout)
 	defer cancel()
 	if err := e.pub.Publish(pctx, ev); err != nil {
-		if code := connect.CodeOf(err); code != connect.CodeInvalidArgument && code != connect.CodePermissionDenied {
+		code := connect.CodeOf(err)
+		switch {
+		case code == connect.CodeInvalidArgument || code == connect.CodePermissionDenied:
+			slog.Error("sessionevents: the bridge refused a session event, parked", "subject", ev.Subject, "type", ev.Type, "error", err)
+			metrics.SessionEventsRefused.Inc()
+			_, uerr := e.pool.Exec(ctx, `UPDATE sessions SET bridge_parked_at = $2 WHERE id = $1::uuid`, s.id, e.now())
+			return true, uerr
+		case errors.Is(err, context.Canceled), errors.Is(err, bridgeclient.ErrNotConfigured),
+			code == connect.CodeUnavailable, code == connect.CodeUnauthenticated:
 			return false, err
 		}
-		slog.Error("sessionevents: the bridge refused a session event, parked", "subject", ev.Subject, "type", ev.Type, "error", err)
-		metrics.SessionEventsRefused.Inc()
-		return true, nil
+		return false, skipErr{err}
 	}
 	metrics.SessionEventsLastSuccess.SetToCurrentTime()
 	metrics.SessionEventsPublished.WithLabelValues(ev.Type).Inc()
@@ -241,6 +289,24 @@ func kind(s session) string {
 	return "repo"
 }
 
+// TitleRunes is the longest title an event carries.
+const TitleRunes = 120
+
+// cleanTitle: the title is agent-written, so it is untrusted text. One place clamps it:
+// control characters and newlines out, 120 runes at most, empty means omitted.
+func cleanTitle(t string) string {
+	t = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(t, ""))
+	if r := []rune(t); len(r) > TitleRunes {
+		t = string(r[:TitleRunes])
+	}
+	return strings.TrimSpace(t)
+}
+
 // base is the data every event shares. Ids, labels and times only.
 func base(s session, at time.Time) map[string]any {
 	d := map[string]any{
@@ -250,8 +316,8 @@ func base(s session, at time.Time) map[string]any {
 	if s.definition != "" {
 		d["definition"] = s.definition
 	}
-	if s.title != "" {
-		d["title"] = s.title
+	if t := cleanTitle(s.title); t != "" {
+		d["title"] = t
 	}
 	return d
 }
@@ -266,9 +332,6 @@ func event(s session, typ, id string, at time.Time, data map[string]any) *bridge
 
 func openedEvent(s session) *bridgev1.CloudEvent {
 	d := base(s, s.createdAt)
-	if s.threadKey != "" {
-		d["thread_key"] = s.threadKey
-	}
 	return event(s, "opened", "session/"+s.id+"/opened", s.createdAt, d)
 }
 
