@@ -404,28 +404,6 @@ export function gatewayEnv(
   };
 }
 
-// FLEET_ASK_RULES as one matcher, for the gateway route's auto mode: the
-// SDK runs in default there, so canUseTool sees every call and this decides
-// which ones still park. Same boundary class as AUTO_MODE_STILL_ASKS_BASH.
-const ASK_RULE_BASH = new RegExp(
-  `(^|[\\s;&|('"/])(${FLEET_ASK_RULES.map((r) =>
-    /^Bash\((.+):\*\)$/.exec(r)?.[1]?.replace(/ /g, "\\s+"),
-  )
-    .filter(Boolean)
-    .join("|")})(\\s|$)`,
-);
-
-export function matchesAskRule(
-  toolName: string,
-  input: Record<string, unknown>,
-): boolean {
-  return (
-    toolName === "Bash" &&
-    typeof input.command === "string" &&
-    ASK_RULE_BASH.test(input.command)
-  );
-}
-
 // Mirrors core/internal/definitions/load.go's toolCeiling: the tools a
 // definition can ever be allowed. Outside it a call is denied, not asked.
 const DEFINITION_TOOL_CEILING = new Set([
@@ -2009,35 +1987,17 @@ export async function runSession(): Promise<SessionResult> {
           // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
           // leaving `auto` is a live control request, so this has to read what
           // the session is in now.
-          // On the gateway route the SDK is in default, so this is the only
-          // auto there is: rm and sudo are denied outright (docs/adr/0088 —
-          // nobody is there to read a prompt for them), any other ask-rule
-          // call parks, everything else runs.
-          if (
-            !spec &&
-            gatewayRoute &&
-            currentMode === "auto" &&
-            autoModeStillAsksCommand(
-              toolName,
-              toolInput as Record<string, unknown>,
-            )
-          ) {
-            return {
-              behavior: "deny",
-              message:
-                "rm and sudo are not allowed in auto on this model route",
-            };
-          }
+          // The same on both routes. On the gateway route the SDK is in default,
+          // so this is the only auto there is and no classifier runs behind it
+          // (docs/adr/0088 §6).
           if (
             !spec &&
             currentMode === "auto" &&
             toolName !== "ExitPlanMode" &&
-            !(gatewayRoute
-              ? matchesAskRule(toolName, toolInput as Record<string, unknown>)
-              : autoModeStillAsksCommand(
-                  toolName,
-                  toolInput as Record<string, unknown>,
-                ))
+            !autoModeStillAsksCommand(
+              toolName,
+              toolInput as Record<string, unknown>,
+            )
           ) {
             return { behavior: "allow", updatedInput: toolInput };
           }

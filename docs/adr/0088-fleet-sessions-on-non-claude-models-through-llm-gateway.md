@@ -36,8 +36,11 @@ llm-gateway, which speaks the Anthropic Messages API, maps ids to providers and 
    off: the model list hides them and create, warm and model switch refuse them with
    "gateway models are disabled (FLEET_GATEWAY_MODELS)".
 6. **`auto` on the gateway route (amends 0053, 0061).** The SDK's own `auto` classifier is Claude's and is not trusted
-   with another model's output. The route uses the SDK default mode with the fleet's allow: everything runs except
-   `FLEET_ASK_RULES`, which park, and `rm`/`sudo`, which deny. A fuller treatment is a later deep dive.
+   with another model's output. The route uses the SDK default mode with the fleet's own allow. Amended (owner,
+   2026-11-24): in a repo session that allow is the Claude route's: everything runs except `rm`, `sudo` and a plan
+   approval, which ask. It replaces parking `FLEET_ASK_RULES` and denying `rm`/`sudo`. No classifier runs behind it on
+   this route; an owner who wants prompts leaves `auto`, which takes effect on the next call. Definition sessions are
+   unchanged. A fuller treatment is a later deep dive.
 7. **Switching.** Repo sessions only, by a locked teardown and a resume on the new model; the transcript records the
    switch. Definitions change model by a reviewed `model.default` PR. **No fallback:** a gateway failure fails the
    turn, it never retries on Claude, so a cost or data-handling choice is never silently reversed.

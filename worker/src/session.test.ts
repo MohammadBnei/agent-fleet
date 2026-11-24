@@ -434,7 +434,6 @@ const {
   runSession,
   sumModelUsage,
   gatewayEnv,
-  matchesAskRule,
   formatAnswerTurn,
   humanTurn,
   authorLabel,
@@ -4180,7 +4179,7 @@ describe("gateway route", () => {
     );
   });
 
-  test("auto runs the SDK in default; rm/sudo deny, other ask-rule calls park, the rest run", async () => {
+  test("auto runs the SDK in default; rm, sudo and the plan ask, the rest run", async () => {
     const p = start("kimi-k2-7-code", "auto");
     await Bun.sleep(100);
     expect(queryOptions?.permissionMode).toBe("default");
@@ -4188,19 +4187,39 @@ describe("gateway route", () => {
     expect((allowed as { behavior: string }).behavior).toBe("allow");
     const ok = await capturedCanUseTool!("Bash", { command: "bun test" });
     expect((ok as { behavior: string }).behavior).toBe("allow");
-    for (const command of ["sudo ls", "bash -c 'rm -rf x'"]) {
-      const denied = await capturedCanUseTool!("Bash", { command });
-      expect((denied as { behavior: string }).behavior).toBe("deny");
+    for (const command of ["git push origin x", "kubectl get po", "curl x"]) {
+      const r = await capturedCanUseTool!("Bash", { command });
+      expect((r as { behavior: string }).behavior).toBe("allow");
     }
-    for (const command of ["git push origin x", "kubectl get po"]) {
+    expect(findPermissionRequest("Bash")).toBeUndefined();
+    for (const [tool, input] of [
+      ["Bash", { command: "sudo ls" }],
+      ["Bash", { command: "bash -c 'rm -rf x'" }],
+      ["ExitPlanMode", { plan: "p" }],
+    ] as const) {
       let resolved = false;
-      void capturedCanUseTool!("Bash", { command }).then(
-        () => (resolved = true),
-      );
+      void capturedCanUseTool!(tool, input).then(() => (resolved = true));
       await Bun.sleep(20);
       expect(resolved).toBe(false);
     }
     expect(findPermissionRequest("Bash")).toBeDefined();
+    expect(findPermissionRequest("ExitPlanMode")).toBeDefined();
+    await stop(p);
+  }, 10000);
+
+  test("leaving auto live: the next call asks", async () => {
+    const p = start("kimi-k2-7-code", "auto");
+    await Bun.sleep(100);
+    const before = await capturedCanUseTool!("Bash", { command: "git push" });
+    expect((before as { behavior: string }).behavior).toBe("allow");
+    pushHuman("acceptEdits", "permission_mode");
+    await Bun.sleep(50);
+    let resolved = false;
+    void capturedCanUseTool!("Bash", { command: "git push" }).then(
+      () => (resolved = true),
+    );
+    await Bun.sleep(20);
+    expect(resolved).toBe(false);
     await stop(p);
   }, 10000);
 
@@ -4219,14 +4238,6 @@ describe("gateway route", () => {
     expect(queryOptions?.permissionMode).toBe("auto");
     await stop(p);
   }, 10000);
-
-  test("matchesAskRule", () => {
-    expect(matchesAskRule("Bash", { command: "git status" })).toBe(false);
-    expect(matchesAskRule("Bash", { command: "git push" })).toBe(true);
-    expect(matchesAskRule("Bash", { command: "echo hi && curl x" })).toBe(true);
-    expect(matchesAskRule("Bash", { command: "gitk" })).toBe(false);
-    expect(matchesAskRule("Write", { command: "rm x" })).toBe(false);
-  });
 
   test("result log line: model, route, deltas, null cost; push flags the route", async () => {
     sessionModel = "kimi-k2-7-code";
