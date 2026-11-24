@@ -455,6 +455,9 @@ infisical:
   enabled: true
   projectSlug: "agent-fleet-nygh"
   envSlug: dev
+  # Core's own folder; it imports /shared (infra-bootstrap
+  # terraform/infisical/agent-fleet.tf, ADR-0093 slice 2).
+  secretsPath: "/core"
 
 # Applies db/migrations/ via the dedicated `migration` image — a
 # migrate/migrate CLI image with db/migrations/ COPY'd in at build time
