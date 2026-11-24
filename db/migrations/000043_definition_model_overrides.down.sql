@@ -1,0 +1,1 @@
+DROP TABLE definition_model_overrides;
