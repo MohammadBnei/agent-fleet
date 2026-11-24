@@ -60,7 +60,8 @@ var (
 )
 
 // logUsage writes one "usage" line per model for a result entry: the line Grafana reads.
-func logUsage(ctx context.Context, sessionID, body string, seq int64) {
+// definition is the session's definition name, "" for a repo session.
+func logUsage(ctx context.Context, sessionID, definition, body string, seq int64) {
 	loggedMu.Lock()
 	set := loggedSeqs[sessionID]
 	if set == nil {
@@ -79,7 +80,7 @@ func logUsage(ctx context.Context, sessionID, body string, seq int64) {
 		return
 	}
 	for _, r := range usageRows(body) {
-		slog.InfoContext(ctx, "usage", "sessionId", sessionID, "model", r.Model, "route", r.Route,
+		slog.InfoContext(ctx, "usage", "sessionId", sessionID, "definition", definition, "model", r.Model, "route", r.Route,
 			"inputTokens", r.Input, "outputTokens", r.Output, "cacheReadTokens", r.CacheRead,
 			"billedUsd", r.BilledUSD, "listUsd", r.ListUSD)
 	}

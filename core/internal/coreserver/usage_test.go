@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -67,24 +68,37 @@ func TestLogUsageDedupesTheExactSeq(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); logUsage(context.Background(), "race", body, 7) }()
+		go func() { defer wg.Done(); logUsage(context.Background(), "race", "", body, 7) }()
 	}
 	wg.Wait()
 	if n.Load() != 1 {
 		t.Fatalf("logged %d times for one seq, want 1", n.Load())
 	}
-	logUsage(context.Background(), "race", body, 3) // lower, later: logs
-	logUsage(context.Background(), "race", body, 3) // its retry: skipped
+	logUsage(context.Background(), "race", "", body, 3) // lower, later: logs
+	logUsage(context.Background(), "race", "", body, 3) // its retry: skipped
 	if n.Load() != 2 {
 		t.Fatalf("logged %d, want 2", n.Load())
 	}
 	for seq := int64(10); seq < 300; seq++ { // the set stays bounded
-		logUsage(context.Background(), "race", `{}`, seq)
+		logUsage(context.Background(), "race", "", `{}`, seq)
 	}
 	loggedMu.Lock()
 	size := len(loggedSeqs["race"])
 	loggedMu.Unlock()
 	if size > 64 {
 		t.Fatalf("set grew to %d", size)
+	}
+}
+
+// The usage line names the definition, so a definition's spend can be grouped.
+func TestLogUsageNamesTheDefinition(t *testing.T) {
+	var buf strings.Builder
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(old)
+	resetLogged("def-s")
+	logUsage(context.Background(), "def-s", "alert-responder", `{"modelUsageDelta":{"z-ai-glm-5-3":{"inputTokens":1}}}`, 1)
+	if !strings.Contains(buf.String(), "definition=alert-responder") || !strings.Contains(buf.String(), "model=z-ai-glm-5-3") {
+		t.Fatalf("line = %q", buf.String())
 	}
 }
