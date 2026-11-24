@@ -1705,15 +1705,15 @@ export type AgentDefinition = Message<"agentfleet.v1.AgentDefinition"> & {
   choices: ModelChoice[];
 
   /**
-   * The definition has a standing (running or stopped) session row.
+   * The definition's lifecycle allows a standing session; it may have no row yet.
    *
    * @generated from field: bool standing = 16;
    */
   standing: boolean;
 
   /**
-   * That row is not stopped. running_model is its stored model ("" = Claude
-   * Code picks); a change applies on its restart.
+   * That row is not stopped. running_model is its stored model ("" = the
+   * fleet default); a change applies on its restart.
    *
    * @generated from field: bool running = 17;
    */

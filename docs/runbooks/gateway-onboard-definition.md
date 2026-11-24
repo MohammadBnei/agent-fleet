@@ -14,8 +14,9 @@ register its hash (step 2) and roll the provisioner (step 3). Then no per-defini
 the console. The provisioner hands the shared key to a definition pod only when core's create request says so, which
 core does only for a session on a gateway model; a Claude-model definition pod never holds it.
 
-1. **Mint the key.** In infra-bootstrap, run `gitops/scripts/llm-gateway-new-key.sh` for the definition. Store the
-   key in Infisical project `agent-fleet-nygh`, environment `dev`, **folder `/provisioner`** (the `secretsPath` of
+1. **Mint the key.** In infra-bootstrap, run `gitops/scripts/llm-gateway-new-key.sh` for the definition. The script
+   stores it in the project root, so move it in Infisical. The printed block needs `app: agent-fleet` and
+   `name: fleet-<definition>` (`fleet-definitions` for the shared key). It belongs in Infisical project `agent-fleet-nygh`, environment `dev`, **folder `/provisioner`** (the `secretsPath` of
    `k8s/provisioner/infisicalsecret.yaml`; a key in the project root is never read) as
    `LLM_GATEWAY_KEY_FLEET_<NAME>`, the definition name upper-cased with
    dashes turned to underscores (`dev-dream-analyst` becomes `LLM_GATEWAY_KEY_FLEET_DEV_DREAM_ANALYST`).

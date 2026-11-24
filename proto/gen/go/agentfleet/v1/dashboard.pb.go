@@ -3355,10 +3355,10 @@ type AgentDefinition struct {
 	OverrideIgnored string `protobuf:"bytes,14,opt,name=override_ignored,json=overrideIgnored,proto3" json:"override_ignored,omitempty"`
 	// Every model in the fleet ceiling, with why one cannot be picked now.
 	Choices []*ModelChoice `protobuf:"bytes,15,rep,name=choices,proto3" json:"choices,omitempty"`
-	// The definition has a standing (running or stopped) session row.
+	// The definition's lifecycle allows a standing session; it may have no row yet.
 	Standing bool `protobuf:"varint,16,opt,name=standing,proto3" json:"standing,omitempty"`
-	// That row is not stopped. running_model is its stored model ("" = Claude
-	// Code picks); a change applies on its restart.
+	// That row is not stopped. running_model is its stored model ("" = the
+	// fleet default); a change applies on its restart.
 	Running       bool   `protobuf:"varint,17,opt,name=running,proto3" json:"running,omitempty"`
 	RunningModel  string `protobuf:"bytes,18,opt,name=running_model,json=runningModel,proto3" json:"running_model,omitempty"`
 	unknownFields protoimpl.UnknownFields

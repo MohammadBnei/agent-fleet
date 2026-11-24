@@ -75,7 +75,7 @@ spec:
         # The model a repo session runs when it has none of its own
         # (worker/src/session.ts: the session's model, else this). Unset, it
         # was whatever Claude Code defaults to for the subscription.
-        # Definitions keep their model.default.
+        # A definition with no model.default and no console pick runs it too.
         - name: CLAUDE_MODEL
           value: claude-opus-5-5
         # BASE domain, not the old deeper e2e.bnei.dev. Previews are now

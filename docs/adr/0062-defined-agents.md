@@ -169,7 +169,7 @@ is pre-existing, and they launch in `auto` anyway (ADR-0061). *(Superseded by AD
 `agent`/`worker`, and this handler check is gone.)*
 
 The pod's `SaveSessionId` model report is ignored for a definition session, so
-the pinned `model.default` is the only model it launches in.
+the pinned `model.default` is the only model it launches in. *(Amended by ADR-0088 §7: or the console's pick.)*
 
 `WarmIfIdle` refuses **every** definition warm in this slice, after the
 revocation checks and **before** `ReserveSlot`: this core never sends the
