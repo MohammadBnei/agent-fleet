@@ -566,7 +566,40 @@ message AgentDefinition {
   string audience_group = 8;
   // RFC3339.
   string synced_at = 9;
+  // `model` above is the EFFECTIVE model a new session gets: the override when
+  // it is valid, else the file's default, else "" (Claude Code picks).
+  // The file's model.default.
+  string yaml_model = 10;
+  // The console's override (docs/adr/0088 amendment); "" when none.
+  string override_model = 11;
+  string override_by = 12;
+  // RFC3339.
+  string override_at = 13;
+  // Why a stored override is not applied ("" when it is, or there is none).
+  string override_ignored = 14;
+  // Every model in the fleet ceiling, with why one cannot be picked now.
+  repeated ModelChoice choices = 15;
+  // The definition has a standing (running or stopped) session row.
+  bool standing = 16;
+  // That row is not stopped. running_model is its stored model ("" = Claude
+  // Code picks); a change applies on its restart.
+  bool running = 17;
+  string running_model = 18;
 }
+
+message ModelChoice {
+  string model = 1;
+  // "" when the model can be set now.
+  string unavailable_reason = 2;
+}
+
+// Sets or, with model "", clears the definition's model override.
+message SetDefinitionModelRequest {
+  string definition = 1;
+  string model = 2;
+}
+
+message SetDefinitionModelResponse {}
 
 message ListDefinitionsResponse {
   repeated AgentDefinition definitions = 1;
@@ -809,6 +842,7 @@ service DashboardService {
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc SyncRepo(SyncRepoRequest) returns (SyncRepoResponse);
   rpc SetReposActive(SetReposActiveRequest) returns (SetReposActiveResponse);
+  rpc SetDefinitionModel(SetDefinitionModelRequest) returns (SetDefinitionModelResponse);
 
   // docs/adr/0063. platform-admins only, like the rest of this service, until
   // the editor role's own ADR.

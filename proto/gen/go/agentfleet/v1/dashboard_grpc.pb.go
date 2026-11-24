@@ -55,6 +55,7 @@ const (
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
 	DashboardService_SyncRepo_FullMethodName            = "/agentfleet.v1.DashboardService/SyncRepo"
 	DashboardService_SetReposActive_FullMethodName      = "/agentfleet.v1.DashboardService/SetReposActive"
+	DashboardService_SetDefinitionModel_FullMethodName  = "/agentfleet.v1.DashboardService/SetDefinitionModel"
 	DashboardService_ListPacks_FullMethodName           = "/agentfleet.v1.DashboardService/ListPacks"
 	DashboardService_CreatePack_FullMethodName          = "/agentfleet.v1.DashboardService/CreatePack"
 	DashboardService_SavePackVersion_FullMethodName     = "/agentfleet.v1.DashboardService/SavePackVersion"
@@ -159,6 +160,7 @@ type DashboardServiceClient interface {
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
 	SyncRepo(ctx context.Context, in *SyncRepoRequest, opts ...grpc.CallOption) (*SyncRepoResponse, error)
 	SetReposActive(ctx context.Context, in *SetReposActiveRequest, opts ...grpc.CallOption) (*SetReposActiveResponse, error)
+	SetDefinitionModel(ctx context.Context, in *SetDefinitionModelRequest, opts ...grpc.CallOption) (*SetDefinitionModelResponse, error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(ctx context.Context, in *ListPacksRequest, opts ...grpc.CallOption) (*ListPacksResponse, error)
@@ -572,6 +574,16 @@ func (c *dashboardServiceClient) SetReposActive(ctx context.Context, in *SetRepo
 	return out, nil
 }
 
+func (c *dashboardServiceClient) SetDefinitionModel(ctx context.Context, in *SetDefinitionModelRequest, opts ...grpc.CallOption) (*SetDefinitionModelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetDefinitionModelResponse)
+	err := c.cc.Invoke(ctx, DashboardService_SetDefinitionModel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListPacks(ctx context.Context, in *ListPacksRequest, opts ...grpc.CallOption) (*ListPacksResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPacksResponse)
@@ -836,6 +848,7 @@ type DashboardServiceServer interface {
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
 	SyncRepo(context.Context, *SyncRepoRequest) (*SyncRepoResponse, error)
 	SetReposActive(context.Context, *SetReposActiveRequest) (*SetReposActiveResponse, error)
+	SetDefinitionModel(context.Context, *SetDefinitionModelRequest) (*SetDefinitionModelResponse, error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *ListPacksRequest) (*ListPacksResponse, error)
@@ -987,6 +1000,9 @@ func (UnimplementedDashboardServiceServer) SyncRepo(context.Context, *SyncRepoRe
 }
 func (UnimplementedDashboardServiceServer) SetReposActive(context.Context, *SetReposActiveRequest) (*SetReposActiveResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetReposActive not implemented")
+}
+func (UnimplementedDashboardServiceServer) SetDefinitionModel(context.Context, *SetDefinitionModelRequest) (*SetDefinitionModelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetDefinitionModel not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListPacks(context.Context, *ListPacksRequest) (*ListPacksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPacks not implemented")
@@ -1704,6 +1720,24 @@ func _DashboardService_SetReposActive_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_SetDefinitionModel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDefinitionModelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).SetDefinitionModel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_SetDefinitionModel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).SetDefinitionModel(ctx, req.(*SetDefinitionModelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListPacks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPacksRequest)
 	if err := dec(in); err != nil {
@@ -2174,6 +2208,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetReposActive",
 			Handler:    _DashboardService_SetReposActive_Handler,
+		},
+		{
+			MethodName: "SetDefinitionModel",
+			Handler:    _DashboardService_SetDefinitionModel_Handler,
 		},
 		{
 			MethodName: "ListPacks",

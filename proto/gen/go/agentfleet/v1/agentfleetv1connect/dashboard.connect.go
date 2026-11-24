@@ -141,6 +141,9 @@ const (
 	// DashboardServiceSetReposActiveProcedure is the fully-qualified name of the DashboardService's
 	// SetReposActive RPC.
 	DashboardServiceSetReposActiveProcedure = "/agentfleet.v1.DashboardService/SetReposActive"
+	// DashboardServiceSetDefinitionModelProcedure is the fully-qualified name of the DashboardService's
+	// SetDefinitionModel RPC.
+	DashboardServiceSetDefinitionModelProcedure = "/agentfleet.v1.DashboardService/SetDefinitionModel"
 	// DashboardServiceListPacksProcedure is the fully-qualified name of the DashboardService's
 	// ListPacks RPC.
 	DashboardServiceListPacksProcedure = "/agentfleet.v1.DashboardService/ListPacks"
@@ -279,6 +282,7 @@ type DashboardServiceClient interface {
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
+	SetDefinitionModel(context.Context, *connect.Request[v1.SetDefinitionModelRequest]) (*connect.Response[v1.SetDefinitionModelResponse], error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
@@ -542,6 +546,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("SetReposActive")),
 			connect.WithClientOptions(opts...),
 		),
+		setDefinitionModel: connect.NewClient[v1.SetDefinitionModelRequest, v1.SetDefinitionModelResponse](
+			httpClient,
+			baseURL+DashboardServiceSetDefinitionModelProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("SetDefinitionModel")),
+			connect.WithClientOptions(opts...),
+		),
 		listPacks: connect.NewClient[v1.ListPacksRequest, v1.ListPacksResponse](
 			httpClient,
 			baseURL+DashboardServiceListPacksProcedure,
@@ -691,6 +701,7 @@ type dashboardServiceClient struct {
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
 	setReposActive      *connect.Client[v1.SetReposActiveRequest, v1.SetReposActiveResponse]
+	setDefinitionModel  *connect.Client[v1.SetDefinitionModelRequest, v1.SetDefinitionModelResponse]
 	listPacks           *connect.Client[v1.ListPacksRequest, v1.ListPacksResponse]
 	createPack          *connect.Client[v1.CreatePackRequest, v1.CreatePackResponse]
 	savePackVersion     *connect.Client[v1.SavePackVersionRequest, v1.SavePackVersionResponse]
@@ -891,6 +902,11 @@ func (c *dashboardServiceClient) SetReposActive(ctx context.Context, req *connec
 	return c.setReposActive.CallUnary(ctx, req)
 }
 
+// SetDefinitionModel calls agentfleet.v1.DashboardService.SetDefinitionModel.
+func (c *dashboardServiceClient) SetDefinitionModel(ctx context.Context, req *connect.Request[v1.SetDefinitionModelRequest]) (*connect.Response[v1.SetDefinitionModelResponse], error) {
+	return c.setDefinitionModel.CallUnary(ctx, req)
+}
+
 // ListPacks calls agentfleet.v1.DashboardService.ListPacks.
 func (c *dashboardServiceClient) ListPacks(ctx context.Context, req *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error) {
 	return c.listPacks.CallUnary(ctx, req)
@@ -1063,6 +1079,7 @@ type DashboardServiceHandler interface {
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error)
+	SetDefinitionModel(context.Context, *connect.Request[v1.SetDefinitionModelRequest]) (*connect.Response[v1.SetDefinitionModelResponse], error)
 	// docs/adr/0063. platform-admins only, like the rest of this service, until
 	// the editor role's own ADR.
 	ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error)
@@ -1322,6 +1339,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("SetReposActive")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceSetDefinitionModelHandler := connect.NewUnaryHandler(
+		DashboardServiceSetDefinitionModelProcedure,
+		svc.SetDefinitionModel,
+		connect.WithSchema(dashboardServiceMethods.ByName("SetDefinitionModel")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListPacksHandler := connect.NewUnaryHandler(
 		DashboardServiceListPacksProcedure,
 		svc.ListPacks,
@@ -1504,6 +1527,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceSyncRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceSetReposActiveProcedure:
 			dashboardServiceSetReposActiveHandler.ServeHTTP(w, r)
+		case DashboardServiceSetDefinitionModelProcedure:
+			dashboardServiceSetDefinitionModelHandler.ServeHTTP(w, r)
 		case DashboardServiceListPacksProcedure:
 			dashboardServiceListPacksHandler.ServeHTTP(w, r)
 		case DashboardServiceCreatePackProcedure:
@@ -1691,6 +1716,10 @@ func (UnimplementedDashboardServiceHandler) SyncRepo(context.Context, *connect.R
 
 func (UnimplementedDashboardServiceHandler) SetReposActive(context.Context, *connect.Request[v1.SetReposActiveRequest]) (*connect.Response[v1.SetReposActiveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SetReposActive is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) SetDefinitionModel(context.Context, *connect.Request[v1.SetDefinitionModelRequest]) (*connect.Response[v1.SetDefinitionModelResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SetDefinitionModel is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListPacks(context.Context, *connect.Request[v1.ListPacksRequest]) (*connect.Response[v1.ListPacksResponse], error) {

@@ -105,6 +105,11 @@ message CreateWorkerPodRequest {
   // writes them to claude-home/<id>-genome, mounted read-only at /genome.
   // Empty is a valid genome (no packs), and still replaces the last one.
   repeated GenomeFile genome = 14;
+  // docs/adr/0088 amendment. Set by core only when the session row's model is a
+  // gateway id: a definition pod with no key of its own may then take the shared
+  // definitions key. Absent, a definition pod never gets the shared key (a Claude
+  // model has no use for it, and the shared budget is not theirs).
+  bool definition_shared_gateway_key = 15;
 }
 
 // One file under /genome. path is relative and must be CLAUDE.md,
@@ -241,6 +246,11 @@ message GetVersionResponse {
   // What every session's sidecar runs — no per-repo override exists, the
   // sidecar is fleet-owned.
   string sidecar_image = 3;
+  // The NAME suffixes of the llm-gateway keys the provisioner holds
+  // (LLM_GATEWAY_KEY_FLEET_<suffix>), e.g. "CONSOLE", "DEFINITIONS",
+  // "ALERT_RESPONDER". Names only, never values: core uses them to refuse a
+  // model that no key could serve.
+  repeated string gateway_key_names = 4;
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the

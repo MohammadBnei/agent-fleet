@@ -141,9 +141,14 @@ type CreateWorkerPodRequest struct {
 	// docs/adr/0063: the session's rendered context packs. The provisioner
 	// writes them to claude-home/<id>-genome, mounted read-only at /genome.
 	// Empty is a valid genome (no packs), and still replaces the last one.
-	Genome        []*GenomeFile `protobuf:"bytes,14,rep,name=genome,proto3" json:"genome,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Genome []*GenomeFile `protobuf:"bytes,14,rep,name=genome,proto3" json:"genome,omitempty"`
+	// docs/adr/0088 amendment. Set by core only when the session row's model is a
+	// gateway id: a definition pod with no key of its own may then take the shared
+	// definitions key. Absent, a definition pod never gets the shared key (a Claude
+	// model has no use for it, and the shared budget is not theirs).
+	DefinitionSharedGatewayKey bool `protobuf:"varint,15,opt,name=definition_shared_gateway_key,json=definitionSharedGatewayKey,proto3" json:"definition_shared_gateway_key,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *CreateWorkerPodRequest) Reset() {
@@ -259,6 +264,13 @@ func (x *CreateWorkerPodRequest) GetGenome() []*GenomeFile {
 		return x.Genome
 	}
 	return nil
+}
+
+func (x *CreateWorkerPodRequest) GetDefinitionSharedGatewayKey() bool {
+	if x != nil {
+		return x.DefinitionSharedGatewayKey
+	}
+	return false
 }
 
 // One file under /genome. path is relative and must be CLAUDE.md,
@@ -917,9 +929,14 @@ type GetVersionResponse struct {
 	WorkerImage string `protobuf:"bytes,2,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
 	// What every session's sidecar runs — no per-repo override exists, the
 	// sidecar is fleet-owned.
-	SidecarImage  string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SidecarImage string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
+	// The NAME suffixes of the llm-gateway keys the provisioner holds
+	// (LLM_GATEWAY_KEY_FLEET_<suffix>), e.g. "CONSOLE", "DEFINITIONS",
+	// "ALERT_RESPONDER". Names only, never values: core uses them to refuse a
+	// model that no key could serve.
+	GatewayKeyNames []string `protobuf:"bytes,4,rep,name=gateway_key_names,json=gatewayKeyNames,proto3" json:"gateway_key_names,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetVersionResponse) Reset() {
@@ -971,6 +988,13 @@ func (x *GetVersionResponse) GetSidecarImage() string {
 		return x.SidecarImage
 	}
 	return ""
+}
+
+func (x *GetVersionResponse) GetGatewayKeyNames() []string {
+	if x != nil {
+		return x.GatewayKeyNames
+	}
+	return nil
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the
@@ -2504,7 +2528,7 @@ var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
-	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xf2\x03\n" +
+	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xb5\x04\n" +
 	"\x16CreateWorkerPodRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -2522,7 +2546,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
 	"definition\x18\r \x01(\v2#.agentfleet.v1.DefinitionPodProfileR\n" +
 	"definition\x121\n" +
-	"\x06genome\x18\x0e \x03(\v2\x19.agentfleet.v1.GenomeFileR\x06genomeJ\x04\b\t\x10\n" +
+	"\x06genome\x18\x0e \x03(\v2\x19.agentfleet.v1.GenomeFileR\x06genome\x12A\n" +
+	"\x1ddefinition_shared_gateway_key\x18\x0f \x01(\bR\x1adefinitionSharedGatewayKeyJ\x04\b\t\x10\n" +
 	"J\x04\b\v\x10\fR\bguidanceR\x13service_ingredients\"4\n" +
 	"\n" +
 	"GenomeFile\x12\x12\n" +
@@ -2569,11 +2594,12 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\vVaultResult\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"\x13\n" +
-	"\x11GetVersionRequest\"v\n" +
+	"\x11GetVersionRequest\"\xa2\x01\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
-	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x1c\n" +
+	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x12*\n" +
+	"\x11gateway_key_names\x18\x04 \x03(\tR\x0fgatewayKeyNames\"\x1c\n" +
 	"\x1aListDefinitionFilesRequest\">\n" +
 	"\x0eDefinitionFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
