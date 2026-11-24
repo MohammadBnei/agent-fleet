@@ -4187,7 +4187,12 @@ describe("gateway route", () => {
     expect((allowed as { behavior: string }).behavior).toBe("allow");
     const ok = await capturedCanUseTool!("Bash", { command: "bun test" });
     expect((ok as { behavior: string }).behavior).toBe("allow");
-    for (const command of ["git push origin x", "kubectl get po", "curl x"]) {
+    for (const command of [
+      "git push origin x",
+      "kubectl get po",
+      "curl x",
+      "npm run rmdirs",
+    ]) {
       const r = await capturedCanUseTool!("Bash", { command });
       expect((r as { behavior: string }).behavior).toBe("allow");
     }
@@ -4195,6 +4200,9 @@ describe("gateway route", () => {
     for (const [tool, input] of [
       ["Bash", { command: "sudo ls" }],
       ["Bash", { command: "bash -c 'rm -rf x'" }],
+      ["Bash", { command: "git ls-files -z | xargs -0 rm" }],
+      ["Bash", { command: "ls | xargs rm;true" }],
+      ["Bash", { command: "ls | (xargs rm)" }],
       ["ExitPlanMode", { plan: "p" }],
     ] as const) {
       let resolved = false;
