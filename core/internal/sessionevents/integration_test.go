@@ -5,8 +5,10 @@ package sessionevents
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/bridgeclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/cardevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
@@ -230,5 +233,183 @@ func TestHardDeleteCountsLost(t *testing.T) {
 	}
 	if testutil.ToFloat64(metrics.SessionEventsLost) != before+1 {
 		t.Fatal("a deleted open session was not counted lost")
+	}
+}
+
+func TestRefusalCodesPark(t *testing.T) {
+	for _, code := range []connect.Code{connect.CodeInvalidArgument, connect.CodePermissionDenied} {
+		t.Run(code.String(), func(t *testing.T) {
+			pool := dbtest.NewPool(t)
+			id := newSession(t, pool, "r")
+			pub := &fakePub{fail: func(*bridgev1.CloudEvent) error { return connect.NewError(code, errors.New("no")) }}
+			e := New(pool, pub, true)
+			if err := e.Tick(context.Background()); err != nil {
+				t.Fatalf("a refusal is not a tick error: %v", err)
+			}
+			var parked bool
+			if err := pool.QueryRow(context.Background(), `SELECT bridge_parked_at IS NOT NULL FROM sessions WHERE id = $1`, id).Scan(&parked); err != nil || !parked {
+				t.Fatalf("%v did not park: %v %v", code, parked, err)
+			}
+		})
+	}
+}
+
+func TestBridgeWideErrorsStopTheTick(t *testing.T) {
+	for name, perr := range map[string]error{
+		"unauthenticated": connect.NewError(connect.CodeUnauthenticated, errors.New("x")),
+		"not configured":  bridgeclient.ErrNotConfigured,
+		"deadline":        connect.NewError(connect.CodeDeadlineExceeded, errors.New("x")),
+		"canceled":        connect.NewError(connect.CodeCanceled, errors.New("x")),
+		"ctx deadline":    context.DeadlineExceeded,
+	} {
+		t.Run(name, func(t *testing.T) {
+			pool := dbtest.NewPool(t)
+			for range 3 {
+				newSession(t, pool, "r")
+			}
+			calls := 0
+			pub := &fakePub{fail: func(*bridgev1.CloudEvent) error { calls++; return perr }}
+			e := New(pool, pub, true)
+			if err := e.Tick(context.Background()); err == nil || calls != 1 {
+				t.Fatalf("err %v after %d publishes: the tick should stop at the first", err, calls)
+			}
+		})
+	}
+}
+
+func TestHungBridgeEndsTickAfterOneTimeout(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	for range 30 {
+		newSession(t, pool, "r")
+	}
+	old := cardevents.PublishTimeout
+	cardevents.PublishTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { cardevents.PublishTimeout = old })
+	calls := 0
+	e := New(pool, &hungPub{calls: &calls}, true)
+	start := time.Now()
+	err := e.Tick(context.Background())
+	if err == nil || calls != 1 || time.Since(start) > 700*time.Millisecond {
+		t.Fatalf("err %v, %d publishes, %v: a hung bridge must cost one timeout", err, calls, time.Since(start))
+	}
+}
+
+type hungPub struct{ calls *int }
+
+func (h *hungPub) Publish(ctx context.Context, _ *bridgev1.CloudEvent) error {
+	*h.calls++
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestFailuresResetAndPrune(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	ctx := context.Background()
+	a := newSession(t, pool, "a")
+	b := newSession(t, pool, "b")
+	failing := map[string]bool{a: true, b: true}
+	pub := &fakePub{fail: func(e *bridgev1.CloudEvent) error {
+		for id, f := range failing {
+			if f && strings.Contains(e.Subject, id) {
+				return errors.New("odd")
+			}
+		}
+		return nil
+	}}
+	e := New(pool, pub, true)
+	clock := e.now()
+	e.now = func() time.Time { return clock }
+	if err := e.Tick(ctx); err != nil || len(e.fails) != 2 {
+		t.Fatalf("fails %v %v", e.fails, err)
+	}
+	failing[a] = false
+	if err := sessions.NewStore(pool).Delete(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Hour)
+	if err := e.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.fails) != 0 {
+		t.Fatalf("a success must clear its failure and a gone session must be pruned: %v", e.fails)
+	}
+}
+
+func TestGlobalBackoffIsUsed(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	newSession(t, pool, "r")
+	var mu sync.Mutex
+	calls := 0
+	pub := &fakePub{fail: func(*bridgev1.CloudEvent) error {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return connect.NewError(connect.CodeUnavailable, errors.New("down"))
+	}}
+	e := New(pool, pub, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { e.Run(ctx, 10*time.Millisecond); close(done) }()
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("%d publishes in 300ms of a down bridge: Run must back off", calls)
+	}
+}
+
+func TestPagesPastOneBatchBeforeEnded(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	ctx := context.Background()
+	id := newSession(t, pool, "r")
+	exec(t, pool, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, created_at)
+		SELECT $1::uuid, g, 'w', '{}', 'result', 'k' || g, now() - interval '1 hour' FROM generate_series(1, 150) g`, id)
+	exec(t, pool, `UPDATE sessions SET archived_at = now() WHERE id = $1`, id)
+	pub := &fakePub{}
+	e := New(pool, pub, true)
+	if err := e.Tick(ctx); err != nil || strings.HasSuffix(pub.types(), ",ended") {
+		t.Fatalf("ended went out before every turn: %v", err)
+	}
+	if err := e.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(pub.types(), ",")
+	if len(got) != 152 || got[0] != "opened" || got[len(got)-1] != "ended" || strings.Count(pub.types(), "turn_ended") != 150 {
+		t.Fatalf("%d events, first %s last %s", len(got), got[0], got[len(got)-1])
+	}
+	for i, ev := range pub.events[1:151] {
+		if want := fmt.Sprintf("session/%s/turn/%d", id, i+1); ev.Id != want {
+			t.Fatalf("event %d is %s, want %s (seq order)", i, ev.Id, want)
+		}
+	}
+}
+
+// created_at is the transaction's start: an append begun before the archive can commit after ended went out.
+func TestLateCommitAfterEndedIsNotPublished(t *testing.T) {
+	pool := dbtest.NewPool(t)
+	ctx := context.Background()
+	id := newSession(t, pool, "r")
+	late, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := late.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key)
+		VALUES ($1::uuid, 1, 'w', '{}', 'result', 'late')`, id); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond) // the archive's transaction starts after the append's
+	exec(t, pool, `UPDATE sessions SET archived_at = now() WHERE id = $1`, id)
+	pub := &fakePub{}
+	e := New(pool, pub, true)
+	if err := e.Tick(ctx); err != nil || pub.types() != "opened,ended" {
+		t.Fatalf("%v %q", err, pub.types())
+	}
+	if err := late.Commit(ctx); err != nil { // its created_at is before archived_at, but ended is out
+		t.Fatal(err)
+	}
+	if err := e.Tick(ctx); err != nil || pub.types() != "opened,ended" {
+		t.Fatalf("a turn went out after ended: %v %q", err, pub.types())
 	}
 }
