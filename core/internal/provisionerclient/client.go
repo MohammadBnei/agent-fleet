@@ -390,8 +390,10 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 
 // GatewayKeyNames is the NAME suffixes of the llm-gateway keys the provisioner
 // holds (GetVersion), never their values.
+//
+// Short: a console list waits on it, and the answer is process-local constants.
 func (c *Client) GatewayKeyNames(ctx context.Context) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	resp, err := c.rpc.GetVersion(ctx, &agentfleetv1.GetVersionRequest{})
 	if err != nil {
