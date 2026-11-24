@@ -93,7 +93,12 @@ func (s *Server) StartStanding(ctx context.Context, req *connect.Request[agentfl
 		if row.StoppedAt == nil {
 			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("%q is already started: %w", name, ErrStandingStarted))
 		}
-		if ok, err := s.sessions.RestartStanding(ctx, row.ID, head.SHA, by); err != nil {
+		// The restart is when a stopped character takes the current effective model (docs/adr/0088 amendment).
+		model, err := s.standingRestartModel(ctx, head, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		if ok, err := s.sessions.RestartStanding(ctx, row.ID, head.SHA, by, model); err != nil {
 			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		} else if !ok {
 			return nil, errkeys.Connect(connect.CodeAborted, errkeys.KeyInternal, fmt.Errorf("the character changed or its pod is still stopping; retry: %w", ErrStandingStopping))

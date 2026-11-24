@@ -1783,12 +1783,12 @@ func (s *Store) StandingByDefinition(ctx context.Context, name string) (*Session
 }
 
 // RestartStanding is Start on a stopped character (docs/adr/0084 §2, amended A4): the row is un-stopped and
-// re-pinned to sha. Every thread keeps its SDK session id and its cursor, so the next warm resumes each thread with
+// re-pinned to sha and set to model ("" is NULL: Claude Code picks). Every thread keeps its SDK session id and its cursor, so the next warm resumes each thread with
 // its context and no waiting entry is lost; a stopped in-flight turn was settled by Stop (MarkStandingStopped's
 // caller). Only the crash counters restart. The transcript and the memory stay.
 // False when the row is not stopped or its old pod is still live: a Stop's grace-period teardown must run first,
 // else Start would disarm it (ListOverdueStopIDs) and the old pod could write its SDK session id back.
-func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, error) {
+func (s *Store) RestartStanding(ctx context.Context, id, sha, by, model string) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return false, fmt.Errorf("restart standing: %w", err)
@@ -1796,10 +1796,10 @@ func (s *Store) RestartStanding(ctx context.Context, id, sha, by string) (bool, 
 	defer tx.Rollback(ctx) //nolint:errcheck
 	tag, err := tx.Exec(ctx, `
 		UPDATE sessions SET stopped_at = NULL, stop_requested_at = NULL, started_by = $3, definition_sha = $2,
-		       restart_after = NULL, drain_started_at = NULL, updated_at = now(),
+		       restart_after = NULL, drain_started_at = NULL, updated_at = now(), model = NULLIF($5, ''),
 		       restart_seq = (SELECT COALESCE(MAX(seq), -1) FROM transcript WHERE session_id = $1)
 		WHERE id = $1 AND lifecycle = 'standing' AND stopped_at IS NOT NULL AND COALESCE(pod_phase, '') <> ALL($4)`,
-		id, sha, by, livePhases)
+		id, sha, by, livePhases, model)
 	if err != nil {
 		return false, fmt.Errorf("restart standing: %w", err)
 	}

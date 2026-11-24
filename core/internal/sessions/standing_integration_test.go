@@ -117,7 +117,7 @@ func TestListRewarmStanding_StoppedIsNeverListed(t *testing.T) {
 	if due(t, store, id) {
 		t.Fatal("a stopped character was listed for re-warm")
 	}
-	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root"); err != nil || !ok {
+	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root", ""); err != nil || !ok {
 		t.Fatalf("start: %v %v", ok, err)
 	}
 	if !due(t, store, id) {

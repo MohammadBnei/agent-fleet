@@ -269,7 +269,7 @@ func TestRestartStanding_KeepsSessionsAndCursors(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root"); err != nil || ok {
+	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root", ""); err != nil || ok {
 		t.Fatalf("a start over a live pod = %v, %v", ok, err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE sessions SET pod_phase = 'POD_PHASE_TERMINATED' WHERE id = $1`, id); err != nil {
@@ -280,7 +280,7 @@ func TestRestartStanding_KeepsSessionsAndCursors(t *testing.T) {
 	for _, x := range th {
 		before[x.Key] = x
 	}
-	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root"); err != nil || !ok {
+	if ok, err := store.RestartStanding(ctx, id, "sha-a", "root", ""); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
 	th, _ = store.Threads(ctx, id)

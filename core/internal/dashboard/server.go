@@ -30,6 +30,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/defmodels"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
@@ -77,6 +78,10 @@ type Server struct {
 	model string
 	// gatewayModels is the FLEET_GATEWAY_MODELS kill switch (SetGatewayModels).
 	gatewayModels bool
+	// defModels is the console's model pick per definition (defmodel.go); nil: files only.
+	defModels defModelStore
+	// keyNames asks the provisioner which gateway key names it holds; nil asks e2e.
+	keyNames func(ctx context.Context) ([]string, error)
 
 	// fileDiffs is where GetFileDiff parks a request for the sidecar's next
 	// telemetry tick to pick up. nil disables the RPC (it answers NO_POD),
@@ -193,7 +198,11 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 	// mode is written EXPLICITLY from mode.default, never the column default:
 	// workspace-base's is auto (docs/adr/0076), but a definition may narrow.
 	if head != nil {
-		repo, model, mode = head.Effective.Workspace.Repo, defaultModelOf(head.Effective), head.Effective.Mode.Default
+		var err error
+		if model, err = s.definitionModel(ctx, *head); err != nil {
+			return nil, err
+		}
+		repo, mode = head.Effective.Workspace.Repo, head.Effective.Mode.Default
 	} else if name := msg.GetDefinition(); name != "" {
 		if repo != "" || model != "" || mode != "" || effort != "" {
 			return nil, errkeys.Connect(connect.CodeInvalidArgument, errkeys.KeyInternal, errors.New("definition sessions take repo, model, mode and effort from the definition"))
@@ -214,7 +223,10 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 			return nil, err
 		}
 		head = &h
-		repo, model, mode = h.Effective.Workspace.Repo, defaultModelOf(h.Effective), h.Effective.Mode.Default
+		if model, err = s.definitionModel(ctx, h); err != nil {
+			return nil, err
+		}
+		repo, mode = h.Effective.Workspace.Repo, h.Effective.Mode.Default
 	}
 
 	repoCfg, err := s.startableRepo(ctx, repo)
@@ -291,18 +303,37 @@ func (s *Server) createSession(ctx context.Context, msg *agentfleetv1.CreateSess
 
 // ListDefinitions lists each present definition's current version
 // (docs/adr/0062). Admin-only through the same interceptor as every method.
-func (s *Server) ListDefinitions(_ context.Context, _ *connect.Request[agentfleetv1.ListDefinitionsRequest]) (*connect.Response[agentfleetv1.ListDefinitionsResponse], error) {
+func (s *Server) ListDefinitions(ctx context.Context, _ *connect.Request[agentfleetv1.ListDefinitionsRequest]) (*connect.Response[agentfleetv1.ListDefinitionsResponse], error) {
 	if s.definitions == nil {
 		return connect.NewResponse(&agentfleetv1.ListDefinitionsResponse{SyncErrors: []string{"defined agents are not configured"}}), nil
 	}
 	heads, syncErrs := s.definitions.List()
 	out := &agentfleetv1.ListDefinitionsResponse{SyncErrors: syncErrs}
+	overrides := map[string]defmodels.Override{}
+	var keys []string
+	var keysErr error
+	if s.defModels != nil {
+		list, err := s.defModels.List(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "dashboard ListDefinitions", "error", err)
+			return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+		}
+		for _, o := range list {
+			overrides[o.Definition] = o
+		}
+		if s.gatewayModels {
+			keys, keysErr = s.gatewayKeyNames(ctx)
+		}
+	}
 	for _, h := range heads {
 		d := &agentfleetv1.AgentDefinition{Name: h.Name, Sha: h.SHA, Valid: h.SHA != "", Error: h.Err}
 		if h.Effective != nil {
 			d.Repo, d.Model, d.PermissionMode = h.Effective.Workspace.Repo, defaultModelOf(h.Effective), h.Effective.Mode.Default
 			d.AudienceGroup = h.Effective.Audience.Group
 			d.SyncedAt = h.SyncedAt.UTC().Format(time.RFC3339)
+			if err := s.fillDefinitionModel(ctx, d, h, overrides, keys, keysErr); err != nil {
+				return nil, errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
+			}
 		}
 		out.Definitions = append(out.Definitions, d)
 	}
@@ -1404,7 +1435,10 @@ func (s *Server) warm(ctx context.Context, sessionID string, answer bool) (podNa
 	// row, which a concurrent "manage repos" edit could have straddled, so a
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
-	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile, genome)
+	// docs/adr/0088 amendment: only a definition pod on a gateway model may take the shared key.
+	_, gwModel := models.Gateway(derefStr(t.Model))
+	sharedKey := profile != nil && gwModel
+	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile, genome, sharedKey)
 	switch {
 	case err != nil && profile != nil:
 		// docs/adr/0064: an error can come after the Job exists (the call's
@@ -2140,4 +2174,11 @@ func (s *Server) OpenSupervised(ctx context.Context, repo, title, body string) (
 		return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 	}
 	return id, nil
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

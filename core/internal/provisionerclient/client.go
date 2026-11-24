@@ -281,7 +281,7 @@ type WorkerPod struct {
 
 // definition is nil for a repo session. For a definition session it switches
 // the pod to the definition profile (docs/adr/0064).
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile, genome []*agentfleetv1.GenomeFile) (WorkerPod, error) {
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile, genome []*agentfleetv1.GenomeFile, sharedGatewayKey bool) (WorkerPod, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -296,6 +296,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		Image:           image,
 		Definition:      definition,
 		Genome:          genome,
+		// A definition pod on a gateway model may take the shared key (docs/adr/0088 amendment).
+		DefinitionSharedGatewayKey: sharedGatewayKey,
 	})
 	if err != nil {
 		return WorkerPod{}, fmt.Errorf("CreateWorkerPod: %w", err)
@@ -384,4 +386,16 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 		return false, fmt.Errorf("TearDownSession: %w", err)
 	}
 	return resp.GetTornDown(), nil
+}
+
+// GatewayKeyNames is the NAME suffixes of the llm-gateway keys the provisioner
+// holds (GetVersion), never their values.
+func (c *Client) GatewayKeyNames(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.GetVersion(ctx, &agentfleetv1.GetVersionRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("GetVersion: %w", err)
+	}
+	return resp.GetGatewayKeyNames(), nil
 }

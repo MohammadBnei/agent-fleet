@@ -40,6 +40,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/decisions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/defmodels"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
 	"github.com/MohammadBnei/agent-fleet/core/internal/errkeys"
@@ -353,6 +354,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	dashboardSvc.SetGrants(grantStore)
 	dashboardSvc.SetRatings(ratings.NewStore(pool))
 	dashboardSvc.SetGatewayModels(cfg.GatewayModels)
+	dashboardSvc.SetDefinitionModels(defmodels.NewStore(pool))
 	dashboardSvc.SetDecisions(decisionStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
