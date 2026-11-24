@@ -211,7 +211,7 @@ env:
     value: "https://fleet.bnei.dev"
   # Our app surfaces that answer cards; anything not reversible goes through core's confirm page (docs/adr/0082 §7).
   - name: FLEET_ADMIN_ORIGINS
-    value: "https://game.bnei.dev"
+    value: "https://game.bnei.dev,https://mountain.bnei.dev"
   # authentik's issuer is PER APPLICATION — this is not a shared base URL, and
   # the trailing slash matters. core runs OIDC discovery against it rather than
   # hardcoding endpoint paths, deliberately: authentik's userinfo endpoint is
