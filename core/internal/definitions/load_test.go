@@ -944,3 +944,10 @@ func TestValidate_ReservesConsole(t *testing.T) {
 		t.Fatalf("consoles: %v", err)
 	}
 }
+
+func TestValidate_ReservesDefinitions(t *testing.T) {
+	err := validate("definitions", &Spec{Abstract: true})
+	if err == nil || !strings.Contains(err.Error(), `"definitions" is reserved`) {
+		t.Fatalf("err = %v", err)
+	}
+}

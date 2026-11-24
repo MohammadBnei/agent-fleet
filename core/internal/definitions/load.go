@@ -462,6 +462,10 @@ func validate(name string, s *Spec) error {
 	if name == "console" {
 		bad(`definition name "console" is reserved for the repo sessions' shared llm-gateway key`)
 	}
+	// "definitions" is the suffix of the shared key a definition falls back to (docs/adr/0088 amendment).
+	if name == "definitions" {
+		bad(`definition name "definitions" is reserved for the shared llm-gateway key of definitions`)
+	}
 	if need(s.Audience != nil, "audience") && !slices.Contains(knownGroups, s.Audience.Group) {
 		bad("audience.group %q is not a known group %v", s.Audience.Group, knownGroups)
 	}
