@@ -63,11 +63,14 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   stub), so a change there keeps the old shape for one release.
 - `service.yaml` — ClusterIP; `core`'s gRPC client reaches it at
   `provisioner.agent-fleet.svc.cluster.local:9090`.
-- `infisicalsecret.yaml` — syncs the whole `agent-fleet-nygh`/`dev` Infisical
-  scope, the same one core syncs: `GH_TOKEN`, both fleet tokens, and every
-  other key in it, `AGENTFLEET_DB_*` included, though the provisioner uses
-  none of the DB ones. A compromised provisioner holds all of them
-  (`docs/adr/0069` Consequences).
+- `infisicalsecret.yaml` — syncs folder `/provisioner` of `agent-fleet-nygh`/`dev`
+  (`THOT_AUTH_TOKEN`, `LLM_GATEWAY_KEY_FLEET_*`, `CLAUDE_CODE_OAUTH_TOKEN`),
+  which imports `/shared` (both fleet tokens, `LOG_LEVEL`,
+  `SESSION_RETENTION`). Core's `/core` keys (`AGENTFLEET_DB_*`, S3, Discord)
+  are not readable by the provisioner's identity (infra-bootstrap ADR-0093
+  slice 2). Every provisioner InfisicalSecret authenticates with
+  `kubernetesAuth` as ServiceAccount `infisical-reader-provisioner`
+  (`serviceaccount.yaml`, no pod runs as it).
 - `networkpolicy.yaml` — the provisioner's ingress fence (`docs/adr/0069`
   §3): `:9090` only from core, `:8080` only from Prometheus. The bearer token
   (`FLEET_CORE_PROVISIONER_TOKEN`, §1) stays the authentication. The
@@ -80,10 +83,9 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   `fleet-github-app` (the App `ukubi-fleet`'s `GITHUB_APP_ID` and
   `GITHUB_APP_PRIVATE_KEY`, docs/adr/0075) into Secret
   `provisioner-github-app`, mounted as files at `/var/run/github-app`, never
-  in env. It authenticates with the identity `fleet-github-app-reader`, whose
-  credentials must exist as Secret `infisical/fleet-github-app-universal-auth`
-  (created by infra-bootstrap's ADR-0062 setup); without it nothing syncs and
-  the provisioner stays on the Infisical files.
+  in env. It authenticates as the provisioner's own Kubernetes-auth identity
+  (`k8s-agent-fleet-provisioner`, infra-bootstrap terraform/infisical);
+  without it nothing syncs and the provisioner stays on the Infisical files.
 - `infisicalsecret-forgejo.yaml` — syncs folder `/forgejo` of the same
   `fleet-github-app` project, with the same identity, into Secret
   `provisioner-forgejo`, mounted at `/var/run/forgejo` (`FORGEJO_SECRETS_DIR`):
