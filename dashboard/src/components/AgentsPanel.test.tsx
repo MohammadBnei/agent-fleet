@@ -79,3 +79,14 @@ test("a running standing session says a change applies on restart", () => {
     renderToStaticMarkup(<AgentRow d={d} busy={false} onPick={() => {}} />),
   ).toContain("applies on restart");
 });
+
+test("a pick that became unavailable stays shown, so it can be changed", () => {
+  const html = renderToStaticMarkup(
+    <AgentRow
+      d={def({ overrideModel: "claude-opus-5", model: "claude-opus-5" })}
+      busy={false}
+      onPick={() => {}}
+    />,
+  );
+  expect(html).toContain("claude-opus-5 (not available)");
+});

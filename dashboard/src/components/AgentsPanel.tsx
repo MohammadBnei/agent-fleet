@@ -22,7 +22,7 @@ export function appliesOnRestart(d: AgentDefinition): boolean {
   return d.standing && d.running && d.runningModel !== d.model;
 }
 
-const pick = (m: string) => (m !== "" ? m : "Claude Code's pick");
+const pick = (m: string) => (m !== "" ? m : "Fleet default");
 
 export function AgentRow({
   d,
@@ -53,13 +53,21 @@ export function AgentRow({
             <option value="">
               {d.yamlModel !== ""
                 ? `${d.yamlModel} (its file)`
-                : "Claude Code's pick"}
+                : "Fleet default"}
             </option>
             {choices.map((c) => (
               <option key={c.model} value={c.model}>
                 {c.model}
               </option>
             ))}
+            {/* The current pick stays selectable-away when it can no longer be picked. */}
+            {d.overrideIgnored === "" &&
+              d.overrideModel !== "" &&
+              !choices.some((c) => c.model === d.overrideModel) && (
+                <option value={d.overrideModel}>
+                  {d.overrideModel} (not available)
+                </option>
+              )}
           </select>
         )}
       </div>
