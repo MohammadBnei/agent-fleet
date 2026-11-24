@@ -82,6 +82,39 @@ var (
 		Help: "When the bridge last answered a card event publish (seeded at start); ages while no card changes",
 	})
 
+	// Session events (core/internal/sessionevents): opened, turn_ended, ended. Same meaning as the card gauges.
+	SessionEventsEnabled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_session_events_enabled",
+		Help: "1 when core's bridge client is configured, so session events can be published",
+	})
+	SessionEventsPublished = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agentfleet_session_events_published_total",
+			Help: "Session events the bridge accepted (or already had), by event type",
+		},
+		[]string{"type"},
+	)
+	SessionEventsRefused = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "agentfleet_session_events_refused_total",
+		Help: "Session events the bridge refused as invalid; the session is parked, never retried",
+	})
+	SessionEventsPending = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_session_events_pending",
+		Help: "Sessions with a state change or a result entry the bridge has not accepted yet",
+	})
+	SessionEventsParked = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_session_events_parked",
+		Help: "Sessions the bridge refused (InvalidArgument, PermissionDenied) and core no longer publishes for",
+	})
+	SessionEventsLost = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "agentfleet_session_events_lost_total",
+		Help: "Sessions the bridge saw open that a hard delete removed, with no ended event",
+	})
+	SessionEventsLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "agentfleet_session_events_last_success_timestamp_seconds",
+		Help: "When the bridge last answered a session event publish (seeded at start); ages while no session changes",
+	})
+
 	// GrpcRequestsTotal/GrpcDuration cover both RPC surfaces core serves —
 	// CoreService (gRPC, sidecar + provisioner call it) and DashboardService
 	// (ConnectRPC, the SPA calls it) — separated by the `surface` label
