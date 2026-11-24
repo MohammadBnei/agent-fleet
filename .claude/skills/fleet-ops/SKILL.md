@@ -191,7 +191,7 @@ FROM transcript WHERE session_id = '<sessionId>' ORDER BY seq;
 SELECT name, url, base_branch, image, cluster_access, active FROM repos ORDER BY name;
 ```
 
-Connect via the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh`
+Connect via the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh` folder `/core`
 project) — `core` is the **only** component with these
 (`docs/adr/0020` point 1); `provisioner`/`sidecar`/`worker` hold none.
 Pod lifecycle events update `pod_phase` but are not journaled

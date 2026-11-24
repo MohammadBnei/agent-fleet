@@ -23,7 +23,7 @@ sandbox pod. A session's worker is one single-shot Kubernetes `Job`,
 `provisioner/internal/k8s/names.go`: the UUID without dashes, first 20
 chars), with two containers, `worker` and `sidecar`.
 
-Connect with the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh`);
+Connect with the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh` folder `/core`);
 only `core` holds them.
 
 ## 1. The session row
