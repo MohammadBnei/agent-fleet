@@ -70,6 +70,24 @@ func jobCount(t *testing.T, k8sc *k8s.Client) int {
 	return len(jobs.Items)
 }
 
+// docs/adr/0088 §3: only a create that asks for it gives a keyless definition pod the shared gateway key.
+func TestCreateWorkerPod_SharedGatewayKeyOnRequest(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "GH_DEV_NOTES": "pat"})
+	k8sc.GatewayURL, k8sc.GatewayKeys = "http://gw.test:8080", map[string]string{"CONSOLE": "console", "DEFINITIONS": "shared"}
+	for id, want := range map[string]string{"def-1": "", "def-2": "shared"} {
+		req := defRequest(t, id, notesProfile())
+		req.DefinitionSharedGatewayKey = want != ""
+		if _, err := s.CreateWorkerPod(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+		sec, err := k8sc.Core.CoreV1().Secrets("agent-fleet").Get(context.Background(), k8s.CredSecretName(id), metav1.GetOptions{})
+		if err != nil || sec.StringData["GATEWAY_KEY"] != want {
+			t.Errorf("%s: GATEWAY_KEY %q (%v), want %q", id, sec.StringData["GATEWAY_KEY"], err, want)
+		}
+	}
+}
+
 // docs/adr/0065: a warm mints one token, after the vault matches the spec, and
 // says so; the pod's deadline is the fixed 12h cap whatever limits.timeout
 // says, and the token outlives it by 60s.
