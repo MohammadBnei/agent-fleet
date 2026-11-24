@@ -25,10 +25,8 @@ const def = (over: Partial<AgentDefinition> = {}): AgentDefinition =>
   }) as AgentDefinition;
 
 test("the source says where the model comes from", () => {
-  expect(modelSource(def())).toBe("yaml");
-  expect(modelSource(def({ yamlModel: "", model: "" }))).toBe(
-    "Claude Code's pick",
-  );
+  expect(modelSource(def())).toBe("set in its file");
+  expect(modelSource(def({ yamlModel: "", model: "" }))).toBe("no model set");
   expect(
     modelSource(
       def({
@@ -37,11 +35,11 @@ test("the source says where the model comes from", () => {
         overrideAt: "2026-11-24T10:00:00Z",
       }),
     ),
-  ).toBe("override by root 2026-11-24");
+  ).toBe("picked by root 2026-11-24");
   // An ignored override is not the source.
   expect(
     modelSource(def({ overrideModel: "x", overrideIgnored: "gone" })),
-  ).toBe("yaml");
+  ).toBe("set in its file");
 });
 
 test("only allowed choices are selectable, unavailable ones carry their reason", () => {
@@ -65,6 +63,7 @@ test("an ignored override is shown with its reason", () => {
     />,
   );
   expect(html).toContain("claude-opus-5 is ignored: not allowed");
+  expect(html).toContain("clear it");
 });
 
 test("a running standing session says a change applies on restart", () => {

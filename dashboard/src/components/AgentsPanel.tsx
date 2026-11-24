@@ -12,9 +12,9 @@ import { InlineError } from "./InlineError";
 export function modelSource(d: AgentDefinition): string {
   if (d.overrideModel !== "" && d.overrideIgnored === "") {
     const when = d.overrideAt ? ` ${d.overrideAt.slice(0, 10)}` : "";
-    return `override by ${d.overrideBy}${when}`;
+    return `picked by ${d.overrideBy}${when}`;
   }
-  return d.yamlModel !== "" ? "yaml" : "Claude Code's pick";
+  return d.yamlModel !== "" ? "set in its file" : "no model set";
 }
 
 // A running standing session keeps its model until it is restarted.
@@ -37,47 +37,44 @@ export function AgentRow({
   const unavailable = d.choices.filter((c) => c.unavailableReason !== "");
   return (
     <div className="py-2 border-b border-base-content/5 last:border-0">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm font-medium w-44 truncate flex-none">
-          {d.name}
-        </span>
-        <code className="text-xs flex-1 min-w-0 break-all">
-          {d.model !== "" ? d.model : "—"}
-        </code>
-        <span className="text-xs text-dim flex-none">{modelSource(d)}</span>
+      <div className="grid gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,1fr)_18rem] items-center">
+        <div className="min-w-0">
+          <div className="text-sm font-medium break-words">{d.name}</div>
+          <div className="text-xs text-dim">{modelSource(d)}</div>
+        </div>
         {d.valid && (
-          <>
-            <select
-              aria-label={`model for ${d.name}`}
-              value={d.overrideIgnored === "" ? d.overrideModel : ""}
-              disabled={busy}
-              onChange={(e) => onPick(e.target.value)}
-              className="select select-xs select-bordered"
-            >
-              <option value="">
-                {d.yamlModel !== "" ? "yaml default" : "Claude Code's pick"}
+          <select
+            aria-label={`model for ${d.name}`}
+            value={d.overrideIgnored === "" ? d.overrideModel : ""}
+            disabled={busy}
+            onChange={(e) => onPick(e.target.value)}
+            className="select select-sm select-bordered w-full"
+          >
+            <option value="">
+              {d.yamlModel !== ""
+                ? `${d.yamlModel} (its file)`
+                : "Claude Code's pick"}
+            </option>
+            {choices.map((c) => (
+              <option key={c.model} value={c.model}>
+                {c.model}
               </option>
-              {choices.map((c) => (
-                <option key={c.model} value={c.model}>
-                  {c.model}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={busy || d.overrideModel === ""}
-              onClick={() => onPick("")}
-              className="border border-line px-3 py-1 text-xs hover:border-error hover:text-error disabled:opacity-50 cursor-pointer"
-            >
-              clear
-            </button>
-          </>
+            ))}
+          </select>
         )}
       </div>
       {!d.valid && <div className="text-xs text-error mt-1">{d.error}</div>}
       {d.overrideIgnored !== "" && (
         <div className="text-xs text-warning mt-1">
-          Override {d.overrideModel} is ignored: {d.overrideIgnored}
+          Override {d.overrideModel} is ignored: {d.overrideIgnored}{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onPick("")}
+            className="underline cursor-pointer disabled:opacity-50"
+          >
+            clear it
+          </button>
         </div>
       )}
       {appliesOnRestart(d) && (
@@ -133,10 +130,9 @@ export function AgentsPanel() {
   return (
     <div>
       <p className="text-xs text-dim mb-3">
-        The model a new session of each defined agent gets. Everything else
-        about a definition stays in its file; a pick can only narrow what the
-        file allows. A session that is already running keeps its model; a
-        standing one takes the new one when it is restarted.
+        The model a new session of each agent gets, among those its file allows.
+        A running session keeps its model; a standing agent takes the new one
+        when it restarts.
       </p>
       {error && <InlineError message={error} />}
       {defs === null ? (
