@@ -1722,9 +1722,10 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	// A card the bridge has seen open and not yet seen close gets no terminal event once its row cascades
 	// away: count it, whatever state the row reached. One statement, so the count and the delete agree.
 	var lost int
+	var open bool // the bridge saw the session open and gets no ended event
 	err := s.pool.QueryRow(ctx, `
 		WITH lost AS (SELECT count(*) AS n FROM decisions WHERE session_id = $1 AND kind = 'card' AND bridge_state = 'open')
-		DELETE FROM sessions WHERE id = $1 RETURNING (SELECT n FROM lost)`, id).Scan(&lost)
+		DELETE FROM sessions WHERE id = $1 RETURNING (SELECT n FROM lost), COALESCE(bridge_state = 'opened', false)`, id).Scan(&lost, &open)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -1733,6 +1734,9 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("delete session: %w", err)
 	}
 	metrics.CardEventsLost.Add(float64(lost))
+	if open {
+		metrics.SessionEventsLost.Inc()
+	}
 	slog.Info("sessions Delete", "sessionId", id)
 	return nil
 }

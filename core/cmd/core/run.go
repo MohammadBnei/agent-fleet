@@ -59,6 +59,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/responder"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessionevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -248,6 +249,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	go announcer.Run(ctx, 30*time.Second)
 	// Card state changes to the bridge (docs/adr/0078 amendment); a blank BRIDGE_URL leaves it idle.
 	go cardevents.New(pool, bridge, cfg.Bridge.URL != "").Run(ctx, 15*time.Second)
+	// Session opened, turn ended and ended to the bridge; idle without BRIDGE_URL.
+	go sessionevents.New(pool, bridge, cfg.Bridge.URL != "").Run(ctx, 15*time.Second)
 
 	// A schedule files a proposal, which a human opens — there is no separate
 	// service to reach, so the scheduler always runs.
