@@ -68,8 +68,8 @@ func TestEnsureExposeRoute_AppRouteIsGatedByAuthentik(t *testing.T) {
 		t.Fatalf("app route middlewares = %+v, want exactly the forwardAuth one", mws)
 	}
 	mw, _ := mws[0].(map[string]any)
-	if mw["name"] != "authentik-forwardauth" || mw["namespace"] != "default" {
-		t.Errorf("app route middleware = %+v, want authentik-forwardauth in default", mw)
+	if mw["name"] != "authentik-forwardauth@file" || len(mw) != 1 {
+		t.Errorf("app route middleware = %+v, want authentik-forwardauth@file", mw)
 	}
 	if strings.Contains(strings.ToLower(readableRoutes(routes)), "basic-admin-auth") {
 		t.Error("basic-admin-auth still referenced by a preview route")
@@ -91,9 +91,8 @@ func TestEnsureExposeRoute_RoutesTheOutpostCallbackOnThePreviewHost(t *testing.T
 		t.Fatalf("outpost route services = %+v", svcs)
 	}
 	svc, _ := svcs[0].(map[string]any)
-	if svc["name"] != authentikServiceName || svc["namespace"] != authentikServiceNamespace {
-		t.Errorf("outpost route points at %+v, want %s in %s — the `platform-` release prefix is not optional and a wrong name fails as a 500 on the callback, not at apply time",
-			svc, authentikServiceName, authentikServiceNamespace)
+	if svc["name"] != "authentik-outpost@file" || svc["kind"] != "TraefikService" || len(svc) != 2 {
+		t.Errorf("outpost route points at %+v, want TraefikService authentik-outpost@file: a wrong name fails as a 404 on the callback, not at apply time", svc)
 	}
 
 	// Gating the callback path with the middleware it is the callback FOR is

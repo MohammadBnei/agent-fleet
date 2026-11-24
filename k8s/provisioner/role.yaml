@@ -16,8 +16,8 @@
 # postgres shared instance's data volume — infrastructure the provisioner
 # itself creates and owns, distinct from the fleet-coordination-DB boundary
 # in docs/adr/0020 point 1, which is untouched. Preview-pod auth REFERENCES a
-# Middleware in `default` (authentik-forwardauth since infra-bootstrap
-# ADR-0041, basic-admin-auth before it) that this Role deliberately cannot
+# Middleware of Traefik's file provider (authentik-forwardauth@file, declared
+# in infra-bootstrap) that this Role deliberately cannot
 # manage — there are no `middlewares` verbs below, and adding them so the
 # provisioner could mint its own copy would put the fleet in charge of its own
 # auth gate. Referencing one it does not control is the point.

@@ -25,18 +25,18 @@ import (
 // forward_single is keyed on a fixed external_host and cannot express a
 // hostname that does not exist until a session asks for it.
 //
-// In `default`, not this namespace: k8s/provisioner/role.yaml deliberately
-// grants no `middlewares` verbs, so the provisioner can only reference a
-// Middleware it does not manage. Do not add the verb to make a local copy.
-var forwardAuthMiddleware = map[string]any{"name": "authentik-forwardauth", "namespace": "default"}
+// Served by Traefik's file provider (infra-bootstrap
+// gitops/platform/values/traefik/values.yaml), so a route in any namespace can
+// name it: k8s/provisioner/role.yaml deliberately grants no `middlewares`
+// verbs, so the provisioner can only reference a Middleware it does not
+// manage. Do not add the verb to make a local copy.
+var forwardAuthMiddleware = map[string]any{"name": "authentik-forwardauth@file"}
 
-// authentikService is where the sign-in callback goes. `platform-` is the
-// ApplicationSet's release prefix and is not optional — a wrong hostname here
-// fails as a 500 on the callback, not as a config error at apply time.
 const (
-	authentikServiceName      = "platform-authentik-server"
-	authentikServiceNamespace = "authentik"
-	authentikServicePort      = 80
+	// authentikOutpostService is where the sign-in callback goes: authentik's
+	// server, as a file-provider service (same values file). A wrong name here
+	// fails as a 404 on the callback, not as a config error at apply time.
+	authentikOutpostService = "authentik-outpost@file"
 	// outpostPathPrefix is where authentik's embedded outpost handles the
 	// sign-in callback. It lands on the PREVIEW host, not on
 	// authentik.bnei.dev, so every preview route has to carry it.
@@ -167,11 +167,7 @@ func (c *Client) ensureExposeRoute(ctx context.Context, sessionID, svcName strin
 					"kind":     "Rule",
 					"priority": int64(20),
 					"services": []any{
-						map[string]any{
-							"name":      authentikServiceName,
-							"namespace": authentikServiceNamespace,
-							"port":      int64(authentikServicePort),
-						},
+						map[string]any{"name": authentikOutpostService, "kind": "TraefikService"},
 					},
 					// NO middleware here, deliberately. Gating the callback
 					// path with the thing it is the callback FOR is its own
