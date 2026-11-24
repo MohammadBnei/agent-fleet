@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AgentsPanel } from "../components/AgentsPanel";
 import { GrantsPanel } from "../components/GrantsPanel";
 import { PacksPanel } from "../components/PacksPanel";
 import { ModelStatsPanel } from "../components/Ratings";
@@ -16,6 +17,7 @@ type Section =
   | "packs"
   | "grants"
   | "repos"
+  | "agents"
   | "models"
   | "appearance"
   | "account";
@@ -28,6 +30,7 @@ const SECTIONS: readonly { value: Section; label: string; hint: string }[] = [
     hint: "Approvals remembered for a definition",
   },
   { value: "repos", label: "Repos", hint: "Repos in the fleet" },
+  { value: "agents", label: "Agents", hint: "Each agent's model" },
   { value: "models", label: "Models", hint: "Usage and ratings per model" },
   { value: "appearance", label: "Appearance", hint: "Theme and text width" },
   { value: "account", label: "Account", hint: "Who is signed in" },
@@ -118,6 +121,7 @@ export function Settings({
           {section === "packs" && <PacksPanel />}
           {section === "grants" && <GrantsPanel />}
           {section === "repos" && <ReposPanel />}
+          {section === "agents" && <AgentsPanel />}
           {section === "models" && <ModelStatsPanel />}
           {section === "appearance" && (
             <div className="flex flex-col gap-4 max-w-sm">
