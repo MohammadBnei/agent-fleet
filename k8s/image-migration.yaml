@@ -2,4 +2,4 @@
 hooks:
   migrate:
     image:
-      tag: "762d84431348@sha256:5f90c1f95b54e0c1484915d2b0d958b9f4ca189a6736e72a3ea7e96833513e8d"
+      tag: "c9fe89fdf3cb@sha256:c8290c7aeb1a0d1169764f7c8279014a4b2afc1208c20a07ab3bd7ba3f86fe84"
