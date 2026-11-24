@@ -117,6 +117,11 @@ type skipErr struct{ err error }
 func (s skipErr) Error() string { return s.err.Error() }
 func (s skipErr) Unwrap() error { return s.err }
 
+// backoffFor: BackoffMin doubling per failure, capped; the shift is bounded so 40 failures cannot overflow.
+func backoffFor(n int) time.Duration {
+	return min(cardevents.BackoffMin<<min(max(n-1, 0), 16), cardevents.BackoffMax)
+}
+
 type failure struct {
 	n     int
 	until time.Time
@@ -153,6 +158,19 @@ func (e *Events) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A session no longer picked (ended, deleted, parked) leaves the failure map.
+	keep := map[string]bool{}
+	for _, id := range skip {
+		keep[id] = true
+	}
+	for _, s := range list {
+		keep[s.id] = true
+	}
+	for id := range e.fails {
+		if !keep[id] {
+			delete(e.fails, id)
+		}
+	}
 	var perr error
 	for _, s := range list {
 		err := e.publish(ctx, s)
@@ -163,7 +181,7 @@ func (e *Events) Tick(ctx context.Context) error {
 		case errors.As(err, &sk):
 			f := e.fails[s.id]
 			f.n++
-			f.until = now.Add(min(cardevents.BackoffMin<<(f.n-1), cardevents.BackoffMax))
+			f.until = now.Add(backoffFor(f.n))
 			e.fails[s.id] = f
 			slog.Warn("sessionevents: publish failed for one session, skipped", "session", s.id, "retryAt", f.until, "error", sk.err)
 		default:
@@ -202,7 +220,8 @@ const (
 	// A result counts as a turn when it has text and, for an archived session, was written before the archive:
 	// nothing is published after ended.
 	unsentTurns = `EXISTS (SELECT 1 FROM transcript t WHERE t.session_id = s.id AND t.type = 'result' AND t.text <> ''
-		AND t.seq > s.bridge_turn_seq AND (s.archived_at IS NULL OR t.created_at <= s.archived_at))`
+		AND t.seq > s.bridge_turn_seq AND (s.archived_at IS NULL OR t.created_at <= s.archived_at))
+		AND s.bridge_state IS DISTINCT FROM 'ended'`
 )
 
 func (e *Events) publish(ctx context.Context, s session) error {
@@ -216,7 +235,8 @@ func (e *Events) publish(ctx context.Context, s session) error {
 	}
 	rows, err := e.pool.Query(ctx, `SELECT seq, thread_key, created_at, text FROM transcript
 		WHERE session_id = $1::uuid AND type = 'result' AND text <> '' AND seq > $2
-		  AND ($4::timestamptz IS NULL OR created_at <= $4) ORDER BY seq LIMIT $3`, s.id, s.turnSeq, turnsPerTick, s.archivedAt)
+		  AND ($4::timestamptz IS NULL OR created_at <= $4)
+		  AND NOT EXISTS (SELECT 1 FROM sessions WHERE id = $1::uuid AND bridge_state = 'ended') ORDER BY seq LIMIT $3`, s.id, s.turnSeq, turnsPerTick, s.archivedAt)
 	if err != nil {
 		return err
 	}
@@ -267,8 +287,8 @@ func (e *Events) send(ctx context.Context, s session, ev *bridgev1.CloudEvent) (
 			metrics.SessionEventsRefused.Inc()
 			_, uerr := e.pool.Exec(ctx, `UPDATE sessions SET bridge_parked_at = $2 WHERE id = $1::uuid`, s.id, e.now())
 			return true, uerr
-		case errors.Is(err, context.Canceled), errors.Is(err, bridgeclient.ErrNotConfigured),
-			code == connect.CodeUnavailable, code == connect.CodeUnauthenticated:
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, bridgeclient.ErrNotConfigured),
+			code == connect.CodeUnavailable, code == connect.CodeUnauthenticated, code == connect.CodeDeadlineExceeded, code == connect.CodeCanceled:
 			return false, err
 		}
 		return false, skipErr{err}
@@ -296,7 +316,7 @@ const TitleRunes = 120
 // control characters and newlines out, 120 runes at most, empty means omitted.
 func cleanTitle(t string) string {
 	t = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
 			return -1
 		}
 		return r

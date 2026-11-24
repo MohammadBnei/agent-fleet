@@ -836,6 +836,10 @@ retry columns (`adr/0048` §2) and `pod_phase` is its only liveness signal;
 `transcript` cascades from `sessions` and dedups on `(session_id,
 idempotency_key)`; `knowledge_journal` is append-only and deliberately not
 FK'd to `sessions`.
+A failed migration leaves golang-migrate dirty and the `PreSync` hook does not retry (`backoffLimit: 0`):
+fix the cause, run `migrate force <n-1>` for the failed file `n`, and run the hook again. A file that builds an index
+`CONCURRENTLY` (043) leaves an INVALID index behind: `DROP INDEX` it before the `force`. Files that take a table lock
+(044, 045) retry lock timeouts inside the file, so a passing reader does not dirty the version.
 
 ## 7. Environment variables
 

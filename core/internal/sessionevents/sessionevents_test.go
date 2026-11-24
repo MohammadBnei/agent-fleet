@@ -2,6 +2,7 @@ package sessionevents
 
 import (
 	"encoding/json"
+	"github.com/MohammadBnei/agent-fleet/core/internal/cardevents"
 	"strings"
 	"testing"
 	"time"
@@ -93,5 +94,22 @@ func TestTitleClamp(t *testing.T) {
 	s.title = "\n"
 	if _, has := base(s, at)["title"]; has {
 		t.Error("an empty title must be omitted")
+	}
+}
+
+func TestBackoffDoesNotOverflow(t *testing.T) {
+	for _, n := range []int{0, 1, 2, 40, 1000} {
+		if d := backoffFor(n); d <= 0 || d > cardevents.BackoffMax {
+			t.Errorf("backoffFor(%d) = %v", n, d)
+		}
+	}
+	if backoffFor(1) != cardevents.BackoffMin || backoffFor(2) != 2*cardevents.BackoffMin {
+		t.Error("backoff does not start at BackoffMin and double")
+	}
+}
+
+func TestTitleStripsFormatCharacters(t *testing.T) {
+	if got := cleanTitle("a" + string(rune(0x202e)) + "b" + string(rune(0x200b)) + "c"); got != "abc" { // bidi override, zero-width space
+		t.Errorf("got %q", got)
 	}
 }
