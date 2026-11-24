@@ -44,6 +44,42 @@ func NewPool(t *testing.T) *pgxpool.Pool {
 	if dsn := os.Getenv("AGENTFLEET_TEST_DSN"); dsn != "" {
 		return externalPool(t, dsn)
 	}
+	connStr := containerDSN(t)
+	m, err := migrate.New(migrationsURL(), connStr)
+	if err != nil {
+		t.Fatalf("migrate.New: %v", err)
+	}
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	t.Cleanup(func() { _, _ = m.Close() })
+	return scopedPool(t, connStr, 0)
+}
+
+// NewMigrated is for tests of the migrations themselves: a migrator at version 'to' and a pool on the
+// same database. With AGENTFLEET_TEST_DSN it works in a schema of that server (see externalSchemaDSN),
+// else in a testcontainer. The pool is wide enough for a handful of concurrent writers.
+func NewMigrated(t *testing.T, to uint) (*migrate.Migrate, *pgxpool.Pool) {
+	t.Helper()
+	var dsn string
+	if env := os.Getenv("AGENTFLEET_TEST_DSN"); env != "" {
+		dsn = externalSchemaDSN(t, env)
+	} else {
+		dsn = containerDSN(t)
+	}
+	m, err := migrate.New(migrationsURL(), dsn)
+	if err != nil {
+		t.Fatalf("migrate.New: %v", err)
+	}
+	t.Cleanup(func() { _, _ = m.Close() })
+	if err := m.Migrate(to); err != nil {
+		t.Fatalf("migrate to %d: %v", to, err)
+	}
+	return m, scopedPool(t, dsn, 12)
+}
+
+// containerDSN starts a postgres:18 container, removed at cleanup.
+func containerDSN(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -66,20 +102,5 @@ func NewPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("connection string: %v", err)
 	}
-
-	m, err := migrate.New(migrationsURL(), connStr)
-	if err != nil {
-		t.Fatalf("migrate.New: %v", err)
-	}
-	if err := m.Up(); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
-
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	return pool
+	return connStr
 }

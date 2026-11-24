@@ -31,6 +31,22 @@ import (
 // "connection reset by peer" rather than "too many clients".
 func externalPool(t *testing.T, dsn string) *pgxpool.Pool {
 	t.Helper()
+	scoped := externalSchemaDSN(t, dsn)
+	m, err := migrate.New(migrationsURL(), scoped)
+	if err != nil {
+		t.Fatalf("migrate.New: %v", err)
+	}
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	t.Cleanup(func() { _, _ = m.Close() })
+	return scopedPool(t, scoped, 4)
+}
+
+// externalSchemaDSN creates this test's schema on the shared server and returns a DSN whose
+// search_path is that schema (golang-migrate keeps its version table there too). The schema is dropped at cleanup.
+func externalSchemaDSN(t *testing.T, dsn string) string {
+	t.Helper()
 	ctx := context.Background()
 
 	// Suffix FIRST, name second: Postgres truncates identifiers at 63 bytes, so
@@ -76,25 +92,22 @@ func externalPool(t *testing.T, dsn string) *pgxpool.Pool {
 	}
 	scoped := dsn + sep + "search_path=" + schema
 
-	m, err := migrate.New(migrationsURL(), scoped)
-	if err != nil {
-		t.Fatalf("migrate.New: %v", err)
-	}
-	if err := m.Up(); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
-	t.Cleanup(func() { _, _ = m.Close() })
+	return scoped
+}
 
+func scopedPool(t *testing.T, scoped string, maxConns int32) *pgxpool.Pool {
+	t.Helper()
 	cfg, err := pgxpool.ParseConfig(scoped)
 	if err != nil {
 		t.Fatalf("parse %s: %v", scoped, err)
 	}
-	cfg.MaxConns = 4
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if maxConns > 0 {
+		cfg.MaxConns = maxConns
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("pgxpool.New: %v", err)
 	}
 	t.Cleanup(pool.Close)
-
 	return pool
 }
