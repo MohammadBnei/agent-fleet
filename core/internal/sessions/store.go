@@ -1221,8 +1221,8 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE sessions
 		SET agent_session_id = $4,
-		    -- A definition session's model is its pinned model.default
-		    -- (docs/adr/0062): what the pod reports never widens it.
+		    -- A definition session's model is fixed at create or standing
+		    -- restart (docs/adr/0088 §7): what the pod reports never widens it.
 		    model = CASE WHEN definition_name IS NULL THEN COALESCE($5, model) ELSE model END,
 		    updated_at = now()
 		WHERE id = $1 AND `+leaseMatch, id, leaseID, livePhases, agentSessionID, modelPtr)
@@ -1875,7 +1875,7 @@ func (s *Store) MarkSpawnReported(ctx context.Context, id string) error {
 }
 
 // SetModel saves a repo session's model (SetSessionModel). A definition
-// session's model is its pinned model.default, so none is written for one; the
+// session's model is fixed at create or standing restart, so none is written for one; the
 // caller refuses those first, and false says the row was not changed.
 func (s *Store) SetModel(ctx context.Context, id, model string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE sessions SET model = $2, updated_at = now() WHERE id = $1 AND definition_name IS NULL`, id, model)

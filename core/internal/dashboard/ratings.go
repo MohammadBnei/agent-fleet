@@ -23,6 +23,7 @@ type ratingStore interface {
 	ResultText(ctx context.Context, sessionID string, seq int64) (string, error)
 	Results(ctx context.Context, sessionID string) ([]ratings.Result, error)
 	LastResult(ctx context.Context, sessionID string) (ratings.Result, bool, error)
+	MaxContext(ctx context.Context, sessionID string) (int64, error)
 	RateTurn(ctx context.Context, sessionID string, seq int64, value int, note, model string) error
 	RateSession(ctx context.Context, sessionID string, score int, note, model string) error
 	Stats(ctx context.Context, since time.Time) (map[string]*ratings.Agg, error)

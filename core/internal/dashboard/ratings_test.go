@@ -32,6 +32,8 @@ func (f *fakeRatings) ResultText(context.Context, string, int64) (string, error)
 func (f *fakeRatings) Results(context.Context, string) ([]ratings.Result, error) {
 	return f.results, nil
 }
+func (f *fakeRatings) MaxContext(context.Context, string) (int64, error) { return 0, nil }
+
 func (f *fakeRatings) LastResult(context.Context, string) (ratings.Result, bool, error) {
 	return ratings.Result{}, false, nil
 }

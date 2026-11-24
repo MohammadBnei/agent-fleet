@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -204,9 +205,9 @@ func hasStanding(s *definitions.Spec) bool {
 }
 
 // standingRestartModel is the model a restarting standing row is set to, under
-// the checks of a create, plus the context-window check of a model switch: a
-// smaller window than the transcript already fills would fail on the first message.
-func (s *Server) standingRestartModel(ctx context.Context, h definitions.Head, rowID string) (string, error) {
+// the checks of a create. A changed model is also held to its window, since
+// Start resumes every thread and one that fills more would fail on its first message.
+func (s *Server) standingRestartModel(ctx context.Context, h definitions.Head, row *sessions.Session) (string, error) {
 	model, err := s.definitionModel(ctx, h)
 	if err != nil {
 		return "", err
@@ -217,14 +218,17 @@ func (s *Server) standingRestartModel(ctx context.Context, h definitions.Head, r
 	if err := s.checkModelEnabled(model); err != nil {
 		return "", err
 	}
-	if window, ok := models.ContextWindow(model); ok && s.ratings != nil {
-		last, found, err := s.ratings.LastResult(ctx, rowID)
+	if model == derefStr(row.Model) || s.ratings == nil {
+		return model, nil
+	}
+	// ponytail: "" runs the provisioner's CLAUDE_MODEL, which core does not know; every Claude window is 200k here.
+	if window, ok := models.ContextWindow(cmp.Or(model, s.fallbackModel(), "claude-opus-5-5")); ok {
+		used, err := s.ratings.MaxContext(ctx, row.ID)
 		if err != nil {
 			return "", errkeys.Connect(connect.CodeInternal, errkeys.KeyInternal, err)
 		}
-		// ContextTokens is 0 on results from before the worker sent it: no check then.
-		if found && last.ContextTokens > int64(window) {
-			return "", refuse(connect.CodeFailedPrecondition, "the transcript is %d tokens and %s takes %d", last.ContextTokens, model, window)
+		if used > int64(window) {
+			return "", refuse(connect.CodeFailedPrecondition, "a thread is %d tokens and %s takes %d", used, cmp.Or(model, "the fleet default"), window)
 		}
 	}
 	return model, nil

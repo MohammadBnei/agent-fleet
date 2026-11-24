@@ -12,6 +12,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/defmodels"
+	"github.com/MohammadBnei/agent-fleet/core/internal/ratings"
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
@@ -238,6 +239,37 @@ func TestStandingRestartTakesTheEffectiveModel(t *testing.T) {
 		t.Fatal("restart went ahead on a failed override read")
 	}
 	s.SetDefinitionModels(st)
+	// One thread's newest reported context is over the new model's window. Newer results without one do not hide it.
+	s.SetRatings(ratings.NewStore(pool))
+	for i, x := range []struct{ thread, text string }{
+		{"a", `{"contextTokens":500000}`}, {"a", `{"subtype":"aborted"}`}, {"b", `{"contextTokens":1000}`},
+	} {
+		if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key)
+			VALUES ($1, $2, 'agent', $3, 'result', gen_random_uuid()::text, $4)`, first.GetId(), 1000+i, x.text, x.thread); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := start(); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "500000") {
+		t.Fatalf("restart over the window: %v", err)
+	}
+	// An unchanged model is never refused for its window.
+	if err := st.Clear(ctx, "dev-stander"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := start(); err != nil {
+		t.Fatalf("restart on the same model: %v", err)
+	}
+	if _, err := s.StopStanding(ctx, connect.NewRequest(&agentfleetv1.StopStandingRequest{Definition: "dev-stander"})); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Set(ctx, "dev-stander", "claude-haiku-4-5", "root"); err != nil {
+		t.Fatal(err)
+	}
+	// A later, smaller report (a compaction) clears it.
+	if _, err := pool.Exec(ctx, `INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, thread_key)
+		VALUES ($1, 2000, 'agent', '{"contextTokens":9000}', 'result', gen_random_uuid()::text, 'a')`, first.GetId()); err != nil {
+		t.Fatal(err)
+	}
 	again, err := start()
 	if err != nil || again.GetModel() != "claude-haiku-4-5" {
 		t.Fatalf("restart: %v, %v", again.GetModel(), err)

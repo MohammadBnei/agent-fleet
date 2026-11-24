@@ -62,6 +62,31 @@ func (s *Store) LastResult(ctx context.Context, sessionID string) (r Result, ok 
 	return r, ok, nil
 }
 
+// MaxContext is the largest context any of the session's threads last reported
+// (contextTokens of each thread's newest result that has one), 0 when none did.
+// A stop's own result carries none, so it is skipped rather than read as 0.
+func (s *Store) MaxContext(ctx context.Context, sessionID string) (int64, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT ON (COALESCE(thread_key, '')) text FROM transcript
+		WHERE session_id = $1 AND type = 'result' AND text ~ '"contextTokens": ?[1-9]'
+		ORDER BY COALESCE(thread_key, ''), seq DESC`, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var most int64
+	for rows.Next() {
+		var text string
+		if err := rows.Scan(&text); err != nil {
+			return 0, err
+		}
+		if r, ok := ParseResult(text); ok {
+			most = max(most, r.ContextTokens)
+		}
+	}
+	return most, rows.Err()
+}
+
 // RateTurn upserts the thumb (+1/-1) on result entry seq.
 func (s *Store) RateTurn(ctx context.Context, sessionID string, seq int64, value int, note, model string) error {
 	_, err := s.pool.Exec(ctx, `

@@ -8,8 +8,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/defmodels"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/defmodels"
 )
 
 type fakeDefModels struct {
@@ -19,8 +19,8 @@ type fakeDefModels struct {
 
 func (f fakeDefModels) Get(context.Context, string) (*defmodels.Override, error) { return f.o, f.err }
 func (fakeDefModels) List(context.Context) ([]defmodels.Override, error)         { return nil, nil }
-func (fakeDefModels) Set(context.Context, string, string, string) error           { return nil }
-func (fakeDefModels) Clear(context.Context, string) error                         { return nil }
+func (fakeDefModels) Set(context.Context, string, string, string) error          { return nil }
+func (fakeDefModels) Clear(context.Context, string) error                        { return nil }
 
 func head(name string, m *definitions.Model) definitions.Head {
 	return definitions.Head{Name: name, Effective: &definitions.Spec{Model: m}}

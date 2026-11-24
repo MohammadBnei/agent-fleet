@@ -94,7 +94,13 @@ func (s *Server) StartStanding(ctx context.Context, req *connect.Request[agentfl
 			return nil, errkeys.Connect(connect.CodeFailedPrecondition, errkeys.KeyInternal, fmt.Errorf("%q is already started: %w", name, ErrStandingStarted))
 		}
 		// The restart is when a stopped character takes the current effective model (docs/adr/0088 amendment).
-		model, err := s.standingRestartModel(ctx, head, row.ID)
+		// Under the send lock: a warm reads the row's model and its key choice from one read, so neither may change under it.
+		release, err := s.sends.lock(ctx, row.ID)
+		if err != nil {
+			return nil, errkeys.Connect(connect.CodeCanceled, errkeys.KeyInternal, err)
+		}
+		defer release()
+		model, err := s.standingRestartModel(ctx, head, row)
 		if err != nil {
 			return nil, err
 		}
