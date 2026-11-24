@@ -3,7 +3,7 @@
 -- locks that appends' FK check (FOR KEY SHARE) does not conflict with, and no table lock. Only rows the
 -- new columns have not reached are touched, so a rerun is harmless. A row lock held by someone else makes it
 -- wait at most 3s per try and try again (20 tries, 0.5s apart) instead of failing the file.
--- If it still fails the version is dirty. Recovery: migrate force 44, then run the migration again.
+-- If it still fails the version is dirty. Recovery: migrate force 45, then run the migration again.
 DO $$
 BEGIN
   FOR i IN 1..20 LOOP

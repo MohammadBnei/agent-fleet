@@ -6,7 +6,7 @@
 //
 // The events carry ids, kind, repo, definition, title, thread key and timings.
 // Never a prompt, a reply, a result's text or a file path. Sessions and
-// result entries that exist when migration 000045 runs are marked published:
+// result entries that exist when migration 000046 runs are marked published:
 // a session open at deploy gets no opened event, its later turns and its ended do flow.
 //
 // ended is published when a session is archived. A hard delete removes the

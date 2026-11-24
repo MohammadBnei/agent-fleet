@@ -3,7 +3,7 @@
 -- bridge_parked_at: set when the bridge refused an event retrying cannot fix; core tries again after 6 hours.
 -- Columns only, all defaults constant, so no table rewrite. The ACCESS EXCLUSIVE lock on sessions waits at most
 -- 3s per try; a passing reader or row lock makes it try again (20 tries, 0.5s apart) instead of failing the file.
--- If it still fails the version is dirty. Recovery: migrate force 43, then run the migration again
+-- If it still fails the version is dirty. Recovery: migrate force 44, then run the migration again
 -- (the columns are not added when the file fails: the ALTER is one transaction).
 DO $$
 BEGIN

@@ -79,7 +79,7 @@ func TestOldRowsNotPublishedNewOnesAre(t *testing.T) {
 	result(t, pool, old, 1, "now()")
 	// Pretend the columns are new: reset them and run the backfill migration itself over the old rows.
 	exec(t, pool, `UPDATE sessions SET bridge_state = NULL, bridge_turn_seq = -1`)
-	sql, err := os.ReadFile("../../../db/migrations/000045_session_bridge_backfill.up.sql")
+	sql, err := os.ReadFile("../../../db/migrations/000046_session_bridge_backfill.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

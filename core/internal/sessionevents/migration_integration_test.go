@@ -115,10 +115,10 @@ func seed(t *testing.T, pool *pgxpool.Pool, workers, rows int) []string {
 }
 
 // The session-event migrations run while appends are in flight: no deadlock (40P01), no append stuck for
-// more than a second. 000043 is the CONCURRENTLY index, run by golang-migrate exactly as production does.
+// more than a second. 000044 is the CONCURRENTLY index, run by golang-migrate exactly as production does.
 func TestMigrationsUnderAppends(t *testing.T) {
 	ctx := context.Background()
-	m, pool := pgMigrator(t, 42)
+	m, pool := pgMigrator(t, 43)
 	stop := appenders(t, pool, seed(t, pool, 8, 20000))
 	time.Sleep(300 * time.Millisecond)
 	if err := m.Up(); err != nil {
@@ -136,10 +136,10 @@ func TestMigrationsUnderAppends(t *testing.T) {
 	}
 }
 
-// 043 alone, on a table big enough that the build takes a while: an append must never wait for it.
+// 044 alone, on a table big enough that the build takes a while: an append must never wait for it.
 // A plain CREATE INDEX (SHARE lock) holds appends for the whole build.
 func TestIndexBuildDoesNotBlockAppends(t *testing.T) {
-	m, pool := pgMigrator(t, 42)
+	m, pool := pgMigrator(t, 43)
 	stop := appenders(t, pool, seed(t, pool, 8, 150000))
 	time.Sleep(300 * time.Millisecond)
 	start := time.Now()
@@ -157,7 +157,7 @@ func TestIndexBuildDoesNotBlockAppends(t *testing.T) {
 	}
 }
 
-// A passing reader or row lock (5s, longer than one 3s lock_timeout) must not dirty 044 or 045.
+// A passing reader or row lock (5s, longer than one 3s lock_timeout) must not dirty 045 or 046.
 func TestLockTimeoutsDoNotDirtyTheVersion(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -165,8 +165,8 @@ func TestLockTimeoutsDoNotDirtyTheVersion(t *testing.T) {
 		hold   string
 		wantAt uint
 	}{
-		{"reader on sessions blocks 044", 43, `SELECT count(*) FROM sessions`, 45},
-		{"row lock on sessions blocks 045", 44, `SELECT id FROM sessions FOR UPDATE`, 45},
+		{"reader on sessions blocks 045", 44, `SELECT count(*) FROM sessions`, 46},
+		{"row lock on sessions blocks 046", 45, `SELECT id FROM sessions FOR UPDATE`, 46},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := context.Background()
