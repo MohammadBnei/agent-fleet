@@ -30,6 +30,12 @@ llm-gateway, which speaks the Anthropic Messages API, maps ids to providers and 
    provisioner writes it to the pod's cred Secret, mounted into the **sidecar only**. Accepted risk: the worker can reach
    the loopback listener and so spend the key, exactly as it can reach the vault token's router. **The budget is the
    only boundary.** The shared console key means one runaway repo session can starve the others; that is accepted for now.
+   Amended 2026-11-24 (owner): a definition with no key of its own may use one shared key,
+   `LLM_GATEWAY_KEY_FLEET_DEFINITIONS` (the definitions loader reserves the name `definitions`, as it does `console`).
+   The provisioner gives a definition pod the shared key only when core's create request says so, and core says so
+   only when the session row's model is a gateway id; a definition pod on a Claude model never holds it, and a
+   definition pod never gets the console key. The provisioner reports the NAMES of the keys it holds (never values) in
+   `GetVersion`, so the console can refuse a gateway model that no key could serve.
 4. **Egress (amends 0065 §5).** The definition egress lock gains llm-gateway pods on port 4000 (Cilium judges after
    the Service DNAT) and the DNS name `llm-gateway.llm-gateway.svc.cluster.local`. Nothing else opens.
 5. **Kill switch (amends 0077).** Core's `FLEET_GATEWAY_MODELS=on` enables gateway ids; anything else, the default, is
@@ -42,7 +48,14 @@ llm-gateway, which speaks the Anthropic Messages API, maps ids to providers and 
    this route; an owner who wants prompts leaves `auto`, which takes effect on the next call. Definition sessions are
    unchanged. A fuller treatment is a later deep dive.
 7. **Switching.** Repo sessions only, by a locked teardown and a resume on the new model; the transcript records the
-   switch. Definitions change model by a reviewed `model.default` PR. **No fallback:** a gateway failure fails the
+   switch. Definitions change model by a reviewed `model.default` PR. Amended 2026-11-24 (owner): an admin may also
+   pick a definition's model in the console (Settings, Agents). The pick is one row per definition name
+   (`definition_model_overrides`, migration 000043) and is read when a NEW session is created and when a stopped
+   standing session restarts; a running session never changes model, and `SetSessionModel` still refuses definition
+   sessions. The file stays the bound: the pick must be in the fleet's model ceiling and in the definition's
+   `model.allow`, and a stored pick that later falls outside is ignored for new sessions and shown with the reason.
+   A gateway pick is also refused while `FLEET_GATEWAY_MODELS` is off or when neither the definition's own key nor the
+   shared key exists. **No fallback:** a gateway failure fails the
    turn, it never retries on Claude, so a cost or data-handling choice is never silently reversed.
 
 ## Consequences

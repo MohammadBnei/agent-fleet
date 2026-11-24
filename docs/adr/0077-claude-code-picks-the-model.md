@@ -84,3 +84,9 @@ The New Session dialog had no model or effort control, although
   pods, `dev-notes`) and an API key (`opus-workspace`'s `ANTHROPIC_OPUS`) may
   default to different models. Check the `init` model in one pod of each after
   deploy.
+
+## Amended 2026-11-24
+
+A definition's model can now be picked in the console within its file's `model.allow`, and is stored in the database
+([ADR-0088](0088-fleet-sessions-on-non-claude-models-through-llm-gateway.md) §7). With no file model and no pick, a
+definition session still stores NULL and Claude Code picks.

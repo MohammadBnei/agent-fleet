@@ -8,6 +8,10 @@
   (the auth this builds on), ADR-0064 (the definition pod profile, next slice),
   `VISION.md` principles 4 and 8 (amended). infra-bootstrap ADR-0060 (the event
   bridge) shares the gate amendment below.
+- **Amended 2026-11-24:** a definition's model is no longer only in git. The file's `model.default` stays the default and
+  `model.allow` (inside the fleet ceiling) stays the bound, but an admin may pick a model within it in the console, stored
+  in the database ([ADR-0088](0088-fleet-sessions-on-non-claude-models-through-llm-gateway.md) §7). Everything else about a
+  definition stays in git.
 - **Amended 2026-10-21:** `model` is optional
   ([ADR-0077](0077-claude-code-picks-the-model.md)). A definition with no
   `model.default` stores no model and Claude Code picks; when present it is
